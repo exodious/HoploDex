@@ -27,3 +27,15 @@ impl Default for TestDb {
         Self::new()
     }
 }
+
+/// A tiny (20x20, solid red) but genuinely valid PNG, so
+/// `services::photos`'s real image-decoding thumbnail generator has real
+/// bytes to decode — no mocks, per the constitution.
+pub fn sample_png_bytes() -> Vec<u8> {
+    vec![
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 20, 0, 0, 0, 20, 8,
+        2, 0, 0, 0, 2, 235, 138, 90, 0, 0, 0, 26, 73, 68, 65, 84, 120, 218, 99, 248, 207, 192, 64,
+        54, 98, 24, 213, 60, 170, 121, 84, 243, 168, 230, 129, 213, 12, 0, 49, 205, 142, 128, 132,
+        11, 139, 140, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ]
+}

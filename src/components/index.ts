@@ -12,3 +12,7 @@ export { Dialog } from "./Dialog";
 export type { DialogProps } from "./Dialog";
 export { ConfirmDialog } from "./ConfirmDialog";
 export type { ConfirmDialogProps } from "./ConfirmDialog";
+export { InsuranceWarningBadge } from "./InsuranceWarningBadge";
+export type { InsuranceWarningBadgeProps, InsuranceWarningKind } from "./InsuranceWarningBadge";
+export { ProgressBar } from "./ProgressBar";
+export type { ProgressBarProps } from "./ProgressBar";

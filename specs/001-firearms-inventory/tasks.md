@@ -99,19 +99,19 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 ### Tests for User Story 2 (mandatory per constitution)
 
-- [ ] T030 [P] [US2] Integration test for `list_firearms` search/group/`includeDisposed` behavior against a real DB (Scenarios 1–5) in `src-tauri/tests/list_firearms_test.rs`
-- [ ] T031 [P] [US2] Integration test confirming FTS5 search matches both free-form notes and structured fields in `src-tauri/tests/fts_search_test.rs`
-- [ ] T032 [P] [US2] E2E test covering all User Story 2 acceptance scenarios in `e2e/specs/us2-browse-search.e2e.ts`
+- [X] T030 [P] [US2] Integration test for `list_firearms` search/group/`includeDisposed` behavior against a real DB (Scenarios 1–5) in `src-tauri/tests/list_firearms_test.rs`
+- [X] T031 [P] [US2] Integration test confirming FTS5 search matches both free-form notes and structured fields in `src-tauri/tests/fts_search_test.rs`
+- [X] T032 [P] [US2] E2E test covering all User Story 2 acceptance scenarios in `e2e/specs/us2-browse-search.e2e.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T033 [US2] Implement `list_firearms` command (query/groupBy/includeDisposed/view) in `src-tauri/src/commands/firearms.rs` (depends on T020, T008)
-- [ ] T034 [US2] Register `list_firearms` in `src-tauri/src/main.rs` (depends on T033)
-- [ ] T035 [P] [US2] Build `BrowseList` (list-layout) component in `src/features/browse/BrowseList.tsx`
-- [ ] T036 [P] [US2] Build `BrowseTiles` (tile/thumbnail-layout) component in `src/features/browse/BrowseTiles.tsx`
-- [ ] T037 [P] [US2] Build `GroupByControl` (type/caliber/make) in `src/features/browse/GroupByControl.tsx`
-- [ ] T038 [P] [US2] Build `SearchBar` component in `src/features/browse/SearchBar.tsx`
-- [ ] T039 [US2] Wire view-switching/grouping/search state to `list_firearms` in `src/features/browse/BrowsePage.tsx` (depends on T034-T038)
+- [X] T033 [US2] Implement `list_firearms` command (query/groupBy/includeDisposed/view) in `src-tauri/src/commands/firearms.rs` (depends on T020, T008)
+- [X] T034 [US2] Register `list_firearms` in `src-tauri/src/main.rs` (depends on T033)
+- [X] T035 [P] [US2] Build `BrowseList` (list-layout) component in `src/features/browse/BrowseList.tsx`
+- [X] T036 [P] [US2] Build `BrowseTiles` (tile/thumbnail-layout) component in `src/features/browse/BrowseTiles.tsx`
+- [X] T037 [P] [US2] Build `GroupByControl` (type/caliber/make) in `src/features/browse/GroupByControl.tsx`
+- [X] T038 [P] [US2] Build `SearchBar` component in `src/features/browse/SearchBar.tsx`
+- [X] T039 [US2] Wire view-switching/grouping/search state to `list_firearms` in `src/features/browse/BrowsePage.tsx` (depends on T034-T038)
 
 **Checkpoint**: User Stories 1 AND 2 both work independently
 
@@ -125,26 +125,26 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 ### Tests for User Story 3 (mandatory per constitution)
 
-- [ ] T040 [P] [US3] Integration test for insurance-policy CRUD and delete-blocked-while-assigned behavior in `src-tauri/tests/insurance_policy_test.rs`
-- [ ] T041 [P] [US3] Integration test for insurance-status calculations — uninsured, under-insured, blanket-limit-exceeded, expired-policy override (Scenarios 1–4, 7–8) in `src-tauri/tests/insurance_status_test.rs`
-- [ ] T042 [P] [US3] Integration test for value-summary auto-recompute-on-mutation and per-policy/unassigned breakdown (Scenarios 5–6) in `src-tauri/tests/valuation_test.rs`
-- [ ] T043 [P] [US3] E2E test covering all User Story 3 acceptance scenarios in `e2e/specs/us3-value-insurance.e2e.ts`
+- [X] T040 [P] [US3] Integration test for insurance-policy CRUD and delete-blocked-while-assigned behavior in `src-tauri/tests/insurance_policy_test.rs`
+- [X] T041 [P] [US3] Integration test for insurance-status calculations — uninsured, under-insured, blanket-limit-exceeded, expired-policy override (Scenarios 1–4, 7–8) in `src-tauri/tests/insurance_status_test.rs`
+- [X] T042 [P] [US3] Integration test for value-summary auto-recompute-on-mutation and per-policy/unassigned breakdown (Scenarios 5–6) in `src-tauri/tests/valuation_test.rs`
+- [X] T043 [P] [US3] E2E test covering all User Story 3 acceptance scenarios in `e2e/specs/us3-value-insurance.e2e.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T044 [P] [US3] Implement `InsurancePolicy` model + validation (end date after start date) in `src-tauri/src/models/insurance_policy.rs`
-- [ ] T045 [US3] Implement `services::insurance_status` (under/uninsured, blanket-exceeded, expiry/expired override per FR-024/028) in `src-tauri/src/services/insurance_status.rs` (depends on T044, T020)
-- [ ] T046 [US3] Implement `services::valuation` (collection total + per-policy breakdown + unassigned group per FR-015) in `src-tauri/src/services/valuation.rs` (depends on T045)
-- [ ] T047 [US3] Implement `create_insurance_policy`/`update_insurance_policy` commands in `src-tauri/src/commands/insurance.rs` (depends on T044)
-- [ ] T048 [US3] Implement `delete_insurance_policy` command (`ON DELETE RESTRICT` + `POLICY_HAS_FIREARMS` error) in `src-tauri/src/commands/insurance.rs` (depends on T047)
-- [ ] T049 [US3] Implement `assign_firearm_coverage` command in `src-tauri/src/commands/insurance.rs` (depends on T047)
-- [ ] T050 [US3] Implement `get_value_summary` command in `src-tauri/src/commands/insurance.rs` (depends on T046)
-- [ ] T051 [US3] Register insurance/valuation commands in `src-tauri/src/main.rs` (depends on T047-T050)
-- [ ] T052 [P] [US3] Build `InsurancePolicyForm` component in `src/features/insurance/InsurancePolicyForm.tsx`
-- [ ] T053 [P] [US3] Build `CoverageAssignment` control (policy/kind/amount) on the firearm detail view in `src/features/insurance/CoverageAssignment.tsx`
-- [ ] T054 [P] [US3] Build `ValueSummaryPanel` (collection total, per-policy breakdown, unassigned group) in `src/features/insurance/ValueSummaryPanel.tsx`
-- [ ] T055 [P] [US3] Build shared `InsuranceWarningBadge` (uninsured/under-insured/policy-expiring/expired) in `src/components/InsuranceWarningBadge.tsx`
-- [ ] T056 [US3] Wire `ValueSummaryPanel`/`InsuranceWarningBadge` to re-invoke `get_value_summary` after every mutating command in `src/features/insurance/` (depends on T051-T055)
+- [X] T044 [P] [US3] Implement `InsurancePolicy` model + validation (end date after start date) in `src-tauri/src/models/insurance_policy.rs`
+- [X] T045 [US3] Implement `services::insurance_status` (under/uninsured, blanket-exceeded, expiry/expired override per FR-024/028) in `src-tauri/src/services/insurance_status.rs` (depends on T044, T020)
+- [X] T046 [US3] Implement `services::valuation` (collection total + per-policy breakdown + unassigned group per FR-015) in `src-tauri/src/services/valuation.rs` (depends on T045)
+- [X] T047 [US3] Implement `create_insurance_policy`/`update_insurance_policy` commands in `src-tauri/src/commands/insurance.rs` (depends on T044)
+- [X] T048 [US3] Implement `delete_insurance_policy` command (`ON DELETE RESTRICT` + `POLICY_HAS_FIREARMS` error) in `src-tauri/src/commands/insurance.rs` (depends on T047)
+- [X] T049 [US3] Implement `assign_firearm_coverage` command in `src-tauri/src/commands/insurance.rs` (depends on T047)
+- [X] T050 [US3] Implement `get_value_summary` command in `src-tauri/src/commands/insurance.rs` (depends on T046)
+- [X] T051 [US3] Register insurance/valuation commands in `src-tauri/src/main.rs` (depends on T047-T050)
+- [X] T052 [P] [US3] Build `InsurancePolicyForm` component in `src/features/insurance/InsurancePolicyForm.tsx`
+- [X] T053 [P] [US3] Build `CoverageAssignment` control (policy/kind/amount) on the firearm detail view in `src/features/insurance/CoverageAssignment.tsx`
+- [X] T054 [P] [US3] Build `ValueSummaryPanel` (collection total, per-policy breakdown, unassigned group) in `src/features/insurance/ValueSummaryPanel.tsx`
+- [X] T055 [P] [US3] Build shared `InsuranceWarningBadge` (uninsured/under-insured/policy-expiring/expired) in `src/components/InsuranceWarningBadge.tsx`
+- [X] T056 [US3] Wire `ValueSummaryPanel`/`InsuranceWarningBadge` to re-invoke `get_value_summary` after every mutating command in `src/features/insurance/` (depends on T051-T055)
 
 **Checkpoint**: User Stories 1, 2, AND 3 all work independently
 
@@ -158,21 +158,21 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 ### Tests for User Story 4 (mandatory per constitution)
 
-- [ ] T057 [P] [US4] Integration test for `add_photo`/`set_thumbnail_photo`/`delete_photo` including thumbnail-fallback behavior (Scenarios 1–3) in `src-tauri/tests/photo_test.rs`
-- [ ] T058 [P] [US4] Integration test for `add_document`/`get_document`/`delete_document` (Scenario 4) in `src-tauri/tests/document_test.rs`
-- [ ] T059 [P] [US4] E2E test covering all User Story 4 acceptance scenarios in `e2e/specs/us4-photos-documents.e2e.ts`
+- [X] T057 [P] [US4] Integration test for `add_photo`/`set_thumbnail_photo`/`delete_photo` including thumbnail-fallback behavior (Scenarios 1–3) in `src-tauri/tests/photo_test.rs`
+- [X] T058 [P] [US4] Integration test for `add_document`/`get_document`/`delete_document` (Scenario 4) in `src-tauri/tests/document_test.rs`
+- [X] T059 [P] [US4] E2E test covering all User Story 4 acceptance scenarios in `e2e/specs/us4-photos-documents.e2e.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T060 [P] [US4] Implement `Photo` model + thumbnail-generation helper in `src-tauri/src/models/photo.rs`
-- [ ] T061 [P] [US4] Implement `DocumentAttachment` model in `src-tauri/src/models/document_attachment.rs`
-- [ ] T062 [P] [US4] Implement `add_photo`/`set_thumbnail_photo`/`delete_photo` commands in `src-tauri/src/commands/photos.rs` (depends on T060)
-- [ ] T063 [P] [US4] Implement `add_document`/`get_document`/`delete_document` commands in `src-tauri/src/commands/documents.rs` (depends on T061)
-- [ ] T064 [US4] Register photo/document commands in `src-tauri/src/main.rs` (depends on T062, T063)
-- [ ] T065 [P] [US4] Implement generic-thumbnail fallback resolution (FirearmType lookup, research.md §10) in `src-tauri/src/services/thumbnails.rs`
-- [ ] T066 [P] [US4] Build `PhotoGallery` + thumbnail-picker component in `src/features/media/PhotoGallery.tsx`
-- [ ] T067 [P] [US4] Build `DocumentList` component (attach/reopen) in `src/features/media/DocumentList.tsx`
-- [ ] T068 [US4] Wire `PhotoGallery`/`DocumentList` to photo/document commands and update `BrowseList`/`BrowseTiles` thumbnail display in `src/features/media/` (depends on T064-T067)
+- [X] T060 [P] [US4] Implement `Photo` model + thumbnail-generation helper in `src-tauri/src/models/photo.rs`
+- [X] T061 [P] [US4] Implement `DocumentAttachment` model in `src-tauri/src/models/document_attachment.rs`
+- [X] T062 [P] [US4] Implement `add_photo`/`set_thumbnail_photo`/`delete_photo` commands in `src-tauri/src/commands/photos.rs` (depends on T060)
+- [X] T063 [P] [US4] Implement `add_document`/`get_document`/`delete_document` commands in `src-tauri/src/commands/documents.rs` (depends on T061)
+- [X] T064 [US4] Register photo/document commands in `src-tauri/src/main.rs` (depends on T062, T063)
+- [X] T065 [P] [US4] Implement generic-thumbnail fallback resolution (FirearmType lookup, research.md §10) in `src-tauri/src/services/thumbnails.rs`
+- [X] T066 [P] [US4] Build `PhotoGallery` + thumbnail-picker component in `src/features/media/PhotoGallery.tsx`
+- [X] T067 [P] [US4] Build `DocumentList` component (attach/reopen) in `src/features/media/DocumentList.tsx`
+- [X] T068 [US4] Wire `PhotoGallery`/`DocumentList` to photo/document commands and update `BrowseList`/`BrowseTiles` thumbnail display in `src/features/media/` (depends on T064-T067)
 
 **Checkpoint**: User Stories 1–4 all work independently
 
@@ -186,25 +186,25 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 ### Tests for User Story 5 (mandatory per constitution)
 
-- [ ] T069 [P] [US5] Integration test: `export_collection` produces a spreadsheet + photos folder matching contracts/spreadsheet-format.md (Scenario 1) in `src-tauri/tests/export_test.rs`
-- [ ] T070 [P] [US5] Integration test: `import_collection` creates/updates records and reports failing rows without discarding successful ones (Scenarios 2–3) in `src-tauri/tests/import_export_test.rs`
-- [ ] T071 [P] [US5] Integration test: import matching/conflict resolution — make+model+serial key, no-serial-always-new, apply-to-remaining (FR-026, FR-030) in `src-tauri/tests/import_matching_test.rs`
-- [ ] T072 [P] [US5] E2E test covering all User Story 5 acceptance scenarios in `e2e/specs/us5-export-import.e2e.ts`
+- [X] T069 [P] [US5] Integration test: `export_collection` produces a spreadsheet + photos folder matching contracts/spreadsheet-format.md (Scenario 1) in `src-tauri/tests/export_test.rs`
+- [X] T070 [P] [US5] Integration test: `import_collection` creates/updates records and reports failing rows without discarding successful ones (Scenarios 2–3) in `src-tauri/tests/import_export_test.rs`
+- [X] T071 [P] [US5] Integration test: import matching/conflict resolution — make+model+serial key, no-serial-always-new, apply-to-remaining (FR-026, FR-030) in `src-tauri/tests/import_matching_test.rs`
+- [X] T072 [P] [US5] E2E test covering all User Story 5 acceptance scenarios in `e2e/specs/us5-export-import.e2e.ts`
 
 ### Implementation for User Story 5
 
-- [ ] T073 [US5] Implement `services::spreadsheet` CSV/XLSX writer (`rust_xlsxwriter`/`csv`) per contracts/spreadsheet-format.md in `src-tauri/src/services/spreadsheet.rs`
-- [ ] T074 [US5] Implement `services::spreadsheet` CSV/XLSX reader (`calamine`/`csv`) + per-row validation in `src-tauri/src/services/spreadsheet.rs` (depends on T073)
-- [ ] T075 [P] [US5] Implement `services::import_matching` (make+model+serial key matching, no-serial-always-new) in `src-tauri/src/services/import_matching.rs`
-- [ ] T076 [US5] Implement `export_collection` command (`scope: all|filtered`, progress events) in `src-tauri/src/commands/import_export.rs` (depends on T073)
-- [ ] T077 [US5] Implement `import_collection` command (progress events, per-row error report) in `src-tauri/src/commands/import_export.rs` (depends on T074, T075)
-- [ ] T078 [US5] Implement `resolve_import_conflicts` command (per-row + apply-to-remaining) in `src-tauri/src/commands/import_export.rs` (depends on T077)
-- [ ] T079 [US5] Register import/export commands in `src-tauri/src/main.rs` (depends on T076-T078)
-- [ ] T080 [P] [US5] Build `ExportWizard` (format/destination/scope picker + progress bar) in `src/features/import-export/ExportWizard.tsx`
-- [ ] T081 [P] [US5] Build `ImportWizard` (file picker + progress bar + row-error report) in `src/features/import-export/ImportWizard.tsx`
-- [ ] T082 [P] [US5] Build `ImportConflictResolver` (per-row skip/overwrite/duplicate + apply-to-remaining) in `src/features/import-export/ImportConflictResolver.tsx`
-- [ ] T083 [P] [US5] Build shared `ProgressBar` component consuming Tauri progress events in `src/components/ProgressBar.tsx`
-- [ ] T084 [US5] Wire `ExportWizard`/`ImportWizard`/`ImportConflictResolver` to import/export commands via `ProgressBar` in `src/features/import-export/` (depends on T079-T083)
+- [X] T073 [US5] Implement `services::spreadsheet` CSV/XLSX writer (`rust_xlsxwriter`/`csv`) per contracts/spreadsheet-format.md in `src-tauri/src/services/spreadsheet.rs`
+- [X] T074 [US5] Implement `services::spreadsheet` CSV/XLSX reader (`calamine`/`csv`) + per-row validation in `src-tauri/src/services/spreadsheet.rs` (depends on T073)
+- [X] T075 [P] [US5] Implement `services::import_matching` (make+model+serial key matching, no-serial-always-new) in `src-tauri/src/services/import_matching.rs`
+- [X] T076 [US5] Implement `export_collection` command (`scope: all|filtered`, progress events) in `src-tauri/src/commands/import_export.rs` (depends on T073)
+- [X] T077 [US5] Implement `import_collection` command (progress events, per-row error report) in `src-tauri/src/commands/import_export.rs` (depends on T074, T075)
+- [X] T078 [US5] Implement `resolve_import_conflicts` command (per-row + apply-to-remaining) in `src-tauri/src/commands/import_export.rs` (depends on T077)
+- [X] T079 [US5] Register import/export commands in `src-tauri/src/main.rs` (depends on T076-T078)
+- [X] T080 [P] [US5] Build `ExportWizard` (format/destination/scope picker + progress bar) in `src/features/import-export/ExportWizard.tsx`
+- [X] T081 [P] [US5] Build `ImportWizard` (file picker + progress bar + row-error report) in `src/features/import-export/ImportWizard.tsx`
+- [X] T082 [P] [US5] Build `ImportConflictResolver` (per-row skip/overwrite/duplicate + apply-to-remaining) in `src/features/import-export/ImportConflictResolver.tsx`
+- [X] T083 [P] [US5] Build shared `ProgressBar` component consuming Tauri progress events in `src/components/ProgressBar.tsx`
+- [X] T084 [US5] Wire `ExportWizard`/`ImportWizard`/`ImportConflictResolver` to import/export commands via `ProgressBar` in `src/features/import-export/` (depends on T079-T083)
 
 **Checkpoint**: All 5 user stories independently functional
 
@@ -214,11 +214,11 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T085 [P] Run `clippy`/`rustfmt` and `eslint`/`prettier` across the full codebase and fix violations
-- [ ] T086 [P] Accessibility audit of the shared component library against WCAG 2.1 AA in `src/components/`
-- [ ] T087 [P] Performance validation: confirm `list_firearms`/`get_value_summary` complete within the 500ms budget at a 10,000-record fixture in `src-tauri/tests/performance_test.rs`
-- [ ] T088 Execute the full quickstart.md validation walkthrough across all 5 user stories
-- [ ] T089 [P] Update `README.md` with build/run/test instructions
+- [X] T085 [P] Run `clippy`/`rustfmt` and `eslint`/`prettier` across the full codebase and fix violations
+- [X] T086 [P] Accessibility audit of the shared component library against WCAG 2.1 AA in `src/components/`
+- [X] T087 [P] Performance validation: confirm `list_firearms`/`get_value_summary` complete within the 500ms budget at a 10,000-record fixture in `src-tauri/tests/performance_test.rs`
+- [X] T088 Execute the full quickstart.md validation walkthrough across all 5 user stories
+- [X] T089 [P] Update `README.md` with build/run/test instructions
 
 ---
 

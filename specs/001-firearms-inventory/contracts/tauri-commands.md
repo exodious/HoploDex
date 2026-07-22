@@ -85,6 +85,14 @@ type CommandError = {
 
 ## Insurance & valuation (User Story 3)
 
+### `list_insurance_policies`
+
+- **Input**: `{}`.
+- **Output**: `InsurancePolicy[]`, ordered by name — populates the
+  coverage-assignment policy picker (not itself an acceptance-scenario
+  requirement, but necessary plumbing `assign_firearm_coverage` depends on
+  the frontend already knowing).
+
 ### `create_insurance_policy` / `update_insurance_policy`
 
 - **Input**: `InsurancePolicyInput` (all InsurancePolicy fields except id).
@@ -139,12 +147,28 @@ type CommandError = {
 
 ## Photos & documents (User Story 4)
 
+### `list_photos` / `list_documents`
+
+- **Input**: `firearmId: number`.
+- **Output**: `PhotoSummary[]` / `DocumentSummary[]` — omit `originalBytes`/
+  `fileBytes` (only fetched on demand via `get_document`, or never at all
+  for photos, which only ever need their pre-generated `thumbnailBytes` in
+  the UI) to keep these list payloads small. Not in the original contract
+  list, but necessary plumbing for `PhotoGallery`/`DocumentList` display.
+
 ### `add_photo`
 
 - **Input**: `firearmId: number`, `fileBytes: Uint8Array`, `originalFilename: string`, `mimeType: string`.
 - **Output**: `Photo` (with generated `thumbnailBytes`). First photo added
   to a firearm automatically becomes `thumbnail_photo_id` (FR-008).
 - **Errors**: `VALIDATION_ERROR` (unsupported mime type), `NOT_FOUND`.
+
+### `get_photo_thumbnail`
+
+- **Input**: `photoId: number`.
+- **Output**: raw thumbnail bytes for one photo. Not in the original
+  contract list, but lets browse views render a firearm's thumbnail
+  without fetching its full photo list.
 
 ### `set_thumbnail_photo`
 
@@ -163,6 +187,13 @@ type CommandError = {
 
 - Analogous to photo commands, without thumbnail generation.
   `get_document` returns the full `file_bytes` for reopening (FR-010).
+
+### `get_generic_thumbnail`
+
+- **Input**: `key: string` (a `FirearmType.generic_thumbnail_key`).
+- **Output**: raw PNG bytes of the bundled generic-thumbnail asset
+  (research.md §10). Not in the original contract list, but necessary so
+  the frontend can actually render the FR-009 fallback thumbnail.
 
 ## Export / Import (User Story 5)
 

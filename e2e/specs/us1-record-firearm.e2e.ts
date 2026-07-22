@@ -43,12 +43,46 @@ async function setValueBySiblingInput(
   value: string,
 ) {
   const field = await $(labelSelector).parentElement().$(tag);
-  await field.setValue(value);
+  const inputType = await field.getAttribute("type");
+  if (inputType === "date") {
+    // WebDriver's keystroke-based setValue() types into whichever date-
+    // spinner segment (month/day/year) currently has focus, in locale
+    // display order — sending the raw ISO string garbles it (e.g.
+    // "2020-01-01" silently became "0001-12-01"). Setting the DOM value
+    // directly via its native property setter (which `<input type=date>`
+    // always accepts in ISO `YYYY-MM-DD` form) and dispatching input/change
+    // sidesteps that entirely.
+    await browser.execute(
+      (element: HTMLElement, isoDate: string) => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        )!.set!;
+        setter.call(element as HTMLInputElement, isoDate);
+        element.dispatchEvent(new Event("input", { bubbles: true }));
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      field,
+      value,
+    );
+  } else {
+    await field.setValue(value);
+  }
   await browser.pause(100);
 }
 
+/**
+ * Selects an option from the Type combobox inside the currently open
+ * dialog. Scoped to `[role="dialog"]` because BrowsePage's own "Group by"
+ * combobox stays mounted (just visually covered) underneath the dialog —
+ * an unscoped `[role="combobox"]` selector would ambiguously match it
+ * instead, since it appears first in document order.
+ */
 async function selectOption(optionLabel: string) {
-  await clickEl('[role="combobox"]');
+  const trigger = await $('[role="dialog"]').$('[role="combobox"]');
+  await trigger.waitForExist();
+  await browser.execute((element: HTMLElement) => element.click(), trigger);
+  await browser.pause(200);
   await clickEl(`[role="option"]=${optionLabel}`);
 }
 

@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { Button, ConfirmDialog, Dialog, Select, TextField } from "../../components";
+import { CoverageAssignment } from "../insurance/CoverageAssignment";
+import { DocumentList } from "../media/DocumentList";
+import { PhotoGallery } from "../media/PhotoGallery";
+import { formatCents } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { FirearmForm } from "./FirearmForm";
 import { DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
@@ -10,10 +14,7 @@ export interface FirearmDetailProps {
   onUpdate: (input: FirearmInput) => Promise<void>;
   onDispose: (input: DisposeFirearmInput) => Promise<void>;
   onDelete: () => Promise<void>;
-}
-
-function formatCents(cents: number | null): string {
-  return cents == null ? "—" : `$${(cents / 100).toFixed(2)}`;
+  onFirearmUpdated: (firearm: Firearm) => void;
 }
 
 function typeName(firearmTypeId: number): string {
@@ -114,7 +115,13 @@ function DisposeDialog({
 
 /** Detail view for a single firearm: shows its record, and offers edit,
  * dispose, and delete (via the shared ConfirmDialog) actions (US1). */
-export function FirearmDetail({ firearm, onUpdate, onDispose, onDelete }: FirearmDetailProps) {
+export function FirearmDetail({
+  firearm,
+  onUpdate,
+  onDispose,
+  onDelete,
+  onFirearmUpdated,
+}: FirearmDetailProps) {
   const [editing, setEditing] = useState(false);
   const [disposing, setDisposing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -179,6 +186,13 @@ export function FirearmDetail({ firearm, onUpdate, onDispose, onDelete }: Firear
           </>
         )}
       </dl>
+
+      {firearm.status === "active" && (
+        <CoverageAssignment firearm={firearm} onAssigned={onFirearmUpdated} />
+      )}
+
+      <PhotoGallery firearm={firearm} onFirearmUpdated={onFirearmUpdated} />
+      <DocumentList firearmId={firearm.id} />
 
       <div className="hd-dialog__actions">
         <Button variant="secondary" onClick={() => setEditing(true)}>

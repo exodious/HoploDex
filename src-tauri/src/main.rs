@@ -3,6 +3,7 @@
 
 use std::sync::Mutex;
 
+use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db::{self, DbHandle};
 use tauri::Manager;
 
@@ -13,6 +14,7 @@ fn main() {
         .setup(|app| {
             let conn = db::init_app_db(app.handle())?;
             app.manage(DbHandle(Mutex::new(conn)));
+            app.manage(ImportSessionStore::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -21,6 +23,26 @@ fn main() {
             hoplodex_lib::commands::firearms::dispose_firearm,
             hoplodex_lib::commands::firearms::delete_firearm,
             hoplodex_lib::commands::firearms::get_firearm,
+            hoplodex_lib::commands::firearms::list_firearms,
+            hoplodex_lib::commands::insurance::list_insurance_policies,
+            hoplodex_lib::commands::insurance::create_insurance_policy,
+            hoplodex_lib::commands::insurance::update_insurance_policy,
+            hoplodex_lib::commands::insurance::delete_insurance_policy,
+            hoplodex_lib::commands::insurance::assign_firearm_coverage,
+            hoplodex_lib::commands::insurance::get_value_summary,
+            hoplodex_lib::commands::photos::list_photos,
+            hoplodex_lib::commands::photos::add_photo,
+            hoplodex_lib::commands::photos::get_photo_thumbnail,
+            hoplodex_lib::commands::photos::set_thumbnail_photo,
+            hoplodex_lib::commands::photos::delete_photo,
+            hoplodex_lib::commands::photos::get_generic_thumbnail,
+            hoplodex_lib::commands::documents::list_documents,
+            hoplodex_lib::commands::documents::add_document,
+            hoplodex_lib::commands::documents::get_document,
+            hoplodex_lib::commands::documents::delete_document,
+            hoplodex_lib::commands::import_export::export_collection,
+            hoplodex_lib::commands::import_export::import_collection,
+            hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

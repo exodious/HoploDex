@@ -1,5 +1,5 @@
 use rusqlite::{named_params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
@@ -23,6 +23,62 @@ pub struct DisposeFirearmInput {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DeleteResult {
     pub deleted: bool,
+}
+
+/// Grouping key for `list_firearms`, per contracts/tauri-commands.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupBy {
+    Type,
+    Caliber,
+    Make,
+}
+
+/// Input for the `list_firearms` command (User Story 2), per
+/// contracts/tauri-commands.md.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ListFirearmsInput {
+    pub query: Option<String>,
+    pub group_by: Option<GroupBy>,
+    #[serde(default)]
+    pub include_disposed: bool,
+    /// Informational only — list/tile views return the same data shape.
+    pub view: Option<String>,
+}
+
+/// Per-firearm insurance-warning flag surfaced in browse views, so
+/// uninsured/under-insured firearms are always visibly flagged (SC-004).
+/// The actual uninsured/under-insured/blanket-exceeded/expired-override
+/// decision lives in `services::insurance_status` (shared with
+/// `get_value_summary` so the browse view and value summary never
+/// disagree).
+pub use crate::services::insurance_status::InsuranceWarning;
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FirearmSummary {
+    pub id: i64,
+    pub make: String,
+    pub model: String,
+    pub caliber: String,
+    pub firearm_type_name: String,
+    pub status: FirearmStatus,
+    pub thumbnail_photo_id: Option<i64>,
+    pub generic_thumbnail_key: String,
+    pub estimated_value: Option<i64>,
+    pub insurance_warning: InsuranceWarning,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct FirearmGroup {
+    pub key: String,
+    pub firearms: Vec<FirearmSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ListFirearmsOutput {
+    pub groups: Vec<FirearmGroup>,
 }
 
 /// Pure, `Connection`-based business logic — no `tauri::State`/`AppHandle`
@@ -211,6 +267,100 @@ pub mod ops {
         }
         Ok(DeleteResult { deleted: true })
     }
+
+    /// Browse/search/group across the collection (User Story 2). Runs a
+    /// single indexed query (FTS5 for `query`, indexed columns otherwise)
+    /// so it stays within the 500ms/10k-record budget (Principle IV)
+    /// rather than scanning and grouping in application code.
+    pub fn list_firearms(
+        conn: &Connection,
+        input: &ListFirearmsInput,
+    ) -> Result<ListFirearmsOutput, CommandError> {
+        let has_query = input.query.as_deref().is_some_and(|q| !q.trim().is_empty());
+        // FTS5 MATCH treats bare whitespace-separated tokens as an implicit
+        // AND; wrapping the whole query as a quoted phrase instead matches
+        // it as contiguous text, which is what a user searching "cracked
+        // handle" or a multi-word caliber value expects. `:has_query`
+        // short-circuits the MATCH subquery entirely when there's no query,
+        // since MATCH errors on an empty/absent search string.
+        let fts_query = input
+            .query
+            .as_deref()
+            .map(|q| format!("\"{}\"", q.replace('"', "\"\"")))
+            .unwrap_or_default();
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.*, ft.name AS firearm_type_name, ft.generic_thumbnail_key AS generic_thumbnail_key
+                 FROM firearms f
+                 JOIN firearm_types ft ON ft.id = f.firearm_type_id
+                 WHERE (:include_disposed = 1 OR f.status = 'active')
+                   AND (:has_query = 0 OR f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
+                 ORDER BY f.make, f.model",
+            )
+            .map_err(CommandError::from_db)?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":include_disposed": input.include_disposed,
+                    ":has_query": has_query,
+                    ":query": fts_query,
+                },
+                |row| {
+                    let firearm = Firearm::from_row(row)?;
+                    let firearm_type_name: String = row.get("firearm_type_name")?;
+                    let generic_thumbnail_key: String = row.get("generic_thumbnail_key")?;
+                    Ok((firearm, firearm_type_name, generic_thumbnail_key))
+                },
+            )
+            .map_err(CommandError::from_db)?;
+
+        let policy_aggregates = crate::services::insurance_status::load_policy_aggregates(conn)?;
+
+        let mut summaries = Vec::new();
+        for row in rows {
+            let (firearm, firearm_type_name, generic_thumbnail_key) =
+                row.map_err(CommandError::from_db)?;
+            let insurance_warning = crate::services::insurance_status::firearm_warning(
+                firearm.estimated_value,
+                firearm.insurance_policy_id,
+                firearm.coverage_kind,
+                firearm.scheduled_coverage_amount,
+                &policy_aggregates,
+            );
+            summaries.push((
+                match input.group_by {
+                    Some(GroupBy::Type) => firearm_type_name.clone(),
+                    Some(GroupBy::Caliber) => firearm.caliber.clone(),
+                    Some(GroupBy::Make) => firearm.make.clone(),
+                    None => "All".to_string(),
+                },
+                FirearmSummary {
+                    id: firearm.id,
+                    make: firearm.make,
+                    model: firearm.model,
+                    caliber: firearm.caliber,
+                    firearm_type_name,
+                    status: firearm.status,
+                    thumbnail_photo_id: firearm.thumbnail_photo_id,
+                    generic_thumbnail_key,
+                    estimated_value: firearm.estimated_value,
+                    insurance_warning,
+                },
+            ));
+        }
+
+        let mut groups: Vec<FirearmGroup> = Vec::new();
+        for (key, summary) in summaries {
+            match groups.iter_mut().find(|g| g.key == key) {
+                Some(group) => group.firearms.push(summary),
+                None => groups.push(FirearmGroup { key, firearms: vec![summary] }),
+            }
+        }
+        groups.sort_by(|a, b| a.key.cmp(&b.key));
+
+        Ok(ListFirearmsOutput { groups })
+    }
 }
 
 #[tauri::command]
@@ -256,4 +406,13 @@ pub async fn delete_firearm(
 pub async fn get_firearm(id: i64, state: State<'_, DbHandle>) -> Result<Firearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
     ops::get_firearm(&conn, id)
+}
+
+#[tauri::command]
+pub async fn list_firearms(
+    input: ListFirearmsInput,
+    state: State<'_, DbHandle>,
+) -> Result<ListFirearmsOutput, CommandError> {
+    let conn = state.0.lock().expect("db mutex poisoned");
+    ops::list_firearms(&conn, &input)
 }

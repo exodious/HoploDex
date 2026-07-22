@@ -39,6 +39,7 @@ thiserror = "2"
 chrono = "0.4"
 getrandom = { version = "0.3", features = ["std"] }
 log = "0.4"
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
 
 [dev-dependencies]
 tempfile = "3"

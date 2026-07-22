@@ -242,3 +242,44 @@
   gap: 12px;
   margin-top: 20px;
 }
+
+.hd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.hd-badge--warning {
+  background: var(--hd-color-error);
+  color: var(--hd-color-danger-fg);
+}
+
+.hd-progress {
+  position: relative;
+  height: 24px;
+  border-radius: var(--hd-radius);
+  background: var(--hd-color-border);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.hd-progress__fill {
+  height: 100%;
+  background: var(--hd-color-primary);
+  transition: width 0.2s ease;
+}
+
+.hd-progress__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--hd-color-fg);
+}
