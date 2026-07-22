@@ -96,7 +96,7 @@ run (killing anything left over on its ports before starting).
 ### Linting & formatting
 
 ```bash
-cargo fmt --check && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml
+cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml
 npm run lint
 npm run format:check
 ```
