@@ -1,0 +1,14 @@
+- [feature] UI needs a lot of work; "functional" for the most part but not pleasing and difficult to use. Maybe use AI interview tool to ask questions about what doesn't work. Pair with the UI plugin somehow.
+- [dev] Running tests should use a database (and any other similar files) isolated from the actual system one. The developers use this app too and don't want their databases overwritten or modified by the test
+- [feature] Users might have more than one database - need a way to choose the database including the location where it is stored
+- [feature] Users are going to want to be able to select their own password. The application might be used on a shared PC account etc.
+- [feature] Missing a way to view, edit, and delete insurance policies
+- [bug] date chooser doesn't clear on its own after selecting a date
+- [question or bug] the "name" assigned to a firearm in the UI is a combination of the make and model; users may have multiple firearms with identical make and model. caliber is also not enough of a discriminator as they may have multiple firearms with identical make, model, and caliber. How is that handled?
+- [feature] UI needs generic firearm type pictures to be generated
+- [question] the application is intended to be GPL v3; do any of the libraries/runtimes used have licenses that cause a conflict?
+- [TODO] need to run tests on other platforms
+- [feature] github test/format check/lint/build/release workflow
+- [feature] caliber is somewhat ambiguous, e.g. 9x18 and 9x19 are both "9mm" but are different cartridges, .223 and 5.56x45 are also nominally the same caliber but are different cartridges, .22 Short, .22 Long, and .22 Long Rifle (LR) are all .22 caliber but are different cartridges. Need to provide a way to enter the specific cartridge and derive the caliber based on the input.
+- [feature] caliber/cartridge input is just a free form field, and users may end up with multiple different ways of specifying the same information. The input should be a combo box that lets users select from existing values or input new values. the available selections should shrink based on what the user types in, e.g. if they start typing ".3" then the list might show ".30-30" and ".30 Carbine". The database should get pre-populated with the most common calibers/cartridges.
+- [feature] there needs to be a way to have backups of the database in case of accidental corruption, but the database could get to be large depending on how many picture and attachment BLOBs are stored. So unsure if it should make a copy for every session or not? I'm thinking about a sort of log rotation system or where the database file is copied and has a datestamp appended to the name or as a file extension suffix. If the backup is going to take more than some set amount of (very short) time - estimate based on size? - then the user needs a visual indication that this is happening. The user also needs to be able to opt out of this feature.
