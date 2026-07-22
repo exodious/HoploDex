@@ -19,6 +19,31 @@ const application = path.resolve(
 let tauriDriver: ChildProcess | undefined;
 
 /**
+ * A prior run's tauri-driver/WebKitWebDriver can be left holding these
+ * ports if it was interrupted (Ctrl+C, crash) before `afterSession` had a
+ * chance to kill it — the next run would otherwise fail to bind and every
+ * session request would get rejected. Clearing them first makes repeated
+ * or previously-interrupted runs self-healing.
+ */
+function killProcessesOnPorts(ports: number[]) {
+  if (process.platform !== "linux") return;
+  for (const port of ports) {
+    try {
+      const out = execSync(`ss -ltnp "sport = :${port}"`, { encoding: "utf-8" });
+      for (const match of out.matchAll(/pid=(\d+)/g)) {
+        try {
+          process.kill(Number(match[1]), "SIGKILL");
+        } catch {
+          // already gone
+        }
+      }
+    } catch {
+      // ss unavailable, or no matching socket — nothing to clean up
+    }
+  }
+}
+
+/**
  * On Linux, tauri-driver wraps WebKitWebDriver, which isn't always on
  * $PATH (e.g. when only available via a Flatpak runtime). Falls back to
  * undefined so tauri-driver uses its own $PATH lookup on other platforms.
@@ -67,6 +92,7 @@ export const config: Options.Testrunner = {
   path: "/",
 
   beforeSession: () => {
+    killProcessesOnPorts([4444, 4445]);
     spawnSync(
       "cargo",
       [
