@@ -1,0 +1,51 @@
+[package]
+name = "hoplodex"
+version = "0.1.0"
+description = "Firearm Collection Inventory App"
+edition = "2021"
+rust-version = "1.75"
+license = "GPL-3.0-only"
+
+[lib]
+name = "hoplodex_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "hoplodex"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+# Enabled for production/E2E builds so the app loads bundled frontendDist
+# assets via Tauri's custom protocol instead of the devUrl dev server.
+custom-protocol = ["tauri/custom-protocol"]
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher", "chrono"] }
+keyring = "4"
+rust_xlsxwriter = "0.96"
+calamine = "0.36"
+csv = "1.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "sync"] }
+thiserror = "2"
+chrono = "0.4"
+getrandom = { version = "0.3", features = ["std"] }
+log = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

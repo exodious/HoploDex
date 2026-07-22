@@ -30,11 +30,11 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create Tauri 2.x project scaffold (`src-tauri/` Rust crate + `src/` React+TypeScript app) per plan.md's Project Structure
-- [ ] T002 Add backend dependencies to `src-tauri/Cargo.toml`: `tauri`, `rusqlite` (`bundled-sqlcipher`, `fts5` features), `keyring`, `rust_xlsxwriter`, `calamine`, `csv`, `serde`/`serde_json`, `tokio`
-- [ ] T003 [P] Add frontend dependencies to `package.json`: `react`, `typescript`, `vite`, Radix UI primitives (shadcn/ui pattern), `vitest`, `@testing-library/react`
-- [ ] T004 [P] Configure linting/formatting: `rustfmt.toml` + `clippy` lint config for `src-tauri/`, `eslint`/`prettier` config for `src/`
-- [ ] T005 [P] Scaffold WebdriverIO + `tauri-driver` E2E harness in `e2e/wdio.conf.ts`
+- [X] T001 Create Tauri 2.x project scaffold (`src-tauri/` Rust crate + `src/` React+TypeScript app) per plan.md's Project Structure
+- [X] T002 Add backend dependencies to `src-tauri/Cargo.toml`: `tauri`, `rusqlite` (`bundled-sqlcipher`, `fts5` features), `keyring`, `rust_xlsxwriter`, `calamine`, `csv`, `serde`/`serde_json`, `tokio`
+- [X] T003 [P] Add frontend dependencies to `package.json`: `react`, `typescript`, `vite`, Radix UI primitives (shadcn/ui pattern), `vitest`, `@testing-library/react`
+- [X] T004 [P] Configure linting/formatting: `rustfmt.toml` + `clippy` lint config for `src-tauri/`, `eslint`/`prettier` config for `src/`
+- [X] T005 [P] Scaffold WebdriverIO + `tauri-driver` E2E harness in `e2e/wdio.conf.ts`
 
 ---
 
@@ -44,16 +44,16 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Implement SQLCipher-backed `rusqlite` connection manager with `keyring`-based passphrase generation/unlock in `src-tauri/src/db/mod.rs`
-- [ ] T007 Write initial schema migration (FirearmType, Firearm, Photo, DocumentAttachment, InsurancePolicy tables per data-model.md) in `src-tauri/src/db/migrations/0001_initial.sql` (depends on T006)
-- [ ] T008 Write `firearms_fts` FTS5 virtual table + sync triggers migration in `src-tauri/src/db/migrations/0002_fts5.sql` (depends on T007)
-- [ ] T009 [P] Seed `FirearmType` lookup rows (Handgun/Rifle/Shotgun/Other + `generic_thumbnail_key`) in `src-tauri/src/db/migrations/0003_seed_firearm_types.sql`
-- [ ] T010 [P] Implement shared `CommandError` type (code/message/fieldErrors) and error mapping in `src-tauri/src/commands/error.rs`
-- [ ] T011 Wire Tauri app bootstrap (DB init on startup, plugin registration, command-handler scaffolding) in `src-tauri/src/main.rs` (depends on T006)
-- [ ] T012 [P] Bundle generic thumbnail image assets per firearm type as Tauri app resources in `src-tauri/resources/thumbnails/`
-- [ ] T013 [P] Build shared accessible component-library primitives (Button, Dialog, ConfirmDialog, TextField, Select) per WCAG 2.1 AA in `src/components/`
-- [ ] T014 [P] Implement typed Tauri `invoke()` wrapper service in `src/services/tauriClient.ts`
-- [ ] T015 [P] Build real-temp-SQLCipher-DB test harness (no mocks) in `src-tauri/tests/support/mod.rs`
+- [X] T006 Implement SQLCipher-backed `rusqlite` connection manager with `keyring`-based passphrase generation/unlock in `src-tauri/src/db/mod.rs`
+- [X] T007 Write initial schema migration (FirearmType, Firearm, Photo, DocumentAttachment, InsurancePolicy tables per data-model.md) in `src-tauri/src/db/migrations/0001_initial.sql` (depends on T006)
+- [X] T008 Write `firearms_fts` FTS5 virtual table + sync triggers migration in `src-tauri/src/db/migrations/0002_fts5.sql` (depends on T007)
+- [X] T009 [P] Seed `FirearmType` lookup rows (Handgun/Rifle/Shotgun/Other + `generic_thumbnail_key`) in `src-tauri/src/db/migrations/0003_seed_firearm_types.sql`
+- [X] T010 [P] Implement shared `CommandError` type (code/message/fieldErrors) and error mapping in `src-tauri/src/commands/error.rs`
+- [X] T011 Wire Tauri app bootstrap (DB init on startup, plugin registration, command-handler scaffolding) in `src-tauri/src/main.rs` (depends on T006)
+- [X] T012 [P] Bundle generic thumbnail image assets per firearm type as Tauri app resources in `src-tauri/resources/thumbnails/`
+- [X] T013 [P] Build shared accessible component-library primitives (Button, Dialog, ConfirmDialog, TextField, Select) per WCAG 2.1 AA in `src/components/`
+- [X] T014 [P] Implement typed Tauri `invoke()` wrapper service in `src/services/tauriClient.ts`
+- [X] T015 [P] Build real-temp-SQLCipher-DB test harness (no mocks) in `src-tauri/tests/support/mod.rs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -69,23 +69,23 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T016 [P] [US1] Integration test: create/edit/dispose/delete firearm lifecycle against a real SQLCipher DB (Acceptance Scenarios 1–5) in `src-tauri/tests/firearm_lifecycle_test.rs`
-- [ ] T017 [P] [US1] Integration test: serial-number attestation validation — blank+attested saves, blank+unattested blocked (Scenarios 6–7) in `src-tauri/tests/serial_attestation_test.rs`
-- [ ] T018 [P] [US1] Vitest unit test for `FirearmForm` serial-attestation UI rule in `src/features/firearms/FirearmForm.test.tsx`
-- [ ] T019 [P] [US1] E2E test covering all User Story 1 acceptance scenarios in `e2e/specs/us1-record-firearm.e2e.ts`
+- [X] T016 [P] [US1] Integration test: create/edit/dispose/delete firearm lifecycle against a real SQLCipher DB (Acceptance Scenarios 1–5) in `src-tauri/tests/firearm_lifecycle_test.rs`
+- [X] T017 [P] [US1] Integration test: serial-number attestation validation — blank+attested saves, blank+unattested blocked (Scenarios 6–7) in `src-tauri/tests/serial_attestation_test.rs`
+- [X] T018 [P] [US1] Vitest unit test for `FirearmForm` serial-attestation UI rule in `src/features/firearms/FirearmForm.test.tsx`
+- [X] T019 [P] [US1] E2E test covering all User Story 1 acceptance scenarios in `e2e/specs/us1-record-firearm.e2e.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T020 [P] [US1] Implement `Firearm` model struct + validation rules from data-model.md in `src-tauri/src/models/firearm.rs`
-- [ ] T021 [US1] Implement `create_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T020)
-- [ ] T022 [US1] Implement `update_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T021)
-- [ ] T023 [US1] Implement `dispose_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T021)
-- [ ] T024 [US1] Implement `delete_firearm` command with cascade delete of Photos/DocumentAttachments in `src-tauri/src/commands/firearms.rs` (depends on T021)
-- [ ] T025 [US1] Implement `get_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T021)
-- [ ] T026 [US1] Register firearm commands in the Tauri invoke handler in `src-tauri/src/main.rs` (depends on T021-T025)
-- [ ] T027 [P] [US1] Build `FirearmForm` component (create/edit, serial-attestation checkbox) in `src/features/firearms/FirearmForm.tsx`
-- [ ] T028 [P] [US1] Build `FirearmDetail` view (edit, dispose, delete via shared `ConfirmDialog`) in `src/features/firearms/FirearmDetail.tsx`
-- [ ] T029 [US1] Wire `FirearmForm`/`FirearmDetail` to `create_firearm`/`update_firearm`/`dispose_firearm`/`delete_firearm`/`get_firearm` via `tauriClient` in `src/features/firearms/` (depends on T026, T027, T028)
+- [X] T020 [P] [US1] Implement `Firearm` model struct + validation rules from data-model.md in `src-tauri/src/models/firearm.rs`
+- [X] T021 [US1] Implement `create_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T020)
+- [X] T022 [US1] Implement `update_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T021)
+- [X] T023 [US1] Implement `dispose_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T021)
+- [X] T024 [US1] Implement `delete_firearm` command with cascade delete of Photos/DocumentAttachments in `src-tauri/src/commands/firearms.rs` (depends on T021)
+- [X] T025 [US1] Implement `get_firearm` command in `src-tauri/src/commands/firearms.rs` (depends on T021)
+- [X] T026 [US1] Register firearm commands in the Tauri invoke handler in `src-tauri/src/main.rs` (depends on T021-T025)
+- [X] T027 [P] [US1] Build `FirearmForm` component (create/edit, serial-attestation checkbox) in `src/features/firearms/FirearmForm.tsx`
+- [X] T028 [P] [US1] Build `FirearmDetail` view (edit, dispose, delete via shared `ConfirmDialog`) in `src/features/firearms/FirearmDetail.tsx`
+- [X] T029 [US1] Wire `FirearmForm`/`FirearmDetail` to `create_firearm`/`update_firearm`/`dispose_firearm`/`delete_firearm`/`get_firearm` via `tauriClient` in `src/features/firearms/` (depends on T026, T027, T028)
 
 **Checkpoint**: User Story 1 fully functional and testable independently
 

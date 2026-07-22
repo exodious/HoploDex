@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+src-tauri/target/
+src-tauri/gen/
+e2e/wdio-logs/
+package-lock.json
+*.md
+.specify/

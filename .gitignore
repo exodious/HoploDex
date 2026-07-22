@@ -1,0 +1,37 @@
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Vite
+.vite/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# E2E
+e2e/wdio-logs/
+e2e/.wdio-tauri-driver*
+
+# Test artifacts
+coverage/
+*.tsbuildinfo
+
+# Local encrypted DB / app data (never commit real collection data)
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
