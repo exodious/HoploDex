@@ -181,7 +181,12 @@
   border-radius: var(--hd-radius);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  z-index: 50;
+  /* Radix portals Select's popover to document.body as a sibling of any
+     Dialog it's nested in (e.g. FirearmForm), not a descendant — so this
+     must outrank .hd-dialog__content's z-index (101) or the dropdown
+     renders (functionally open, correctly positioned) behind the opaque
+     dialog panel: invisible, but still "open" per Radix's own state. */
+  z-index: 200;
 }
 
 .hd-select__item {
