@@ -23,9 +23,11 @@ On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
 **Platform system dependencies** (required by Tauri/WebView, and by
 `rusqlite`'s bundled-SQLCipher build):
 
-- **Linux** (Debian/Ubuntu package names — see
+- **Linux** (Debian/Ubuntu and Arch package names below — see
   [Tauri's Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux)
   for other distros):
+
+  Debian/Ubuntu:
 
   ```bash
   sudo apt update
@@ -42,6 +44,21 @@ On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
     librsvg2-dev
   ```
 
+  Arch:
+
+  ```bash
+  sudo pacman -S --needed \
+    base-devel \
+    curl \
+    wget \
+    file \
+    openssl \
+    appmenu-gtk-module \
+    libappindicator-gtk3 \
+    librsvg \
+    webkit2gtk-4.1
+  ```
+
 - **macOS**: Xcode Command Line Tools —
 
   ```bash
@@ -56,10 +73,63 @@ On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
 
 **End-to-end (E2E) testing extras — Linux only:**
 
+Debian/Ubuntu:
+
 ```bash
 sudo apt install -y webkit2gtk-driver xvfb   # provides WebKitWebDriver + an isolated virtual display
 cargo install tauri-driver
 ```
+
+Arch:
+
+```bash
+sudo pacman -S --needed xorg-server-xvfb   # isolated virtual display
+cargo install tauri-driver
+```
+
+Unlike Debian's `webkit2gtk-driver` package, Arch's `webkit2gtk-4.1` package
+does **not** include the `WebKitWebDriver` binary, so it must be built from
+source, matching the exact version of `webkit2gtk-4.1` you have installed:
+
+```bash
+sudo pacman -S --needed ninja cmake clang lld ruby gperf python unifdef
+gem install getoptlong
+
+ver=$(pacman -Q webkit2gtk-4.1 | awk '{print $2}' | cut -d- -f1)
+curl -LO "https://webkitgtk.org/releases/webkitgtk-$ver.tar.xz"
+tar xf "webkitgtk-$ver.tar.xz"
+mkdir webkitgtk-build && cd webkitgtk-build
+cmake "../webkitgtk-$ver" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DPORT=GTK -DENABLE_WEBDRIVER=ON \
+  -DENABLE_MINIBROWSER=OFF -DENABLE_API_TESTS=OFF -DUSE_GTK4=OFF -DUSE_SOUP2=ON \
+  -DENABLE_INTROSPECTION=OFF -DENABLE_SPEECH_SYNTHESIS=OFF -DUSE_LIBBACKTRACE=OFF
+ninja WebKitWebDriver
+sudo install -m755 bin/WebKitWebDriver /usr/local/bin/
+```
+
+Re-run this after every `pacman` update to `webkit2gtk-4.1`, since a
+version-mismatched `WebKitWebDriver` will fail to drive the installed
+library. `npm run test:e2e` locates the binary via `which WebKitWebDriver`
+(falling back to a filesystem search), so anywhere on `$PATH` works.
+
+**Headless/SSH sessions only:** HoploDex reads/writes its SQLCipher database
+key via the OS credential store (the `keyring` crate), which on Linux talks
+to the Secret Service D-Bus API. A bare SSH login has a D-Bus session bus
+but usually no Secret Service provider registered on it, so `test:e2e` fails
+with `keyring error: ... org.freedesktop.DBus.Error.ServiceUnknown: The name
+is not activatable`. Fix by installing `gnome-keyring` and starting it
+against your session's bus before running tests:
+
+```bash
+sudo pacman -S --needed gnome-keyring   # apt install gnome-keyring on Debian/Ubuntu
+printf '\n' | gnome-keyring-daemon --login --daemonize --components=pkcs11,secrets
+```
+
+Use `--login` (not `--start --unlock` — this daemon version rejects that
+combination), which unlocks the login keyring with the blank password from
+stdin in one step, creating it on first run. Verify it registered correctly
+with `busctl --user list | grep org.freedesktop.secrets` before re-running
+`npm run test:e2e`.
 
 On Windows/macOS, E2E tests use their platform's own native WebView driver
 instead (no extra install beyond the prerequisites above).
