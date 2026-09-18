@@ -1,49 +1,95 @@
-import { InsuranceWarningBadge } from "../../components";
 import { formatCents } from "../../lib/money";
+import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
-import type { FirearmGroup } from "./types";
+import type { GroupBy, VisibleGroup } from "./types";
 
 export interface BrowseListProps {
-  groups: FirearmGroup[];
+  groups: VisibleGroup[];
+  groupBy: GroupBy | undefined;
   onSelect: (id: number) => void;
 }
 
-/** Row/list layout for browsing the collection (US2 Acceptance Scenario 1). */
-export function BrowseList({ groups, onSelect }: BrowseListProps) {
-  const isGrouped = groups.length > 1 || (groups[0]?.key ?? "All") !== "All";
-
+/** Row/list layout for browsing the collection (US2 Acceptance Scenario
+ * 1): one table per group, with the serial number under each name so
+ * firearms sharing a make and model stay distinguishable. */
+export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
+  const grouped = groupBy !== undefined;
+  // A column repeating the group heading adds nothing.
+  const showCaliber = groupBy !== "caliber";
+  const showType = groupBy !== "type";
   return (
-    <div>
-      {groups.map((group) => (
-        <section key={group.key}>
-          {isGrouped && <h3>{group.key}</h3>}
-          <ul>
-            {group.firearms.map((firearm) => (
-              <li key={firearm.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <FirearmThumbnail
-                  thumbnailPhotoId={firearm.thumbnailPhotoId}
-                  genericThumbnailKey={firearm.genericThumbnailKey}
-                  alt=""
-                  size={40}
-                />
-                <button type="button" onClick={() => onSelect(firearm.id)}>
-                  {firearm.make} {firearm.model}
-                </button>
-                <span>
-                  {" "}
-                  {firearm.caliber} · {formatCents(firearm.estimatedValue)}
-                </span>
-                {firearm.insuranceWarning !== "none" && (
-                  <InsuranceWarningBadge kind={firearm.insuranceWarning} />
-                )}
-              </li>
-            ))}
-          </ul>
+    <div className="hd-browse">
+      {groups.map((group, index) => (
+        <section key={group.key} className="hd-group" aria-label={grouped ? group.key : undefined}>
+          {grouped && <GroupHeading group={group} />}
+          <table className="hd-table">
+            <thead className={index > 0 ? "hd-sr-only" : undefined}>
+              <tr>
+                <th scope="col">Firearm</th>
+                {showCaliber && <th scope="col">Caliber</th>}
+                {showType && <th scope="col">Type</th>}
+                <th scope="col" className="hd-table__num">
+                  Est. value
+                </th>
+                <th scope="col">Coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.firearms.map((firearm) => (
+                <tr
+                  key={firearm.id}
+                  className={firearm.status === "disposed" ? "hd-row hd-row--disposed" : "hd-row"}
+                  onClick={() => onSelect(firearm.id)}
+                >
+                  <td>
+                    <div className="hd-row__identity">
+                      <FirearmThumbnail
+                        className="hd-row__thumb"
+                        thumbnailPhotoId={firearm.thumbnailPhotoId}
+                        genericThumbnailKey={firearm.genericThumbnailKey}
+                      />
+                      <div className="hd-row__names">
+                        <button
+                          type="button"
+                          className="hd-row__name"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect(firearm.id);
+                          }}
+                        >
+                          {firearm.make} {firearm.model}
+                        </button>
+                        <span className="hd-row__serial">
+                          {firearm.serialNumber ? (
+                            <span className="hd-serial">{firearm.serialNumber}</span>
+                          ) : (
+                            "No serial number"
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+                  {showCaliber && <td>{firearm.caliber}</td>}
+                  {showType && <td>{firearm.firearmTypeName}</td>}
+                  <td className="hd-table__num hd-num">{formatCents(firearm.estimatedValue)}</td>
+                  <td>
+                    <CoverageCell firearm={firearm} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       ))}
-      {groups.every((g) => g.firearms.length === 0) && (
-        <p>No firearms match. Add your first one, or clear the search/group filters.</p>
-      )}
     </div>
+  );
+}
+
+export function GroupHeading({ group }: { group: VisibleGroup }) {
+  return (
+    <h2 className="hd-group__title">
+      {group.key}
+      <span className="hd-group__count hd-num">{group.total}</span>
+    </h2>
   );
 }

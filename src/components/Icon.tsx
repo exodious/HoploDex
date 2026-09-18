@@ -1,0 +1,56 @@
+import type { SVGProps } from "react";
+
+// A small stroked icon set drawn on a 20px grid to match the type drawings'
+// line weight. Decorative by default (aria-hidden); pair with visible text
+// or an aria-label on the control.
+const PATHS = {
+  search: "M8.5 3.5a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM12.2 12.2 16.5 16.5",
+  plus: "M10 4v12M4 10h12",
+  list: "M7 5.5h9M7 10h9M7 14.5h9M3.5 5.5h.5M3.5 10h.5M3.5 14.5h.5",
+  tiles: "M3.5 3.5h5v5h-5zM11.5 3.5h5v5h-5zM3.5 11.5h5v5h-5zM11.5 11.5h5v5h-5z",
+  back: "M11.5 5 6.5 10l5 5",
+  chevronLeft: "M12 5 7 10l5 5",
+  chevronRight: "M8 5l5 5-5 5",
+  pencil: "M12.5 4.5 15.5 7.5 7.5 15.5H4.5V12.5ZM10.5 6.5l3 3",
+  trash: "M4 6h12M8 6V4.5h4V6M5.5 6l.8 9.5h7.4l.8-9.5M8.5 9v4M11.5 9v4",
+  file: "M5.5 3h6l3 3v11h-9zM11.5 3v3h3M8 10h4.5M8 13h4.5",
+  image: "M3.5 4.5h13v11h-13zM3.5 13l4-4 3.5 3.5 2-2 3.5 3.5M12.5 7.5h.01",
+  alert: "M10 3.5 17 16H3ZM10 8v3.5M10 13.8v.2",
+  check: "M4.5 10.5 8 14l7.5-8",
+  calendar: "M3.5 5h13v11h-13zM3.5 8.5h13M7 3v3.5M13 3v3.5",
+  upload: "M10 13V3.5M6 7.5l4-4 4 4M4 13v3h12v-3",
+  download: "M10 3.5V13M6 9l4 4 4-4M4 13v3h12v-3",
+  close: "M5 5l10 10M15 5 5 15",
+  open: "M11 3.5h5.5V9M16.5 3.5 9 11M14 11.5v5h-10.5v-10.5h5",
+  shield: "M10 3 16 5v5c0 3.5-2.6 6-6 7-3.4-1-6-3.5-6-7V5Z",
+  archive: "M3.5 4h13v3.5h-13zM4.5 7.5v8.5h11V7.5M8 10.5h4",
+  star: "M10 3.5l1.9 4 4.4.5-3.3 3 .9 4.3L10 13.2l-3.9 2.1.9-4.3-3.3-3 4.4-.5Z",
+  folder: "M3.5 5h4.5l1.5 1.5h7v9h-13z",
+} as const;
+
+export type IconName = keyof typeof PATHS;
+
+export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
+  name: IconName;
+  size?: number;
+}
+
+export function Icon({ name, size = 18, ...props }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable={false}
+      {...props}
+    >
+      <path d={PATHS[name]} />
+    </svg>
+  );
+}

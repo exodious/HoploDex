@@ -1,0 +1,62 @@
+/* Layout for every data-entry form in the app (firearm, dispose, policy,
+   coverage) — one pattern so each form reads the same way. */
+
+.hd-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.hd-form-section + .hd-form-section {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+
+.hd-form-section__title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.hd-form-grid {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.hd-form-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hd-form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hd-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hd-form-banner {
+  margin-bottom: var(--space-5);
+}
+
+.hd-form-note {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-required-mark {
+  color: var(--blaze-ink);
+}
+
+@media (max-width: 700px) {
+  .hd-form-grid--2,
+  .hd-form-grid--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

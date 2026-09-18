@@ -1,83 +1,91 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bytesToDataUrl } from "../../lib/bytes";
 import * as mediaService from "../media/mediaService";
+import { TypeDrawing } from "./TypeDrawing";
 
 export interface FirearmThumbnailProps {
   thumbnailPhotoId: number | null;
   genericThumbnailKey: string;
-  alt: string;
-  size?: number;
+  className?: string;
 }
 
-// Thumbnails never change after upload, and there's only a handful of
-// generic per-type images — a simple in-memory cache avoids re-fetching
-// the same bytes on every browse re-render (no need for a fuller
-// data-fetching library at this scale).
+// Thumbnails never change after upload — a simple in-memory cache avoids
+// re-fetching the same bytes on every browse re-render (no need for a
+// fuller data-fetching library at this scale).
 const photoThumbnailCache = new Map<number, string>();
-const genericThumbnailCache = new Map<string, string>();
 
 /** Renders a firearm's thumbnail: its designated photo if it has one, or
- * its type's bundled generic thumbnail otherwise (FR-009, US4 Scenario 3). */
+ * its type's generic drawing otherwise (FR-009, US4 Scenario 3). Photos
+ * load only once the frame scrolls near the viewport, so a long
+ * collection doesn't issue one IPC call per row up front. */
 export function FirearmThumbnail({
   thumbnailPhotoId,
   genericThumbnailKey,
-  alt,
-  size = 48,
+  className,
 }: FirearmThumbnailProps) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [nearViewport, setNearViewport] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      if (thumbnailPhotoId != null) {
-        const cached = photoThumbnailCache.get(thumbnailPhotoId);
-        if (cached) {
-          setSrc(cached);
-          return;
-        }
-        try {
-          const bytes = await mediaService.getPhotoThumbnail(thumbnailPhotoId);
-          const url = bytesToDataUrl(bytes, "image/jpeg");
-          photoThumbnailCache.set(thumbnailPhotoId, url);
-          if (!cancelled) setSrc(url);
-          return;
-        } catch {
-          // fall through to the generic thumbnail
-        }
-      }
-
-      const cached = genericThumbnailCache.get(genericThumbnailKey);
-      if (cached) {
-        setSrc(cached);
-        return;
-      }
-      try {
-        const bytes = await mediaService.getGenericThumbnail(genericThumbnailKey);
-        const url = bytesToDataUrl(bytes, "image/png");
-        genericThumbnailCache.set(genericThumbnailKey, url);
-        if (!cancelled) setSrc(url);
-      } catch {
-        if (!cancelled) setSrc(null);
-      }
+    const frame = frameRef.current;
+    if (!frame || thumbnailPhotoId == null) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNearViewport(true);
+      return;
     }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setNearViewport(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "300px" },
+    );
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [thumbnailPhotoId]);
 
-    void load();
+  useEffect(() => {
+    setFailed(false);
+    if (thumbnailPhotoId == null) {
+      setSrc(null);
+      return;
+    }
+    const cached = photoThumbnailCache.get(thumbnailPhotoId);
+    if (cached) {
+      setSrc(cached);
+      return;
+    }
+    setSrc(null);
+    if (!nearViewport) return;
+
+    let cancelled = false;
+    mediaService
+      .getPhotoThumbnail(thumbnailPhotoId)
+      .then((bytes) => {
+        const url = bytesToDataUrl(bytes, "image/jpeg");
+        photoThumbnailCache.set(thumbnailPhotoId, url);
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [thumbnailPhotoId, genericThumbnailKey]);
+  }, [thumbnailPhotoId, nearViewport]);
 
-  if (!src) {
-    return <div aria-hidden style={{ width: size, height: size }} />;
-  }
+  const showDrawing = thumbnailPhotoId == null || failed;
   return (
-    <img
-      src={src}
-      alt={alt}
-      width={size}
-      height={size}
-      style={{ objectFit: "cover", borderRadius: "var(--hd-radius)" }}
-    />
+    <div ref={frameRef} className={["hd-thumb", className].filter(Boolean).join(" ")}>
+      {showDrawing ? (
+        <TypeDrawing typeKey={genericThumbnailKey} />
+      ) : (
+        src && <img src={src} alt="" className="hd-thumb__photo" />
+      )}
+    </div>
   );
 }
