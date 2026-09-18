@@ -1,198 +1,125 @@
-import { $, browser, expect } from "@wdio/globals";
+import { $, addFirearm, back, browser, clickButton, choose, expect, fill } from "../support/ui";
+import { listedNames, openFirearm, titleBlock, toggle } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 1's acceptance scenarios (spec.md),
  * driven against the real built app via tauri-driver / WebKitWebDriver —
  * no mocks, exercising the full stack (React UI -> Tauri IPC -> SQLCipher).
+ * See e2e/support/ui.ts for why interactions go through page JS.
  *
- * Clicks go through a plain JS `element.click()` rather than
- * WebdriverIO's native-pointer click: WebKitWebDriver's native click
- * pipeline in this environment has a driver-level "element click
- * intercepted" / "did not become interactable" quirk even when the
- * element is independently verified (via elementFromPoint at the same
- * coordinates) to be genuinely on top and clickable. None of this app's
- * interactions depend on real pointer-event coordinates, so a JS click is
- * behaviorally equivalent for React's onClick handlers.
- *
- * Note: creating a firearm navigates straight to its detail view (per
- * FirearmsPage.tsx), not back to the collection list — scenarios below
- * assert against the detail view right after creation rather than
- * expecting a list item to appear.
+ * Creating a firearm opens its record page, so scenarios assert against
+ * the record right after creation.
  */
-async function clickEl(selector: string) {
-  const el = await $(selector);
-  await el.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), el);
-  await browser.pause(200);
-}
-
-/** Some button labels (e.g. "Add firearm", "Delete") appear both as the
- * page-level trigger and inside the dialog/alertdialog it opens once that
- * dialog is showing — scope to the open dialog to click the right one. */
-async function clickInRole(role: "dialog" | "alertdialog", buttonText: string) {
-  const container = await $(`[role="${role}"]`);
-  const btn = await container.$(`button=${buttonText}`);
-  await btn.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), btn);
-  await browser.pause(200);
-}
-
-async function setValueBySiblingInput(
-  labelSelector: string,
-  tag: "input" | "textarea",
-  value: string,
-) {
-  const field = await $(labelSelector).parentElement().$(tag);
-  const inputType = await field.getAttribute("type");
-  if (inputType === "date") {
-    // WebDriver's keystroke-based setValue() types into whichever date-
-    // spinner segment (month/day/year) currently has focus, in locale
-    // display order — sending the raw ISO string garbles it (e.g.
-    // "2020-01-01" silently became "0001-12-01"). Setting the DOM value
-    // directly via its native property setter (which `<input type=date>`
-    // always accepts in ISO `YYYY-MM-DD` form) and dispatching input/change
-    // sidesteps that entirely.
-    await browser.execute(
-      (element: HTMLElement, isoDate: string) => {
-        const setter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype,
-          "value",
-        )!.set!;
-        setter.call(element as HTMLInputElement, isoDate);
-        element.dispatchEvent(new Event("input", { bubbles: true }));
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-      },
-      field,
-      value,
-    );
-  } else {
-    await field.setValue(value);
-  }
-  await browser.pause(100);
-}
-
-/**
- * Selects an option from the Type combobox inside the currently open
- * dialog. Scoped to `[role="dialog"]` because BrowsePage's own "Group by"
- * combobox stays mounted (just visually covered) underneath the dialog —
- * an unscoped `[role="combobox"]` selector would ambiguously match it
- * instead, since it appears first in document order.
- */
-async function selectOption(optionLabel: string) {
-  const trigger = await $('[role="dialog"]').$('[role="combobox"]');
-  await trigger.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), trigger);
-  await browser.pause(200);
-  await clickEl(`[role="option"]=${optionLabel}`);
-}
-
 describe("User Story 1 - Record a Firearm", () => {
-  beforeEach(async () => {
-    await browser.pause(300);
-  });
+  it("creates a firearm and shows it with its values intact (Scenario 1)", async () => {
+    await addFirearm({
+      make: "Glock",
+      model: "19",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "E2E-001",
+    });
 
-  it("creates a firearm and shows it in the collection with its values intact (Scenario 1)", async () => {
-    await clickEl("button=Add firearm");
-
-    await setValueBySiblingInput("label=Make", "input", "Glock");
-    await setValueBySiblingInput("label=Model", "input", "19");
-    await setValueBySiblingInput("label=Caliber", "input", "9mm");
-    await selectOption("Handgun");
-    await setValueBySiblingInput("label=Serial number", "input", "E2E-001");
-
-    await clickInRole("dialog", "Add firearm");
-
-    // Creating navigates straight to the new record's detail view.
-    await expect($("h2*=Glock 19")).toExist();
-    await expect($("dd*=E2E-001")).toExist();
+    await expect($("#record-name")).toHaveText("Glock 19");
+    await expect($(".hd-plate__serial")).toHaveText("E2E-001");
+    expect(await titleBlock("Caliber")).toBe("9mm");
   });
 
   it("persists an edited field on reopen (Scenario 2)", async () => {
-    // Still on the Glock 19 detail view from Scenario 1.
-    await clickEl("button=Edit");
+    await clickButton("Edit");
+    await fill("Notes", "scratch on left side");
+    await clickButton("Save changes");
 
-    await setValueBySiblingInput("label=Notes", "textarea", "scratch on left side");
-    await clickInRole("dialog", "Save changes");
+    await expect($(".hd-textblock*=scratch on left side")).toExist();
 
-    await expect($("dd*=scratch on left side")).toExist();
-
-    // Reopen via the collection list to confirm persistence beyond the
-    // in-memory form/detail state. Target the list row's <button> (the
-    // <li> wrapper itself has no click handler).
-    await clickEl("button=← Back to collection");
-    await clickEl("button*=Glock 19");
-    await expect($("dd*=scratch on left side")).toExist();
+    // Reopen from the collection to confirm persistence beyond the
+    // in-memory record state.
+    await back();
+    await openFirearm("Glock 19");
+    await expect($(".hd-textblock*=scratch on left side")).toExist();
   });
 
   it("saves acquisition details and shows them on the record (Scenario 3)", async () => {
-    await clickEl("button=Edit");
-    await setValueBySiblingInput("label=Acquisition source", "input", "Local gun shop");
-    await setValueBySiblingInput("label=Acquisition date", "input", "2025-03-01");
-    await setValueBySiblingInput("label=Acquisition price ($)", "input", "450.00");
-    await clickInRole("dialog", "Save changes");
+    await clickButton("Edit");
+    await fill("Acquired from", "Local gun shop");
+    await fill("Date acquired", "2025-03-01");
+    await fill("Price paid", "1,450.00");
+    await clickButton("Save changes");
 
     await expect($("dd*=Local gun shop")).toExist();
+    // Regression: "1,450.00" used to be parsed as $1.00.
+    await expect($("dd=$1,450.00")).toExist();
   });
 
   it("marks a firearm disposed while retaining its history (Scenario 4)", async () => {
-    await clickEl("button=Mark disposed");
-    await selectOption("Sold");
-    await setValueBySiblingInput("label=Recipient", "input", "Jane Doe");
-    await setValueBySiblingInput("label=Date", "input", "2025-06-15");
-    await setValueBySiblingInput("label=Price ($)", "input", "400.00");
-    await clickInRole("dialog", "Confirm disposal");
+    await clickButton("Mark disposed");
+    await choose("Sold");
+    await fill("Transferred to", "Jane Doe");
+    await fill("Date", "2025-06-15");
+    await fill("Price received", "400.00");
+    await clickButton("Mark as disposed");
 
-    await expect($("dd*=Disposed")).toExist();
-    // History retained: identifying details still shown.
-    await expect($("dd*=E2E-001")).toExist();
+    expect(await titleBlock("Status")).toContain("Sold");
+    // History retained: identifying and acquisition details still shown.
+    await expect($(".hd-plate__serial")).toHaveText("E2E-001");
+    await expect($("dd*=Jane Doe")).toExist();
+    await expect($("dd*=Local gun shop")).toExist();
+
+    // FR-025: hidden from the collection by default, shown on request.
+    await back();
+    expect(await listedNames()).not.toContain("Glock 19");
+    await toggle("Show disposed");
+    expect(await listedNames()).toContain("Glock 19");
+    await toggle("Show disposed");
   });
 
   it("deletes a firearm only after confirmation (Scenario 5)", async () => {
-    await clickEl("button=← Back to collection");
-    await clickEl("button=Add firearm");
-    await setValueBySiblingInput("label=Make", "input", "ToDelete");
-    await setValueBySiblingInput("label=Model", "input", "X");
-    await setValueBySiblingInput("label=Caliber", "input", ".22");
-    await selectOption("Other");
-    await setValueBySiblingInput("label=Serial number", "input", "DEL-1");
-    await clickInRole("dialog", "Add firearm");
+    await addFirearm({
+      make: "ToDelete",
+      model: "X",
+      caliber: ".22",
+      type: "Other",
+      serial: "DEL-1",
+    });
 
-    // Already on the new record's detail view.
-    await expect($("h2*=ToDelete X")).toExist();
-    await clickEl("button=Delete");
+    await clickButton("Delete");
+    await expect($('[role="alertdialog"]')).toExist();
+    await clickButton("Cancel");
+    await expect($("#record-name")).toHaveText("ToDelete X");
 
-    const dialog = await $('[role="alertdialog"]');
-    await expect(dialog).toExist();
-    await clickInRole("alertdialog", "Delete");
+    await clickButton("Delete");
+    await clickButton("Delete firearm");
 
-    // Deleting returns to the collection list.
-    await expect($("li*=ToDelete X")).not.toExist();
+    // Deleting returns to the collection, without the firearm.
+    await $(".hd-page-title").waitForExist();
+    await browser.pause(300);
+    expect(await listedNames()).not.toContain("ToDelete X");
   });
 
   it("saves a blank serial number once attested (Scenario 6)", async () => {
-    await clickEl("button=Add firearm");
-    await setValueBySiblingInput("label=Make", "input", "Homemade");
-    await setValueBySiblingInput("label=Model", "input", "80% build");
-    await setValueBySiblingInput("label=Caliber", "input", ".223");
-    await selectOption("Rifle");
-    await clickEl("label=This firearm has no serial number");
+    await addFirearm({
+      make: "Homemade",
+      model: "80% build",
+      caliber: ".223",
+      type: "Rifle",
+      noSerial: true,
+    });
 
-    await clickInRole("dialog", "Add firearm");
-
-    await expect($("h2*=Homemade 80% build")).toExist();
-    await expect($("dd*=None (attested)")).toExist();
+    await expect($(".hd-plate__no-serial")).toExist();
+    await back();
   });
 
   it("blocks saving a blank, unattested serial number (Scenario 7)", async () => {
-    await clickEl("button=Add firearm");
-    await setValueBySiblingInput("label=Make", "input", "Blocked");
-    await setValueBySiblingInput("label=Model", "input", "Case");
-    await setValueBySiblingInput("label=Caliber", "input", "9mm");
-    await selectOption("Handgun");
-
-    await clickInRole("dialog", "Add firearm");
+    await clickButton("Add firearm");
+    await fill("Make", "Blocked");
+    await fill("Model", "Case");
+    await choose("Handgun");
+    await fill("Caliber", "9mm");
+    await clickButton("Add firearm");
 
     await expect($("p*=Enter a serial number, or confirm this firearm has none.")).toExist();
-    await expect($("h2*=Blocked Case")).not.toExist();
+    await expect($('[role="dialog"]')).toExist();
+    await expect($("#record-name")).not.toExist();
+    await clickButton("Cancel");
   });
 });
