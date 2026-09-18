@@ -1,5 +1,8 @@
+use std::path::{Path, PathBuf};
+
 use rusqlite::{named_params, Connection, OptionalExtension};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
@@ -80,6 +83,66 @@ pub mod ops {
         }
         Ok(DeleteResult { deleted: true })
     }
+
+    /// Writes `document` into `dir` (created if absent) under its original
+    /// filename, reduced to a single path component with characters that
+    /// are invalid on any supported OS replaced — the copy `open_document`
+    /// hands to the OS default app.
+    pub fn write_document_copy(
+        dir: &Path,
+        document: &DocumentAttachment,
+    ) -> Result<PathBuf, CommandError> {
+        let io_error = |e: std::io::Error| {
+            CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {e}"))
+        };
+        std::fs::create_dir_all(dir).map_err(io_error)?;
+        let path = dir.join(safe_file_name(&document.original_filename));
+        std::fs::write(&path, &document.file_bytes).map_err(io_error)?;
+        Ok(path)
+    }
+
+    fn safe_file_name(original: &str) -> String {
+        let last_component = original.rsplit(['/', '\\']).next().unwrap_or_default();
+        let cleaned: String = last_component
+            .chars()
+            .map(|c| if c.is_control() || r#"<>:"|?*"#.contains(c) { '_' } else { c })
+            .collect();
+        let trimmed = cleaned.trim();
+        if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
+            "document".into()
+        } else {
+            trimmed.into()
+        }
+    }
+}
+
+/// Folder under the app cache directory that holds the temporary copies
+/// `open_document` hands to the OS. Cleared at every startup so decrypted
+/// copies don't accumulate outside the encrypted database.
+pub const OPENED_DOCUMENTS_DIR: &str = "opened-documents";
+
+/// Reopens a document from its record (FR-010) in the OS default app for
+/// its file type, via a temporary copy under [`OPENED_DOCUMENTS_DIR`].
+#[tauri::command]
+pub async fn open_document(
+    id: i64,
+    app: AppHandle,
+    state: State<'_, DbHandle>,
+) -> Result<(), CommandError> {
+    let document = {
+        let conn = state.0.lock().expect("db mutex poisoned");
+        ops::get_document(&conn, id)?
+    };
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?
+        .join(OPENED_DOCUMENTS_DIR)
+        .join(id.to_string());
+    let path = ops::write_document_copy(&dir, &document)?;
+    app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| {
+        CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}"))
+    })
 }
 
 #[tauri::command]

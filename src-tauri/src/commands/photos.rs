@@ -204,6 +204,19 @@ pub async fn get_photo_thumbnail(
     Ok(ops::get_photo(&conn, photo_id)?.thumbnail_bytes)
 }
 
+/// The full-resolution original bytes for one photo, returned as a raw
+/// binary IPC response (an `ArrayBuffer` in the frontend, not a JSON number
+/// array) so multi-megabyte photos transfer quickly — for the record view's
+/// photo viewer, where condition details need to be legible.
+#[tauri::command]
+pub async fn get_photo_original(
+    photo_id: i64,
+    state: State<'_, DbHandle>,
+) -> Result<tauri::ipc::Response, CommandError> {
+    let conn = state.0.lock().expect("db mutex poisoned");
+    Ok(tauri::ipc::Response::new(ops::get_photo(&conn, photo_id)?.original_bytes))
+}
+
 #[tauri::command]
 pub async fn set_thumbnail_photo(
     firearm_id: i64,

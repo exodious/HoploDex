@@ -150,3 +150,52 @@ fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
     let all_with_disposed: Vec<_> = with_disposed.groups.iter().flat_map(|g| &g.firearms).collect();
     assert_eq!(all_with_disposed.len(), 2);
 }
+
+/// Two firearms can share make and model (spec_TODO: "the name assigned to a
+/// firearm in the UI is a combination of the make and model") — browse rows
+/// carry the serial number so the UI can tell them apart, plus the coverage
+/// assignment so the insurance view can list each policy's firearms.
+#[test]
+fn summaries_carry_serial_number_and_coverage_assignment() {
+    let db = TestDb::new();
+    let policy = hoplodex_lib::commands::insurance::ops::create_policy(
+        &db.conn,
+        &hoplodex_lib::models::insurance_policy::InsurancePolicyInput {
+            name: "Rider".into(),
+            policy_number: "R-1".into(),
+            insurance_company: "Acme".into(),
+            company_contact: None,
+            agent_name: None,
+            agent_contact: None,
+            blanket_coverage_limit: 100_000,
+            effective_start_date: "2020-01-01".into(),
+            effective_end_date: "2099-01-01".into(),
+        },
+    )
+    .unwrap();
+
+    let mut covered = firearm("Glock", "19", "9mm", 1);
+    covered.serial_number = Some("AAA111".into());
+    covered.insurance_policy_id = Some(policy.id);
+    covered.coverage_kind = Some(hoplodex_lib::models::firearm::CoverageKind::Blanket);
+    ops::create_firearm(&db.conn, &covered).unwrap();
+
+    let mut twin = firearm("Glock", "19", "9mm", 1);
+    twin.serial_number = None;
+    twin.no_serial_attested = true;
+    ops::create_firearm(&db.conn, &twin).unwrap();
+
+    let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
+    let summaries = &result.groups[0].firearms;
+    let with_serial = summaries.iter().find(|f| f.serial_number.is_some()).unwrap();
+    assert_eq!(with_serial.serial_number.as_deref(), Some("AAA111"));
+    assert_eq!(with_serial.insurance_policy_id, Some(policy.id));
+    assert_eq!(
+        with_serial.coverage_kind,
+        Some(hoplodex_lib::models::firearm::CoverageKind::Blanket)
+    );
+
+    let without_serial = summaries.iter().find(|f| f.serial_number.is_none()).unwrap();
+    assert_eq!(without_serial.insurance_policy_id, None);
+    assert_eq!(without_serial.coverage_kind, None);
+}

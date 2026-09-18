@@ -89,3 +89,42 @@ fn lists_every_document_for_a_firearm() {
     let listed = document_ops::list_documents(&db.conn, firearm.id).unwrap();
     assert_eq!(listed.len(), 2);
 }
+
+/// `open_document` hands the OS a temporary copy of the document (FR-010:
+/// "reopen them from the record") — the copy must hold the original bytes
+/// and keep the original filename, reduced to a safe single path component.
+#[test]
+fn writes_a_temporary_copy_under_a_safe_filename() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let dir = tempfile::TempDir::new().unwrap();
+
+    let attached = document_ops::add_document(
+        &db.conn,
+        firearm.id,
+        SAMPLE_PDF_BYTES,
+        "receipt.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+    let path = document_ops::write_document_copy(dir.path(), &attached).unwrap();
+    assert_eq!(path, dir.path().join("receipt.pdf"));
+    assert_eq!(std::fs::read(&path).unwrap(), SAMPLE_PDF_BYTES);
+
+    let hostile = document_ops::add_document(
+        &db.conn,
+        firearm.id,
+        SAMPLE_PDF_BYTES,
+        "../../escape:me?.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+    let path = document_ops::write_document_copy(dir.path(), &hostile).unwrap();
+    assert_eq!(path, dir.path().join("escape_me_.pdf"));
+
+    let unnamed =
+        document_ops::add_document(&db.conn, firearm.id, SAMPLE_PDF_BYTES, "..", "text/plain")
+            .unwrap();
+    let path = document_ops::write_document_copy(dir.path(), &unnamed).unwrap();
+    assert_eq!(path, dir.path().join("document"));
+}

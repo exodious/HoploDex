@@ -5,7 +5,7 @@ use tauri::State;
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::firearm::{
-    validate_firearm_input, DispositionType, Firearm, FirearmInput, FirearmStatus,
+    validate_firearm_input, CoverageKind, DispositionType, Firearm, FirearmInput, FirearmStatus,
 };
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
@@ -61,6 +61,8 @@ pub struct FirearmSummary {
     pub id: i64,
     pub make: String,
     pub model: String,
+    /// Tells apart firearms sharing a make and model in browse views.
+    pub serial_number: Option<String>,
     pub caliber: String,
     pub firearm_type_name: String,
     pub status: FirearmStatus,
@@ -68,6 +70,10 @@ pub struct FirearmSummary {
     pub generic_thumbnail_key: String,
     pub estimated_value: Option<i64>,
     pub insurance_warning: InsuranceWarning,
+    /// Coverage assignment, so the insurance view can list each policy's
+    /// firearms without fetching every full record.
+    pub insurance_policy_id: Option<i64>,
+    pub coverage_kind: Option<CoverageKind>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -282,11 +288,21 @@ pub mod ops {
         // it as contiguous text, which is what a user searching "cracked
         // handle" or a multi-word caliber value expects. `:has_query`
         // short-circuits the MATCH subquery entirely when there's no query,
-        // since MATCH errors on an empty/absent search string.
+        // since MATCH errors on an empty/absent search string. The trailing
+        // `*` makes the phrase's last word a prefix, so results appear while
+        // it's still being typed ("Rem" finds Remington); a query with no
+        // words at all can't take one, so it stays an exact phrase.
         let fts_query = input
             .query
             .as_deref()
-            .map(|q| format!("\"{}\"", q.replace('"', "\"\"")))
+            .map(|q| {
+                let phrase = format!("\"{}\"", q.trim().replace('"', "\"\""));
+                if q.chars().any(char::is_alphanumeric) {
+                    phrase + "*"
+                } else {
+                    phrase
+                }
+            })
             .unwrap_or_default();
 
         let mut stmt = conn
@@ -339,6 +355,7 @@ pub mod ops {
                     id: firearm.id,
                     make: firearm.make,
                     model: firearm.model,
+                    serial_number: firearm.serial_number,
                     caliber: firearm.caliber,
                     firearm_type_name,
                     status: firearm.status,
@@ -346,6 +363,8 @@ pub mod ops {
                     generic_thumbnail_key,
                     estimated_value: firearm.estimated_value,
                     insurance_warning,
+                    insurance_policy_id: firearm.insurance_policy_id,
+                    coverage_kind: firearm.coverage_kind,
                 },
             ));
         }
