@@ -99,7 +99,10 @@ export const config: Options.Testrunner = {
         "build",
         "--release",
         "--features",
-        "custom-protocol",
+        // mock-keyring swaps the OS keyring for an in-memory store — CI/
+        // headless environments have no way to unlock a real one (see
+        // src-tauri/src/db/mod.rs).
+        "custom-protocol,mock-keyring",
         "--manifest-path",
         "src-tauri/Cargo.toml",
       ],

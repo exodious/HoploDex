@@ -46,8 +46,35 @@ pub fn generate_key_hex() -> Result<String, DbError> {
 
 /// Reads the SQLCipher passphrase from the OS-native credential store,
 /// generating and persisting one on first run (research.md §5).
+#[cfg(not(feature = "mock-keyring"))]
 pub fn get_or_create_passphrase() -> Result<String, DbError> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+    match entry.get_password() {
+        Ok(existing) => Ok(existing),
+        Err(keyring::Error::NoEntry) => {
+            let key_hex = generate_key_hex()?;
+            entry.set_password(&key_hex)?;
+            Ok(key_hex)
+        }
+        Err(other) => Err(other.into()),
+    }
+}
+
+/// E2E-only variant of [`get_or_create_passphrase`]. Headless/CI
+/// environments have no way to unlock the real platform credential store
+/// (a Secret Service passphrase prompt has no one to answer it), so E2E
+/// builds (`--features mock-keyring`) use keyring-core's in-memory mock
+/// store instead — same first-run-generates-a-key behavior, just not
+/// backed by the OS.
+#[cfg(feature = "mock-keyring")]
+pub fn get_or_create_passphrase() -> Result<String, DbError> {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        keyring_core::set_default_store(
+            keyring_core::mock::Store::new().expect("mock keyring store"),
+        );
+    });
+    let entry = keyring_core::Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
     match entry.get_password() {
         Ok(existing) => Ok(existing),
         Err(keyring::Error::NoEntry) => {

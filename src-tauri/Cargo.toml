@@ -22,6 +22,14 @@ tauri-build = { version = "2", features = [] }
 # Enabled for production/E2E builds so the app loads bundled frontendDist
 # assets via Tauri's custom protocol instead of the devUrl dev server.
 custom-protocol = ["tauri/custom-protocol"]
+# Enabled for E2E builds only. Swaps the OS-native keyring (Secret
+# Service/Keychain/Credential Manager) for keyring-core's in-memory mock
+# store, so the SQLCipher passphrase never depends on a real, unlockable
+# platform credential store — headless/CI environments have no way to
+# answer the Secret Service's unlock prompt (research.md §5 already
+# assumes the real store is silently unlocked via the user's login
+# session, which doesn't hold in CI).
+mock-keyring = ["dep:keyring-core"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -31,6 +39,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher", "chrono"] }
 keyring = "4"
+keyring-core = { version = "1", optional = true }
 rust_xlsxwriter = "0.96"
 calamine = "0.36"
 csv = "1.4"
