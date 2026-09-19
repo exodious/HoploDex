@@ -2,8 +2,8 @@ import { createContext, useContext } from "react";
 
 export type Route =
   | { page: "collection" }
-  /** `policyId` scrolls to (and highlights) one policy's card. */
-  | { page: "insurance"; policyId?: number }
+  | { page: "insurance" }
+  | { page: "policy"; id: number }
   | { page: "firearm"; id: number; from: "collection" | "insurance" };
 
 /** Dialogs the app shell owns, so any page can open them. */

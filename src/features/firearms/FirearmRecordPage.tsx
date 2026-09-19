@@ -282,7 +282,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                   <button
                     type="button"
                     className="hd-link"
-                    onClick={() => open({ page: "insurance", policyId: policy.id })}
+                    onClick={() => open({ page: "policy", id: policy.id })}
                   >
                     {policy.name}
                   </button>

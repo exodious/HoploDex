@@ -9,7 +9,7 @@ import type { FirearmInput } from "../firearms/types";
 import { ExportDialog } from "../import-export/ExportDialog";
 import { ImportDialog } from "../import-export/ImportDialog";
 import { InsurancePage } from "../insurance/InsurancePage";
-import { policyCardId } from "../insurance/policyCard";
+import { PolicyPage } from "../insurance/PolicyPage";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
@@ -73,9 +73,9 @@ export function AppShell() {
         case "collection":
           return "Collection";
         case "insurance":
-          return (
-            (target.policyId != null && policiesById.get(target.policyId)?.name) || "Insurance"
-          );
+          return "Insurance";
+        case "policy":
+          return policiesById.get(target.id)?.name ?? "Policy";
         case "firearm": {
           const firearm = firearmsById.get(target.id);
           return firearm ? firearmName(firearm) : "Firearm";
@@ -106,15 +106,9 @@ export function AppShell() {
       window.scrollTo(0, restore.current.scrollY);
       return;
     }
-    if (route.page === "insurance" && route.policyId != null) {
-      const card = document.getElementById(policyCardId(route.policyId));
-      if (card) {
-        card.scrollIntoView({ block: "start" });
-        return;
-      }
-    }
     // Records always open at the top; list pages return to where they were.
-    window.scrollTo(0, route.page === "firearm" ? 0 : (scrollMemory.current[route.page] ?? 0));
+    const isRecord = route.page === "firearm" || route.page === "policy";
+    window.scrollTo(0, isRecord ? 0 : (scrollMemory.current[route.page] ?? 0));
   }, [route]);
 
   useEffect(() => {
@@ -159,7 +153,8 @@ export function AppShell() {
     open({ page: "firearm", id: created.id, from: "collection" });
   }
 
-  const section = route.page === "firearm" ? route.from : route.page;
+  const section =
+    route.page === "firearm" ? route.from : route.page === "policy" ? "insurance" : route.page;
 
   return (
     <NavigationContext.Provider value={navigation}>
@@ -220,6 +215,7 @@ export function AppShell() {
             <CollectionPage browse={browse} onBrowseChange={setBrowse} />
           )}
           {route.page === "insurance" && <InsurancePage />}
+          {route.page === "policy" && <PolicyPage key={route.id} id={route.id} />}
           {route.page === "firearm" && <FirearmRecordPage key={route.id} id={route.id} />}
         </main>
 

@@ -130,15 +130,16 @@ describe("UI review follow-ups", () => {
     expect(await insuranceTabCount()).toBe(2);
   });
 
-  it("links from a firearm to its policy and back, and from the policy to a firearm and back", async () => {
+  it("links from a firearm to its own policy page and back, and from the policy to a firearm and back", async () => {
     await goTo("Collection");
     await openFirearm("InsE2EReview Rifle");
 
+    // The policy link opens that one policy, not the Insurance listing.
     await clickEl(".hd-facts .hd-link");
-    await $(".hd-policy--focused").waitForExist({ timeout: 4000 });
-    await expect($(".hd-policy--focused")).toHaveText(
-      expect.stringContaining("InsE2E Review Policy"),
-    );
+    await $(".hd-policy").waitForExist({ timeout: 4000 });
+    await expect($(".hd-policy__name")).toHaveText("InsE2E Review Policy");
+    expect(await $$(".hd-policy").length).toBe(1);
+    await expect($(".hd-page-title")).not.toExist();
     await expect($(".hd-backlink")).toHaveText(expect.stringContaining("InsE2EReview Rifle"));
 
     await back();
@@ -147,7 +148,7 @@ describe("UI review follow-ups", () => {
 
     // And the other way: policy -> firearm -> back lands on the policy again.
     await clickEl(".hd-facts .hd-link");
-    await $(".hd-policy--focused").waitForExist({ timeout: 4000 });
+    await $(".hd-policy").waitForExist({ timeout: 4000 });
     await browser.execute(() => {
       [...document.querySelectorAll<HTMLElement>(".hd-policy .hd-link")]
         .find((link) => link.textContent?.includes("InsE2EReview Pistol"))
@@ -157,8 +158,9 @@ describe("UI review follow-ups", () => {
     await expect($(".hd-backlink")).toHaveText(expect.stringContaining("InsE2E Review Policy"));
 
     await back();
-    await expect($(".hd-page-title")).toHaveText("Insurance");
-    await expect($(".hd-policy--focused")).toExist();
+    await $(".hd-policy").waitForExist({ timeout: 4000 });
+    await expect($(".hd-policy__name")).toHaveText("InsE2E Review Policy");
+    await expect($(".hd-page-title")).not.toExist();
   });
 
   it("switches between light, dark, and auto color modes", async () => {
