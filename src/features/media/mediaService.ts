@@ -1,4 +1,5 @@
 import { invoke } from "../../services/tauriClient";
+import type { Firearm } from "../firearms/types";
 import type { DocumentDetail, DocumentSummary, PhotoSummary } from "./types";
 
 export function listPhotos(firearmId: number): Promise<PhotoSummary[]> {
@@ -14,11 +15,13 @@ export function addPhoto(
   return invoke<PhotoSummary>("add_photo", { firearmId, fileBytes, originalFilename, mimeType });
 }
 
-export function setThumbnailPhoto(
-  firearmId: number,
-  photoId: number,
-): Promise<import("../firearms/types").Firearm> {
-  return invoke("set_thumbnail_photo", { firearmId, photoId });
+/** Adds a photo from a file on disk — what a drop onto the window delivers. */
+export function addPhotoFromPath(firearmId: number, path: string): Promise<PhotoSummary> {
+  return invoke<PhotoSummary>("add_photo_from_path", { firearmId, path });
+}
+
+export function setThumbnailPhoto(firearmId: number, photoId: number): Promise<Firearm> {
+  return invoke<Firearm>("set_thumbnail_photo", { firearmId, photoId });
 }
 
 export function deletePhoto(photoId: number, confirmed: boolean): Promise<{ deleted: boolean }> {
@@ -29,8 +32,9 @@ export function getPhotoThumbnail(photoId: number): Promise<number[]> {
   return invoke<number[]>("get_photo_thumbnail", { photoId });
 }
 
-export function getGenericThumbnail(key: string): Promise<number[]> {
-  return invoke<number[]>("get_generic_thumbnail", { key });
+/** Full-resolution original, delivered as raw bytes (binary IPC). */
+export function getPhotoOriginal(photoId: number): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("get_photo_original", { photoId });
 }
 
 export function listDocuments(firearmId: number): Promise<DocumentSummary[]> {
@@ -51,8 +55,18 @@ export function addDocument(
   });
 }
 
+/** Attaches a document from a file on disk — what a drop onto the window delivers. */
+export function addDocumentFromPath(firearmId: number, path: string): Promise<DocumentSummary> {
+  return invoke<DocumentSummary>("add_document_from_path", { firearmId, path });
+}
+
 export function getDocument(id: number): Promise<DocumentDetail> {
   return invoke<DocumentDetail>("get_document", { id });
+}
+
+/** Opens the document in the OS default app for its file type (FR-010). */
+export function openDocument(id: number): Promise<void> {
+  return invoke<void>("open_document", { id });
 }
 
 export function deleteDocument(id: number, confirmed: boolean): Promise<{ deleted: boolean }> {

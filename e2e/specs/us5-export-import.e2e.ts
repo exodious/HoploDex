@@ -1,62 +1,37 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { $, browser, expect } from "@wdio/globals";
+import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
+import { choose, listedNames, search } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
  * driven against the real built app via tauri-driver / WebKitWebDriver.
  *
- * The destination-folder/file-path fields are plain editable text inputs
- * (not just native-dialog pickers) specifically so this spec can drive
- * them directly — native OS file/folder pickers run outside the webview
- * and cannot be automated through WebDriver. See us1-record-firearm.e2e.ts
- * for the JS-click rationale.
+ * The folder and file fields accept typed paths (not only native pickers)
+ * specifically so this spec can drive them — native OS file dialogs run
+ * outside the webview and can't be automated through WebDriver. See
+ * e2e/support/ui.ts for why interactions go through page JS.
  */
-async function clickEl(selector: string) {
-  const el = await $(selector);
-  await el.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), el);
-  await browser.pause(200);
-}
-
-async function clickInRole(role: "dialog" | "alertdialog", buttonText: string) {
-  const container = await $(`[role="${role}"]`);
-  const btn = await container.$(`button=${buttonText}`);
-  await btn.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), btn);
-  await browser.pause(200);
-}
-
-async function setValueBySiblingInput(
-  labelSelector: string,
-  tag: "input" | "textarea",
-  value: string,
-) {
-  const field = await $(labelSelector).parentElement().$(tag);
-  await field.setValue(value);
-  await browser.pause(100);
-}
-
-async function addFirearm(opts: { make: string; model: string; serial: string }) {
-  await clickEl("button=Add firearm");
-  await setValueBySiblingInput("label=Make", "input", opts.make);
-  await setValueBySiblingInput("label=Model", "input", opts.model);
-  await setValueBySiblingInput("label=Caliber", "input", "9mm");
-  // Scoped to the open dialog: BrowsePage's own "Group by" combobox stays
-  // mounted underneath and would otherwise match first.
-  const typeTrigger = await $('[role="dialog"]').$('[role="combobox"]');
-  await typeTrigger.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), typeTrigger);
-  await browser.pause(200);
-  await clickEl('[role="option"]=Handgun');
-  await setValueBySiblingInput("label=Serial number", "input", opts.serial);
-  await clickInRole("dialog", "Add firearm");
-  await clickEl("button=← Back to collection");
-}
 
 const HEADER =
   "make,model,serial_number,no_serial_attested,caliber,firearm_type,notes,accessories,status,estimated_value,acquisition_source,acquisition_date,acquisition_price,disposition_type,disposition_recipient,disposition_date,disposition_price,insurance_policy_name,coverage_kind,scheduled_coverage_amount,photo_filenames";
+
+async function importFile(csvPath: string) {
+  await clickButton("Import");
+  await fill("Spreadsheet file", csvPath);
+  await clickButton("Import");
+  await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
+}
+
+async function tally(label: string): Promise<number> {
+  return browser.execute((wanted: string) => {
+    const item = [...document.querySelectorAll(".hd-tally__item")].find(
+      (i) => i.querySelector(".hd-tally__label")?.textContent?.trim() === wanted,
+    );
+    return Number(item?.querySelector(".hd-tally__value")?.textContent ?? "NaN");
+  }, label);
+}
 
 describe("User Story 5 - Export and Import Records", () => {
   let workDir: string;
@@ -66,31 +41,32 @@ describe("User Story 5 - Export and Import Records", () => {
   });
 
   it("exports the collection to a spreadsheet and photos folder (Scenario 1)", async () => {
-    await addFirearm({ make: "ExportE2EGlock", model: "19", serial: "EXP-001" });
+    await addFirearm({
+      make: "ExportE2EGlock",
+      model: "19",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "EXP-001",
+    });
+    await back();
 
-    await clickEl("button=Export");
-    const destinationInput = await $("label=Destination folder").parentElement().$("input");
-    await destinationInput.setValue(workDir);
-    await clickInRole("dialog", "Export");
+    await clickButton("Export");
+    await fill("Save to folder", workDir);
+    await clickButton("Export");
 
-    await browser.waitUntil(
-      async () =>
-        (await $("p*=Exported").isExisting()) || (await $('p[role="alert"]').isExisting()),
-      { timeout: 15000, timeoutMsg: "export never completed" },
-    );
-    await expect($('p[role="alert"]')).not.toExist();
-    await expect($("p*=Exported")).toExist();
+    await $(".hd-outcome__headline*=Exported").waitForExist({
+      timeout: 15000,
+      timeoutMsg: "export never finished",
+    });
+    await expect($('[role="alert"]')).not.toExist();
 
     const files = fs.readdirSync(workDir);
     const spreadsheet = files.find((f) => f.endsWith(".csv"));
     expect(spreadsheet).toBeDefined();
-    const contents = fs.readFileSync(path.join(workDir, spreadsheet!), "utf-8");
-    expect(contents).toContain("ExportE2EGlock");
+    expect(fs.readFileSync(path.join(workDir, spreadsheet!), "utf-8")).toContain("ExportE2EGlock");
+    expect(files.find((f) => f.endsWith("_photos"))).toBeDefined();
 
-    const photosFolder = files.find((f) => f.endsWith("_photos"));
-    expect(photosFolder).toBeDefined();
-
-    await clickEl("button=Close");
+    await clickButton("Done");
   });
 
   it("imports new records from a prepared spreadsheet (Scenario 2)", async () => {
@@ -100,22 +76,14 @@ describe("User Story 5 - Export and Import Records", () => {
       `${HEADER}\nImportE2ERuger,10-22,IMP-001,FALSE,.22 LR,Rifle,,,,300.00,,,,,,,,,,,\n`,
     );
 
-    await clickEl("button=Import");
-    const fileInput = await $("label=File path").parentElement().$("input");
-    await fileInput.setValue(csvPath);
-    await clickInRole("dialog", "Import");
+    await importFile(csvPath);
+    expect(await tally("added")).toBe(1);
+    expect(await tally("failed")).toBe(0);
+    await clickButton("Done");
 
-    await browser.waitUntil(async () => await $("p*=Imported").isExisting(), {
-      timeout: 15000,
-      timeoutMsg: "import never completed",
-    });
-    await expect($("p*=Imported 1 new record")).toExist();
-    await clickEl("button=Close");
-
-    const searchField = await $("label=Search").parentElement().$("input");
-    await searchField.setValue("ImportE2ERuger");
-    await browser.pause(400);
-    await expect($("button*=ImportE2ERuger 10-22")).toExist();
+    await search("ImportE2ERuger");
+    expect(await listedNames()).toContain("ImportE2ERuger 10-22");
+    await search("");
   });
 
   it("reports a failing row without discarding the successful one (Scenario 3)", async () => {
@@ -125,22 +93,55 @@ describe("User Story 5 - Export and Import Records", () => {
       `${HEADER}\n,BadRow,IMP-BAD,FALSE,9mm,Handgun,,,,100.00,,,,,,,,,,,\nImportE2ESig,P226,IMP-002,FALSE,9mm,Handgun,,,,400.00,,,,,,,,,,,\n`,
     );
 
-    await clickEl("button=Import");
-    const fileInput = await $("label=File path").parentElement().$("input");
-    await fileInput.setValue(csvPath);
-    await clickInRole("dialog", "Import");
+    await importFile(csvPath);
+    expect(await tally("added")).toBe(1);
+    expect(await tally("failed")).toBe(1);
+    await expect($(".hd-row-errors").$("li*=Row 1")).toExist();
+    await clickButton("Done");
 
-    await browser.waitUntil(async () => await $("p*=Imported").isExisting(), {
-      timeout: 15000,
-      timeoutMsg: "import never completed",
-    });
-    await expect($("p*=1 row(s) failed")).toExist();
-    await expect($("li*=Row 1")).toExist();
-    await clickEl("button=Close");
+    await search("ImportE2ESig");
+    expect(await listedNames()).toContain("ImportE2ESig P226");
+    await search("");
+  });
 
-    const searchField = await $("label=Search").parentElement().$("input");
-    await searchField.setValue("ImportE2ESig");
-    await browser.pause(400);
-    await expect($("button*=ImportE2ESig P226")).toExist();
+  it("exports only the current search results when asked (Edge Case: filtered export)", async () => {
+    // Regression: the export dialog never offered the current results.
+    await search("ImportE2E");
+    await clickButton("Export");
+    await $(".hd-choice__label=Current results (2)").waitForExist();
+    await choose("Current results (2)");
+    const filteredDir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-filtered-"));
+    await fill("Save to folder", filteredDir);
+    await clickButton("Export");
+
+    await $(".hd-outcome__headline*=Exported 2 firearms").waitForExist({ timeout: 15000 });
+    const spreadsheet = fs.readdirSync(filteredDir).find((f) => f.endsWith(".csv"))!;
+    const contents = fs.readFileSync(path.join(filteredDir, spreadsheet), "utf-8");
+    expect(contents).toContain("ImportE2ERuger");
+    expect(contents).toContain("ImportE2ESig");
+    expect(contents).not.toContain("ExportE2EGlock");
+    await clickButton("Done");
+    await search("");
+  });
+
+  it("asks what to do with rows matching an existing firearm (FR-026)", async () => {
+    const csvPath = path.join(workDir, "import-conflict.csv");
+    fs.writeFileSync(
+      csvPath,
+      `${HEADER}\nExportE2EGlock,19,EXP-001,FALSE,9mm,Handgun,re-imported,,,,,,,,,,,,,,\n`,
+    );
+
+    await importFile(csvPath);
+    expect(await tally("need a decision")).toBe(1);
+    await expect($("button=Apply decisions")).toBeDisabled();
+
+    await clickButton("Keep existing");
+    await clickButton("Apply decisions");
+    await $(".hd-outcome__headline*=Resolved 1 matching row").waitForExist();
+    await clickButton("Done");
+
+    // Keeping the existing record means no duplicate was added.
+    await search("ExportE2EGlock");
+    expect(await listedNames()).toEqual(["ExportE2EGlock 19"]);
   });
 });

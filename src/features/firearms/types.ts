@@ -45,18 +45,33 @@ export interface DisposeFirearmInput {
 }
 
 /** Seeded per src-tauri/src/db/migrations/0003_seed_firearm_types.sql. No
- * management UI exists for this list in this feature (data-model.md). */
+ * management UI exists for this list in this feature (data-model.md).
+ * `key` is the type's `generic_thumbnail_key`. */
 export const FIREARM_TYPE_OPTIONS = [
-  { value: "1", label: "Handgun" },
-  { value: "2", label: "Rifle" },
-  { value: "3", label: "Shotgun" },
-  { value: "4", label: "Other" },
+  { value: "1", label: "Handgun", key: "handgun" },
+  { value: "2", label: "Rifle", key: "rifle" },
+  { value: "3", label: "Shotgun", key: "shotgun" },
+  { value: "4", label: "Other", key: "other" },
 ];
+
+export function firearmTypeOption(firearmTypeId: number) {
+  return (
+    FIREARM_TYPE_OPTIONS.find((o) => o.value === String(firearmTypeId)) ?? {
+      value: String(firearmTypeId),
+      label: "Other",
+      key: "other",
+    }
+  );
+}
 
 export const DISPOSITION_TYPE_OPTIONS: { value: DispositionType; label: string }[] = [
   { value: "sold", label: "Sold" },
   { value: "traded", label: "Traded" },
   { value: "gifted", label: "Gifted" },
   { value: "destroyed", label: "Destroyed" },
-  { value: "lost_stolen", label: "Lost / Stolen" },
+  { value: "lost_stolen", label: "Lost or stolen" },
 ];
+
+export function dispositionLabel(type: DispositionType | null): string {
+  return DISPOSITION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? "Disposed";
+}

@@ -1,10 +1,15 @@
-import { useId } from "react";
 import * as RadixSelect from "@radix-ui/react-select";
+import type { ReactNode } from "react";
+import { FieldFrame } from "./Field";
+import { useFieldIds } from "./fieldIds";
+import { Icon } from "./Icon";
 import "./components.css";
 
 export interface SelectOption {
   value: string;
   label: string;
+  /** Secondary text shown under the label in the open list. */
+  detail?: string;
 }
 
 export interface SelectProps {
@@ -14,11 +19,14 @@ export interface SelectProps {
   options: SelectOption[];
   placeholder?: string;
   error?: string;
+  hint?: ReactNode;
+  required?: boolean;
   id?: string;
   disabled?: boolean;
 }
 
-/** Labeled, keyboard-navigable select — the only dropdown pattern the app uses. */
+/** Labeled, keyboard-navigable select — the dropdown pattern for option
+ * lists too long for a segmented control (e.g. choosing a policy). */
 export function Select({
   label,
   value,
@@ -26,43 +34,55 @@ export function Select({
   options,
   placeholder = "Select…",
   error,
+  hint,
+  required,
   id,
   disabled,
 }: SelectProps) {
-  const generatedId = useId();
-  const selectId = id ?? generatedId;
-  const errorId = error ? `${selectId}-error` : undefined;
+  const { inputId, hintId, errorId, describedBy } = useFieldIds(id, hint, error);
+  const labelId = `${inputId}-label`;
 
   return (
-    <div className="hd-field">
-      <label className="hd-field__label" id={`${selectId}-label`} htmlFor={selectId}>
-        {label}
-      </label>
+    <FieldFrame
+      inputId={inputId}
+      label={label}
+      labelId={labelId}
+      required={required}
+      hint={hint}
+      hintId={hintId}
+      error={error}
+      errorId={errorId}
+    >
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger
-          id={selectId}
-          className={["hd-select__trigger", error && "hd-field__input--error"]
-            .filter(Boolean)
-            .join(" ")}
-          aria-labelledby={`${selectId}-label`}
+          id={inputId}
+          className={["hd-select__trigger", error && "hd-input--error"].filter(Boolean).join(" ")}
+          aria-labelledby={labelId}
           aria-invalid={error ? true : undefined}
-          aria-describedby={errorId}
+          aria-describedby={describedBy}
         >
           <RadixSelect.Value placeholder={placeholder} />
-          <RadixSelect.Icon className="hd-select__icon">▾</RadixSelect.Icon>
+          <RadixSelect.Icon className="hd-select__icon">
+            <Icon name="chevronRight" size={16} style={{ transform: "rotate(90deg)" }} />
+          </RadixSelect.Icon>
         </RadixSelect.Trigger>
         <RadixSelect.Portal>
           <RadixSelect.Content className="hd-select__content" position="popper" sideOffset={4}>
-            <RadixSelect.Viewport>
+            <RadixSelect.Viewport className="hd-select__viewport">
               {options.map((option) => (
                 <RadixSelect.Item
                   key={option.value}
                   value={option.value}
                   className="hd-select__item"
                 >
-                  <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
+                  <span className="hd-select__item-text">
+                    <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
+                    {option.detail && (
+                      <span className="hd-select__item-detail">{option.detail}</span>
+                    )}
+                  </span>
                   <RadixSelect.ItemIndicator className="hd-select__item-indicator">
-                    ✓
+                    <Icon name="check" size={16} />
                   </RadixSelect.ItemIndicator>
                 </RadixSelect.Item>
               ))}
@@ -70,11 +90,6 @@ export function Select({
           </RadixSelect.Content>
         </RadixSelect.Portal>
       </RadixSelect.Root>
-      {error && (
-        <p id={errorId} className="hd-field__error" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
+    </FieldFrame>
   );
 }

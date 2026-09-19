@@ -92,3 +92,18 @@ fn no_match_returns_an_empty_result() {
 
     assert_eq!(search(&db.conn, "nonexistentxyz"), 0);
 }
+
+/// Search runs as the user types, so a partially typed last word must
+/// already match ("Rem" finds Remington, "CO19" finds serial CO1911) —
+/// whole-word-only matching showed nothing until the word was complete.
+#[test]
+fn matches_a_partially_typed_last_word() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &base_input()).unwrap();
+
+    assert_eq!(search(&db.conn, "Col"), 1, "prefix of make");
+    assert_eq!(search(&db.conn, "CO19"), 1, "prefix of serial number");
+    assert_eq!(search(&db.conn, "minor pit"), 1, "phrase ending in a partial word");
+    assert_eq!(search(&db.conn, "pitting minor"), 0, "earlier words still form a phrase");
+    assert_eq!(search(&db.conn, "\""), 0, "a stray quote is not a syntax error");
+}

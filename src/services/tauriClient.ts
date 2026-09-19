@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 /**
  * Mirrors src-tauri/src/commands/error.rs's `CommandError` — the one error
@@ -49,4 +50,39 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
     }
     throw error;
   }
+}
+
+/** Files being dragged onto the window from the desktop. Dropped files are
+ * delivered as paths — the webview itself gets no `File` for them (WebKitGTK
+ * exposes none) — to be handed to a command that reads them. */
+export type FileDropEvent =
+  { type: "enter"; paths: string[] } | { type: "leave" } | { type: "drop"; paths: string[] };
+
+/** Listens for files dragged onto the window; returns the unsubscribe
+ * function. Does nothing outside the Tauri shell (unit tests, a plain
+ * browser preview). */
+export function listenForFileDrops(handler: (event: FileDropEvent) => void): () => void {
+  let unlisten: (() => void) | undefined;
+  let stopped = false;
+  try {
+    void getCurrentWebview()
+      .onDragDropEvent(({ payload }) => {
+        if (payload.type === "enter") handler({ type: "enter", paths: payload.paths });
+        else if (payload.type === "drop") handler({ type: "drop", paths: payload.paths });
+        else if (payload.type === "leave") handler({ type: "leave" });
+      })
+      .then((stop) => {
+        if (stopped) stop();
+        else unlisten = stop;
+      })
+      .catch(() => {
+        // No drag-and-drop here; the file pickers still work.
+      });
+  } catch {
+    // Not running inside the Tauri shell.
+  }
+  return () => {
+    stopped = true;
+    unlisten?.();
+  };
 }

@@ -4,8 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { FirearmForm } from "./FirearmForm";
 
 async function selectFirearmType(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("combobox", { name: "Type" }));
-  await user.click(await screen.findByRole("option", { name: "Handgun" }));
+  await user.click(screen.getByRole("radio", { name: "Handgun" }));
 }
 
 describe("FirearmForm serial-attestation rule", () => {

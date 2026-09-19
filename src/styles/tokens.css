@@ -1,0 +1,123 @@
+/* HoploDex design tokens — the single source for color, type, and spacing
+   (constitution Principle III). Every component and feature stylesheet
+   derives from these; none defines its own palette.
+
+   Palette, light ("vellum"): a cool drafting-vellum ground, blued-steel ink,
+   niter blue (the fire-blued color of small parts on fine guns) for focus
+   and selection, blaze orange — the hunter's safety color — reserved for
+   coverage warnings, olive drab for coverage that checks out, and a
+   separate red kept for irreversible actions like deletion.
+   Contrast: every text/background pair below meets WCAG 2.1 AA (4.5:1);
+   control borders and meter fills meet the 3:1 non-text minimum. */
+
+:root {
+  --vellum: #edefea;
+  --sheet: #f9faf7;
+  --sheet-sunk: #e3e6e0;
+  --ink: #161c24;
+  --ink-2: #4f5965;
+  --ink-3: #646d78;
+  --rule: #d3d7d0;
+  --rule-strong: #858c86;
+  --niter: #2344be;
+  --niter-wash: #e2e7fa;
+  --blaze: #d4520a;
+  --blaze-ink: #a33c00;
+  --blaze-wash: #fbe8db;
+  --od: #4a6428;
+  --od-wash: #e3ebd6;
+  --danger: #a8231c;
+  --danger-wash: #f8e1de;
+  --on-ink: #f9faf7;
+  --scrim: rgb(16 22 30 / 0.45);
+  --shadow-raised: 0 1px 2px rgb(16 22 30 / 0.06), 0 4px 16px -6px rgb(16 22 30 / 0.12);
+  --shadow-float: 0 2px 6px rgb(16 22 30 / 0.08), 0 24px 64px -16px rgb(16 22 30 / 0.35);
+
+  --font-display:
+    "Big Shoulders Display Variable", "Arial Narrow", "Liberation Sans Narrow", sans-serif;
+  --font-body:
+    "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:
+    "Atkinson Hyperlegible Mono Variable", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+    monospace;
+
+  --text-xs: 0.75rem; /* 12px — title-block labels, eyebrows */
+  --text-sm: 0.84375rem; /* 13.5px — secondary lines */
+  --text-md: 0.9375rem; /* 15px — body */
+  --text-lg: 1.0625rem; /* 17px — emphasized body */
+  --display-sm: 1.5rem;
+  --display-md: 2.25rem;
+  --display-lg: 3rem;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-14: 56px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --control-height: 40px;
+  --page-max: 1180px;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Palette, dark ("blued steel"). Used when the OS prefers dark and the user
+   hasn't forced light, or whenever the user has chosen dark: the theme
+   control sets data-theme on <html> ("light" | "dark"; absent means auto).
+   The two blocks must stay identical — plain CSS can't share one. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --vellum: #0f1419;
+    --sheet: #161d25;
+    --sheet-sunk: #0b0f14;
+    --ink: #e6e9ec;
+    --ink-2: #a8b1bb;
+    --ink-3: #8f99a5;
+    --rule: #28313b;
+    --rule-strong: #67727d;
+    --niter: #93a8ff;
+    --niter-wash: #1c2647;
+    --blaze: #ff7a2e;
+    --blaze-ink: #ffa46d;
+    --blaze-wash: #3a2113;
+    --od: #aac47c;
+    --od-wash: #1e2915;
+    --danger: #ff8f86;
+    --danger-wash: #3b1714;
+    --on-ink: #0f1419;
+    --scrim: rgb(0 0 0 / 0.6);
+    --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px -6px rgb(0 0 0 / 0.5);
+    --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  --vellum: #0f1419;
+  --sheet: #161d25;
+  --sheet-sunk: #0b0f14;
+  --ink: #e6e9ec;
+  --ink-2: #a8b1bb;
+  --ink-3: #8f99a5;
+  --rule: #28313b;
+  --rule-strong: #67727d;
+  --niter: #93a8ff;
+  --niter-wash: #1c2647;
+  --blaze: #ff7a2e;
+  --blaze-ink: #ffa46d;
+  --blaze-wash: #3a2113;
+  --od: #aac47c;
+  --od-wash: #1e2915;
+  --danger: #ff8f86;
+  --danger-wash: #3b1714;
+  --on-ink: #0f1419;
+  --scrim: rgb(0 0 0 / 0.6);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px -6px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);
+}

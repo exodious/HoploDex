@@ -75,10 +75,15 @@ type CommandError = {
   }
   ```
 - **Output**: `{ groups: { key: string; firearms: FirearmSummary[] }[] }`
-  where `FirearmSummary` includes id, make, model, caliber, type,
-  status, thumbnail reference (`thumbnailPhotoId` or generic type key),
-  estimated value, and computed insurance-warning flags (for SC-004's
-  "always visibly flagged" requirement).
+  where `FirearmSummary` includes id, make, model, serial number (so
+  firearms sharing a make and model stay distinguishable in lists),
+  caliber, type, status, thumbnail reference (`thumbnailPhotoId` or
+  generic type key), estimated value, coverage assignment
+  (`insurancePolicyId`, `coverageKind`), and computed insurance-warning
+  flags (for SC-004's "always visibly flagged" requirement).
+- **Search semantics**: `query` matches as a phrase whose last word may be
+  partial (`"cracked han"` finds "cracked handle"), so results can update
+  as the user types.
 - **Performance contract**: MUST return within 500ms at 10,000-record
   scale (Principle IV) — implemented via the FTS5 index and indexed
   columns on `firearm_type_id`/`caliber`/`make`.
@@ -163,12 +168,35 @@ type CommandError = {
   to a firearm automatically becomes `thumbnail_photo_id` (FR-008).
 - **Errors**: `VALIDATION_ERROR` (unsupported mime type), `NOT_FOUND`.
 
+### `add_photo_from_path` / `add_document_from_path`
+
+- **Input**: `firearmId: number`, `path: string`.
+- **Output**: as `add_photo` / `add_document`. The backend reads the
+  file itself and takes the original filename from the path and the mime
+  type from its extension (`services::attachments`).
+- **Why**: files dragged onto the window from the desktop reach the
+  frontend as paths, never as `File` objects (WebKitGTK exposes none, and
+  Tauri's own drag-drop handling must stay enabled so the webview doesn't
+  navigate to a dropped file). The file pickers keep using
+  `add_photo`/`add_document` with bytes.
+- **Errors**: `VALIDATION_ERROR` (a folder, or — for photos — anything
+  but JPEG/PNG), `NOT_FOUND` (path missing or unreadable).
+
 ### `get_photo_thumbnail`
 
 - **Input**: `photoId: number`.
 - **Output**: raw thumbnail bytes for one photo. Not in the original
   contract list, but lets browse views render a firearm's thumbnail
   without fetching its full photo list.
+
+### `get_photo_original`
+
+- **Input**: `photoId: number`.
+- **Output**: the photo's full-resolution original bytes as a raw binary
+  IPC response (an `ArrayBuffer` in the frontend, not a JSON number
+  array, so multi-megabyte photos transfer quickly). Used by the record
+  view's photo viewer and plate, where condition details must be legible.
+- **Errors**: `NOT_FOUND`.
 
 ### `set_thumbnail_photo`
 
@@ -186,14 +214,28 @@ type CommandError = {
 ### `add_document` / `delete_document` / `get_document`
 
 - Analogous to photo commands, without thumbnail generation.
-  `get_document` returns the full `file_bytes` for reopening (FR-010).
+  `get_document` returns the full `file_bytes`.
+
+### `open_document`
+
+- **Input**: `id: number`.
+- **Output**: nothing. Reopens the document from its record (FR-010) in
+  the OS default app for its file type, by writing a temporary copy to
+  `<app cache dir>/opened-documents/<id>/<original filename>` (reduced to
+  a single, OS-safe path component) and handing that path to the OS. The
+  webview can't display arbitrary files itself. The `opened-documents`
+  folder is cleared at every startup, so decrypted copies don't
+  accumulate outside the encrypted database.
+- **Errors**: `NOT_FOUND`, `INTERNAL_ERROR` (copy couldn't be written or
+  no app could open it).
 
 ### `get_generic_thumbnail`
 
 - **Input**: `key: string` (a `FirearmType.generic_thumbnail_key`).
 - **Output**: raw PNG bytes of the bundled generic-thumbnail asset
-  (research.md §10). Not in the original contract list, but necessary so
-  the frontend can actually render the FR-009 fallback thumbnail.
+  (research.md §10). No longer used by the frontend, which draws each
+  type's generic thumbnail as inline vector line art (FR-009) instead of
+  fetching these placeholder images.
 
 ## Export / Import (User Story 5)
 

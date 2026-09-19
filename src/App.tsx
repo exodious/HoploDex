@@ -1,10 +1,14 @@
-import { FirearmsPage } from "./features/firearms/FirearmsPage";
+import { ToastProvider } from "./components";
+import { AppShell } from "./features/app/AppShell";
+import { CollectionProvider } from "./features/app/CollectionProvider";
 
 function App() {
   return (
-    <main>
-      <FirearmsPage />
-    </main>
+    <ToastProvider>
+      <CollectionProvider>
+        <AppShell />
+      </CollectionProvider>
+    </ToastProvider>
   );
 }
 

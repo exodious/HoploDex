@@ -1,8 +1,11 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Button, TextField } from "../../components";
+import { Button, DateField, MoneyField, TextField } from "../../components";
+import { parseDateInput } from "../../lib/dates";
+import { centsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
+import "../firearms/forms.css";
 
 export interface InsurancePolicyFormProps {
   initialValues?: InsurancePolicy;
@@ -17,10 +20,12 @@ interface FormState {
   companyContact: string;
   agentName: string;
   agentContact: string;
-  blanketCoverageLimitDollars: string;
+  blanketCoverageLimit: string;
   effectiveStartDate: string;
   effectiveEndDate: string;
 }
+
+type Field = keyof FormState;
 
 function toFormState(policy?: InsurancePolicy): FormState {
   return {
@@ -30,7 +35,7 @@ function toFormState(policy?: InsurancePolicy): FormState {
     companyContact: policy?.companyContact ?? "",
     agentName: policy?.agentName ?? "",
     agentContact: policy?.agentContact ?? "",
-    blanketCoverageLimitDollars: policy ? (policy.blanketCoverageLimit / 100).toFixed(2) : "",
+    blanketCoverageLimit: policy ? centsToInput(policy.blanketCoverageLimit) : "",
     effectiveStartDate: policy?.effectiveStartDate ?? "",
     effectiveEndDate: policy?.effectiveEndDate ?? "",
   };
@@ -41,56 +46,79 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-function dollarsToCents(dollars: string): number {
-  const parsed = Number.parseFloat(dollars.trim() || "0");
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
-}
+function validate(form: FormState): Partial<Record<Field, string>> {
+  const errors: Partial<Record<Field, string>> = {};
+  if (form.name.trim() === "") errors.name = "Give the policy a name you'll recognize.";
+  if (form.policyNumber.trim() === "") errors.policyNumber = "Enter the policy number.";
+  if (form.insuranceCompany.trim() === "") errors.insuranceCompany = "Enter the insurance company.";
+  const limit = parseDollars(form.blanketCoverageLimit);
+  if (!limit.ok) errors.blanketCoverageLimit = limit.error;
 
-function validate(form: FormState): Record<string, string> {
-  const errors: Record<string, string> = {};
-  if (form.name.trim() === "") errors.name = "Name is required.";
-  if (form.policyNumber.trim() === "") errors.policyNumber = "Policy number is required.";
-  if (form.insuranceCompany.trim() === "")
-    errors.insuranceCompany = "Insurance company is required.";
-  if (form.effectiveStartDate === "") errors.effectiveStartDate = "Start date is required.";
-  if (form.effectiveEndDate === "") {
-    errors.effectiveEndDate = "End date is required.";
-  } else if (form.effectiveStartDate && form.effectiveEndDate <= form.effectiveStartDate) {
-    errors.effectiveEndDate = "End date must be after the start date.";
+  const start = parseDateInput(form.effectiveStartDate);
+  const end = parseDateInput(form.effectiveEndDate);
+  if (!start.ok) errors.effectiveStartDate = start.error;
+  else if (!start.iso) errors.effectiveStartDate = "Enter the date coverage starts.";
+  if (!end.ok) errors.effectiveEndDate = end.error;
+  else if (!end.iso) errors.effectiveEndDate = "Enter the date coverage ends.";
+  else if (start.ok && start.iso && end.iso <= start.iso) {
+    errors.effectiveEndDate = "The end date must be after the start date.";
   }
   return errors;
 }
 
-/** Create/edit form for an insurance policy (US3). */
+const FIELD_ORDER: Field[] = [
+  "name",
+  "policyNumber",
+  "insuranceCompany",
+  "blanketCoverageLimit",
+  "effectiveStartDate",
+  "effectiveEndDate",
+];
+
+/** Create/edit form for an insurance policy (US3, FR-027). Renders its own
+ * dialog body and footer (use inside `<Dialog bare>`). */
 export function InsurancePolicyForm({
   initialValues,
   onSubmit,
   onCancel,
 }: InsurancePolicyFormProps) {
   const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<CommandFailure | null>(null);
 
   const clientErrors = validate(form);
-  const fieldError = (field: string): string | undefined =>
-    touched[field] ? (clientErrors[field] ?? serverError?.fieldErrors?.[field]) : undefined;
+  const errorFor = (field: Field): string | undefined =>
+    touched[field] || submitted
+      ? (clientErrors[field] ?? serverError?.fieldErrors?.[field])
+      : undefined;
+  // Blurring an empty field doesn't flag it; "required" errors wait for a
+  // submit attempt.
+  const touch = (field: Field) => () => {
+    if (form[field].trim() !== "") setTouched((t) => ({ ...t, [field]: true }));
+  };
+  const bind = (field: Field) => ({
+    value: form[field],
+    onChange: (e: { target: { value: string } }) =>
+      setForm((prev) => ({ ...prev, [field]: e.target.value })),
+    onBlur: touch(field),
+    error: errorFor(field),
+  });
+  const set = (field: Field) => (text: string) => setForm((prev) => ({ ...prev, [field]: text }));
 
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setTouched({
-      name: true,
-      policyNumber: true,
-      insuranceCompany: true,
-      effectiveStartDate: true,
-      effectiveEndDate: true,
-    });
-    if (Object.keys(clientErrors).length > 0) return;
+    setSubmitted(true);
+    const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
+    if (firstInvalid) {
+      event.currentTarget
+        .querySelector<HTMLElement>(`[data-field="${firstInvalid}"] input`)
+        ?.focus();
+      return;
+    }
 
+    const limit = parseDollars(form.blanketCoverageLimit);
     const input: InsurancePolicyInput = {
       name: form.name.trim(),
       policyNumber: form.policyNumber.trim(),
@@ -98,9 +126,9 @@ export function InsurancePolicyForm({
       companyContact: blankToNull(form.companyContact),
       agentName: blankToNull(form.agentName),
       agentContact: blankToNull(form.agentContact),
-      blanketCoverageLimit: dollarsToCents(form.blanketCoverageLimitDollars),
-      effectiveStartDate: form.effectiveStartDate,
-      effectiveEndDate: form.effectiveEndDate,
+      blanketCoverageLimit: (limit.ok && limit.cents) || 0,
+      effectiveStartDate: (parseDateInput(form.effectiveStartDate) as { iso: string }).iso,
+      effectiveEndDate: (parseDateInput(form.effectiveEndDate) as { iso: string }).iso,
     };
 
     setSubmitting(true);
@@ -119,87 +147,117 @@ export function InsurancePolicyForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
-      {serverError && !serverError.fieldErrors && (
-        <p className="hd-field__error" role="alert">
-          {serverError.message}
+    <form className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
+      <div className="hd-dialog__body">
+        {serverError && !serverError.fieldErrors && (
+          <p className="hd-banner hd-banner--error hd-form-banner" role="alert">
+            {serverError.message}
+          </p>
+        )}
+
+        <section className="hd-form-section" aria-labelledby="pf-policy">
+          <h3 className="hd-form-section__title" id="pf-policy">
+            Policy
+          </h3>
+          <div className="hd-form-grid hd-form-grid--2">
+            <div data-field="name">
+              <TextField
+                label="Policy name"
+                required
+                placeholder="e.g. Homeowner's firearms rider"
+                autoFocus={!initialValues}
+                {...bind("name")}
+              />
+            </div>
+            <div data-field="policyNumber">
+              <TextField
+                label="Policy number"
+                required
+                className="hd-serial"
+                {...bind("policyNumber")}
+              />
+            </div>
+            <div data-field="insuranceCompany">
+              <TextField label="Insurance company" required {...bind("insuranceCompany")} />
+            </div>
+            <div data-field="blanketCoverageLimit">
+              <MoneyField
+                label="Blanket coverage limit"
+                value={form.blanketCoverageLimit}
+                onValueChange={set("blanketCoverageLimit")}
+                onBlur={touch("blanketCoverageLimit")}
+                error={errorFor("blanketCoverageLimit")}
+                hint="The shared limit for firearms covered under the blanket. Leave blank if there is none."
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="hd-form-section" aria-labelledby="pf-term">
+          <h3 className="hd-form-section__title" id="pf-term">
+            Term
+          </h3>
+          <div className="hd-form-grid hd-form-grid--2">
+            <div data-field="effectiveStartDate">
+              <DateField
+                label="Coverage starts"
+                required
+                value={form.effectiveStartDate}
+                onValueChange={set("effectiveStartDate")}
+                onBlur={touch("effectiveStartDate")}
+                error={errorFor("effectiveStartDate")}
+              />
+            </div>
+            <div data-field="effectiveEndDate">
+              <DateField
+                label="Coverage ends"
+                required
+                value={form.effectiveEndDate}
+                onValueChange={set("effectiveEndDate")}
+                onBlur={touch("effectiveEndDate")}
+                error={errorFor("effectiveEndDate")}
+                hint="You'll be warned 30 days before this date."
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="hd-form-section" aria-labelledby="pf-contacts">
+          <h3 className="hd-form-section__title" id="pf-contacts">
+            Contacts
+          </h3>
+          <div className="hd-form-grid hd-form-grid--2">
+            <TextField
+              label="Company contact"
+              placeholder="Claims phone, email, or address"
+              {...bind("companyContact")}
+            />
+            <TextField label="Agent name" {...bind("agentName")} />
+            <TextField
+              label="Agent contact"
+              placeholder="Phone or email"
+              {...bind("agentContact")}
+            />
+          </div>
+        </section>
+      </div>
+
+      <footer className="hd-dialog__footer">
+        <p className="hd-dialog__footer-note">
+          <span aria-hidden className="hd-required-mark">
+            *
+          </span>{" "}
+          Required
         </p>
-      )}
-
-      <TextField
-        label="Policy name"
-        value={form.name}
-        onChange={(e) => update("name", e.target.value)}
-        onBlur={() => setTouched((t) => ({ ...t, name: true }))}
-        error={fieldError("name")}
-        required
-      />
-      <TextField
-        label="Policy number"
-        value={form.policyNumber}
-        onChange={(e) => update("policyNumber", e.target.value)}
-        onBlur={() => setTouched((t) => ({ ...t, policyNumber: true }))}
-        error={fieldError("policyNumber")}
-        required
-      />
-      <TextField
-        label="Insurance company"
-        value={form.insuranceCompany}
-        onChange={(e) => update("insuranceCompany", e.target.value)}
-        onBlur={() => setTouched((t) => ({ ...t, insuranceCompany: true }))}
-        error={fieldError("insuranceCompany")}
-        required
-      />
-      <TextField
-        label="Company contact"
-        value={form.companyContact}
-        onChange={(e) => update("companyContact", e.target.value)}
-      />
-      <TextField
-        label="Agent name"
-        value={form.agentName}
-        onChange={(e) => update("agentName", e.target.value)}
-      />
-      <TextField
-        label="Agent contact"
-        value={form.agentContact}
-        onChange={(e) => update("agentContact", e.target.value)}
-      />
-      <TextField
-        label="Blanket coverage limit ($)"
-        inputMode="decimal"
-        value={form.blanketCoverageLimitDollars}
-        onChange={(e) => update("blanketCoverageLimitDollars", e.target.value)}
-      />
-      <TextField
-        label="Effective start date"
-        type="date"
-        value={form.effectiveStartDate}
-        onChange={(e) => update("effectiveStartDate", e.target.value)}
-        onBlur={() => setTouched((t) => ({ ...t, effectiveStartDate: true }))}
-        error={fieldError("effectiveStartDate")}
-        required
-      />
-      <TextField
-        label="Effective end date"
-        type="date"
-        value={form.effectiveEndDate}
-        onChange={(e) => update("effectiveEndDate", e.target.value)}
-        onBlur={() => setTouched((t) => ({ ...t, effectiveEndDate: true }))}
-        error={fieldError("effectiveEndDate")}
-        required
-      />
-
-      <div className="hd-dialog__actions">
         {onCancel && (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
+          <Button variant="secondary" onClick={onCancel} disabled={submitting}>
             Cancel
           </Button>
         )}
-        <Button type="submit" variant="primary" disabled={submitting}>
+        <Button type="submit" variant="primary" pending={submitting}>
           {initialValues ? "Save changes" : "Add policy"}
         </Button>
-      </div>
+      </footer>
     </form>
   );
 }

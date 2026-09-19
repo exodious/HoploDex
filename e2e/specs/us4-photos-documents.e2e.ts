@@ -1,125 +1,125 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { $$, $, browser, expect } from "@wdio/globals";
+import {
+  $,
+  addFirearm,
+  attachFile,
+  back,
+  browser,
+  clickButton,
+  clickEl,
+  expect,
+} from "../support/ui";
+import { openFirearm, rowThumbnail } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 4's acceptance scenarios (spec.md),
  * driven against the real built app via tauri-driver / WebKitWebDriver.
- * See us1-record-firearm.e2e.ts for the JS-click rationale.
+ * See e2e/support/ui.ts for why interactions go through page JS.
  */
-async function clickEl(selector: string) {
-  const el = await $(selector);
-  await el.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), el);
-  await browser.pause(200);
-}
 
-async function clickInRole(role: "dialog" | "alertdialog", buttonText: string) {
-  const container = await $(`[role="${role}"]`);
-  const btn = await container.$(`button=${buttonText}`);
-  await btn.waitForExist();
-  await browser.execute((element: HTMLElement) => element.click(), btn);
-  await browser.pause(200);
-}
-
-async function setValueBySiblingInput(
-  labelSelector: string,
-  tag: "input" | "textarea",
-  value: string,
-) {
-  const field = await $(labelSelector).parentElement().$(tag);
-  await field.setValue(value);
-  await browser.pause(100);
-}
-
-// A tiny (20x20, solid blue) but genuinely valid PNG file, written to a
-// temp path so the file input can upload real bytes — no mocks. (A
-// commonly copy-pasted "1x1 transparent PNG" base64 string was tried here
-// first; it turned out to have a corrupted IDAT CRC that browsers/`file`
-// tolerate but the `image` crate correctly rejects — generated fresh via
-// Python's zlib instead, and round-trip-verified against
-// `models::photo::generate_thumbnail` directly.)
-const SAMPLE_PNG_BYTES = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAGUlEQVR42mNgaPhPPhrVPKp5VPOo5oHVDADApFaPDOtbFgAAAABJRU5ErkJggg==",
-  "base64",
-);
+// A tiny (20x20, solid blue) but genuinely valid PNG, so the backend's
+// real image decoding and thumbnail generation run — no mocks. (A commonly
+// copy-pasted "1x1 transparent PNG" base64 string was tried here first; it
+// has a corrupted IDAT CRC that browsers tolerate but the `image` crate
+// correctly rejects.)
+const SAMPLE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAGUlEQVR42mNgaPhPPhrVPKp5VPOo5oHVDADApFaPDOtbFgAAAABJRU5ErkJggg==";
+const SAMPLE_PDF_BASE64 = Buffer.from("%PDF-1.4 sample receipt contents").toString("base64");
 
 describe("User Story 4 - Attach Photos and Documents", () => {
-  let pngPath: string;
-  let pdfPath: string;
+  it("shows a firearm with no photos with its type's generic drawing (Scenario 3)", async () => {
+    await addFirearm({
+      make: "InsE2EMediaGlock",
+      model: "43",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "MEDIA-1",
+    });
 
-  before(() => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-"));
-    pngPath = path.join(dir, "range-day.png");
-    fs.writeFileSync(pngPath, SAMPLE_PNG_BYTES);
-    pdfPath = path.join(dir, "receipt.pdf");
-    fs.writeFileSync(pdfPath, "%PDF-1.4 sample receipt contents");
-  });
+    await expect($(".hd-plate__figure svg.hd-drawing")).toExist();
+    await expect($("button*=Drop photos here")).toExist();
 
-  it("adds a firearm with no photos and shows its generic type thumbnail (Scenario 3)", async () => {
-    await clickEl("button=Add firearm");
-    await setValueBySiblingInput("label=Make", "input", "InsE2EMediaGlock");
-    await setValueBySiblingInput("label=Model", "input", "43");
-    await setValueBySiblingInput("label=Caliber", "input", "9mm");
-    // Scoped to the open dialog: BrowsePage's own "Group by" combobox
-    // stays mounted underneath and would otherwise match first.
-    const typeTrigger = await $('[role="dialog"]').$('[role="combobox"]');
-    await typeTrigger.waitForExist();
-    await browser.execute((element: HTMLElement) => element.click(), typeTrigger);
-    await browser.pause(200);
-    await clickEl('[role="option"]=Handgun');
-    await setValueBySiblingInput("label=Serial number", "input", "MEDIA-1");
-    await clickInRole("dialog", "Add firearm");
-
-    await expect($("h3=Photos")).toExist();
-    await expect($("p*=No photos yet")).toExist();
-
-    await clickEl("button=← Back to collection");
-    await expect($("button*=InsE2EMediaGlock 43")).toExist();
-    // The generic-thumbnail <img> loads asynchronously (a separate IPC
-    // round trip per row); give it a moment before asserting.
-    await browser.pause(500);
-    // ValueSummaryPanel's "Unassigned" list also renders a plain
-    // <li>make model: $value</li> for this firearm, earlier in the DOM
-    // than BrowseList's own row — scope via the row's button (which only
-    // BrowseList renders) rather than matching any <li> by text.
-    await expect($("button*=InsE2EMediaGlock 43").parentElement().$("img")).toExist();
+    await back();
+    expect(await rowThumbnail("InsE2EMediaGlock 43")).toBe("drawing");
   });
 
   it("adds a photo that becomes the thumbnail (Scenario 1)", async () => {
-    await clickEl("button*=InsE2EMediaGlock 43");
+    await openFirearm("InsE2EMediaGlock 43");
+    await attachFile('input[aria-label="Add photos"]', {
+      name: "range-day.png",
+      type: "image/png",
+      base64: SAMPLE_PNG_BASE64,
+    });
 
-    const fileInput = await $('input[aria-label="Add photo"]');
-    await fileInput.setValue(pngPath);
-    await browser.pause(500);
+    await $(".hd-photo").waitForExist();
+    await expect($(".hd-photo__tag*=Thumbnail")).toExist();
+    // The record's plate now shows the photo instead of the drawing.
+    await expect($(".hd-plate__figure img")).toExist();
 
-    await expect($("span=Thumbnail")).toExist();
-    await expect($("h3=Photos").parentElement().$("img")).toExist();
+    await back();
+    await browser.waitUntil(async () => (await rowThumbnail("InsE2EMediaGlock 43")) === "photo", {
+      timeoutMsg: "the collection row never showed the new photo thumbnail",
+    });
+    await openFirearm("InsE2EMediaGlock 43");
   });
 
   it("adds a second photo and lets it be explicitly selected as thumbnail (Scenario 2)", async () => {
-    const fileInput = await $('input[aria-label="Add photo"]');
-    await fileInput.setValue(pngPath);
-    await browser.pause(500);
+    await attachFile('input[aria-label="Add photos"]', {
+      name: "bench.png",
+      type: "image/png",
+      base64: SAMPLE_PNG_BASE64,
+    });
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => document.querySelectorAll(".hd-photo").length)) === 2,
+    );
 
-    // Only one photo (the first) should be marked as the thumbnail so far.
-    await expect($("button=Set as thumbnail")).toExist();
-    await clickEl("button=Set as thumbnail");
+    // The first photo added stays the thumbnail until another is chosen.
+    const tagsBefore = await browser.execute(() =>
+      [...document.querySelectorAll(".hd-photo")].map((p) =>
+        Boolean(p.querySelector(".hd-photo__tag")),
+      ),
+    );
+    expect(tagsBefore).toEqual([true, false]);
 
-    const thumbnailLabels = await $$("span=Thumbnail");
-    expect(thumbnailLabels.length).toBe(1);
+    await clickEl('button[aria-label="View bench.png"]');
+    await clickButton("Use as thumbnail");
+    await expect($("button=Current thumbnail")).toExist();
+    await browser.keys(["Escape"]);
+    await browser.pause(300);
+
+    const tagsAfter = await browser.execute(() =>
+      [...document.querySelectorAll(".hd-photo")].map((p) =>
+        Boolean(p.querySelector(".hd-photo__tag")),
+      ),
+    );
+    expect(tagsAfter).toEqual([false, true]);
   });
 
   it("attaches a document and can reopen it (Scenario 4)", async () => {
-    const fileInput = await $('input[aria-label="Attach document"]');
-    await fileInput.setValue(pdfPath);
-    await browser.pause(500);
+    await attachFile('input[aria-label="Attach documents"]', {
+      name: "receipt.pdf",
+      type: "application/pdf",
+      base64: SAMPLE_PDF_BASE64,
+    });
 
-    await expect($("li*=receipt.pdf")).toExist();
-    // "Reopen" opens the document via a blob: URL — just confirm the
-    // action is available and doesn't raise an error banner.
-    await clickEl("button=Reopen");
-    await expect($("p*=Failed to reopen")).not.toExist();
+    await expect($(".hd-doc__name=receipt.pdf")).toExist();
+    await clickButton("Open");
+    await browser.pause(800);
+    await expect($(".hd-toast--error")).not.toExist();
+
+    // Reopening hands the OS a temporary copy of the stored bytes. When the
+    // run isolates its data under XDG_CACHE_HOME, check that copy directly.
+    const cacheHome = process.env.XDG_CACHE_HOME;
+    if (cacheHome) {
+      const openedRoot = path.join(cacheHome, "com.hoplodex.app", "opened-documents");
+      const copies = fs
+        .readdirSync(openedRoot)
+        .map((dir) => path.join(openedRoot, dir, "receipt.pdf"))
+        .filter((file) => fs.existsSync(file));
+      expect(copies.length).toBe(1);
+      expect(fs.readFileSync(copies[0], "utf-8")).toBe("%PDF-1.4 sample receipt contents");
+    }
   });
 });

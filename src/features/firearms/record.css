@@ -1,0 +1,272 @@
+.hd-record__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.hd-record__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── The plate: the record's identity, laid out like a drawing sheet ── */
+
+.hd-plate {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+}
+
+.hd-plate__top {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(300px, 46%) minmax(0, 1fr);
+  border-bottom: 1.5px solid var(--ink);
+}
+
+.hd-plate__figure {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--sheet-sunk);
+  border-right: 1px solid var(--rule);
+}
+
+.hd-plate__thumb {
+  position: absolute;
+  inset: 0;
+}
+
+.hd-plate__thumb .hd-drawing {
+  width: 88%;
+  height: 88%;
+}
+
+.hd-plate__thumb .hd-thumb__photo,
+.hd-plate__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hd-plate__photo {
+  animation: hd-fade-in 240ms var(--ease-out);
+}
+
+.hd-plate__heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-8) var(--space-6);
+  min-width: 0;
+}
+
+.hd-plate__type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hd-plate__name {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 4.6vw, 3.75rem);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: 0.005em;
+  overflow-wrap: anywhere;
+}
+
+.hd-plate__stamp {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hd-plate__stamp-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* The serial reads like a roll-stamped marking: tracked out, set into a
+   shallow recess. */
+.hd-plate__serial {
+  padding: 5px 12px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--vellum);
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 0.12),
+    inset 0 0 0 1px var(--rule);
+  font-size: 1.25rem;
+  letter-spacing: 0.16em;
+  user-select: all;
+}
+
+.hd-plate__no-serial {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+/* Hairlines are each cell's top and left borders; the -1px offsets tuck
+   the outermost ones under the plate's edge and the heavier rule above,
+   so a partial last row never leaves a gap. */
+.hd-titleblock {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: -1px 0 0 -1px;
+}
+
+.hd-titleblock__cell {
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--rule);
+  border-left: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.hd-titleblock dt {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.hd-titleblock dd {
+  margin-top: 6px;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+/* ── Sections below the plate ─────────────────────────────────────── */
+
+.hd-record__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--space-10);
+  margin-top: var(--space-10);
+}
+
+.hd-record__main,
+.hd-record__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  min-width: 0;
+}
+
+.hd-textblock {
+  max-width: 72ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hd-subhead {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.hd-facts__row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.hd-facts__row dt {
+  color: var(--ink-2);
+}
+
+.hd-facts__row dd {
+  overflow-wrap: anywhere;
+}
+
+.hd-facts--compact .hd-facts__row {
+  grid-template-columns: 84px minmax(0, 1fr);
+  padding: 7px 0;
+  font-size: var(--text-sm);
+}
+
+.hd-record__stamp {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-coverage {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border-left: 3px solid currentColor;
+}
+
+.hd-coverage--warn {
+  background: var(--blaze-wash);
+  color: var(--blaze-ink);
+}
+
+.hd-coverage--ok {
+  background: var(--od-wash);
+  color: var(--od);
+}
+
+.hd-coverage--neutral {
+  background: var(--sheet-sunk);
+  color: var(--ink-2);
+}
+
+.hd-coverage__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 750;
+}
+
+.hd-coverage__detail {
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 1000px) {
+  .hd-record__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hd-titleblock {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .hd-plate__top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hd-plate__figure {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .hd-titleblock {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hd-record__bar {
+    flex-wrap: wrap;
+  }
+}

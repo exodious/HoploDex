@@ -125,3 +125,45 @@ fn rejects_an_unsupported_mime_type() {
     .expect_err("non-image mime types must be rejected");
     assert_eq!(err.code, "VALIDATION_ERROR");
 }
+
+#[test]
+fn adds_a_photo_dropped_as_a_file_path() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Range Day.PNG");
+    std::fs::write(&path, sample_png_bytes()).unwrap();
+
+    let photo = photo_ops::add_photo_from_path(&db.conn, firearm.id, &path).unwrap();
+
+    assert_eq!(photo.original_filename, "Range Day.PNG");
+    assert_eq!(photo.mime_type, "image/png");
+    assert_eq!(photo.original_bytes, sample_png_bytes());
+    let updated = firearm_ops::get_firearm(&db.conn, firearm.id).unwrap();
+    assert_eq!(updated.thumbnail_photo_id, Some(photo.id), "the first photo is the thumbnail");
+}
+
+#[test]
+fn a_dropped_path_that_is_not_a_photo_is_rejected() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("receipt.pdf");
+    std::fs::write(&path, b"%PDF-1.4").unwrap();
+
+    let err = photo_ops::add_photo_from_path(&db.conn, firearm.id, &path)
+        .expect_err("a PDF isn't a photo");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(photo_ops::list_photos(&db.conn, firearm.id).unwrap().is_empty());
+}
+
+#[test]
+fn a_dropped_path_that_no_longer_exists_is_reported() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+
+    let err = photo_ops::add_photo_from_path(&db.conn, firearm.id, &dir.path().join("gone.png"))
+        .expect_err("a missing file can't be added");
+    assert_eq!(err.code, "NOT_FOUND");
+}

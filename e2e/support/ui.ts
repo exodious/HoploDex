@@ -1,0 +1,297 @@
+import { $, $$, browser } from "@wdio/globals";
+
+/**
+ * Shared helpers for driving the HoploDex UI through tauri-driver /
+ * WebKitWebDriver.
+ *
+ * Clicks and value changes go through plain JS in the page rather than
+ * WebDriver's native pointer/keyboard actions: WebKitWebDriver's native
+ * click pipeline in this environment has a driver-level "element click
+ * intercepted" / "did not become interactable" quirk even when the element
+ * is independently verified (via elementFromPoint at the same
+ * coordinates) to be on top and clickable, and its keystroke-based
+ * setValue() can't clear a field or reliably fire React's change events.
+ * None of the app's interactions depend on real pointer coordinates, so JS
+ * clicks and native value setters are behaviorally equivalent for React's
+ * handlers.
+ */
+
+const SETTLE_MS = 200;
+
+// Runs in the page: the innermost open dialog, else the whole document —
+// so a field label shared with the page underneath resolves to the one
+// the user is actually looking at.
+const SCOPE_JS = `
+  const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"]');
+  const scope = dialogs.length ? dialogs[dialogs.length - 1] : document;
+`;
+
+export async function clickEl(selector: string) {
+  const el = await $(selector);
+  await el.waitForExist();
+  await browser.execute((element: HTMLElement) => element.click(), el);
+  await browser.pause(SETTLE_MS);
+}
+
+/** Clicks the button whose visible text is exactly `text`, inside the
+ * innermost open dialog when there is one. */
+export async function clickButton(text: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        new Function(
+          "text",
+          `${SCOPE_JS}
+          const button = [...scope.querySelectorAll("button")].find(
+            (b) => b.textContent.trim() === text && !b.disabled,
+          );
+          if (button) button.click();
+          return Boolean(button);`,
+        ) as (text: string) => boolean,
+        text,
+      ),
+    { timeout: 5000, timeoutMsg: `no enabled button "${text}"` },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
+/** Clicks one of the app's top-bar section tabs ("Collection", "Insurance"). */
+export async function goTo(section: "Collection" | "Insurance") {
+  await browser.execute((name: string) => {
+    const tab = [...document.querySelectorAll<HTMLElement>(".hd-tab")].find((t) =>
+      t.textContent?.trim().startsWith(name),
+    );
+    tab?.click();
+  }, section);
+  await browser.pause(400);
+}
+
+/** Sets a text, amount, or date field by its visible label. */
+export async function fill(label: string, value: string) {
+  const found = await browser.execute(
+    new Function(
+      "label",
+      "value",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      if (!field) return false;
+      const proto = field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;`,
+    ) as (label: string, value: string) => boolean,
+    label,
+    value,
+  );
+  if (!found) throw new Error(`no field labelled "${label}"`);
+  await browser.pause(100);
+}
+
+/** Picks a radio choice (type cards, segmented controls, coverage kind…)
+ * by its visible label. */
+export async function choose(text: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        new Function(
+          "text",
+          `${SCOPE_JS}
+          const input = [...scope.querySelectorAll('input[type="radio"]')].find((r) => {
+            const face = r.closest("label")?.querySelector(".hd-choice__label, .hd-segmented__face");
+            return face && face.textContent.trim() === text;
+          });
+          if (input) input.click();
+          return Boolean(input);`,
+        ) as (text: string) => boolean,
+        text,
+      ),
+    { timeout: 5000, timeoutMsg: `no choice "${text}"` },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
+/** Toggles a checkbox by its visible label. */
+export async function toggle(label: string) {
+  const found = await browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find((l) => l.textContent.trim() === label);
+      const box = labelEl && document.getElementById(labelEl.htmlFor);
+      if (box) box.click();
+      return Boolean(box);`,
+    ) as (label: string) => boolean,
+    label,
+  );
+  if (!found) throw new Error(`no checkbox labelled "${label}"`);
+  await browser.pause(SETTLE_MS);
+}
+
+/** Opens a labelled dropdown (e.g. "Policy") and picks an option by name. */
+export async function selectOption(label: string, option: string) {
+  const opened = await browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find((l) => l.textContent.trim() === label);
+      const trigger = labelEl && document.getElementById(labelEl.htmlFor);
+      if (trigger) trigger.click();
+      return Boolean(trigger);`,
+    ) as (label: string) => boolean,
+    label,
+  );
+  if (!opened) throw new Error(`no dropdown labelled "${label}"`);
+  // The option list is fetched and portaled asynchronously; wait for it.
+  await browser.waitUntil(
+    () =>
+      browser.execute((name: string) => {
+        const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+          (o) => o.querySelector(".hd-select__item-text > span")?.textContent?.trim() === name,
+        );
+        item?.click();
+        return Boolean(item);
+      }, option),
+    { timeout: 5000, timeoutMsg: `no option "${option}" in "${label}"` },
+  );
+  await browser.pause(300);
+}
+
+/** Types into the collection search box and waits out its debounce. */
+export async function search(term: string) {
+  await browser.execute((value: string) => {
+    const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, term);
+  await browser.pause(600);
+}
+
+/** Opens a firearm's record from the collection list by its "Make Model"
+ * name (the first match, if several share it). */
+export async function openFirearm(name: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute((wanted: string) => {
+        const button = [...document.querySelectorAll<HTMLElement>(".hd-row__name")].find(
+          (b) => b.textContent?.trim() === wanted,
+        );
+        button?.click();
+        return Boolean(button);
+      }, name),
+    { timeout: 5000, timeoutMsg: `no firearm "${name}" in the list` },
+  );
+  await $("#record-name").waitForExist();
+  await browser.pause(300);
+}
+
+/** Leaves a record for the page it was opened from. */
+export async function back() {
+  await clickEl(".hd-backlink");
+  await browser.pause(300);
+}
+
+/** Names ("Make Model") of every firearm currently listed. */
+export async function listedNames(): Promise<string[]> {
+  return browser.execute(() =>
+    [...document.querySelectorAll(".hd-row__name, .hd-tile__name")].map(
+      (el) => el.textContent?.trim() ?? "",
+    ),
+  );
+}
+
+/** What a listed firearm's row thumbnail shows: its photo, its type's
+ * generic drawing, or nothing yet. */
+export async function rowThumbnail(name: string): Promise<"photo" | "drawing" | "empty"> {
+  return browser.execute((wanted: string) => {
+    const row = [...document.querySelectorAll(".hd-row")].find(
+      (r) => r.querySelector(".hd-row__name")?.textContent?.trim() === wanted,
+    );
+    const thumb = row?.querySelector(".hd-row__thumb");
+    if (thumb?.querySelector("img")) return "photo";
+    if (thumb?.querySelector("svg.hd-drawing")) return "drawing";
+    return "empty";
+  }, name);
+}
+
+/** The record page's title-block value for a label ("Status", "Coverage"…). */
+export async function titleBlock(label: string): Promise<string> {
+  return browser.execute((wanted: string) => {
+    const cell = [...document.querySelectorAll(".hd-titleblock__cell")].find(
+      (c) => c.querySelector("dt")?.textContent?.trim().toLowerCase() === wanted.toLowerCase(),
+    );
+    return cell?.querySelector("dd")?.textContent?.trim() ?? "";
+  }, label);
+}
+
+/** The text of the policy card titled `name` on the Insurance page, with
+ * whitespace collapsed (flex layouts put line breaks between figures). */
+export async function policyCardText(name: string): Promise<string> {
+  const card = await $(`article.hd-policy*=${name}`);
+  await card.waitForExist();
+  return (await card.getText()).replace(/\s+/g, " ");
+}
+
+/** Puts a real file into a file input the way a file picker would, so the
+ * app's own reading/upload path runs (WebDriver's file upload can't reach
+ * a visually hidden input). */
+export async function attachFile(
+  inputSelector: string,
+  file: { name: string; type: string; base64: string },
+) {
+  await browser.execute(
+    (selector: string, name: string, type: string, base64: string) => {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], name, { type }));
+      const input = document.querySelector<HTMLInputElement>(selector)!;
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    inputSelector,
+    file.name,
+    file.type,
+    file.base64,
+  );
+  await browser.pause(800);
+}
+
+export interface NewFirearm {
+  make: string;
+  model: string;
+  caliber: string;
+  type: "Handgun" | "Rifle" | "Shotgun" | "Other";
+  serial?: string;
+  noSerial?: boolean;
+  valueDollars?: string;
+  notes?: string;
+}
+
+/** Adds a firearm through the Add firearm dialog, leaving the app on its
+ * new record. */
+export async function addFirearm(firearm: NewFirearm) {
+  await clickButton("Add firearm");
+  await $('[role="dialog"]').waitForExist();
+  await fill("Make", firearm.make);
+  await fill("Model", firearm.model);
+  await choose(firearm.type);
+  await fill("Caliber", firearm.caliber);
+  if (firearm.serial) await fill("Serial number", firearm.serial);
+  if (firearm.noSerial) await toggle("This firearm has no serial number");
+  if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
+  if (firearm.notes) await fill("Notes", firearm.notes);
+  await clickButton("Add firearm");
+  await browser.waitUntil(
+    async () =>
+      (await $("#record-name").isExisting()) &&
+      (await $("#record-name").getText()) === `${firearm.make} ${firearm.model}`,
+    { timeout: 8000, timeoutMsg: `record for ${firearm.make} ${firearm.model} never opened` },
+  );
+  await browser.pause(300);
+}
+
+export { $, $$, browser };
+export { expect } from "@wdio/globals";

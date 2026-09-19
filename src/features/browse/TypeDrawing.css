@@ -1,0 +1,79 @@
+.hd-drawing {
+  width: 100%;
+  height: 100%;
+  color: var(--ink-2);
+  overflow: visible;
+}
+
+.hd-drawing__part,
+.hd-drawing__open,
+.hd-drawing__detail {
+  stroke: currentColor;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.hd-drawing__part {
+  /* The frame's own background, so nearer parts hide the lines behind. */
+  fill: var(--drawing-paper, var(--sheet-sunk));
+  stroke-width: 1.5px;
+}
+
+.hd-drawing__open {
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.hd-drawing__detail {
+  fill: none;
+  stroke-width: 1px;
+}
+
+.hd-drawing__axis {
+  fill: none;
+  stroke: var(--niter);
+  stroke-width: 0.9;
+  stroke-dasharray: 14 3 2 3;
+  opacity: 0.75;
+}
+
+.hd-drawing--animate .hd-drawing__part,
+.hd-drawing--animate .hd-drawing__open,
+.hd-drawing--animate .hd-drawing__detail {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: hd-draw 1.4s var(--ease-out) forwards;
+}
+
+.hd-drawing--animate .hd-drawing__axis {
+  opacity: 0;
+  animation: hd-axis-in 600ms 1.1s var(--ease-out) forwards;
+}
+
+@keyframes hd-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes hd-axis-in {
+  to {
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hd-drawing--animate .hd-drawing__part,
+  .hd-drawing--animate .hd-drawing__open,
+  .hd-drawing--animate .hd-drawing__detail {
+    animation: none;
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+  }
+
+  .hd-drawing--animate .hd-drawing__axis {
+    animation: none;
+    opacity: 0.75;
+  }
+}
