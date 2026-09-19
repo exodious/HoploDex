@@ -59,8 +59,9 @@ export const DRAWINGS: Record<string, Drawing> = {
     axis: [46, 37, 300],
   },
   // M16A1, right side: carry handle with the A1 rear sight's windage drum,
-  // teardrop forward assist, tapered handguard, triangular front sight,
-  // A1 grip and a straight 20-round magazine.
+  // teardrop forward assist, plain slip ring, tapered handguard seated in
+  // the front sight's cap, triangular front sight, A1 grip and a straight
+  // 20-round magazine.
   rifle: {
     parts: [
       { d: "M259.1 87.1H295.7V91.1H259.1Z", role: "part" },
@@ -81,12 +82,16 @@ export const DRAWINGS: Record<string, Drawing> = {
       { d: "M248.2 82.8L252.9 74.8Q253.3 74.1 254.2 74.1H257.6V82.8", role: "open" },
       { d: "M255.4 82.8V75.9Q255.4 75.2 256 75.2Q256.7 75.2 256.7 75.9V82.8", role: "part" },
       { d: "M245.5 83.3H260.3", role: "detail" },
-      { d: "M147.2 81.3H150.7L154.8 80.1V98L150.7 95.8H147.2Z", role: "part" },
+      { d: "M146.7 82.2H149.2V94.2H146.7Z", role: "part" },
       {
-        d: "M245.3 82.4L163.2 79.3Q155.9 78.8 154.8 81.9Q153.9 89.5 154.8 96Q155.9 99.6 160.1 99.6L245.3 94.9Z",
+        d: "M149.2 81H153.9Q154.3 81 154.3 81.5V94.9Q154.3 95.3 153.9 95.3H149.2Q148.7 95.3 148.7 94.9V81.5Q148.7 81 149.2 81Z",
         role: "part",
       },
-      { d: "M243.5 82H245.8Q246.4 82 246.4 82.8V94.9Q246.4 95.7 245.8 95.7H243.5Z", role: "part" },
+      { d: "M153.6 81V95.3", role: "detail" },
+      {
+        d: "M157 78.9L243.8 82.4Q246 88.6 243.8 95.1L157.2 99.7Q154.5 99.7 154.5 97.1V81.5Q154.5 78.9 157 78.9Z",
+        role: "part",
+      },
       {
         d: "M198.5 96.3H202.9M206.1 96.1H211.2M213.9 95.9H218.6M221.7 95.5H226.4M229 95.2H233.7",
         role: "detail",
@@ -121,7 +126,7 @@ export const DRAWINGS: Record<string, Drawing> = {
       { circle: [121.3, 97.5, 1], role: "part" },
       { circle: [146.1, 93.8, 0.5], role: "part" },
       {
-        d: "M93.4 102.2H104.4V109.1Q104.4 111.8 103 113.4Q96.3 120.7 91.9 131.4Q91 133.5 89.2 133L79.4 130.1Q77.6 129.4 78.5 128.1L90.3 111.8Q93.6 107.6 93.4 102.2Z",
+        d: "M92.5 102.2H104.4V109.1Q104.4 111.8 103 113.4Q96.3 120.7 91.9 131.4Q91 133.5 89.2 133L78 130.1Q76 129.4 76.9 127.9L89 111.8Q92.5 107.6 92.5 102.2Z",
         role: "part",
       },
       {
