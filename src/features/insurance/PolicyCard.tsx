@@ -12,10 +12,13 @@ export function PolicyCard({
   policy,
   summary,
   firearms,
+  onOpen,
   onEdit,
   onDelete,
 }: {
   policy: InsurancePolicy;
+  /** Makes the name a link to the policy's own page; omitted on that page. */
+  onOpen?: () => void;
   summary: PolicySummary | undefined;
   firearms: FirearmSummary[];
   onEdit: () => void;
@@ -36,7 +39,13 @@ export function PolicyCard({
       <header className="hd-policy__head">
         <div className="hd-policy__title">
           <h3 className="hd-policy__name" id={`policy-${policy.id}`}>
-            {policy.name}
+            {onOpen ? (
+              <button type="button" className="hd-policy__open" onClick={onOpen}>
+                {policy.name}
+              </button>
+            ) : (
+              policy.name
+            )}
           </h3>
           <p className="hd-policy__meta">
             {policy.insuranceCompany} · Policy{" "}

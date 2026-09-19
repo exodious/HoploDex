@@ -134,6 +134,26 @@
   overflow-wrap: anywhere;
 }
 
+/* The name as a link to the policy's own page: it reads as the title, and
+   shows it is clickable on hover and focus. */
+.hd-policy__open {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
+}
+
+.hd-policy__open:hover,
+.hd-policy__open:focus-visible {
+  color: var(--niter);
+  text-decoration: underline;
+}
+
 .hd-policy__meta {
   margin-top: 6px;
   color: var(--ink-2);

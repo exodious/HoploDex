@@ -163,6 +163,22 @@ describe("UI review follow-ups", () => {
     await expect($(".hd-page-title")).not.toExist();
   });
 
+  it("opens a policy's own page from the Insurance list, and goes back to the list", async () => {
+    await goTo("Insurance");
+    await expect($(".hd-page-title")).toHaveText("Insurance");
+
+    await clickEl(".hd-policy__open");
+    await $(".hd-policy").waitForExist({ timeout: 4000 });
+    await expect($(".hd-policy__name")).toHaveText("InsE2E Review Policy");
+    expect(await $$(".hd-policy").length).toBe(1);
+    // On its own page the name is the heading, not a link to itself.
+    await expect($(".hd-policy__open")).not.toExist();
+    await expect($(".hd-backlink")).toHaveText(expect.stringContaining("Insurance"));
+
+    await back();
+    await expect($(".hd-page-title")).toHaveText("Insurance");
+  });
+
   it("switches between light, dark, and auto color modes", async () => {
     await goTo("Collection");
     expect(await themeAttribute()).toBeNull();

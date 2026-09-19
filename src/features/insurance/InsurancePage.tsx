@@ -16,7 +16,7 @@ import "./insurance.css";
  * Policies can be added, edited, and deleted here (FR-027). */
 export function InsurancePage() {
   const { firearms, summary, policies } = useCollection();
-  const { back } = useNavigation();
+  const { back, open } = useNavigation();
 
   const active = firearms.filter((f) => f.status === "active");
   const valued = active.filter((f) => (f.estimatedValue ?? 0) > 0);
@@ -87,6 +87,7 @@ export function InsurancePage() {
                 policy={policy}
                 summary={summary?.byPolicy.find((p) => p.policyId === policy.id)}
                 firearms={assignedTo(policy).filter((f) => f.status === "active")}
+                onOpen={() => open({ page: "policy", id: policy.id })}
                 onEdit={() => edit(policy)}
                 onDelete={() => remove(policy)}
               />
