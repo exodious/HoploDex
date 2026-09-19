@@ -1,44 +1,40 @@
-import { useRef, useState } from "react";
-import type { DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listenForFileDrops } from "../../services/tauriClient";
 
-/** Makes an element accept files dragged in from the desktop. (Tauri's own
- * drag-drop handling is disabled in tauri.conf.json so the webview
- * receives these as ordinary HTML drop events.) */
-export function useFileDrop(onFiles: (files: File[]) => void) {
+/** Whether the user is in the middle of a dialog, where a stray drop
+ * shouldn't quietly change the record underneath it. */
+function dialogOpen(): boolean {
+  return document.querySelector('[role="dialog"], [role="alertdialog"]') != null;
+}
+
+/** Accepts files dragged onto the window from the desktop, the ones
+ * `accepts` approves of by path. Where in the window they land doesn't
+ * matter — a photo panel and a document panel can listen side by side and
+ * each takes only its own kind — so `dragging` is true while any acceptable
+ * file is being dragged over the window, for the caller to show a drop
+ * target. */
+export function useFileDrop(accepts: (path: string) => boolean, onDrop: (paths: string[]) => void) {
   const [dragging, setDragging] = useState(false);
-  // dragenter/dragleave fire for every child element crossed; count them
-  // so the highlight doesn't flicker.
-  const depth = useRef(0);
+  const latest = useRef({ accepts, onDrop });
+  latest.current = { accepts, onDrop };
 
-  const hasFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
-
-  return {
-    dragging,
-    dropProps: {
-      onDragEnter: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
-        event.preventDefault();
-        depth.current += 1;
-        setDragging(true);
-      },
-      onDragOver: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-      },
-      onDragLeave: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
-        depth.current = Math.max(0, depth.current - 1);
-        if (depth.current === 0) setDragging(false);
-      },
-      onDrop: (event: DragEvent) => {
-        if (!hasFiles(event)) return;
-        event.preventDefault();
-        depth.current = 0;
+  useEffect(
+    () =>
+      listenForFileDrops((event) => {
+        if (event.type === "leave") {
+          setDragging(false);
+          return;
+        }
+        const wanted = event.paths.filter(latest.current.accepts);
+        if (event.type === "enter") {
+          setDragging(wanted.length > 0 && !dialogOpen());
+          return;
+        }
         setDragging(false);
-        const files = Array.from(event.dataTransfer.files);
-        if (files.length > 0) onFiles(files);
-      },
-    },
-  };
+        if (wanted.length > 0 && !dialogOpen()) latest.current.onDrop(wanted);
+      }),
+    [],
+  );
+
+  return dragging;
 }

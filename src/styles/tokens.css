@@ -68,9 +68,12 @@
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-/* Palette, dark ("blued steel"). Applied when the OS prefers dark. */
+/* Palette, dark ("blued steel"). Used when the OS prefers dark and the user
+   hasn't forced light, or whenever the user has chosen dark: the theme
+   control sets data-theme on <html> ("light" | "dark"; absent means auto).
+   The two blocks must stay identical — plain CSS can't share one. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --vellum: #0f1419;
     --sheet: #161d25;
     --sheet-sunk: #0b0f14;
@@ -93,4 +96,28 @@
     --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px -6px rgb(0 0 0 / 0.5);
     --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);
   }
+}
+
+:root[data-theme="dark"] {
+  --vellum: #0f1419;
+  --sheet: #161d25;
+  --sheet-sunk: #0b0f14;
+  --ink: #e6e9ec;
+  --ink-2: #a8b1bb;
+  --ink-3: #8f99a5;
+  --rule: #28313b;
+  --rule-strong: #67727d;
+  --niter: #93a8ff;
+  --niter-wash: #1c2647;
+  --blaze: #ff7a2e;
+  --blaze-ink: #ffa46d;
+  --blaze-wash: #3a2113;
+  --od: #aac47c;
+  --od-wash: #1e2915;
+  --danger: #ff8f86;
+  --danger-wash: #3b1714;
+  --on-ink: #0f1419;
+  --scrim: rgb(0 0 0 / 0.6);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px -6px rgb(0 0 0 / 0.5);
+  --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);
 }

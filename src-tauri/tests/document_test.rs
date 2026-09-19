@@ -128,3 +128,30 @@ fn writes_a_temporary_copy_under_a_safe_filename() {
     let path = document_ops::write_document_copy(dir.path(), &unnamed).unwrap();
     assert_eq!(path, dir.path().join("document"));
 }
+
+#[test]
+fn attaches_a_document_dropped_as_a_file_path() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Appraisal 2026.pdf");
+    std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
+
+    let attached = document_ops::add_document_from_path(&db.conn, firearm.id, &path).unwrap();
+
+    assert_eq!(attached.original_filename, "Appraisal 2026.pdf");
+    assert_eq!(attached.mime_type, "application/pdf");
+    assert_eq!(attached.file_bytes, SAMPLE_PDF_BYTES);
+}
+
+#[test]
+fn a_dropped_folder_is_not_attached() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+
+    let err = document_ops::add_document_from_path(&db.conn, firearm.id, dir.path())
+        .expect_err("folders can't be attachments");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(document_ops::list_documents(&db.conn, firearm.id).unwrap().is_empty());
+}

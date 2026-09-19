@@ -125,8 +125,13 @@
 
 .hd-topbar__tools {
   display: flex;
+  align-items: center;
   gap: var(--space-1);
   margin-left: auto;
+}
+
+.hd-topbar__tools .hd-segmented {
+  margin-left: var(--space-3);
 }
 
 .hd-main {
@@ -138,6 +143,10 @@
 }
 
 /* ── Page furniture shared by every page ─────────────────────────────── */
+
+.hd-page-back {
+  margin-bottom: var(--space-3);
+}
 
 .hd-page-head {
   display: flex;
@@ -282,4 +291,26 @@
 
 .hd-panel__empty {
   color: var(--ink-2);
+}
+
+/* ── Back link, shared by records and the policy page ────────────────── */
+
+.hd-backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-2);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.hd-backlink:hover {
+  background: var(--sheet-sunk);
+  color: var(--ink);
 }

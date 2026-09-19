@@ -11,6 +11,15 @@
   text-rendering: optimizeLegibility;
 }
 
+/* A chosen theme also steers native controls (scrollbars, date pickers). */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 *,
 *::before,
 *::after {

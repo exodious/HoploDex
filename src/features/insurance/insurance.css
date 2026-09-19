@@ -113,6 +113,26 @@
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
   background: var(--sheet);
+  /* Clears the sticky top bar when a link scrolls straight to this card. */
+  scroll-margin-top: 72px;
+}
+
+/* The policy a link just brought the user to: its border flashes niter blue
+   and settles back. */
+.hd-policy--focused {
+  animation: hd-policy-focus 1800ms var(--ease-out) 1;
+}
+
+@keyframes hd-policy-focus {
+  0%,
+  35% {
+    border-color: var(--niter);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--niter) 30%, transparent);
+  }
+  100% {
+    border-color: var(--rule);
+    box-shadow: none;
+  }
 }
 
 .hd-policy__head {

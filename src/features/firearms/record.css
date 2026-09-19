@@ -11,26 +11,6 @@
   gap: var(--space-2);
 }
 
-.hd-backlink {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px 0 6px;
-  margin-left: -6px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--ink-2);
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.hd-backlink:hover {
-  background: var(--sheet-sunk);
-  color: var(--ink);
-}
-
 /* ── The plate: the record's identity, laid out like a drawing sheet ── */
 
 .hd-plate {

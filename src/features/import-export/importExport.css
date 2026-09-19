@@ -16,6 +16,10 @@
   cursor: pointer;
 }
 
+.hd-input__text-action:focus-visible {
+  outline-offset: -2px;
+}
+
 .hd-input__text-action:hover {
   background: var(--sheet-sunk);
 }

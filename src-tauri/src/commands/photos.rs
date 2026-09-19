@@ -5,6 +5,7 @@ use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::photo::{generate_thumbnail, validate_photo_mime_type, Photo, PhotoSummary};
+use crate::services::attachments::read_attachment_file;
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -89,6 +90,17 @@ pub mod ops {
         }
 
         get_photo(conn, photo_id)
+    }
+
+    /// `add_photo` for a file already on disk — a photo dropped onto the
+    /// window arrives as a path, not as bytes.
+    pub fn add_photo_from_path(
+        conn: &Connection,
+        firearm_id: i64,
+        path: &std::path::Path,
+    ) -> Result<Photo, CommandError> {
+        let file = read_attachment_file(path)?;
+        add_photo(conn, firearm_id, &file.bytes, &file.filename, file.mime_type)
     }
 
     pub fn set_thumbnail_photo(
@@ -190,6 +202,17 @@ pub async fn add_photo(
 ) -> Result<PhotoSummary, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
     ops::add_photo(&conn, firearm_id, &file_bytes, &original_filename, &mime_type).map(Into::into)
+}
+
+/// Adds a photo from a file on disk: what a drop onto the window delivers.
+#[tauri::command]
+pub async fn add_photo_from_path(
+    firearm_id: i64,
+    path: String,
+    state: State<'_, DbHandle>,
+) -> Result<PhotoSummary, CommandError> {
+    let conn = state.0.lock().expect("db mutex poisoned");
+    ops::add_photo_from_path(&conn, firearm_id, std::path::Path::new(&path)).map(Into::into)
 }
 
 /// Just the small cached thumbnail bytes for one photo — lets browse views

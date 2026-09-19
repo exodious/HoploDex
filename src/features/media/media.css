@@ -32,6 +32,15 @@
   padding: var(--space-4);
 }
 
+/* The strip that stays under a gallery or list once it has something in it,
+   so dropping more files is still discoverable. */
+.hd-photos + .hd-dropzone,
+.hd-docs + .hd-dropzone {
+  width: 100%;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+}
+
 .hd-dropzone-overlay {
   position: absolute;
   inset: -8px;

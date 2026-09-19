@@ -6,6 +6,7 @@ import { formatDate } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
 import * as mediaService from "./mediaService";
 import type { DocumentSummary } from "./types";
+import { fileName, isDocumentPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
 import "./media.css";
 
@@ -48,26 +49,49 @@ export function DocumentList({ firearmId }: DocumentListProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firearmId]);
 
-  async function addFiles(files: File[]) {
-    setAdding(files.length);
+  /** Attaches each document in turn, carrying on past one that fails so a
+   * bad file doesn't cost the rest of a batch. */
+  async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
+    if (pending.length === 0) return;
+    setAdding(pending.length);
     let added = 0;
-    try {
-      for (const file of files) {
-        await mediaService.addDocument(
-          firearmId,
-          await fileToByteArray(file),
-          file.name,
-          file.type || "application/octet-stream",
-        );
+    let failure: string | null = null;
+    for (const { name, add } of pending) {
+      try {
+        await add();
         added += 1;
+      } catch (e) {
+        failure ??= failureMessage(e, `${name} couldn't be attached.`);
       }
-    } catch (e) {
-      notify(failureMessage(e, "A document couldn't be attached."), "error");
-    } finally {
-      setAdding(0);
-      await load();
-      if (added > 0) notify(`Attached ${added} ${added === 1 ? "document" : "documents"}.`);
     }
+    setAdding(0);
+    await load();
+    if (added > 0) notify(`Attached ${added} ${added === 1 ? "document" : "documents"}.`);
+    if (failure) notify(failure, "error");
+  }
+
+  async function addFiles(files: File[]) {
+    await addAll(
+      files.map((file) => ({
+        name: file.name,
+        add: async () =>
+          mediaService.addDocument(
+            firearmId,
+            await fileToByteArray(file),
+            file.name,
+            file.type || "application/octet-stream",
+          ),
+      })),
+    );
+  }
+
+  async function addPaths(paths: string[]) {
+    await addAll(
+      paths.map((path) => ({
+        name: fileName(path),
+        add: () => mediaService.addDocumentFromPath(firearmId, path),
+      })),
+    );
   }
 
   async function open(doc: DocumentSummary) {
@@ -97,11 +121,11 @@ export function DocumentList({ firearmId }: DocumentListProps) {
     if (files.length > 0) void addFiles(files);
   }
 
-  const { dragging, dropProps } = useFileDrop((files) => void addFiles(files));
+  const dragging = useFileDrop(isDocumentPath, (paths) => void addPaths(paths));
   const pick = () => inputRef.current?.click();
 
   return (
-    <section className="hd-panel hd-dropzone-host" aria-labelledby="documents-title" {...dropProps}>
+    <section className="hd-panel hd-dropzone-host" aria-labelledby="documents-title">
       <header className="hd-panel__head">
         <h2 className="hd-panel__title" id="documents-title">
           Documents
@@ -170,6 +194,14 @@ export function DocumentList({ firearmId }: DocumentListProps) {
             </li>
           ))}
         </ul>
+      )}
+
+      {documents && documents.length > 0 && (
+        <button type="button" className="hd-dropzone hd-dropzone--compact" onClick={pick}>
+          <span>
+            Drop more files here, or <span className="hd-link">choose files</span>
+          </span>
+        </button>
       )}
 
       {dragging && (

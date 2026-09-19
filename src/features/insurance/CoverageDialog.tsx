@@ -45,7 +45,7 @@ function CoverageForm({
   onCancel: () => void;
 }) {
   const { policies, policiesById, firearms } = useCollection();
-  const { navigate } = useNavigation();
+  const { open: goTo } = useNavigation();
   const [policyId, setPolicyId] = useState(
     firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_INSURED,
   );
@@ -118,7 +118,7 @@ function CoverageForm({
           <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => navigate({ page: "insurance" })}>
+          <Button variant="primary" onClick={() => goTo({ page: "insurance" })}>
             Go to Insurance
           </Button>
         </footer>

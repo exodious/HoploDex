@@ -11,12 +11,14 @@ import {
 import { formatDate } from "../../lib/dates";
 import { formatCents } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
+import { BackLink } from "../app/BackLink";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
 import type { FirearmSummary } from "../browse/types";
-import { policyExpiry } from "./coverage";
+import { coverageShortfall, policyExpiry } from "./coverage";
 import * as insuranceService from "./insuranceService";
 import { InsurancePolicyForm } from "./InsurancePolicyForm";
+import { policyCardId } from "./policyCard";
 import type { InsurancePolicy, InsurancePolicyInput, PolicySummary } from "./types";
 import "./insurance.css";
 
@@ -27,6 +29,8 @@ import "./insurance.css";
 export function InsurancePage() {
   const { firearms, summary, policies, refresh } = useCollection();
   const notify = useToast();
+  const { route, back } = useNavigation();
+  const focusedPolicyId = route.page === "insurance" ? route.policyId : undefined;
   const [editing, setEditing] = useState<InsurancePolicy | "new" | null>(null);
   const [deleting, setDeleting] = useState<InsurancePolicy | null>(null);
 
@@ -68,6 +72,11 @@ export function InsurancePage() {
 
   return (
     <>
+      {back && (
+        <div className="hd-page-back">
+          <BackLink target={back} />
+        </div>
+      )}
       <header className="hd-page-head">
         <div>
           <h1 className="hd-page-title">Insurance</h1>
@@ -87,6 +96,7 @@ export function InsurancePage() {
       <CoverageOverview
         covered={sum(covered)}
         under={sum(under)}
+        underMissing={coverageShortfall(summary)}
         uninsured={sum(uninsured)}
         counts={{ covered: covered.length, under: under.length, uninsured: uninsured.length }}
         unvaluedCount={unvalued.length}
@@ -115,6 +125,7 @@ export function InsurancePage() {
               <PolicyCard
                 key={policy.id}
                 policy={policy}
+                focused={policy.id === focusedPolicyId}
                 summary={summary?.byPolicy.find((p) => p.policyId === policy.id)}
                 firearms={assignedTo(policy).filter((f) => f.status === "active")}
                 onEdit={() => setEditing(policy)}
@@ -195,12 +206,16 @@ export function InsurancePage() {
 function CoverageOverview({
   covered,
   under,
+  underMissing,
   uninsured,
   counts,
   unvaluedCount,
 }: {
   covered: number;
+  /** Combined value of the under-insured firearms — sizes the bar. */
   under: number;
+  /** How much coverage those firearms are short by — what the legend shows. */
+  underMissing: number;
   uninsured: number;
   counts: { covered: number; under: number; uninsured: number };
   unvaluedCount: number;
@@ -216,10 +231,26 @@ function CoverageOverview({
     );
   }
   const pct = (n: number) => `${(n / total) * 100}%`;
+  // The bar shows where the collection's value sits; the legend shows the
+  // gap for under-insured firearms (the part of their value that isn't
+  // covered) and the whole value for uninsured ones.
   const segments = [
-    { key: "covered", label: "Covered", value: covered, count: counts.covered },
-    { key: "under", label: "Under-insured", value: under, count: counts.under },
-    { key: "uninsured", label: "Uninsured", value: uninsured, count: counts.uninsured },
+    { key: "covered", label: "Covered", value: covered, shown: covered, count: counts.covered },
+    {
+      key: "under",
+      label: "Under-insured",
+      value: under,
+      shown: underMissing,
+      suffix: "short",
+      count: counts.under,
+    },
+    {
+      key: "uninsured",
+      label: "Uninsured",
+      value: uninsured,
+      shown: uninsured,
+      count: counts.uninsured,
+    },
   ].filter((s) => s.value > 0);
 
   return (
@@ -238,7 +269,8 @@ function CoverageOverview({
           <li key={s.key}>
             <span className={`hd-overview__swatch hd-overview__seg--${s.key}`} aria-hidden />
             <span className="hd-overview__label">{s.label}</span>
-            <strong className="hd-num">{formatCents(s.value, { whole: true })}</strong>
+            <strong className="hd-num">{formatCents(s.shown, { whole: true })}</strong>
+            {s.suffix && <span className="hd-muted">{s.suffix}</span>}
             <span className="hd-muted hd-num">
               {s.count} {s.count === 1 ? "firearm" : "firearms"}
             </span>
@@ -251,12 +283,15 @@ function CoverageOverview({
 
 function PolicyCard({
   policy,
+  focused,
   summary,
   firearms,
   onEdit,
   onDelete,
 }: {
   policy: InsurancePolicy;
+  /** Arrived here from a link to this policy. */
+  focused: boolean;
   summary: PolicySummary | undefined;
   firearms: FirearmSummary[];
   onEdit: () => void;
@@ -273,7 +308,11 @@ function PolicyCard({
   const over = blanketTotal > limit;
 
   return (
-    <article className="hd-policy" aria-labelledby={`policy-${policy.id}`}>
+    <article
+      className={focused ? "hd-policy hd-policy--focused" : "hd-policy"}
+      id={policyCardId(policy.id)}
+      aria-labelledby={`policy-${policy.id}`}
+    >
       <header className="hd-policy__head">
         <div className="hd-policy__title">
           <h3 className="hd-policy__name" id={`policy-${policy.id}`}>
@@ -417,7 +456,7 @@ function ScheduledTable({
   amounts: Map<number, { scheduledAmount: number; estimatedValue: number; underInsured: boolean }>;
   expired: boolean;
 }) {
-  const { navigate } = useNavigation();
+  const { open } = useNavigation();
   return (
     <table className="hd-mini-table">
       <thead>
@@ -444,7 +483,7 @@ function ScheduledTable({
                 <button
                   type="button"
                   className="hd-link"
-                  onClick={() => navigate({ page: "firearm", id: firearm.id, from: "insurance" })}
+                  onClick={() => open({ page: "firearm", id: firearm.id, from: "insurance" })}
                 >
                   {firearmName(firearm)}
                 </button>
@@ -493,10 +532,10 @@ function FirearmLinkList({
   inline?: boolean;
   onNavigate?: () => void;
 }) {
-  const { navigate } = useNavigation();
-  const open = (id: number) => {
+  const { open } = useNavigation();
+  const openRecord = (id: number) => {
     onNavigate?.();
-    navigate({ page: "firearm", id, from: "insurance" });
+    open({ page: "firearm", id, from: "insurance" });
   };
   return (
     <div className={inline ? "hd-linklist hd-linklist--inline" : "hd-linklist"}>
@@ -509,7 +548,7 @@ function FirearmLinkList({
       <ul>
         {firearms.map((firearm) => (
           <li key={firearm.id}>
-            <button type="button" className="hd-link" onClick={() => open(firearm.id)}>
+            <button type="button" className="hd-link" onClick={() => openRecord(firearm.id)}>
               {firearmName(firearm)}
             </button>
             {!inline && firearm.serialNumber && (

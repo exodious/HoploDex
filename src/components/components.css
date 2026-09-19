@@ -184,6 +184,13 @@
   outline: none;
 }
 
+/* The wrapper draws the focus ring (see .hd-input:focus-within). Without
+   this the global :focus-visible outline also rings the bare <input>, which
+   is narrower than the wrapper whenever there's a "$" prefix or an icon. */
+.hd-input .hd-input__control:focus-visible {
+  outline: none;
+}
+
 .hd-input__prefix + .hd-input__control {
   padding-left: 6px;
 }
@@ -208,6 +215,11 @@
   background: transparent;
   color: var(--ink-2);
   cursor: pointer;
+}
+
+/* Inside the field's border, so the ring doesn't spill past it. */
+.hd-input__action:focus-visible {
+  outline-offset: -2px;
 }
 
 .hd-input__action:hover:not(:disabled) {

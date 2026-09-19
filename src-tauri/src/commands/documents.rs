@@ -8,6 +8,7 @@ use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::document_attachment::{DocumentAttachment, DocumentDetail, DocumentSummary};
+use crate::services::attachments::read_attachment_file;
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -62,6 +63,17 @@ pub mod ops {
         .map_err(CommandError::from_db)?;
 
         get_document(conn, conn.last_insert_rowid())
+    }
+
+    /// `add_document` for a file already on disk — a document dropped onto
+    /// the window arrives as a path, not as bytes.
+    pub fn add_document_from_path(
+        conn: &Connection,
+        firearm_id: i64,
+        path: &Path,
+    ) -> Result<DocumentAttachment, CommandError> {
+        let file = read_attachment_file(path)?;
+        add_document(conn, firearm_id, &file.bytes, &file.filename, file.mime_type)
     }
 
     pub fn delete_document(
@@ -165,6 +177,18 @@ pub async fn add_document(
     let conn = state.0.lock().expect("db mutex poisoned");
     ops::add_document(&conn, firearm_id, &file_bytes, &original_filename, &mime_type)
         .map(Into::into)
+}
+
+/// Attaches a document from a file on disk: what a drop onto the window
+/// delivers.
+#[tauri::command]
+pub async fn add_document_from_path(
+    firearm_id: i64,
+    path: String,
+    state: State<'_, DbHandle>,
+) -> Result<DocumentSummary, CommandError> {
+    let conn = state.0.lock().expect("db mutex poisoned");
+    ops::add_document_from_path(&conn, firearm_id, Path::new(&path)).map(Into::into)
 }
 
 #[tauri::command]

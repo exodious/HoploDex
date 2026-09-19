@@ -4,6 +4,7 @@ import { Badge, Button, ConfirmDialog, Dialog, Icon, useToast } from "../../comp
 import { formatDate } from "../../lib/dates";
 import { formatCents } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
+import { BackLink } from "../app/BackLink";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
@@ -25,7 +26,6 @@ type RecordDialog = "edit" | "dispose" | "delete" | "coverage";
 
 export interface FirearmRecordPageProps {
   id: number;
-  from: "collection" | "insurance";
 }
 
 function failureMessage(e: unknown, fallback: string): string {
@@ -34,15 +34,13 @@ function failureMessage(e: unknown, fallback: string): string {
 
 /** One firearm's full record (US1, US3, US4): identity plate, coverage,
  * photos, documents, acquisition and disposition history. */
-export function FirearmRecordPage({ id, from }: FirearmRecordPageProps) {
+export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const { firearmsById, policiesById, revision, refresh } = useCollection();
-  const { navigate } = useNavigation();
+  const { open, back } = useNavigation();
   const notify = useToast();
   const [firearm, setFirearm] = useState<Firearm | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
-
-  const back = () => navigate({ page: from });
 
   useEffect(() => {
     let cancelled = false;
@@ -67,16 +65,16 @@ export function FirearmRecordPage({ id, from }: FirearmRecordPageProps) {
         )
       )
         return;
-      navigate({ page: from });
+      back?.go();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, from]);
+  }, [back]);
 
   if (loadError) {
     return (
       <div className="hd-record">
-        <BackLink from={from} onClick={back} />
+        {back && <BackLink target={back} escapes />}
         <p className="hd-banner hd-banner--error" role="alert">
           <Icon name="alert" />
           <span className="hd-banner__text">{loadError}</span>
@@ -85,11 +83,7 @@ export function FirearmRecordPage({ id, from }: FirearmRecordPageProps) {
     );
   }
   if (!firearm) {
-    return (
-      <div className="hd-record">
-        <BackLink from={from} onClick={back} />
-      </div>
-    );
+    return <div className="hd-record">{back && <BackLink target={back} escapes />}</div>;
   }
 
   const name = firearmName(firearm);
@@ -130,7 +124,7 @@ export function FirearmRecordPage({ id, from }: FirearmRecordPageProps) {
       await firearmsService.deleteFirearm(id, true);
       await refresh();
       notify(`Deleted ${name}.`);
-      navigate({ page: from });
+      back?.go();
     } catch (e) {
       notify(failureMessage(e, `${name} couldn't be deleted.`), "error");
     }
@@ -145,7 +139,7 @@ export function FirearmRecordPage({ id, from }: FirearmRecordPageProps) {
   return (
     <div className="hd-record">
       <div className="hd-record__bar">
-        <BackLink from={from} onClick={back} />
+        {back && <BackLink target={back} escapes />}
         <div className="hd-record__actions">
           <Button icon="pencil" onClick={() => setDialog("edit")}>
             Edit
@@ -288,7 +282,7 @@ export function FirearmRecordPage({ id, from }: FirearmRecordPageProps) {
                   <button
                     type="button"
                     className="hd-link"
-                    onClick={() => navigate({ page: "insurance" })}
+                    onClick={() => open({ page: "insurance", policyId: policy.id })}
                   >
                     {policy.name}
                   </button>
@@ -392,15 +386,6 @@ function PlateFigure({
       />
       {original && <img className="hd-plate__photo" src={original} alt="" />}
     </div>
-  );
-}
-
-function BackLink({ from, onClick }: { from: "collection" | "insurance"; onClick: () => void }) {
-  return (
-    <button type="button" className="hd-backlink" onClick={onClick} aria-keyshortcuts="Escape">
-      <Icon name="back" size={16} />
-      {from === "insurance" ? "Insurance" : "Collection"}
-    </button>
   );
 }
 

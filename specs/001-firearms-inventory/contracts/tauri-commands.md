@@ -168,6 +168,20 @@ type CommandError = {
   to a firearm automatically becomes `thumbnail_photo_id` (FR-008).
 - **Errors**: `VALIDATION_ERROR` (unsupported mime type), `NOT_FOUND`.
 
+### `add_photo_from_path` / `add_document_from_path`
+
+- **Input**: `firearmId: number`, `path: string`.
+- **Output**: as `add_photo` / `add_document`. The backend reads the
+  file itself and takes the original filename from the path and the mime
+  type from its extension (`services::attachments`).
+- **Why**: files dragged onto the window from the desktop reach the
+  frontend as paths, never as `File` objects (WebKitGTK exposes none, and
+  Tauri's own drag-drop handling must stay enabled so the webview doesn't
+  navigate to a dropped file). The file pickers keep using
+  `add_photo`/`add_document` with bytes.
+- **Errors**: `VALIDATION_ERROR` (a folder, or — for photos — anything
+  but JPEG/PNG), `NOT_FOUND` (path missing or unreadable).
+
 ### `get_photo_thumbnail`
 
 - **Input**: `photoId: number`.

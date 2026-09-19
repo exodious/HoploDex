@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Firearm } from "../firearms/types";
-import type { InsurancePolicy } from "./types";
-import { coverageStatus, policyExpiry } from "./coverage";
+import type { InsurancePolicy, PolicySummary, ValueSummary } from "./types";
+import { coverageShortfall, coverageStatus, policyExpiry } from "./coverage";
 
 const policy: InsurancePolicy = {
   id: 7,
@@ -119,5 +119,57 @@ describe("coverageStatus", () => {
   it("does not track disposed firearms", () => {
     const status = coverageStatus(firearm({ status: "disposed" }), "none", undefined);
     expect(status).toMatchObject({ tone: "neutral", label: "Not tracked" });
+  });
+});
+
+describe("coverageShortfall", () => {
+  const policySummary = (overrides: Partial<PolicySummary>): PolicySummary => ({
+    policyId: 1,
+    policyName: "Rider",
+    isExpired: false,
+    isExpiringSoon: false,
+    blanketTotal: 0,
+    blanketLimit: 0,
+    blanketUnderInsured: false,
+    individuallyScheduled: [],
+    ...overrides,
+  });
+  const summaryOf = (...byPolicy: PolicySummary[]): ValueSummary => ({
+    collectionTotal: 0,
+    byPolicy,
+    unassigned: [],
+  });
+
+  it("is zero without a summary or when nothing is short", () => {
+    expect(coverageShortfall(null)).toBe(0);
+    expect(
+      coverageShortfall(summaryOf(policySummary({ blanketTotal: 90, blanketLimit: 100 }))),
+    ).toBe(0);
+  });
+
+  it("counts how far blanket firearms exceed the limit, not their value", () => {
+    const summary = summaryOf(policySummary({ blanketTotal: 150000, blanketLimit: 100000 }));
+    expect(coverageShortfall(summary)).toBe(50000);
+  });
+
+  it("counts how far each scheduled amount is below its firearm's value", () => {
+    const summary = summaryOf(
+      policySummary({
+        individuallyScheduled: [
+          { firearmId: 1, estimatedValue: 400000, scheduledAmount: 300000, underInsured: true },
+          { firearmId: 2, estimatedValue: 200000, scheduledAmount: 250000, underInsured: false },
+          { firearmId: 3, estimatedValue: 100000, scheduledAmount: 0, underInsured: true },
+        ],
+      }),
+    );
+    expect(coverageShortfall(summary)).toBe(200000);
+  });
+
+  it("leaves expired policies out, since their firearms count as uninsured", () => {
+    const summary = summaryOf(
+      policySummary({ isExpired: true, blanketTotal: 500000, blanketLimit: 1 }),
+      policySummary({ policyId: 2, blanketTotal: 120000, blanketLimit: 100000 }),
+    );
+    expect(coverageShortfall(summary)).toBe(20000);
   });
 });

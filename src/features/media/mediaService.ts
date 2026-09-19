@@ -15,6 +15,11 @@ export function addPhoto(
   return invoke<PhotoSummary>("add_photo", { firearmId, fileBytes, originalFilename, mimeType });
 }
 
+/** Adds a photo from a file on disk — what a drop onto the window delivers. */
+export function addPhotoFromPath(firearmId: number, path: string): Promise<PhotoSummary> {
+  return invoke<PhotoSummary>("add_photo_from_path", { firearmId, path });
+}
+
 export function setThumbnailPhoto(firearmId: number, photoId: number): Promise<Firearm> {
   return invoke<Firearm>("set_thumbnail_photo", { firearmId, photoId });
 }
@@ -48,6 +53,11 @@ export function addDocument(
     originalFilename,
     mimeType,
   });
+}
+
+/** Attaches a document from a file on disk — what a drop onto the window delivers. */
+export function addDocumentFromPath(firearmId: number, path: string): Promise<DocumentSummary> {
+  return invoke<DocumentSummary>("add_document_from_path", { firearmId, path });
 }
 
 export function getDocument(id: number): Promise<DocumentDetail> {

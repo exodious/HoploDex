@@ -9,10 +9,11 @@ import type { FirearmInput } from "../firearms/types";
 import { ExportDialog } from "../import-export/ExportDialog";
 import { ImportDialog } from "../import-export/ImportDialog";
 import { InsurancePage } from "../insurance/InsurancePage";
-import { policyExpiry } from "../insurance/coverage";
+import { policyCardId } from "../insurance/policyCard";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
-import type { Navigation, Route, ShellDialog } from "./navigation";
+import { ThemeToggle } from "./ThemeToggle";
+import type { BackTarget, Navigation, Route, ShellDialog } from "./navigation";
 import "./AppShell.css";
 
 const VIEW_PREFERENCE_KEY = "hoplodex.browseView";
@@ -27,27 +28,91 @@ function initialBrowseState(): BrowseState {
   return { query: "", groupBy: undefined, includeDisposed: false, view };
 }
 
+/** A page left behind by following a link, with how far it was scrolled. */
+interface Visit {
+  route: Route;
+  scrollY: number;
+}
+
 /** The app frame: top bar, the current page, and the dialogs reachable
  * from anywhere (add firearm, import, export). Browse state lives here so
  * a search, grouping, or scroll position survives opening a record and
- * coming back. */
+ * coming back. Following a link (a policy from a firearm, a firearm from a
+ * policy) pushes onto a trail, so "back" retraces the path taken. */
 export function AppShell() {
-  const { firearms, policies, refresh } = useCollection();
+  const { firearmsById, firearms, policiesById, refresh } = useCollection();
   const notify = useToast();
   const [route, setRoute] = useState<Route>({ page: "collection" });
+  const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
   const [dialog, setDialog] = useState<ShellDialog | null>(null);
   const scrollMemory = useRef<Partial<Record<Route["page"], number>>>({});
+  // Set when going back, to restore the scroll position of the page returned to.
+  const restore = useRef<{ route: Route; scrollY: number } | null>(null);
 
   const navigate = useCallback(
     (next: Route) => {
       scrollMemory.current[route.page] = window.scrollY;
+      setTrail([]);
       setRoute(next);
     },
     [route.page],
   );
 
+  const open = useCallback(
+    (next: Route) => {
+      setTrail((visits) => [...visits, { route, scrollY: window.scrollY }]);
+      setRoute(next);
+    },
+    [route],
+  );
+
+  const back = useMemo<BackTarget | null>(() => {
+    const labelFor = (target: Route): string => {
+      switch (target.page) {
+        case "collection":
+          return "Collection";
+        case "insurance":
+          return (
+            (target.policyId != null && policiesById.get(target.policyId)?.name) || "Insurance"
+          );
+        case "firearm": {
+          const firearm = firearmsById.get(target.id);
+          return firearm ? firearmName(firearm) : "Firearm";
+        }
+      }
+    };
+    const previous = trail[trail.length - 1];
+    if (previous) {
+      return {
+        label: labelFor(previous.route),
+        go: () => {
+          restore.current = { route: previous.route, scrollY: previous.scrollY };
+          setTrail((visits) => visits.slice(0, -1));
+          setRoute(previous.route);
+        },
+      };
+    }
+    // A record reached without a trail returns to the list it belongs to.
+    if (route.page === "firearm") {
+      const list: Route = { page: route.from };
+      return { label: labelFor(list), go: () => navigate(list) };
+    }
+    return null;
+  }, [trail, route, firearmsById, policiesById, navigate]);
+
   useLayoutEffect(() => {
+    if (restore.current?.route === route) {
+      window.scrollTo(0, restore.current.scrollY);
+      return;
+    }
+    if (route.page === "insurance" && route.policyId != null) {
+      const card = document.getElementById(policyCardId(route.policyId));
+      if (card) {
+        card.scrollIntoView({ block: "start" });
+        return;
+      }
+    }
     // Records always open at the top; list pages return to where they were.
     window.scrollTo(0, route.page === "firearm" ? 0 : (scrollMemory.current[route.page] ?? 0));
   }, [route]);
@@ -74,24 +139,24 @@ export function AppShell() {
   }, []);
 
   const navigation = useMemo<Navigation>(
-    () => ({ route, navigate, openDialog: setDialog }),
-    [route, navigate],
+    () => ({ route, navigate, open, back, openDialog: setDialog }),
+    [route, navigate, open, back],
   );
 
   const activeCount = firearms.filter((f) => f.status === "active").length;
-  const attentionCount =
-    firearms.filter((f) => f.status === "active" && f.insuranceWarning !== "none").length +
-    policies.filter((p) => {
-      const expiry = policyExpiry(p.effectiveEndDate);
-      return expiry.expired || expiry.expiringSoon;
-    }).length;
+  // Only firearms are counted: lapsing policies are called out on the
+  // Insurance page itself, and mixing them in made the number keep
+  // counting a policy after the firearm that prompted it was gone.
+  const attentionCount = firearms.filter(
+    (f) => f.status === "active" && f.insuranceWarning !== "none",
+  ).length;
 
   async function handleCreate(input: FirearmInput) {
     const created = await firearmsService.createFirearm(input);
     setDialog(null);
     await refresh();
     notify(`Added ${firearmName(created)} to the collection.`);
-    navigate({ page: "firearm", id: created.id, from: "collection" });
+    open({ page: "firearm", id: created.id, from: "collection" });
   }
 
   const section = route.page === "firearm" ? route.from : route.page;
@@ -145,6 +210,7 @@ export function AppShell() {
               <Button variant="ghost" size="sm" icon="upload" onClick={() => setDialog("export")}>
                 Export
               </Button>
+              <ThemeToggle />
             </div>
           </div>
         </header>
@@ -154,9 +220,7 @@ export function AppShell() {
             <CollectionPage browse={browse} onBrowseChange={setBrowse} />
           )}
           {route.page === "insurance" && <InsurancePage />}
-          {route.page === "firearm" && (
-            <FirearmRecordPage key={route.id} id={route.id} from={route.from} />
-          )}
+          {route.page === "firearm" && <FirearmRecordPage key={route.id} id={route.id} />}
         </main>
 
         <Dialog

@@ -7,6 +7,8 @@ export interface SegmentedOption<T extends string> {
   value: T;
   label: string;
   icon?: IconName;
+  /** Show only the icon; the label stays as the accessible name and tooltip. */
+  iconOnly?: boolean;
 }
 
 export interface SegmentedControlProps<T extends string> {
@@ -43,7 +45,11 @@ export function SegmentedControl<T extends string>({
       </span>
       <div className="hd-segmented__track">
         {options.map((option) => (
-          <label key={option.value} className="hd-segmented__option">
+          <label
+            key={option.value}
+            className="hd-segmented__option"
+            title={option.iconOnly ? option.label : undefined}
+          >
             <input
               type="radio"
               name={id}
@@ -53,7 +59,7 @@ export function SegmentedControl<T extends string>({
             />
             <span className="hd-segmented__face">
               {option.icon && <Icon name={option.icon} size={16} />}
-              {option.label}
+              {option.iconOnly ? <span className="hd-sr-only">{option.label}</span> : option.label}
             </span>
           </label>
         ))}

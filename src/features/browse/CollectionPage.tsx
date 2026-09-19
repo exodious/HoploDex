@@ -29,7 +29,7 @@ export interface CollectionPageProps {
 /** Browse, search, and group the collection (User Story 2). */
 export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) {
   const { firearms, summary, loaded, revision } = useCollection();
-  const { navigate, openDialog } = useNavigation();
+  const { open, openDialog } = useNavigation();
   const [groups, setGroups] = useState<FirearmGroup[] | null>(null);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +116,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
   const activeCount = firearms.filter((f) => f.status === "active").length;
   const disposedCount = firearms.length - activeCount;
   const grouped = browse.groupBy !== undefined;
-  const openRecord = (id: number) => navigate({ page: "firearm", id, from: "collection" });
+  const openRecord = (id: number) => open({ page: "firearm", id, from: "collection" });
 
   if (loaded && firearms.length === 0) {
     return (
@@ -290,7 +290,7 @@ function PageHeader({
  * visible from the collection without opening it. */
 function AttentionBanner() {
   const { firearms, policies } = useCollection();
-  const { navigate } = useNavigation();
+  const { open } = useNavigation();
 
   const flagged = firearms.filter((f) => f.status === "active" && f.insuranceWarning !== "none");
   const lapsing = policies
@@ -316,7 +316,7 @@ function AttentionBanner() {
     <div className="hd-banner hd-attention">
       <Icon name="alert" />
       <p className="hd-banner__text">{sentence(parts)}.</p>
-      <Button variant="secondary" size="sm" onClick={() => navigate({ page: "insurance" })}>
+      <Button variant="secondary" size="sm" onClick={() => open({ page: "insurance" })}>
         Review insurance
       </Button>
     </div>

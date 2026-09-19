@@ -2,7 +2,7 @@ import { daysUntil, formatDate, todayIso } from "../../lib/dates";
 import { formatCents } from "../../lib/money";
 import type { InsuranceWarning } from "../browse/types";
 import type { Firearm } from "../firearms/types";
-import type { InsurancePolicy } from "./types";
+import type { InsurancePolicy, ValueSummary } from "./types";
 
 export interface PolicyExpiry {
   expired: boolean;
@@ -103,4 +103,26 @@ export function coverageStatus(
         ? `Scheduled for ${formatCents(firearm.scheduledCoverageAmount, { whole: true })} on ${policy.name}.`
         : `Blanket coverage on ${policy.name}.`,
   };
+}
+
+/** How much coverage is missing on firearms flagged under-insured, in
+ * cents: the amount a blanket policy's limit falls short of the firearms
+ * assigned to it, plus, for each individually scheduled firearm, how far
+ * its scheduled amount is below its value. Expired policies contribute
+ * nothing here — their firearms count as uninsured instead, with their
+ * whole value missing. Mirrors the rules in
+ * `services::insurance_status::firearm_warning`. */
+export function coverageShortfall(summary: ValueSummary | null): number {
+  if (!summary) return 0;
+  let missing = 0;
+  for (const policy of summary.byPolicy) {
+    if (policy.isExpired) continue;
+    missing += Math.max(0, policy.blanketTotal - policy.blanketLimit);
+    for (const entry of policy.individuallyScheduled) {
+      if (entry.estimatedValue > 0) {
+        missing += Math.max(0, entry.estimatedValue - entry.scheduledAmount);
+      }
+    }
+  }
+  return missing;
 }

@@ -7,6 +7,7 @@ import { CommandFailure } from "../../services/tauriClient";
 import type { Firearm } from "../firearms/types";
 import * as mediaService from "./mediaService";
 import type { PhotoSummary } from "./types";
+import { fileName, isPhotoPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
 import "./media.css";
 
@@ -51,6 +52,30 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firearm.id]);
 
+  /** Adds each photo in turn, carrying on past one that fails so a bad file
+   * doesn't cost the rest of a batch. */
+  async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
+    if (pending.length === 0) return;
+    setAdding(pending.length);
+    let added = 0;
+    let failure: string | null = null;
+    for (const { name, add } of pending) {
+      try {
+        await add();
+        added += 1;
+      } catch (e) {
+        failure ??= failureMessage(e, `${name} couldn't be added.`);
+      }
+    }
+    setAdding(0);
+    await load();
+    if (added > 0) {
+      await onChanged();
+      notify(`Added ${plural(added, "photo", "photos")}.`);
+    }
+    if (failure) notify(failure, "error");
+  }
+
   async function addFiles(files: File[]) {
     const accepted = files.filter((f) => ACCEPTED_MIME_TYPES.includes(f.type));
     const rejected = files.filter((f) => !ACCEPTED_MIME_TYPES.includes(f.type));
@@ -60,25 +85,22 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
         "error",
       );
     }
-    if (accepted.length === 0) return;
+    await addAll(
+      accepted.map((file) => ({
+        name: file.name,
+        add: async () =>
+          mediaService.addPhoto(firearm.id, await fileToByteArray(file), file.name, file.type),
+      })),
+    );
+  }
 
-    setAdding(accepted.length);
-    let added = 0;
-    try {
-      for (const file of accepted) {
-        await mediaService.addPhoto(firearm.id, await fileToByteArray(file), file.name, file.type);
-        added += 1;
-      }
-    } catch (e) {
-      notify(failureMessage(e, "A photo couldn't be added."), "error");
-    } finally {
-      setAdding(0);
-      await load();
-      if (added > 0) {
-        await onChanged();
-        notify(`Added ${plural(added, "photo", "photos")}.`);
-      }
-    }
+  async function addPaths(paths: string[]) {
+    await addAll(
+      paths.map((path) => ({
+        name: fileName(path),
+        add: () => mediaService.addPhotoFromPath(firearm.id, path),
+      })),
+    );
   }
 
   async function setThumbnail(photo: PhotoSummary) {
@@ -109,11 +131,11 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
     void addFiles(files);
   }
 
-  const { dragging, dropProps } = useFileDrop((files) => void addFiles(files));
+  const dragging = useFileDrop(isPhotoPath, (paths) => void addPaths(paths));
   const pick = () => inputRef.current?.click();
 
   return (
-    <section className="hd-panel hd-dropzone-host" aria-labelledby="photos-title" {...dropProps}>
+    <section className="hd-panel hd-dropzone-host" aria-labelledby="photos-title">
       <header className="hd-panel__head">
         <h2 className="hd-panel__title" id="photos-title">
           Photos
@@ -170,6 +192,14 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
             </li>
           ))}
         </ul>
+      )}
+
+      {photos && photos.length > 0 && (
+        <button type="button" className="hd-dropzone hd-dropzone--compact" onClick={pick}>
+          <span>
+            Drop more photos here, or <span className="hd-link">choose files</span>
+          </span>
+        </button>
       )}
 
       {dragging && (
