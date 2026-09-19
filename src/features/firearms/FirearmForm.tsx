@@ -261,7 +261,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
               options={FIREARM_TYPE_OPTIONS.map((option) => ({
                 value: option.value,
                 label: option.label,
-                art: <TypeDrawing typeKey={option.key} />,
+                art: <TypeDrawing typeKey={option.key} crop />,
               }))}
             />
           </div>

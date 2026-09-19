@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import "./TypeDrawing.css";
 import { DRAWINGS } from "./typeDrawings";
 
@@ -16,14 +17,38 @@ export interface TypeDrawingProps {
   className?: string;
   /** Draws the lines in, once — reserved for the empty-collection state. */
   animate?: boolean;
+  /** Crops the canvas to the drawing's own bounds, so long guns fill a
+   * short, wide frame instead of keeping the shared 320×200 box. */
+  crop?: boolean;
 }
 
-export function TypeDrawing({ typeKey, className, animate }: TypeDrawingProps) {
+const FULL_BOX = "0 0 320 200";
+/** Room for the outline strokes, in drawing units. */
+const CROP_MARGIN = 3;
+
+export function TypeDrawing({ typeKey, className, animate, crop }: TypeDrawingProps) {
   const drawing = DRAWINGS[typeKey] ?? DRAWINGS.other;
   const [x0, y, x1] = drawing.axis;
+  const ref = useRef<SVGSVGElement>(null);
+  const [viewBox, setViewBox] = useState(FULL_BOX);
+
+  useLayoutEffect(() => {
+    const svg = ref.current;
+    // getBBox is absent outside a real layout engine (jsdom).
+    if (!crop || !svg || typeof svg.getBBox !== "function") {
+      setViewBox(FULL_BOX);
+      return;
+    }
+    const box = svg.getBBox();
+    if (box.width === 0 || box.height === 0) return;
+    const m = CROP_MARGIN;
+    setViewBox(`${box.x - m} ${box.y - m} ${box.width + 2 * m} ${box.height + 2 * m}`);
+  }, [crop, drawing]);
+
   return (
     <svg
-      viewBox="0 0 320 200"
+      ref={ref}
+      viewBox={viewBox}
       className={["hd-drawing", animate && "hd-drawing--animate", className]
         .filter(Boolean)
         .join(" ")}
