@@ -33,6 +33,7 @@ fn main() {
             hoplodex_lib::commands::insurance::list_insurance_policies,
             hoplodex_lib::commands::insurance::create_insurance_policy,
             hoplodex_lib::commands::insurance::update_insurance_policy,
+            hoplodex_lib::commands::insurance::get_policy_deletion_impact,
             hoplodex_lib::commands::insurance::delete_insurance_policy,
             hoplodex_lib::commands::insurance::assign_firearm_coverage,
             hoplodex_lib::commands::insurance::get_value_summary,

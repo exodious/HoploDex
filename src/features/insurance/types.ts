@@ -87,3 +87,28 @@ export interface ValueSummary {
   byPolicy: PolicySummary[];
   uninsured: UninsuredFirearm[];
 }
+
+/** `get_policy_deletion_impact`'s output: what deleting a policy would do,
+ * for the FR-034 dialog to explain before anything changes. */
+export interface PolicyDeletionImpact {
+  isExpired: boolean;
+  isBlanketInForce: boolean;
+  scheduledFirearmCount: number;
+  scheduledFirearms: { id: number; make: string; model: string; nickname: string | null }[];
+  /** Unscheduled firearms that lose blanket coverage if this is the blanket
+   * policy in force (0 otherwise). */
+  blanketFirearmCount: number;
+  /** What becomes of firearms left unscheduled. */
+  unscheduleOutcome: "blanket" | "uninsured";
+  otherPolicies: { id: number; name: string; isExpired: boolean }[];
+}
+
+/** How the firearms scheduled under a deleted policy are resolved (FR-034). */
+export type ScheduledFirearmsAction =
+  { action: "move"; targetPolicyId: number } | { action: "unschedule"; confirmUnschedule?: true };
+
+export interface DeletePolicyResult {
+  deleted: boolean;
+  movedCount: number;
+  unscheduledCount: number;
+}
