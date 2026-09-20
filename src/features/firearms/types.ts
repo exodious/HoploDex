@@ -11,6 +11,7 @@ export interface Firearm {
   id: number;
   make: string;
   model: string;
+  nickname: string | null;
   serialNumber: string | null;
   noSerialAttested: boolean;
   caliber: string;

@@ -28,6 +28,7 @@ export interface FirearmFormProps {
 interface FormState {
   make: string;
   model: string;
+  nickname: string;
   caliber: string;
   firearmTypeId: string;
   serialNumber: string;
@@ -50,6 +51,7 @@ function toFormState(firearm?: Firearm): FormState {
   return {
     make: firearm?.make ?? "",
     model: firearm?.model ?? "",
+    nickname: firearm?.nickname ?? "",
     caliber: firearm?.caliber ?? "",
     firearmTypeId: firearm ? String(firearm.firearmTypeId) : "",
     serialNumber: firearm?.serialNumber ?? "",
@@ -129,6 +131,7 @@ function isoDate(text: string): string | null {
 const FIELD_ORDER: Field[] = [
   "make",
   "model",
+  "nickname",
   "firearmTypeId",
   "caliber",
   "serialNumber",
@@ -183,6 +186,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
     const input: FirearmInput = {
       make: form.make.trim(),
       model: form.model.trim(),
+      nickname: blankToNull(form.nickname),
       caliber: form.caliber.trim(),
       firearmTypeId: Number(form.firearmTypeId),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
@@ -255,6 +259,17 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
                 placeholder="e.g. Model 29"
               />
             </div>
+          </div>
+
+          <div data-field="nickname">
+            <TextField
+              label="Nickname"
+              value={form.nickname}
+              onChange={(e) => update("nickname", e.target.value)}
+              error={errorFor("nickname")}
+              hint="Optional. Tells apart firearms with the same make and model; each active firearm needs its own."
+              placeholder="e.g. Range gun"
+            />
           </div>
 
           <div data-field="firearmTypeId">

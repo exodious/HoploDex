@@ -1,4 +1,5 @@
 import { formatCents } from "../../lib/money";
+import { FirearmName } from "../app/FirearmName";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
 import type { GroupBy, VisibleGroup } from "./types";
@@ -57,7 +58,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                             onSelect(firearm.id);
                           }}
                         >
-                          {firearm.make} {firearm.model}
+                          <FirearmName firearm={firearm} />
                         </button>
                         <span className="hd-row__serial">
                           {firearm.serialNumber ? (

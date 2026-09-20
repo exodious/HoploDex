@@ -150,6 +150,16 @@ pub struct FirearmInput {
     pub scheduled_coverage_amount: Option<i64>,
 }
 
+impl FirearmInput {
+    /// The input as it is stored: a blank nickname becomes `None` and any
+    /// other is trimmed (FR-031: blank is not a value, and comparison
+    /// ignores surrounding whitespace).
+    pub fn normalized(&self) -> Self {
+        let nickname = self.nickname.as_deref().map(str::trim).filter(|n| !n.is_empty());
+        Self { nickname: nickname.map(str::to_owned), ..self.clone() }
+    }
+}
+
 fn is_blank(value: &Option<String>) -> bool {
     value.as_deref().map(str::trim).unwrap_or("").is_empty()
 }

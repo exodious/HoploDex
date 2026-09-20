@@ -18,6 +18,7 @@ export interface FirearmSummary {
   id: number;
   make: string;
   model: string;
+  nickname: string | null;
   serialNumber: string | null;
   caliber: string;
   firearmTypeName: string;

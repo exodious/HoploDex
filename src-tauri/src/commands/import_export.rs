@@ -161,6 +161,7 @@ pub mod ops {
             rows.push(FirearmExportRow {
                 make: firearm.make,
                 model: firearm.model,
+                nickname: firearm.nickname.unwrap_or_default(),
                 serial_number: firearm.serial_number.unwrap_or_default(),
                 no_serial_attested: if firearm.no_serial_attested { "TRUE" } else { "FALSE" }
                     .to_string(),
@@ -294,7 +295,7 @@ pub mod ops {
             no_serial_attested: parse_bool(&raw.no_serial_attested),
             caliber,
             firearm_type_id,
-            nickname: None,
+            nickname: raw.nickname.clone(),
             notes: raw.notes.clone(),
             accessories: raw.accessories.clone(),
             status,
@@ -364,10 +365,15 @@ pub mod ops {
                                 new_input: input,
                             });
                         }
-                        None => {
-                            firearm_ops::create_firearm(conn, &input)?;
-                            imported_count += 1;
-                        }
+                        None => match firearm_ops::create_firearm(conn, &input) {
+                            Ok(_) => imported_count += 1,
+                            // Rules that need the rest of the collection to
+                            // judge (nickname/identity uniqueness) fail one
+                            // row, not the whole import (FR-020).
+                            Err(e) if e.code == "VALIDATION_ERROR" => row_errors
+                                .push(RowError { row: row_number, message: row_message(&e) }),
+                            Err(e) => return Err(e),
+                        },
                     }
                 }
             }

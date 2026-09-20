@@ -4,6 +4,7 @@
 CREATE VIRTUAL TABLE firearms_fts USING fts5(
     make,
     model,
+    nickname,
     serial_number,
     caliber,
     notes,
@@ -16,12 +17,13 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
 CREATE TRIGGER firearms_fts_after_insert AFTER INSERT ON firearms
 BEGIN
     INSERT INTO firearms_fts (
-        rowid, make, model, serial_number, caliber, notes, accessories, firearm_type_name
+        rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
     )
     VALUES (
         new.id,
         new.make,
         new.model,
+        new.nickname,
         new.serial_number,
         new.caliber,
         new.notes,
@@ -33,13 +35,14 @@ END;
 CREATE TRIGGER firearms_fts_after_delete AFTER DELETE ON firearms
 BEGIN
     INSERT INTO firearms_fts (
-        firearms_fts, rowid, make, model, serial_number, caliber, notes, accessories, firearm_type_name
+        firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
     )
     VALUES (
         'delete',
         old.id,
         old.make,
         old.model,
+        old.nickname,
         old.serial_number,
         old.caliber,
         old.notes,
@@ -51,13 +54,14 @@ END;
 CREATE TRIGGER firearms_fts_after_update AFTER UPDATE ON firearms
 BEGIN
     INSERT INTO firearms_fts (
-        firearms_fts, rowid, make, model, serial_number, caliber, notes, accessories, firearm_type_name
+        firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
     )
     VALUES (
         'delete',
         old.id,
         old.make,
         old.model,
+        old.nickname,
         old.serial_number,
         old.caliber,
         old.notes,
@@ -65,12 +69,13 @@ BEGIN
         (SELECT name FROM firearm_types WHERE id = old.firearm_type_id)
     );
     INSERT INTO firearms_fts (
-        rowid, make, model, serial_number, caliber, notes, accessories, firearm_type_name
+        rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
     )
     VALUES (
         new.id,
         new.make,
         new.model,
+        new.nickname,
         new.serial_number,
         new.caliber,
         new.notes,

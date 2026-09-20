@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
 import { FirearmForm } from "./FirearmForm";
+import { CommandFailure } from "../../services/tauriClient";
 import type { Firearm } from "./types";
 
 async function selectFirearmType(user: ReturnType<typeof userEvent.setup>) {
@@ -146,5 +147,52 @@ describe("FirearmForm date rules (FR-003 / FR-004)", () => {
       screen.getByText("Disposition date can't be earlier than the acquisition date."),
     ).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe("FirearmForm nickname (FR-031)", () => {
+  it("submits a trimmed nickname, or null when left blank", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[0][0].nickname).toBeNull();
+
+    await user.type(screen.getByLabelText("Nickname"), "  Old Faithful ");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[1][0].nickname).toBe("Old Faithful");
+  });
+
+  it("shows the backend's duplicate-nickname message on the nickname field", async () => {
+    const user = userEvent.setup();
+    const message = 'That nickname is already used by Glock 19 "Old Faithful".';
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { nickname: message },
+      }),
+    );
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(screen.getByLabelText("Nickname"), "Old Faithful");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  it("prefills the nickname when editing", () => {
+    render(
+      <FirearmForm
+        initialValues={
+          { id: 1, make: "Colt", model: "Python", nickname: "Snake", status: "active" } as Firearm
+        }
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Nickname")).toHaveValue("Snake");
   });
 });

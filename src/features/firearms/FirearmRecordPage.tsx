@@ -6,6 +6,7 @@ import { formatCents } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { BackLink } from "../app/BackLink";
 import { firearmName, useCollection } from "../app/collectionStore";
+import { FirearmName } from "../app/FirearmName";
 import { useNavigation } from "../app/navigation";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { CoverageDialog } from "../insurance/CoverageDialog";
@@ -168,7 +169,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               )}
             </p>
             <h1 className="hd-plate__name" id="record-name">
-              {name}
+              <FirearmName firearm={firearm} />
             </h1>
             <p className="hd-plate__stamp">
               <span className="hd-plate__stamp-label">Serial no.</span>

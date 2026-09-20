@@ -8,7 +8,7 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
-use support::TestDb;
+use support::{csv_file, csv_firearm, TestDb};
 use tempfile::TempDir;
 
 fn write_csv(dir: &TempDir, contents: &str) -> std::path::PathBuf {
@@ -17,17 +17,16 @@ fn write_csv(dir: &TempDir, contents: &str) -> std::path::PathBuf {
     path
 }
 
-const HEADER: &str = "make,model,serial_number,no_serial_attested,caliber,firearm_type,notes,accessories,status,estimated_value,acquisition_source,acquisition_date,acquisition_price,disposition_type,disposition_recipient,disposition_date,disposition_price,insurance_policy_name,coverage_kind,scheduled_coverage_amount,photo_filenames";
-
 #[test]
 fn scenario_2_imports_new_records_from_a_spreadsheet() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
 
-    let csv = format!(
-        "{HEADER}\nGlock,19,ABC123,FALSE,9mm,Handgun,,,,500.00,,,,,,,,,,,\nSig,P226,DEF456,FALSE,9mm,Handgun,,,,600.00,,,,,,,,,,,\n"
-    );
+    let csv = csv_file(&[
+        csv_firearm("Glock", "19", "ABC123", &[]),
+        csv_firearm("Sig", "P226", "DEF456", &[("estimated_value", "600.00")]),
+    ]);
     let path = write_csv(&dir, &csv);
 
     let mut progress_calls = Vec::new();
@@ -57,9 +56,10 @@ fn scenario_3_reports_a_failing_row_without_discarding_successful_ones() {
     let store = ImportSessionStore::new();
 
     // Row 1 is missing `make` (required); row 2 is valid.
-    let csv = format!(
-        "{HEADER}\n,19,ABC123,FALSE,9mm,Handgun,,,,500.00,,,,,,,,,,,\nSig,P226,DEF456,FALSE,9mm,Handgun,,,,600.00,,,,,,,,,,,\n"
-    );
+    let csv = csv_file(&[
+        csv_firearm("", "19", "ABC123", &[("no_serial_attested", "FALSE")]),
+        csv_firearm("Sig", "P226", "DEF456", &[("estimated_value", "600.00")]),
+    ]);
     let path = write_csv(&dir, &csv);
 
     let result = import_export_ops::import_collection(
@@ -87,7 +87,8 @@ fn rejects_an_unknown_firearm_type_with_a_row_error() {
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
 
-    let csv = format!("{HEADER}\nGlock,19,ABC123,FALSE,9mm,NotARealType,,,,500.00,,,,,,,,,,,\n");
+    let csv =
+        csv_file(&[csv_firearm("Glock", "19", "ABC123", &[("firearm_type", "NotARealType")])]);
     let path = write_csv(&dir, &csv);
 
     let result = import_export_ops::import_collection(
@@ -105,11 +106,11 @@ fn rejects_an_unknown_firearm_type_with_a_row_error() {
 
 // --- Date rules (FR-003 / FR-004): a violation is a row error ---
 
-fn import_one_row(row: &str) -> hoplodex_lib::commands::import_export::ImportResult {
+fn import_one_row(row: String) -> hoplodex_lib::commands::import_export::ImportResult {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    let path = write_csv(&dir, &format!("{HEADER}\n{row}\n"));
+    let path = write_csv(&dir, &csv_file(&[row]));
     import_export_ops::import_collection(
         &db.conn,
         &path,
@@ -120,14 +121,29 @@ fn import_one_row(row: &str) -> hoplodex_lib::commands::import_export::ImportRes
     .unwrap()
 }
 
+/// A disposed Glock 19 row acquired on `acquired` (if any) and disposed of
+/// on `disposed_on`.
+fn disposed_row(acquired: Option<&str>, disposed_on: &str) -> String {
+    let mut cells = vec![
+        ("status", "disposed"),
+        ("disposition_type", "sold"),
+        ("disposition_recipient", "Jane"),
+        ("disposition_date", disposed_on),
+        ("disposition_price", "400.00"),
+    ];
+    if let Some(acquired) = acquired {
+        cells.push(("acquisition_date", acquired));
+    }
+    csv_firearm("Glock", "19", "ABC123", &cells)
+}
+
 #[test]
 fn a_future_acquisition_date_is_a_row_error() {
     let tomorrow = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
-    let result = import_one_row(&format!(
-        "Glock,19,ABC123,FALSE,9mm,Handgun,,,,500.00,,{tomorrow},,,,,,,,,"
-    ));
+    let result =
+        import_one_row(csv_firearm("Glock", "19", "ABC123", &[("acquisition_date", &tomorrow)]));
 
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.row_errors.len(), 1);
@@ -140,9 +156,7 @@ fn a_future_disposition_date_is_a_row_error() {
     let tomorrow = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
-    let result = import_one_row(&format!(
-        "Glock,19,ABC123,FALSE,9mm,Handgun,,,disposed,500.00,,,,sold,Jane,{tomorrow},400.00,,,,"
-    ));
+    let result = import_one_row(disposed_row(None, &tomorrow));
 
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.row_errors.len(), 1);
@@ -151,9 +165,7 @@ fn a_future_disposition_date_is_a_row_error() {
 
 #[test]
 fn a_disposition_before_the_acquisition_date_is_a_row_error() {
-    let result = import_one_row(
-        "Glock,19,ABC123,FALSE,9mm,Handgun,,,disposed,500.00,,2025-03-01,,sold,Jane,2025-02-28,400.00,,,,",
-    );
+    let result = import_one_row(disposed_row(Some("2025-03-01"), "2025-02-28"));
 
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.row_errors.len(), 1);
@@ -162,9 +174,7 @@ fn a_disposition_before_the_acquisition_date_is_a_row_error() {
 
 #[test]
 fn a_valid_disposition_on_or_after_the_acquisition_date_imports() {
-    let result = import_one_row(
-        "Glock,19,ABC123,FALSE,9mm,Handgun,,,disposed,500.00,,2025-03-01,,sold,Jane,2025-03-01,400.00,,,,",
-    );
+    let result = import_one_row(disposed_row(Some("2025-03-01"), "2025-03-01"));
 
     assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
     assert_eq!(result.imported_count, 1);

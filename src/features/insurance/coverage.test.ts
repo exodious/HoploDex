@@ -23,6 +23,7 @@ function firearm(overrides: Partial<Firearm> = {}): Firearm {
     id: 1,
     make: "Colt",
     model: "Python",
+    nickname: null,
     serialNumber: "V1",
     noSerialAttested: false,
     caliber: ".357 Magnum",

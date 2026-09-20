@@ -61,6 +61,8 @@ pub struct FirearmSummary {
     pub id: i64,
     pub make: String,
     pub model: String,
+    /// Shown alongside make and model wherever the firearm is named (FR-031).
+    pub nickname: Option<String>,
     /// Tells apart firearms sharing a make and model in browse views.
     pub serial_number: Option<String>,
     pub caliber: String,
@@ -106,11 +108,78 @@ pub mod ops {
         .ok_or_else(|| CommandError::not_found("No firearm was found with that id."))
     }
 
+    /// A record already in the collection that a new or edited firearm
+    /// clashes with, described for the error naming it.
+    struct Clash {
+        make: String,
+        model: String,
+        nickname: Option<String>,
+        serial_number: Option<String>,
+    }
+
+    impl std::fmt::Display for Clash {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{} {}", self.make, self.model)?;
+            if let Some(nickname) = &self.nickname {
+                write!(f, " \"{nickname}\"")?;
+            }
+            if let Some(serial) = &self.serial_number {
+                write!(f, " (serial {serial})")?;
+            }
+            Ok(())
+        }
+    }
+
+    /// FR-031: the nickname must be unique among active firearms, ignoring
+    /// case and surrounding whitespace. `exclude_id` is the record being
+    /// edited, which never clashes with itself. A disposed record has
+    /// released its nickname, so it isn't checked.
+    pub fn check_nickname(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        input: &FirearmInput,
+    ) -> Result<(), CommandError> {
+        let Some(nickname) =
+            input.nickname.as_deref().filter(|_| input.status == FirearmStatus::Active)
+        else {
+            return Ok(());
+        };
+        let clash = conn
+            .query_row(
+                "SELECT make, model, nickname, serial_number FROM firearms
+                 WHERE status = 'active' AND id IS NOT :exclude
+                   AND lower(trim(nickname)) = lower(trim(:nickname))",
+                named_params! { ":exclude": exclude_id, ":nickname": nickname },
+                |row| {
+                    Ok(Clash {
+                        make: row.get(0)?,
+                        model: row.get(1)?,
+                        nickname: row.get(2)?,
+                        serial_number: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        match clash {
+            None => Ok(()),
+            Some(other) => {
+                let message = format!("That nickname is already used by {other}.");
+                Err(CommandError::validation(
+                    message.clone(),
+                    [("nickname".to_string(), message)].into(),
+                ))
+            }
+        }
+    }
+
     pub fn create_firearm(
         conn: &Connection,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
+        let input = &input.normalized();
         validate_firearm_input(input)?;
+        check_nickname(conn, None, input)?;
         conn.execute(
             "INSERT INTO firearms (
                 make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
@@ -161,7 +230,9 @@ pub mod ops {
         id: i64,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
+        let input = &input.normalized();
         validate_firearm_input(input)?;
+        check_nickname(conn, Some(id), input)?;
         let updated = conn
             .execute(
                 "UPDATE firearms SET
@@ -359,6 +430,7 @@ pub mod ops {
                     id: firearm.id,
                     make: firearm.make,
                     model: firearm.model,
+                    nickname: firearm.nickname,
                     serial_number: firearm.serial_number,
                     caliber: firearm.caliber,
                     firearm_type_name,

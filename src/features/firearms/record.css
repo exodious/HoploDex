@@ -83,6 +83,16 @@
   overflow-wrap: anywhere;
 }
 
+/* The nickname sits under the make and model at a fraction of their size. */
+.hd-plate__name .hd-nickname {
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-body);
+  font-size: 0.4em;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
 .hd-plate__stamp {
   display: flex;
   align-items: center;

@@ -31,6 +31,7 @@ impl SpreadsheetFormat {
 pub const COLUMNS: &[&str] = &[
     "make",
     "model",
+    "nickname",
     "serial_number",
     "no_serial_attested",
     "caliber",
@@ -58,6 +59,7 @@ pub const COLUMNS: &[&str] = &[
 pub struct FirearmExportRow {
     pub make: String,
     pub model: String,
+    pub nickname: String,
     pub serial_number: String,
     pub no_serial_attested: String,
     pub caliber: String,
@@ -80,10 +82,11 @@ pub struct FirearmExportRow {
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 21] {
+    fn as_fields(&self) -> [&str; 22] {
         [
             &self.make,
             &self.model,
+            &self.nickname,
             &self.serial_number,
             &self.no_serial_attested,
             &self.caliber,
@@ -115,6 +118,7 @@ impl FirearmExportRow {
 pub struct RawImportRow {
     pub make: Option<String>,
     pub model: Option<String>,
+    pub nickname: Option<String>,
     pub serial_number: Option<String>,
     pub no_serial_attested: Option<String>,
     pub caliber: Option<String>,
@@ -149,24 +153,25 @@ fn row_from_cells(cells: &[String]) -> RawImportRow {
     RawImportRow {
         make: non_blank(cell(0)),
         model: non_blank(cell(1)),
-        serial_number: non_blank(cell(2)),
-        no_serial_attested: non_blank(cell(3)),
-        caliber: non_blank(cell(4)),
-        firearm_type: non_blank(cell(5)),
-        notes: non_blank(cell(6)),
-        accessories: non_blank(cell(7)),
-        status: non_blank(cell(8)),
-        estimated_value: non_blank(cell(9)),
-        acquisition_source: non_blank(cell(10)),
-        acquisition_date: non_blank(cell(11)),
-        acquisition_price: non_blank(cell(12)),
-        disposition_type: non_blank(cell(13)),
-        disposition_recipient: non_blank(cell(14)),
-        disposition_date: non_blank(cell(15)),
-        disposition_price: non_blank(cell(16)),
-        insurance_policy_name: non_blank(cell(17)),
-        coverage_kind: non_blank(cell(18)),
-        scheduled_coverage_amount: non_blank(cell(19)),
+        nickname: non_blank(cell(2)),
+        serial_number: non_blank(cell(3)),
+        no_serial_attested: non_blank(cell(4)),
+        caliber: non_blank(cell(5)),
+        firearm_type: non_blank(cell(6)),
+        notes: non_blank(cell(7)),
+        accessories: non_blank(cell(8)),
+        status: non_blank(cell(9)),
+        estimated_value: non_blank(cell(10)),
+        acquisition_source: non_blank(cell(11)),
+        acquisition_date: non_blank(cell(12)),
+        acquisition_price: non_blank(cell(13)),
+        disposition_type: non_blank(cell(14)),
+        disposition_recipient: non_blank(cell(15)),
+        disposition_date: non_blank(cell(16)),
+        disposition_price: non_blank(cell(17)),
+        insurance_policy_name: non_blank(cell(18)),
+        coverage_kind: non_blank(cell(19)),
+        scheduled_coverage_amount: non_blank(cell(20)),
     }
 }
 

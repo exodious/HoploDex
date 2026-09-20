@@ -1,4 +1,5 @@
 import { formatCents } from "../../lib/money";
+import { FirearmName } from "../app/FirearmName";
 import { GroupHeading } from "./BrowseList";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
@@ -36,7 +37,7 @@ export function BrowseTiles({ groups, grouped, onSelect }: BrowseTilesProps) {
                   />
                   <span className="hd-tile__body">
                     <span className="hd-tile__name">
-                      {firearm.make} {firearm.model}
+                      <FirearmName firearm={firearm} />
                     </span>
                     <span className="hd-tile__meta">
                       {firearm.caliber}

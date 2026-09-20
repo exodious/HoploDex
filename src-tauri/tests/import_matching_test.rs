@@ -9,10 +9,8 @@ use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::{ConflictResolution, ImportSessionStore};
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
-use support::TestDb;
+use support::{csv_file, csv_firearm, TestDb};
 use tempfile::TempDir;
-
-const HEADER: &str = "make,model,serial_number,no_serial_attested,caliber,firearm_type,notes,accessories,status,estimated_value,acquisition_source,acquisition_date,acquisition_price,disposition_type,disposition_recipient,disposition_date,disposition_price,insurance_policy_name,coverage_kind,scheduled_coverage_amount,photo_filenames";
 
 fn write_csv(dir: &TempDir, contents: &str) -> std::path::PathBuf {
     let path = dir.path().join("import.csv");
@@ -53,8 +51,12 @@ fn a_matching_make_model_serial_produces_a_conflict_not_a_silent_overwrite() {
     let store = ImportSessionStore::new();
     let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
 
-    let csv =
-        format!("{HEADER}\nGlock,19,ABC123,FALSE,9mm,Handgun,updated notes,,,700.00,,,,,,,,,,,\n");
+    let csv = csv_file(&[csv_firearm(
+        "Glock",
+        "19",
+        "ABC123",
+        &[("notes", "updated notes"), ("estimated_value", "700.00")],
+    )]);
     let path = write_csv(&dir, &csv);
 
     let result = import_export_ops::import_collection(
@@ -84,7 +86,7 @@ fn no_serial_attested_rows_are_always_inserted_as_new() {
 
     // Same make/model as the existing record, but no_serial_attested=TRUE:
     // must never match, always inserted as new (FR-030).
-    let csv = format!("{HEADER}\nGlock,19,,TRUE,9mm,Handgun,,,,500.00,,,,,,,,,,,\n");
+    let csv = csv_file(&[csv_firearm("Glock", "19", "", &[])]);
     let path = write_csv(&dir, &csv);
 
     let result = import_export_ops::import_collection(
@@ -107,8 +109,12 @@ fn resolving_a_conflict_as_overwrite_updates_the_existing_record() {
     let store = ImportSessionStore::new();
     let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
 
-    let csv =
-        format!("{HEADER}\nGlock,19,ABC123,FALSE,9mm,Handgun,updated notes,,,700.00,,,,,,,,,,,\n");
+    let csv = csv_file(&[csv_firearm(
+        "Glock",
+        "19",
+        "ABC123",
+        &[("notes", "updated notes"), ("estimated_value", "700.00")],
+    )]);
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
@@ -142,8 +148,12 @@ fn resolving_a_conflict_as_duplicate_inserts_a_new_record_alongside_the_original
     let store = ImportSessionStore::new();
     firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
 
-    let csv =
-        format!("{HEADER}\nGlock,19,ABC123,FALSE,9mm,Handgun,duplicate row,,,700.00,,,,,,,,,,,\n");
+    let csv = csv_file(&[csv_firearm(
+        "Glock",
+        "19",
+        "ABC123",
+        &[("notes", "duplicate row"), ("estimated_value", "700.00")],
+    )]);
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
@@ -176,9 +186,12 @@ fn resolving_a_conflict_as_skip_leaves_the_original_untouched() {
     let store = ImportSessionStore::new();
     let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
 
-    let csv = format!(
-        "{HEADER}\nGlock,19,ABC123,FALSE,9mm,Handgun,should not apply,,,700.00,,,,,,,,,,,\n"
-    );
+    let csv = csv_file(&[csv_firearm(
+        "Glock",
+        "19",
+        "ABC123",
+        &[("notes", "should not apply"), ("estimated_value", "700.00")],
+    )]);
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
@@ -217,9 +230,20 @@ fn apply_to_remaining_resolves_conflicts_not_explicitly_listed() {
     second.serial_number = Some("XYZ789".into());
     let e2 = firearm_ops::create_firearm(&db.conn, &second).unwrap();
 
-    let csv = format!(
-        "{HEADER}\nGlock,19,ABC123,FALSE,9mm,Handgun,row one,,,700.00,,,,,,,,,,,\nGlock,26,XYZ789,FALSE,9mm,Handgun,row two,,,800.00,,,,,,,,,,,\n"
-    );
+    let csv = csv_file(&[
+        csv_firearm(
+            "Glock",
+            "19",
+            "ABC123",
+            &[("notes", "row one"), ("estimated_value", "700.00")],
+        ),
+        csv_firearm(
+            "Glock",
+            "26",
+            "XYZ789",
+            &[("notes", "row two"), ("estimated_value", "800.00")],
+        ),
+    ]);
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,

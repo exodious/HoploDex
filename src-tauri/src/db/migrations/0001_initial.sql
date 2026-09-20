@@ -67,6 +67,13 @@ CREATE INDEX idx_firearms_make ON firearms (make);
 CREATE INDEX idx_firearms_status ON firearms (status);
 CREATE INDEX idx_firearms_insurance_policy ON firearms (insurance_policy_id);
 
+-- FR-031: a nickname is unique among active firearms (case-insensitively);
+-- a disposed firearm releases it. Backstop for the check in the command
+-- layer, which also trims surrounding whitespace.
+CREATE UNIQUE INDEX idx_firearms_active_nickname
+    ON firearms (nickname COLLATE NOCASE)
+    WHERE status = 'active' AND nickname IS NOT NULL;
+
 CREATE TABLE photos (
     id INTEGER PRIMARY KEY,
     firearm_id INTEGER NOT NULL REFERENCES firearms (id) ON DELETE CASCADE,
