@@ -16,6 +16,7 @@ sibling photos folder.
 |---|---|---|---|
 | `make` | yes | `Firearm.make` | |
 | `model` | yes | `Firearm.model` | |
+| `nickname` | no | `Firearm.nickname` | free text; blank → none; never used for matching; must be unique among active firearms, otherwise row error (FR-031) |
 | `serial_number` | no | `Firearm.serial_number` | blank allowed only with `no_serial_attested = TRUE` |
 | `no_serial_attested` | no (default FALSE) | `Firearm.no_serial_attested` | `TRUE`/`FALSE` |
 | `caliber` | yes | `Firearm.caliber` | |
@@ -38,6 +39,10 @@ sibling photos folder.
 
 ## Export behavior
 
+- Retained `DispositionHistory` rows (FR-033) are not represented in the
+  spreadsheet (one row = one firearm, current state only); only the
+  firearm's current disposition columns are exported.
+
 - One spreadsheet file (`.csv` or `.xlsx`, per user's chosen format) plus
   one sibling folder (`<export-name>_photos/`) containing every stored
   photo in its original format and filename, deduplicated per firearm.
@@ -57,3 +62,8 @@ sibling photos folder.
 - A row whose key matches an existing record produces an `ImportConflict`
   (see `resolve_import_conflicts` in tauri-commands.md) rather than a
   silent overwrite.
+- Every row is also checked against FR-032: a row that would be blocked
+  (non-exempt serial matching an *active* record) is not offered the
+  "duplicate" resolution; a row for a serial-exempt firearm that matches
+  produces a warning in the report but still imports. A disposed-only
+  match is not a conflict for blocking purposes.

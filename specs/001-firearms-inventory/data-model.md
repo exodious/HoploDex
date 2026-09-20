@@ -1,7 +1,7 @@
 # Phase 1 Data Model: Firearms Collection Inventory
 
 Derived from the Key Entities section of [spec.md](./spec.md) and the
-functional requirements (FR-001–FR-030). All tables live in the single
+functional requirements (FR-001–FR-033). All tables live in the single
 encrypted SQLCipher database described in [research.md](./research.md).
 Every table below is a real SQL table (or virtual table for FTS5) — none of
 this is mocked for testing; `cargo test` integration tests run against a
@@ -34,6 +34,7 @@ Primary record; corresponds directly to the spec's **Firearm** entity.
 | `model` | TEXT, not null | structured field |
 | `serial_number` | TEXT, nullable | FR-001, FR-029: null only if `no_serial_attested = true` |
 | `no_serial_attested` | BOOLEAN, not null, default false | FR-029: explicit attestation; save is blocked in the app layer if `serial_number IS NULL AND no_serial_attested = false` |
+| `nickname` | TEXT, nullable | FR-031: optional free-form label to tell similar records apart; blank input stored as null; unique (case-insensitive, trimmed) among `status = 'active'` rows only, so a disposed firearm releases it; not part of the identifying key (FR-030), not used in import matching; indexed by FTS5; not a grouping field |
 | `caliber` | TEXT, not null | structured field |
 | `firearm_type_id` | INTEGER FK → FirearmType, not null | structured field |
 | `notes` | TEXT, nullable | free-form (FR-002), indexed by FTS5 |
@@ -67,14 +68,60 @@ human-readable errors):
   `scheduled_coverage_amount` null (blanket firearms draw from the
   policy's shared limit, computed in aggregate — see Insurance Coverage
   below).
-- Deleting a Firearm cascades to delete its Photos and DocumentAttachments
+- **Nickname uniqueness (FR-031)**: `nickname` must not equal (ignoring
+  case and surrounding whitespace) the nickname of any other
+  `status = 'active'` firearm. Backstop: partial unique index on
+  `nickname COLLATE NOCASE WHERE status = 'active' AND nickname IS NOT NULL`.
+- **Identity uniqueness (FR-032)**: among other `status = 'active'`
+  firearms, compare `(make, model, serial_number)` ignoring case and
+  surrounding whitespace, only when `serial_number IS NOT NULL`. Match and
+  `no_serial_attested = false` → `VALIDATION_ERROR` (blocked). Match and
+  `no_serial_attested = true` → save succeeds and the response carries a
+  warning. Matches against disposed rows are ignored. Backstop for the
+  blocking case only: partial unique index on
+  `(make, model, serial_number)` with NOCASE collation
+  `WHERE status = 'active' AND no_serial_attested = 0 AND serial_number IS NOT NULL`.
+  The app is unreleased, so no compatibility with earlier development
+  databases is required; the migration may create the index directly.
+- The two uniqueness checks are also re-run when a disposition is reversed
+  (a disposed record returning to `active` may now clash with a record
+  created in the meantime) and on every import row.
+- Deleting a Firearm cascades to delete its Photos, DocumentAttachments, and DispositionHistory rows
   (spec Assumption: "Deleting a firearm record also removes its
   uniquely-associated photographs and document attachments").
 
-**State transitions**: `active → disposed` (one-way per FR-023: disposed
-firearms retain full history; the spec does not request an "undispose"
-flow, so none is modeled). Deletion is a distinct, separate action
+**State transitions**: `active → disposed` (dispose, FR-004) and
+`disposed → active` (reverse disposition, FR-033). Reversal requires the
+user's explicit choice of `keep` or `discard` for the current disposition:
+- `keep`: insert one `DispositionHistory` row copied from
+  `disposition_type/recipient/date/price`, then null the four `Firearm`
+  disposition columns.
+- `discard`: null the four columns; nothing is stored.
+Both set `status = 'active'` in the same transaction, after re-running the
+nickname and make/model/serial checks (FR-031, FR-032) against currently
+active firearms; a clash aborts the whole reversal with nothing changed.
+Because the `Firearm` columns always hold only the *current* disposition,
+the rule "`status = active` requires them null" is unchanged. Disposal is
+never a deletion (FR-023). Deletion is a distinct, separate action
 available from either state (FR-006), requiring confirmation.
+
+## Entity: DispositionHistory
+
+Retained past dispositions of a firearm that was restored to active
+(FR-033). Written only by `reverse_disposition` with `keep`; never edited.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `firearm_id` | INTEGER FK → Firearm, not null, on delete cascade | real deletion with the firearm (constitution V) |
+| `disposition_type` | TEXT, not null | same enum as `Firearm.disposition_type` |
+| `disposition_recipient` | TEXT, not null | |
+| `disposition_date` | TEXT (ISO 8601 date), not null | |
+| `disposition_price` | INTEGER (cents), nullable | |
+| `reversed_at` | TEXT (ISO 8601 datetime), not null | when the user reversed it |
+
+Not indexed by FTS5 and not included in the spreadsheet export/import (one
+row per firearm; see contracts/spreadsheet-format.md).
 
 ## Entity: Photo
 
@@ -160,7 +207,7 @@ code:
 ## Virtual table: firearms_fts (FTS5)
 
 External-content FTS5 table over `Firearm`, kept in sync via `AFTER INSERT
-/ UPDATE / DELETE` triggers, indexing: `make`, `model`, `serial_number`,
+/ UPDATE / DELETE` triggers, indexing: `make`, `model`, `nickname`, `serial_number`,
 `caliber`, `notes`, `accessories`, and the joined `FirearmType.name`.
 Satisfies FR-013 (search across all recorded information including
 free-form notes) and US2 Acceptance Scenarios 3–4.
@@ -171,6 +218,7 @@ free-form notes) and US2 Acceptance Scenarios 3–4.
 FirearmType (1) ──< (many) Firearm
 Firearm (1) ──< (many) Photo
 Firearm (1) ──< (many) DocumentAttachment
+Firearm (1) ──< (many) DispositionHistory
 Firearm (1) ── thumbnail_photo_id ──> (1) Photo            [nullable]
 InsurancePolicy (1) ──< (many) Firearm  [insurance_policy_id, nullable]
 Firearm ──< firearms_fts (FTS5 shadow index, external-content)

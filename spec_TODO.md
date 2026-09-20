@@ -1,40 +1,188 @@
-## Development, Testing & Release
+# Spec TODO — triage against `specs/001-firearms-inventory/`
 
-- [dev] Running tests should use a database (and any other similar files) isolated from the actual system one. The developers use this app too and don't want their databases overwritten or modified by the test
-- [TODO] need to run tests on other platforms
-- [feature] github test/format check/lint/build/release workflow
-- [question] the application is intended to be GPL v3; do any of the libraries/runtimes used have licenses that cause a conflict?
+Every original item is kept verbatim (a few are split at a sentence boundary, marked *(part 1/2)*). The bracketed tag is the original one; the annotations underneath are the triage.
 
-## Database & Data Safety
+**Three tracks**
 
-- [feature] Users might have more than one database - need a way to choose the database including the location where it is stored
-- [feature] there needs to be a way to have backups of the database in case of accidental corruption, but the database could get to be large depending on how many picture and attachment BLOBs are stored. So unsure if it should make a copy for every session or not? I'm thinking about a sort of log rotation system or where the database file is copied and has a datestamp appended to the name or as a file extension suffix. If the backup is going to take more than some set amount of (very short) time - estimate based on size? - then the user needs a visual indication that this is happening. The user also needs to be able to opt out of this feature.
-- [feature] need an undo system, or otherwise some way to roll back changes. e.g. there is no way to un-dispose a firearm that was incorrectly marked as disposed.
+| Track | Meaning | Process |
+|---|---|---|
+| **A. Revise 001** | The item is a defect, gap, or unanswered question in the existing 001 artifacts, or it contradicts them | `/speckit-clarify` (record the answer in spec.md `## Clarifications`) → edit spec.md / data-model.md / contracts/ → `/speckit-converge` to append the unbuilt work to tasks.md |
+| **B. New spec** | New capability with its own user stories, data model, or design decisions; 001 doesn't cover it | `/speckit-specify` → clarify → plan → tasks. Each new spec must list which 001 FRs/decisions it **amends or supersedes** |
+| **C. Not spec work** | Dev tooling, release engineering, assets, research | Plain issues/tasks. Some warrant a constitution amendment (`/speckit-constitution`) |
 
-## Security & Privacy
+---
 
-- [feature] Users are going to want to be able to select their own password. The application might be used on a shared PC account etc.
-- [feature/bug] The security and data handling issue with open_document needs to be addressed better. The file cannot be left on disk until the app is run again - it needs to remove at least on program exit. Ideally it would be previewable within the program rather than opening an external viewer - but the user should be able to say what it is they want / open externally has an extra step and notify the users of the potential consequences.
+## Track A — Revisions / clarifications to 001
 
-## Firearm Records: Identity, Validation & Attributes
+### A1. Record validation & identity (amends FR-003, FR-004, FR-030, US1, data-model "Validation rules")
 
 - [bug] missing acquisition validation - it should not be possible to mark firearms as aquired on or disposed of on a future date.
+  - **Gap:** FR-003/FR-004 and data-model.md have no date rules at all. Add: no future dates for acquisition or disposition; also decide whether `disposition_date >= acquisition_date`. Add a US1 acceptance scenario and a regression test (constitution II).
 - [question or bug] the "name" assigned to a firearm in the UI is a combination of the make and model; users may have multiple firearms with identical make and model. caliber is also not enough of a discriminator as they may have multiple firearms with identical make, model, and caliber. How is that handled?
-- [feature/bug] The deduplication / validation needs some work. For domestically made firearms after GCA 1968 took effect, the make/model/serial combination must be unique. e.g. for the same make and model there cannot be another firearm with the same serial number. For imported firearms, depending on when it was imported, the original manufacturer's markings might be "the" identifiers according to BATFE, or it might have an assigned-on-import serial, e.g. the importer had to mark the firearm with their name and assign a serial number. I think they may have had to assign a model as well, but that needs double checking. The BATFE has evolved their regulations over time as well.
-- [feature] import/surplus firearms may have original manufacturer's identifiers (make/model/serial, sometimes year) as well as importer info. Legally the importer info is generally how the firearm is recorded, but there should be an option to provide the original manufacturer's marks in addition to the importer's.
-- [feature] need to be able to specify the action or sub-type of a firearm, e.g. semi-automatic, break action, revolver, lever action, pump action, bolt action, etc.
+  - **RESOLVED 2026-09-19 → optional nickname (FR-031).** Encoded in spec.md (Clarifications, US1 scenario 8, FR-031, Key Entities), data-model.md (`nickname`, FTS), spreadsheet-format.md, and `FirearmSummary` in tauri-commands.md. Not yet in tasks.md; run `/speckit-converge`. (Earlier note corrected: 001 already showed serial in `FirearmSummary` for disambiguation; the nickname covers serial-less firearms and gives a visual cue.)
+- [feature/bug] The deduplication / validation needs some work. For domestically made firearms after GCA 1968 took effect, the make/model/serial combination must be unique. e.g. for the same make and model there cannot be another firearm with the same serial number. *(part 1 — domestic rule)*
+  - **RESOLVED 2026-09-19 → FR-032.** Non-exempt record with a serial: a duplicate make/model/serial among *active* firearms is **blocked**. Serial-exempt (pre-GCA 68 / homemade) record that still records a serial: **warn only**. Disposed matches never block or warn (reacquisition = new record). No-serial records are never compared. Case/whitespace-insensitive. Applies on create, edit, import, and reversing a disposition. Encoded in spec.md (Clarifications, US1 scenarios 9–11, FR-032, FR-026 amended), data-model.md (validation + partial-index backstops), both contracts. **Follow-up for plan/tasks:** import's "create a duplicate" option must be hidden where FR-032 would block. (Migration handling of pre-existing duplicates was dropped: the app is unreleased.) The importer/original-marks half is in **B1**.
 
-## Caliber / Cartridge Modeling
+### A2. Un-dispose (amends FR-023, data-model "State transitions")
 
-- [feature] caliber is somewhat ambiguous, e.g. 9x18 and 9x19 are both "9mm" but are different cartridges, .223 and 5.56x45 are also nominally the same caliber but are different cartridges, .22 Short, .22 Long, and .22 Long Rifle (LR) are all .22 caliber but are different cartridges. Need to provide a way to enter the specific cartridge and derive the caliber based on the input.
-- [feature] caliber/cartridge input is just a free form field, and users may end up with multiple different ways of specifying the same information. The input should be a combo box that lets users select from existing values or input new values. the available selections should shrink based on what the user types in, e.g. if they start typing ".3" then the list might show ".30-30" and ".30 Carbine". The database should get pre-populated with the most common calibers/cartridges.
+- [feature] need an undo system, or otherwise some way to roll back changes. e.g. there is no way to un-dispose a firearm that was incorrectly marked as disposed. *(the un-dispose example)*
+  - **RESOLVED 2026-09-19 → FR-033, `reverse_disposition`.** Targeted reversal now; general undo stays B6. The user is asked to **keep** the prior disposition as retained history or **discard** it. Keep = a new `DispositionHistory` row (Firearm's own columns always hold only the current disposition, so "active ⇒ disposition fields null" is unchanged). Blocked if it would clash on nickname or make/model/serial with a currently active firearm. Encoded in spec.md (Clarifications, US1 scenario 12, FR-033, Key Entities), data-model.md (state transitions + `DispositionHistory`), tauri-commands.md, spreadsheet-format.md (history not exported).
+  - **New constraint from FR-031/FR-032:** reversing a disposition must re-run the nickname and make/model/serial checks (the record may clash with one created since, e.g. a reacquisition); on a clash the user must rename or resolve first. Already noted in data-model.md.
+  - **Conflict:** data-model.md says the transition is one-way and "the spec does not request an 'undispose' flow, so none is modeled". Now it is requested. Recommend a targeted **reverse-disposition** command as a 001 revision (small, no history storage needed). The general undo system is **B6**.
 
-## UI: Input Suggestions & Branding
-
-- [feature] when typing in makes, models, calibers, sub/action types, a picklist of vales should appear below the input field (e.g. as with a combo box) to suggest values already entered previously. The suggestions should narrow as the user types. The suggestions should only be based on values presently in the database, including from disposed of firearms. Deleted firearms should not leave behind any values usable by this feature.
-- [feature] need a program icon
-
-## Insurance Policies
+### A3. Insurance policy deletion (amends Edge Cases, FR-027, contract `delete_insurance_policy`, data-model InsurancePolicy)
 
 - [feature] deleting an insurance policy should provide the user a means of moving the affected firearms to another policy, rather than just warning them about it and blocking the deletion.
 - [feature] deleting an expired insurance policy with assigned firearms should be allowed with a warning.
+  - **Gap:** The spec lists "delete a policy that still has firearms assigned" only as an Edge Case *question*. data-model/contract answered it with `ON DELETE RESTRICT` + `POLICY_HAS_FIREARMS`. Both items refine that answer. Reassign-then-delete (with an unassign option), and expired-policy delete-with-warning, become explicit requirements. The expired case is consistent with FR-024, since those firearms are already treated as uninsured. Both items get the same `ConfirmDialog` treatment (constitution III).
+
+### A4. `open_document` plaintext handling — bug part (contract `open_document`, FR-010; conflicts with research §4 and constitution V)
+
+- [feature/bug] The security and data handling issue with open_document needs to be addressed better. The file cannot be left on disk until the app is run again - it needs to remove at least on program exit. *(part 1)*
+  - **Internal inconsistency:** research.md §4 promises "no plaintext files ever touch disk outside of an explicit, disclosed export", but the contract writes a decrypted copy to `<cache>/opened-documents/` and clears it only at next startup. Fix the contract: delete on exit (and ideally when the external app closes), using the same best-effort secure-delete helper as B5's passphrase change, consider crash/kill leftovers (startup sweep stays as a backstop), and add a regression test. The preview/choice half is in **B3**.
+
+### A5. Gaps between 001's plan and what exists (handle via `/speckit-converge` or plain tasks)
+
+- [TODO] need to run tests on other platforms
+  - FR-022 (multi-OS) and SC-008 are existing requirements with no verification task. tasks.md T085–T089 only covered the dev machine. Best satisfied together with the CI matrix in **C2**.
+- [feature] github test/format check/lint/build/release workflow
+  - The **test/format/lint/build** portion is already promised: plan.md's Constitution Check says clippy/rustfmt/eslint/prettier are "wired into CI", but T085 ran them once, manually, and no workflow exists. That portion is a plan-vs-reality gap (this track). **Release/packaging** is new work (**C2**).
+
+---
+
+## Track B — New specs (proposed)
+
+Suggested order: B1 and B2 are independent of each other. **B5 (passphrase, portability) before B4 (multiple databases, backups)**, since B5 defines the unlock model and file format B4 builds on; B3 (document viewing) can fold into B5's threat model or stand alone; B6 comes last.
+
+### B1. `002-firearm-identification` — how a firearm is identified & marked
+
+Supersedes/amends: FR-030, FR-026 (import matching), FR-001, data-model Firearm identity columns, spreadsheet contract.
+
+- [feature/bug] The deduplication / validation needs some work. *(part 2 — imports)* For imported firearms, depending on when it was imported, the original manufacturer's markings might be "the" identifiers according to BATFE, or it might have an assigned-on-import serial, e.g. the importer had to mark the firearm with their name and assign a serial number. I think they may have had to assign a model as well, but that needs double checking. The BATFE has evolved their regulations over time as well.
+- [feature] import/surplus firearms may have original manufacturer's identifiers (make/model/serial, sometimes year) as well as importer info. Legally the importer info is generally how the firearm is recorded, but there should be an option to provide the original manufacturer's marks in addition to the importer's.
+  - **Why separate:** these change what "make/model/serial" *means* (primary marks vs. original-maker marks), which changes the identity key, uniqueness rules by origin/date, the import matcher, and the spreadsheet columns. That requires research on regulations that vary by era. Note the existing Clarification already scopes 001 to federal GCA norms; the new spec should state how far the regulatory-history scope extends.
+  - Keep A1's simple domestic uniqueness rule out of this spec's critical path so it can ship first; B1 then generalizes it.
+
+### B2. `003-classification-vocabularies` — cartridges, action types, and suggestion picklists
+
+Supersedes/amends: spec Assumptions ("caliber is a structured field… user-entered"), FR-001 (adds cartridge and optional action type), FR-012 (grouping by caliber; adds action type), data-model `caliber TEXT` (plus new cartridge column, `ActionType` and type→action tables), spreadsheet `caliber` column (plus `cartridge`, `action_type`), `FirearmSummary`, FTS index.
+
+- [feature] caliber is somewhat ambiguous, e.g. 9x18 and 9x19 are both "9mm" but are different cartridges, .223 and 5.56x45 are also nominally the same caliber but are different cartridges, .22 Short, .22 Long, and .22 Long Rifle (LR) are all .22 caliber but are different cartridges. Need to provide a way to enter the specific cartridge and derive the caliber based on the input.
+- [feature] caliber/cartridge input is just a free form field, and users may end up with multiple different ways of specifying the same information. The input should be a combo box that lets users select from existing values or input new values. the available selections should shrink based on what the user types in, e.g. if they start typing ".3" then the list might show ".30-30" and ".30 Carbine". The database should get pre-populated with the most common calibers/cartridges.
+- [feature] need to be able to specify the action or sub-type of a firearm, e.g. semi-automatic, break action, revolver, lever action, pump action, bolt action, etc.
+- [feature] when typing in makes, models, calibers, sub/action types, a picklist of vales should appear below the input field (e.g. as with a combo box) to suggest values already entered previously. The suggestions should narrow as the user types. The suggestions should only be based on values presently in the database, including from disposed of firearms. Deleted firearms should not leave behind any values usable by this feature.
+  - **Why grouped:** the second caliber item and the picklist item are the same combobox mechanism, and the cartridge catalog, action type, and make/model suggestions all share it. They also all add or reshape lookup data.
+  - **RESOLVED 2026-09-19 (decision #4): seed the *suggestions*, not the database.** The "pre-populated" wording in the caliber item is read as: the app ships a built-in catalog of common cartridges that feeds the combobox, in addition to values derived from the user's own firearm records. Nothing is written to the user's database, so a built-in cartridge that no firearm uses is not residue and the "deleted firearms leave nothing behind" rule (constitution V) holds by construction. Purpose of the catalog: quality of life (common cartridges are selectable instead of typed) and *formatting hints* showing how the user might name their own cartridges.
+  - **Design consequences to carry into `/speckit-specify` for this spec:**
+    - **Suggestion sources are merged at query time:** (1) `SELECT DISTINCT` of the field over all firearm rows, active and disposed (existing item's rule); (2) the bundled read-only catalog, shipped as an app resource like the generic thumbnails (research §10), not a DB table or migration. Deduplicate case-insensitively so "9x19mm" appears once if both sources have it. A value the user typed but never saved on a firearm is never remembered; delete the last firearm using a custom cartridge and it disappears from suggestions.
+    - **The firearm record must be self-contained.** Since the catalog is not in the DB, the record stores its own cartridge string *and* its derived caliber (so grouping by caliber, FR-012, works without the catalog). Selecting a catalog entry copies its cartridge name and caliber onto the record. Catalog changes in later app versions never alter existing records.
+    - **RESOLVED (caliber for a custom cartridge): guess, pre-populate, user may override.** A catalog cartridge maps to its caliber exactly. For a cartridge not in the catalog the app derives a best-effort guess and pre-fills the caliber field. The guess is visible and editable before saving, and once the user has edited the caliber field, later cartridge edits must not overwrite it. Caliber stays required (FR-001), so grouping never has a gap; if a name doesn't parse, leave the field empty and ask rather than guess wrong. On import, if `caliber` is blank but a cartridge is given, derive it (catalog first, then the guess) and list those rows in the import report so a guess is never silent. The heuristic needs a test corpus of real names (.22 LR, .300 BLK, 7.62x39, 9x19, .45 ACP, 12 gauge...).
+    - **RESOLVED (normalization): yes, visibly, for make, model, cartridge, and caliber.** (Action type is a closed list, below.) Rules to carry into the spec:
+      - *Equivalence* ignores case, spacing and separator variants: "9mm" = "9 mm", "9x19" = "9 x 19" = "9×19", "Smith & Wesson" = "Smith and Wesson" = "Smith&Wesson" (`&` ≡ `and` is a token rule). The field snaps on entry so the user sees it before saving; on import it snaps and the report counts the changes. A built-in spelling wins over a user's variant; otherwise the most-used existing spelling wins.
+      - *Guide, never restrict.* (Revised after review.) The catalog and suggestions steer users toward specific cartridges, but free entry is always accepted within reason: non-empty, trimmed, a sensible length cap, no control characters. Nothing requires a value to exist in the catalog. Many users mean 9x19 when they say "9mm" and may not know other 9mm cartridges exist, and recording "9mm" is acceptable. So a bare "9mm" is kept as typed (not blocked, not snapped); the list narrows to the specific 9mm cartridges, most common first (9x19mm Parabellum, then .380 ACP, 9x18 Makarov, 9x21...), and the user may pick one or decline. A suggestion is never applied unless the user chooses it. The same principle applies to make, model and caliber. Action type is the one closed list.
+      - *Snapping is for same-notation variants only.* Case, spacing, separator and `&`/`and` variants of the same text snap to each other: "9 mm" → "9mm", "9 x 19" → "9x19", "Smith and Wesson" → "Smith & Wesson", when the target is on record or is a catalog spelling. Different notations are **not** snapped ("9mm", "9x19" and "9x19mm Parabellum" stay as entered). Catalog aliases ("9mm Luger", "9mm Para", "9x19") only narrow and rank the suggestion list. (This drops my earlier unique-alias snapping, which conflicted with "record it however you want".) Consequences: catalog entries need a commonness rank to order suggestions, and the caliber guess for "9mm" is simply "9mm".
+      - *Abbreviations and acronyms narrow the suggestion list only; they never auto-snap.* Narrowing modes: prefix, word-prefix ("smith w"), and initialism ignoring `&` and spaces ("sw" or "s&w" finds Smith & Wesson; "hk" finds Heckler & Koch), run against the merged suggestion pool; catalog aliases add ".22 LR" ↔ ".22 Long Rifle" and similar. Abbreviations that aren't initialisms (e.g. "CZ" for Česká zbrojovka) match only if the value is on record under that spelling. No built-in make-alias list is planned; makes and models stay derived-only.
+      - Only new entries and imports are normalized. Existing records that already differ ("S&W" vs "Smith & Wesson") stay split. A later "merge/rename value" cleanup tool is a possible follow-up, not part of B2 unless wanted.
+    - **RESOLVED (action type): a closed choice from a fixed, pre-populated list, not a combobox and not part of the suggestion mechanism.** Modeled like `FirearmType`: a seeded `ActionType` lookup table (migration), nullable FK on Firearm, and new values arrive only with app updates ("generalize, or ask for an update"). Choices are **filtered by firearm type** through a seeded type→action mapping (join table, since e.g. semi-automatic applies to several types). To define in the spec:
+      - Seed list content and the mapping. Your starting set: semi-automatic, break action, revolver, lever action, pump action, bolt action. Likely additions: single-shot, falling/rolling block, muzzleloader ignition types. Decide how to treat full-auto/select-fire.
+      - Fallback: `FirearmType` is user-extensible, and a user-added type or "Other" has no mapping, so show the whole list.
+      - Changing the firearm type after choosing an action that the new type doesn't allow: clear the action with a notice.
+      - The field is optional; existing records get none and group as "Unspecified".
+      - Import/export: `action_type` matched case-insensitively against the list; unknown or not-allowed-for-type is a row error (same as `firearm_type`); export writes the name.
+      - It is a structured field, so it becomes groupable (FR-012) and searchable via a join like the type name.
+      - This removes action type from the picklist item above; that item keeps make, model, cartridge, caliber.
+    - **Migration: not applicable (decided 2026-09-20).** The app is unreleased (`0.1.0`, no tags), so there is no obligation to migrate or preserve data from earlier development builds. Nothing in the constitution or the 001 specs requires it. Schema changes for B2 need no data-mapping or backfill design. Developers with existing databases either add an ordinary new migration or recreate their DB. If a compatibility policy is wanted in writing, a one-line pre-1.0 clause in the constitution would settle it for good.
+    - **UI:** show catalog entries and the user's own entries in one narrowing list, but visually distinguish the source (e.g. a "built-in" marker or grouping) so the catalog can act as the formatting hint. Matching should be forgiving of leading dots and separators ("30" or ".30" finds ".30-30" and ".30 Carbine") and use the abbreviation/initialism modes above.
+    - **Precedent, not a conflict:** `FirearmType` *is* seeded into the DB (migration 0003) because it is a real lookup table with an FK from `firearms`. Cartridge is deliberately different: no FK, free-text on the record.
+
+### B3. `004-document-viewing` (or fold into B5) — in-app preview & external-open consent
+
+- [feature/bug] Ideally it would be previewable within the program rather than opening an external viewer - but the user should be able to say what it is they want / open externally has an extra step and notify the users of the potential consequences. *(part 2 of the open_document item)*
+  - **Why new:** a new user-facing behavior (preview component, a preference, a consent step) beyond FR-010's "reopen from the record". PDF/image preview in a webview has its own security review (malicious PDFs, CSP). The bug half is A4 and shouldn't wait for this.
+
+### B4. `005-database-management` — multiple databases, location, backups
+
+Supersedes/amends: FR-021 (storage location), plan (single DB in OS app-data dir). Builds on B5 (unlock model).
+
+- [feature] Users might have more than one database - need a way to choose the database including the location where it is stored
+- [feature] there needs to be a way to have backups of the database in case of accidental corruption, but the database could get to be large depending on how many picture and attachment BLOBs are stored. So unsure if it should make a copy for every session or not? I'm thinking about a sort of log rotation system or where the database file is copied and has a datestamp appended to the name or as a file extension suffix. If the backup is going to take more than some set amount of (very short) time - estimate based on size? - then the user needs a visual indication that this is happening. The user also needs to be able to opt out of this feature.
+  - **Dependencies:** (1) *Resolved by B5:* with a passphrase-derived key (B5) a backup is just a copy of the database file and opens anywhere with the passphrase. Note backups keep whatever passphrase was current when they were made, so after a passphrase change older backups still need the old one; say so in the UI. (2) Each database has its own passphrase and its own optional keyring entry; the recent-databases list is machine-local. (3) Backups are still encrypted, but destination and retention are user-visible privacy questions (constitution V "what leaves the device"). (4) The progress indicator falls under constitution IV. (5) Relationship to the existing spreadsheet export, which SC-005 already calls a "backup": that is a data export, not a corruption backup. (6) Do B5 first: it changes the file/unlock model that this spec builds on.
+
+### B5. `006-database-protection-portability` — passphrase, portability, optional keyring (do this before B4)
+
+Supersedes: research §5 (random key generated at first run and held in the OS keyring, with silent unlock), and the alternative it rejected ("user-supplied master password… out of scope here"). Amends: plan.md Constitution Check row V (keyring), `encryption_test.rs` (keyring + SQLCipher), the spec Assumption "no accounts, login", quickstart first-run flow. Left out of 001 on purpose: 001 should not claim portability until this ships.
+
+- [feature] Users are going to want to be able to select their own password. The application might be used on a shared PC account etc.
+- **Added 2026-09-20 (new requirement, from discussion):** the user must be able to take their database to another computer, run the app there, and have all their data. That cannot work while the actual key lives in a system keyring. So: the user provides a passphrase; the database's protection derives from it (or it protects the key), and everything needed to open the database travels with it. Storing the passphrase in the OS keyring is an **optional, opt-in convenience** for users who accept the security implications.
+
+**Decided**
+- **Portability guarantee** (new requirement): database file(s) + passphrase opens on any supported OS/machine, with no dependency on machine-local secret storage. Verified by a cross-platform test (create on one OS, open on another), which the CI matrix in C2 can run.
+- **No key in the keyring by default.** The keyring may hold *the passphrase* only, only when the user opts in, and per database.
+- **Opt-in must disclose the implication:** anyone who can use that OS account (or with the keyring unlocked) can open the database, which defeats the passphrase on a shared PC account. Default off. Provide "forget saved passphrase". Update or clear the stored copy when the passphrase changes. If no keyring service is available (some Linux setups), the option is shown as unavailable with an explanation.
+- **Passphrase is mandatory** for every database: constitution "Security & Data Handling" requires encryption at rest, so there is no "no passphrase" mode. Never logged; held in memory only as long as needed.
+- **Scope: personal, non-commercial.** One passphrase per database. No multi-user unlock and no recovery key in the first release; anyone else with access is a close confidant who shares the passphrase. Commercial use (dealers, several operators, audit trails) has its own set of concerns and is out of scope. This matches 001's existing "single-user, personal application" Assumption; B5 amends only its "no accounts, login" part.
+- **Changing the passphrase is copy-then-swap.** Re-encrypt into a new file under the new passphrase, verify it (opens with the new passphrase, integrity check, row counts match), then atomically replace. The original is untouched until then, so a failure or interruption leaves the working database intact; that is the built-in backup. Needs free space about equal to the database size and a progress indication. **Decided 2026-09-20:** after a verified swap the old file is **deleted by default, with no extra prompt**, so the whole operation is as transparent to the user as possible. Deletion uses **secure deletion where the OS supports it** (best effort: overwrite, flush, then unlink, plus a TRIM/discard hint where available). If the old file cannot be removed, the operation still succeeds, but the user is told the old file remains, where it is, and that it is readable with the old passphrase.
+- **Security disclosure (dialogs and documentation, "within reason").** Keep the in-dialog text short and put the detail in the user docs. It should say: (1) secure deletion is best effort and cannot be guaranteed on SSDs, journaling or copy-on-write filesystems, filesystem snapshots, or cloud-synced folders; (2) the deleted old copy was still encrypted under the old passphrase, so the risk exists only if that passphrase was compromised; (3) backups and copies made earlier, elsewhere, are not touched and still open with the passphrase current when they were made.
+- **Recommend whole-disk encryption in addition to the passphrase.** It is the strongest complement: BitLocker (Windows), FileVault (macOS), LUKS or equivalent (Linux). It protects what the app cannot control: freed blocks that secure deletion missed, decrypted temporary copies from `open_document` (A4/B3), swap and hibernation files, and stolen-device scenarios. State this in the user docs and in a one-time, dismissible note at first run or database creation (consistent with constitution III, no repeated nagging). The app does not try to detect or enforce disk encryption; detection isn't reliable across platforms.
+- **Shared helper:** one best-effort secure-delete utility, used here for the old database file and by A4 for decrypted document copies.
+
+**Decided 2026-09-20 — mechanism: the passphrase is the SQLCipher key directly (single self-contained file).**
+- SQLCipher stores its random KDF salt in the first bytes of the database file and derives the key from the passphrase (PBKDF2-HMAC-SHA512, high iteration count in SQLCipher 4 defaults; verify against the bundled version). The file is therefore **self-contained: one file + passphrase = data.** No custom crypto and nothing to lose besides the file. This matches the constitution's "platform-standard encryption".
+- **Why not "passphrase encrypts a random key, stored in or alongside the database":** SQLCipher encrypts the file from byte 0, so a wrapped key cannot live *inside* the database (you'd need the key to read it). It would have to be a **sidecar file** (two files that must stay together; losing the sidecar loses everything) or a custom container format. What it buys: changing the passphrase is instant (re-wrap only), multiple unlock methods, an optional recovery key. What it costs: a second artifact, custom key-wrapping code to design and audit, more ways to fail. Those benefits are not required now and can be added later if wanted.
+- **Cost of this approach (accepted):** changing the passphrase re-encrypts the whole file (`PRAGMA rekey` or export to a new file), proportional to size (photo BLOBs), so it needs progress indication (constitution IV) and should be done copy-then-swap so an interruption can't destroy the database.
+- **Measured cost of re-encrypting (2026-09-20), so the trade-off isn't abstract.** Benchmark: rusqlite with the same bundled SQLCipher as the app, 2 GiB of incompressible 4 MB blobs (photo-like), on a Ryzen 9 5900X with AES-NI and `/tmp` on tmpfs (so essentially no disk I/O, i.e. a best case). Results: in-place `PRAGMA rekey` **15 s (140 MiB/s)**; `sqlcipher_export` to a new file **9 s (229 MiB/s)**; opening a database including key derivation **0.09 s**. SQLCipher is single-threaded, so core count doesn't help. Extrapolation to a modest ~5-year-old laptop assumes roughly half the single-thread speed (an estimate, not measured): copy-then-swap about 1 GiB ≈ 10 s, 5 GiB ≈ 50 s, 20 GiB ≈ 3 min on an SSD; roughly 2.5-4x longer on a hard disk. Practical notes: copy-then-swap needs free disk space about equal to the database size for the duration; `sqlcipher_export` is one blocking call with no progress callback, so a progress bar needs a chunked copy or a size-based estimate; the per-open key-derivation cost is small enough that the iteration count could be raised substantially.
+- **Considered and set aside (2026-09-20), kept for reference: making a two-file variant one unit.** Moot now that a single file was chosen; revisit only if a recovery key or multi-person unlock is ever wanted.
+  - *Zip container:* SQLite/SQLCipher needs a seekable, in-place-writable file (plus journal/WAL), so a database inside a zip, even a zero-compression one, must be **extracted to a working file to be used**, then repacked. Costs: copy time and double disk use on a photo-heavy database, ZIP64 for entries over 4 GiB, and two sources of truth, so a crash or power loss mid-session leaves changes in the working copy and not the archive (needs recovery logic). The extracted database is still encrypted, so extraction alone is not a plaintext leak.
+  - *Better ways to keep the pair together:* (a) a **database folder** (e.g. `Name.hoplodex/` holding the database and the key file) that is copied as one item, with no extraction; (b) a zip only as a **transport bundle** ("Export portable bundle" and open-from-bundle), not the working format; (c) a custom single-file container via a SQLite VFS (SQLite's tree has an optional "append" VFS extension; not in standard builds, would need compiling, registering and verifying against SQLCipher), which is the riskiest.
+  - *Security nuance of key-wrapping:* changing the passphrase re-wraps the same data key, so an old passphrase plus an old copy of the key file still opens the database forever, unless the data key is rotated (a full re-encrypt again). The direct-passphrase approach re-encrypts on change, so the old passphrase stops working for the new file (old backups keep it).
+  - *Stakes are low either way:* the app is unreleased, so switching approaches later costs a spec, not user data.
+
+**Consequences to carry into the spec**
+- **Security trade-off, stated plainly:** a random 256-bit keyring key could not be brute-forced offline; a passphrase-derived key can. Because the file is now portable (and copyable, e.g. in a backup), **passphrase strength determines security.** Require a minimum length, show a strength hint, encourage long passphrases; raising the KDF iteration count is cheap. No composition rules.
+- **No recovery by design:** a forgotten passphrase means unrecoverable data. Say so at creation, ideally asking the user to confirm they've stored it. (The unencrypted spreadsheet export is the only escape hatch and carries its own disclosure, constitution V.)
+- **Pin cipher settings explicitly** (page size, KDF iterations, HMAC/KDF algorithm, i.e. SQLCipher compatibility mode) so every platform and build writes and reads the same format.
+- **Forward-compat guard:** an older app opening a database with a newer schema must refuse with a clear message rather than modify it. The `schema_migrations` table already records applied migrations. Full backward-migration policy is moot (app unreleased).
+- **Wrong passphrase looks like corruption** to SQLCipher ("file is not a database"). The UI can only say "incorrect passphrase, or not a HoploDex database". No meaningful offline attempt limiting.
+- **First run changes:** creating a database now includes choosing a passphrase, and every launch (or opening a database) prompts for it unless the user opted into the keyring. Replaces the "silent unlock" of research §5.
+- **Machine-local settings stay outside the database:** recent-databases list, keyring opt-in flags, backup opt-out. Only the data travels.
+- **Deferred (2026-09-20): auto-lock.** A "lock now" command and lock-after-idle are moved out of B5 into a future, as-yet-undefined feature. B5 still has to leave room for it (an unlock/lock state the app can return to).
+- **Related threat surface:** decrypted temp copies from `open_document` (A4/B3) are exposed on a shared account regardless of passphrase, which is why A4 must land regardless.
+
+### B6. `007-undo-history` — general change history / undo
+
+- [feature] need an undo system, or otherwise some way to roll back changes. *(general system; the un-dispose example is A2)*
+  - **Tension with 001:** constitution V and the data-model require deletes to be real (no soft-delete). An undo/audit log that retains prior values, or deleted records, contradicts that unless scoped (for example: undo covers edits and dispositions only; delete stays permanent, or is undoable only within a short session window with an explicit purge). Decide that first. Do this after A2 ships and probably after B4, since a history table grows the DB and interacts with backup size.
+
+---
+
+## Track C — Not spec work
+
+### C1. Test isolation (plus a constitution amendment)
+
+- [dev] Running tests should use a database (and any other similar files) isolated from the actual system one. The developers use this app too and don't want their databases overwritten or modified by the test
+  - This is a defect in the test harness, not a product requirement. Constitution II says integration tests use a "real temporary SQLCipher database" (T015 does), but there is no rule that E2E/manual runs must not touch the user's data. Recommend an explicit app-level data-dir override (env var / CLI flag) used by all test runs, then amend the constitution's Testing Standards with "tests MUST NOT read or write the user's real database or keyring entry". **Check (until B5 ships):** the DB key lives in the OS keyring, so verify tests don't share the real keyring entry either; isolating the DB file alone isn't enough if they do. After B5 the keyring is opt-in and tests use a fixed test passphrase, which removes this risk. The override is the same mechanism B4 needs for choosing DB location, so build it once.
+
+### C2. CI / release engineering
+
+- [feature] github test/format check/lint/build/release workflow *(release/packaging portion; test/lint/build portion is A5)*
+  - Cross-platform matrix (Windows/macOS/Linux) also delivers A5's "other platforms" item. Signing/installer/updater decisions are new; if they become large, run them through spec kit as an infrastructure spec, otherwise plain issues.
+
+### C3. License compatibility (plus a constitution/plan amendment)
+
+- [question] the application is intended to be GPL v3; do any of the libraries/runtimes used have licenses that cause a conflict?
+  - Research task, not a feature. 001's dependency review (constitution "Security & Data Handling") checked for telemetry, not license. Audit the Rust and npm dependency trees (e.g. `cargo-deny` / `license-checker`), and add a CI license gate in C2. The first thing to check: the `bundled-sqlcipher` build links OpenSSL/libcrypto, and the OpenSSL license version matters for GPLv3 compatibility. Also check the bundled assets (line-art drawings, fonts). Then record the result in research.md and add "dependency licenses MUST be GPLv3-compatible" to the constitution.
+
+### C4. Branding
+
+- [feature] need a program icon
+  - Asset + `tauri.conf.json` bundle icons (`cargo tauri icon`). No spec impact.
+
+---
+
+## Decisions needed before proceeding
+
+1. ~~**A1 uniqueness**~~ — **decided:** block for non-exempt serials, warn for serial-exempt, disposed records ignored (FR-032).
+2. ~~**A1 display name**~~ — **decided:** optional nickname (FR-031), unique among *active* firearms (case-insensitive); a disposed firearm releases its nickname. Not part of identity or import matching.
+3. ~~**A2/B6**~~ — **decided:** targeted reverse-disposition now (FR-033, user chooses keep vs. discard the details); general undo later (B6), which still has to reconcile with "real deletion".
+4. ~~**B2 seeded cartridges**~~ — **decided:** yes; the built-in catalog seeds the *suggestions* (bundled with the app, merged with values from the user's own records), not the database, so it is never residue. The three follow-on questions are also decided: custom-cartridge caliber is guessed and pre-filled with user override; entries are normalized (with narrowing-only abbreviation matching); action type is a closed, type-filtered lookup list instead of a suggestion field. The migration question is moot: the app is unreleased.
+5. ~~**B4/B5 key management**~~ — **decided 2026-09-20:** the passphrase is the SQLCipher key directly (single portable file; file + passphrase opens anywhere). Keyring is opt-in and holds only the passphrase. Personal single-passphrase scope; no recovery key or multi-user unlock. Passphrase change is copy-then-swap, and the old file is deleted by default using best-effort secure deletion, with user-facing disclosure and a recommendation to also use whole-disk encryption. Auto-lock deferred to a future feature. See B5.

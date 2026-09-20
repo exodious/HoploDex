@@ -28,22 +28,46 @@ type CommandError = {
 
 - **Input**: `FirearmInput` — all `Firearm` fields from data-model.md
   except `id`, `created_at`, `updated_at`, `thumbnail_photo_id`.
-- **Output**: `Firearm` (full record as persisted).
+- **Output**: `Firearm` (full record as persisted) plus `warnings: string[]`
+  (FR-032b: serial-exempt record matching an active firearm's
+  make/model/serial; empty otherwise).
 - **Errors**: `VALIDATION_ERROR` (e.g. missing serial number without
-  attestation — FR-029; disposition fields inconsistent with status).
+  attestation — FR-029; disposition fields inconsistent with status;
+  duplicate nickname among active firearms — FR-031; duplicate
+  make/model/serial on a non-exempt record — FR-032a; the message names
+  the conflicting record).
 
 ### `update_firearm`
 
 - **Input**: `id: number`, `FirearmInput` (partial or full; validation
   rules from data-model.md apply to the resulting record).
-- **Output**: `Firearm`.
-- **Errors**: `VALIDATION_ERROR`, `NOT_FOUND`.
+- **Output**: `Firearm` plus `warnings: string[]` (as `create_firearm`).
+- **Errors**: `VALIDATION_ERROR` (same uniqueness rules, excluding the
+  record itself), `NOT_FOUND`.
 
 ### `dispose_firearm`
 
 - **Input**: `id: number`, `{ dispositionType, recipient, date, price }`.
 - **Output**: `Firearm` (status now `disposed`).
 - **Errors**: `VALIDATION_ERROR`, `NOT_FOUND`.
+
+### `reverse_disposition`
+
+- **Input**: `id: number`, `{ history: "keep" | "discard", nickname?: string | null }`.
+  `history` is required: the frontend asks the user (via the shared
+  `ConfirmDialog` pattern, constitution III) and never defaults it
+  silently. The optional `nickname` lets the user resolve a FR-031 nickname
+  clash in the same step by renaming.
+- **Output**: `Firearm` (status now `active`, disposition fields null) plus
+  `warnings: string[]` (as `create_firearm`).
+- **Errors**: `VALIDATION_ERROR` (record is not disposed; `history`
+  missing; nickname or make/model/serial clash with a currently active
+  firearm per FR-031/FR-032 — message names the conflicting record;
+  nothing is changed), `NOT_FOUND`.
+- **Side effects**: with `keep`, inserts a `DispositionHistory` row;
+  status change, history insert, and column clear happen in one
+  transaction. Frontend re-invokes `get_value_summary` afterwards (the
+  firearm re-enters the value summary, FR-015/FR-025).
 
 ### `delete_firearm`
 
@@ -58,6 +82,7 @@ type CommandError = {
 
 - **Input**: `id: number`.
 - **Output**: `FirearmDetail` (Firearm + its Photos + DocumentAttachments +
+  its retained `DispositionHistory` rows (newest first) +
   resolved InsurancePolicy summary + computed insurance-status flags).
 - **Errors**: `NOT_FOUND`.
 
@@ -75,8 +100,9 @@ type CommandError = {
   }
   ```
 - **Output**: `{ groups: { key: string; firearms: FirearmSummary[] }[] }`
-  where `FirearmSummary` includes id, make, model, serial number (so
-  firearms sharing a make and model stay distinguishable in lists),
+  where `FirearmSummary` includes id, make, model, nickname (FR-031),
+  serial number (so firearms sharing a make and model stay
+  distinguishable in lists),
   caliber, type, status, thumbnail reference (`thumbnailPhotoId` or
   generic type key), estimated value, coverage assignment
   (`insurancePolicyId`, `coverageKind`), and computed insurance-warning
@@ -256,7 +282,9 @@ type CommandError = {
 - **Behavior**: Rows failing validation are reported per-row without
   discarding successful rows (FR-020). Rows matching an existing
   `(make, model, serial_number)` key produce an `ImportConflict` requiring
-  resolution rather than being silently applied.
+  resolution rather than being silently applied. FR-031/FR-032 apply per
+  row: a duplicate nickname is a row error; a `duplicate` resolution is
+  only valid where FR-032 would allow the resulting record.
 
 ### `resolve_import_conflicts`
 
@@ -264,4 +292,6 @@ type CommandError = {
 - **Output**: `{ resolvedCount: number }`.
 - **Behavior**: Implements FR-026's per-row resolution plus "apply to all
   subsequent conflicting rows" option; `applyToRemaining` only affects
-  conflicts not explicitly listed in `resolutions`.
+  conflicts not explicitly listed in `resolutions`. `duplicate` (explicit
+  or via `applyToRemaining`) is rejected for a conflict FR-032 would
+  block; such conflicts are left unresolved and reported.
