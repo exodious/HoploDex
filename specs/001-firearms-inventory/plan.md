@@ -45,7 +45,9 @@ encryption/keyring integration) run against a real temporary SQLCipher
 database per the constitution's no-mocks rule; Vitest + React Testing
 Library for frontend unit tests; WebdriverIO driven through `tauri-driver`
 (Tauri's officially supported WebDriver harness) for E2E tests covering the
-five user-story acceptance scenarios end-to-end against the built app.
+five user-story acceptance scenarios end-to-end against the built app. Format,
+lint, test, and build run in CI on Windows, macOS, and Linux so FR-022's
+cross-platform requirement is verified rather than assumed.
 
 **Target Platform**: Desktop — Windows 10+, macOS 12+, Linux (glibc,
 WebKitGTK) — single codebase, no server component, fully offline-capable.

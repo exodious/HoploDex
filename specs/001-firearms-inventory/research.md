@@ -70,8 +70,10 @@ library) so nothing is left as NEEDS CLARIFICATION going into Phase 1.
   respective tables; additionally store a small pre-generated thumbnail
   BLOB (e.g., ~200px JPEG) per photo, generated once at insert time.
 - **Rationale**: Keeps the "single encrypted container" property (no
-  plaintext files ever touch disk outside of an explicit, disclosed
-  export) while still meeting the 500ms browse/search and 1s
+  plaintext
+  files ever touch disk outside of an explicit, disclosed export, or the
+  temporary copy made when the user opens a document in an external
+  viewer, which is deleted when the app exits, FR-035) while still meeting the 500ms browse/search and 1s
   record-open budgets — list/tile views only ever read the small cached
   thumbnail BLOB, never the full-resolution original, so browsing
   performance is independent of photo file size.

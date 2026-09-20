@@ -35,7 +35,8 @@ type CommandError = {
   attestation — FR-029; disposition fields inconsistent with status;
   duplicate nickname among active firearms — FR-031; duplicate
   make/model/serial on a non-exempt record — FR-032a; the message names
-  the conflicting record).
+  the conflicting record; acquisition or disposition date in the future, or
+  disposition before acquisition — FR-003/FR-004).
 
 ### `update_firearm`
 
@@ -49,7 +50,8 @@ type CommandError = {
 
 - **Input**: `id: number`, `{ dispositionType, recipient, date, price }`.
 - **Output**: `Firearm` (status now `disposed`).
-- **Errors**: `VALIDATION_ERROR`, `NOT_FOUND`.
+- **Errors**: `VALIDATION_ERROR` (including a future `date`, or a `date`
+  earlier than the firearm's acquisition date — FR-004), `NOT_FOUND`.
 
 ### `reverse_disposition`
 
@@ -104,8 +106,9 @@ type CommandError = {
   serial number (so firearms sharing a make and model stay
   distinguishable in lists),
   caliber, type, status, thumbnail reference (`thumbnailPhotoId` or
-  generic type key), estimated value, coverage assignment
-  (`insurancePolicyId`, `coverageKind`), and computed insurance-warning
+  generic type key), estimated value, scheduled coverage
+  (`insurancePolicyId`, `scheduledCoverageAmount`; both null when the
+  firearm is unscheduled), and computed insurance-warning
   flags (for SC-004's "always visibly flagged" requirement).
 - **Search semantics**: `query` matches as a phrase whose last word may be
   partial (`"cracked han"` finds "cracked handle"), so results can update
@@ -128,20 +131,46 @@ type CommandError = {
 
 - **Input**: `InsurancePolicyInput` (all InsurancePolicy fields except id).
 - **Output**: `InsurancePolicy`.
-- **Errors**: `VALIDATION_ERROR` (e.g. end date before start date).
+- **Errors**: `VALIDATION_ERROR` (e.g. end date before start date; blanket
+  policy dates overlapping another blanket policy by more than a shared
+  boundary day — FR-036, the message names the other policy).
+
+### `get_policy_deletion_impact`
+
+- **Input**: `id: number`.
+- **Output**: `{ isExpired: boolean, isBlanketInForce: boolean, scheduledFirearmCount: number, scheduledFirearms: { id: number; make: string; model: string; nickname: string | null }[], blanketFirearmCount: number, unscheduleOutcome: "blanket" | "uninsured", otherPolicies: { id: number; name: string; isExpired: boolean }[] }`.
+- **Errors**: `NOT_FOUND`.
+- Read-only. `blanketFirearmCount` is the number of active unscheduled
+  firearms that lose blanket coverage because this is the blanket policy
+  currently in force (0 otherwise). `unscheduleOutcome` says what happens to
+  firearms left unscheduled: they fall under another blanket policy that is
+  in force after the deletion (`"blanket"`) or are uninsured
+  (`"uninsured"`). Lets the frontend build the FR-034 dialog before anything
+  changes.
 
 ### `delete_insurance_policy`
 
-- **Input**: `id: number`, `confirmed: true`.
-- **Output**: `{ deleted: true }`.
-- **Errors**: `POLICY_HAS_FIREARMS` (Edge Case: deleting a policy with
-  firearms still assigned is rejected, not silently cascaded — the
-  frontend surfaces the affected firearm list and asks the user to
-  reassign/unassign first).
+- **Input**: `id: number`, `confirmed: true`, and, when the policy has
+  scheduled firearms, `scheduledFirearms`:
+  `{ action: "move", targetPolicyId: number } | { action: "unschedule", confirmUnschedule?: true }`.
+- **Output**: `{ deleted: true, movedCount: number, unscheduledCount: number }`.
+- **Behavior** (FR-034): one transaction. `move` reassigns every scheduled
+  firearm to the target policy, keeping `scheduledCoverageAmount`.
+  `unschedule` clears the policy and scheduled amount. Then the policy is
+  deleted. Unscheduled (blanket) firearms need no handling: their coverage is
+  computed. Frontend re-invokes `get_value_summary` afterwards.
+- **Errors**: `POLICY_HAS_FIREARMS` (scheduled firearms exist and
+  `scheduledFirearms` omitted; nothing changed), `VALIDATION_ERROR` (target
+  missing, equal to the deleted policy, or nonexistent; `unschedule` on a
+  non-expired policy without `confirmUnschedule`), `NOT_FOUND`.
 
 ### `assign_firearm_coverage`
 
-- **Input**: `firearmId: number`, `{ policyId: number | null, coverageKind?: "individually_scheduled" | "blanket", scheduledCoverageAmount?: number }`.
+- **Input**: `firearmId: number`, `{ policyId: number | null, scheduledCoverageAmount?: number }`.
+  A non-null `policyId` schedules the firearm under that policy and requires
+  `scheduledCoverageAmount`; `policyId: null` makes it unscheduled, i.e.
+  covered by the blanket policy in force (FR-036). There is no per-firearm
+  blanket assignment.
 - **Output**: `Firearm`.
 - **Errors**: `VALIDATION_ERROR`.
 
@@ -152,14 +181,19 @@ type CommandError = {
   ```ts
   {
     collectionTotal: number;               // cents, all active firearms
-    byPolicy: {
+    blanket: {                             // blanket policy in force today; null if none
+      policyId: number;
+      policyName: string;
+      limit: number;
+      total: number;                       // sum of values of active unscheduled firearms
+      firearmCount: number;
+      underInsured: boolean;
+    } | null;
+    byPolicy: {                            // policies that have scheduled firearms
       policyId: number;
       policyName: string;
       isExpired: boolean;
       isExpiringSoon: boolean;
-      blanketTotal: number;                // sum of blanket-covered firearm values
-      blanketLimit: number;
-      blanketUnderInsured: boolean;
       individuallyScheduled: {
         firearmId: number;
         estimatedValue: number;
@@ -167,7 +201,7 @@ type CommandError = {
         underInsured: boolean;
       }[];
     }[];
-    unassigned: { firearmId: number; estimatedValue: number }[]; // uninsured group
+    uninsured: { firearmId: number; estimatedValue: number }[]; // unscheduled firearms when no blanket policy is in force
   }
   ```
 - **Recompute contract**: the frontend re-invokes this after every
@@ -249,9 +283,16 @@ type CommandError = {
   the OS default app for its file type, by writing a temporary copy to
   `<app cache dir>/opened-documents/<id>/<original filename>` (reduced to
   a single, OS-safe path component) and handing that path to the OS. The
-  webview can't display arbitrary files itself. The `opened-documents`
-  folder is cleared at every startup, so decrypted copies don't
-  accumulate outside the encrypted database.
+  webview can't display arbitrary files itself. **Lifecycle (FR-035):** the whole
+  `opened-documents` folder is deleted when the app exits normally
+  (window close, quit, or an OS shutdown where the platform lets the app
+  run cleanup). The app cannot tell when an external viewer has closed the
+  file, since many viewers hand off to an already-running process, so
+  cleanup on exit is the guarantee. The folder is also swept at every
+  startup as a backstop for crashes and forced kills, and anything that
+  could not be deleted is retried then. Deletion uses secure deletion
+  (overwrite before unlink) where the OS supports it. Decrypted copies
+  therefore never outlive the session that created them.
 - **Errors**: `NOT_FOUND`, `INTERNAL_ERROR` (copy couldn't be written or
   no app could open it).
 

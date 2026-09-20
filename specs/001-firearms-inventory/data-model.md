@@ -1,7 +1,7 @@
 # Phase 1 Data Model: Firearms Collection Inventory
 
 Derived from the Key Entities section of [spec.md](./spec.md) and the
-functional requirements (FR-001–FR-033). All tables live in the single
+functional requirements (FR-001–FR-036). All tables live in the single
 encrypted SQLCipher database described in [research.md](./research.md).
 Every table below is a real SQL table (or virtual table for FTS5) — none of
 this is mocked for testing; `cargo test` integration tests run against a
@@ -49,9 +49,8 @@ Primary record; corresponds directly to the spec's **Firearm** entity.
 | `disposition_date` | TEXT (ISO 8601 date), nullable | FR-004 |
 | `disposition_price` | INTEGER (cents), nullable | FR-004 |
 | `thumbnail_photo_id` | INTEGER FK → Photo, nullable | FR-008; null ⇒ use FirearmType's generic thumbnail (FR-009) |
-| `insurance_policy_id` | INTEGER FK → InsurancePolicy, nullable | FR-027: at most one policy per firearm |
-| `coverage_kind` | TEXT, nullable | enum: `individually_scheduled`, `blanket`; required iff `insurance_policy_id IS NOT NULL` |
-| `scheduled_coverage_amount` | INTEGER (cents), nullable | required iff `coverage_kind = individually_scheduled` (FR-014, FR-024) |
+| `insurance_policy_id` | INTEGER FK → InsurancePolicy, nullable | FR-014, FR-027: set only when the firearm is individually scheduled under that policy; null ⇒ unscheduled, covered by the blanket policy in force (computed, never stored per firearm, FR-036) |
+| `scheduled_coverage_amount` | INTEGER (cents), nullable | FR-014, FR-024: set iff `insurance_policy_id` is set |
 | `created_at` / `updated_at` | TEXT (ISO 8601 datetime), not null | audit trail, also drives "last updated" ordering if needed |
 
 **Validation rules** (enforced in `services::firearms` / command layer, not
@@ -62,12 +61,14 @@ human-readable errors):
   false (Acceptance Scenario US1.7).
 - `status = disposed` requires all four disposition fields set
   (Acceptance Scenario US1.4); `status = active` requires them null.
-- `coverage_kind = individually_scheduled` requires
-  `scheduled_coverage_amount` set and `insurance_policy_id` set.
-- `coverage_kind = blanket` requires `insurance_policy_id` set and
-  `scheduled_coverage_amount` null (blanket firearms draw from the
-  policy's shared limit, computed in aggregate — see Insurance Coverage
-  below).
+- `insurance_policy_id` and `scheduled_coverage_amount` are either both set
+  (individually scheduled) or both null (unscheduled). Blanket coverage is
+  never stored on the firearm; see Insurance Coverage below (FR-036).
+- **Dates (FR-003, FR-004)**: `acquisition_date` and `disposition_date`,
+  when set, must not be later than the user's current local date (today is
+  allowed); `disposition_date` must not be earlier than `acquisition_date`
+  when both are set. Both may be null. Checked on create, update, dispose,
+  and every import row.
 - **Nickname uniqueness (FR-031)**: `nickname` must not equal (ignoring
   case and surrounding whitespace) the nickname of any other
   `status = 'active'` firearm. Backstop: partial unique index on
@@ -162,7 +163,7 @@ Acceptance Scenario 1–2).
 | `company_contact` | TEXT, nullable | phone/email/address, free text |
 | `agent_name` | TEXT, nullable | |
 | `agent_contact` | TEXT, nullable | |
-| `blanket_coverage_limit` | INTEGER (cents), not null | shared limit for blanket-covered firearms on this policy |
+| `blanket_coverage_limit` | INTEGER (cents), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy |
 | `effective_start_date` | TEXT (ISO 8601 date), not null | |
 | `effective_end_date` | TEXT (ISO 8601 date), not null | drives 30-day and expired warnings (FR-028) |
 | `created_at` / `updated_at` | TEXT (ISO 8601 datetime), not null | |
@@ -170,39 +171,53 @@ Acceptance Scenario 1–2).
 **Validation rules**:
 
 - `effective_end_date > effective_start_date`.
-- Deleting a policy that still has firearms assigned to it must be blocked
-  or must first require reassigning/unassigning those firearms — surfaced
-  to the user with an explicit choice (Edge Cases: "delete an insurance
-  policy that still has firearms assigned to it"); implemented as a
-  foreign-key restrict (`ON DELETE RESTRICT`) with a friendly error
-  message rather than a silent cascade, since silently un-insuring
-  firearms would be a dangerous default.
+- **At most one blanket policy in force (FR-036)**: for any two policies with
+  a non-null `blanket_coverage_limit`, `A.start < B.end AND B.start < A.end`
+  must be false, so their dates may share one boundary day (`A.end = B.start`)
+  but no more. Checked on create and on every update that changes a policy's
+  dates or blanket limit. Enforced in the command/service layer, since SQLite
+  has no range-exclusion constraint.
+- Deleting a policy that has firearms scheduled under it (FR-034) requires
+  the caller to resolve them first, in the same transaction as the deletion:
+  `move` sets `insurance_policy_id` to the chosen target policy on every
+  affected firearm and leaves `scheduled_coverage_amount` unchanged;
+  `unschedule` sets both `insurance_policy_id` and
+  `scheduled_coverage_amount` to null. `unschedule` on a non-expired policy
+  additionally needs an explicit confirmation flag. The foreign key stays
+  `ON DELETE RESTRICT` as a backstop so a bug can never silently un-insure
+  firearms; an unresolved deletion fails with `POLICY_HAS_FIREARMS`. Blanket
+  firearms need no handling: their coverage is computed.
 
 **Derived status** (not stored, computed by `services::insurance_status`):
 
 - `is_expired`: `effective_end_date < today`.
 - `is_expiring_soon`: `effective_end_date` within 30 days of today and not
   yet expired.
+- `is_in_force`: `effective_start_date <= today <= effective_end_date`.
+- `blanket_in_force`: the policy with a non-null `blanket_coverage_limit`
+  that `is_in_force` (on a shared boundary day, the one with the later
+  `effective_start_date`); null if there is none.
+- FR-028 warning suppression for blanket policies: no expiring warning while
+  another blanket policy starts no later than the day after this one ends;
+  no expired warning once a blanket policy with a later start date exists.
 
-## Entity: Insurance Coverage (relationship, not a separate table)
+## Entity: Insurance Coverage (derived, not a table)
 
-Modeled as columns directly on `Firearm`
-(`insurance_policy_id`, `coverage_kind`, `scheduled_coverage_amount`) rather
-than a separate join table, because FR-027 constrains each firearm to at
-most one policy — a one-to-many (`Firearm.insurance_policy_id → InsurancePolicy.id`)
-relationship, not a many-to-many. This keeps the schema simple (Principle I:
-no join table until a real many-to-many need appears) while
-`services::insurance_status` still treats "coverage" as its own concept in
-code:
+Only *individually-scheduled* coverage is a per-firearm fact, stored as
+`Firearm.insurance_policy_id` + `scheduled_coverage_amount` (one-to-many,
+since FR-027 allows each firearm at most one scheduled policy). *Blanket*
+coverage is never stored per firearm: `services::insurance_status` computes
+it from policy dates (FR-036), so adding a firearm, renewing a policy, or
+replacing one never touches firearm rows.
 
 - **Individually-scheduled coverage**: `scheduled_coverage_amount` vs.
-  `Firearm.estimated_value` (FR-024, US3 Acceptance Scenario 2–3).
-  Uninsured/under-insured if no policy, or if the policy `is_expired`
-  (FR-024, US3 Acceptance Scenario 8).
-- **Blanket coverage**: `SUM(estimated_value)` of every firearm with
-  `coverage_kind = blanket` and the same `insurance_policy_id`, compared
-  against that policy's `blanket_coverage_limit` (FR-017, FR-024, US3
-  Acceptance Scenario 4). Same expired-policy override applies.
+  `Firearm.estimated_value` (FR-024, US3 Acceptance Scenario 2–3). Uninsured
+  if the policy `is_expired` (US3 Acceptance Scenario 8).
+- **Blanket coverage**: let `B` be `blanket_in_force`. `SUM(estimated_value)`
+  of every *active* firearm with `insurance_policy_id IS NULL` is compared
+  against `B.blanket_coverage_limit` (FR-017, FR-024, US3 Acceptance Scenario
+  4). If there is no `B`, every active unscheduled firearm is uninsured
+  (US3 Acceptance Scenario 13). Disposed firearms never count (FR-025).
 
 ## Virtual table: firearms_fts (FTS5)
 

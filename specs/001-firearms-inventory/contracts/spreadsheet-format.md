@@ -26,15 +26,14 @@ sibling photos folder.
 | `status` | no (default `active`) | `Firearm.status` | `active` / `disposed` |
 | `estimated_value` | no | `Firearm.estimated_value` | decimal currency, e.g. `450.00` |
 | `acquisition_source` | no | `Firearm.acquisition_source` | |
-| `acquisition_date` | no | `Firearm.acquisition_date` | `YYYY-MM-DD` |
+| `acquisition_date` | no | `Firearm.acquisition_date` | `YYYY-MM-DD`; a future date is a row error (FR-003) |
 | `acquisition_price` | no | `Firearm.acquisition_price` | decimal currency |
 | `disposition_type` | required if `status=disposed` | `Firearm.disposition_type` | `sold`/`traded`/`gifted`/`destroyed`/`lost_stolen` |
 | `disposition_recipient` | required if `status=disposed` | `Firearm.disposition_recipient` | |
-| `disposition_date` | required if `status=disposed` | `Firearm.disposition_date` | `YYYY-MM-DD` |
+| `disposition_date` | required if `status=disposed` | `Firearm.disposition_date` | `YYYY-MM-DD`; a future date, or a date before `acquisition_date`, is a row error (FR-004) |
 | `disposition_price` | no | `Firearm.disposition_price` | decimal currency |
-| `insurance_policy_name` | no | `InsurancePolicy.name` (by lookup) | unknown name on import → row error |
-| `coverage_kind` | required if `insurance_policy_name` set | `Firearm.coverage_kind` | `individually_scheduled`/`blanket` |
-| `scheduled_coverage_amount` | required if `coverage_kind=individually_scheduled` | `Firearm.scheduled_coverage_amount` | decimal currency |
+| `insurance_policy_name` | no | `InsurancePolicy.name` (by lookup) | schedules the firearm under that policy; blank ⇒ unscheduled (covered by the blanket policy in force); unknown name on import → row error |
+| `scheduled_coverage_amount` | required if `insurance_policy_name` set; must be blank otherwise | `Firearm.scheduled_coverage_amount` | decimal currency |
 | `photo_filenames` | no (export only; ignored on import per FR-019) | — | semicolon-delimited filenames in the sibling photos folder |
 
 ## Export behavior
