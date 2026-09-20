@@ -203,7 +203,6 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
       dispositionDate: disposed ? isoDate(form.dispositionDate) : null,
       dispositionPrice: disposed ? cents(form.dispositionPrice) : null,
       insurancePolicyId: initialValues?.insurancePolicyId ?? null,
-      coverageKind: initialValues?.coverageKind ?? null,
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
     };
 

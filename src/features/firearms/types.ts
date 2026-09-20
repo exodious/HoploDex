@@ -5,8 +5,6 @@ export type FirearmStatus = "active" | "disposed";
 
 export type DispositionType = "sold" | "traded" | "gifted" | "destroyed" | "lost_stolen";
 
-export type CoverageKind = "individually_scheduled" | "blanket";
-
 export interface Firearm {
   id: number;
   make: string;
@@ -29,7 +27,6 @@ export interface Firearm {
   dispositionPrice: number | null;
   thumbnailPhotoId: number | null;
   insurancePolicyId: number | null;
-  coverageKind: CoverageKind | null;
   scheduledCoverageAmount: number | null;
   createdAt: string;
   updatedAt: string;

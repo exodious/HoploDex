@@ -126,7 +126,8 @@ export function InsurancePolicyForm({
       companyContact: blankToNull(form.companyContact),
       agentName: blankToNull(form.agentName),
       agentContact: blankToNull(form.agentContact),
-      blanketCoverageLimit: (limit.ok && limit.cents) || 0,
+      // Blank means no blanket limit: a schedule-only policy (FR-036).
+      blanketCoverageLimit: limit.ok ? limit.cents : null,
       effectiveStartDate: (parseDateInput(form.effectiveStartDate) as { iso: string }).iso,
       effectiveEndDate: (parseDateInput(form.effectiveEndDate) as { iso: string }).iso,
     };
@@ -187,7 +188,7 @@ export function InsurancePolicyForm({
                 onValueChange={set("blanketCoverageLimit")}
                 onBlur={touch("blanketCoverageLimit")}
                 error={errorFor("blanketCoverageLimit")}
-                hint="The shared limit for firearms covered under the blanket. Leave blank if there is none."
+                hint="Makes this a blanket policy: its limit is shared by every firearm not scheduled individually while it is in force. Leave blank for a policy that only covers firearms scheduled on it."
               />
             </div>
           </div>

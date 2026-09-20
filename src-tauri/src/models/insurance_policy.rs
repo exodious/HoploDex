@@ -15,7 +15,8 @@ pub struct InsurancePolicy {
     pub company_contact: Option<String>,
     pub agent_name: Option<String>,
     pub agent_contact: Option<String>,
-    pub blanket_coverage_limit: i64,
+    /// Set for a blanket policy (FR-036), absent for a schedule-only one.
+    pub blanket_coverage_limit: Option<i64>,
     pub effective_start_date: String,
     pub effective_end_date: String,
     pub created_at: String,
@@ -52,7 +53,8 @@ pub struct InsurancePolicyInput {
     pub company_contact: Option<String>,
     pub agent_name: Option<String>,
     pub agent_contact: Option<String>,
-    pub blanket_coverage_limit: i64,
+    /// Set for a blanket policy (FR-036), absent for a schedule-only one.
+    pub blanket_coverage_limit: Option<i64>,
     pub effective_start_date: String,
     pub effective_end_date: String,
 }
@@ -70,7 +72,7 @@ pub fn validate_insurance_policy_input(input: &InsurancePolicyInput) -> Result<(
     if input.insurance_company.trim().is_empty() {
         errors.insert("insuranceCompany".into(), "Insurance company is required.".into());
     }
-    if input.blanket_coverage_limit < 0 {
+    if input.blanket_coverage_limit.is_some_and(|limit| limit < 0) {
         errors.insert(
             "blanketCoverageLimit".into(),
             "Blanket coverage limit cannot be negative.".into(),

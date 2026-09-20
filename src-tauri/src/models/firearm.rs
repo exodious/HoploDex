@@ -55,11 +55,6 @@ text_enum!(DispositionType {
     LostStolen => "lost_stolen",
 });
 
-text_enum!(CoverageKind {
-    IndividuallyScheduled => "individually_scheduled",
-    Blanket => "blanket",
-});
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Firearm {
@@ -84,7 +79,6 @@ pub struct Firearm {
     pub disposition_price: Option<i64>,
     pub thumbnail_photo_id: Option<i64>,
     pub insurance_policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
     pub scheduled_coverage_amount: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
@@ -114,7 +108,6 @@ impl Firearm {
             disposition_price: row.get("disposition_price")?,
             thumbnail_photo_id: row.get("thumbnail_photo_id")?,
             insurance_policy_id: row.get("insurance_policy_id")?,
-            coverage_kind: row.get("coverage_kind")?,
             scheduled_coverage_amount: row.get("scheduled_coverage_amount")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
@@ -146,7 +139,6 @@ pub struct FirearmInput {
     pub disposition_date: Option<String>,
     pub disposition_price: Option<i64>,
     pub insurance_policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
     pub scheduled_coverage_amount: Option<i64>,
 }
 
@@ -175,7 +167,6 @@ impl From<&Firearm> for FirearmInput {
             disposition_date: firearm.disposition_date.clone(),
             disposition_price: firearm.disposition_price,
             insurance_policy_id: firearm.insurance_policy_id,
-            coverage_kind: firearm.coverage_kind,
             scheduled_coverage_amount: firearm.scheduled_coverage_amount,
         }
     }
@@ -308,43 +299,22 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         }
     }
 
-    match input.coverage_kind {
-        Some(CoverageKind::IndividuallyScheduled) => {
-            if input.insurance_policy_id.is_none() {
-                errors.insert(
-                    "insurancePolicyId".into(),
-                    "Select a policy for individually-scheduled coverage.".into(),
-                );
-            }
-            if input.scheduled_coverage_amount.is_none() {
-                errors.insert(
-                    "scheduledCoverageAmount".into(),
-                    "Enter a scheduled coverage amount.".into(),
-                );
-            }
+    // FR-014/FR-036: scheduled under a policy with its own amount, or not at
+    // all. There is no per-firearm blanket assignment.
+    match (input.insurance_policy_id, input.scheduled_coverage_amount) {
+        (Some(_), None) => {
+            errors.insert(
+                "scheduledCoverageAmount".into(),
+                "Enter the amount scheduled on the policy.".into(),
+            );
         }
-        Some(CoverageKind::Blanket) => {
-            if input.insurance_policy_id.is_none() {
-                errors.insert(
-                    "insurancePolicyId".into(),
-                    "Select a policy for blanket coverage.".into(),
-                );
-            }
-            if input.scheduled_coverage_amount.is_some() {
-                errors.insert(
-                    "scheduledCoverageAmount".into(),
-                    "Blanket-covered firearms draw from the policy's shared limit, not an individual amount.".into(),
-                );
-            }
+        (None, Some(_)) => {
+            errors.insert(
+                "insurancePolicyId".into(),
+                "Choose the policy this amount is scheduled on.".into(),
+            );
         }
-        None => {
-            if input.insurance_policy_id.is_some() {
-                errors.insert(
-                    "coverageKind".into(),
-                    "Select how this firearm is covered by the assigned policy.".into(),
-                );
-            }
-        }
+        _ => {}
     }
 
     if errors.is_empty() {

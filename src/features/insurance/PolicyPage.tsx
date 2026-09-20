@@ -24,6 +24,7 @@ export function PolicyPage({ id }: { id: number }) {
       {policy ? (
         <PolicyCard
           policy={policy}
+          blanket={summary?.blanket ?? null}
           summary={summary?.byPolicy.find((p) => p.policyId === policy.id)}
           firearms={firearms.filter(
             (f) => f.insurancePolicyId === policy.id && f.status === "active",

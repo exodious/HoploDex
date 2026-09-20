@@ -14,7 +14,9 @@ CREATE TABLE insurance_policies (
     company_contact TEXT,
     agent_name TEXT,
     agent_contact TEXT,
-    blanket_coverage_limit INTEGER NOT NULL,
+    -- FR-027/FR-036: set => a blanket policy, whose limit is shared by every
+    -- firearm not individually scheduled while the policy is in force.
+    blanket_coverage_limit INTEGER,
     effective_start_date TEXT NOT NULL,
     effective_end_date TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -50,15 +52,13 @@ CREATE TABLE firearms (
     disposition_price INTEGER,
     thumbnail_photo_id INTEGER REFERENCES photos (id) ON DELETE SET NULL,
     insurance_policy_id INTEGER REFERENCES insurance_policies (id) ON DELETE RESTRICT,
-    coverage_kind TEXT
-        CHECK (
-            coverage_kind IS NULL
-            OR coverage_kind IN ('individually_scheduled', 'blanket')
-        ),
     scheduled_coverage_amount INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (serial_number IS NOT NULL OR no_serial_attested = 1)
+    CHECK (serial_number IS NOT NULL OR no_serial_attested = 1),
+    -- FR-014/FR-036: scheduled under a policy with its own amount, or not
+    -- scheduled at all. Blanket coverage is computed, never stored here.
+    CHECK ((insurance_policy_id IS NULL) = (scheduled_coverage_amount IS NULL))
 );
 
 CREATE INDEX idx_firearms_type ON firearms (firearm_type_id);

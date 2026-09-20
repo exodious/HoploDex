@@ -5,10 +5,11 @@ use tauri::State;
 use crate::commands::firearms::{self, DeleteResult};
 use crate::commands::CommandError;
 use crate::db::DbHandle;
-use crate::models::firearm::{CoverageKind, Firearm};
+use crate::models::firearm::Firearm;
 use crate::models::insurance_policy::{
     validate_insurance_policy_input, InsurancePolicy, InsurancePolicyInput,
 };
+use crate::services::insurance_status::{load_context, PolicyStatus};
 use crate::services::valuation::{self, ValueSummary};
 
 /// Input for `assign_firearm_coverage`, per contracts/tauri-commands.md.
@@ -16,8 +17,18 @@ use crate::services::valuation::{self, ValueSummary};
 #[serde(rename_all = "camelCase")]
 pub struct AssignCoverageInput {
     pub policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
     pub scheduled_coverage_amount: Option<i64>,
+}
+
+/// A policy as listed: its record plus derived status (in force, expiring,
+/// expired, and the FR-028 warnings), so the frontend never re-derives them.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsurancePolicyView {
+    #[serde(flatten)]
+    pub policy: InsurancePolicy,
+    #[serde(flatten)]
+    pub status: PolicyStatus,
 }
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
@@ -49,11 +60,87 @@ pub mod ops {
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }
 
+    /// [`list_policies`] with each policy's derived status as of today.
+    pub fn list_policy_views(conn: &Connection) -> Result<Vec<InsurancePolicyView>, CommandError> {
+        let context = load_context(conn)?;
+        Ok(list_policies(conn)?
+            .into_iter()
+            .filter_map(|policy| {
+                let status = context.policies.get(&policy.id)?.clone();
+                Some(InsurancePolicyView { policy, status })
+            })
+            .collect())
+    }
+
+    /// One policy with its derived status as of today.
+    pub fn policy_view(
+        conn: &Connection,
+        policy: InsurancePolicy,
+    ) -> Result<InsurancePolicyView, CommandError> {
+        let status = load_context(conn)?
+            .policies
+            .remove(&policy.id)
+            .ok_or_else(|| CommandError::new("INTERNAL_ERROR", "An unexpected error occurred."))?;
+        Ok(InsurancePolicyView { policy, status })
+    }
+
+    /// FR-036: at most one blanket policy in force on any date. Two blanket
+    /// policies conflict when their dates overlap by more than a single
+    /// shared boundary day (`A.start < B.end AND B.start < A.end`); the
+    /// message names the other policy. Schedule-only policies never conflict.
+    /// `exclude_id` is the policy being edited, which never clashes with
+    /// itself.
+    fn check_blanket_overlap(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        input: &InsurancePolicyInput,
+    ) -> Result<(), CommandError> {
+        if input.blanket_coverage_limit.is_none() {
+            return Ok(());
+        }
+        let other = conn
+            .query_row(
+                "SELECT name, effective_start_date, effective_end_date FROM insurance_policies
+                 WHERE blanket_coverage_limit IS NOT NULL AND id IS NOT :exclude
+                   AND effective_start_date < :end AND :start < effective_end_date
+                 ORDER BY effective_start_date LIMIT 1",
+                named_params! {
+                    ":exclude": exclude_id,
+                    ":start": input.effective_start_date,
+                    ":end": input.effective_end_date,
+                },
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        match other {
+            None => Ok(()),
+            Some((name, start, end)) => {
+                let message = format!(
+                    "These dates overlap the blanket policy {name} ({start} to {end}). Only one \
+                     blanket policy can be in force on any day, though a policy may start on the \
+                     day another ends."
+                );
+                Err(CommandError::validation(
+                    message.clone(),
+                    [("effectiveStartDate".to_string(), message)].into(),
+                ))
+            }
+        }
+    }
+
     pub fn create_policy(
         conn: &Connection,
         input: &InsurancePolicyInput,
     ) -> Result<InsurancePolicy, CommandError> {
         validate_insurance_policy_input(input)?;
+        check_blanket_overlap(conn, None, input)?;
         conn.execute(
             "INSERT INTO insurance_policies (
                 name, policy_number, insurance_company, company_contact, agent_name, agent_contact,
@@ -86,6 +173,7 @@ pub mod ops {
         input: &InsurancePolicyInput,
     ) -> Result<InsurancePolicy, CommandError> {
         validate_insurance_policy_input(input)?;
+        check_blanket_overlap(conn, Some(id), input)?;
         let updated = conn
             .execute(
                 "UPDATE insurance_policies SET
@@ -158,24 +246,25 @@ pub mod ops {
         Ok(DeleteResult { deleted: true })
     }
 
+    /// Schedules a firearm under `policy_id` with its own amount, or, with
+    /// `None`, unschedules it: it is then covered by the blanket policy in
+    /// force (FR-036). There is no per-firearm blanket assignment.
     pub fn assign_firearm_coverage(
         conn: &Connection,
         firearm_id: i64,
         policy_id: Option<i64>,
-        coverage_kind: Option<CoverageKind>,
         scheduled_coverage_amount: Option<i64>,
     ) -> Result<Firearm, CommandError> {
         let current = firearms::ops::get_firearm(conn, firearm_id)?;
-        let mut input = crate::models::firearm::FirearmInput {
+        if let Some(policy_id) = policy_id {
+            get_policy(conn, policy_id)?;
+        }
+        let input = crate::models::firearm::FirearmInput {
             insurance_policy_id: policy_id,
-            coverage_kind,
-            scheduled_coverage_amount,
+            // Unscheduling clears the amount along with the policy.
+            scheduled_coverage_amount: policy_id.and(scheduled_coverage_amount),
             ..crate::models::firearm::FirearmInput::from(&current)
         };
-        if policy_id.is_none() {
-            input.coverage_kind = None;
-            input.scheduled_coverage_amount = None;
-        }
         firearms::ops::update_firearm(conn, firearm_id, &input)
     }
 
@@ -187,18 +276,19 @@ pub mod ops {
 #[tauri::command]
 pub async fn list_insurance_policies(
     state: State<'_, DbHandle>,
-) -> Result<Vec<InsurancePolicy>, CommandError> {
+) -> Result<Vec<InsurancePolicyView>, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::list_policies(&conn)
+    ops::list_policy_views(&conn)
 }
 
 #[tauri::command]
 pub async fn create_insurance_policy(
     input: InsurancePolicyInput,
     state: State<'_, DbHandle>,
-) -> Result<InsurancePolicy, CommandError> {
+) -> Result<InsurancePolicyView, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::create_policy(&conn, &input)
+    let policy = ops::create_policy(&conn, &input)?;
+    ops::policy_view(&conn, policy)
 }
 
 #[tauri::command]
@@ -206,9 +296,10 @@ pub async fn update_insurance_policy(
     id: i64,
     input: InsurancePolicyInput,
     state: State<'_, DbHandle>,
-) -> Result<InsurancePolicy, CommandError> {
+) -> Result<InsurancePolicyView, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::update_policy(&conn, id, &input)
+    let policy = ops::update_policy(&conn, id, &input)?;
+    ops::policy_view(&conn, policy)
 }
 
 #[tauri::command]
@@ -232,7 +323,6 @@ pub async fn assign_firearm_coverage(
         &conn,
         firearm_id,
         input.policy_id,
-        input.coverage_kind,
         input.scheduled_coverage_amount,
     )
 }

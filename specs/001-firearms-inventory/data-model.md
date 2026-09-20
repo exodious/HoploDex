@@ -200,6 +200,10 @@ Acceptance Scenario 1–2).
 - FR-028 warning suppression for blanket policies: no expiring warning while
   another blanket policy starts no later than the day after this one ends;
   no expired warning once a blanket policy with a later start date exists.
+  `is_expired` and `is_expiring_soon` stay facts about the dates (a firearm
+  scheduled on an expired policy is uninsured either way); the suppression
+  applies to the derived `expiring_warning` / `expired_warning` flags the
+  backend returns with each policy, so the frontend never re-derives it.
 
 ## Entity: Insurance Coverage (derived, not a table)
 

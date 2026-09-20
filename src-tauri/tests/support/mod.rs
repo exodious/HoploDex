@@ -1,5 +1,6 @@
 use hoplodex_lib::db;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -112,7 +113,28 @@ pub fn firearm(make: &str, model: &str, serial: &str) -> FirearmInput {
         disposition_date: None,
         disposition_price: None,
         insurance_policy_id: None,
-        coverage_kind: None,
         scheduled_coverage_amount: None,
     }
+}
+
+/// A valid policy running `start` to `end` (ISO dates); a `limit` makes it
+/// a blanket policy, `None` a schedule-only one.
+#[allow(dead_code)]
+pub fn policy(name: &str, start: &str, end: &str, limit: Option<i64>) -> InsurancePolicyInput {
+    InsurancePolicyInput {
+        name: name.into(),
+        policy_number: format!("{name}-1"),
+        insurance_company: "Acme Insurance".into(),
+        company_contact: None,
+        agent_name: None,
+        agent_contact: None,
+        blanket_coverage_limit: limit,
+        effective_start_date: start.into(),
+        effective_end_date: end.into(),
+    }
+}
+
+#[allow(dead_code)]
+pub fn date(iso: &str) -> chrono::NaiveDate {
+    chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").unwrap()
 }

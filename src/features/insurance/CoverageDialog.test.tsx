@@ -5,22 +5,37 @@ import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import type { Firearm } from "../firearms/types";
 import { CoverageDialog } from "./CoverageDialog";
-import type { InsurancePolicy } from "./types";
+import type { BlanketSummary, InsurancePolicy } from "./types";
 
 const policy = {
   id: 7,
   name: "Collectibles rider",
   insuranceCompany: "Acme",
-  blanketCoverageLimit: 500000,
+  blanketCoverageLimit: null,
   effectiveEndDate: "2099-01-01",
+  isExpired: false,
+  isExpiringSoon: false,
+  isInForce: true,
 } as InsurancePolicy;
 
-const collection = {
-  firearms: [],
-  firearmsById: new Map(),
-  policies: [policy],
-  policiesById: new Map([[policy.id, policy]]),
-} as unknown as CollectionState;
+const blanket: BlanketSummary = {
+  policyId: 9,
+  policyName: "Homeowner's blanket",
+  limit: 1_000_000,
+  total: 400_000,
+  firearmCount: 3,
+  underInsured: false,
+};
+
+function collection(blanketInForce: BlanketSummary | null): CollectionState {
+  return {
+    firearms: [],
+    firearmsById: new Map(),
+    policies: [policy],
+    policiesById: new Map([[policy.id, policy]]),
+    summary: { collectionTotal: 0, blanket: blanketInForce, byPolicy: [], uninsured: [] },
+  } as unknown as CollectionState;
+}
 
 const firearm = {
   id: 1,
@@ -28,24 +43,30 @@ const firearm = {
   model: "Python",
   estimatedValue: 380000,
   insurancePolicyId: null,
-  coverageKind: null,
   scheduledCoverageAmount: null,
 } as Firearm;
 
-describe("CoverageDialog", () => {
+function renderDialog(
+  onSave = vi.fn().mockResolvedValue(undefined),
+  blanketInForce: BlanketSummary | null = blanket,
+  subject: Firearm = firearm,
+) {
+  render(
+    <CollectionContext.Provider value={collection(blanketInForce)}>
+      <CoverageDialog open onOpenChange={vi.fn()} firearm={subject} onSave={onSave} />
+    </CollectionContext.Provider>,
+  );
+  return onSave;
+}
+
+describe("CoverageDialog (FR-014, FR-036)", () => {
   it("requires a scheduled amount instead of saving $0", async () => {
     // Regression: a blank scheduled amount was saved as $0.00.
     const user = userEvent.setup();
-    const onSave = vi.fn().mockResolvedValue(undefined);
-    render(
-      <CollectionContext.Provider value={collection}>
-        <CoverageDialog open onOpenChange={vi.fn()} firearm={firearm} onSave={onSave} />
-      </CollectionContext.Provider>,
-    );
+    const onSave = renderDialog();
 
     await user.click(screen.getByRole("combobox", { name: "Policy" }));
     await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
-    await user.click(screen.getByRole("radio", { name: /Scheduled individually/ }));
     await user.click(screen.getByRole("button", { name: "Save coverage" }));
 
     expect(screen.getByText("Enter the amount scheduled on the policy.")).toBeInTheDocument();
@@ -53,10 +74,41 @@ describe("CoverageDialog", () => {
 
     await user.type(screen.getByLabelText("Scheduled amount"), "3,500");
     await user.click(screen.getByRole("button", { name: "Save coverage" }));
-    expect(onSave).toHaveBeenCalledWith({
-      policyId: 7,
-      coverageKind: "individually_scheduled",
-      scheduledCoverageAmount: 350000,
-    });
+    expect(onSave).toHaveBeenCalledWith({ policyId: 7, scheduledCoverageAmount: 350000 });
+  });
+
+  it("has no per-firearm blanket option: choosing not to schedule is the blanket", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    expect(screen.queryByRole("radio", { name: /Blanket/ })).not.toBeInTheDocument();
+    // Unscheduled says where the firearm's coverage comes from.
+    expect(screen.getByText(/covered by Homeowner's blanket/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Scheduled amount")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save coverage" }));
+  });
+
+  it("unschedules a scheduled firearm with a null policy", async () => {
+    const user = userEvent.setup();
+    const scheduled = {
+      ...firearm,
+      insurancePolicyId: 7,
+      scheduledCoverageAmount: 300000,
+    } as Firearm;
+    const onSave = renderDialog(undefined, blanket, scheduled);
+
+    await user.click(screen.getByRole("combobox", { name: "Policy" }));
+    await user.click(await screen.findByRole("option", { name: /Not scheduled/ }));
+    await user.click(screen.getByRole("button", { name: "Save coverage" }));
+
+    expect(onSave).toHaveBeenCalledWith({ policyId: null });
+  });
+
+  it("warns that an unscheduled firearm is uninsured when no blanket policy is in force", () => {
+    renderDialog(undefined, null);
+
+    expect(screen.getByText(/no blanket policy is in force/i)).toBeInTheDocument();
+    expect(screen.getByText(/uninsured/i)).toBeInTheDocument();
   });
 });

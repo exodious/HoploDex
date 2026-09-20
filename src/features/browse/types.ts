@@ -1,7 +1,7 @@
 // Mirrors src-tauri/src/commands/firearms.rs's list_firearms wire shapes
 // (camelCase, per contracts/tauri-commands.md), User Story 2.
 
-import type { CoverageKind, FirearmStatus } from "../firearms/types";
+import type { FirearmStatus } from "../firearms/types";
 
 export type GroupBy = "type" | "caliber" | "make";
 
@@ -28,7 +28,7 @@ export interface FirearmSummary {
   estimatedValue: number | null;
   insuranceWarning: InsuranceWarning;
   insurancePolicyId: number | null;
-  coverageKind: CoverageKind | null;
+  scheduledCoverageAmount: number | null;
 }
 
 export interface FirearmGroup {

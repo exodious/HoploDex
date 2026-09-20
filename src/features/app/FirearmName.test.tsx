@@ -48,7 +48,7 @@ function summary(id: number, nickname: string | null): FirearmSummary {
     estimatedValue: null,
     insuranceWarning: "none",
     insurancePolicyId: null,
-    coverageKind: null,
+    scheduledCoverageAmount: null,
   };
 }
 

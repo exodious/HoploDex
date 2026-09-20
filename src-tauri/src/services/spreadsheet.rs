@@ -48,7 +48,6 @@ pub const COLUMNS: &[&str] = &[
     "disposition_date",
     "disposition_price",
     "insurance_policy_name",
-    "coverage_kind",
     "scheduled_coverage_amount",
     "photo_filenames",
 ];
@@ -76,13 +75,12 @@ pub struct FirearmExportRow {
     pub disposition_date: String,
     pub disposition_price: String,
     pub insurance_policy_name: String,
-    pub coverage_kind: String,
     pub scheduled_coverage_amount: String,
     pub photo_filenames: String,
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 22] {
+    fn as_fields(&self) -> [&str; 21] {
         [
             &self.make,
             &self.model,
@@ -103,7 +101,6 @@ impl FirearmExportRow {
             &self.disposition_date,
             &self.disposition_price,
             &self.insurance_policy_name,
-            &self.coverage_kind,
             &self.scheduled_coverage_amount,
             &self.photo_filenames,
         ]
@@ -135,7 +132,6 @@ pub struct RawImportRow {
     pub disposition_date: Option<String>,
     pub disposition_price: Option<String>,
     pub insurance_policy_name: Option<String>,
-    pub coverage_kind: Option<String>,
     pub scheduled_coverage_amount: Option<String>,
 }
 
@@ -170,8 +166,7 @@ fn row_from_cells(cells: &[String]) -> RawImportRow {
         disposition_date: non_blank(cell(16)),
         disposition_price: non_blank(cell(17)),
         insurance_policy_name: non_blank(cell(18)),
-        coverage_kind: non_blank(cell(19)),
-        scheduled_coverage_amount: non_blank(cell(20)),
+        scheduled_coverage_amount: non_blank(cell(19)),
     }
 }
 

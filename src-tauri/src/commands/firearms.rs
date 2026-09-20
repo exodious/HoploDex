@@ -6,7 +6,7 @@ use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
-    validate_firearm_input, CoverageKind, DispositionType, Firearm, FirearmInput, FirearmStatus,
+    validate_firearm_input, DispositionType, Firearm, FirearmInput, FirearmStatus,
 };
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
@@ -111,10 +111,11 @@ pub struct FirearmSummary {
     pub generic_thumbnail_key: String,
     pub estimated_value: Option<i64>,
     pub insurance_warning: InsuranceWarning,
-    /// Coverage assignment, so the insurance view can list each policy's
-    /// firearms without fetching every full record.
+    /// Scheduled coverage (both null when unscheduled, i.e. covered by the
+    /// blanket policy in force), so the insurance view can list each
+    /// policy's firearms without fetching every full record.
     pub insurance_policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
+    pub scheduled_coverage_amount: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -310,14 +311,14 @@ pub mod ops {
                 notes, accessories, status, estimated_value,
                 acquisition_source, acquisition_date, acquisition_price,
                 disposition_type, disposition_recipient, disposition_date, disposition_price,
-                insurance_policy_id, coverage_kind, scheduled_coverage_amount,
+                insurance_policy_id, scheduled_coverage_amount,
                 created_at, updated_at
             ) VALUES (
                 :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id, :nickname,
                 :notes, :accessories, :status, :estimated_value,
                 :acquisition_source, :acquisition_date, :acquisition_price,
                 :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
-                :insurance_policy_id, :coverage_kind, :scheduled_coverage_amount,
+                :insurance_policy_id, :scheduled_coverage_amount,
                 datetime('now'), datetime('now')
             )",
             named_params! {
@@ -340,7 +341,6 @@ pub mod ops {
                 ":disposition_date": input.disposition_date,
                 ":disposition_price": input.disposition_price,
                 ":insurance_policy_id": input.insurance_policy_id,
-                ":coverage_kind": input.coverage_kind,
                 ":scheduled_coverage_amount": input.scheduled_coverage_amount,
             },
         )
@@ -387,7 +387,6 @@ pub mod ops {
                     disposition_date = :disposition_date,
                     disposition_price = :disposition_price,
                     insurance_policy_id = :insurance_policy_id,
-                    coverage_kind = :coverage_kind,
                     scheduled_coverage_amount = :scheduled_coverage_amount,
                     updated_at = datetime('now')
                 WHERE id = :id",
@@ -412,8 +411,7 @@ pub mod ops {
                     ":disposition_date": input.disposition_date,
                     ":disposition_price": input.disposition_price,
                     ":insurance_policy_id": input.insurance_policy_id,
-                    ":coverage_kind": input.coverage_kind,
-                    ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                        ":scheduled_coverage_amount": input.scheduled_coverage_amount,
                 },
             )
             .map_err(CommandError::from_db)?;
@@ -604,7 +602,7 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
 
-        let policy_aggregates = crate::services::insurance_status::load_policy_aggregates(conn)?;
+        let insurance = crate::services::insurance_status::load_context(conn)?;
 
         let mut summaries = Vec::new();
         for row in rows {
@@ -613,9 +611,8 @@ pub mod ops {
             let insurance_warning = crate::services::insurance_status::firearm_warning(
                 firearm.estimated_value,
                 firearm.insurance_policy_id,
-                firearm.coverage_kind,
                 firearm.scheduled_coverage_amount,
-                &policy_aggregates,
+                &insurance,
             );
             summaries.push((
                 match input.group_by {
@@ -638,7 +635,7 @@ pub mod ops {
                     estimated_value: firearm.estimated_value,
                     insurance_warning,
                     insurance_policy_id: firearm.insurance_policy_id,
-                    coverage_kind: firearm.coverage_kind,
+                    scheduled_coverage_amount: firearm.scheduled_coverage_amount,
                 },
             ));
         }

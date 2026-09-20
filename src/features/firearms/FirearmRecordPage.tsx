@@ -45,7 +45,7 @@ function failureMessage(e: unknown, fallback: string): string {
 /** One firearm's full record (US1, US3, US4): identity plate, coverage,
  * photos, documents, acquisition and disposition history. */
 export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
-  const { firearmsById, policiesById, revision, refresh } = useCollection();
+  const { firearmsById, policiesById, summary: valueSummary, revision, refresh } = useCollection();
   const { open, back } = useNavigation();
   const notify = useToast();
   const [firearm, setFirearm] = useState<FirearmDetail | null>(null);
@@ -100,7 +100,14 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const summary = firearmsById.get(firearm.id);
   const policy =
     firearm.insurancePolicyId != null ? policiesById.get(firearm.insurancePolicyId) : undefined;
-  const coverage = coverageStatus(firearm, summary?.insuranceWarning ?? "none", policy);
+  const blanket = valueSummary?.blanket ?? null;
+  const coverage = coverageStatus(firearm, summary?.insuranceWarning ?? "none", policy, blanket);
+  // An unscheduled firearm is covered by the blanket policy in force.
+  const blanketPolicy =
+    !policy && blanket && firearm.status === "active"
+      ? policiesById.get(blanket.policyId)
+      : undefined;
+  const coveringPolicy = policy ?? blanketPolicy;
   const type = firearmTypeOption(firearm.firearmTypeId);
   const disposed = firearm.status === "disposed";
 
@@ -303,23 +310,23 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               </p>
               <p className="hd-coverage__detail">{coverage.detail}</p>
             </div>
-            {policy && (
+            {coveringPolicy && (
               <dl className="hd-facts hd-facts--compact">
                 <Fact label="Policy">
                   <button
                     type="button"
                     className="hd-link"
-                    onClick={() => open({ page: "policy", id: policy.id })}
+                    onClick={() => open({ page: "policy", id: coveringPolicy.id })}
                   >
-                    {policy.name}
+                    {coveringPolicy.name}
                   </button>
                 </Fact>
                 <Fact label="Coverage">
-                  {firearm.coverageKind === "individually_scheduled"
+                  {policy
                     ? `Scheduled, ${formatCents(firearm.scheduledCoverageAmount)}`
-                    : "Blanket"}
+                    : "Blanket, not scheduled"}
                 </Fact>
-                <Fact label="Term">{expiryLabel(policy.effectiveEndDate)}</Fact>
+                <Fact label="Term">{expiryLabel(coveringPolicy)}</Fact>
               </dl>
             )}
           </section>

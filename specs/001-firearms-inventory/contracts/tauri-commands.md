@@ -124,7 +124,12 @@ type CommandError = {
 ### `list_insurance_policies`
 
 - **Input**: `{}`.
-- **Output**: `InsurancePolicy[]`, ordered by name — populates the
+- **Output**: `InsurancePolicy[]`, ordered by name, each with its derived
+  status as of today: `isInForce`, `isExpired`, `isExpiringSoon` (facts about
+  its dates) and `expiringWarning`, `expiredWarning` (what to warn about,
+  after FR-028's suppression for a renewed or replaced blanket policy).
+  `create_insurance_policy` and `update_insurance_policy` return the same
+  shape. Populates the
   coverage-assignment policy picker (not itself an acceptance-scenario
   requirement, but necessary plumbing `assign_firearm_coverage` depends on
   the frontend already knowing).

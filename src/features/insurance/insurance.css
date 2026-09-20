@@ -184,6 +184,11 @@
   color: var(--blaze-ink);
 }
 
+.hd-policy__note {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 .hd-policy__block {
   display: flex;
   flex-direction: column;

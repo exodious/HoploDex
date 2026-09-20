@@ -179,3 +179,167 @@ fn a_valid_disposition_on_or_after_the_acquisition_date_imports() {
     assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
     assert_eq!(result.imported_count, 1);
 }
+
+// --- Coverage columns (FR-014/FR-036, contracts/spreadsheet-format.md) ---
+
+fn import_into(
+    db: &TestDb,
+    rows: &[String],
+) -> hoplodex_lib::commands::import_export::ImportResult {
+    let dir = TempDir::new().unwrap();
+    let path = write_csv(&dir, &csv_file(rows));
+    import_export_ops::import_collection(
+        &db.conn,
+        &path,
+        SpreadsheetFormat::Csv,
+        &ImportSessionStore::new(),
+        &mut |_, _| {},
+    )
+    .unwrap()
+}
+
+fn rider(db: &TestDb) -> i64 {
+    hoplodex_lib::commands::insurance::ops::create_policy(
+        &db.conn,
+        &support::policy("Collectibles rider", "2020-01-01", "2099-01-01", None),
+    )
+    .unwrap()
+    .id
+}
+
+#[test]
+fn there_is_no_coverage_kind_column() {
+    assert!(!hoplodex_lib::services::spreadsheet::COLUMNS.contains(&"coverage_kind"));
+}
+
+#[test]
+fn a_row_naming_a_policy_and_an_amount_is_scheduled_under_it() {
+    let db = TestDb::new();
+    let policy_id = rider(&db);
+
+    let result = import_into(
+        &db,
+        &[csv_firearm(
+            "Colt",
+            "Python",
+            "V1",
+            &[
+                ("insurance_policy_name", "collectibles RIDER"),
+                ("scheduled_coverage_amount", "3500.00"),
+            ],
+        )],
+    );
+
+    assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
+    let imported = &listing.groups[0].firearms[0];
+    assert_eq!(imported.insurance_policy_id, Some(policy_id));
+    assert_eq!(imported.scheduled_coverage_amount, Some(350_000));
+}
+
+#[test]
+fn a_row_with_no_policy_is_unscheduled_meaning_covered_by_the_blanket_policy() {
+    let db = TestDb::new();
+    let result = import_into(&db, &[csv_firearm("Glock", "19", "A1", &[])]);
+
+    assert_eq!(result.imported_count, 1);
+    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
+    let imported = &listing.groups[0].firearms[0];
+    assert_eq!(imported.insurance_policy_id, None);
+    assert_eq!(imported.scheduled_coverage_amount, None);
+}
+
+#[test]
+fn a_policy_without_an_amount_is_a_row_error() {
+    let db = TestDb::new();
+    rider(&db);
+
+    let result = import_into(
+        &db,
+        &[csv_firearm("Colt", "Python", "V1", &[("insurance_policy_name", "Collectibles rider")])],
+    );
+
+    assert_eq!(result.imported_count, 0);
+    assert_eq!(result.row_errors.len(), 1);
+    assert!(result.row_errors[0].message.to_lowercase().contains("amount"));
+}
+
+#[test]
+fn an_amount_without_a_policy_is_a_row_error() {
+    let db = TestDb::new();
+
+    let result = import_into(
+        &db,
+        &[csv_firearm("Colt", "Python", "V1", &[("scheduled_coverage_amount", "3500.00")])],
+    );
+
+    assert_eq!(result.imported_count, 0);
+    assert_eq!(result.row_errors.len(), 1);
+    assert!(result.row_errors[0].message.to_lowercase().contains("policy"));
+}
+
+#[test]
+fn an_unknown_policy_name_is_a_row_error() {
+    let db = TestDb::new();
+
+    let result = import_into(
+        &db,
+        &[csv_firearm(
+            "Colt",
+            "Python",
+            "V1",
+            &[("insurance_policy_name", "No such policy"), ("scheduled_coverage_amount", "1.00")],
+        )],
+    );
+
+    assert_eq!(result.imported_count, 0);
+    assert!(result.row_errors[0].message.contains("No such policy"));
+}
+
+#[test]
+fn a_scheduled_firearm_survives_an_export_and_re_import() {
+    let db = TestDb::new();
+    let policy_id = rider(&db);
+    let created =
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Colt", "Python", "V1")).unwrap();
+    hoplodex_lib::commands::insurance::ops::assign_firearm_coverage(
+        &db.conn,
+        created.id,
+        Some(policy_id),
+        Some(350_000),
+    )
+    .unwrap();
+    let plain =
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1")).unwrap();
+
+    let dest = TempDir::new().unwrap();
+    let exported = import_export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        "backup",
+        SpreadsheetFormat::Csv,
+        &[created.id, plain.id],
+        &mut |_, _| {},
+    )
+    .unwrap();
+    firearm_ops::delete_firearm(&db.conn, created.id, true).unwrap();
+    firearm_ops::delete_firearm(&db.conn, plain.id, true).unwrap();
+
+    let result = import_export_ops::import_collection(
+        &db.conn,
+        &exported.spreadsheet_path,
+        SpreadsheetFormat::Csv,
+        &ImportSessionStore::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+
+    assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
+    let all: Vec<_> = listing.groups.iter().flat_map(|g| &g.firearms).collect();
+    let colt = all.iter().find(|f| f.make == "Colt").unwrap();
+    assert_eq!(colt.insurance_policy_id, Some(policy_id));
+    assert_eq!(colt.scheduled_coverage_amount, Some(350_000));
+    let glock = all.iter().find(|f| f.make == "Glock").unwrap();
+    assert_eq!(glock.insurance_policy_id, None);
+}

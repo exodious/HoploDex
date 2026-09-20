@@ -10,7 +10,7 @@ use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::firearm::{
-    validate_firearm_input, CoverageKind, DispositionType, FirearmInput, FirearmStatus,
+    validate_firearm_input, DispositionType, FirearmInput, FirearmStatus,
 };
 use crate::services::spreadsheet::{
     cents_to_decimal_string, parse_decimal_to_cents, read_spreadsheet, write_spreadsheet,
@@ -192,10 +192,6 @@ pub mod ops {
                 disposition_date: firearm.disposition_date.unwrap_or_default(),
                 disposition_price: cents_to_decimal_string(firearm.disposition_price),
                 insurance_policy_name: insurance_policy_name.unwrap_or_default(),
-                coverage_kind: firearm
-                    .coverage_kind
-                    .map(|c| c.as_str().to_string())
-                    .unwrap_or_default(),
                 scheduled_coverage_amount: cents_to_decimal_string(
                     firearm.scheduled_coverage_amount,
                 ),
@@ -227,14 +223,6 @@ pub mod ops {
             "destroyed" => Ok(DispositionType::Destroyed),
             "lost_stolen" => Ok(DispositionType::LostStolen),
             other => Err(format!("Unknown disposition type: {other}")),
-        }
-    }
-
-    fn parse_coverage_kind(value: &str) -> Result<CoverageKind, String> {
-        match value.to_lowercase().as_str() {
-            "individually_scheduled" => Ok(CoverageKind::IndividuallyScheduled),
-            "blanket" => Ok(CoverageKind::Blanket),
-            other => Err(format!("Unknown coverage kind: {other}")),
         }
     }
 
@@ -282,7 +270,6 @@ pub mod ops {
 
         let disposition_type =
             raw.disposition_type.as_deref().map(parse_disposition_type).transpose()?;
-        let coverage_kind = raw.coverage_kind.as_deref().map(parse_coverage_kind).transpose()?;
 
         let insurance_policy_id = match &raw.insurance_policy_name {
             None => None,
@@ -318,7 +305,6 @@ pub mod ops {
             disposition_date: raw.disposition_date.clone(),
             disposition_price: parse_decimal_to_cents(&raw.disposition_price),
             insurance_policy_id,
-            coverage_kind,
             scheduled_coverage_amount: parse_decimal_to_cents(&raw.scheduled_coverage_amount),
         };
 

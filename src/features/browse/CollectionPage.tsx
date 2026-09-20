@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
+import { daysUntil } from "../../lib/dates";
 import { formatCents } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
-import { policyExpiry } from "../insurance/coverage";
 import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
@@ -293,9 +293,9 @@ function AttentionBanner() {
   const { open } = useNavigation();
 
   const flagged = firearms.filter((f) => f.status === "active" && f.insuranceWarning !== "none");
-  const lapsing = policies
-    .map((policy) => ({ policy, expiry: policyExpiry(policy.effectiveEndDate) }))
-    .filter(({ expiry }) => expiry.expired || expiry.expiringSoon);
+  // The backend's warning flags, which already leave out a blanket policy
+  // that has been renewed or replaced (FR-028).
+  const lapsing = policies.filter((policy) => policy.expiredWarning || policy.expiringWarning);
   if (flagged.length === 0 && lapsing.length === 0) return null;
 
   const parts: string[] = [];
@@ -304,11 +304,12 @@ function AttentionBanner() {
       `${flagged.length} ${flagged.length === 1 ? "firearm is" : "firearms are"} uninsured or under-insured`,
     );
   }
-  for (const { policy, expiry } of lapsing) {
+  for (const policy of lapsing) {
+    const daysLeft = daysUntil(policy.effectiveEndDate);
     parts.push(
-      expiry.expired
+      policy.expiredWarning
         ? `“${policy.name}” has expired`
-        : `“${policy.name}” expires in ${expiry.daysLeft} ${expiry.daysLeft === 1 ? "day" : "days"}`,
+        : `“${policy.name}” expires in ${daysLeft} ${daysLeft === 1 ? "day" : "days"}`,
     );
   }
 
