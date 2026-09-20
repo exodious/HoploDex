@@ -227,6 +227,22 @@ pub mod ops {
         }
     }
 
+    /// The reason shown for a failing row: every per-field message (the
+    /// summary line alone says nothing about which field is wrong), in a
+    /// stable order.
+    fn row_message(error: &CommandError) -> String {
+        let Some(fields) = &error.field_errors else {
+            return error.message.clone();
+        };
+        let mut messages: Vec<_> = fields.iter().collect();
+        messages.sort();
+        messages
+            .iter()
+            .map(|(field, message)| format!("{field}: {message}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
     /// Parses and validates one raw spreadsheet row into a `FirearmInput`,
     /// resolving `firearm_type`/`insurance_policy_name` by lookup — a
     /// human-readable `Err` message per FR-020, never a panic/abort of the
@@ -278,6 +294,7 @@ pub mod ops {
             no_serial_attested: parse_bool(&raw.no_serial_attested),
             caliber,
             firearm_type_id,
+            nickname: None,
             notes: raw.notes.clone(),
             accessories: raw.accessories.clone(),
             status,
@@ -294,7 +311,7 @@ pub mod ops {
             scheduled_coverage_amount: parse_decimal_to_cents(&raw.scheduled_coverage_amount),
         };
 
-        validate_firearm_input(&input).map_err(|e| e.message)?;
+        validate_firearm_input(&input).map_err(|e| row_message(&e))?;
         Ok(input)
     }
 

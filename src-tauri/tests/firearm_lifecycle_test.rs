@@ -29,6 +29,7 @@ fn sample_input() -> FirearmInput {
         disposition_price: None,
         insurance_policy_id: None,
         coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }
@@ -161,4 +162,112 @@ fn deleting_a_firearm_cascades_to_its_photos_and_documents() {
         .unwrap();
     assert_eq!(photo_count, 0);
     assert_eq!(doc_count, 0);
+}
+
+// --- Date rules (FR-003 / FR-004, US1 Acceptance Scenarios 13-14) ---
+
+fn today() -> chrono::NaiveDate {
+    chrono::Local::now().date_naive()
+}
+
+fn iso(date: chrono::NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+fn dispose_input(date: &str) -> DisposeFirearmInput {
+    DisposeFirearmInput {
+        disposition_type: DispositionType::Sold,
+        recipient: "Jane Doe".into(),
+        date: date.into(),
+        price: 40000,
+    }
+}
+
+#[test]
+fn scenario_13_a_future_acquisition_date_is_blocked_but_today_and_earlier_are_accepted() {
+    let db = TestDb::new();
+
+    let mut future = sample_input();
+    future.acquisition_date = Some(iso(today() + chrono::Duration::days(1)));
+    let err = ops::create_firearm(&db.conn, &future).expect_err("future date must be blocked");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
+
+    let mut current = sample_input();
+    current.acquisition_date = Some(iso(today()));
+    assert!(ops::create_firearm(&db.conn, &current).is_ok(), "today is allowed");
+
+    let mut past = sample_input();
+    past.serial_number = Some("PAST-1".into());
+    past.acquisition_date = Some("1968-10-22".into());
+    assert!(ops::create_firearm(&db.conn, &past).is_ok());
+}
+
+#[test]
+fn scenario_13_a_future_acquisition_date_is_blocked_on_update_too() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+
+    let mut edited = sample_input();
+    edited.acquisition_date = Some(iso(today() + chrono::Duration::days(30)));
+    let err = ops::update_firearm(&db.conn, created.id, &edited).expect_err("blocked");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().acquisition_date, None);
+}
+
+#[test]
+fn scenario_13_a_future_disposition_date_is_blocked_on_dispose_and_update() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let tomorrow = iso(today() + chrono::Duration::days(1));
+
+    let err = ops::dispose_firearm(&db.conn, created.id, &dispose_input(&tomorrow))
+        .expect_err("future disposition date must be blocked");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().status, FirearmStatus::Active);
+
+    let mut edited = sample_input();
+    edited.status = FirearmStatus::Disposed;
+    edited.disposition_type = Some(DispositionType::Sold);
+    edited.disposition_recipient = Some("Jane Doe".into());
+    edited.disposition_date = Some(tomorrow);
+    edited.disposition_price = Some(1);
+    let err = ops::update_firearm(&db.conn, created.id, &edited).expect_err("blocked");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
+
+    assert!(ops::dispose_firearm(&db.conn, created.id, &dispose_input(&iso(today()))).is_ok());
+}
+
+#[test]
+fn scenario_14_a_disposition_before_the_acquisition_date_is_blocked() {
+    let db = TestDb::new();
+    let mut input = sample_input();
+    input.acquisition_date = Some("2025-03-01".into());
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+
+    let err = ops::dispose_firearm(&db.conn, created.id, &dispose_input("2025-02-28"))
+        .expect_err("disposition before acquisition must be blocked");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().status, FirearmStatus::Active);
+
+    // The same day is fine.
+    let disposed = ops::dispose_firearm(&db.conn, created.id, &dispose_input("2025-03-01"));
+    assert!(disposed.is_ok());
+}
+
+#[test]
+fn a_disposition_date_is_not_compared_when_there_is_no_acquisition_date() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    assert!(ops::dispose_firearm(&db.conn, created.id, &dispose_input("1990-01-01")).is_ok());
+}
+
+#[test]
+fn a_date_that_is_not_a_real_calendar_date_is_rejected() {
+    let db = TestDb::new();
+    let mut input = sample_input();
+    input.acquisition_date = Some("03/01/2025".into());
+    let err = ops::create_firearm(&db.conn, &input).expect_err("not YYYY-MM-DD");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
 }

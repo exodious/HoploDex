@@ -102,3 +102,70 @@ fn rejects_an_unknown_firearm_type_with_a_row_error() {
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.row_errors.len(), 1);
 }
+
+// --- Date rules (FR-003 / FR-004): a violation is a row error ---
+
+fn import_one_row(row: &str) -> hoplodex_lib::commands::import_export::ImportResult {
+    let db = TestDb::new();
+    let dir = TempDir::new().unwrap();
+    let store = ImportSessionStore::new();
+    let path = write_csv(&dir, &format!("{HEADER}\n{row}\n"));
+    import_export_ops::import_collection(
+        &db.conn,
+        &path,
+        SpreadsheetFormat::Csv,
+        &store,
+        &mut |_, _| {},
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_future_acquisition_date_is_a_row_error() {
+    let tomorrow = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let result = import_one_row(&format!(
+        "Glock,19,ABC123,FALSE,9mm,Handgun,,,,500.00,,{tomorrow},,,,,,,,,"
+    ));
+
+    assert_eq!(result.imported_count, 0);
+    assert_eq!(result.row_errors.len(), 1);
+    assert_eq!(result.row_errors[0].row, 1);
+    assert!(result.row_errors[0].message.to_lowercase().contains("acquisition"));
+}
+
+#[test]
+fn a_future_disposition_date_is_a_row_error() {
+    let tomorrow = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let result = import_one_row(&format!(
+        "Glock,19,ABC123,FALSE,9mm,Handgun,,,disposed,500.00,,,,sold,Jane,{tomorrow},400.00,,,,"
+    ));
+
+    assert_eq!(result.imported_count, 0);
+    assert_eq!(result.row_errors.len(), 1);
+    assert!(result.row_errors[0].message.to_lowercase().contains("disposition"));
+}
+
+#[test]
+fn a_disposition_before_the_acquisition_date_is_a_row_error() {
+    let result = import_one_row(
+        "Glock,19,ABC123,FALSE,9mm,Handgun,,,disposed,500.00,,2025-03-01,,sold,Jane,2025-02-28,400.00,,,,",
+    );
+
+    assert_eq!(result.imported_count, 0);
+    assert_eq!(result.row_errors.len(), 1);
+    assert!(result.row_errors[0].message.to_lowercase().contains("acquisition"));
+}
+
+#[test]
+fn a_valid_disposition_on_or_after_the_acquisition_date_imports() {
+    let result = import_one_row(
+        "Glock,19,ABC123,FALSE,9mm,Handgun,,,disposed,500.00,,2025-03-01,,sold,Jane,2025-03-01,400.00,,,,",
+    );
+
+    assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
+    assert_eq!(result.imported_count, 1);
+}

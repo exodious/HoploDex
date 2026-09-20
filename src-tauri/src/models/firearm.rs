@@ -70,6 +70,7 @@ pub struct Firearm {
     pub no_serial_attested: bool,
     pub caliber: String,
     pub firearm_type_id: i64,
+    pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
     pub status: FirearmStatus,
@@ -99,6 +100,7 @@ impl Firearm {
             no_serial_attested: row.get("no_serial_attested")?,
             caliber: row.get("caliber")?,
             firearm_type_id: row.get("firearm_type_id")?,
+            nickname: row.get("nickname")?,
             notes: row.get("notes")?,
             accessories: row.get("accessories")?,
             status: row.get("status")?,
@@ -131,6 +133,7 @@ pub struct FirearmInput {
     pub no_serial_attested: bool,
     pub caliber: String,
     pub firearm_type_id: i64,
+    pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
     pub status: FirearmStatus,
@@ -149,6 +152,34 @@ pub struct FirearmInput {
 
 fn is_blank(value: &Option<String>) -> bool {
     value.as_deref().map(str::trim).unwrap_or("").is_empty()
+}
+
+/// Parses an optional `YYYY-MM-DD` date that must not be later than
+/// `today` (FR-003/FR-004: today is allowed). A blank date is fine — both
+/// dates are optional — and yields `None`; a bad one records an error under
+/// `field` and also yields `None`.
+fn checked_date(
+    field: &str,
+    label: &str,
+    value: &Option<String>,
+    today: chrono::NaiveDate,
+    errors: &mut HashMap<String, String>,
+) -> Option<chrono::NaiveDate> {
+    if is_blank(value) {
+        return None;
+    }
+    match chrono::NaiveDate::parse_from_str(value.as_deref().unwrap_or_default().trim(), "%Y-%m-%d")
+    {
+        Ok(date) if date > today => {
+            errors.insert(field.into(), format!("{label} can't be in the future."));
+            None
+        }
+        Ok(date) => Some(date),
+        Err(_) => {
+            errors.insert(field.into(), format!("{label} must be a date in YYYY-MM-DD format."));
+            None
+        }
+    }
 }
 
 /// Validation rules from data-model.md's "Validation rules" section,
@@ -174,6 +205,31 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
             "serialNumber".into(),
             "Enter a serial number, or confirm this firearm has none.".into(),
         );
+    }
+
+    // FR-003/FR-004: judged against the user's local date, not UTC.
+    let today = chrono::Local::now().date_naive();
+    let acquired = checked_date(
+        "acquisitionDate",
+        "Acquisition date",
+        &input.acquisition_date,
+        today,
+        &mut errors,
+    );
+    let disposed_on = checked_date(
+        "dispositionDate",
+        "Disposition date",
+        &input.disposition_date,
+        today,
+        &mut errors,
+    );
+    if let (Some(acquired), Some(disposed_on)) = (acquired, disposed_on) {
+        if disposed_on < acquired {
+            errors.insert(
+                "dispositionDate".into(),
+                "Disposition date can't be earlier than the acquisition date.".into(),
+            );
+        }
     }
 
     match input.status {

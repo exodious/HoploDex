@@ -113,14 +113,14 @@ pub mod ops {
         validate_firearm_input(input)?;
         conn.execute(
             "INSERT INTO firearms (
-                make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
+                make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
                 notes, accessories, status, estimated_value,
                 acquisition_source, acquisition_date, acquisition_price,
                 disposition_type, disposition_recipient, disposition_date, disposition_price,
                 insurance_policy_id, coverage_kind, scheduled_coverage_amount,
                 created_at, updated_at
             ) VALUES (
-                :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id,
+                :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id, :nickname,
                 :notes, :accessories, :status, :estimated_value,
                 :acquisition_source, :acquisition_date, :acquisition_price,
                 :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
@@ -134,6 +134,7 @@ pub mod ops {
                 ":no_serial_attested": input.no_serial_attested,
                 ":caliber": input.caliber,
                 ":firearm_type_id": input.firearm_type_id,
+                ":nickname": input.nickname,
                 ":notes": input.notes,
                 ":accessories": input.accessories,
                 ":status": input.status,
@@ -170,6 +171,7 @@ pub mod ops {
                     no_serial_attested = :no_serial_attested,
                     caliber = :caliber,
                     firearm_type_id = :firearm_type_id,
+                    nickname = :nickname,
                     notes = :notes,
                     accessories = :accessories,
                     status = :status,
@@ -194,6 +196,7 @@ pub mod ops {
                     ":no_serial_attested": input.no_serial_attested,
                     ":caliber": input.caliber,
                     ":firearm_type_id": input.firearm_type_id,
+                    ":nickname": input.nickname,
                     ":notes": input.notes,
                     ":accessories": input.accessories,
                     ":status": input.status,
@@ -232,6 +235,7 @@ pub mod ops {
             no_serial_attested: current.no_serial_attested,
             caliber: current.caliber,
             firearm_type_id: current.firearm_type_id,
+            nickname: current.nickname.clone(),
             notes: current.notes,
             accessories: current.accessories,
             status: FirearmStatus::Disposed,

@@ -29,6 +29,7 @@ CREATE TABLE firearms (
     make TEXT NOT NULL,
     model TEXT NOT NULL,
     serial_number TEXT,
+    nickname TEXT,
     no_serial_attested INTEGER NOT NULL DEFAULT 0 CHECK (no_serial_attested IN (0, 1)),
     caliber TEXT NOT NULL,
     firearm_type_id INTEGER NOT NULL REFERENCES firearm_types (id),

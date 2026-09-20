@@ -10,6 +10,7 @@ const firearm = {
   make: "Colt",
   model: "Python",
   status: "active",
+  acquisitionDate: "2025-03-01",
 } as Firearm;
 
 function Harness({ onDispose }: { onDispose: (input: DisposeFirearmInput) => Promise<void> }) {
@@ -56,5 +57,43 @@ describe("DisposeDialog", () => {
     expect(onDispose).toHaveBeenCalledWith(
       expect.objectContaining({ dispositionType: "sold", recipient: "Jane Doe", price: 120000 }),
     );
+  });
+
+  it("blocks a disposition date before the acquisition date", async () => {
+    const user = userEvent.setup();
+    const onDispose = vi.fn().mockResolvedValue(undefined);
+    render(<Harness onDispose={onDispose} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("radio", { name: "Sold" }));
+    await user.type(screen.getByLabelText("Transferred to"), "Jane Doe");
+    await user.type(screen.getByLabelText("Price received"), "100");
+    const date = screen.getByLabelText("Date");
+    await user.clear(date);
+    await user.type(date, "2025-02-28");
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+    expect(
+      screen.getByText("Disposition date can't be earlier than the acquisition date."),
+    ).toBeInTheDocument();
+    expect(onDispose).not.toHaveBeenCalled();
+  });
+
+  it("blocks a future disposition date", async () => {
+    const user = userEvent.setup();
+    const onDispose = vi.fn().mockResolvedValue(undefined);
+    render(<Harness onDispose={onDispose} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("radio", { name: "Sold" }));
+    await user.type(screen.getByLabelText("Transferred to"), "Jane Doe");
+    await user.type(screen.getByLabelText("Price received"), "100");
+    const date = screen.getByLabelText("Date");
+    await user.clear(date);
+    await user.type(date, "2999-01-01");
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+    expect(screen.getByText("Disposition date can't be in the future.")).toBeInTheDocument();
+    expect(onDispose).not.toHaveBeenCalled();
   });
 });

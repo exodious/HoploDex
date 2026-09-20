@@ -30,6 +30,7 @@ fn sample_firearm() -> FirearmInput {
         disposition_price: None,
         insurance_policy_id: None,
         coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }
@@ -154,4 +155,79 @@ fn a_dropped_folder_is_not_attached() {
         .expect_err("folders can't be attachments");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(document_ops::list_documents(&db.conn, firearm.id).unwrap().is_empty());
+}
+
+/// Regression for FR-035 / SC-010: the decrypted copies `open_document`
+/// writes must not outlive the session. Clearing the folder overwrites each
+/// file's contents before unlinking it — a hard link taken beforehand keeps
+/// the old inode reachable, so it shows whether the bytes were really
+/// overwritten and not merely unlinked.
+#[test]
+fn clearing_opened_documents_overwrites_then_removes_each_copy() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let opened = scratch.path().join("opened-documents");
+
+    let attached = document_ops::add_document(
+        &db.conn,
+        firearm.id,
+        SAMPLE_PDF_BYTES,
+        "receipt.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+    let copy = document_ops::write_document_copy(&opened.join("1"), &attached).unwrap();
+    let survivor = scratch.path().join("survivor");
+    std::fs::hard_link(&copy, &survivor).unwrap();
+
+    let leftovers = document_ops::clear_opened_documents(&opened);
+
+    assert!(leftovers.is_empty());
+    assert!(!opened.exists(), "the folder itself is removed");
+    let remaining = std::fs::read(&survivor).unwrap();
+    assert_eq!(remaining.len(), SAMPLE_PDF_BYTES.len());
+    assert!(
+        remaining.iter().all(|&b| b == 0),
+        "contents were overwritten before the file was unlinked"
+    );
+}
+
+#[test]
+fn clearing_a_missing_opened_documents_folder_is_a_no_op() {
+    let scratch = tempfile::TempDir::new().unwrap();
+    assert!(document_ops::clear_opened_documents(&scratch.path().join("never-created")).is_empty());
+}
+
+/// Startup retries whatever the previous exit could not delete: a copy that
+/// can't be removed is reported and left in place, and the next sweep (once
+/// the obstacle is gone) removes it.
+#[cfg(unix)]
+#[test]
+fn a_copy_that_cannot_be_deleted_is_reported_and_retried_by_the_next_sweep() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let scratch = tempfile::TempDir::new().unwrap();
+    let opened = scratch.path().join("opened-documents");
+    let folder = opened.join("7");
+    std::fs::create_dir_all(&folder).unwrap();
+    let stuck = folder.join("stuck.pdf");
+    std::fs::write(&stuck, SAMPLE_PDF_BYTES).unwrap();
+
+    // A read-only folder forbids unlinking its entries.
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(folder.join("probe"), b"").is_ok() {
+        // Running as a user the permission bits don't bind (root): the
+        // obstacle can't be simulated here.
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    let leftovers = document_ops::clear_opened_documents(&opened);
+    assert_eq!(leftovers, vec![stuck.clone()]);
+    assert!(stuck.exists());
+
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(document_ops::clear_opened_documents(&opened).is_empty());
+    assert!(!opened.exists());
 }

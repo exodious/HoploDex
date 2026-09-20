@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from "../../components";
-import { parseDateInput, todayIso } from "../../lib/dates";
+import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
@@ -37,15 +37,21 @@ export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: Dispos
       bare
     >
       {/* Mounted only while open, so every opening starts from a blank form. */}
-      <DisposeForm onDispose={onDispose} onCancel={() => onOpenChange(false)} />
+      <DisposeForm
+        acquisitionDate={firearm.acquisitionDate}
+        onDispose={onDispose}
+        onCancel={() => onOpenChange(false)}
+      />
     </Dialog>
   );
 }
 
 function DisposeForm({
+  acquisitionDate,
   onDispose,
   onCancel,
 }: {
+  acquisitionDate: string | null;
   onDispose: (input: DisposeFirearmInput) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -62,7 +68,12 @@ function DisposeForm({
   const errors = {
     dispositionType: dispositionType ? undefined : "Choose what happened to it.",
     recipient: recipient.trim() ? undefined : "Enter who received it.",
-    date: !parsedDate.ok ? parsedDate.error : parsedDate.iso ? undefined : "Enter the date.",
+    date: !parsedDate.ok
+      ? parsedDate.error
+      : !parsedDate.iso
+        ? "Enter the date."
+        : (futureDateError(parsedDate.iso, "Disposition date") ??
+          dispositionOrderError(acquisitionDate, parsedDate.iso)),
     price: !parsedPrice.ok
       ? parsedPrice.error
       : parsedPrice.cents == null
@@ -124,6 +135,7 @@ function DisposeForm({
             label="Date"
             required
             value={date}
+            max={todayIso()}
             onValueChange={setDate}
             error={shown(errors.date)}
           />

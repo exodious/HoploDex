@@ -10,7 +10,7 @@ import {
   TextArea,
   TextField,
 } from "../../components";
-import { parseDateInput } from "../../lib/dates";
+import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { centsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
@@ -90,6 +90,10 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
   }
   const acquired = parseDateInput(form.acquisitionDate);
   if (!acquired.ok) errors.acquisitionDate = acquired.error;
+  else {
+    const future = futureDateError(acquired.iso, "Acquisition date");
+    if (future) errors.acquisitionDate = future;
+  }
 
   if (disposed) {
     if (!form.dispositionType) errors.dispositionType = "Choose what happened to it.";
@@ -98,6 +102,12 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     const date = parseDateInput(form.dispositionDate);
     if (!date.ok) errors.dispositionDate = date.error;
     else if (!date.iso) errors.dispositionDate = "Enter the date.";
+    else {
+      const problem =
+        futureDateError(date.iso, "Disposition date") ??
+        dispositionOrderError(acquired.ok ? acquired.iso : null, date.iso);
+      if (problem) errors.dispositionDate = problem;
+    }
     const price = parseDollars(form.dispositionPrice);
     if (!price.ok) errors.dispositionPrice = price.error;
     else if (price.cents == null) errors.dispositionPrice = "Enter the price, or 0.";
@@ -337,6 +347,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
               <DateField
                 label="Date acquired"
                 value={form.acquisitionDate}
+                max={todayIso()}
                 onValueChange={(text) => update("acquisitionDate", text)}
                 onBlur={touch("acquisitionDate")}
                 error={errorFor("acquisitionDate")}
@@ -407,6 +418,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
                   label="Date"
                   required
                   value={form.dispositionDate}
+                  max={todayIso()}
                   onValueChange={(text) => update("dispositionDate", text)}
                   onBlur={touch("dispositionDate")}
                   error={errorFor("dispositionDate")}

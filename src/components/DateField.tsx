@@ -14,6 +14,9 @@ export interface DateFieldProps extends Omit<
   /** The raw text being edited; parse it with `parseDateInput` on submit. */
   value: string;
   onValueChange: (text: string) => void;
+  /** Latest selectable day (ISO). Later days are disabled in the calendar;
+   * typed dates are still validated by the caller. */
+  max?: string;
 }
 
 /**
@@ -23,7 +26,7 @@ export interface DateFieldProps extends Omit<
  * choosing a date (spec_TODO) and whose segment-typing garbled pasted ISO
  * dates.
  */
-export function DateField({ value, onValueChange, onBlur, label, ...props }: DateFieldProps) {
+export function DateField({ value, onValueChange, onBlur, label, max, ...props }: DateFieldProps) {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const parsed = parseDateInput(value);
@@ -70,6 +73,7 @@ export function DateField({ value, onValueChange, onBlur, label, ...props }: Dat
         >
           <Calendar
             selected={selected}
+            max={max}
             onSelect={(iso) => {
               onValueChange(iso);
               setOpen(false);
@@ -115,9 +119,11 @@ function shiftMonths(iso: string, months: number): string {
 
 function Calendar({
   selected,
+  max,
   onSelect,
 }: {
   selected: string | null;
+  max?: string;
   onSelect: (iso: string) => void;
 }) {
   const today = todayIso();
@@ -148,8 +154,8 @@ function Calendar({
   const weeks: (string | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
-  const thisYear = Number(today.slice(0, 4));
-  const years = Array.from({ length: thisYear + 11 - 1850 }, (_, i) => thisYear + 10 - i);
+  const lastYear = max ? Number(max.slice(0, 4)) : Number(today.slice(0, 4)) + 10;
+  const years = Array.from({ length: lastYear + 1 - 1850 }, (_, i) => lastYear - i);
 
   function handleKeyDown(event: KeyboardEvent) {
     const moves: Record<string, () => string> = {
@@ -167,7 +173,9 @@ function Calendar({
     if (move) {
       event.preventDefault();
       focusCursor.current = true;
-      setCursor(move());
+      // Keyboard movement stops at the last selectable day.
+      const next = move();
+      setCursor(max !== undefined && next > max ? max : next);
     }
   }
 
@@ -242,6 +250,7 @@ function Calendar({
                       aria-label={FULL_DATE.format(new Date(`${iso}T00:00:00Z`))}
                       aria-pressed={iso === selected}
                       aria-current={iso === today ? "date" : undefined}
+                      disabled={max !== undefined && iso > max}
                       onClick={() => onSelect(iso)}
                     >
                       {parts(iso)[2]}
@@ -255,7 +264,12 @@ function Calendar({
       </table>
 
       <div className="hd-calendar__foot">
-        <button type="button" className="hd-link" onClick={() => onSelect(today)}>
+        <button
+          type="button"
+          className="hd-link"
+          disabled={max !== undefined && today > max}
+          onClick={() => onSelect(today)}
+        >
           Today
         </button>
         {selected && (

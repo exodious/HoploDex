@@ -173,6 +173,7 @@ pub mod ops {
             no_serial_attested: current.no_serial_attested,
             caliber: current.caliber,
             firearm_type_id: current.firearm_type_id,
+            nickname: current.nickname.clone(),
             notes: current.notes,
             accessories: current.accessories,
             status: current.status,

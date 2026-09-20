@@ -29,6 +29,7 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         disposition_price: None,
         insurance_policy_id: None,
         coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }

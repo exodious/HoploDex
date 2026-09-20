@@ -739,8 +739,14 @@
   cursor: pointer;
 }
 
-.hd-calendar__day:hover {
+.hd-calendar__day:hover:not(:disabled) {
   background: var(--sheet-sunk);
+}
+
+.hd-calendar__day:disabled {
+  color: var(--ink-3);
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .hd-calendar__day[aria-current="date"] {

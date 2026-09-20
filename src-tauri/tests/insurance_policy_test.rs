@@ -45,6 +45,7 @@ fn sample_firearm() -> FirearmInput {
         disposition_price: None,
         insurance_policy_id: None,
         coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }

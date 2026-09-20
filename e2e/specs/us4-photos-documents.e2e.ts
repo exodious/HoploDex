@@ -27,6 +27,23 @@ const SAMPLE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAGUlEQVR42mNgaPhPPhrVPKp5VPOo5oHVDADApFaPDOtbFgAAAABJRU5ErkJggg==";
 const SAMPLE_PDF_BASE64 = Buffer.from("%PDF-1.4 sample receipt contents").toString("base64");
 
+// The run's isolated cache/data dirs (see the E2E isolation notes): the
+// opened-document copies live under the cache dir. Checks that touch the
+// filesystem only run when the run is isolated, so they can never reach a
+// real user's data.
+const cacheHome = process.env.XDG_CACHE_HOME;
+const dataHome = process.env.XDG_DATA_HOME;
+const openedRoot = cacheHome && path.join(cacheHome, "com.hoplodex.app", "opened-documents");
+
+function filesUnder(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory() ? filesUnder(path.join(dir, entry.name)) : [path.join(dir, entry.name)],
+    );
+}
+
 describe("User Story 4 - Attach Photos and Documents", () => {
   it("shows a firearm with no photos with its type's generic drawing (Scenario 3)", async () => {
     await addFirearm({
@@ -121,5 +138,43 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       expect(copies.length).toBe(1);
       expect(fs.readFileSync(copies[0], "utf-8")).toBe("%PDF-1.4 sample receipt contents");
     }
+  });
+
+  // Scenario 5: no decrypted copy outlives the session (FR-035, SC-010).
+  it("deletes the opened copy when the app exits (Scenario 5)", async function () {
+    if (!openedRoot) return this.skip();
+    expect(filesUnder(openedRoot).length).toBe(1);
+
+    // Quit the way a user does: close the only window.
+    await browser.closeWindow();
+
+    await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {
+      timeout: 10000,
+      timeoutMsg: "a decrypted document copy was still on disk after the app exited",
+    });
+  });
+
+  it("deletes a copy left by a crash at the next launch (Scenario 5)", async function () {
+    if (!openedRoot || !dataHome) return this.skip();
+
+    // A copy a crashed or killed session couldn't clean up.
+    const stale = path.join(openedRoot, "99", "stale.pdf");
+    fs.mkdirSync(path.dirname(stale), { recursive: true });
+    fs.writeFileSync(stale, "%PDF-1.4 left behind");
+
+    // The E2E build's mock keyring makes a new key every launch, so the
+    // previous launch's scratch database can't be reopened. Drop it (inside
+    // this run's own data dir only) so the relaunch starts fresh.
+    const dbDir = path.join(dataHome, "com.hoplodex.app");
+    for (const name of fs.readdirSync(dbDir).filter((f) => f.startsWith("hoplodex.db"))) {
+      fs.rmSync(path.join(dbDir, name));
+    }
+
+    await browser.reloadSession();
+
+    await browser.waitUntil(async () => !fs.existsSync(stale), {
+      timeout: 10000,
+      timeoutMsg: "the stale decrypted copy survived a relaunch",
+    });
   });
 });

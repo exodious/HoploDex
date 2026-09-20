@@ -31,6 +31,8 @@ impl Default for TestDb {
 /// A tiny (20x20, solid red) but genuinely valid PNG, so
 /// `services::photos`'s real image-decoding thumbnail generator has real
 /// bytes to decode — no mocks, per the constitution.
+// Shared by every integration-test crate, but only some of them use each helper.
+#[allow(dead_code)]
 pub fn sample_png_bytes() -> Vec<u8> {
     vec![
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 20, 0, 0, 0, 20, 8,
