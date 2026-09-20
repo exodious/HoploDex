@@ -39,6 +39,9 @@ pub struct ImportConflict {
     pub conflict_id: String,
     pub row: usize,
     pub existing_firearm_id: i64,
+    /// Whether "create a duplicate" may be offered: false where FR-032 would
+    /// block the resulting record (FR-026).
+    pub duplicate_allowed: bool,
     pub make: String,
     pub model: String,
     pub serial_number: Option<String>,
@@ -52,6 +55,8 @@ pub struct ImportResult {
     pub updated_count: usize,
     pub skipped_count: usize,
     pub row_errors: Vec<RowError>,
+    /// Rows that imported but drew a warning (FR-032b), per row.
+    pub warnings: Vec<RowError>,
     pub conflicts: Vec<ImportConflict>,
 }
 
@@ -66,10 +71,15 @@ pub struct ConflictResolution {
 #[serde(rename_all = "camelCase")]
 pub struct ResolveResult {
     pub resolved_count: usize,
+    /// Conflicts the chosen action could not be applied to (a duplicate
+    /// FR-032 forbids, an overwrite that fails validation). They stay open
+    /// in the import session, so a different action can still be chosen.
+    pub unresolved: Vec<RowError>,
 }
 
 struct PendingConflict {
     conflict_id: String,
+    row: usize,
     existing_firearm_id: i64,
     new_input: FirearmInput,
 }
@@ -333,6 +343,7 @@ pub mod ops {
 
         let mut imported_count = 0;
         let mut row_errors = Vec::new();
+        let mut warnings = Vec::new();
         let mut conflicts = Vec::new();
         let mut pending = Vec::new();
 
@@ -355,18 +366,31 @@ pub mod ops {
                                 conflict_id: conflict_id.clone(),
                                 row: row_number,
                                 existing_firearm_id,
+                                duplicate_allowed: firearm_ops::check_uniqueness(
+                                    conn, None, &input,
+                                )
+                                .is_ok(),
                                 make: input.make.clone(),
                                 model: input.model.clone(),
                                 serial_number: input.serial_number.clone(),
                             });
                             pending.push(PendingConflict {
                                 conflict_id,
+                                row: row_number,
                                 existing_firearm_id,
                                 new_input: input,
                             });
                         }
-                        None => match firearm_ops::create_firearm(conn, &input) {
-                            Ok(_) => imported_count += 1,
+                        None => match firearm_ops::create_firearm_with_warnings(conn, &input) {
+                            Ok(saved) => {
+                                imported_count += 1;
+                                warnings.extend(
+                                    saved
+                                        .warnings
+                                        .into_iter()
+                                        .map(|message| RowError { row: row_number, message }),
+                                );
+                            }
                             // Rules that need the rest of the collection to
                             // judge (nickname/identity uniqueness) fail one
                             // row, not the whole import (FR-020).
@@ -394,15 +418,18 @@ pub mod ops {
             updated_count: 0,
             skipped_count: 0,
             row_errors,
+            warnings,
             conflicts,
         })
     }
 
     /// Applies each conflict's resolution: `overwrite` updates the existing
     /// record, `duplicate` inserts the imported row as a new record
-    /// alongside it, `skip` (the default, including any conflict not
-    /// covered by `resolutions` or `apply_to_remaining`) leaves the
-    /// existing record untouched.
+    /// alongside it (only where FR-032 allows), `skip` (the default,
+    /// including any conflict not covered by `resolutions` or
+    /// `apply_to_remaining`) leaves the existing record untouched. A conflict
+    /// the action can't be applied to is reported in `unresolved` and stays
+    /// open in the session.
     pub fn resolve_import_conflicts(
         conn: &Connection,
         store: &ImportSessionStore,
@@ -421,29 +448,43 @@ pub mod ops {
             resolutions.iter().map(|r| (r.conflict_id.as_str(), r.action.as_str())).collect();
 
         let mut resolved_count = 0;
+        let mut unresolved = Vec::new();
+        let mut still_open = Vec::new();
         for conflict in pending {
             let action = explicit
                 .get(conflict.conflict_id.as_str())
                 .copied()
                 .or(apply_to_remaining)
                 .unwrap_or("skip");
-            match action {
-                "overwrite" => {
-                    firearm_ops::update_firearm(
-                        conn,
-                        conflict.existing_firearm_id,
-                        &conflict.new_input,
-                    )?;
+            let outcome = match action {
+                "overwrite" => firearm_ops::update_firearm(
+                    conn,
+                    conflict.existing_firearm_id,
+                    &conflict.new_input,
+                )
+                .map(drop),
+                "duplicate" => firearm_ops::create_firearm(conn, &conflict.new_input).map(drop),
+                _ => Ok(()), // "skip", or an unrecognized action, leaves the existing record untouched
+            };
+            match outcome {
+                Ok(()) => resolved_count += 1,
+                Err(e) if e.code == "VALIDATION_ERROR" => {
+                    unresolved.push(RowError { row: conflict.row, message: row_message(&e) });
+                    still_open.push(conflict);
                 }
-                "duplicate" => {
-                    firearm_ops::create_firearm(conn, &conflict.new_input)?;
-                }
-                _ => {} // "skip", or an unrecognized action, leaves the existing record untouched
+                Err(e) => return Err(e),
             }
-            resolved_count += 1;
         }
 
-        Ok(ResolveResult { resolved_count })
+        if !still_open.is_empty() {
+            store
+                .pending
+                .lock()
+                .expect("import session mutex poisoned")
+                .insert(session_id.to_string(), still_open);
+        }
+
+        Ok(ResolveResult { resolved_count, unresolved })
     }
 }
 

@@ -74,6 +74,15 @@ CREATE UNIQUE INDEX idx_firearms_active_nickname
     ON firearms (nickname COLLATE NOCASE)
     WHERE status = 'active' AND nickname IS NOT NULL;
 
+-- FR-032: make + model + serial number is unique among active firearms that
+-- are not attested serial-exempt (an exempt record only draws a warning, and
+-- a disposed one may be reacquired as a new record). Backstop for the
+-- blocking case only; the command layer also trims whitespace and produces
+-- the warning.
+CREATE UNIQUE INDEX idx_firearms_active_identity
+    ON firearms (make COLLATE NOCASE, model COLLATE NOCASE, serial_number COLLATE NOCASE)
+    WHERE status = 'active' AND no_serial_attested = 0 AND serial_number IS NOT NULL;
+
 CREATE TABLE photos (
     id INTEGER PRIMARY KEY,
     firearm_id INTEGER NOT NULL REFERENCES firearms (id) ON DELETE CASCADE,

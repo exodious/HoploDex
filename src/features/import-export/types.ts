@@ -33,6 +33,8 @@ export interface ImportConflict {
   conflictId: string;
   row: number;
   existingFirearmId: number;
+  /** False where FR-032 would block a duplicate record (FR-026). */
+  duplicateAllowed: boolean;
   make: string;
   model: string;
   serialNumber: string | null;
@@ -44,6 +46,8 @@ export interface ImportResult {
   updatedCount: number;
   skippedCount: number;
   rowErrors: RowError[];
+  /** Rows that imported but drew a warning (FR-032b). */
+  warnings: RowError[];
   conflicts: ImportConflict[];
 }
 
@@ -62,4 +66,6 @@ export interface ResolveImportConflictsInput {
 
 export interface ResolveResult {
   resolvedCount: number;
+  /** Conflicts the chosen action couldn't be applied to; still open. */
+  unresolved: RowError[];
 }

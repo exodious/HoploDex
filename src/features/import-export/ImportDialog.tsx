@@ -14,7 +14,13 @@ import {
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import * as importExportService from "./importExportService";
-import type { ConflictAction, ImportConflict, ImportResult, SpreadsheetFormat } from "./types";
+import type {
+  ConflictAction,
+  ImportConflict,
+  ImportResult,
+  RowError,
+  SpreadsheetFormat,
+} from "./types";
 import "./importExport.css";
 
 export interface ImportDialogProps {
@@ -67,6 +73,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [resolving, setResolving] = useState(false);
   const [confirmingReplace, setConfirmingReplace] = useState(false);
   const [resolvedCount, setResolvedCount] = useState<number | null>(null);
+  const [unresolved, setUnresolved] = useState<RowError[]>([]);
 
   async function chooseFile() {
     const selected = await openDialog({
@@ -113,7 +120,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           action: choices[c.conflictId],
         })),
       });
-      setResolvedCount(resolved.resolvedCount);
+      setResolvedCount((so_far) => (so_far ?? 0) + resolved.resolvedCount);
+      // A decision the backend couldn't apply leaves its row open to be
+      // decided again; everything else is done.
+      const stillOpen = new Set(resolved.unresolved.map((u) => u.row));
+      setResult({ ...result, conflicts: result.conflicts.filter((c) => stillOpen.has(c.row)) });
+      setUnresolved(resolved.unresolved);
+      setChoices({});
       await refresh();
       notify(`Resolved ${count(resolved.resolvedCount, "matching row", "matching rows")}.`);
     } catch (e) {
@@ -174,7 +187,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   }
 
   // ── Step 2: results, and any rows needing a decision ───────────────────
-  const conflicts = resolvedCount == null ? result.conflicts : [];
+  const conflicts = result.conflicts;
   const undecided = conflicts.filter((c) => !choices[c.conflictId]);
   const replacing = conflicts.filter((c) => choices[c.conflictId] === "overwrite").length;
 
@@ -190,13 +203,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             label="failed"
             warn={result.rowErrors.length > 0}
           />
-          {result.conflicts.length > 0 && (
-            <Tally
-              value={result.conflicts.length}
-              label={resolvedCount == null ? "need a decision" : "resolved"}
-              warn={resolvedCount == null}
-            />
-          )}
+          {conflicts.length > 0 && <Tally value={conflicts.length} label="need a decision" warn />}
+          {resolvedCount != null && <Tally value={resolvedCount} label="resolved" />}
         </div>
         <p className="hd-sr-only">
           Imported {count(result.importedCount, "new record", "new records")}.{" "}
@@ -222,6 +230,39 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           </section>
         )}
 
+        {result.warnings.length > 0 && (
+          <section className="hd-io-section" aria-labelledby="row-warnings-title">
+            <h3 className="hd-io-section__title" id="row-warnings-title">
+              Imported with a warning
+            </h3>
+            <ul className="hd-row-errors">
+              {result.warnings.map((warning) => (
+                <li key={`${warning.row}-${warning.message}`}>
+                  <span className="hd-row-errors__row hd-num">Row {warning.row}</span>
+                  <span>{warning.message}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {unresolved.length > 0 && (
+          <section className="hd-io-section" aria-labelledby="unresolved-title">
+            <h3 className="hd-io-section__title" id="unresolved-title">
+              Decisions that couldn’t be applied
+            </h3>
+            <p className="hd-form-note">These rows are still waiting. Choose again below.</p>
+            <ul className="hd-row-errors">
+              {unresolved.map((item) => (
+                <li key={`${item.row}-${item.message}`}>
+                  <span className="hd-row-errors__row hd-num">Row {item.row}</span>
+                  <span>{item.message}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {conflicts.length > 0 && (
           <section className="hd-io-section" aria-labelledby="conflicts-title">
             <h3 className="hd-io-section__title" id="conflicts-title">
@@ -229,7 +270,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               your collection
             </h3>
             <p className="hd-form-note">
-              Same make, model, and serial number. Choose what to do with each one.
+              Same make, model, and serial number. Choose what to do with each one. A firearm can’t
+              be added as new while an active one has the same make, model, and serial number.
             </p>
             <div className="hd-bulk">
               <span className="hd-bulk__label">
@@ -245,7 +287,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
                   onClick={() =>
                     setChoices((prev) => ({
                       ...prev,
-                      ...Object.fromEntries(undecided.map((c) => [c.conflictId, option.value])),
+                      // "Add as new" skips rows where FR-032 forbids it; those
+                      // stay undecided for the user to choose keep or replace.
+                      ...Object.fromEntries(
+                        undecided
+                          .filter((c) => option.value !== "duplicate" || c.duplicateAllowed)
+                          .map((c) => [c.conflictId, option.value]),
+                      ),
                     }))
                   }
                 >
@@ -284,7 +332,11 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
                         onChange={(value) =>
                           setChoices((prev) => ({ ...prev, [conflict.conflictId]: value }))
                         }
-                        options={CONFLICT_OPTIONS}
+                        options={
+                          conflict.duplicateAllowed
+                            ? CONFLICT_OPTIONS
+                            : CONFLICT_OPTIONS.filter((option) => option.value !== "duplicate")
+                        }
                       />
                     </td>
                   </tr>
@@ -294,7 +346,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           </section>
         )}
 
-        {resolvedCount != null && (
+        {resolvedCount != null && conflicts.length === 0 && (
           <div className="hd-outcome" role="status">
             <Icon name="check" size={22} />
             <p className="hd-outcome__headline">
@@ -309,7 +361,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           <>
             <p className="hd-dialog__footer-note">
               {undecided.length > 0
-                ? `${count(undecided.length, "row", "rows")} still need a decision.`
+                ? `${count(undecided.length, "row", "rows")} still ${undecided.length === 1 ? "needs" : "need"} a decision.`
                 : "Every row has a decision."}
             </p>
             <Button

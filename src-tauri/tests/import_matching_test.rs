@@ -4,10 +4,10 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::ops as firearm_ops;
+use hoplodex_lib::commands::firearms::{ops as firearm_ops, DisposeFirearmInput};
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::{ConflictResolution, ImportSessionStore};
-use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{csv_file, csv_firearm, TestDb};
 use tempfile::TempDir;
@@ -141,31 +141,59 @@ fn resolving_a_conflict_as_overwrite_updates_the_existing_record() {
     assert_eq!(updated.estimated_value, Some(70000));
 }
 
-#[test]
-fn resolving_a_conflict_as_duplicate_inserts_a_new_record_alongside_the_original() {
-    let db = TestDb::new();
+fn import_glock(
+    db: &TestDb,
+    store: &ImportSessionStore,
+    rows: &[String],
+) -> hoplodex_lib::commands::import_export::ImportResult {
     let dir = TempDir::new().unwrap();
-    let store = ImportSessionStore::new();
-    firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
-
-    let csv = csv_file(&[csv_firearm(
-        "Glock",
-        "19",
-        "ABC123",
-        &[("notes", "duplicate row"), ("estimated_value", "700.00")],
-    )]);
-    let path = write_csv(&dir, &csv);
-    let import_result = import_export_ops::import_collection(
+    let path = write_csv(&dir, &csv_file(rows));
+    import_export_ops::import_collection(
         &db.conn,
         &path,
         SpreadsheetFormat::Csv,
-        &store,
+        store,
         &mut |_, _| {},
     )
+    .unwrap()
+}
+
+fn dispose(db: &TestDb, id: i64) {
+    firearm_ops::dispose_firearm(
+        &db.conn,
+        id,
+        &DisposeFirearmInput {
+            disposition_type: DispositionType::Sold,
+            recipient: "Jane Doe".into(),
+            date: "2025-06-15".into(),
+            price: 40000,
+        },
+    )
     .unwrap();
+}
+
+fn active_count(db: &TestDb) -> usize {
+    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
+    listing.groups.iter().map(|g| g.firearms.len()).sum()
+}
+
+#[test]
+fn a_duplicate_of_a_disposed_record_is_allowed_as_a_reacquisition() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    dispose(&db, existing.id);
+
+    let import_result = import_glock(
+        &db,
+        &store,
+        &[csv_firearm("Glock", "19", "ABC123", &[("notes", "reacquired")])],
+    );
+    assert_eq!(import_result.conflicts.len(), 1);
+    assert!(import_result.conflicts[0].duplicate_allowed, "a disposed match never blocks");
     let conflict_id = import_result.conflicts[0].conflict_id.clone();
 
-    import_export_ops::resolve_import_conflicts(
+    let resolved = import_export_ops::resolve_import_conflicts(
         &db.conn,
         &store,
         &import_result.session_id,
@@ -174,9 +202,192 @@ fn resolving_a_conflict_as_duplicate_inserts_a_new_record_alongside_the_original
     )
     .unwrap();
 
-    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
-    let all: Vec<_> = listing.groups.iter().flat_map(|g| &g.firearms).collect();
-    assert_eq!(all.len(), 2, "both the original and the duplicate must exist");
+    assert_eq!(resolved.resolved_count, 1);
+    assert!(resolved.unresolved.is_empty());
+    assert_eq!(active_count(&db), 1, "the reacquired record is active; the old one is disposed");
+}
+
+#[test]
+fn a_duplicate_of_an_active_record_is_not_offered_and_is_refused_and_reported() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+
+    let import_result = import_glock(
+        &db,
+        &store,
+        &[csv_firearm("Glock", "19", "ABC123", &[("notes", "duplicate row")])],
+    );
+    assert_eq!(import_result.conflicts.len(), 1);
+    assert!(
+        !import_result.conflicts[0].duplicate_allowed,
+        "FR-032 would block it, so only skip and overwrite are offered"
+    );
+    let conflict_id = import_result.conflicts[0].conflict_id.clone();
+
+    let resolved = import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        &store,
+        &import_result.session_id,
+        &[ConflictResolution { conflict_id: conflict_id.clone(), action: "duplicate".into() }],
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(resolved.resolved_count, 0);
+    assert_eq!(resolved.unresolved.len(), 1);
+    assert_eq!(resolved.unresolved[0].row, 1);
+    assert_eq!(active_count(&db), 1, "nothing was inserted");
+
+    // Left unresolved, not lost: it can still be skipped or overwritten.
+    let retried = import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        &store,
+        &import_result.session_id,
+        &[ConflictResolution { conflict_id, action: "overwrite".into() }],
+        None,
+    )
+    .unwrap();
+    assert_eq!(retried.resolved_count, 1);
+    let updated = firearm_ops::get_firearm(&db.conn, existing.id).unwrap();
+    assert_eq!(updated.notes.as_deref(), Some("duplicate row"));
+}
+
+#[test]
+fn apply_to_remaining_duplicate_skips_only_the_conflicts_it_may_not_apply_to() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    let active = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let mut second = existing_firearm();
+    second.model = "26".into();
+    second.serial_number = Some("XYZ789".into());
+    let disposed = firearm_ops::create_firearm(&db.conn, &second).unwrap();
+    dispose(&db, disposed.id);
+
+    let import_result = import_glock(
+        &db,
+        &store,
+        &[csv_firearm("Glock", "19", "ABC123", &[]), csv_firearm("Glock", "26", "XYZ789", &[])],
+    );
+    assert_eq!(import_result.conflicts.len(), 2);
+
+    let resolved = import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        &store,
+        &import_result.session_id,
+        &[],
+        Some("duplicate"),
+    )
+    .unwrap();
+
+    assert_eq!(resolved.resolved_count, 1, "only the reacquisition was duplicated");
+    assert_eq!(resolved.unresolved.len(), 1);
+    assert_eq!(resolved.unresolved[0].row, 1);
+    assert_eq!(active_count(&db), 2);
+    assert!(firearm_ops::get_firearm(&db.conn, active.id).is_ok());
+}
+
+#[test]
+fn a_conflict_that_would_fail_validation_on_overwrite_is_reported_not_fatal() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    let mut first = existing_firearm();
+    first.nickname = Some("Taken".into());
+    firearm_ops::create_firearm(&db.conn, &first).unwrap();
+    let mut second = existing_firearm();
+    second.model = "26".into();
+    second.serial_number = Some("XYZ789".into());
+    let target = firearm_ops::create_firearm(&db.conn, &second).unwrap();
+
+    // Overwriting the second record would give it the first one's nickname.
+    let import_result = import_glock(
+        &db,
+        &store,
+        &[
+            csv_firearm("Glock", "26", "XYZ789", &[("nickname", "taken")]),
+            csv_firearm("Glock", "19", "ABC123", &[("notes", "fine")]),
+        ],
+    );
+    assert_eq!(import_result.conflicts.len(), 2);
+
+    let resolved = import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        &store,
+        &import_result.session_id,
+        &[],
+        Some("overwrite"),
+    )
+    .unwrap();
+
+    assert_eq!(resolved.resolved_count, 1, "the other conflict still resolves");
+    assert_eq!(resolved.unresolved.len(), 1);
+    assert!(resolved.unresolved[0].message.to_lowercase().contains("nickname"));
+    assert_eq!(firearm_ops::get_firearm(&db.conn, target.id).unwrap().nickname, None);
+}
+
+#[test]
+fn matching_ignores_letter_case_and_surrounding_whitespace() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+
+    let result = import_glock(&db, &store, &[csv_firearm(" glock ", "19", " abc123 ", &[])]);
+
+    assert_eq!(result.imported_count, 0);
+    assert_eq!(result.conflicts.len(), 1);
+    assert_eq!(result.conflicts[0].existing_firearm_id, existing.id);
+}
+
+#[test]
+fn a_disposed_and_an_active_match_conflict_with_the_active_one() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    let old = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    dispose(&db, old.id);
+    let current = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+
+    let result = import_glock(&db, &store, &[csv_firearm("Glock", "19", "ABC123", &[])]);
+
+    assert_eq!(result.conflicts[0].existing_firearm_id, current.id);
+    assert!(!result.conflicts[0].duplicate_allowed);
+}
+
+#[test]
+fn an_exempt_row_matching_an_active_record_imports_with_a_warning() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+    firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+
+    let result = import_glock(
+        &db,
+        &store,
+        &[csv_firearm("Glock", "19", "ABC123", &[("no_serial_attested", "TRUE")])],
+    );
+
+    assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    assert!(result.conflicts.is_empty(), "an exempt row is never matched (FR-030)");
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(result.warnings[0].row, 1);
+    assert!(result.warnings[0].message.contains("ABC123"));
+    assert_eq!(active_count(&db), 2);
+}
+
+#[test]
+fn a_row_repeating_an_earlier_row_of_the_same_file_conflicts_with_the_record_it_created() {
+    let db = TestDb::new();
+    let store = ImportSessionStore::new();
+
+    let result = import_glock(
+        &db,
+        &store,
+        &[csv_firearm("Sig", "P226", "S1", &[]), csv_firearm("Sig", "P226", "S1", &[])],
+    );
+
+    assert_eq!(result.imported_count, 1);
+    assert!(result.row_errors.is_empty());
+    assert_eq!(result.conflicts.len(), 1);
+    assert_eq!(result.conflicts[0].row, 2);
+    assert!(!result.conflicts[0].duplicate_allowed);
 }
 
 #[test]

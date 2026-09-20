@@ -876,6 +876,7 @@
   animation: hd-toast-in 200ms var(--ease-out);
 }
 
+.hd-toast--warning svg:first-child,
 .hd-toast--error svg:first-child {
   color: var(--blaze);
 }

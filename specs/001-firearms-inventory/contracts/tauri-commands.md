@@ -319,7 +319,11 @@ type CommandError = {
 ### `import_collection`
 
 - **Input**: `{ filePath: string, format: "csv" | "xlsx" }`.
-- **Output (progress events, then)**: `{ importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], conflicts: ImportConflict[] }`.
+- **Output (progress events, then)**: `{ sessionId: string, importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], warnings: { row: number; message: string }[], conflicts: ImportConflict[] }`.
+  `warnings` lists rows that imported but drew a FR-032b warning (a
+  serial-exempt row matching an active firearm). Each `ImportConflict`
+  carries `duplicateAllowed: boolean`, false where FR-032 would block the
+  resulting record, so the frontend offers only skip and overwrite there.
 - **Behavior**: Rows failing validation are reported per-row without
   discarding successful rows (FR-020). Rows matching an existing
   `(make, model, serial_number)` key produce an `ImportConflict` requiring
@@ -330,9 +334,12 @@ type CommandError = {
 ### `resolve_import_conflicts`
 
 - **Input**: `{ importSessionId: string, resolutions: { conflictId: string; action: "skip" | "overwrite" | "duplicate" }[], applyToRemaining?: "skip" | "overwrite" | "duplicate" }`.
-- **Output**: `{ resolvedCount: number }`.
+- **Output**: `{ resolvedCount: number, unresolved: { row: number; message: string }[] }`.
 - **Behavior**: Implements FR-026's per-row resolution plus "apply to all
   subsequent conflicting rows" option; `applyToRemaining` only affects
   conflicts not explicitly listed in `resolutions`. `duplicate` (explicit
   or via `applyToRemaining`) is rejected for a conflict FR-032 would
-  block; such conflicts are left unresolved and reported.
+  block, and an `overwrite` that fails validation (for example a nickname
+  clash, FR-031) is rejected likewise. Such conflicts are returned in
+  `unresolved` and stay open in the session, so a different action can
+  still be chosen for them; only infrastructure failures abort the call.

@@ -5,6 +5,7 @@ import type { BrowseState } from "../browse/types";
 import { FirearmForm } from "../firearms/FirearmForm";
 import { FirearmRecordPage } from "../firearms/FirearmRecordPage";
 import * as firearmsService from "../firearms/firearmsService";
+import { notifySaveWarnings } from "../firearms/saveWarnings";
 import type { FirearmInput } from "../firearms/types";
 import { ExportDialog } from "../import-export/ExportDialog";
 import { ImportDialog } from "../import-export/ImportDialog";
@@ -150,6 +151,7 @@ export function AppShell() {
     setDialog(null);
     await refresh();
     notify(`Added ${firearmName(created)} to the collection.`);
+    notifySaveWarnings(notify, created.warnings);
     open({ page: "firearm", id: created.id, from: "collection" });
   }
 

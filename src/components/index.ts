@@ -33,3 +33,4 @@ export { ProgressBar } from "./ProgressBar";
 export type { ProgressBarProps } from "./ProgressBar";
 export { ToastProvider } from "./Toast";
 export { useToast } from "./toastContext";
+export type { Notify } from "./toastContext";

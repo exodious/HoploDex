@@ -20,6 +20,15 @@ pub struct DisposeFirearmInput {
     pub price: i64,
 }
 
+/// What `create_firearm` and `update_firearm` return: the record as saved
+/// plus any warnings that didn't block the save (FR-032b).
+#[derive(Debug, Clone, Serialize)]
+pub struct SavedFirearm {
+    #[serde(flatten)]
+    pub firearm: Firearm,
+    pub warnings: Vec<String>,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DeleteResult {
     pub deleted: bool,
@@ -109,12 +118,23 @@ pub mod ops {
     }
 
     /// A record already in the collection that a new or edited firearm
-    /// clashes with, described for the error naming it.
+    /// clashes with, described for the message naming it.
     struct Clash {
         make: String,
         model: String,
         nickname: Option<String>,
         serial_number: Option<String>,
+    }
+
+    impl Clash {
+        fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+            Ok(Self {
+                make: row.get(0)?,
+                model: row.get(1)?,
+                nickname: row.get(2)?,
+                serial_number: row.get(3)?,
+            })
+        }
     }
 
     impl std::fmt::Display for Clash {
@@ -130,56 +150,130 @@ pub mod ops {
         }
     }
 
-    /// FR-031: the nickname must be unique among active firearms, ignoring
-    /// case and surrounding whitespace. `exclude_id` is the record being
-    /// edited, which never clashes with itself. A disposed record has
-    /// released its nickname, so it isn't checked.
-    pub fn check_nickname(
+    /// The active firearm (other than `exclude_id`, the record being edited,
+    /// which never clashes with itself) whose nickname matches, ignoring case
+    /// and surrounding whitespace.
+    fn find_nickname_clash(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        nickname: &str,
+    ) -> Result<Option<Clash>, CommandError> {
+        conn.query_row(
+            "SELECT make, model, nickname, serial_number FROM firearms
+             WHERE status = 'active' AND id IS NOT :exclude
+               AND lower(trim(nickname)) = lower(trim(:nickname))",
+            named_params! { ":exclude": exclude_id, ":nickname": nickname },
+            Clash::from_row,
+        )
+        .optional()
+        .map_err(CommandError::from_db)
+    }
+
+    /// The active firearm (other than `exclude_id`) with the same make,
+    /// model and serial number, ignoring case and surrounding whitespace.
+    pub(crate) fn find_identity_clash(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        make: &str,
+        model: &str,
+        serial_number: &str,
+    ) -> Result<Option<i64>, CommandError> {
+        conn.query_row(
+            "SELECT id FROM firearms
+             WHERE status = 'active' AND id IS NOT :exclude
+               AND lower(trim(make)) = lower(trim(:make))
+               AND lower(trim(model)) = lower(trim(:model))
+               AND lower(trim(serial_number)) = lower(trim(:serial))",
+            named_params! {
+                ":exclude": exclude_id,
+                ":make": make,
+                ":model": model,
+                ":serial": serial_number,
+            },
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(CommandError::from_db)
+    }
+
+    /// FR-031 and FR-032, against the other active firearms. A disposed
+    /// record has released its nickname and never competes for an identity,
+    /// so neither it nor a record with no serial number is compared.
+    /// Returns the warnings that don't block the save (FR-032b); every
+    /// blocking clash is reported at once, each on its own field.
+    pub fn check_uniqueness(
         conn: &Connection,
         exclude_id: Option<i64>,
         input: &FirearmInput,
-    ) -> Result<(), CommandError> {
-        let Some(nickname) =
-            input.nickname.as_deref().filter(|_| input.status == FirearmStatus::Active)
-        else {
-            return Ok(());
-        };
-        let clash = conn
-            .query_row(
-                "SELECT make, model, nickname, serial_number FROM firearms
-                 WHERE status = 'active' AND id IS NOT :exclude
-                   AND lower(trim(nickname)) = lower(trim(:nickname))",
-                named_params! { ":exclude": exclude_id, ":nickname": nickname },
-                |row| {
-                    Ok(Clash {
-                        make: row.get(0)?,
-                        model: row.get(1)?,
-                        nickname: row.get(2)?,
-                        serial_number: row.get(3)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(CommandError::from_db)?;
-        match clash {
-            None => Ok(()),
-            Some(other) => {
-                let message = format!("That nickname is already used by {other}.");
-                Err(CommandError::validation(
-                    message.clone(),
-                    [("nickname".to_string(), message)].into(),
-                ))
+    ) -> Result<Vec<String>, CommandError> {
+        if input.status != FirearmStatus::Active {
+            return Ok(Vec::new());
+        }
+        let mut errors = std::collections::HashMap::new();
+        let mut warnings = Vec::new();
+
+        if let Some(nickname) = &input.nickname {
+            if let Some(other) = find_nickname_clash(conn, exclude_id, nickname)? {
+                errors.insert(
+                    "nickname".to_string(),
+                    format!("That nickname is already used by {other}."),
+                );
             }
         }
+
+        if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty()) {
+            if let Some(other_id) =
+                find_identity_clash(conn, exclude_id, &input.make, &input.model, serial)?
+            {
+                let other = describe_firearm(conn, other_id)?;
+                if input.no_serial_attested {
+                    warnings.push(format!(
+                        "Another active firearm has the same make, model and serial number: {other}. \
+                         This one was saved because it is marked as having no required serial number."
+                    ));
+                } else {
+                    errors.insert(
+                        "serialNumber".to_string(),
+                        format!(
+                            "{other} already has this make, model and serial number. \
+                             Change one of them, or dispose of or delete the other record."
+                        ),
+                    );
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            return Ok(warnings);
+        }
+        let mut messages: Vec<_> = errors.values().cloned().collect();
+        messages.sort();
+        Err(CommandError::validation(messages.join(" "), errors))
+    }
+
+    fn describe_firearm(conn: &Connection, id: i64) -> Result<Clash, CommandError> {
+        conn.query_row(
+            "SELECT make, model, nickname, serial_number FROM firearms WHERE id = :id",
+            named_params! { ":id": id },
+            Clash::from_row,
+        )
+        .map_err(CommandError::from_db)
     }
 
     pub fn create_firearm(
         conn: &Connection,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
+        create_firearm_with_warnings(conn, input).map(|saved| saved.firearm)
+    }
+
+    pub fn create_firearm_with_warnings(
+        conn: &Connection,
+        input: &FirearmInput,
+    ) -> Result<SavedFirearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input)?;
-        check_nickname(conn, None, input)?;
+        let warnings = check_uniqueness(conn, None, input)?;
         conn.execute(
             "INSERT INTO firearms (
                 make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
@@ -222,7 +316,7 @@ pub mod ops {
         )
         .map_err(CommandError::from_db)?;
 
-        get_firearm(conn, conn.last_insert_rowid())
+        Ok(SavedFirearm { firearm: get_firearm(conn, conn.last_insert_rowid())?, warnings })
     }
 
     pub fn update_firearm(
@@ -230,9 +324,17 @@ pub mod ops {
         id: i64,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
+        update_firearm_with_warnings(conn, id, input).map(|saved| saved.firearm)
+    }
+
+    pub fn update_firearm_with_warnings(
+        conn: &Connection,
+        id: i64,
+        input: &FirearmInput,
+    ) -> Result<SavedFirearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input)?;
-        check_nickname(conn, Some(id), input)?;
+        let warnings = check_uniqueness(conn, Some(id), input)?;
         let updated = conn
             .execute(
                 "UPDATE firearms SET
@@ -289,7 +391,7 @@ pub mod ops {
         if updated == 0 {
             return Err(CommandError::not_found("No firearm was found with that id."));
         }
-        get_firearm(conn, id)
+        Ok(SavedFirearm { firearm: get_firearm(conn, id)?, warnings })
     }
 
     pub fn dispose_firearm(
@@ -462,9 +564,9 @@ pub mod ops {
 pub async fn create_firearm(
     input: FirearmInput,
     state: State<'_, DbHandle>,
-) -> Result<Firearm, CommandError> {
+) -> Result<SavedFirearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::create_firearm(&conn, &input)
+    ops::create_firearm_with_warnings(&conn, &input)
 }
 
 #[tauri::command]
@@ -472,9 +574,9 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     state: State<'_, DbHandle>,
-) -> Result<Firearm, CommandError> {
+) -> Result<SavedFirearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::update_firearm(&conn, id, &input)
+    ops::update_firearm_with_warnings(&conn, id, &input)
 }
 
 #[tauri::command]

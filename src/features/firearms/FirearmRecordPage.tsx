@@ -19,6 +19,7 @@ import { PhotoGallery } from "../media/PhotoGallery";
 import { DisposeDialog } from "./DisposeDialog";
 import { FirearmForm } from "./FirearmForm";
 import * as firearmsService from "./firearmsService";
+import { notifySaveWarnings } from "./saveWarnings";
 import { dispositionLabel, firearmTypeOption } from "./types";
 import type { DisposeFirearmInput, Firearm, FirearmInput } from "./types";
 import "./record.css";
@@ -105,6 +106,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   async function handleUpdate(input: FirearmInput) {
     const updated = await firearmsService.updateFirearm(id, input);
     await afterChange(updated, `Saved changes to ${firearmName(updated)}.`);
+    notifySaveWarnings(notify, updated.warnings);
   }
 
   async function handleDispose(input: DisposeFirearmInput) {
