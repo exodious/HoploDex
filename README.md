@@ -71,6 +71,13 @@ On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
   on Windows 10/11; otherwise get it from the
   [WebView2 runtime page](https://developer.microsoft.com/microsoft-edge/webview2/)).
 
+  SQLCipher also needs OpenSSL here (macOS uses CommonCrypto and Linux uses
+  `libssl-dev`, so neither needs anything extra). Install it, for example
+  with [vcpkg](https://vcpkg.io) — `vcpkg install openssl:x64-windows-static-md` —
+  and set `OPENSSL_DIR` (e.g. `C:\vcpkg\installed\x64-windows-static-md`) and
+  `OPENSSL_STATIC=1` before building. The build stops with "Missing
+  environment variable OPENSSL_DIR" otherwise.
+
 **End-to-end (E2E) testing extras — Linux only:**
 
 Debian/Ubuntu:
@@ -157,6 +164,12 @@ npm test                                          # Vitest frontend unit tests
 npm run test:e2e                                  # WebdriverIO E2E, driven against the built app
 ```
 
+The E2E suite can't watch the app exit (WebKitWebDriver ends a session by
+killing it), so `e2e/scripts/quit-cleanup.py` checks that decrypted document
+copies are removed when the app quits — window closed, SIGTERM, SIGHUP or
+SIGINT — against the built binary: `xvfb-run -a python3
+e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).
+
 `npm run test:e2e` builds a release binary with `cargo build --release
 --features custom-protocol` and drives it via `tauri-driver`. On Linux it
 runs under an isolated `xvfb` virtual display (via `xvfb-run`), so it never
@@ -166,7 +179,17 @@ run (killing anything left over on its ports before starting).
 ### Linting & formatting
 
 ```bash
-cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml
+cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 npm run lint
 npm run format:check
 ```
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main`/`develop` and on every
+pull request, on Windows, macOS and Linux: it builds the frontend, then runs
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+`eslint`, `prettier --check`, `vitest`, and finally `tauri build --no-bundle`.
+The Rust crate embeds the built frontend, which is why the frontend builds
+first. The WebdriverIO E2E suite isn't part of CI: it needs a display and a
+platform WebDriver, so run `npm run test:e2e` locally.
