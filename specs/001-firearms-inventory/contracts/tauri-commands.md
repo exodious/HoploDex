@@ -83,9 +83,11 @@ type CommandError = {
 ### `get_firearm`
 
 - **Input**: `id: number`.
-- **Output**: `FirearmDetail` (Firearm + its Photos + DocumentAttachments +
-  its retained `DispositionHistory` rows (newest first) +
-  resolved InsurancePolicy summary + computed insurance-status flags).
+- **Output**: `FirearmDetail`: the `Firearm` plus `dispositionHistory`, its
+  retained `DispositionHistory` rows (newest first, FR-033). Photos and
+  documents come from `list_photos` / `list_documents`; the policy and the
+  computed insurance-status flags come from `list_insurance_policies` and
+  `list_firearms`, so nothing is fetched twice.
 - **Errors**: `NOT_FOUND`.
 
 ## Browse, search, group (User Story 2)

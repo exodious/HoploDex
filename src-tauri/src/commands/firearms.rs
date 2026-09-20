@@ -4,6 +4,7 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::db::DbHandle;
+use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
     validate_firearm_input, CoverageKind, DispositionType, Firearm, FirearmInput, FirearmStatus,
 };
@@ -27,6 +28,35 @@ pub struct SavedFirearm {
     #[serde(flatten)]
     pub firearm: Firearm,
     pub warnings: Vec<String>,
+}
+
+/// What the user chose to do with the disposition being reversed (FR-033).
+/// Required: the frontend asks and the backend never picks for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryChoice {
+    Keep,
+    Discard,
+}
+
+/// Input for `reverse_disposition`. `nickname` renames the firearm in the
+/// same step, to resolve a FR-031 clash; blank or absent keeps it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseDispositionInput {
+    pub history: HistoryChoice,
+    #[serde(default)]
+    pub nickname: Option<String>,
+}
+
+/// `get_firearm`'s output: the record plus its retained dispositions,
+/// newest first (FR-033).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirearmDetail {
+    #[serde(flatten)]
+    pub firearm: Firearm,
+    pub disposition_history: Vec<DispositionHistoryEntry>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -402,30 +432,96 @@ pub mod ops {
         let current = get_firearm(conn, id)?;
 
         let updated_input = FirearmInput {
-            make: current.make,
-            model: current.model,
-            serial_number: current.serial_number,
-            no_serial_attested: current.no_serial_attested,
-            caliber: current.caliber,
-            firearm_type_id: current.firearm_type_id,
-            nickname: current.nickname.clone(),
-            notes: current.notes,
-            accessories: current.accessories,
             status: FirearmStatus::Disposed,
-            estimated_value: current.estimated_value,
-            acquisition_source: current.acquisition_source,
-            acquisition_date: current.acquisition_date,
-            acquisition_price: current.acquisition_price,
             disposition_type: Some(input.disposition_type),
             disposition_recipient: Some(input.recipient.clone()),
             disposition_date: Some(input.date.clone()),
             disposition_price: Some(input.price),
-            insurance_policy_id: current.insurance_policy_id,
-            coverage_kind: current.coverage_kind,
-            scheduled_coverage_amount: current.scheduled_coverage_amount,
+            ..FirearmInput::from(&current)
         };
 
         update_firearm(conn, id, &updated_input)
+    }
+
+    pub fn get_firearm_detail(conn: &Connection, id: i64) -> Result<FirearmDetail, CommandError> {
+        let firearm = get_firearm(conn, id)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT * FROM disposition_history WHERE firearm_id = :id
+                 ORDER BY reversed_at DESC, id DESC",
+            )
+            .map_err(CommandError::from_db)?;
+        let disposition_history = stmt
+            .query_map(named_params! { ":id": id }, DispositionHistoryEntry::from_row)
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+        Ok(FirearmDetail { firearm, disposition_history })
+    }
+
+    /// Restores a disposed firearm to active status (FR-033). With `keep`
+    /// the current disposition is copied to `disposition_history` first.
+    /// Runs in one transaction, and the restored record goes through the
+    /// same save path as an edit, so FR-031/FR-032 are re-applied against
+    /// the firearms active now: a clash fails the whole reversal, naming
+    /// the other record, with nothing changed.
+    pub fn reverse_disposition(
+        conn: &Connection,
+        id: i64,
+        input: &ReverseDispositionInput,
+    ) -> Result<SavedFirearm, CommandError> {
+        let current = get_firearm(conn, id)?;
+        let (Some(disposition_type), Some(recipient), Some(date)) = (
+            current.disposition_type,
+            current.disposition_recipient.clone(),
+            current.disposition_date.clone(),
+        ) else {
+            return Err(CommandError::new(
+                "VALIDATION_ERROR",
+                "Only a disposed firearm can have its disposition reversed.",
+            ));
+        };
+        if current.status != FirearmStatus::Disposed {
+            return Err(CommandError::new(
+                "VALIDATION_ERROR",
+                "Only a disposed firearm can have its disposition reversed.",
+            ));
+        }
+
+        let restored = FirearmInput {
+            status: FirearmStatus::Active,
+            disposition_type: None,
+            disposition_recipient: None,
+            disposition_date: None,
+            disposition_price: None,
+            nickname: match input.nickname.as_deref().map(str::trim) {
+                Some(renamed) if !renamed.is_empty() => Some(renamed.to_owned()),
+                _ => current.nickname.clone(),
+            },
+            ..FirearmInput::from(&current)
+        };
+
+        // Dropped without commit on any error below, which rolls it back.
+        let tx = conn.unchecked_transaction().map_err(CommandError::from_db)?;
+        if input.history == HistoryChoice::Keep {
+            conn.execute(
+                "INSERT INTO disposition_history (
+                    firearm_id, disposition_type, disposition_recipient,
+                    disposition_date, disposition_price, reversed_at
+                ) VALUES (:firearm_id, :type, :recipient, :date, :price, datetime('now'))",
+                named_params! {
+                    ":firearm_id": id,
+                    ":type": disposition_type,
+                    ":recipient": recipient,
+                    ":date": date,
+                    ":price": current.disposition_price,
+                },
+            )
+            .map_err(CommandError::from_db)?;
+        }
+        let saved = update_firearm_with_warnings(conn, id, &restored)?;
+        tx.commit().map_err(CommandError::from_db)?;
+        Ok(saved)
     }
 
     pub fn delete_firearm(
@@ -590,6 +686,16 @@ pub async fn dispose_firearm(
 }
 
 #[tauri::command]
+pub async fn reverse_disposition(
+    id: i64,
+    input: ReverseDispositionInput,
+    state: State<'_, DbHandle>,
+) -> Result<SavedFirearm, CommandError> {
+    let conn = state.0.lock().expect("db mutex poisoned");
+    ops::reverse_disposition(&conn, id, &input)
+}
+
+#[tauri::command]
 pub async fn delete_firearm(
     id: i64,
     confirmed: bool,
@@ -600,9 +706,12 @@ pub async fn delete_firearm(
 }
 
 #[tauri::command]
-pub async fn get_firearm(id: i64, state: State<'_, DbHandle>) -> Result<Firearm, CommandError> {
+pub async fn get_firearm(
+    id: i64,
+    state: State<'_, DbHandle>,
+) -> Result<FirearmDetail, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_firearm(&conn, id)
+    ops::get_firearm_detail(&conn, id)
 }
 
 #[tauri::command]

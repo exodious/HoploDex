@@ -167,27 +167,10 @@ pub mod ops {
     ) -> Result<Firearm, CommandError> {
         let current = firearms::ops::get_firearm(conn, firearm_id)?;
         let mut input = crate::models::firearm::FirearmInput {
-            make: current.make,
-            model: current.model,
-            serial_number: current.serial_number,
-            no_serial_attested: current.no_serial_attested,
-            caliber: current.caliber,
-            firearm_type_id: current.firearm_type_id,
-            nickname: current.nickname.clone(),
-            notes: current.notes,
-            accessories: current.accessories,
-            status: current.status,
-            estimated_value: current.estimated_value,
-            acquisition_source: current.acquisition_source,
-            acquisition_date: current.acquisition_date,
-            acquisition_price: current.acquisition_price,
-            disposition_type: current.disposition_type,
-            disposition_recipient: current.disposition_recipient,
-            disposition_date: current.disposition_date,
-            disposition_price: current.disposition_price,
             insurance_policy_id: policy_id,
             coverage_kind,
             scheduled_coverage_amount,
+            ..crate::models::firearm::FirearmInput::from(&current)
         };
         if policy_id.is_none() {
             input.coverage_kind = None;

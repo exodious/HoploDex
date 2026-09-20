@@ -150,6 +150,37 @@ pub struct FirearmInput {
     pub scheduled_coverage_amount: Option<i64>,
 }
 
+/// The record as an input that would save it unchanged — the starting point
+/// for commands that change only part of a firearm (dispose, reverse a
+/// disposition, assign coverage).
+impl From<&Firearm> for FirearmInput {
+    fn from(firearm: &Firearm) -> Self {
+        Self {
+            make: firearm.make.clone(),
+            model: firearm.model.clone(),
+            serial_number: firearm.serial_number.clone(),
+            no_serial_attested: firearm.no_serial_attested,
+            caliber: firearm.caliber.clone(),
+            firearm_type_id: firearm.firearm_type_id,
+            nickname: firearm.nickname.clone(),
+            notes: firearm.notes.clone(),
+            accessories: firearm.accessories.clone(),
+            status: firearm.status,
+            estimated_value: firearm.estimated_value,
+            acquisition_source: firearm.acquisition_source.clone(),
+            acquisition_date: firearm.acquisition_date.clone(),
+            acquisition_price: firearm.acquisition_price,
+            disposition_type: firearm.disposition_type,
+            disposition_recipient: firearm.disposition_recipient.clone(),
+            disposition_date: firearm.disposition_date.clone(),
+            disposition_price: firearm.disposition_price,
+            insurance_policy_id: firearm.insurance_policy_id,
+            coverage_kind: firearm.coverage_kind,
+            scheduled_coverage_amount: firearm.scheduled_coverage_amount,
+        }
+    }
+}
+
 impl FirearmInput {
     /// The input as it is stored: a blank nickname becomes `None` and any
     /// other is trimmed (FR-031: blank is not a value, and comparison

@@ -1,3 +1,4 @@
+pub mod disposition_history;
 pub mod document_attachment;
 pub mod firearm;
 pub mod insurance_policy;

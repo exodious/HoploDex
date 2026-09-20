@@ -26,6 +26,7 @@ fn main() {
             hoplodex_lib::commands::firearms::create_firearm,
             hoplodex_lib::commands::firearms::update_firearm,
             hoplodex_lib::commands::firearms::dispose_firearm,
+            hoplodex_lib::commands::firearms::reverse_disposition,
             hoplodex_lib::commands::firearms::delete_firearm,
             hoplodex_lib::commands::firearms::get_firearm,
             hoplodex_lib::commands::firearms::list_firearms,

@@ -35,6 +35,30 @@ export interface Firearm {
   updatedAt: string;
 }
 
+/** A retained past disposition of a firearm restored to active (FR-033). */
+export interface DispositionHistoryEntry {
+  id: number;
+  firearmId: number;
+  dispositionType: DispositionType;
+  dispositionRecipient: string;
+  dispositionDate: string;
+  dispositionPrice: number | null;
+  reversedAt: string;
+}
+
+/** `get_firearm`'s output: the record plus its retained dispositions,
+ * newest first. */
+export type FirearmDetail = Firearm & { dispositionHistory: DispositionHistoryEntry[] };
+
+/** What to do with the disposition being reversed (FR-033). */
+export type HistoryChoice = "keep" | "discard";
+
+export interface ReverseDispositionInput {
+  history: HistoryChoice;
+  /** Renames the firearm in the same step, to resolve a nickname clash. */
+  nickname?: string;
+}
+
 /** What `create_firearm`/`update_firearm` return: the record as saved plus
  * warnings that didn't block the save (FR-032b). */
 export type SavedFirearm = Firearm & { warnings: string[] };

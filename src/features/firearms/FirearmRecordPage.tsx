@@ -16,15 +16,23 @@ import type { AssignCoverageInput } from "../insurance/types";
 import { DocumentList } from "../media/DocumentList";
 import * as mediaService from "../media/mediaService";
 import { PhotoGallery } from "../media/PhotoGallery";
+import { DispositionHistoryList } from "./DispositionHistoryList";
 import { DisposeDialog } from "./DisposeDialog";
 import { FirearmForm } from "./FirearmForm";
+import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
 import { notifySaveWarnings } from "./saveWarnings";
 import { dispositionLabel, firearmTypeOption } from "./types";
-import type { DisposeFirearmInput, Firearm, FirearmInput } from "./types";
+import type {
+  DisposeFirearmInput,
+  Firearm,
+  FirearmDetail,
+  FirearmInput,
+  ReverseDispositionInput,
+} from "./types";
 import "./record.css";
 
-type RecordDialog = "edit" | "dispose" | "delete" | "coverage";
+type RecordDialog = "edit" | "dispose" | "restore" | "delete" | "coverage";
 
 export interface FirearmRecordPageProps {
   id: number;
@@ -40,7 +48,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const { firearmsById, policiesById, revision, refresh } = useCollection();
   const { open, back } = useNavigation();
   const notify = useToast();
-  const [firearm, setFirearm] = useState<Firearm | null>(null);
+  const [firearm, setFirearm] = useState<FirearmDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
 
@@ -97,7 +105,12 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const disposed = firearm.status === "disposed";
 
   async function afterChange(updated: Firearm, message: string) {
-    setFirearm(updated);
+    // The refresh below reloads the retained history; keep what's shown
+    // until it arrives.
+    setFirearm((current) => ({
+      ...updated,
+      dispositionHistory: current?.dispositionHistory ?? [],
+    }));
     setDialog(null);
     await refresh();
     notify(message);
@@ -115,6 +128,12 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       updated,
       `Marked ${firearmName(updated)} as ${dispositionLabel(updated.dispositionType).toLowerCase()}.`,
     );
+  }
+
+  async function handleRestore(input: ReverseDispositionInput) {
+    const restored = await firearmsService.reverseDisposition(id, input);
+    await afterChange(restored, `Restored ${firearmName(restored)} to the collection.`);
+    notifySaveWarnings(notify, restored.warnings);
   }
 
   async function handleCoverage(input: AssignCoverageInput) {
@@ -147,7 +166,11 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
           <Button icon="pencil" onClick={() => setDialog("edit")}>
             Edit
           </Button>
-          {!disposed && (
+          {disposed ? (
+            <Button icon="archive" onClick={() => setDialog("restore")}>
+              Restore to collection
+            </Button>
+          ) : (
             <Button icon="archive" onClick={() => setDialog("dispose")}>
               Mark disposed
             </Button>
@@ -247,6 +270,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 </>
               )}
             </dl>
+            <DispositionHistoryList entries={firearm.dispositionHistory} />
             <p className="hd-record__stamp">
               Record added {formatDate(firearm.createdAt.slice(0, 10))}
               {firearm.updatedAt !== firearm.createdAt &&
@@ -323,6 +347,13 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         onOpenChange={(open) => !open && setDialog(null)}
         firearm={firearm}
         onDispose={handleDispose}
+      />
+
+      <RestoreDialog
+        open={dialog === "restore"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        firearm={firearm}
+        onRestore={handleRestore}
       />
 
       <CoverageDialog

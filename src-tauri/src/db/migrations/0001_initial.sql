@@ -106,3 +106,18 @@ CREATE TABLE document_attachments (
 );
 
 CREATE INDEX idx_document_attachments_firearm ON document_attachments (firearm_id);
+
+-- FR-033: past dispositions of a firearm that was restored to active, kept
+-- only when the user chose to keep them. Deleted with the firearm.
+CREATE TABLE disposition_history (
+    id INTEGER PRIMARY KEY,
+    firearm_id INTEGER NOT NULL REFERENCES firearms (id) ON DELETE CASCADE,
+    disposition_type TEXT NOT NULL
+        CHECK (disposition_type IN ('sold', 'traded', 'gifted', 'destroyed', 'lost_stolen')),
+    disposition_recipient TEXT NOT NULL,
+    disposition_date TEXT NOT NULL,
+    disposition_price INTEGER,
+    reversed_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_disposition_history_firearm ON disposition_history (firearm_id);

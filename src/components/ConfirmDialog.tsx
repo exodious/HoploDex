@@ -12,8 +12,14 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** Holds the confirm button back until the user has made a required
+   * choice inside `children`. */
+  confirmDisabled?: boolean;
   /** May return a promise; the dialog stays open, showing progress, until
-   * it settles. */
+   * it settles. If it rejects the dialog stays open afterwards too, so the
+   * caller can show what went wrong (and let the user correct it) inside
+   * `children`; a caller that reports failures elsewhere just doesn't
+   * reject. */
   onConfirm: () => void | Promise<unknown>;
   children?: ReactNode;
 }
@@ -31,6 +37,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   destructive = true,
+  confirmDisabled = false,
   onConfirm,
   children,
 }: ConfirmDialogProps) {
@@ -40,10 +47,12 @@ export function ConfirmDialog({
     const result = onConfirm();
     if (result instanceof Promise) {
       setPending(true);
-      void result.finally(() => {
-        setPending(false);
-        onOpenChange(false);
-      });
+      void result
+        .then(
+          () => onOpenChange(false),
+          () => {}, // stay open; the caller shows the failure
+        )
+        .finally(() => setPending(false));
     } else {
       onOpenChange(false);
     }
@@ -75,6 +84,7 @@ export function ConfirmDialog({
             <Button
               variant={destructive ? "danger" : "primary"}
               pending={pending}
+              disabled={confirmDisabled}
               onClick={handleConfirm}
             >
               {confirmLabel}
