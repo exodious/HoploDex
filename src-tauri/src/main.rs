@@ -8,6 +8,31 @@ use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db::{self, DbHandle};
 use tauri::{Manager, RunEvent};
 
+/// A session shutdown (SIGTERM, SIGHUP) or Ctrl+C asks the app to exit. Left
+/// alone the process would just die, skipping the exit handler below, so route
+/// them through the normal exit path: decrypted document copies must not
+/// outlive the session even when the OS ends it (FR-035).
+#[cfg(unix)]
+fn exit_on_termination_signals(app: tauri::AppHandle) {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    tauri::async_runtime::spawn(async move {
+        let (Ok(mut terminate), Ok(mut hangup), Ok(mut interrupt)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::hangup()),
+            signal(SignalKind::interrupt()),
+        ) else {
+            return;
+        };
+        tokio::select! {
+            _ = terminate.recv() => {}
+            _ = hangup.recv() => {}
+            _ = interrupt.recv() => {}
+        }
+        app.exit(0);
+    });
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -17,6 +42,8 @@ fn main() {
             // Backstop for a crash or forced kill: decrypted document copies
             // a previous session couldn't clean up on exit (FR-035).
             clear_opened_documents_cache(app.handle());
+            #[cfg(unix)]
+            exit_on_termination_signals(app.handle().clone());
             let conn = db::init_app_db(app.handle())?;
             app.manage(DbHandle(Mutex::new(conn)));
             app.manage(ImportSessionStore::new());
