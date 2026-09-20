@@ -1,5 +1,14 @@
 import { $, addFirearm, back, browser, clickButton, choose, expect, fill } from "../support/ui";
-import { listedNames, openFirearm, titleBlock, toggle } from "../support/ui";
+import {
+  displayName,
+  fillFirearmForm,
+  isButtonDisabled,
+  listedNames,
+  openFirearm,
+  titleBlock,
+  toggle,
+} from "../support/ui";
+import type { NewFirearm } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 1's acceptance scenarios (spec.md),
@@ -121,5 +130,170 @@ describe("User Story 1 - Record a Firearm", () => {
     await expect($('[role="dialog"]')).toExist();
     await expect($("#record-name")).not.toExist();
     await clickButton("Cancel");
+  });
+
+  // --- Scenarios 8-14: nicknames, uniqueness, reversal, dates ---
+
+  const twin = (serial: string, nickname?: string): NewFirearm => ({
+    make: "E2ENick",
+    model: "Twin",
+    caliber: "9mm",
+    type: "Handgun",
+    serial,
+    nickname,
+  });
+
+  /** Opens the Add firearm dialog and fills it, without saving. */
+  async function startAdding(firearm: NewFirearm) {
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fillFirearmForm(firearm);
+  }
+
+  async function markDisposed(price = "1.00") {
+    await clickButton("Mark disposed");
+    await choose("Sold");
+    await fill("Transferred to", "Jane Doe");
+    await fill("Price received", price);
+    await clickButton("Mark as disposed");
+    await $('[role="alertdialog"], [role="dialog"]').waitForExist({ reverse: true });
+    await browser.pause(400);
+  }
+
+  it("tells identical firearms apart by nickname, and leaves a blank one alone (Scenario 8)", async () => {
+    await addFirearm(twin("N-1", "Range gun"));
+    await back();
+    await addFirearm(twin("N-2", "Carry gun"));
+    await back();
+    await addFirearm(twin("N-3"));
+    await back();
+
+    const names = await listedNames();
+    expect(names).toContain("E2ENick Twin “Range gun”");
+    expect(names).toContain("E2ENick Twin “Carry gun”");
+    expect(names).toContain("E2ENick Twin");
+  });
+
+  it("blocks a duplicate nickname, ignoring case, until the first firearm is disposed (Scenario 9)", async () => {
+    await startAdding({ ...twin("N-4", "range GUN"), model: "Third" });
+    await clickButton("Add firearm");
+
+    await expect($('[role="dialog"]*=already used by E2ENick Twin')).toExist();
+    await expect($("#record-name")).not.toExist();
+    await clickButton("Cancel");
+
+    await openFirearm("E2ENick Twin “Range gun”");
+    await markDisposed();
+    await back();
+
+    await addFirearm({ ...twin("N-4", "Range gun"), model: "Third" });
+    await back();
+    expect(await listedNames()).toContain("E2ENick Third “Range gun”");
+  });
+
+  it("blocks a duplicate make/model/serial, naming it, until the first is disposed (Scenario 10)", async () => {
+    const pistol: NewFirearm = {
+      make: "E2EDup",
+      model: "Pistol",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "D-1",
+    };
+    await addFirearm(pistol);
+    await back();
+
+    await startAdding(pistol);
+    await clickButton("Add firearm");
+    await expect($('[role="dialog"]*=already has this make, model and serial number')).toExist();
+    await clickButton("Cancel");
+
+    await openFirearm("E2EDup Pistol");
+    await markDisposed();
+    await back();
+    await addFirearm(pistol); // reacquired: a new record
+    await back();
+  });
+
+  it("saves a serial-exempt duplicate with a warning naming the match (Scenario 11)", async () => {
+    const rifle: NewFirearm = {
+      make: "E2EExempt",
+      model: "Rifle",
+      caliber: ".30-06",
+      type: "Rifle",
+      serial: "X-1",
+    };
+    await addFirearm(rifle);
+    await back();
+
+    await addFirearm({ ...rifle, noSerial: true });
+
+    await expect($(".hd-toast--warning")).toExist();
+    await expect($(".hd-toast--warning*=same make, model and serial number")).toExist();
+    await back();
+  });
+
+  it("reverses a disposition, blocked while its nickname is taken, then keeps it as history (Scenario 12)", async () => {
+    // Twin "Range gun" was disposed above, and Third now holds that nickname.
+    await toggle("Show disposed");
+    await openFirearm("E2ENick Twin “Range gun”");
+    await clickButton("Restore to collection");
+    await expect($('[role="alertdialog"]')).toExist();
+
+    // The keep/discard choice is never made for the user.
+    expect(await isButtonDisabled("Restore to collection")).toBe(true);
+    await choose("Keep as history");
+    await clickButton("Restore to collection");
+    await expect($('[role="alertdialog"]*=already used by E2ENick Third')).toExist();
+
+    // Rename in the same step to resolve the clash.
+    await fill("New nickname", "Range gun II");
+    await clickButton("Restore to collection");
+    await browser.waitUntil(
+      async () =>
+        (await $("#record-name").getText()).replace(/\s+/g, " ") ===
+        displayName({ make: "E2ENick", model: "Twin", nickname: "Range gun II" }),
+      { timeoutMsg: "the restored firearm never showed its new nickname" },
+    );
+
+    expect(await titleBlock("Status")).toBe("Active");
+    await expect($("h3=Earlier dispositions")).toExist();
+    await expect($(".hd-past-dispositions*=Jane Doe")).toExist();
+    await back();
+    await toggle("Show disposed");
+  });
+
+  it("rejects future acquisition dates and a disposition before the acquisition (Scenarios 13-14)", async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const future = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+
+    const dated: NewFirearm = {
+      make: "E2EDates",
+      model: "One",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "DT-1",
+    };
+    await startAdding({ ...dated, acquisitionDate: future });
+    await clickButton("Add firearm");
+    await expect($(`[role="dialog"]*=Acquisition date can't be in the future`)).toExist();
+    await clickButton("Cancel");
+
+    // Today is fine.
+    await addFirearm({ ...dated, acquisitionDate: todayIso });
+
+    // Dispose it before it was acquired: blocked, naming the field.
+    await clickButton("Mark disposed");
+    await choose("Sold");
+    await fill("Transferred to", "Jane Doe");
+    await fill("Date", "2000-01-01");
+    await fill("Price received", "1.00");
+    await clickButton("Mark as disposed");
+    await expect($('[role="dialog"]*=earlier than the acquisition date')).toExist();
+    await clickButton("Cancel");
+    expect(await titleBlock("Status")).toBe("Active");
   });
 });

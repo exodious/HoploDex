@@ -14,8 +14,62 @@ import { choose, listedNames, search } from "../support/ui";
  * e2e/support/ui.ts for why interactions go through page JS.
  */
 
-const HEADER =
-  "make,model,serial_number,no_serial_attested,caliber,firearm_type,notes,accessories,status,estimated_value,acquisition_source,acquisition_date,acquisition_price,disposition_type,disposition_recipient,disposition_date,disposition_price,insurance_policy_name,coverage_kind,scheduled_coverage_amount,photo_filenames";
+/** The spreadsheet's columns, in order (contracts/spreadsheet-format.md). */
+const COLUMNS = [
+  "make",
+  "model",
+  "nickname",
+  "serial_number",
+  "no_serial_attested",
+  "caliber",
+  "firearm_type",
+  "notes",
+  "accessories",
+  "status",
+  "estimated_value",
+  "acquisition_source",
+  "acquisition_date",
+  "acquisition_price",
+  "disposition_type",
+  "disposition_recipient",
+  "disposition_date",
+  "disposition_price",
+  "insurance_policy_name",
+  "scheduled_coverage_amount",
+  "photo_filenames",
+];
+const HEADER = COLUMNS.join(",");
+
+/** One data row from named cells; every column not named is blank. */
+function csvRow(cells: Record<string, string>): string {
+  for (const name of Object.keys(cells)) {
+    if (!COLUMNS.includes(name)) throw new Error(`unknown spreadsheet column ${name}`);
+  }
+  return COLUMNS.map((column) => cells[column] ?? "").join(",");
+}
+
+/** A whole import file: the header plus the given rows. */
+function csvFile(...rows: string[]): string {
+  return `${[HEADER, ...rows].join("\n")}\n`;
+}
+
+/** A valid Handgun row for a make/model/serial, with any extra cells. */
+function firearmRow(
+  make: string,
+  model: string,
+  serial: string,
+  extra: Record<string, string> = {},
+): string {
+  return csvRow({
+    make,
+    model,
+    serial_number: serial,
+    no_serial_attested: "FALSE",
+    caliber: "9mm",
+    firearm_type: "Handgun",
+    ...extra,
+  });
+}
 
 async function importFile(csvPath: string) {
   await clickButton("Import");
@@ -73,7 +127,13 @@ describe("User Story 5 - Export and Import Records", () => {
     const csvPath = path.join(workDir, "import-new.csv");
     fs.writeFileSync(
       csvPath,
-      `${HEADER}\nImportE2ERuger,10-22,IMP-001,FALSE,.22 LR,Rifle,,,,300.00,,,,,,,,,,,\n`,
+      csvFile(
+        firearmRow("ImportE2ERuger", "10-22", "IMP-001", {
+          caliber: ".22 LR",
+          firearm_type: "Rifle",
+          estimated_value: "300.00",
+        }),
+      ),
     );
 
     await importFile(csvPath);
@@ -90,7 +150,10 @@ describe("User Story 5 - Export and Import Records", () => {
     const csvPath = path.join(workDir, "import-mixed.csv");
     fs.writeFileSync(
       csvPath,
-      `${HEADER}\n,BadRow,IMP-BAD,FALSE,9mm,Handgun,,,,100.00,,,,,,,,,,,\nImportE2ESig,P226,IMP-002,FALSE,9mm,Handgun,,,,400.00,,,,,,,,,,,\n`,
+      csvFile(
+        firearmRow("", "BadRow", "IMP-BAD", { estimated_value: "100.00" }),
+        firearmRow("ImportE2ESig", "P226", "IMP-002", { estimated_value: "400.00" }),
+      ),
     );
 
     await importFile(csvPath);
@@ -128,7 +191,7 @@ describe("User Story 5 - Export and Import Records", () => {
     const csvPath = path.join(workDir, "import-conflict.csv");
     fs.writeFileSync(
       csvPath,
-      `${HEADER}\nExportE2EGlock,19,EXP-001,FALSE,9mm,Handgun,re-imported,,,,,,,,,,,,,,\n`,
+      csvFile(firearmRow("ExportE2EGlock", "19", "EXP-001", { notes: "re-imported" })),
     );
 
     await importFile(csvPath);

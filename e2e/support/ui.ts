@@ -55,6 +55,22 @@ export async function clickButton(text: string) {
   await browser.pause(SETTLE_MS);
 }
 
+/** Whether the button with this visible text, in the innermost open dialog,
+ * is disabled. (An attribute selector can't express "button with this text"
+ * after a descendant combinator, so this reads it from the page.) */
+export async function isButtonDisabled(text: string): Promise<boolean> {
+  return browser.execute(
+    new Function(
+      "text",
+      `${SCOPE_JS}
+      const button = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
+      if (!button) throw new Error("no button " + text);
+      return button.disabled;`,
+    ) as (text: string) => boolean,
+    text,
+  );
+}
+
 /** Clicks one of the app's top-bar section tabs ("Collection", "Insurance"). */
 export async function goTo(section: "Collection" | "Insurance") {
   await browser.execute((name: string) => {
@@ -268,6 +284,29 @@ export interface NewFirearm {
   noSerial?: boolean;
   valueDollars?: string;
   notes?: string;
+  nickname?: string;
+  acquisitionDate?: string;
+}
+
+/** A firearm's display name as the app shows it: "Make Model", plus its
+ * nickname in curly quotes when it has one (FR-031). */
+export function displayName(firearm: { make: string; model: string; nickname?: string }) {
+  const name = `${firearm.make} ${firearm.model}`;
+  return firearm.nickname ? `${name} “${firearm.nickname}”` : name;
+}
+
+/** Fills the open Add firearm dialog without saving it. */
+export async function fillFirearmForm(firearm: NewFirearm) {
+  await fill("Make", firearm.make);
+  await fill("Model", firearm.model);
+  if (firearm.nickname) await fill("Nickname", firearm.nickname);
+  await choose(firearm.type);
+  await fill("Caliber", firearm.caliber);
+  if (firearm.serial) await fill("Serial number", firearm.serial);
+  if (firearm.noSerial) await toggle("This firearm has no serial number");
+  if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
+  if (firearm.acquisitionDate) await fill("Date acquired", firearm.acquisitionDate);
+  if (firearm.notes) await fill("Notes", firearm.notes);
 }
 
 /** Adds a firearm through the Add firearm dialog, leaving the app on its
@@ -275,20 +314,15 @@ export interface NewFirearm {
 export async function addFirearm(firearm: NewFirearm) {
   await clickButton("Add firearm");
   await $('[role="dialog"]').waitForExist();
-  await fill("Make", firearm.make);
-  await fill("Model", firearm.model);
-  await choose(firearm.type);
-  await fill("Caliber", firearm.caliber);
-  if (firearm.serial) await fill("Serial number", firearm.serial);
-  if (firearm.noSerial) await toggle("This firearm has no serial number");
-  if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
-  if (firearm.notes) await fill("Notes", firearm.notes);
+  await fillFirearmForm(firearm);
   await clickButton("Add firearm");
+  const expected = displayName(firearm);
   await browser.waitUntil(
     async () =>
       (await $("#record-name").isExisting()) &&
-      (await $("#record-name").getText()) === `${firearm.make} ${firearm.model}`,
-    { timeout: 8000, timeoutMsg: `record for ${firearm.make} ${firearm.model} never opened` },
+      // The nickname sits on its own line, so compare with whitespace collapsed.
+      (await $("#record-name").getText()).replace(/\s+/g, " ") === expected,
+    { timeout: 8000, timeoutMsg: `record for ${expected} never opened` },
   );
   await browser.pause(300);
 }

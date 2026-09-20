@@ -141,26 +141,14 @@ describe("User Story 4 - Attach Photos and Documents", () => {
   });
 
   // Scenario 5: no decrypted copy outlives the session (FR-035, SC-010).
-  it("deletes the opened copy when the app exits (Scenario 5)", async function () {
-    if (!openedRoot) return this.skip();
-    expect(filesUnder(openedRoot).length).toBe(1);
-
-    // Quit the way a user does: close the only window.
-    await browser.closeWindow();
-
-    await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {
-      timeout: 10000,
-      timeoutMsg: "a decrypted document copy was still on disk after the app exited",
-    });
-  });
-
-  it("deletes a copy left by a crash at the next launch (Scenario 5)", async function () {
+  // Ending a WebDriver session kills the app without letting it run its exit
+  // handler, which makes it a faithful crash: whatever Scenario 4's "Open"
+  // left behind must be swept at the next launch. Clean exit (window closed, or
+  // SIGTERM/SIGHUP/SIGINT) can't be observed through WebDriver and is checked
+  // against the real binary by e2e/scripts/quit-cleanup.py.
+  it("deletes the opened copy at the next launch after an abrupt termination (Scenario 5)", async function () {
     if (!openedRoot || !dataHome) return this.skip();
-
-    // A copy a crashed or killed session couldn't clean up.
-    const stale = path.join(openedRoot, "99", "stale.pdf");
-    fs.mkdirSync(path.dirname(stale), { recursive: true });
-    fs.writeFileSync(stale, "%PDF-1.4 left behind");
+    expect(filesUnder(openedRoot).length).toBe(1);
 
     // The E2E build's mock keyring makes a new key every launch, so the
     // previous launch's scratch database can't be reopened. Drop it (inside
@@ -172,9 +160,9 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     await browser.reloadSession();
 
-    await browser.waitUntil(async () => !fs.existsSync(stale), {
+    await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {
       timeout: 10000,
-      timeoutMsg: "the stale decrypted copy survived a relaunch",
+      timeoutMsg: "a decrypted document copy survived a relaunch",
     });
   });
 });
