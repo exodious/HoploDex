@@ -189,7 +189,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
       nickname: blankToNull(form.nickname),
       caliber: form.caliber.trim(),
       firearmTypeId: Number(form.firearmTypeId),
-      serialNumber: blankToNull(form.serialNumber),
+      serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
       accessories: blankToNull(form.accessories),
@@ -307,16 +307,17 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
                 label="Serial number"
                 required={!form.noSerialAttested}
                 className="hd-serial"
-                value={form.serialNumber}
+                value={form.noSerialAttested ? "" : form.serialNumber}
                 onChange={(e) => update("serialNumber", e.target.value)}
                 onBlur={touch("serialNumber")}
                 error={errorFor("serialNumber")}
+                disabled={form.noSerialAttested}
                 placeholder={form.noSerialAttested ? "None" : undefined}
                 spellCheck={false}
               />
               <Checkbox
                 label="This firearm has no serial number"
-                hint="Only for firearms not required to have one: made before October 22, 1968, or homemade. If it does have a serial number, you can still record it."
+                hint="Only for firearms not required to have one: made before October 22, 1968, or homemade."
                 checked={form.noSerialAttested}
                 onCheckedChange={(checked) => {
                   update("noSerialAttested", checked);

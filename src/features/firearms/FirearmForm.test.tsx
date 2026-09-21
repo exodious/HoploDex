@@ -67,30 +67,14 @@ describe("FirearmForm serial-attestation rule", () => {
     expect(submitted.noSerialAttested).toBe(false);
   });
 
-  it("checking attestation stops requiring the serial number, but still allows one", async () => {
-    // FR-032b: a serial-exempt firearm may still record the serial it has,
-    // which is what lets a match against another active firearm draw a
-    // warning instead of a block.
+  it("checking attestation disables and does not require the serial number field", async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    render(<FirearmForm onSubmit={vi.fn()} />);
 
-    await user.click(screen.getByLabelText("This firearm has no serial number"));
-    const serial = screen.getByLabelText("Serial number");
-    expect(serial).toBeEnabled();
-    expect(serial).not.toBeRequired();
+    const checkbox = screen.getByLabelText("This firearm has no serial number");
+    await user.click(checkbox);
 
-    await user.type(screen.getByLabelText("Make"), "Colt");
-    await user.type(screen.getByLabelText("Model"), "1911");
-    await user.type(screen.getByLabelText("Caliber"), ".45");
-    await selectFirearmType(user);
-    await user.type(serial, "12345");
-    await user.click(screen.getByRole("button", { name: "Add firearm" }));
-
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({
-      serialNumber: "12345",
-      noSerialAttested: true,
-    });
+    expect(screen.getByLabelText("Serial number")).toBeDisabled();
   });
 });
 
