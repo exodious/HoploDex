@@ -1,0 +1,911 @@
+//! Seeds a database for human (non-automated) testing: a realistic
+//! collection to poke at, to judge the look and feel and to check the
+//! functions behave as expected. See `scripts/human-testing.sh`, which runs
+//! this and then launches the app against the result.
+//!
+//! Everything goes through the same `ops` layer the app's commands use, so
+//! the data obeys every rule (uniqueness, coverage, dispositions) and never
+//! needs a schema of its own to keep up to date.
+//!
+//! The database is created under `<dir>/data/com.hoplodex.app/` (Linux app
+//! data layout, so the app finds it via `XDG_DATA_HOME=<dir>/data`) and is
+//! encrypted with the same OS-keyring key the app uses. It is never the real
+//! database: the target is refused if it resolves to the real data directory.
+//!
+//! Usage: cargo run --example human_seed -- [--dir <path>] [--extra <n>] [--reset]
+
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
+
+use chrono::{Duration, Local};
+use hoplodex_lib::commands::documents::ops as document_ops;
+use hoplodex_lib::commands::firearms::ops as firearm_ops;
+use hoplodex_lib::commands::firearms::{
+    DisposeFirearmInput, HistoryChoice, ListFirearmsInput, ReverseDispositionInput,
+};
+use hoplodex_lib::commands::insurance::ops as insurance_ops;
+use hoplodex_lib::commands::photos::ops as photo_ops;
+use hoplodex_lib::db;
+use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
+use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::spreadsheet::COLUMNS;
+use rusqlite::Connection;
+
+const APP_IDENTIFIER: &str = "com.hoplodex.app";
+
+// Ids seeded by migration 0003_seed_firearm_types.
+const HANDGUN: i64 = 1;
+const RIFLE: i64 = 2;
+const SHOTGUN: i64 = 3;
+const OTHER: i64 = 4;
+
+struct Args {
+    dir: PathBuf,
+    extra: usize,
+    reset: bool,
+}
+
+fn parse_args() -> Args {
+    let mut args = Args {
+        dir: Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".human-testing"),
+        extra: 0,
+        reset: false,
+    };
+    let mut it = std::env::args().skip(1);
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--dir" => args.dir = it.next().unwrap_or_else(|| usage("--dir needs a path")).into(),
+            "--extra" => {
+                args.extra = it
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or_else(|| usage("--extra needs a number"));
+            }
+            "--reset" => args.reset = true,
+            "-h" | "--help" => usage(""),
+            other => usage(&format!("unknown argument {other}")),
+        }
+    }
+    args
+}
+
+fn usage(problem: &str) -> ! {
+    if !problem.is_empty() {
+        eprintln!("error: {problem}\n");
+    }
+    eprintln!(
+        "Usage: cargo run --example human_seed -- [options]\n\n\
+         --dir <path>   where the test data lives (default: <repo>/.human-testing)\n\
+         --extra <n>    also generate n plain firearms, to test scrolling and search\n\
+         --reset        delete and recreate an existing test database"
+    );
+    std::process::exit(if problem.is_empty() { 0 } else { 2 });
+}
+
+fn main() {
+    let args = parse_args();
+    let data_home = args.dir.join("data");
+    let db_dir = data_home.join(APP_IDENTIFIER);
+    std::fs::create_dir_all(&db_dir).expect("create the test data directory");
+    refuse_real_data_dir(&data_home);
+
+    let db_path = db_dir.join("hoplodex.db");
+    if db_path.exists() {
+        if !args.reset {
+            eprintln!(
+                "{} already exists. Pass --reset to delete it and start over.",
+                db_path.display()
+            );
+            std::process::exit(1);
+        }
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", db_path.display()));
+        }
+    }
+
+    let key = db::get_or_create_passphrase().expect("read or create the database key");
+    let conn = db::open_encrypted(&db_path, &key).expect("create the encrypted database");
+
+    seed(&conn, args.extra);
+    let samples = write_import_samples(&args.dir.join("import-samples"));
+
+    print_summary(&conn);
+    println!("\nDatabase:       {}", db_path.display());
+    println!("Import samples: {}", samples.display());
+    println!("\nLaunch the app against it with:\n  scripts/human-testing.sh");
+}
+
+/// The app finds its database by the platform's data directory, so seeding
+/// into that directory would overwrite the developer's real collection.
+fn refuse_real_data_dir(data_home: &Path) {
+    let real = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
+    if let (Some(real), Ok(target)) = (real, data_home.canonicalize()) {
+        if real.canonicalize().is_ok_and(|real| real == target) {
+            eprintln!("refusing to seed the real data directory {}", target.display());
+            std::process::exit(1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Seed data
+// ---------------------------------------------------------------------------
+
+/// Fails loudly: a seed that half-applies would give misleading test data.
+fn must<T, E: std::fmt::Debug>(result: Result<T, E>, what: &str) -> T {
+    result.unwrap_or_else(|err| panic!("seeding {what} failed: {err:?}"))
+}
+
+fn text(value: &str) -> Option<String> {
+    Some(value.to_owned())
+}
+
+/// A valid active firearm with only the required fields; records add what
+/// they exercise with struct-update syntax.
+fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> FirearmInput {
+    FirearmInput {
+        make: make.into(),
+        model: model.into(),
+        serial_number: text(serial),
+        no_serial_attested: false,
+        caliber: caliber.into(),
+        firearm_type_id: type_id,
+        nickname: None,
+        notes: None,
+        accessories: None,
+        status: FirearmStatus::Active,
+        estimated_value: None,
+        acquisition_source: None,
+        acquisition_date: None,
+        acquisition_price: None,
+        disposition_type: None,
+        disposition_recipient: None,
+        disposition_date: None,
+        disposition_price: None,
+        insurance_policy_id: None,
+        scheduled_coverage_amount: None,
+    }
+}
+
+fn day(offset_from_today: i64) -> String {
+    (Local::now().date_naive() + Duration::days(offset_from_today)).format("%Y-%m-%d").to_string()
+}
+
+struct Policies {
+    collector: i64,
+    expired_rider: i64,
+    vault: i64,
+}
+
+/// Policy dates are relative to today so every insurance state is on show
+/// whenever the database is seeded: in force, expiring soon, expired, and
+/// an expired blanket policy that a renewal has replaced.
+fn seed_policies(conn: &Connection) -> Policies {
+    let policy =
+        |name: &str, number: &str, company: &str, limit: Option<i64>, start: i64, end: i64| {
+            InsurancePolicyInput {
+                name: name.into(),
+                policy_number: number.into(),
+                insurance_company: company.into(),
+                company_contact: text("1-800-555-0142"),
+                agent_name: text("Pat Alvarez"),
+                agent_contact: text("pat.alvarez@example.com"),
+                blanket_coverage_limit: limit,
+                effective_start_date: day(start),
+                effective_end_date: day(end),
+            }
+        };
+    let create = |input: InsurancePolicyInput| {
+        must(insurance_ops::create_policy(conn, &input), &input.name.clone()).id
+    };
+
+    // The renewal starts the day after the old blanket policy ends, so the
+    // old one is expired-but-replaced and raises no warning (FR-028).
+    create(policy(
+        "Homeowners Blanket 2025",
+        "HB-2025-88120",
+        "Cascade Mutual",
+        Some(10_000),
+        -530,
+        -166,
+    ));
+    Policies {
+        collector: create(policy(
+            "Collector Schedule",
+            "CS-771204",
+            "Heritage Fine Arts",
+            None,
+            -335,
+            20,
+        )),
+        expired_rider: create(policy(
+            "Range Bag Rider",
+            "RB-30918",
+            "Cascade Mutual",
+            None,
+            -700,
+            -40,
+        )),
+        vault: create(policy("Vault Schedule", "VS-559031", "Heritage Fine Arts", None, -100, 265)),
+    }
+}
+
+/// The blanket policy in force today. The caller sizes `limit` so the
+/// unscheduled firearms sit comfortably under it whatever `--extra` adds:
+/// the app starts with a healthy blanket that one more firearm can tip over.
+fn seed_blanket(conn: &Connection, limit: i64) {
+    let input = InsurancePolicyInput {
+        name: "Homeowners Blanket 2026".into(),
+        policy_number: "HB-2026-90311".into(),
+        insurance_company: "Cascade Mutual".into(),
+        company_contact: text("1-800-555-0142"),
+        agent_name: text("Pat Alvarez"),
+        agent_contact: text("pat.alvarez@example.com"),
+        blanket_coverage_limit: Some(limit),
+        effective_start_date: day(-165),
+        effective_end_date: day(200),
+    };
+    must(insurance_ops::create_policy(conn, &input), "the current blanket policy");
+}
+
+fn seed(conn: &Connection, extra: usize) {
+    let policies = seed_policies(conn);
+    let extras = generated_firearms(extra);
+    let extras_value: i64 = extras.iter().filter_map(|f| f.estimated_value).sum();
+    seed_blanket(conn, 12_000 + extras_value);
+
+    let add = |input: FirearmInput| {
+        let label = format!("{} {}", input.make, input.model);
+        must(firearm_ops::create_firearm(conn, &input), &label).id
+    };
+    let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
+        let input = DisposeFirearmInput {
+            disposition_type: kind,
+            recipient: recipient.into(),
+            date: date.into(),
+            price,
+        };
+        must(firearm_ops::dispose_firearm(conn, id, &input), "a disposition");
+    };
+    let photos = |firearm_id: i64, images: &[(&str, Vec<u8>, &str)]| -> Vec<i64> {
+        images
+            .iter()
+            .map(|(name, bytes, mime)| {
+                must(photo_ops::add_photo(conn, firearm_id, bytes, name, mime), name).id
+            })
+            .collect()
+    };
+    let documents = |firearm_id: i64, files: &[(&str, Vec<u8>, &str)]| {
+        for (name, bytes, mime) in files {
+            must(document_ops::add_document(conn, firearm_id, bytes, name, mime), name);
+        }
+    };
+
+    // -- Active, unscheduled (covered by the blanket policy) ---------------
+
+    let glock = add(FirearmInput {
+        nickname: text("Daily"),
+        notes: text("Trigger job done by a gunsmith in 2022. Fires reliably with 115 gr FMJ and 124 gr JHP."),
+        accessories: text("Three 15-round magazines, Streamlight TLR-7 light, Kydex holster"),
+        estimated_value: Some(550),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2021-03-14"),
+        acquisition_price: Some(529),
+        ..base("Glock", "19 Gen5", "BXKT482", "9mm", HANDGUN)
+    });
+    photos(
+        glock,
+        &[
+            ("glock-19-left.png", gradient_image(800, 600, 210, false), "image/png"),
+            ("glock-19-right.png", gradient_image(800, 600, 200, false), "image/png"),
+            ("glock-19-field-stripped.jpg", gradient_image(800, 600, 190, true), "image/jpeg"),
+        ],
+    );
+    documents(
+        glock,
+        &[
+            (
+                "receipt-ridgeline-arms.pdf",
+                simple_pdf(&["Ridgeline Arms", "Sales receipt", "Glock 19 Gen5 - 529.00"]),
+                "application/pdf",
+            ),
+            (
+                "owners-manual-notes.txt",
+                b"Field strip: clear, lock slide back, pull down the takedown tabs.\n".to_vec(),
+                "text/plain",
+            ),
+        ],
+    );
+
+    // Deliberately no photos: shows the generic rifle thumbnail.
+    add(FirearmInput {
+        nickname: text("Plinker"),
+        estimated_value: Some(380),
+        acquisition_source: text("Gun show"),
+        acquisition_date: text("2018-09-02"),
+        acquisition_price: Some(340),
+        ..base("Ruger", "10/22 Takedown", "0012-34567", ".22 LR", RIFLE)
+    });
+
+    add(FirearmInput {
+        notes: text("Old duty gun; the bluing is worn at the muzzle and the forend has a hairline crack near the tang. Keep an eye on it. Bring the original barrel-length paperwork when transferring."),
+        accessories: text("Extra 20-inch barrel, Vang Comp magazine tube extension, sling swivels, 4-shell side saddle, Limbsaver recoil pad, spare bead sight, cleaning kit"),
+        estimated_value: Some(650),
+        acquisition_date: text("2012-11-23"),
+        ..base("Remington", "870 Wingmaster", "RS12345M", "12 gauge", SHOTGUN)
+    });
+
+    let benelli = add(FirearmInput {
+        nickname: text("Home Defense"),
+        estimated_value: Some(1_900),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2020-02-08"),
+        acquisition_price: Some(1_749),
+        ..base("Benelli", "M4 Super 90", "M123456", "12 gauge", SHOTGUN)
+    });
+    photos(benelli, &[("benelli-m4.png", gradient_image(600, 800, 25, false), "image/png")]);
+
+    // Same identity as a disposed record below: a firearm reacquired as a
+    // new record (FR-032 only protects active records).
+    let disposed_p365 = add(FirearmInput {
+        nickname: text("Carry"),
+        estimated_value: Some(600),
+        acquisition_date: text("2022-01-15"),
+        ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
+    });
+    dispose(disposed_p365, DispositionType::Sold, "Dana Whitfield", "2023-04-02", 520);
+    let p365 = add(FirearmInput {
+        nickname: text("Carry"),
+        notes: text("Bought back from the same friend I sold it to."),
+        estimated_value: Some(600),
+        acquisition_source: text("Dana Whitfield"),
+        acquisition_date: text("2025-10-11"),
+        acquisition_price: Some(500),
+        ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
+    });
+    photos(p365, &[("p365.png", gradient_image(800, 600, 160, false), "image/png")]);
+
+    add(FirearmInput {
+        notes: text("Garand thumb is not a myth."),
+        estimated_value: Some(1_600),
+        acquisition_source: text("Civilian Marksmanship Program"),
+        acquisition_date: text("2016-05-19"),
+        acquisition_price: Some(1_050),
+        ..base("Springfield Armory", "M1 Garand", "1234567", ".30-06", RIFLE)
+    });
+
+    add(FirearmInput {
+        no_serial_attested: true,
+        serial_number: None,
+        nickname: text("Project Gun"),
+        notes: text("Built from an 80% lower; no serial number, attested."),
+        estimated_value: Some(700),
+        acquisition_date: text("2023-06-10"),
+        ..base("Homebuilt", "AR-15 80% Lower Build", "", "5.56 NATO", RIFLE)
+    });
+
+    add(FirearmInput {
+        no_serial_attested: true,
+        serial_number: None,
+        notes: text("Black powder; no serial number."),
+        estimated_value: Some(250),
+        acquisition_date: text("2019-08-03"),
+        ..base("Pedersoli", "1858 Remington Replica", "", ".44 black powder", OTHER)
+    });
+
+    // Only the required fields: no value, so no insurance warning either.
+    add(base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN));
+
+    add(FirearmInput {
+        nickname: text("Ünïcödé Tëst"),
+        notes: text("Accented text: crème brûlée, façade, señor, Zażółć gęślą jaźń."),
+        estimated_value: Some(700),
+        acquisition_date: text("2024-03-30"),
+        ..base("Česká zbrojovka", "CZ 75 B", "ČZ-00042", "9mm", HANDGUN)
+    });
+
+    add(FirearmInput {
+        estimated_value: Some(1_000),
+        acquisition_date: text("2017-12-01"),
+        ..base("Henry", "Big Boy", "BB0123456", ".44 Magnum", RIFLE)
+    });
+
+    add(FirearmInput {
+        nickname: text("Backup"),
+        estimated_value: Some(300),
+        acquisition_date: text("2024-08-17"),
+        ..base("Taurus", "G3C", "ABC12345", "9mm", HANDGUN)
+    });
+
+    // Disposed and reacquired twice, keeping both past dispositions
+    // (FR-033): shows the disposition history on the record.
+    let p320 = add(FirearmInput {
+        nickname: text("Reacquired"),
+        estimated_value: Some(500),
+        acquisition_date: text("2019-04-20"),
+        ..base("Sig Sauer", "P320", "58B123456", "9mm", HANDGUN)
+    });
+    dispose(p320, DispositionType::Sold, "Dave Rossi", "2022-05-10", 450);
+    must(
+        firearm_ops::reverse_disposition(
+            conn,
+            p320,
+            &ReverseDispositionInput { history: HistoryChoice::Keep, nickname: None },
+        ),
+        "reversing a disposition",
+    );
+    dispose(p320, DispositionType::Traded, "Ridgeline Arms", "2023-08-02", 400);
+    must(
+        firearm_ops::reverse_disposition(
+            conn,
+            p320,
+            &ReverseDispositionInput { history: HistoryChoice::Keep, nickname: None },
+        ),
+        "reversing a disposition",
+    );
+
+    // -- Scheduled under Collector Schedule (in force, expires in 20 days) --
+
+    let s_and_w = add(FirearmInput {
+        nickname: text("The Revolver"),
+        notes: text("Wood grips are replacements; the originals are in the safe."),
+        estimated_value: Some(850),
+        acquisition_date: text("2015-07-04"),
+        insurance_policy_id: Some(policies.collector),
+        scheduled_coverage_amount: Some(1_000),
+        ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357 Magnum", HANDGUN)
+    });
+    let ids = photos(
+        s_and_w,
+        &[
+            ("686-left.png", gradient_image(800, 600, 280, false), "image/png"),
+            ("686-detail.png", gradient_image(800, 600, 300, false), "image/png"),
+        ],
+    );
+    // Not the first photo: a chosen thumbnail rather than the default.
+    must(photo_ops::set_thumbnail_photo(conn, s_and_w, ids[1]), "choosing a thumbnail");
+
+    let winchester = add(FirearmInput {
+        nickname: text("Elk Rifle"),
+        estimated_value: Some(1_400),
+        acquisition_date: text("2014-10-12"),
+        insurance_policy_id: Some(policies.collector),
+        scheduled_coverage_amount: Some(1_500),
+        ..base("Winchester", "Model 70 Featherweight", "G2841175", ".270 Win", RIFLE)
+    });
+    // A large photo, to see how the app copes with a full-size original.
+    photos(
+        winchester,
+        &[("elk-rifle-range-day.jpg", gradient_image(2400, 1600, 100, true), "image/jpeg")],
+    );
+
+    // -- Scheduled under Vault Schedule (in force) --------------------------
+
+    // Scheduled for less than its value: under-insured.
+    add(FirearmInput {
+        nickname: text("Grandpa's 1911"),
+        notes: text("Inherited. Series 70. Family piece, never sell."),
+        estimated_value: Some(2_400),
+        acquisition_source: text("Inherited"),
+        acquisition_date: text("2009-06-01"),
+        insurance_policy_id: Some(policies.vault),
+        scheduled_coverage_amount: Some(2_000),
+        ..base("Colt", "1911 Government Model", "70S12345", ".45 ACP", HANDGUN)
+    });
+
+    // Scheduled for exactly its value: adequately insured.
+    add(FirearmInput {
+        nickname: text("Duck Gun"),
+        estimated_value: Some(1_800),
+        acquisition_date: text("2013-01-20"),
+        insurance_policy_id: Some(policies.vault),
+        scheduled_coverage_amount: Some(1_800),
+        ..base("Browning", "Auto-5 Light Twelve", "1V12345", "12 gauge", SHOTGUN)
+    });
+
+    // Long text everywhere, to check truncation and wrapping in tiles/rows.
+    add(FirearmInput {
+        nickname: text("The Really Long Nickname Used To Check How Tiles And Rows Truncate"),
+        notes: text("Commemorative presentation piece. ".repeat(12).trim_end()),
+        estimated_value: Some(3_200),
+        acquisition_date: text("2011-11-11"),
+        insurance_policy_id: Some(policies.vault),
+        scheduled_coverage_amount: Some(3_500),
+        ..base(
+            "Smith & Wesson",
+            "Model 1911 A1 Government Commemorative Limited Edition Engraved Presentation Grade",
+            "LONG-SERIAL-0000000000000000001",
+            ".45 ACP",
+            HANDGUN,
+        )
+    });
+
+    // -- Scheduled under an expired policy: uninsured despite the amount ----
+
+    add(FirearmInput {
+        estimated_value: Some(650),
+        acquisition_date: text("2020-09-09"),
+        insurance_policy_id: Some(policies.expired_rider),
+        scheduled_coverage_amount: Some(700),
+        ..base("Savage", "110", "S0011223", ".308 Win", RIFLE)
+    });
+
+    // -- Disposed ------------------------------------------------------------
+
+    let kel_tec = add(FirearmInput {
+        notes: text("Sold at a gun show; paperwork filed."),
+        estimated_value: Some(250),
+        acquisition_date: text("2017-03-03"),
+        acquisition_price: Some(220),
+        ..base("Kel-Tec", "P32", "R3K123", ".32 ACP", HANDGUN)
+    });
+    dispose(kel_tec, DispositionType::Sold, "Mark Tanaka", "2025-02-11", 250);
+
+    let marlin = add(FirearmInput {
+        estimated_value: Some(700),
+        acquisition_date: text("2010-04-04"),
+        ..base("Marlin", "336", "MR445566", ".30-30 Win", RIFLE)
+    });
+    dispose(marlin, DispositionType::Gifted, "Nephew Tom (Christmas)", "2024-12-25", 0);
+
+    let lcp = add(FirearmInput {
+        estimated_value: Some(280),
+        acquisition_date: text("2019-01-19"),
+        ..base("Ruger", "LCP", "371-00099", ".380 ACP", HANDGUN)
+    });
+    dispose(
+        lcp,
+        DispositionType::LostStolen,
+        "Reported to police, case 23-118342",
+        "2023-07-02",
+        0,
+    );
+
+    let patriot = add(FirearmInput {
+        estimated_value: Some(450),
+        acquisition_date: text("2021-06-06"),
+        ..base("Mossberg", "Patriot", "MP778899", ".308 Win", RIFLE)
+    });
+    dispose(patriot, DispositionType::Traded, "Ridgeline Arms", "2025-06-30", 400);
+
+    // -- Generated filler for scrolling, grouping and search ----------------
+
+    for input in extras {
+        add(input);
+    }
+}
+
+/// Deterministic filler: plain, valued, unscheduled firearms with distinct
+/// serial numbers, spread across makes, calibers and types.
+fn generated_firearms(count: usize) -> Vec<FirearmInput> {
+    const MODELS: &[(&str, &str, &str, i64, i64)] = &[
+        ("Glock", "17", "9mm", HANDGUN, 550),
+        ("Beretta", "92FS", "9mm", HANDGUN, 650),
+        ("Ruger", "GP100", ".357 Magnum", HANDGUN, 800),
+        ("Smith & Wesson", "M&P Shield", "9mm", HANDGUN, 450),
+        ("Kimber", "Micro 9", "9mm", HANDGUN, 700),
+        ("Savage", "Axis", ".243 Win", RIFLE, 400),
+        ("Marlin", "1895", ".45-70", RIFLE, 900),
+        ("Tikka", "T3x", "6.5 Creedmoor", RIFLE, 1_000),
+        ("Ruger", "American", ".308 Win", RIFLE, 550),
+        ("Mossberg", "590A1", "12 gauge", SHOTGUN, 600),
+        ("Stoeger", "Coach Gun", "20 gauge", SHOTGUN, 450),
+        ("CVA", "Wolf", ".50 black powder", OTHER, 300),
+    ];
+    (0..count)
+        .map(|i| {
+            let (make, model, caliber, type_id, value) = MODELS[i % MODELS.len()];
+            let serial = format!("GEN{:05}", i + 1);
+            FirearmInput {
+                estimated_value: Some(value),
+                acquisition_date: Some(format!(
+                    "20{:02}-{:02}-{:02}",
+                    10 + i % 15,
+                    1 + i % 12,
+                    1 + i % 28
+                )),
+                ..base(make, model, &serial, caliber, type_id)
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Generated files
+// ---------------------------------------------------------------------------
+
+/// A diagonal colour gradient with stripes, so each seeded photo looks
+/// different in the tiles and the full-size view. PNG or JPEG.
+fn gradient_image(width: u32, height: u32, hue: u32, jpeg: bool) -> Vec<u8> {
+    let image = image::RgbImage::from_fn(width, height, |x, y| {
+        let t = (x + y) as f32 / (width + height) as f32;
+        let striped = ((x + y) / 40) % 2 == 0;
+        let (r, g, b) =
+            hsv_to_rgb((hue as f32 + t * 40.0) % 360.0, 0.55, if striped { 0.85 } else { 0.7 });
+        image::Rgb([r, g, b])
+    });
+    let mut bytes = Vec::new();
+    let format = if jpeg { image::ImageFormat::Jpeg } else { image::ImageFormat::Png };
+    image.write_to(&mut Cursor::new(&mut bytes), format).expect("encode a seed image");
+    bytes
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match (h / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let byte = |channel: f32| ((channel + m) * 255.0).round() as u8;
+    (byte(r), byte(g), byte(b))
+}
+
+/// A one-page PDF with real text, small enough to build by hand, so opening
+/// a document hands the OS viewer something it can actually display.
+fn simple_pdf(lines: &[&str]) -> Vec<u8> {
+    let escape = |line: &str| line.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)");
+    let mut content = String::from("BT /F1 16 Tf 72 720 Td 22 TL\n");
+    for line in lines {
+        content.push_str(&format!("({}) Tj T*\n", escape(line)));
+    }
+    content.push_str("ET");
+
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R \
+         /Resources << /Font << /F1 4 0 R >> >> >>"
+            .to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+    ];
+    let mut pdf = String::from("%PDF-1.4\n");
+    let mut offsets = Vec::new();
+    for (index, body) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.push_str(&format!("{} 0 obj\n{body}\nendobj\n", index + 1));
+    }
+    let xref = pdf.len();
+    pdf.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1));
+    for offset in offsets {
+        pdf.push_str(&format!("{offset:010} 00000 n \n"));
+    }
+    pdf.push_str(&format!(
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    ));
+    pdf.into_bytes()
+}
+
+/// Spreadsheets to try File > Import with, each shaped to hit a different
+/// path: a clean import, conflicts with the seeded collection, and rows that
+/// fail validation. Written next to the database, never imported here.
+fn write_import_samples(dir: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).expect("create the import samples directory");
+
+    let row = |cells: &[(&str, &str)]| -> Vec<String> {
+        for (name, _) in cells {
+            assert!(COLUMNS.contains(name), "unknown spreadsheet column {name}");
+        }
+        COLUMNS
+            .iter()
+            .map(|column| {
+                cells.iter().find(|(name, _)| name == column).map_or("", |(_, v)| *v).to_owned()
+            })
+            .collect()
+    };
+    let write = |name: &str, rows: Vec<Vec<String>>| {
+        let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
+        writer.write_record(COLUMNS).expect("write the header");
+        for record in rows {
+            writer.write_record(record).expect("write a row");
+        }
+        writer.flush().expect("flush an import sample");
+    };
+
+    write(
+        "import-clean.csv",
+        vec![
+            row(&[
+                ("make", "Beretta"),
+                ("model", "A300 Ultima"),
+                ("serial_number", "A300-1001"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "12 gauge"),
+                ("firearm_type", "Shotgun"),
+                ("estimated_value", "1100"),
+                ("acquisition_date", "2024-09-14"),
+            ]),
+            row(&[
+                ("make", "Tikka"),
+                ("model", "T3x Lite"),
+                ("nickname", "Deer Rifle"),
+                ("serial_number", "T3-55210"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "6.5 Creedmoor"),
+                ("firearm_type", "Rifle"),
+                ("estimated_value", "$1,050"),
+                ("insurance_policy_name", "Vault Schedule"),
+                ("scheduled_coverage_amount", "1200"),
+            ]),
+            row(&[
+                ("make", "Homebuilt"),
+                ("model", "Flintlock Pistol Kit"),
+                ("no_serial_attested", "TRUE"),
+                ("caliber", ".50 black powder"),
+                ("firearm_type", "Other"),
+                ("estimated_value", "180"),
+                ("notes", "Kit build; no serial number."),
+            ]),
+        ],
+    );
+
+    write(
+        "import-conflicts.csv",
+        vec![
+            // Same make, model and serial as the seeded Glock, with a new value and note.
+            row(&[
+                ("make", "Glock"),
+                ("model", "19 Gen5"),
+                ("serial_number", "BXKT482"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("estimated_value", "600"),
+                ("notes", "Updated by import."),
+            ]),
+            // Matches the seeded Ruger 10/22 ignoring letter case.
+            row(&[
+                ("make", "RUGER"),
+                ("model", "10/22 TAKEDOWN"),
+                ("serial_number", "0012-34567"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".22 LR"),
+                ("firearm_type", "Rifle"),
+                ("estimated_value", "400"),
+            ]),
+            // Matches a disposed record only: still a conflict, but one where
+            // "import as a duplicate" is allowed alongside overwrite and skip.
+            row(&[
+                ("make", "Kel-Tec"),
+                ("model", "P32"),
+                ("serial_number", "R3K123"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".32 ACP"),
+                ("firearm_type", "Handgun"),
+                ("estimated_value", "260"),
+            ]),
+            // No conflict at all.
+            row(&[
+                ("make", "Walther"),
+                ("model", "PPK/S"),
+                ("serial_number", "WA-20214"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".380 ACP"),
+                ("firearm_type", "Handgun"),
+                ("estimated_value", "750"),
+            ]),
+        ],
+    );
+
+    let tomorrow = (Local::now().date_naive() + Duration::days(1)).format("%Y-%m-%d").to_string();
+    write(
+        "import-errors.csv",
+        vec![
+            row(&[
+                ("model", "No Make Given"),
+                ("serial_number", "E-001"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+            ]),
+            row(&[
+                ("make", "Future"),
+                ("model", "Acquisition"),
+                ("serial_number", "E-002"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("acquisition_date", tomorrow.as_str()),
+            ]),
+            row(&[
+                ("make", "Fractional"),
+                ("model", "Price"),
+                ("serial_number", "E-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("estimated_value", "500.50"),
+            ]),
+            // "Daily" is already an active firearm's nickname.
+            row(&[
+                ("make", "Nickname"),
+                ("model", "Clash"),
+                ("nickname", "Daily"),
+                ("serial_number", "E-004"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+            ]),
+            row(&[
+                ("make", "Unknown"),
+                ("model", "Type"),
+                ("serial_number", "E-005"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Trebuchet"),
+            ]),
+            row(&[
+                ("make", "Both"),
+                ("model", "Serial And Attested"),
+                ("serial_number", "E-006"),
+                ("no_serial_attested", "TRUE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+            ]),
+            row(&[
+                ("make", "Good"),
+                ("model", "Row Among The Bad"),
+                ("serial_number", "E-007"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("estimated_value", "400"),
+            ]),
+        ],
+    );
+
+    dir.to_path_buf()
+}
+
+// ---------------------------------------------------------------------------
+// Read-back summary
+// ---------------------------------------------------------------------------
+
+/// Reads the result back through the same queries the app's views use, so
+/// what is printed is what the app will show.
+fn print_summary(conn: &Connection) {
+    let listing = must(
+        firearm_ops::list_firearms(
+            conn,
+            &ListFirearmsInput { include_disposed: true, ..Default::default() },
+        ),
+        "the read-back listing",
+    );
+    let all: Vec<_> = listing.groups.iter().flat_map(|g| &g.firearms).collect();
+    let active = all.iter().filter(|f| f.status == FirearmStatus::Active).count();
+    println!("Seeded {} firearms ({} active, {} disposed)", all.len(), active, all.len() - active);
+
+    let mut by_warning = std::collections::BTreeMap::<String, Vec<String>>::new();
+    for f in all.iter().filter(|f| f.status == FirearmStatus::Active) {
+        let key = format!("{:?}", f.insurance_warning);
+        by_warning.entry(key).or_default().push(format!("{} {}", f.make, f.model));
+    }
+    for (warning, names) in &by_warning {
+        let shown: Vec<_> = names.iter().take(4).cloned().collect();
+        let more = names.len().saturating_sub(shown.len());
+        let tail = if more > 0 { format!(", +{more} more") } else { String::new() };
+        println!("  {warning:<13} {:>3}  {}{tail}", names.len(), shown.join("; "));
+    }
+
+    let value = must(insurance_ops::get_value_summary(conn), "the value summary");
+    println!("Collection value: ${}", value.collection_total);
+    if let Some(blanket) = value.blanket {
+        println!(
+            "Blanket ({}): ${} of ${} limit across {} firearms, ${} of headroom",
+            blanket.policy_name,
+            blanket.total,
+            blanket.limit,
+            blanket.firearm_count,
+            blanket.limit - blanket.total
+        );
+    }
+}

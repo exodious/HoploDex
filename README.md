@@ -176,6 +176,26 @@ runs under an isolated `xvfb` virtual display (via `xvfb-run`), so it never
 touches your real desktop, and it self-heals after an interrupted prior
 run (killing anything left over on its ports before starting).
 
+### Human testing
+
+To poke at the app by hand (look and feel, workflows) against a realistic
+collection instead of an empty one:
+
+```bash
+scripts/human-testing.sh                # seed on first use, then launch `tauri dev`
+scripts/human-testing.sh --reset        # throw the data away and reseed
+scripts/human-testing.sh --extra 200    # also generate 200 plain firearms
+```
+
+The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own
+command layer, so it covers photos, documents, dispositions and every
+insurance state: healthy, under-insured, uninsured (expired policy), and a
+policy expiring soon. Policy dates are relative to the day it is seeded. The
+data lives in `.human-testing/` (git-ignored), along with three spreadsheets
+in `import-samples/` (clean, conflicting and invalid rows) to try File >
+Import with. The app is pointed at it through `XDG_*_HOME`, so your real
+collection is never opened. Linux only.
+
 ### Linting & formatting
 
 ```bash
