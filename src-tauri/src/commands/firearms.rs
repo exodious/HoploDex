@@ -509,6 +509,8 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No firearm was found with that id."));
         }
+        // Its photos and documents went with it: return their space (Constitution V).
+        crate::db::reclaim_freed_space(conn);
         Ok(DeleteResult { deleted: true })
     }
 

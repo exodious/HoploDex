@@ -16,7 +16,7 @@ const base: InsurancePolicy = {
   companyContact: null,
   agentName: null,
   agentContact: null,
-  blanketCoverageLimit: 1_000_000,
+  blanketCoverageLimit: 10_000,
   effectiveStartDate: "2025-07-01",
   effectiveEndDate: "2099-06-30",
   createdAt: "",
@@ -31,8 +31,8 @@ const base: InsurancePolicy = {
 const blanketInForce: BlanketSummary = {
   policyId: 1,
   policyName: "Homeowner's blanket",
-  limit: 1_000_000,
-  total: 400_000,
+  limit: 10_000,
+  total: 4_000,
   firearmCount: 3,
   underInsured: false,
 };
@@ -49,7 +49,7 @@ function firearmSummary(id: number, overrides: Partial<FirearmSummary> = {}): Fi
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",
-    estimatedValue: 200_000,
+    estimatedValue: 2_000,
     insuranceWarning: "none",
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
@@ -93,7 +93,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
 
   it("flags a blanket total over its limit", () => {
     renderCard(base, {
-      blanket: { ...blanketInForce, total: 1_250_000, underInsured: true },
+      blanket: { ...blanketInForce, total: 12_500, underInsured: true },
     });
 
     expect(screen.getByText("Over by $2,500")).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
   it("lists the firearms scheduled under the policy with their amounts", () => {
     const scheduled = firearmSummary(5, {
       insurancePolicyId: 1,
-      scheduledCoverageAmount: 150_000,
+      scheduledCoverageAmount: 1_500,
       insuranceWarning: "under_insured",
     });
     renderCard(
@@ -134,7 +134,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
           isExpired: false,
           isExpiringSoon: false,
           individuallyScheduled: [
-            { firearmId: 5, estimatedValue: 200_000, scheduledAmount: 150_000, underInsured: true },
+            { firearmId: 5, estimatedValue: 2_000, scheduledAmount: 1_500, underInsured: true },
           ],
         },
       },

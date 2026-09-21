@@ -234,7 +234,7 @@ fn a_row_naming_a_policy_and_an_amount_is_scheduled_under_it() {
     let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
     let imported = &listing.groups[0].firearms[0];
     assert_eq!(imported.insurance_policy_id, Some(policy_id));
-    assert_eq!(imported.scheduled_coverage_amount, Some(350_000));
+    assert_eq!(imported.scheduled_coverage_amount, Some(3500));
 }
 
 #[test]
@@ -306,7 +306,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
         &db.conn,
         created.id,
         Some(policy_id),
-        Some(350_000),
+        Some(3500),
     )
     .unwrap();
     let plain =
@@ -339,7 +339,143 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     let all: Vec<_> = listing.groups.iter().flat_map(|g| &g.firearms).collect();
     let colt = all.iter().find(|f| f.make == "Colt").unwrap();
     assert_eq!(colt.insurance_policy_id, Some(policy_id));
-    assert_eq!(colt.scheduled_coverage_amount, Some(350_000));
+    assert_eq!(colt.scheduled_coverage_amount, Some(3500));
     let glock = all.iter().find(|f| f.make == "Glock").unwrap();
     assert_eq!(glock.insurance_policy_id, None);
+}
+
+// --- Whole-dollar amounts (FR-037, spreadsheet-format.md "Amounts") ---
+
+fn imported_value(cell: &str) -> Option<i64> {
+    let db = TestDb::new();
+    let result =
+        import_into(&db, &[csv_firearm("Glock", "19", "A1", &[("estimated_value", cell)])]);
+    assert_eq!(result.imported_count, 1, "{cell:?}: {:?}", result.row_errors);
+    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
+    listing.groups[0].firearms[0].estimated_value
+}
+
+#[test]
+fn import_accepts_whole_dollar_amounts_however_they_are_written() {
+    assert_eq!(imported_value("450"), Some(450));
+    assert_eq!(imported_value("450.00"), Some(450));
+    assert_eq!(imported_value("\"$1,250\""), Some(1250));
+    assert_eq!(imported_value("\" $ 1,250.00 \""), Some(1250));
+    assert_eq!(imported_value("0"), Some(0));
+}
+
+#[test]
+fn import_rejects_cents_negatives_and_text_as_row_errors_naming_the_column() {
+    for column in
+        ["estimated_value", "acquisition_price", "disposition_price", "scheduled_coverage_amount"]
+    {
+        for bad in ["450.50", "-5", "abc", "12.345", "1e3"] {
+            let db = TestDb::new();
+            let result = import_into(&db, &[csv_firearm("Glock", "19", "A1", &[(column, bad)])]);
+            assert_eq!(result.imported_count, 0, "{column}={bad} must not import");
+            assert_eq!(result.row_errors.len(), 1, "{column}={bad}");
+            assert!(
+                result.row_errors[0].message.contains(column),
+                "{column}={bad}: message {:?} should name the column",
+                result.row_errors[0].message
+            );
+        }
+    }
+}
+
+#[test]
+fn a_bad_amount_fails_only_its_own_row() {
+    let db = TestDb::new();
+    let result = import_into(
+        &db,
+        &[
+            csv_firearm("Glock", "19", "A1", &[("estimated_value", "450.50")]),
+            csv_firearm("Sig", "P226", "B2", &[("estimated_value", "450")]),
+        ],
+    );
+    assert_eq!(result.imported_count, 1);
+    assert_eq!(result.row_errors.len(), 1);
+    assert_eq!(result.row_errors[0].row, 1);
+}
+
+#[test]
+fn import_accepts_a_numeric_xlsx_cell() {
+    let db = TestDb::new();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("import.xlsx");
+
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet();
+    let values = [
+        ("make", "Glock"),
+        ("model", "19"),
+        ("serial_number", "X1"),
+        ("no_serial_attested", "FALSE"),
+        ("caliber", "9mm"),
+        ("firearm_type", "Handgun"),
+    ];
+    for (col, name) in hoplodex_lib::services::spreadsheet::COLUMNS.iter().enumerate() {
+        sheet.write_string(0, col as u16, *name).unwrap();
+        if let Some((_, value)) = values.iter().find(|(n, _)| n == name) {
+            sheet.write_string(1, col as u16, *value).unwrap();
+        }
+        if *name == "estimated_value" {
+            sheet.write_number(1, col as u16, 450.0).unwrap();
+        }
+    }
+    workbook.save(&path).unwrap();
+
+    let result = import_export_ops::import_collection(
+        &db.conn,
+        &path,
+        SpreadsheetFormat::Xlsx,
+        &ImportSessionStore::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    let listing = firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap();
+    assert_eq!(listing.groups[0].firearms[0].estimated_value, Some(450));
+}
+
+#[test]
+fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged() {
+    let db = TestDb::new();
+    let dest = TempDir::new().unwrap();
+    let mut input = support::firearm("Glock", "19", "A1");
+    input.estimated_value = Some(1250);
+    input.acquisition_price = Some(1000000);
+    firearm_ops::create_firearm(&db.conn, &input).unwrap();
+    let id =
+        firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap().groups[0].firearms[0].id;
+
+    let result = import_export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        "amounts",
+        SpreadsheetFormat::Csv,
+        &[id],
+        &mut |_, _| {},
+    )
+    .unwrap();
+
+    let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
+    let headers = reader.headers().unwrap().clone();
+    let record = reader.records().next().unwrap().unwrap();
+    let cell = |name: &str| record.get(headers.iter().position(|h| h == name).unwrap()).unwrap();
+    assert_eq!(cell("estimated_value"), "1250");
+    assert_eq!(cell("acquisition_price"), "1000000");
+
+    let db2 = TestDb::new();
+    let reimported = import_export_ops::import_collection(
+        &db2.conn,
+        &result.spreadsheet_path,
+        SpreadsheetFormat::Csv,
+        &ImportSessionStore::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(reimported.imported_count, 1, "{:?}", reimported.row_errors);
+    let listing = firearm_ops::list_firearms(&db2.conn, &Default::default()).unwrap();
+    assert_eq!(listing.groups[0].firearms[0].estimated_value, Some(1250));
 }

@@ -33,6 +33,10 @@
   font-size: var(--text-sm);
 }
 
+.hd-privacy-note__path {
+  overflow-wrap: anywhere;
+}
+
 .hd-privacy-note > svg {
   flex: none;
   margin-top: 2px;

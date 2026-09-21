@@ -1,4 +1,7 @@
 -- Initial schema per specs/001-firearms-inventory/data-model.md
+--
+-- Every price, value, coverage amount and limit is a whole number of U.S.
+-- dollars, never cents (FR-037).
 
 CREATE TABLE firearm_types (
     id INTEGER PRIMARY KEY,
@@ -16,7 +19,7 @@ CREATE TABLE insurance_policies (
     agent_contact TEXT,
     -- FR-027/FR-036: set => a blanket policy, whose limit is shared by every
     -- firearm not individually scheduled while the policy is in force.
-    blanket_coverage_limit INTEGER,
+    blanket_coverage_limit INTEGER CHECK (blanket_coverage_limit IS NULL OR blanket_coverage_limit >= 0),
     effective_start_date TEXT NOT NULL,
     effective_end_date TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -38,10 +41,10 @@ CREATE TABLE firearms (
     notes TEXT,
     accessories TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disposed')),
-    estimated_value INTEGER,
+    estimated_value INTEGER CHECK (estimated_value IS NULL OR estimated_value >= 0),
     acquisition_source TEXT,
     acquisition_date TEXT,
-    acquisition_price INTEGER,
+    acquisition_price INTEGER CHECK (acquisition_price IS NULL OR acquisition_price >= 0),
     disposition_type TEXT
         CHECK (
             disposition_type IS NULL
@@ -49,10 +52,10 @@ CREATE TABLE firearms (
         ),
     disposition_recipient TEXT,
     disposition_date TEXT,
-    disposition_price INTEGER,
+    disposition_price INTEGER CHECK (disposition_price IS NULL OR disposition_price >= 0),
     thumbnail_photo_id INTEGER REFERENCES photos (id) ON DELETE SET NULL,
     insurance_policy_id INTEGER REFERENCES insurance_policies (id) ON DELETE RESTRICT,
-    scheduled_coverage_amount INTEGER,
+    scheduled_coverage_amount INTEGER CHECK (scheduled_coverage_amount IS NULL OR scheduled_coverage_amount >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     -- FR-029: a serial number, or the attestation that there is none; never both.
@@ -116,7 +119,7 @@ CREATE TABLE disposition_history (
         CHECK (disposition_type IN ('sold', 'traded', 'gifted', 'destroyed', 'lost_stolen')),
     disposition_recipient TEXT NOT NULL,
     disposition_date TEXT NOT NULL,
-    disposition_price INTEGER,
+    disposition_price INTEGER CHECK (disposition_price IS NULL OR disposition_price >= 0),
     reversed_at TEXT NOT NULL
 );
 

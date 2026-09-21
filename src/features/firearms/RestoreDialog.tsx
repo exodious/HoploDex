@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChoiceCards, ConfirmDialog, TextField } from "../../components";
 import { formatDate } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
 import { dispositionLabel } from "./types";
@@ -90,7 +90,7 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
         <p className="hd-form-note">
           Recorded disposition: {dispositionLabel(firearm.dispositionType)} to{" "}
           {firearm.dispositionRecipient}, {formatDate(firearm.dispositionDate)}
-          {firearm.dispositionPrice != null && <>, {formatCents(firearm.dispositionPrice)}</>}.
+          {firearm.dispositionPrice != null && <>, {formatDollars(firearm.dispositionPrice)}</>}.
         </p>
         <ChoiceCards<HistoryChoice>
           label="What should happen to these details?"

@@ -51,7 +51,7 @@ describe("UI review follow-ups", () => {
     await fill("Policy name", "InsE2E Review Policy");
     await fill("Policy number", "REV-1");
     await fill("Insurance company", "Acme Insurance");
-    await fill("Blanket coverage limit", "1,000.00");
+    await fill("Blanket coverage limit", "1000");
     await fill("Coverage starts", "2020-01-01");
     await fill("Coverage ends", isoDaysFromNow(365));
     await clickButton("Add policy");
@@ -76,7 +76,7 @@ describe("UI review follow-ups", () => {
       caliber: ".308",
       type: "Rifle",
       serial: "REV-R",
-      valueDollars: "5,000.00",
+      valueDollars: "5000",
     });
     await back();
 
@@ -87,9 +87,9 @@ describe("UI review follow-ups", () => {
       caliber: "9mm",
       type: "Handgun",
       serial: "REV-P",
-      valueDollars: "2,000.00",
+      valueDollars: "2000",
     });
-    await schedule("InsE2E Review Policy", "1,500.00");
+    await schedule("InsE2E Review Policy", "1500");
     await back();
 
     // Scheduled on a policy that has expired: uninsured.
@@ -99,9 +99,9 @@ describe("UI review follow-ups", () => {
       caliber: "12 gauge",
       type: "Shotgun",
       serial: "REV-S",
-      valueDollars: "600.00",
+      valueDollars: "600",
     });
-    await schedule("InsE2E Review Rider (expired)", "600.00");
+    await schedule("InsE2E Review Rider (expired)", "600");
     await back();
   });
 

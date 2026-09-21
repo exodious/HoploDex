@@ -41,7 +41,7 @@ const firearm = {
   id: 1,
   make: "Colt",
   model: "Python",
-  estimatedValue: 380000,
+  estimatedValue: 3800,
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
 } as Firearm;
@@ -61,7 +61,7 @@ function renderDialog(
 
 describe("CoverageDialog (FR-014, FR-036)", () => {
   it("requires a scheduled amount instead of saving $0", async () => {
-    // Regression: a blank scheduled amount was saved as $0.00.
+    // Regression: a blank scheduled amount was saved as $0.
     const user = userEvent.setup();
     const onSave = renderDialog();
 
@@ -74,7 +74,7 @@ describe("CoverageDialog (FR-014, FR-036)", () => {
 
     await user.type(screen.getByLabelText("Scheduled amount"), "3,500");
     await user.click(screen.getByRole("button", { name: "Save coverage" }));
-    expect(onSave).toHaveBeenCalledWith({ policyId: 7, scheduledCoverageAmount: 350000 });
+    expect(onSave).toHaveBeenCalledWith({ policyId: 7, scheduledCoverageAmount: 3500 });
   });
 
   it("has no per-firearm blanket option: choosing not to schedule is the blanket", async () => {
@@ -94,7 +94,7 @@ describe("CoverageDialog (FR-014, FR-036)", () => {
     const scheduled = {
       ...firearm,
       insurancePolicyId: 7,
-      scheduledCoverageAmount: 300000,
+      scheduledCoverageAmount: 3000,
     } as Firearm;
     const onSave = renderDialog(undefined, blanket, scheduled);
 

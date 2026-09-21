@@ -1,4 +1,4 @@
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { FirearmName } from "../app/FirearmName";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
@@ -72,7 +72,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                   </td>
                   {showCaliber && <td>{firearm.caliber}</td>}
                   {showType && <td>{firearm.firearmTypeName}</td>}
-                  <td className="hd-table__num hd-num">{formatCents(firearm.estimatedValue)}</td>
+                  <td className="hd-table__num hd-num">{formatDollars(firearm.estimatedValue)}</td>
                   <td>
                     <CoverageCell firearm={firearm} />
                   </td>

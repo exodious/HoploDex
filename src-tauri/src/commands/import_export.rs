@@ -13,8 +13,8 @@ use crate::models::firearm::{
     validate_firearm_input, DispositionType, FirearmInput, FirearmStatus,
 };
 use crate::services::spreadsheet::{
-    cents_to_decimal_string, parse_decimal_to_cents, read_spreadsheet, write_spreadsheet,
-    FirearmExportRow, RawImportRow, SpreadsheetFormat,
+    dollars_to_string, parse_whole_dollars, read_spreadsheet, write_spreadsheet, FirearmExportRow,
+    RawImportRow, SpreadsheetFormat,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -178,21 +178,19 @@ pub mod ops {
                 notes: firearm.notes.unwrap_or_default(),
                 accessories: firearm.accessories.unwrap_or_default(),
                 status: firearm.status.as_str().to_string(),
-                estimated_value: cents_to_decimal_string(firearm.estimated_value),
+                estimated_value: dollars_to_string(firearm.estimated_value),
                 acquisition_source: firearm.acquisition_source.unwrap_or_default(),
                 acquisition_date: firearm.acquisition_date.unwrap_or_default(),
-                acquisition_price: cents_to_decimal_string(firearm.acquisition_price),
+                acquisition_price: dollars_to_string(firearm.acquisition_price),
                 disposition_type: firearm
                     .disposition_type
                     .map(|d| d.as_str().to_string())
                     .unwrap_or_default(),
                 disposition_recipient: firearm.disposition_recipient.unwrap_or_default(),
                 disposition_date: firearm.disposition_date.unwrap_or_default(),
-                disposition_price: cents_to_decimal_string(firearm.disposition_price),
+                disposition_price: dollars_to_string(firearm.disposition_price),
                 insurance_policy_name: insurance_policy_name.unwrap_or_default(),
-                scheduled_coverage_amount: cents_to_decimal_string(
-                    firearm.scheduled_coverage_amount,
-                ),
+                scheduled_coverage_amount: dollars_to_string(firearm.scheduled_coverage_amount),
                 photo_filenames: photo_filenames.join(";"),
             });
 
@@ -294,16 +292,19 @@ pub mod ops {
             notes: raw.notes.clone(),
             accessories: raw.accessories.clone(),
             status,
-            estimated_value: parse_decimal_to_cents(&raw.estimated_value),
+            estimated_value: parse_whole_dollars("estimated_value", &raw.estimated_value)?,
             acquisition_source: raw.acquisition_source.clone(),
             acquisition_date: raw.acquisition_date.clone(),
-            acquisition_price: parse_decimal_to_cents(&raw.acquisition_price),
+            acquisition_price: parse_whole_dollars("acquisition_price", &raw.acquisition_price)?,
             disposition_type,
             disposition_recipient: raw.disposition_recipient.clone(),
             disposition_date: raw.disposition_date.clone(),
-            disposition_price: parse_decimal_to_cents(&raw.disposition_price),
+            disposition_price: parse_whole_dollars("disposition_price", &raw.disposition_price)?,
             insurance_policy_id,
-            scheduled_coverage_amount: parse_decimal_to_cents(&raw.scheduled_coverage_amount),
+            scheduled_coverage_amount: parse_whole_dollars(
+                "scheduled_coverage_amount",
+                &raw.scheduled_coverage_amount,
+            )?,
         };
 
         validate_firearm_input(&input).map_err(|e| row_message(&e))?;

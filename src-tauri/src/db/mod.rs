@@ -107,8 +107,26 @@ pub fn open_encrypted(path: &Path, key_hex: &str) -> Result<Connection, DbError>
     // error on the first real read against the database.
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))?;
+    // Constitution V: deleted content is overwritten with zeros where it
+    // lay, not just unlinked. Stated here rather than left to the SQLCipher
+    // build's compile-time default, so it holds for every connection.
+    conn.pragma_update(None, "secure_delete", "ON")?;
     apply_migrations(&conn)?;
     Ok(conn)
+}
+
+/// Gives the space a delete freed back to the filesystem by rebuilding the
+/// file (`VACUUM`), so a deleted photo or document leaves neither its bytes
+/// nor an oversized file behind (Constitution V). Call after the `DELETE`
+/// has committed: `VACUUM` cannot run inside a transaction.
+///
+/// The delete itself has already succeeded and `secure_delete` has already
+/// zeroed the content, so a failure here is logged and not reported as a
+/// failed delete.
+pub fn reclaim_freed_space(conn: &Connection) {
+    if let Err(err) = conn.execute_batch("VACUUM") {
+        log::warn!("could not vacuum the database after a delete: {err}");
+    }
 }
 
 fn apply_migrations(conn: &Connection) -> Result<(), DbError> {

@@ -220,6 +220,20 @@ fn checked_date(
     }
 }
 
+/// FR-037: an amount is a whole number of dollars, so once it has decoded
+/// (a fractional number never does) the only thing left to refuse is a
+/// negative one.
+fn checked_amount(
+    field: &str,
+    label: &str,
+    value: Option<i64>,
+    errors: &mut HashMap<String, String>,
+) {
+    if value.is_some_and(|dollars| dollars < 0) {
+        errors.insert(field.into(), format!("{label} can't be negative."));
+    }
+}
+
 /// Validation rules from data-model.md's "Validation rules" section,
 /// enforced here (not just at the DB level) so import validation (FR-020)
 /// can produce per-row human-readable errors too.
@@ -235,6 +249,16 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
     if input.caliber.trim().is_empty() {
         errors.insert("caliber".into(), "Caliber is required.".into());
     }
+
+    checked_amount("estimatedValue", "Estimated value", input.estimated_value, &mut errors);
+    checked_amount("acquisitionPrice", "Acquisition price", input.acquisition_price, &mut errors);
+    checked_amount("dispositionPrice", "Disposition price", input.disposition_price, &mut errors);
+    checked_amount(
+        "scheduledCoverageAmount",
+        "Scheduled coverage amount",
+        input.scheduled_coverage_amount,
+        &mut errors,
+    );
 
     // Acceptance Scenarios 6-7 and FR-029: a serial number or the attestation
     // that there is none, never both and never neither.

@@ -1,5 +1,5 @@
 import { formatDate } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { dispositionLabel } from "./types";
 import type { DispositionHistoryEntry } from "./types";
 
@@ -15,7 +15,7 @@ export function DispositionHistoryList({ entries }: { entries: DispositionHistor
           <li key={entry.id}>
             <strong>{dispositionLabel(entry.dispositionType)}</strong> to{" "}
             {entry.dispositionRecipient} on {formatDate(entry.dispositionDate)}
-            {entry.dispositionPrice != null && <> for {formatCents(entry.dispositionPrice)}</>}
+            {entry.dispositionPrice != null && <> for {formatDollars(entry.dispositionPrice)}</>}
             <span className="hd-muted hd-past-dispositions__restored">
               Restored {formatDate(entry.reversedAt.slice(0, 10))}
             </span>

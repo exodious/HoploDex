@@ -16,8 +16,9 @@ Every monetary number in a command's input or output (`estimatedValue`,
 `acquisitionPrice`, `dispositionPrice`, `price`, `scheduledCoverageAmount`,
 `scheduledAmount`, `blanketCoverageLimit`, `limit`, `total`, `collectionTotal`)
 is a non-negative integer number of whole U.S. dollars (FR-037). The backend
-rejects a fractional or negative value with `VALIDATION_ERROR` and a
-`fieldErrors` entry; it never rounds. Thousands separators are a display
+rejects a negative value with `VALIDATION_ERROR` and a `fieldErrors` entry, and
+a fractional number never decodes into the integer argument at all (Tauri
+refuses the call before the command runs); it never rounds. Thousands separators are a display
 concern of the frontend only and never cross this boundary.
 
 All error returns use a common shape:

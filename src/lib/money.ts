@@ -1,46 +1,36 @@
-// Amounts are integer cents everywhere past the input boundary
-// (data-model.md). Currency is USD, matching the app's U.S. federal-law scope.
+// Amounts are whole U.S. dollars everywhere (FR-037): they are entered,
+// stored, sent over IPC and exported as whole dollars, never cents. Currency
+// is USD, matching the app's U.S. federal-law scope. Thousands separators
+// exist only in `formatDollars`; they are never typed, stored or exported.
 
-const withCents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
-const wholeDollars = new Intl.NumberFormat("en-US", {
+const dollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 0,
 });
-const grouped = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
 
-/** Formats cents as dollars ("$1,234.56"), or an em dash when unset.
- * `whole` drops ".00" for display totals, keeping any real cents. */
-export function formatCents(cents: number | null, options: { whole?: boolean } = {}): string {
-  if (cents == null) return "—";
-  if (options.whole && cents % 100 === 0) return wholeDollars.format(cents / 100);
-  return withCents.format(cents / 100);
+/** Formats whole dollars for display ("$1,250"), or an em dash when unset. */
+export function formatDollars(amount: number | null): string {
+  return amount == null ? "—" : dollars.format(amount);
 }
 
-/** The editable text for an amount field ("1,200.50"), or "" when unset. */
-export function centsToInput(cents: number | null): string {
-  return cents == null ? "" : grouped.format(cents / 100);
+/** The editable text for an amount field ("1250", no grouping), or "" when unset. */
+export function dollarsToInput(amount: number | null): string {
+  return amount == null ? "" : String(amount);
 }
 
-export type ParsedDollars = { ok: true; cents: number | null } | { ok: false; error: string };
+export type ParsedDollars = { ok: true; dollars: number | null } | { ok: false; error: string };
 
-// Whole dollars (optionally grouped by commas in threes), then up to two
-// decimal places.
-const AMOUNT = /^(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d{1,2}))?$/;
+export const WHOLE_DOLLARS_MESSAGE = "Enter whole dollars only, like 1250, with no cents.";
 
-/** Parses user-typed dollars into cents. Blank means "no value"; anything
- * that isn't a plain non-negative amount is an error, never a guess. */
+/** Parses user-entered dollars. A "$", thousands commas and spaces are
+ * dropped; blank means "no value". A fractional part, a sign, or anything
+ * else that isn't digits is an error, never rounded or guessed at. */
 export function parseDollars(input: string): ParsedDollars {
-  const text = input.replace(/[$\s]/g, "");
-  if (text === "") return { ok: true, cents: null };
-  const match = AMOUNT.exec(text);
-  if (!match || text === ".") {
-    return { ok: false, error: "Enter an amount like 1,250.00." };
-  }
-  const [whole, fraction = ""] = text.replace(/,/g, "").split(".");
-  const cents = Number(whole || "0") * 100 + Number(fraction.padEnd(2, "0"));
-  return { ok: true, cents };
+  const text = input.replace(/[$,\s]/g, "");
+  if (text === "") return { ok: true, dollars: null };
+  if (!/^\d+$/.test(text)) return { ok: false, error: WHOLE_DOLLARS_MESSAGE };
+  const amount = Number(text);
+  if (!Number.isSafeInteger(amount)) return { ok: false, error: "That amount is too large." };
+  return { ok: true, dollars: amount };
 }

@@ -76,7 +76,7 @@ function DisposeForm({
           dispositionOrderError(acquisitionDate, parsedDate.iso)),
     price: !parsedPrice.ok
       ? parsedPrice.error
-      : parsedPrice.cents == null
+      : parsedPrice.dollars == null
         ? "Enter the price, or 0 if nothing was received."
         : undefined,
   };
@@ -94,7 +94,7 @@ function DisposeForm({
         dispositionType: dispositionType as DispositionType,
         recipient: recipient.trim(),
         date: parsedDate.iso as string,
-        price: parsedPrice.cents as number,
+        price: parsedPrice.dollars as number,
       });
     } catch (e) {
       setServerError(

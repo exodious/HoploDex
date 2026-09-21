@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge, Button, ConfirmDialog, Dialog, Icon, useToast } from "../../components";
 import { formatDate } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { BackLink } from "../app/BackLink";
 import { firearmName, useCollection } from "../app/collectionStore";
@@ -19,6 +19,7 @@ import { PhotoGallery } from "../media/PhotoGallery";
 import { DispositionHistoryList } from "./DispositionHistoryList";
 import { DisposeDialog } from "./DisposeDialog";
 import { FirearmForm } from "./FirearmForm";
+import type { FocusField } from "./FirearmForm";
 import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
 import { dispositionLabel, firearmTypeOption } from "./types";
@@ -50,6 +51,8 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const [firearm, setFirearm] = useState<FirearmDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
+  // The field the edit form opens on, when reached from an "Add" link.
+  const [editFocus, setEditFocus] = useState<FocusField>();
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +125,11 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     notify(message);
   }
 
+  function editField(field: FocusField) {
+    setEditFocus(field);
+    setDialog("edit");
+  }
+
   async function handleUpdate(input: FirearmInput) {
     const updated = await firearmsService.updateFirearm(id, input);
     await afterChange(updated, `Saved changes to ${firearmName(updated)}.`);
@@ -167,7 +175,13 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       <div className="hd-record__bar">
         {back && <BackLink target={back} escapes />}
         <div className="hd-record__actions">
-          <Button icon="pencil" onClick={() => setDialog("edit")}>
+          <Button
+            icon="pencil"
+            onClick={() => {
+              setEditFocus(undefined);
+              setDialog("edit");
+            }}
+          >
             Edit
           </Button>
           {disposed ? (
@@ -219,7 +233,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               : "Active"}
           </TitleCell>
           <TitleCell label="Replacement value">
-            <span className="hd-num">{formatCents(firearm.estimatedValue)}</span>
+            <span className="hd-num">{formatDollars(firearm.estimatedValue)}</span>
           </TitleCell>
           <TitleCell label="Acquired">{formatDate(firearm.acquisitionDate)}</TitleCell>
           <TitleCell label="Coverage">
@@ -241,13 +255,13 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
             <TextBlock
               text={firearm.notes}
               empty="No notes recorded."
-              onAdd={() => setDialog("edit")}
+              onAdd={() => editField("notes")}
             />
             <h3 className="hd-subhead">Accessories</h3>
             <TextBlock
               text={firearm.accessories}
               empty="No accessories recorded."
-              onAdd={() => setDialog("edit")}
+              onAdd={() => editField("accessories")}
             />
           </section>
 
@@ -263,14 +277,14 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 {firearm.acquisitionDate && formatDate(firearm.acquisitionDate)}
               </Fact>
               <Fact label="Price paid">
-                {firearm.acquisitionPrice != null && formatCents(firearm.acquisitionPrice)}
+                {firearm.acquisitionPrice != null && formatDollars(firearm.acquisitionPrice)}
               </Fact>
               {disposed && (
                 <>
                   <Fact label="Disposition">{dispositionLabel(firearm.dispositionType)}</Fact>
                   <Fact label="Transferred to">{firearm.dispositionRecipient}</Fact>
                   <Fact label="Date">{formatDate(firearm.dispositionDate)}</Fact>
-                  <Fact label="Price received">{formatCents(firearm.dispositionPrice)}</Fact>
+                  <Fact label="Price received">{formatDollars(firearm.dispositionPrice)}</Fact>
                 </>
               )}
             </dl>
@@ -320,7 +334,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 </Fact>
                 <Fact label="Coverage">
                   {policy
-                    ? `Scheduled, ${formatCents(firearm.scheduledCoverageAmount)}`
+                    ? `Scheduled, ${formatDollars(firearm.scheduledCoverageAmount)}`
                     : "Blanket, not scheduled"}
                 </Fact>
                 <Fact label="Term">{expiryLabel(coveringPolicy)}</Fact>
@@ -341,6 +355,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       >
         <FirearmForm
           initialValues={firearm}
+          focusField={editFocus}
           onSubmit={handleUpdate}
           onCancel={() => setDialog(null)}
         />

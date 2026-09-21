@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Button, Dialog, MoneyField, Select } from "../../components";
-import { centsToInput, formatCents, parseDollars } from "../../lib/money";
+import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
@@ -50,7 +50,7 @@ function CoverageForm({
   const [policyId, setPolicyId] = useState(
     firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_SCHEDULED,
   );
-  const [amount, setAmount] = useState(centsToInput(firearm.scheduledCoverageAmount));
+  const [amount, setAmount] = useState(dollarsToInput(firearm.scheduledCoverageAmount));
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ function CoverageForm({
     ? undefined
     : !parsedAmount.ok
       ? parsedAmount.error
-      : parsedAmount.cents == null
+      : parsedAmount.dollars == null
         ? "Enter the amount scheduled on the policy."
         : undefined;
 
@@ -75,8 +75,8 @@ function CoverageForm({
     setServerError(null);
     try {
       await onSave(
-        scheduled && parsedAmount.ok && parsedAmount.cents != null
-          ? { policyId: Number(policyId), scheduledCoverageAmount: parsedAmount.cents }
+        scheduled && parsedAmount.ok && parsedAmount.dollars != null
+          ? { policyId: Number(policyId), scheduledCoverageAmount: parsedAmount.dollars }
           : { policyId: null },
       );
     } catch (e) {
@@ -136,7 +136,7 @@ function CoverageForm({
         {!scheduled && (
           <p className="hd-form-note">
             {blanket
-              ? `Not scheduled, so it's covered by ${blanket.policyName}, along with every other firearm that isn't scheduled. Its value counts toward that policy's ${formatCents(blanket.limit, { whole: true })} limit.`
+              ? `Not scheduled, so it's covered by ${blanket.policyName}, along with every other firearm that isn't scheduled. Its value counts toward that policy's ${formatDollars(blanket.limit)} limit.`
               : "No blanket policy is in force, so an unscheduled firearm is uninsured. Add a blanket policy on the Insurance page, or schedule this firearm on a policy."}
           </p>
         )}
@@ -149,7 +149,7 @@ function CoverageForm({
             error={submitted ? amountError : undefined}
             hint={
               firearm.estimatedValue != null
-                ? `Its estimated replacement value is ${formatCents(firearm.estimatedValue)}.`
+                ? `Its estimated replacement value is ${formatDollars(firearm.estimatedValue)}.`
                 : "It has no estimated value yet, so coverage can't be checked."
             }
           />

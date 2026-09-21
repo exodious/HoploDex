@@ -1,11 +1,17 @@
 import { $, addFirearm, back, browser, clickButton, choose, expect, fill } from "../support/ui";
 import {
   displayName,
+  fieldValue,
   fillFirearmForm,
+  focusedFieldLabel,
+  followAddLink,
+  hasHighlightedSection,
   isButtonDisabled,
   isFieldDisabled,
+  isFieldInView,
   listedNames,
   openFirearm,
+  pasteInto,
   titleBlock,
   toggle,
 } from "../support/ui";
@@ -53,12 +59,12 @@ describe("User Story 1 - Record a Firearm", () => {
     await clickButton("Edit");
     await fill("Acquired from", "Local gun shop");
     await fill("Date acquired", "2025-03-01");
-    await fill("Price paid", "1,450.00");
+    await fill("Price paid", "1450");
     await clickButton("Save changes");
 
     await expect($("dd*=Local gun shop")).toExist();
-    // Regression: "1,450.00" used to be parsed as $1.00.
-    await expect($("dd=$1,450.00")).toExist();
+    // Entered as plain digits, shown grouped and with no cents (FR-037).
+    await expect($("dd=$1,450")).toExist();
   });
 
   it("marks a firearm disposed while retaining its history (Scenario 4)", async () => {
@@ -66,7 +72,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
     await fill("Date", "2025-06-15");
-    await fill("Price received", "400.00");
+    await fill("Price received", "400");
     await clickButton("Mark as disposed");
 
     expect(await titleBlock("Status")).toContain("Sold");
@@ -151,7 +157,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await fillFirearmForm(firearm);
   }
 
-  async function markDisposed(price = "1.00") {
+  async function markDisposed(price = "1") {
     await clickButton("Mark disposed");
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
@@ -308,10 +314,83 @@ describe("User Story 1 - Record a Firearm", () => {
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
     await fill("Date", "2000-01-01");
-    await fill("Price received", "1.00");
+    await fill("Price received", "1");
     await clickButton("Mark as disposed");
     await expect($('[role="dialog"]*=earlier than the acquisition date')).toExist();
     await clickButton("Cancel");
     expect(await titleBlock("Status")).toBe("Active");
+  });
+  it("opens the edit form on the notes or accessories field from an Add link (Scenario 15)", async () => {
+    // Scenarios 13-14 end on a record; Add firearm lives on the collection.
+    await back();
+    await addFirearm({
+      make: "E2EAdd",
+      model: "Links",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "ADD-1",
+    });
+
+    for (const [emptyText, label] of [
+      ["No notes recorded.", "Notes"],
+      ["No accessories recorded.", "Accessories"],
+    ] as const) {
+      await followAddLink(emptyText);
+      await $('[role="dialog"]').waitForExist();
+      await browser.waitUntil(async () => (await focusedFieldLabel()) === label, {
+        timeoutMsg: `the ${label} field was not focused`,
+      });
+      expect(await isFieldInView(label)).toBe(true);
+      expect(await hasHighlightedSection()).toBe(true);
+      await clickButton("Cancel");
+    }
+
+    // The plain Edit button lands on the first field, with nothing highlighted.
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    expect(await focusedFieldLabel()).toBe("Make");
+    expect(await hasHighlightedSection()).toBe(false);
+    await clickButton("Cancel");
+    await back();
+  });
+
+  it("takes amounts as whole dollars only and shows them grouped (Scenario 16)", async () => {
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fillFirearmForm({
+      make: "E2EMoney",
+      model: "Whole",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "MNY-1",
+    });
+
+    // A decimal point, comma or other character is not accepted as typed.
+    await fill("Estimated replacement value", "1,2.5x0");
+    expect(await fieldValue("Estimated replacement value")).toBe("1250");
+
+    // A pasted amount with cents is refused with a message and changes nothing.
+    await pasteInto("Estimated replacement value", "1250.50");
+    expect(await fieldValue("Estimated replacement value")).toBe("1250");
+    await expect($('[role="dialog"]*=whole dollars')).toExist();
+
+    // A pasted "$" and thousands commas are dropped.
+    await fill("Estimated replacement value", "");
+    await pasteInto("Estimated replacement value", "$1,250");
+    expect(await fieldValue("Estimated replacement value")).toBe("1250");
+    await expect($('[role="dialog"]*=whole dollars')).not.toExist();
+
+    await clickButton("Add firearm");
+    await $("#record-name").waitForExist();
+
+    // Only the digits were entered and stored; the record shows "$1,250".
+    expect(await titleBlock("Replacement value")).toBe("$1,250");
+
+    // Editing shows the digits again, never the grouping.
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    expect(await fieldValue("Estimated replacement value")).toBe("1250");
+    await clickButton("Cancel");
+    await back();
   });
 });

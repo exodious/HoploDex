@@ -170,23 +170,42 @@ fn row_from_cells(cells: &[String]) -> RawImportRow {
     }
 }
 
-/// Formats an integer-cents amount as a decimal currency string (e.g.
-/// `450.00`), or `""` when absent — the spreadsheet-format.md convention.
-pub fn cents_to_decimal_string(cents: Option<i64>) -> String {
-    match cents {
-        Some(c) => format!("{:.2}", c as f64 / 100.0),
-        None => String::new(),
-    }
+/// Formats a whole-dollar amount as plain digits (`1250`: no `$`, no
+/// thousands separator, no decimals), or `""` when absent — the
+/// spreadsheet-format.md "Amounts" convention (FR-037).
+pub fn dollars_to_string(dollars: Option<i64>) -> String {
+    dollars.map(|d| d.to_string()).unwrap_or_default()
 }
 
-/// Parses a decimal currency string (e.g. `450.00`) into integer cents;
-/// blank/unparsable input yields `None`.
-pub fn parse_decimal_to_cents(value: &Option<String>) -> Option<i64> {
-    let raw = value.as_deref()?.trim();
-    if raw.is_empty() {
-        return None;
+/// Parses an amount cell into whole dollars (FR-037). A leading `$`,
+/// thousands commas and whitespace are dropped, and a zero fraction
+/// (`450.00`) is accepted; a value with non-zero cents, a sign, or any other
+/// text is an `Err` naming `column`, never rounded. A blank cell is `None`.
+pub fn parse_whole_dollars(column: &str, value: &Option<String>) -> Result<Option<i64>, String> {
+    let Some(raw) = value.as_deref() else {
+        return Ok(None);
+    };
+    let cleaned: String =
+        raw.chars().filter(|c| !c.is_whitespace() && *c != '$' && *c != ',').collect();
+    if cleaned.is_empty() && raw.trim().is_empty() {
+        return Ok(None);
     }
-    raw.parse::<f64>().ok().map(|parsed| (parsed * 100.0).round() as i64)
+
+    let (whole, fraction) = match cleaned.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (cleaned.as_str(), None),
+    };
+    let digits_only = |text: &str| !text.is_empty() && text.chars().all(|c| c.is_ascii_digit());
+    if !digits_only(whole) || fraction.is_some_and(|f| !digits_only(f)) {
+        return Err(format!("{column}: {raw:?} is not a whole-dollar amount"));
+    }
+    if fraction.is_some_and(|f| f.chars().any(|c| c != '0')) {
+        return Err(format!("{column}: whole dollars only, but {raw:?} has cents"));
+    }
+    whole
+        .parse::<i64>()
+        .map(Some)
+        .map_err(|_| format!("{column}: {raw:?} is too large to be an amount"))
 }
 
 pub fn write_spreadsheet(

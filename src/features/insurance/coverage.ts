@@ -1,5 +1,5 @@
 import { daysUntil, formatDate, todayIso } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import type { InsuranceWarning } from "../browse/types";
 import type { Firearm } from "../firearms/types";
 import type { BlanketSummary, InsurancePolicy, ValueSummary } from "./types";
@@ -76,7 +76,7 @@ export function coverageStatus(
       return {
         tone: "warn",
         label: "Under-insured",
-        detail: `Scheduled for ${formatCents(amount, { whole: true })} — ${formatCents(shortfall, { whole: true })} short of its value.`,
+        detail: `Scheduled for ${formatDollars(amount)} — ${formatDollars(shortfall)} short of its value.`,
       };
     }
     return {
@@ -101,13 +101,13 @@ export function coverageStatus(
     tone: "ok",
     label: "Covered",
     detail: scheduled
-      ? `Scheduled for ${formatCents(firearm.scheduledCoverageAmount, { whole: true })} on ${policy?.name ?? "a policy"}.`
+      ? `Scheduled for ${formatDollars(firearm.scheduledCoverageAmount)} on ${policy?.name ?? "a policy"}.`
       : `Covered by ${blanket?.policyName ?? "the blanket policy"}.`,
   };
 }
 
 /** How much coverage is missing on firearms flagged under-insured, in
- * cents: the amount the blanket policy's limit falls short of the firearms
+ * dollars: the amount the blanket policy's limit falls short of the firearms
  * it covers, plus, for each individually scheduled firearm, how far its
  * scheduled amount is below its value. Expired policies contribute
  * nothing here — their firearms count as uninsured instead, with their

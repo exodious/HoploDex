@@ -217,3 +217,104 @@ fn scheduling_requires_an_amount_and_an_existing_policy() {
             .expect_err("unknown policy");
     assert_eq!(no_policy.code, "NOT_FOUND");
 }
+
+// --- Whole-dollar amounts (FR-037) ---
+
+#[test]
+fn a_negative_scheduled_amount_is_rejected_with_a_field_error() {
+    let db = TestDb::new();
+    let rider =
+        insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-01-01", None))
+            .unwrap();
+    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "NEG-1")).unwrap();
+
+    let err =
+        insurance_ops::assign_firearm_coverage(&db.conn, created.id, Some(rider.id), Some(-60_000))
+            .expect_err("negative amount");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("scheduledCoverageAmount"));
+    assert_eq!(firearm_ops::get_firearm(&db.conn, created.id).unwrap().insurance_policy_id, None);
+}
+
+#[test]
+fn a_negative_blanket_limit_names_the_field_on_create_and_update() {
+    let db = TestDb::new();
+    let err = insurance_ops::create_policy(
+        &db.conn,
+        &policy("Bad", "2025-01-01", "2026-01-01", Some(-1)),
+    )
+    .expect_err("negative limit");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("blanketCoverageLimit"));
+
+    let created =
+        insurance_ops::create_policy(&db.conn, &blanket("Good", "2025-01-01", "2026-01-01"))
+            .unwrap();
+    let err = insurance_ops::update_policy(
+        &db.conn,
+        created.id,
+        &policy("Good", "2025-01-01", "2026-01-01", Some(-1)),
+    )
+    .expect_err("negative limit");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("blanketCoverageLimit"));
+}
+
+#[test]
+fn a_blanket_limit_of_zero_is_allowed_and_stored_as_dollars() {
+    let db = TestDb::new();
+    let created = insurance_ops::create_policy(
+        &db.conn,
+        &policy("Zero", "2025-01-01", "2026-01-01", Some(0)),
+    )
+    .unwrap();
+    assert_eq!(created.blanket_coverage_limit, Some(0));
+
+    let stored: Option<i64> = db
+        .conn
+        .query_row(
+            "SELECT blanket_coverage_limit FROM insurance_policies WHERE id = ?1",
+            [created.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, Some(0));
+}
+
+#[test]
+fn a_fractional_amount_is_refused_when_the_arguments_are_decoded_never_rounded() {
+    use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+
+    let mut input = serde_json::json!({
+        "name": "P", "policyNumber": "1", "insuranceCompany": "Acme",
+        "effectiveStartDate": "2025-01-01", "effectiveEndDate": "2026-01-01",
+        "blanketCoverageLimit": 500000
+    });
+    assert!(serde_json::from_value::<InsurancePolicyInput>(input.clone()).is_ok());
+
+    input["blanketCoverageLimit"] = serde_json::json!(500000.5);
+    assert!(serde_json::from_value::<InsurancePolicyInput>(input).is_err());
+}
+
+#[test]
+fn the_database_itself_refuses_a_negative_limit_or_scheduled_amount() {
+    let db = TestDb::new();
+    let rider =
+        insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-01-01", None))
+            .unwrap();
+    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "CHK-1")).unwrap();
+
+    assert!(db
+        .conn
+        .execute(
+            "UPDATE insurance_policies SET blanket_coverage_limit = -1 WHERE id = ?1",
+            [rider.id]
+        )
+        .is_err());
+    assert!(db
+        .conn
+        .execute(
+            "UPDATE firearms SET insurance_policy_id = ?1, scheduled_coverage_amount = -1
+             WHERE id = ?2",
+            [rider.id, created.id]
+        )
+        .is_err());
+}

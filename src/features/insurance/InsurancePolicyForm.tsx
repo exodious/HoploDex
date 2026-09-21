@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Button, DateField, MoneyField, TextField } from "../../components";
 import { parseDateInput } from "../../lib/dates";
-import { centsToInput, parseDollars } from "../../lib/money";
+import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 import "../firearms/forms.css";
@@ -35,7 +35,7 @@ function toFormState(policy?: InsurancePolicy): FormState {
     companyContact: policy?.companyContact ?? "",
     agentName: policy?.agentName ?? "",
     agentContact: policy?.agentContact ?? "",
-    blanketCoverageLimit: policy ? centsToInput(policy.blanketCoverageLimit) : "",
+    blanketCoverageLimit: policy ? dollarsToInput(policy.blanketCoverageLimit) : "",
     effectiveStartDate: policy?.effectiveStartDate ?? "",
     effectiveEndDate: policy?.effectiveEndDate ?? "",
   };
@@ -127,7 +127,7 @@ export function InsurancePolicyForm({
       agentName: blankToNull(form.agentName),
       agentContact: blankToNull(form.agentContact),
       // Blank means no blanket limit: a schedule-only policy (FR-036).
-      blanketCoverageLimit: limit.ok ? limit.cents : null,
+      blanketCoverageLimit: limit.ok ? limit.dollars : null,
       effectiveStartDate: (parseDateInput(form.effectiveStartDate) as { iso: string }).iso,
       effectiveEndDate: (parseDateInput(form.effectiveEndDate) as { iso: string }).iso,
     };

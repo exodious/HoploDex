@@ -52,7 +52,18 @@ export function Dialog({
           {...(description ? {} : { "aria-describedby": undefined })}
           onOpenAutoFocus={(event) => {
             // Start in the first field rather than on the header's close
-            // button, which Radix would otherwise focus first.
+            // button, which Radix would otherwise focus first — unless the
+            // content already put focus somewhere itself (a form opened on a
+            // specific field).
+            const focused = document.activeElement;
+            if (
+              focused &&
+              focused !== contentRef.current &&
+              contentRef.current?.contains(focused)
+            ) {
+              event.preventDefault();
+              return;
+            }
             const first = contentRef.current?.querySelector<HTMLElement>(FIRST_FIELD);
             if (first) {
               event.preventDefault();

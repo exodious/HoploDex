@@ -27,7 +27,7 @@ describe("DispositionHistoryList (FR-033)", () => {
             dispositionType: "sold",
             dispositionRecipient: "First Buyer",
             dispositionDate: "2024-01-10",
-            dispositionPrice: 40000,
+            dispositionPrice: 400,
             reversedAt: "2024-02-01 10:00:00",
           },
         ]}

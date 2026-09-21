@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Button,
@@ -11,16 +11,25 @@ import {
   TextField,
 } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
-import { centsToInput, parseDollars } from "../../lib/money";
+import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
 import { DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
 import type { DispositionType, Firearm, FirearmInput } from "./types";
 import "./forms.css";
 
+/** A field the form can open on, for the record page's "Add" links. */
+export type FocusField = "notes" | "accessories";
+
+/** How long the section stays highlighted after the form opens on a field. */
+const HIGHLIGHT_MS = 1800;
+
 export interface FirearmFormProps {
   /** Present in edit mode; omitted when creating a new record. */
   initialValues?: Firearm;
+  /** Opens with this field scrolled into view, focused, and its section
+   * briefly highlighted (FR-038). */
+  focusField?: FocusField;
   onSubmit: (input: FirearmInput) => Promise<void>;
   onCancel?: () => void;
 }
@@ -58,14 +67,14 @@ function toFormState(firearm?: Firearm): FormState {
     noSerialAttested: firearm?.noSerialAttested ?? false,
     notes: firearm?.notes ?? "",
     accessories: firearm?.accessories ?? "",
-    estimatedValue: centsToInput(firearm?.estimatedValue ?? null),
+    estimatedValue: dollarsToInput(firearm?.estimatedValue ?? null),
     acquisitionSource: firearm?.acquisitionSource ?? "",
     acquisitionDate: firearm?.acquisitionDate ?? "",
-    acquisitionPrice: centsToInput(firearm?.acquisitionPrice ?? null),
+    acquisitionPrice: dollarsToInput(firearm?.acquisitionPrice ?? null),
     dispositionType: firearm?.dispositionType ?? "",
     dispositionRecipient: firearm?.dispositionRecipient ?? "",
     dispositionDate: firearm?.dispositionDate ?? "",
-    dispositionPrice: centsToInput(firearm?.dispositionPrice ?? null),
+    dispositionPrice: dollarsToInput(firearm?.dispositionPrice ?? null),
   };
 }
 
@@ -112,14 +121,14 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     }
     const price = parseDollars(form.dispositionPrice);
     if (!price.ok) errors.dispositionPrice = price.error;
-    else if (price.cents == null) errors.dispositionPrice = "Enter the price, or 0.";
+    else if (price.dollars == null) errors.dispositionPrice = "Enter the price, or 0.";
   }
   return errors;
 }
 
-function cents(text: string): number | null {
+function dollars(text: string): number | null {
   const parsed = parseDollars(text);
-  return parsed.ok ? parsed.cents : null;
+  return parsed.ok ? parsed.dollars : null;
 }
 
 function isoDate(text: string): string | null {
@@ -148,7 +157,7 @@ const FIELD_ORDER: Field[] = [
  * set from the record's own coverage panel; a disposed record's
  * disposition details can be corrected here. Renders its own dialog body
  * and footer (use inside `<Dialog bare>`). */
-export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormProps) {
+export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: FirearmFormProps) {
   const disposed = initialValues?.status === "disposed";
   const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
@@ -156,6 +165,22 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<CommandFailure | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const accessoriesRef = useRef<HTMLTextAreaElement>(null);
+  // Motion-free under prefers-reduced-motion: still marked, so the user can
+  // see where to type, but neither animated nor smooth-scrolled.
+  const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
+
+  useEffect(() => {
+    const field = focusField === "notes" ? notesRef.current : accessoriesRef.current;
+    if (!focusField || !field) return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    field.focus({ preventScroll: true });
+    field.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    setHighlight(reduceMotion ? "static" : "animated");
+    const timer = setTimeout(() => setHighlight(null), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [focusField]);
 
   const clientErrors = validate(form, disposed);
   const errorFor = (field: Field): string | undefined =>
@@ -193,15 +218,15 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
       accessories: blankToNull(form.accessories),
-      estimatedValue: cents(form.estimatedValue),
+      estimatedValue: dollars(form.estimatedValue),
       acquisitionSource: blankToNull(form.acquisitionSource),
       acquisitionDate: isoDate(form.acquisitionDate),
-      acquisitionPrice: cents(form.acquisitionPrice),
+      acquisitionPrice: dollars(form.acquisitionPrice),
       status: initialValues?.status ?? "active",
       dispositionType: disposed ? (form.dispositionType as DispositionType) : null,
       dispositionRecipient: disposed ? form.dispositionRecipient.trim() : null,
       dispositionDate: disposed ? isoDate(form.dispositionDate) : null,
-      dispositionPrice: disposed ? cents(form.dispositionPrice) : null,
+      dispositionPrice: disposed ? dollars(form.dispositionPrice) : null,
       insurancePolicyId: initialValues?.insurancePolicyId ?? null,
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
     };
@@ -379,12 +404,17 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
           </div>
         </section>
 
-        <section className="hd-form-section" aria-labelledby="ff-condition">
+        <section
+          className="hd-form-section"
+          aria-labelledby="ff-condition"
+          data-highlight={highlight ?? undefined}
+        >
           <h3 className="hd-form-section__title" id="ff-condition">
             Condition and accessories
           </h3>
           <div className="hd-form-grid hd-form-grid--2">
             <TextArea
+              ref={notesRef}
               label="Notes"
               value={form.notes}
               onChange={(e) => update("notes", e.target.value)}
@@ -392,6 +422,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
               rows={4}
             />
             <TextArea
+              ref={accessoriesRef}
               label="Accessories"
               value={form.accessories}
               onChange={(e) => update("accessories", e.target.value)}

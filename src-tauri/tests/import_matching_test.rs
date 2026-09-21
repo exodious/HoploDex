@@ -137,7 +137,7 @@ fn resolving_a_conflict_as_overwrite_updates_the_existing_record() {
 
     let updated = firearm_ops::get_firearm(&db.conn, existing.id).unwrap();
     assert_eq!(updated.notes.as_deref(), Some("updated notes"));
-    assert_eq!(updated.estimated_value, Some(70000));
+    assert_eq!(updated.estimated_value, Some(700));
 }
 
 fn import_glock(

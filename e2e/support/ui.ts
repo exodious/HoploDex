@@ -107,6 +107,107 @@ export async function fill(label: string, value: string) {
   await browser.pause(100);
 }
 
+/** The current text of a labelled field in the open dialog. */
+export async function fieldValue(label: string): Promise<string> {
+  const value = await browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      return field ? field.value : null;`,
+    ) as (label: string) => string | null,
+    label,
+  );
+  if (value === null) throw new Error(`no field labelled "${label}"`);
+  return value;
+}
+
+/** Pastes `text` into a labelled field, as the clipboard would: a real
+ * `paste` event carrying the text, so the field can refuse it before it
+ * changes anything (`fill` sets a value directly and never fires one). */
+export async function pasteInto(label: string, text: string) {
+  const found = await browser.execute(
+    new Function(
+      "label",
+      "text",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      if (!field) return false;
+      field.focus();
+      const data = new DataTransfer();
+      data.setData("text/plain", text);
+      const paste = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+      const proceed = field.dispatchEvent(paste);
+      if (proceed) {
+        // Nobody refused it: insert what the browser would have.
+        const proto = HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(field, field.value + text);
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return true;`,
+    ) as (label: string, text: string) => boolean,
+    label,
+    text,
+  );
+  if (!found) throw new Error(`no field labelled "${label}"`);
+  await browser.pause(150);
+}
+
+/** The visible label of the field that has keyboard focus, or null. */
+export async function focusedFieldLabel(): Promise<string | null> {
+  return browser.execute(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active?.id) return null;
+    const label = document.querySelector(`label[for="${active.id}"]`);
+    return label ? (label.textContent ?? "").trim() : null;
+  });
+}
+
+/** Whether the labelled field is fully inside the visible window, i.e. was
+ * scrolled into view rather than left below a dialog's fold. */
+export async function isFieldInView(label: string): Promise<boolean> {
+  return browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      if (!field) return false;
+      const box = field.getBoundingClientRect();
+      return box.top >= 0 && box.bottom <= window.innerHeight;`,
+    ) as (label: string) => boolean,
+    label,
+  );
+}
+
+/** Follows the "Add" link beside an empty-state line such as
+ * "No notes recorded." on a firearm's record. */
+export async function followAddLink(emptyText: string) {
+  const found = await browser.execute((text: string) => {
+    const line = [...document.querySelectorAll(".hd-panel__empty")].find((p) =>
+      p.textContent?.includes(text),
+    );
+    const link = line?.querySelector<HTMLElement>("button");
+    link?.click();
+    return Boolean(link);
+  }, emptyText);
+  if (!found) throw new Error(`no "Add" link beside "${emptyText}"`);
+  await browser.pause(SETTLE_MS);
+}
+
+/** Whether a form section in the open dialog is currently highlighted (FR-038). */
+export async function hasHighlightedSection(): Promise<boolean> {
+  return browser.execute(() => Boolean(document.querySelector('[role="dialog"] [data-highlight]')));
+}
+
 /** Whether the labelled text field in the open dialog is disabled. */
 export async function isFieldDisabled(label: string): Promise<boolean> {
   const state = await browser.execute(

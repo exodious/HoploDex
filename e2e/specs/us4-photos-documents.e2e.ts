@@ -71,8 +71,18 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     await $(".hd-photo").waitForExist();
     await expect($(".hd-photo__tag*=Thumbnail")).toExist();
-    // The record's plate now shows the photo instead of the drawing.
+    // The record's plate now shows the photo instead of the drawing, and it
+    // really decoded: a Content-Security-Policy that refused `data:` images
+    // would leave the element in place with nothing drawn.
     await expect($(".hd-plate__figure img")).toExist();
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const img = document.querySelector<HTMLImageElement>(".hd-plate__figure img");
+          return Boolean(img?.complete && img.naturalWidth > 0);
+        }),
+      { timeoutMsg: "the photo on the record never rendered" },
+    );
 
     await back();
     await browser.waitUntil(async () => (await rowThumbnail("InsE2EMediaGlock 43")) === "photo", {
@@ -164,5 +174,28 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       timeout: 10000,
       timeoutMsg: "a decrypted document copy survived a relaunch",
     });
+  });
+  it("refuses every request that would leave the device (FR-021, SC-008)", async () => {
+    // A restrictive Content-Security-Policy is what stops the webview, and so
+    // anything the UI is ever made to run, from sending records anywhere.
+    const violations: string[] = await browser.executeAsync((done: (blocked: string[]) => void) => {
+      const blocked: string[] = [];
+      document.addEventListener("securitypolicyviolation", (e) =>
+        blocked.push(e.effectiveDirective),
+      );
+      const attempts = [
+        fetch("https://example.com/collect").catch(() => {}),
+        new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onerror = () => resolve();
+          img.onload = () => resolve();
+          img.src = "https://example.com/pixel.png";
+        }),
+      ];
+      Promise.all(attempts).then(() => setTimeout(() => done(blocked), 300));
+    });
+
+    expect(violations).toContain("connect-src");
+    expect(violations).toContain("img-src");
   });
 });

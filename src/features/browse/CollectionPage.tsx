@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
 import { daysUntil } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
@@ -121,7 +121,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
   if (loaded && firearms.length === 0) {
     return (
       <>
-        <PageHeader activeCount={0} valueCents={0} disposedCount={0} />
+        <PageHeader activeCount={0} valueDollars={0} disposedCount={0} />
         <div className="hd-empty">
           <div className="hd-empty__art">
             <TypeDrawing typeKey="rifle" animate />
@@ -149,7 +149,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     <>
       <PageHeader
         activeCount={activeCount}
-        valueCents={summary?.collectionTotal ?? 0}
+        valueDollars={summary?.collectionTotal ?? 0}
         disposedCount={disposedCount}
       />
 
@@ -240,11 +240,11 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
 
 function PageHeader({
   activeCount,
-  valueCents,
+  valueDollars,
   disposedCount,
 }: {
   activeCount: number;
-  valueCents: number;
+  valueDollars: number;
   disposedCount: number;
 }) {
   const { openDialog } = useNavigation();
@@ -259,8 +259,8 @@ function PageHeader({
             <>
               <strong className="hd-num">{activeCount}</strong>{" "}
               {activeCount === 1 ? "firearm" : "firearms"} ·{" "}
-              <strong className="hd-num">{formatCents(valueCents, { whole: true })}</strong>{" "}
-              estimated replacement value
+              <strong className="hd-num">{formatDollars(valueDollars)}</strong> estimated
+              replacement value
               {disposedCount > 0 && (
                 <>
                   {" "}

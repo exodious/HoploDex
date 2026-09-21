@@ -45,7 +45,7 @@ function firearm(overrides: Partial<Firearm> = {}): Firearm {
     notes: null,
     accessories: null,
     status: "active",
-    estimatedValue: 400000,
+    estimatedValue: 4000,
     acquisitionSource: null,
     acquisitionDate: null,
     acquisitionPrice: null,
@@ -101,7 +101,7 @@ describe("coverageStatus", () => {
   it("blames an expired policy when the firearm is scheduled on one", () => {
     const expired = { ...policy, isExpired: true, effectiveEndDate: "2025-12-01" };
     const status = coverageStatus(
-      firearm({ insurancePolicyId: 7, scheduledCoverageAmount: 500000 }),
+      firearm({ insurancePolicyId: 7, scheduledCoverageAmount: 5000 }),
       "uninsured",
       expired,
       blanket,
@@ -112,7 +112,7 @@ describe("coverageStatus", () => {
 
   it("shows the shortfall for an under-scheduled firearm", () => {
     const status = coverageStatus(
-      firearm({ insurancePolicyId: 7, scheduledCoverageAmount: 300000 }),
+      firearm({ insurancePolicyId: 7, scheduledCoverageAmount: 3000 }),
       "under_insured",
       policy,
       null,
@@ -133,7 +133,7 @@ describe("coverageStatus", () => {
 
   it("confirms a scheduled firearm is covered", () => {
     const status = coverageStatus(
-      firearm({ insurancePolicyId: 7, scheduledCoverageAmount: 400000 }),
+      firearm({ insurancePolicyId: 7, scheduledCoverageAmount: 4000 }),
       "none",
       policy,
       blanket,
@@ -185,21 +185,21 @@ describe("coverageShortfall", () => {
   });
 
   it("counts how far the unscheduled firearms exceed the blanket limit, not their value", () => {
-    const summary = summaryOf([], { ...blanket, total: 150000, limit: 100000 });
-    expect(coverageShortfall(summary)).toBe(50000);
+    const summary = summaryOf([], { ...blanket, total: 1500, limit: 1000 });
+    expect(coverageShortfall(summary)).toBe(500);
   });
 
   it("counts how far each scheduled amount is below its firearm's value", () => {
     const summary = summaryOf([
       policySummary({
         individuallyScheduled: [
-          { firearmId: 1, estimatedValue: 400000, scheduledAmount: 300000, underInsured: true },
-          { firearmId: 2, estimatedValue: 200000, scheduledAmount: 250000, underInsured: false },
-          { firearmId: 3, estimatedValue: 100000, scheduledAmount: 0, underInsured: true },
+          { firearmId: 1, estimatedValue: 4000, scheduledAmount: 3000, underInsured: true },
+          { firearmId: 2, estimatedValue: 2000, scheduledAmount: 2500, underInsured: false },
+          { firearmId: 3, estimatedValue: 1000, scheduledAmount: 0, underInsured: true },
         ],
       }),
     ]);
-    expect(coverageShortfall(summary)).toBe(200000);
+    expect(coverageShortfall(summary)).toBe(2000);
   });
 
   it("leaves expired policies out, since their firearms count as uninsured", () => {
@@ -208,18 +208,18 @@ describe("coverageShortfall", () => {
         policySummary({
           isExpired: true,
           individuallyScheduled: [
-            { firearmId: 1, estimatedValue: 500000, scheduledAmount: 1, underInsured: true },
+            { firearmId: 1, estimatedValue: 5000, scheduledAmount: 1, underInsured: true },
           ],
         }),
         policySummary({
           policyId: 2,
           individuallyScheduled: [
-            { firearmId: 2, estimatedValue: 120000, scheduledAmount: 100000, underInsured: true },
+            { firearmId: 2, estimatedValue: 1200, scheduledAmount: 1000, underInsured: true },
           ],
         }),
       ],
       null,
     );
-    expect(coverageShortfall(summary)).toBe(20000);
+    expect(coverageShortfall(summary)).toBe(200);
   });
 });

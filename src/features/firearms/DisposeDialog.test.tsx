@@ -55,7 +55,7 @@ describe("DisposeDialog", () => {
     await user.type(screen.getByLabelText("Price received"), "1,200");
     await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
     expect(onDispose).toHaveBeenCalledWith(
-      expect.objectContaining({ dispositionType: "sold", recipient: "Jane Doe", price: 120000 }),
+      expect.objectContaining({ dispositionType: "sold", recipient: "Jane Doe", price: 1200 }),
     );
   });
 

@@ -94,6 +94,7 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No document was found with that id."));
         }
+        crate::db::reclaim_freed_space(conn);
         Ok(DeleteResult { deleted: true })
     }
 

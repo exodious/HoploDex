@@ -97,7 +97,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       make: "InsE2EGlock",
       model: "19",
       serial: "INS-U-1",
-      valueDollars: "500.00",
+      valueDollars: "500",
     });
 
     expect(await titleBlock("Coverage")).toBe("Uninsured");
@@ -112,7 +112,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await addPolicy({
       name: "InsE2E Blanket A",
       policyNumber: "A-1",
-      blanketLimitDollars: "100,000.00",
+      blanketLimitDollars: "100000",
       startDate: "2020-01-01",
       endDate: isoDaysFromNow(365),
     });
@@ -127,7 +127,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       make: "InsE2ESig",
       model: "P226",
       serial: "INS-B-1",
-      valueDollars: "500.00",
+      valueDollars: "500",
     });
     expect(await titleBlock("Coverage")).toBe("Covered");
   });
@@ -140,7 +140,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       endDate: isoDaysFromNow(365),
     });
     await openCoverage("InsE2EGlock 19");
-    await assignCoverage({ policyName: "InsE2E Rider", amountDollars: "300.00" });
+    await assignCoverage({ policyName: "InsE2E Rider", amountDollars: "300" });
 
     expect(await titleBlock("Coverage")).toBe("Under-insured");
     await expect($(".hd-coverage*=$200 short of its value")).toExist();
@@ -148,7 +148,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     expect(await policyCardText("InsE2E Rider")).toContain("$200 short");
 
     await openCoverage("InsE2EGlock 19");
-    await assignCoverage({ policyName: "InsE2E Rider", amountDollars: "600.00" });
+    await assignCoverage({ policyName: "InsE2E Rider", amountDollars: "600" });
 
     expect(await titleBlock("Coverage")).toBe("Covered");
     await goTo("Insurance");
@@ -161,12 +161,12 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       make: "InsE2EMossberg",
       model: "500",
       serial: "INS-B-2",
-      valueDollars: "500.00",
+      valueDollars: "500",
     });
     expect(await titleBlock("Coverage")).toBe("Covered");
 
     // Sig and Mossberg are unscheduled and worth $1,000 together.
-    await editPolicy("InsE2E Blanket A", { "Blanket coverage limit": "800.00" });
+    await editPolicy("InsE2E Blanket A", { "Blanket coverage limit": "800" });
 
     await openCoverage("InsE2EMossberg 500");
     expect(await titleBlock("Coverage")).toBe("Under-insured");
@@ -183,13 +183,13 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       make: "InsE2ERuger",
       model: "10-22",
       serial: "INS-T-1",
-      valueDollars: "200.00",
+      valueDollars: "200",
     });
     expect(await collectionTotal()).toBeCloseTo(before + 200, 2);
 
     await openFirearm("InsE2ERuger 10-22");
     await clickButton("Edit");
-    await fill("Estimated replacement value", "300.00");
+    await fill("Estimated replacement value", "300");
     await clickButton("Save changes");
     expect(await collectionTotal()).toBeCloseTo(before + 300, 2);
 
@@ -198,7 +198,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
     await fill("Date", "2025-01-01");
-    await fill("Price received", "250.00");
+    await fill("Price received", "250");
     await clickButton("Mark as disposed");
     expect(await collectionTotal()).toBeCloseTo(before, 2);
   });
@@ -221,7 +221,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await submitPolicy({
       name: "InsE2E Blanket Overlap",
       policyNumber: "O-1",
-      blanketLimitDollars: "50,000.00",
+      blanketLimitDollars: "50000",
       startDate: isoDaysFromNow(300),
       endDate: isoDaysFromNow(700),
     });
@@ -233,7 +233,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await addPolicy({
       name: "InsE2E Blanket Next",
       policyNumber: "N-1",
-      blanketLimitDollars: "50,000.00",
+      blanketLimitDollars: "50000",
       startDate: isoDaysFromNow(365),
       endDate: isoDaysFromNow(730),
     });
@@ -272,9 +272,9 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       make: "InsE2EWinchester",
       model: "94",
       serial: "INS-EXP-2",
-      valueDollars: "100.00",
+      valueDollars: "100",
     });
-    await assignCoverage({ policyName: "InsE2E Rider Old", amountDollars: "100.00" });
+    await assignCoverage({ policyName: "InsE2E Rider Old", amountDollars: "100" });
 
     expect(await titleBlock("Coverage")).toBe("Uninsured");
     await expect($(".hd-coverage*=expired")).toExist();
@@ -324,9 +324,9 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       make: "InsE2ERemington",
       model: "870",
       serial: "INS-LAPSED-1",
-      valueDollars: "100.00",
+      valueDollars: "100",
     });
-    await assignCoverage({ policyName: "InsE2E Rider Lapsed", amountDollars: "100.00" });
+    await assignCoverage({ policyName: "InsE2E Rider Lapsed", amountDollars: "100" });
     expect(await titleBlock("Coverage")).toBe("Uninsured");
 
     await goTo("Insurance");

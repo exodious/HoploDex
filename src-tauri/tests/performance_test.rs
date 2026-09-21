@@ -219,3 +219,21 @@ fn list_firearms_with_blanket_coverage_completes_within_budget_at_10k_records() 
         elapsed.as_millis()
     );
 }
+
+#[test]
+fn deleting_a_firearm_completes_within_the_interactive_budget_at_10k_records() {
+    // Deleting vacuums the file to return the freed space (Constitution V),
+    // which must stay inside the 1s completion budget (Constitution IV).
+    let db = TestDb::new();
+    let ids = seed_10k_firearms(&db);
+
+    let started = Instant::now();
+    firearm_ops::delete_firearm(&db.conn, ids[RECORD_COUNT / 2], true).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "delete (with vacuum) took {}ms at {RECORD_COUNT} records; budget is 1000ms",
+        elapsed.as_millis()
+    );
+}

@@ -1,4 +1,4 @@
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { FirearmName } from "../app/FirearmName";
 import { GroupHeading } from "./BrowseList";
 import { CoverageCell } from "./CoverageCell";
@@ -50,7 +50,7 @@ export function BrowseTiles({ groups, grouped, onSelect }: BrowseTilesProps) {
                     </span>
                     <span className="hd-tile__foot">
                       <span className="hd-tile__value hd-num">
-                        {formatCents(firearm.estimatedValue, { whole: true })}
+                        {formatDollars(firearm.estimatedValue)}
                       </span>
                       <CoverageCell firearm={firearm} />
                     </span>

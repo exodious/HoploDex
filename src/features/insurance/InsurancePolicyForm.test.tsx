@@ -25,7 +25,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(onSubmit.mock.calls[0][0].blanketCoverageLimit).toBeNull();
   });
 
-  it("submits a limit in cents, making it a blanket policy", async () => {
+  it("submits a limit in whole dollars, making it a blanket policy", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<InsurancePolicyForm onSubmit={onSubmit} />);
@@ -34,7 +34,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     await user.type(screen.getByLabelText("Blanket coverage limit"), "25,000");
     await user.click(screen.getByRole("button", { name: "Add policy" }));
 
-    expect(onSubmit.mock.calls[0][0].blanketCoverageLimit).toBe(2_500_000);
+    expect(onSubmit.mock.calls[0][0].blanketCoverageLimit).toBe(25_000);
   });
 
   it("explains what the limit means", () => {

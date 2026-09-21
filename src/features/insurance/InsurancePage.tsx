@@ -1,5 +1,5 @@
 import { Button, Icon } from "../../components";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { BackLink } from "../app/BackLink";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
@@ -41,9 +41,7 @@ export function InsurancePage() {
         <div>
           <h1 className="hd-page-title">Insurance</h1>
           <p className="hd-page-sub">
-            <strong className="hd-num">
-              {formatCents(summary?.collectionTotal ?? 0, { whole: true })}
-            </strong>{" "}
+            <strong className="hd-num">{formatDollars(summary?.collectionTotal ?? 0)}</strong>{" "}
             estimated replacement value across <span className="hd-num">{active.length}</span>{" "}
             active {active.length === 1 ? "firearm" : "firearms"}
           </p>
@@ -193,7 +191,7 @@ function CoverageOverview({
           <li key={s.key}>
             <span className={`hd-overview__swatch hd-overview__seg--${s.key}`} aria-hidden />
             <span className="hd-overview__label">{s.label}</span>
-            <strong className="hd-num">{formatCents(s.shown, { whole: true })}</strong>
+            <strong className="hd-num">{formatDollars(s.shown)}</strong>
             {s.suffix && <span className="hd-muted">{s.suffix}</span>}
             <span className="hd-muted hd-num">
               {s.count} {s.count === 1 ? "firearm" : "firearms"}

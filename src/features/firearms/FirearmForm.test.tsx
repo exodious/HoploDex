@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
 import { FirearmForm } from "./FirearmForm";
@@ -194,5 +194,73 @@ describe("FirearmForm nickname (FR-031)", () => {
       />,
     );
     expect(screen.getByLabelText("Nickname")).toHaveValue("Snake");
+  });
+});
+
+describe("FirearmForm focusField (FR-038, US1 Acceptance Scenario 15)", () => {
+  function reducedMotion(reduce: boolean) {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        matches: reduce && query.includes("prefers-reduced-motion"),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Element.prototype.scrollIntoView = vi.fn();
+    reducedMotion(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  for (const [focusField, label] of [
+    ["notes", "Notes"],
+    ["accessories", "Accessories"],
+  ] as const) {
+    it(`focuses ${focusField}, scrolls it into view and briefly highlights its section`, () => {
+      render(<FirearmForm onSubmit={vi.fn()} focusField={focusField} />);
+
+      const field = screen.getByLabelText(label);
+      expect(field).toHaveFocus();
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+      const section = field.closest("[data-highlight]");
+      expect(section).not.toBeNull();
+      expect(section).toHaveAttribute("data-highlight", "animated");
+
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(field.closest("[data-highlight]")).toBeNull();
+      expect(field).toHaveFocus();
+    });
+  }
+
+  it("skips the highlight animation and smooth scrolling under prefers-reduced-motion", () => {
+    reducedMotion(true);
+    render(<FirearmForm onSubmit={vi.fn()} focusField="notes" />);
+
+    const notes = screen.getByLabelText("Notes");
+    expect(notes).toHaveFocus();
+    // Still marked so the user can see where to type, but without motion.
+    expect(notes.closest("[data-highlight]")).toHaveAttribute("data-highlight", "static");
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ behavior: "auto" }),
+    );
+  });
+
+  it("changes nothing when no field was asked for", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(document.querySelector("[data-highlight]")).toBeNull();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Notes")).not.toHaveFocus();
   });
 });

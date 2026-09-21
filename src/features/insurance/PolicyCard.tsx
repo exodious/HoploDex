@@ -1,6 +1,6 @@
 import { Badge, Button, InsuranceWarningBadge } from "../../components";
 import { formatDate } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { firearmName } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
 import type { FirearmSummary } from "../browse/types";
@@ -93,20 +93,20 @@ export function PolicyCard({
             </div>
             <Meter value={inForce.total} limit={limit} />
             <p className="hd-policy__figures">
-              <strong className="hd-num">{formatCents(inForce.total, { whole: true })}</strong>
+              <strong className="hd-num">{formatDollars(inForce.total)}</strong>
               <span className="hd-muted">
                 {" "}
-                of <span className="hd-num">{formatCents(limit, { whole: true })}</span> limit
+                of <span className="hd-num">{formatDollars(limit)}</span> limit
               </span>
               {inForce.total > limit ? (
                 <InsuranceWarningBadge
                   kind="under_insured"
-                  label={`Over by ${formatCents(inForce.total - limit, { whole: true })}`}
+                  label={`Over by ${formatDollars(inForce.total - limit)}`}
                 />
               ) : (
                 <span className="hd-muted hd-num">
                   {" "}
-                  · {formatCents(limit - inForce.total, { whole: true })} to spare
+                  · {formatDollars(limit - inForce.total)} to spare
                 </span>
               )}
             </p>
@@ -114,8 +114,8 @@ export function PolicyCard({
           </div>
         ) : (
           <p className="hd-policy__block hd-muted">
-            Blanket limit <span className="hd-num">{formatCents(limit, { whole: true })}</span> —
-            not in force, so it covers no firearms.
+            Blanket limit <span className="hd-num">{formatDollars(limit)}</span> — not in force, so
+            it covers no firearms.
           </p>
         ))}
 
@@ -225,9 +225,9 @@ function ScheduledTable({
                   <span className="hd-serial hd-mini-table__serial">{firearm.serialNumber}</span>
                 )}
               </td>
-              <td className="hd-table__num hd-num">{formatCents(firearm.estimatedValue)}</td>
+              <td className="hd-table__num hd-num">{formatDollars(firearm.estimatedValue)}</td>
               <td className="hd-table__num hd-num">
-                {formatCents(entry?.scheduledAmount ?? null)}
+                {formatDollars(entry?.scheduledAmount ?? null)}
               </td>
               <td className="hd-mini-table__status">
                 {expired ? (
@@ -235,7 +235,7 @@ function ScheduledTable({
                 ) : firearm.insuranceWarning === "under_insured" ? (
                   <InsuranceWarningBadge
                     kind="under_insured"
-                    label={`${formatCents(shortfall, { whole: true })} short`}
+                    label={`${formatDollars(shortfall)} short`}
                   />
                 ) : firearm.estimatedValue ? (
                   <Badge tone="ok">Covered</Badge>
@@ -290,7 +290,7 @@ export function FirearmLinkList({
             )}
             {showValue && (
               <span className="hd-linklist__value hd-num">
-                {formatCents(firearm.estimatedValue)}
+                {formatDollars(firearm.estimatedValue)}
               </span>
             )}
           </li>
