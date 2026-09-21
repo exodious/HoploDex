@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import type { Options } from "@wdio/types";
 import { browser } from "@wdio/globals";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,7 +105,7 @@ function findNativeDriver(): string | undefined {
   }
 }
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.Config = {
   runner: "local",
   specs: ["./specs/**/*.e2e.ts"],
   maxInstances: 1,
