@@ -352,7 +352,7 @@ fn a_disposed_and_an_active_match_conflict_with_the_active_one() {
 }
 
 #[test]
-fn an_exempt_row_matching_an_active_record_imports_with_a_warning() {
+fn a_row_with_both_a_serial_number_and_the_attestation_is_rejected() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
     firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
@@ -363,12 +363,12 @@ fn an_exempt_row_matching_an_active_record_imports_with_a_warning() {
         &[csv_firearm("Glock", "19", "ABC123", &[("no_serial_attested", "TRUE")])],
     );
 
-    assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    assert_eq!(result.imported_count, 0);
     assert!(result.conflicts.is_empty(), "an exempt row is never matched (FR-030)");
-    assert_eq!(result.warnings.len(), 1);
-    assert_eq!(result.warnings[0].row, 1);
-    assert!(result.warnings[0].message.contains("ABC123"));
-    assert_eq!(active_count(&db), 2);
+    assert_eq!(result.row_errors.len(), 1);
+    assert_eq!(result.row_errors[0].row, 1);
+    assert!(result.row_errors[0].message.contains("no serial number"));
+    assert_eq!(active_count(&db), 1);
 }
 
 #[test]

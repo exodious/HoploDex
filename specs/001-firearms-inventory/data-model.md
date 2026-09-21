@@ -32,8 +32,8 @@ Primary record; corresponds directly to the spec's **Firearm** entity.
 | `id` | INTEGER PK | |
 | `make` | TEXT, not null | structured field (FR-012, grouping) |
 | `model` | TEXT, not null | structured field |
-| `serial_number` | TEXT, nullable | FR-001, FR-029: null only if `no_serial_attested = true` |
-| `no_serial_attested` | BOOLEAN, not null, default false | FR-029: explicit attestation; save is blocked in the app layer if `serial_number IS NULL AND no_serial_attested = false` |
+| `serial_number` | TEXT, nullable | FR-001, FR-029: null if and only if `no_serial_attested = true`; a blank value is stored as null |
+| `no_serial_attested` | BOOLEAN, not null, default false | FR-029: explicit attestation that the firearm has no serial number; save is blocked in the app layer if `serial_number IS NULL AND no_serial_attested = false` or if both are set; the DB CHECK enforces exactly one |
 | `nickname` | TEXT, nullable | FR-031: optional free-form label to tell similar records apart; blank input stored as null; unique (case-insensitive, trimmed) among `status = 'active'` rows only, so a disposed firearm releases it; not part of the identifying key (FR-030), not used in import matching; indexed by FTS5; not a grouping field |
 | `caliber` | TEXT, not null | structured field |
 | `firearm_type_id` | INTEGER FK → FirearmType, not null | structured field |
@@ -57,8 +57,10 @@ Primary record; corresponds directly to the spec's **Firearm** entity.
 just at the DB level, so import validation (FR-020) can produce per-row
 human-readable errors):
 
-- `serial_number IS NOT NULL XOR no_serial_attested = true` must not both be
-  false (Acceptance Scenario US1.7).
+- Exactly one of `serial_number IS NOT NULL` and `no_serial_attested = true`
+  holds: neither is blocked (Acceptance Scenario US1.7), and so is both (the
+  form disables the serial field while the box is checked, FR-029). Backstop:
+  `CHECK ((serial_number IS NOT NULL) <> (no_serial_attested = 1))`.
 - `status = disposed` requires all four disposition fields set
   (Acceptance Scenario US1.4); `status = active` requires them null.
 - `insurance_policy_id` and `scheduled_coverage_amount` are either both set
@@ -75,13 +77,11 @@ human-readable errors):
   `nickname COLLATE NOCASE WHERE status = 'active' AND nickname IS NOT NULL`.
 - **Identity uniqueness (FR-032)**: among other `status = 'active'`
   firearms, compare `(make, model, serial_number)` ignoring case and
-  surrounding whitespace, only when `serial_number IS NOT NULL`. Match and
-  `no_serial_attested = false` → `VALIDATION_ERROR` (blocked). Match and
-  `no_serial_attested = true` → save succeeds and the response carries a
-  warning. Matches against disposed rows are ignored. Backstop for the
-  blocking case only: partial unique index on
-  `(make, model, serial_number)` with NOCASE collation
-  `WHERE status = 'active' AND no_serial_attested = 0 AND serial_number IS NOT NULL`.
+  surrounding whitespace, only when `serial_number IS NOT NULL`. A match →
+  `VALIDATION_ERROR` (blocked). Matches against disposed rows are ignored,
+  and a record with no serial number is never compared. Backstop: partial
+  unique index on `(make, model, serial_number)` with NOCASE collation
+  `WHERE status = 'active' AND serial_number IS NOT NULL`.
   The app is unreleased, so no compatibility with earlier development
   databases is required; the migration may create the index directly.
 - The two uniqueness checks are also re-run when a disposition is reversed

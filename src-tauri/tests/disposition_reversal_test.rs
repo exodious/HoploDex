@@ -50,11 +50,11 @@ fn keeping_the_history_restores_the_firearm_and_retains_the_disposition() {
     let restored = ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep))
         .expect("reversal should succeed");
 
-    assert_eq!(restored.firearm.status, FirearmStatus::Active);
-    assert_eq!(restored.firearm.disposition_type, None);
-    assert_eq!(restored.firearm.disposition_recipient, None);
-    assert_eq!(restored.firearm.disposition_date, None);
-    assert_eq!(restored.firearm.disposition_price, None);
+    assert_eq!(restored.status, FirearmStatus::Active);
+    assert_eq!(restored.disposition_type, None);
+    assert_eq!(restored.disposition_recipient, None);
+    assert_eq!(restored.disposition_date, None);
+    assert_eq!(restored.disposition_price, None);
 
     let detail = ops::get_firearm_detail(&db.conn, created.id).unwrap();
     assert_eq!(detail.disposition_history.len(), 1);
@@ -75,8 +75,8 @@ fn discarding_restores_the_firearm_and_stores_nothing() {
     let restored =
         ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Discard)).unwrap();
 
-    assert_eq!(restored.firearm.status, FirearmStatus::Active);
-    assert_eq!(restored.firearm.disposition_type, None);
+    assert_eq!(restored.status, FirearmStatus::Active);
+    assert_eq!(restored.disposition_type, None);
     assert_eq!(history_count(&db, created.id), 0);
     assert!(ops::get_firearm_detail(&db.conn, created.id).unwrap().disposition_history.is_empty());
 }
@@ -148,8 +148,8 @@ fn a_reversal_can_rename_to_resolve_a_nickname_clash_in_the_same_step() {
     )
     .unwrap();
 
-    assert_eq!(restored.firearm.status, FirearmStatus::Active);
-    assert_eq!(restored.firearm.nickname.as_deref(), Some("Old Faithful II"));
+    assert_eq!(restored.status, FirearmStatus::Active);
+    assert_eq!(restored.nickname.as_deref(), Some("Old Faithful II"));
     assert_eq!(history_count(&db, original.id), 1);
 }
 
@@ -170,18 +170,21 @@ fn a_reversal_that_clashes_on_make_model_serial_is_blocked_and_changes_nothing()
 }
 
 #[test]
-fn a_serial_exempt_firearm_may_be_restored_over_a_match_with_a_warning() {
+fn a_firearm_with_no_serial_number_is_restored_without_being_compared() {
     let db = TestDb::new();
-    let exempt = FirearmInput { no_serial_attested: true, ..firearm("Colt", "1911", "12345") };
-    let original = ops::create_firearm(&db.conn, &exempt).unwrap();
+    let no_serial = FirearmInput {
+        serial_number: None,
+        no_serial_attested: true,
+        ..firearm("Colt", "1911", "")
+    };
+    let original = ops::create_firearm(&db.conn, &no_serial).unwrap();
     dispose(&db, original.id, "Jane Doe", "2025-06-15");
     ops::create_firearm(&db.conn, &firearm("Colt", "1911", "12345")).unwrap();
 
     let restored =
         ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Keep)).unwrap();
 
-    assert_eq!(restored.firearm.status, FirearmStatus::Active);
-    assert_eq!(restored.warnings.len(), 1);
+    assert_eq!(restored.status, FirearmStatus::Active);
 }
 
 #[test]

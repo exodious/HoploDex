@@ -3,6 +3,7 @@ import {
   displayName,
   fillFirearmForm,
   isButtonDisabled,
+  isFieldDisabled,
   listedNames,
   openFirearm,
   titleBlock,
@@ -214,7 +215,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await back();
   });
 
-  it("saves a serial-exempt duplicate with a warning naming the match (Scenario 11)", async () => {
+  it("takes a no-serial firearm out of the duplicate check and locks its serial field (Scenario 11)", async () => {
     const rifle: NewFirearm = {
       make: "E2EExempt",
       model: "Rifle",
@@ -225,11 +226,28 @@ describe("User Story 1 - Record a Firearm", () => {
     await addFirearm(rifle);
     await back();
 
-    await addFirearm({ ...rifle, noSerial: true });
-
-    await expect($(".hd-toast--warning")).toExist();
-    await expect($(".hd-toast--warning*=same make, model and serial number")).toExist();
+    // A serial typed before the box is checked is discarded with it.
+    await startAdding({ ...rifle, noSerial: true });
+    expect(await isFieldDisabled("Serial number")).toBe(true);
+    await clickButton("Add firearm");
+    await browser.waitUntil(async () => await $("#record-name").isExisting(), {
+      timeoutMsg: "the no-serial firearm was not saved",
+    });
+    await expect($(".hd-plate__no-serial")).toExist();
     await back();
+
+    // Unchecking the box brings the serial requirement back.
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Make", "E2EExempt");
+    await fill("Model", "Rifle");
+    await choose("Rifle");
+    await fill("Caliber", ".30-06");
+    await toggle("This firearm has no serial number");
+    await toggle("This firearm has no serial number");
+    await clickButton("Add firearm");
+    await expect($("p*=Enter a serial number, or confirm this firearm has none.")).toExist();
+    await clickButton("Cancel");
   });
 
   it("reverses a disposition, blocked while its nickname is taken, then keeps it as history (Scenario 12)", async () => {

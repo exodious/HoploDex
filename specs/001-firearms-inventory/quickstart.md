@@ -74,11 +74,13 @@ Workflow gate.
 10. Save another active firearm with an existing nickname (different
     letter case) → blocked, conflicting record named; dispose the first
     firearm → the nickname can now be used (Scenario 9).
-11. Save a non-exempt firearm with the same make, model, and serial as an
+11. Save a firearm with the same make, model, and serial as an
     active firearm → blocked; dispose the existing one → the same
     make/model/serial now saves as a new record (Scenario 10).
-12. Save a serial-exempt firearm that records a serial matching an active
-    firearm → warning naming the match, save succeeds (Scenario 11).
+12. Check "no serial number" on a firearm with the same make and model as
+    an active one → the serial field is unavailable and the save succeeds
+    without being compared; uncheck it → a serial is required again
+    (Scenario 11).
 13. Reverse a disposition → asked whether to keep or discard the
     disposition details; firearm returns to active; kept details show as
     history; a clash with a current active firearm blocks the reversal

@@ -19,7 +19,6 @@ const result: ImportResult = {
   updatedCount: 0,
   skippedCount: 0,
   rowErrors: [],
-  warnings: [{ row: 4, message: "Another active firearm has the same make, model and serial." }],
   conflicts: [
     {
       conflictId: "c1",
@@ -83,14 +82,6 @@ describe("ImportDialog (FR-026, FR-032)", () => {
       }),
     ).toBeChecked();
     expect(screen.getByText("1 row still needs a decision.")).toBeInTheDocument();
-  });
-
-  it("reports rows that imported with a warning", async () => {
-    const user = userEvent.setup();
-    await importTheFile(user);
-
-    expect(screen.getByText("Imported with a warning")).toBeInTheDocument();
-    expect(screen.getByText(/same make, model and serial/)).toBeInTheDocument();
   });
 
   it("keeps a conflict open, with the reason, when its decision couldn't be applied", async () => {

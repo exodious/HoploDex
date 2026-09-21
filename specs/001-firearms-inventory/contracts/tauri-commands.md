@@ -28,13 +28,12 @@ type CommandError = {
 
 - **Input**: `FirearmInput` — all `Firearm` fields from data-model.md
   except `id`, `created_at`, `updated_at`, `thumbnail_photo_id`.
-- **Output**: `Firearm` (full record as persisted) plus `warnings: string[]`
-  (FR-032b: serial-exempt record matching an active firearm's
-  make/model/serial; empty otherwise).
+- **Output**: `Firearm` (full record as persisted).
 - **Errors**: `VALIDATION_ERROR` (e.g. missing serial number without
-  attestation — FR-029; disposition fields inconsistent with status;
+  attestation, or a serial number together with the attestation —
+  FR-029; disposition fields inconsistent with status;
   duplicate nickname among active firearms — FR-031; duplicate
-  make/model/serial on a non-exempt record — FR-032a; the message names
+  make/model/serial among active firearms — FR-032; the message names
   the conflicting record; acquisition or disposition date in the future, or
   disposition before acquisition — FR-003/FR-004).
 
@@ -60,8 +59,7 @@ type CommandError = {
   `ConfirmDialog` pattern, constitution III) and never defaults it
   silently. The optional `nickname` lets the user resolve a FR-031 nickname
   clash in the same step by renaming.
-- **Output**: `Firearm` (status now `active`, disposition fields null) plus
-  `warnings: string[]` (as `create_firearm`).
+- **Output**: `Firearm` (status now `active`, disposition fields null).
 - **Errors**: `VALIDATION_ERROR` (record is not disposed; `history`
   missing; nickname or make/model/serial clash with a currently active
   firearm per FR-031/FR-032 — message names the conflicting record;
@@ -326,9 +324,8 @@ type CommandError = {
 ### `import_collection`
 
 - **Input**: `{ filePath: string, format: "csv" | "xlsx" }`.
-- **Output (progress events, then)**: `{ sessionId: string, importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], warnings: { row: number; message: string }[], conflicts: ImportConflict[] }`.
-  `warnings` lists rows that imported but drew a FR-032b warning (a
-  serial-exempt row matching an active firearm). Each `ImportConflict`
+- **Output (progress events, then)**: `{ sessionId: string, importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], conflicts: ImportConflict[] }`.
+  Each `ImportConflict`
   carries `duplicateAllowed: boolean`, false where FR-032 would block the
   resulting record, so the frontend offers only skip and overwrite there.
 - **Behavior**: Rows failing validation are reported per-row without

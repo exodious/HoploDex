@@ -21,15 +21,6 @@ pub struct DisposeFirearmInput {
     pub price: i64,
 }
 
-/// What `create_firearm` and `update_firearm` return: the record as saved
-/// plus any warnings that didn't block the save (FR-032b).
-#[derive(Debug, Clone, Serialize)]
-pub struct SavedFirearm {
-    #[serde(flatten)]
-    pub firearm: Firearm,
-    pub warnings: Vec<String>,
-}
-
 /// What the user chose to do with the disposition being reversed (FR-033).
 /// Required: the frontend asks and the backend never picks for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -229,19 +220,17 @@ pub mod ops {
 
     /// FR-031 and FR-032, against the other active firearms. A disposed
     /// record has released its nickname and never competes for an identity,
-    /// so neither it nor a record with no serial number is compared.
-    /// Returns the warnings that don't block the save (FR-032b); every
-    /// blocking clash is reported at once, each on its own field.
+    /// so neither it nor a record with no serial number is compared. Every
+    /// clash is reported at once, each on its own field.
     pub fn check_uniqueness(
         conn: &Connection,
         exclude_id: Option<i64>,
         input: &FirearmInput,
-    ) -> Result<Vec<String>, CommandError> {
+    ) -> Result<(), CommandError> {
         if input.status != FirearmStatus::Active {
-            return Ok(Vec::new());
+            return Ok(());
         }
         let mut errors = std::collections::HashMap::new();
-        let mut warnings = Vec::new();
 
         if let Some(nickname) = &input.nickname {
             if let Some(other) = find_nickname_clash(conn, exclude_id, nickname)? {
@@ -257,25 +246,18 @@ pub mod ops {
                 find_identity_clash(conn, exclude_id, &input.make, &input.model, serial)?
             {
                 let other = describe_firearm(conn, other_id)?;
-                if input.no_serial_attested {
-                    warnings.push(format!(
-                        "Another active firearm has the same make, model and serial number: {other}. \
-                         This one was saved because it is marked as having no required serial number."
-                    ));
-                } else {
-                    errors.insert(
-                        "serialNumber".to_string(),
-                        format!(
-                            "{other} already has this make, model and serial number. \
-                             Change one of them, or dispose of or delete the other record."
-                        ),
-                    );
-                }
+                errors.insert(
+                    "serialNumber".to_string(),
+                    format!(
+                        "{other} already has this make, model and serial number. \
+                         Change one of them, or dispose of or delete the other record."
+                    ),
+                );
             }
         }
 
         if errors.is_empty() {
-            return Ok(warnings);
+            return Ok(());
         }
         let mut messages: Vec<_> = errors.values().cloned().collect();
         messages.sort();
@@ -295,16 +277,9 @@ pub mod ops {
         conn: &Connection,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
-        create_firearm_with_warnings(conn, input).map(|saved| saved.firearm)
-    }
-
-    pub fn create_firearm_with_warnings(
-        conn: &Connection,
-        input: &FirearmInput,
-    ) -> Result<SavedFirearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input)?;
-        let warnings = check_uniqueness(conn, None, input)?;
+        check_uniqueness(conn, None, input)?;
         conn.execute(
             "INSERT INTO firearms (
                 make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
@@ -346,7 +321,7 @@ pub mod ops {
         )
         .map_err(CommandError::from_db)?;
 
-        Ok(SavedFirearm { firearm: get_firearm(conn, conn.last_insert_rowid())?, warnings })
+        get_firearm(conn, conn.last_insert_rowid())
     }
 
     pub fn update_firearm(
@@ -354,17 +329,9 @@ pub mod ops {
         id: i64,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
-        update_firearm_with_warnings(conn, id, input).map(|saved| saved.firearm)
-    }
-
-    pub fn update_firearm_with_warnings(
-        conn: &Connection,
-        id: i64,
-        input: &FirearmInput,
-    ) -> Result<SavedFirearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input)?;
-        let warnings = check_uniqueness(conn, Some(id), input)?;
+        check_uniqueness(conn, Some(id), input)?;
         let updated = conn
             .execute(
                 "UPDATE firearms SET
@@ -419,7 +386,7 @@ pub mod ops {
         if updated == 0 {
             return Err(CommandError::not_found("No firearm was found with that id."));
         }
-        Ok(SavedFirearm { firearm: get_firearm(conn, id)?, warnings })
+        get_firearm(conn, id)
     }
 
     pub fn dispose_firearm(
@@ -467,7 +434,7 @@ pub mod ops {
         conn: &Connection,
         id: i64,
         input: &ReverseDispositionInput,
-    ) -> Result<SavedFirearm, CommandError> {
+    ) -> Result<Firearm, CommandError> {
         let current = get_firearm(conn, id)?;
         let (Some(disposition_type), Some(recipient), Some(date)) = (
             current.disposition_type,
@@ -517,9 +484,9 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
         }
-        let saved = update_firearm_with_warnings(conn, id, &restored)?;
+        let restored = update_firearm(conn, id, &restored)?;
         tx.commit().map_err(CommandError::from_db)?;
-        Ok(saved)
+        Ok(restored)
     }
 
     pub fn delete_firearm(
@@ -657,9 +624,9 @@ pub mod ops {
 pub async fn create_firearm(
     input: FirearmInput,
     state: State<'_, DbHandle>,
-) -> Result<SavedFirearm, CommandError> {
+) -> Result<Firearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::create_firearm_with_warnings(&conn, &input)
+    ops::create_firearm(&conn, &input)
 }
 
 #[tauri::command]
@@ -667,9 +634,9 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     state: State<'_, DbHandle>,
-) -> Result<SavedFirearm, CommandError> {
+) -> Result<Firearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::update_firearm_with_warnings(&conn, id, &input)
+    ops::update_firearm(&conn, id, &input)
 }
 
 #[tauri::command]
@@ -687,7 +654,7 @@ pub async fn reverse_disposition(
     id: i64,
     input: ReverseDispositionInput,
     state: State<'_, DbHandle>,
-) -> Result<SavedFirearm, CommandError> {
+) -> Result<Firearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
     ops::reverse_disposition(&conn, id, &input)
 }

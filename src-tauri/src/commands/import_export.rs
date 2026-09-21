@@ -55,8 +55,6 @@ pub struct ImportResult {
     pub updated_count: usize,
     pub skipped_count: usize,
     pub row_errors: Vec<RowError>,
-    /// Rows that imported but drew a warning (FR-032b), per row.
-    pub warnings: Vec<RowError>,
     pub conflicts: Vec<ImportConflict>,
 }
 
@@ -329,7 +327,6 @@ pub mod ops {
 
         let mut imported_count = 0;
         let mut row_errors = Vec::new();
-        let mut warnings = Vec::new();
         let mut conflicts = Vec::new();
         let mut pending = Vec::new();
 
@@ -367,16 +364,8 @@ pub mod ops {
                                 new_input: input,
                             });
                         }
-                        None => match firearm_ops::create_firearm_with_warnings(conn, &input) {
-                            Ok(saved) => {
-                                imported_count += 1;
-                                warnings.extend(
-                                    saved
-                                        .warnings
-                                        .into_iter()
-                                        .map(|message| RowError { row: row_number, message }),
-                                );
-                            }
+                        None => match firearm_ops::create_firearm(conn, &input) {
+                            Ok(_) => imported_count += 1,
                             // Rules that need the rest of the collection to
                             // judge (nickname/identity uniqueness) fail one
                             // row, not the whole import (FR-020).
@@ -404,7 +393,6 @@ pub mod ops {
             updated_count: 0,
             skipped_count: 0,
             row_errors,
-            warnings,
             conflicts,
         })
     }

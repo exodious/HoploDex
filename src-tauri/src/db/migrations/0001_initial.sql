@@ -55,7 +55,8 @@ CREATE TABLE firearms (
     scheduled_coverage_amount INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (serial_number IS NOT NULL OR no_serial_attested = 1),
+    -- FR-029: a serial number, or the attestation that there is none; never both.
+    CHECK ((serial_number IS NOT NULL) <> (no_serial_attested = 1)),
     -- FR-014/FR-036: scheduled under a policy with its own amount, or not
     -- scheduled at all. Blanket coverage is computed, never stored here.
     CHECK ((insurance_policy_id IS NULL) = (scheduled_coverage_amount IS NULL))
@@ -74,14 +75,13 @@ CREATE UNIQUE INDEX idx_firearms_active_nickname
     ON firearms (nickname COLLATE NOCASE)
     WHERE status = 'active' AND nickname IS NOT NULL;
 
--- FR-032: make + model + serial number is unique among active firearms that
--- are not attested serial-exempt (an exempt record only draws a warning, and
--- a disposed one may be reacquired as a new record). Backstop for the
--- blocking case only; the command layer also trims whitespace and produces
--- the warning.
+-- FR-032: make + model + serial number is unique among active firearms (a
+-- disposed one may be reacquired as a new record; a record with no serial
+-- number is never compared). Backstop for the check in the command layer,
+-- which also trims surrounding whitespace.
 CREATE UNIQUE INDEX idx_firearms_active_identity
     ON firearms (make COLLATE NOCASE, model COLLATE NOCASE, serial_number COLLATE NOCASE)
-    WHERE status = 'active' AND no_serial_attested = 0 AND serial_number IS NOT NULL;
+    WHERE status = 'active' AND serial_number IS NOT NULL;
 
 CREATE TABLE photos (
     id INTEGER PRIMARY KEY,

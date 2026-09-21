@@ -173,12 +173,18 @@ impl From<&Firearm> for FirearmInput {
 }
 
 impl FirearmInput {
-    /// The input as it is stored: a blank nickname becomes `None` and any
-    /// other is trimmed (FR-031: blank is not a value, and comparison
-    /// ignores surrounding whitespace).
+    /// The input as it is stored: a blank nickname or serial number becomes
+    /// `None` and any other is trimmed (FR-031, FR-032: blank is not a value,
+    /// and comparison ignores surrounding whitespace).
     pub fn normalized(&self) -> Self {
-        let nickname = self.nickname.as_deref().map(str::trim).filter(|n| !n.is_empty());
-        Self { nickname: nickname.map(str::to_owned), ..self.clone() }
+        let trimmed = |value: &Option<String>| {
+            value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
+        };
+        Self {
+            nickname: trimmed(&self.nickname),
+            serial_number: trimmed(&self.serial_number),
+            ..self.clone()
+        }
     }
 }
 
@@ -230,12 +236,19 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         errors.insert("caliber".into(), "Caliber is required.".into());
     }
 
-    // Acceptance Scenarios 6-7: blank serial number is only allowed when
-    // explicitly attested; providing a serial number is always fine.
+    // Acceptance Scenarios 6-7 and FR-029: a serial number or the attestation
+    // that there is none, never both and never neither.
     if is_blank(&input.serial_number) && !input.no_serial_attested {
         errors.insert(
             "serialNumber".into(),
             "Enter a serial number, or confirm this firearm has none.".into(),
+        );
+    } else if !is_blank(&input.serial_number) && input.no_serial_attested {
+        errors.insert(
+            "serialNumber".into(),
+            "A firearm with no serial number can't also have one. Clear the serial number, \
+             or uncheck the box."
+                .into(),
         );
     }
 

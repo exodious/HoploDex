@@ -107,6 +107,24 @@ export async function fill(label: string, value: string) {
   await browser.pause(100);
 }
 
+/** Whether the labelled text field in the open dialog is disabled. */
+export async function isFieldDisabled(label: string): Promise<boolean> {
+  const state = await browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      return field ? field.disabled : null;`,
+    ) as (label: string) => boolean | null,
+    label,
+  );
+  if (state === null) throw new Error(`no field labelled "${label}"`);
+  return state;
+}
+
 /** Picks a radio choice (type cards, segmented controls, coverage kind…)
  * by its visible label. */
 export async function choose(text: string) {

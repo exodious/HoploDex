@@ -5,26 +5,22 @@ import type {
   FirearmDetail,
   FirearmInput,
   ReverseDispositionInput,
-  SavedFirearm,
 } from "./types";
 
-export function createFirearm(input: FirearmInput): Promise<SavedFirearm> {
-  return invoke<SavedFirearm>("create_firearm", { input });
+export function createFirearm(input: FirearmInput): Promise<Firearm> {
+  return invoke<Firearm>("create_firearm", { input });
 }
 
-export function updateFirearm(id: number, input: FirearmInput): Promise<SavedFirearm> {
-  return invoke<SavedFirearm>("update_firearm", { id, input });
+export function updateFirearm(id: number, input: FirearmInput): Promise<Firearm> {
+  return invoke<Firearm>("update_firearm", { id, input });
 }
 
 export function disposeFirearm(id: number, input: DisposeFirearmInput): Promise<Firearm> {
   return invoke<Firearm>("dispose_firearm", { id, input });
 }
 
-export function reverseDisposition(
-  id: number,
-  input: ReverseDispositionInput,
-): Promise<SavedFirearm> {
-  return invoke<SavedFirearm>("reverse_disposition", { id, input });
+export function reverseDisposition(id: number, input: ReverseDispositionInput): Promise<Firearm> {
+  return invoke<Firearm>("reverse_disposition", { id, input });
 }
 
 export function deleteFirearm(id: number, confirmed: boolean): Promise<{ deleted: boolean }> {

@@ -17,7 +17,7 @@ sibling photos folder.
 | `make` | yes | `Firearm.make` | |
 | `model` | yes | `Firearm.model` | |
 | `nickname` | no | `Firearm.nickname` | free text; blank → none; never used for matching; must be unique among active firearms, otherwise row error (FR-031) |
-| `serial_number` | no | `Firearm.serial_number` | blank allowed only with `no_serial_attested = TRUE` |
+| `serial_number` | no | `Firearm.serial_number` | blank only with `no_serial_attested = TRUE`, and must be blank with it (FR-029): a row with both is a row error |
 | `no_serial_attested` | no (default FALSE) | `Firearm.no_serial_attested` | `TRUE`/`FALSE` |
 | `caliber` | yes | `Firearm.caliber` | |
 | `firearm_type` | yes | `FirearmType.name` | matched case-insensitively; unknown type → row error |
@@ -62,7 +62,6 @@ sibling photos folder.
   (see `resolve_import_conflicts` in tauri-commands.md) rather than a
   silent overwrite.
 - Every row is also checked against FR-032: a row that would be blocked
-  (non-exempt serial matching an *active* record) is not offered the
-  "duplicate" resolution; a row for a serial-exempt firearm that matches
-  produces a warning in the report but still imports. A disposed-only
-  match is not a conflict for blocking purposes.
+  (serial matching an *active* record) is not offered the
+  "duplicate" resolution. A disposed-only match is not a conflict for
+  blocking purposes.

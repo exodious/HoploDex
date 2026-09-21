@@ -230,22 +230,6 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           </section>
         )}
 
-        {result.warnings.length > 0 && (
-          <section className="hd-io-section" aria-labelledby="row-warnings-title">
-            <h3 className="hd-io-section__title" id="row-warnings-title">
-              Imported with a warning
-            </h3>
-            <ul className="hd-row-errors">
-              {result.warnings.map((warning) => (
-                <li key={`${warning.row}-${warning.message}`}>
-                  <span className="hd-row-errors__row hd-num">Row {warning.row}</span>
-                  <span>{warning.message}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         {unresolved.length > 0 && (
           <section className="hd-io-section" aria-labelledby="unresolved-title">
             <h3 className="hd-io-section__title" id="unresolved-title">

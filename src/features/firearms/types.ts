@@ -56,10 +56,6 @@ export interface ReverseDispositionInput {
   nickname?: string;
 }
 
-/** What `create_firearm`/`update_firearm` return: the record as saved plus
- * warnings that didn't block the save (FR-032b). */
-export type SavedFirearm = Firearm & { warnings: string[] };
-
 /** All `Firearm` fields except `id`, `createdAt`, `updatedAt`, `thumbnailPhotoId`. */
 export type FirearmInput = Omit<Firearm, "id" | "createdAt" | "updatedAt" | "thumbnailPhotoId">;
 

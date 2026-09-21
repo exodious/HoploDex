@@ -46,8 +46,6 @@ export interface ImportResult {
   updatedCount: number;
   skippedCount: number;
   rowErrors: RowError[];
-  /** Rows that imported but drew a warning (FR-032b). */
-  warnings: RowError[];
   conflicts: ImportConflict[];
 }
 
