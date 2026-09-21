@@ -407,7 +407,8 @@ describe("User Story 1 - Record a Firearm", () => {
     });
     await fill("Barrel length (in)", "16.25");
     await fill("Overall length (in)", "36");
-    await fill("Weight (oz)", "40.5");
+    await fill("Weight (lb)", "2");
+    await fill("Weight (oz)", "8.5");
     await fill("Capacity", "30");
     await fill("Finish", "Cerakote flat dark earth");
     await selectOption("Condition", "Excellent");
@@ -442,6 +443,7 @@ describe("User Story 1 - Record a Firearm", () => {
     for (const label of [
       "Barrel length (in)",
       "Overall length (in)",
+      "Weight (lb)",
       "Weight (oz)",
       "Capacity",
       "Finish",

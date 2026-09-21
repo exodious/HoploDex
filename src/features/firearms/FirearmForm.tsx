@@ -12,7 +12,13 @@ import {
   TextField,
 } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
-import { inchesToInput, ouncesToInput, parseInches, parseOunces } from "../../lib/measure";
+import {
+  inchesToInput,
+  parseInches,
+  parseWeight,
+  WEIGHT_PLACES,
+  weightToInputs,
+} from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
@@ -48,7 +54,8 @@ interface FormState {
   accessories: string;
   barrelLength: string;
   overallLength: string;
-  weight: string;
+  weightPounds: string;
+  weightOunces: string;
   capacity: string;
   finish: string;
   condition: Condition | "";
@@ -68,11 +75,16 @@ type Field = keyof FormState;
 const SERVER_FIELD: Partial<Record<Field, string>> = {
   barrelLength: "barrelLengthHundredths",
   overallLength: "overallLengthHundredths",
-  weight: "weightTenthsOz",
+  weightPounds: "weightTenthsOz",
 };
 
 /** Sent for the condition's "Not recorded" option: a Select item can't be "". */
 const NOT_RECORDED = "none";
+
+function weightFields(tenthsOz: number | null) {
+  const { pounds, ounces } = weightToInputs(tenthsOz);
+  return { weightPounds: pounds, weightOunces: ounces };
+}
 
 function toFormState(firearm?: Firearm): FormState {
   return {
@@ -87,7 +99,7 @@ function toFormState(firearm?: Firearm): FormState {
     accessories: firearm?.accessories ?? "",
     barrelLength: inchesToInput(firearm?.barrelLengthHundredths ?? null),
     overallLength: inchesToInput(firearm?.overallLengthHundredths ?? null),
-    weight: ouncesToInput(firearm?.weightTenthsOz ?? null),
+    ...weightFields(firearm?.weightTenthsOz ?? null),
     capacity: firearm?.capacity == null ? "" : String(firearm.capacity),
     finish: firearm?.finish ?? "",
     condition: firearm?.condition ?? "",
@@ -123,13 +135,14 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     const parsed = parseDollars(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
   }
-  for (const [field, parse] of [
-    ["barrelLength", parseInches],
-    ["overallLength", parseInches],
-    ["weight", parseOunces],
-  ] as const) {
-    const parsed = parse(form[field]);
+  for (const field of ["barrelLength", "overallLength"] as const) {
+    const parsed = parseInches(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
+  }
+  const weight = parseWeight(form.weightPounds, form.weightOunces);
+  if (!weight.ok) {
+    if (weight.errors.pounds) errors.weightPounds = weight.errors.pounds;
+    if (weight.errors.ounces) errors.weightOunces = weight.errors.ounces;
   }
   if (form.capacity !== "" && !(Number(form.capacity) >= 1)) {
     errors.capacity = "Capacity must be at least 1.";
@@ -187,7 +200,8 @@ const FIELD_ORDER: Field[] = [
   "serialNumber",
   "barrelLength",
   "overallLength",
-  "weight",
+  "weightPounds",
+  "weightOunces",
   "capacity",
   "estimatedValue",
   "acquisitionDate",
@@ -253,6 +267,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       return;
     }
 
+    const weight = parseWeight(form.weightPounds, form.weightOunces);
+    const weightTenths = weight.ok ? weight.value : null;
+
     const input: FirearmInput = {
       make: form.make.trim(),
       model: form.model.trim(),
@@ -265,7 +282,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       accessories: blankToNull(form.accessories),
       barrelLengthHundredths: measure(parseInches, form.barrelLength),
       overallLengthHundredths: measure(parseInches, form.overallLength),
-      weightTenthsOz: measure(parseOunces, form.weight),
+      weightTenthsOz: weightTenths,
       capacity: form.capacity === "" ? null : Number(form.capacity),
       finish: blankToNull(form.finish),
       condition: form.condition === "" ? null : form.condition,
@@ -429,16 +446,32 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 placeholder="e.g. 7.4"
               />
             </div>
-            <div data-field="weight">
-              <DecimalField
-                label="Weight (oz)"
-                places={1}
-                value={form.weight}
-                onValueChange={(text) => update("weight", text)}
-                onBlur={touch("weight")}
-                error={errorFor("weight")}
-                hint="Ounces, e.g. 40.5. Shown as pounds and ounces."
-              />
+            <div className="hd-form-pair">
+              <div data-field="weightPounds">
+                <DecimalField
+                  label="Weight (lb)"
+                  places={WEIGHT_PLACES}
+                  value={form.weightPounds}
+                  onValueChange={(text) => update("weightPounds", text)}
+                  onBlur={touch("weightPounds")}
+                  error={errorFor("weightPounds")}
+                  placeholder="e.g. 6.5"
+                />
+              </div>
+              <div data-field="weightOunces">
+                <DecimalField
+                  label="Weight (oz)"
+                  places={WEIGHT_PLACES}
+                  value={form.weightOunces}
+                  onValueChange={(text) => update("weightOunces", text)}
+                  onBlur={touch("weightOunces")}
+                  error={errorFor("weightOunces")}
+                  placeholder="e.g. 8"
+                />
+              </div>
+              <p className="hd-form-pair__hint">
+                Fill in either or both. Saved to the nearest 0.1 oz.
+              </p>
             </div>
             <div data-field="capacity">
               <TextField

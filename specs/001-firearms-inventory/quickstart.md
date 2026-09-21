@@ -94,7 +94,7 @@ Workflow gate.
     each blocked; then a disposition date before the acquisition date →
     blocked; today's date is accepted (Scenarios 13-14).
 
-15. Enter barrel length `16.25`, overall length, weight `40.5`, capacity,
+15. Enter barrel length `16.25`, overall length, weight `2` lb and `8.5` oz (or `6.5` lb alone), capacity,
     finish and condition → the record shows "16.25 in", "2 lb 8.5 oz" and the
     rest after reopening; type `16.255` in a length → rejected with a message
     and nothing rounded; leave all six blank → saves and shows none; search a

@@ -82,8 +82,9 @@ human-readable errors):
 - **Physical details (FR-039)**: all six columns are optional for every
   firearm type. The columns hold scaled integers (inches × 100, ounces × 10),
   so a measurement is never a float. The input layers (form and import) accept
-  at most two decimal places for lengths and one for weight and reject more,
-  never rounding; the command layer rejects any value `<= 0` (capacity `< 1`)
+  at most two decimal places for lengths and reject more, never rounding
+  (the form's weight takes pounds and/or ounces, up to three places each, and
+  converts to the nearest tenth of an ounce; import takes one place); the command layer rejects any value `<= 0` (capacity `< 1`)
   and any `condition` outside the list with `VALIDATION_ERROR` and a
   `fieldErrors` entry. A blank `finish` is stored as null. Dispose, reverse
   disposition and coverage changes start from the stored record, so these

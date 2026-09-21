@@ -227,7 +227,8 @@ describe("User Story 5 - Export and Import Records", () => {
     });
     await fill("Barrel length (in)", "5.25");
     await fill("Overall length (in)", "8.5");
-    await fill("Weight (oz)", "38.5");
+    await fill("Weight (lb)", "2");
+    await fill("Weight (oz)", "6.5");
     await fill("Capacity", "7");
     await fill("Finish", "Parkerized");
     await selectOption("Condition", "Like new");

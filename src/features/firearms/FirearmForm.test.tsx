@@ -201,7 +201,8 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   const group = () => screen.getByRole("group", { name: "Physical details" });
   const barrel = () => within(group()).getByLabelText("Barrel length (in)");
   const overall = () => within(group()).getByLabelText("Overall length (in)");
-  const weight = () => within(group()).getByLabelText("Weight (oz)");
+  const weightLb = () => within(group()).getByLabelText("Weight (lb)");
+  const weightOz = () => within(group()).getByLabelText("Weight (oz)");
   const capacity = () => within(group()).getByLabelText("Capacity");
   const finish = () => within(group()).getByLabelText("Finish");
 
@@ -213,7 +214,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("has a Physical details group with all six fields", () => {
     render(<FirearmForm onSubmit={vi.fn()} />);
 
-    for (const field of [barrel(), overall(), weight(), capacity(), finish()]) {
+    for (const field of [barrel(), overall(), weightLb(), weightOz(), capacity(), finish()]) {
       expect(field).toBeInTheDocument();
     }
     expect(within(group()).getByRole("combobox", { name: "Condition" })).toBeInTheDocument();
@@ -263,7 +264,8 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
     await fillRequired(user);
     await user.type(barrel(), "16.25");
     await user.type(overall(), "18");
-    await user.type(weight(), "40.5");
+    await user.type(weightLb(), "2");
+    await user.type(weightOz(), "8.5");
     await user.type(capacity(), "15");
     await user.type(finish(), "  Cerakote  ");
     await pickCondition(user, "Like new");
@@ -277,6 +279,41 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
       finish: "Cerakote",
       condition: "like_new",
     });
+  });
+
+  it("converts pounds alone, ounces alone, or both to tenths of an ounce", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(weightLb(), "6.5");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[0][0].weightTenthsOz).toBe(1040);
+
+    await user.clear(weightLb());
+    await user.type(weightOz(), "40.5");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[1][0].weightTenthsOz).toBe(405);
+
+    await user.type(weightLb(), "2");
+    await user.clear(weightOz());
+    await user.type(weightOz(), "8.5");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[2][0].weightTenthsOz).toBe(405);
+  });
+
+  it("blocks a zero weight with a message on the box", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(weightLb(), "0");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(screen.getByText("Must be greater than 0.")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("submits null for Not recorded after a grade was chosen", async () => {
@@ -315,7 +352,8 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
 
     expect(barrel()).toHaveValue("16.25");
     expect(overall()).toHaveValue("18");
-    expect(weight()).toHaveValue("40.5");
+    expect(weightLb()).toHaveValue("2");
+    expect(weightOz()).toHaveValue("8.5");
     expect(capacity()).toHaveValue("6");
     expect(finish()).toHaveValue("Blued");
     expect(within(group()).getByRole("combobox", { name: "Condition" })).toHaveTextContent(
@@ -339,11 +377,11 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
 
     await fillRequired(user);
     await user.type(barrel(), "16.255");
-    await user.type(weight(), "40.55");
+    await user.type(weightLb(), "6.6251");
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
 
     expect(screen.getByText("Use at most 2 decimal places.")).toBeInTheDocument();
-    expect(screen.getByText("Use at most 1 decimal place.")).toBeInTheDocument();
+    expect(screen.getByText("Use at most 3 decimal places.")).toBeInTheDocument();
     expect(barrel()).toHaveValue("16.255");
     expect(onSubmit).not.toHaveBeenCalled();
   });
