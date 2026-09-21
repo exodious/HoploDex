@@ -36,7 +36,13 @@ type CommandError = {
 ### `create_firearm`
 
 - **Input**: `FirearmInput` — all `Firearm` fields from data-model.md
-  except `id`, `created_at`, `updated_at`, `thumbnail_photo_id`.
+  except `id`, `created_at`, `updated_at`, `thumbnail_photo_id`. This includes
+  the FR-039 physical details, which cross the boundary as the stored scaled
+  integers `barrelLengthHundredths`, `overallLengthHundredths` (inches × 100),
+  `weightTenthsOz` (ounces × 10), `capacity`, `finish` and `condition`
+  (`"new_in_box" | "like_new" | "excellent" | "good" | "fair" | "poor"`), all
+  nullable; the frontend converts to and from decimals for display.
+  `FirearmSummary` (list results) does not carry them.
 - **Output**: `Firearm` (full record as persisted).
 - **Errors**: `VALIDATION_ERROR` (e.g. missing serial number without
   attestation, or a serial number together with the attestation —
@@ -44,7 +50,9 @@ type CommandError = {
   duplicate nickname among active firearms — FR-031; duplicate
   make/model/serial among active firearms — FR-032; the message names
   the conflicting record; acquisition or disposition date in the future, or
-  disposition before acquisition — FR-003/FR-004).
+  disposition before acquisition — FR-003/FR-004; a physical detail out of
+  range — a length or weight `<= 0`, a capacity `< 1`, or an unknown
+  `condition` — FR-039, with a `fieldErrors` entry naming the field).
 
 ### `update_firearm`
 
@@ -143,7 +151,7 @@ type CommandError = {
 
 ### `create_insurance_policy` / `update_insurance_policy`
 
-- **Input**: `InsurancePolicyInput` (all InsurancePolicy fields except id).
+- **Input**: `InsurancePolicyInput` (all InsurancePolicy fields except id, including the optional `notes`; a blank value is stored as null, FR-027).
 - **Output**: `InsurancePolicy`.
 - **Errors**: `VALIDATION_ERROR` (e.g. end date before start date; blanket
   policy dates overlapping another blanket policy by more than a shared

@@ -383,3 +383,86 @@ With multiple developers:
 - [X] T140 Add that disclosure (destination folder plus an "unencrypted, outside HoploDex" notice) to `src/features/import-export/ExportDialog.tsx` using the existing shared dialog components, per Constitution V (missing) (depends on T139)
 - [X] T141 [P] Write a failing check (script or `cargo test`) that `src-tauri/tauri.conf.json` sets a restrictive CSP (`default-src 'self'`, no remote `connect-src`) and that no network-capable Tauri plugin or capability is enabled, per FR-021 / SC-008 (missing)
 - [X] T142 Replace `"csp": null` in `src-tauri/tauri.conf.json` with a strict CSP, allowing only the local image sources the app needs (`data:`, `blob:`, the asset protocol), and confirm thumbnails and photos still render, per FR-021 / SC-008 (missing) (depends on T141)
+
+## Phase 11: Insurance Policy Notes (US3, spec_TODO A9)
+
+**Purpose**: An optional free-form `notes` field on insurance policies (FR-027, US3/AC16). A small additive column with no new user story. Write the failing tests first (Constitution II). The app is unreleased, so the schema is edited in place and an existing dev database must be recreated, as with the Phase 9 changes.
+
+**Goal**: A collector records free-form notes on an insurance policy, sees them on the policy after reopening, and can clear them.
+
+**Independent Test**: Create a policy with notes, reopen it and see them, edit them, clear them and see none — independent of firearms, photos, or export.
+
+- [ ] T143 [P] [US3] Write failing tests that `create_insurance_policy` and `update_insurance_policy` store `notes`, return it from both and from `list_insurance_policies`, store a blank or whitespace-only value as null, and clear it when updated with null, in `src-tauri/tests/insurance_policy_test.rs` per FR-027 / US3/AC16 (missing)
+- [ ] T144 [US3] Add `notes TEXT` (nullable, no length cap, no FTS5 indexing) to `insurance_policies` after `agent_contact` in `src-tauri/src/db/migrations/0001_initial.sql` per FR-027 / data-model.md (missing) (depends on T143)
+- [ ] T145 [US3] Add `notes: Option<String>` to `InsurancePolicy` and `InsurancePolicyInput` (blank or whitespace-only stored as null, otherwise trimmed) in `src-tauri/src/models/insurance_policy.rs`, include it in the INSERT and UPDATE statements in `src-tauri/src/commands/insurance.rs`, and add `notes: None` to the `InsurancePolicyInput` literals in `src-tauri/tests/support/mod.rs` and `src-tauri/tests/list_firearms_test.rs`, per FR-027 (missing) (depends on T144)
+- [ ] T146 [P] [US3] Write failing Vitest tests that `InsurancePolicyForm` shows a "Notes" text area prefilled from the policy and submits a blank value as `null`, and that `PolicyCard` shows the notes (line breaks kept) when present and no notes row when absent, in `src/features/insurance/InsurancePolicyForm.test.tsx` and `src/features/insurance/PolicyCard.test.tsx` per FR-027 / US3/AC16 (missing)
+- [ ] T147 [US3] Add `notes: string | null` to `src/features/insurance/types.ts`, a "Notes" `TextArea` (blank sent as `null` via the existing `blankToNull`) to `src/features/insurance/InsurancePolicyForm.tsx`, and a notes row to `src/features/insurance/PolicyCard.tsx` shown only when set, with `white-space: pre-wrap` in `src/features/insurance/insurance.css`, per FR-027 (missing) (depends on T145, T146)
+- [ ] T148 [US3] Extend `e2e/specs/us3-value-insurance.e2e.ts` to enter notes on a policy, reopen it and see them, then clear them and see none (US3/AC16) (depends on T147)
+
+---
+
+## Phase 12: Firearm Physical Details (US1, spec_TODO A10)
+
+**Purpose**: Six optional physical-detail fields on every firearm: barrel length, overall length, weight, capacity, finish/color, condition (FR-039, US1/AC17). Plain optional fields: nothing acts on them (no legal-threshold checks, range search or grouping, which belong to a later regulated-item-types spec). Lengths and weight are stored as scaled integers (inches × 100, ounces × 10) so no float error creeps in, in line with FR-037, and cross the IPC boundary as those integers. Write the failing tests first (Constitution II). Same in-place schema edit as Phase 11, so an existing dev database must be recreated.
+
+**Goal**: A collector records physical details on a firearm, sees them on its record, finds a firearm by a word in its finish, and round-trips them through export and import.
+
+**Independent Test**: Enter all six details on a firearm, save, reopen and see them; enter an over-precise length and see it rejected; leave all six blank and see the record save normally; search a word from the finish; export and re-import — independent of insurance, photos, or browsing.
+
+**Ordering note**: T150 edits `0001_initial.sql` like T144, so sequence those two by hand. Both T145 and T151 may touch `src-tauri/tests/support/mod.rs`. Otherwise Phases 11 and 12 are independent.
+
+### Backend
+
+- [ ] T149 [P] [US1] Write failing tests in a new `src-tauri/tests/physical_details_test.rs`, and in `src-tauri/tests/fts_search_test.rs` for the search case: (a) all six round-trip through `create_firearm`, `update_firearm` and `get_firearm`; (b) all six null is accepted for every firearm type; (c) `barrelLengthHundredths`, `overallLengthHundredths` and `weightTenthsOz` of 0 or negative, and `capacity` below 1, are rejected with `VALIDATION_ERROR` and a `fieldErrors` entry naming the field; (d) a `condition` outside `new_in_box|like_new|excellent|good|fair|poor` is rejected; (e) a blank or whitespace-only `finish` is stored as null; (f) the values survive `dispose_firearm`, `reverse_disposition` and `assign_firearm_coverage`; (g) a word in `finish` is found by `list_firearms` search, including after the finish is edited and after the firearm is deleted (no hit), per FR-039 / US1/AC17 (missing)
+- [ ] T150 [US1] Add to `firearms` in `src-tauri/src/db/migrations/0001_initial.sql`: `barrel_length_hundredths INTEGER CHECK (barrel_length_hundredths IS NULL OR barrel_length_hundredths > 0)`, `overall_length_hundredths INTEGER CHECK (overall_length_hundredths IS NULL OR overall_length_hundredths > 0)`, `weight_tenths_oz INTEGER CHECK (weight_tenths_oz IS NULL OR weight_tenths_oz > 0)`, `capacity INTEGER CHECK (capacity IS NULL OR capacity >= 1)`, `finish TEXT`, and `condition TEXT CHECK (condition IS NULL OR condition IN ('new_in_box','like_new','excellent','good','fair','poor'))`; and add `finish` to the `firearms_fts` columns and to all three sync triggers (insert, delete, update) in `src-tauri/src/db/migrations/0002_fts5.sql`; per FR-039 / data-model.md (missing) (depends on T149)
+- [ ] T151 [US1] Add a `Condition` `text_enum!` (`NewInBox => "new_in_box"`, `LikeNew => "like_new"`, `Excellent`, `Good`, `Fair`, `Poor`) and the six fields (`barrel_length_hundredths`, `overall_length_hundredths`, `weight_tenths_oz`, `capacity` as `Option<i64>`, `finish: Option<String>`, `condition: Option<Condition>`) to `Firearm`, `FirearmInput`, `Firearm::from_row` and `From<&Firearm> for FirearmInput` in `src-tauri/src/models/firearm.rs`; trim a blank `finish` to `None` in `FirearmInput::normalized`; validate "a length or weight must be greater than 0, capacity at least 1" with `fieldErrors` keys `barrelLengthHundredths`, `overallLengthHundredths`, `weightTenthsOz`, `capacity` in the model's validation; include the columns in the INSERT and UPDATE statements in `src-tauri/src/commands/firearms.rs`; and add the new fields (as `None`) to every `FirearmInput { .. }` literal under `src-tauri/tests/` (find them with `grep -rn 'FirearmInput {' src-tauri/tests`), per FR-039 (missing) (depends on T150)
+
+### Export and import
+
+- [ ] T152 [P] [US1] Write failing tests in `src-tauri/tests/export_test.rs` and `src-tauri/tests/import_export_test.rs`: export writes `barrel_length_in`, `overall_length_in`, `weight_oz`, `capacity`, `finish`, `condition` as plain numbers with no trailing zeros (`16.25`, `18`, `40.5`) and the condition's display name (`Like new`) between `scheduled_coverage_amount` and `photo_filenames`; import accepts blanks, `16.25`, a zero fraction beyond the precision (`16.250`), a numeric cell, and `condition` in any letter case or as `new_in_box`; import gives a row error naming the column for `16.255`, `0`, `-1`, `abc`, a `weight_oz` of `40.55`, a `capacity` of `0` or `12.5`, and an unknown `condition`; an export re-imports with all six intact; an overwrite via `resolve_import_conflicts` updates them; per FR-039 / contracts/spreadsheet-format.md (missing)
+- [ ] T153 [US1] Append the six columns to `COLUMNS`, `FirearmExportRow` (and its `as_fields` array, now 27 long), `RawImportRow` and `row_from_cells` in `src-tauri/src/services/spreadsheet.rs` at positions 20–25 with `photo_filenames` moving to 26 (export-only, still ignored on import, so no existing import index shifts); add a `parse_scaled_decimal(column, value, places)` helper beside `parse_whole_dollars` (digits with at most `places` decimal places, a zero fraction beyond that accepted, non-numeric, negative, zero or over-precise values an `Err` naming the column, never rounded); and wire export mapping and `parse_row` in `src-tauri/src/commands/import_export.rs` (case-insensitive `condition` match on the display name or the `new_in_box` form, capacity via a whole-number parse `>= 1`), per FR-039 / contracts/spreadsheet-format.md (missing) (depends on T151, T152)
+
+### Frontend
+
+- [ ] T154 [P] [US1] Write failing Vitest tests: in a new `src/lib/measure.test.ts`, `parseInches("16.25")` is 1625, `"16.255"` is an error and is not rounded, `"0"`, `"-1"` and `"abc"` are errors, blank is `null`, `formatInches(1625)` is "16.25" and `formatInches(1800)` is "18"; `parseOunces("40.5")` is 405, `"40.55"` is an error; `formatWeight(405)` is "2 lb 8.5 oz", `formatWeight(160)` is "1 lb", `formatWeight(80)` is "8 oz"; and in a new `src/components/DecimalField.test.tsx`, typing accepts digits and a single `.`, ignores letters and a second `.`, shows a field-level message for a value with too many decimal places and never rounds it, and drops a pasted "$", commas and spaces, per FR-039 (missing)
+- [ ] T155 [US1] Implement `src/lib/measure.ts` (`parseInches`, `formatInches`, `parseOunces`, `formatWeight`) and a `DecimalField` (props: `places`, `label`, `error`, modelled on `MoneyField`) in `src/components/DecimalField.tsx`, exported from `src/components/index.ts`, per FR-039 / Constitution III (missing) (depends on T154)
+- [ ] T156 [P] [US1] Write failing Vitest tests: in `src/features/firearms/FirearmForm.test.tsx`, a "Physical details" group renders barrel length, overall length, weight (oz), capacity (digits only), finish and a condition `Select` offering "Not recorded" plus the six grades in order, prefills from the record, submits blanks as `null` and entered values as the scaled integers, and blocks the save with a field-level message for `16.255`, a zero length and a capacity of `0`; and in `src/features/firearms/FirearmRecordPage.test.tsx`, recorded values show as "16.25 in", "2 lb 8.5 oz", "15 rounds", finish text and "Excellent", and the panel is omitted when none are recorded, per FR-039 / US1/AC17 (missing)
+- [ ] T157 [US1] Add the six fields to `src/features/firearms/types.ts`; add a "Physical details" fieldset (two `DecimalField`s with `places={2}` for lengths, one with `places={1}` for weight in ounces, a digits-only capacity `TextField`, a finish `TextField`, and a condition `Select` with a "Not recorded" option) to `src/features/firearms/FirearmForm.tsx`, converting with `src/lib/measure.ts` and sending `null` for blanks; add a "Physical details" panel showing only recorded values to `src/features/firearms/FirearmRecordPage.tsx`; and add styles in `src/features/firearms/forms.css` and `record.css`, per FR-039 / Constitution III (missing) (depends on T151, T155, T156)
+
+### End-to-end
+
+- [ ] T158 [US1] Extend `e2e/specs/us1-record-firearm.e2e.ts` to enter all six physical details, save, reopen and see "16.25 in" and "2 lb 8.5 oz"; enter `16.255` and see the field-level rejection with nothing saved; clear all six and see the panel disappear (US1/AC17) (depends on T157)
+- [ ] T159 [P] [US1] Extend `e2e/specs/us2-browse-search.e2e.ts` to find a firearm by a word in its finish, and `e2e/specs/us5-export-import.e2e.ts` to export a firearm with physical details, re-import the file and see all six values intact (US1/AC17, FR-039) (depends on T153, T157)
+
+---
+
+## Phase 13: Polish for Phases 11–12
+
+**Purpose**: Re-validation after the schema and contract changes above.
+
+- [ ] T160 [P] Re-validate the 500 ms `list_firearms` budget at the 10,000-record fixture now that `finish` is in the FTS5 index (and the fixture rows carry the new columns), in `src-tauri/tests/performance_test.rs` per Constitution IV (partial) (depends on T151)
+- [ ] T161 Run `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `eslint`, `prettier --check` and `vitest`; then run the new quickstart.md steps (US1 step 15, US3 step 13) and the E2E specs one at a time with scratch XDG dirs (never the real database or keyring), recreating the dev database first because the schema was edited in place (depends on T148, T158, T159, T160)
+
+---
+
+## Phase 11–13 Dependencies & Execution Order
+
+- **Phase 11 (policy notes) and Phase 12 (physical details)** depend only on the completed Phases 1–10 and on nothing in each other, except the two shared files noted under Phase 12 (`0001_initial.sql` and possibly `tests/support/mod.rs`). They can be built in either order or in parallel.
+- **Within each phase**: failing tests → schema → model and commands → frontend → E2E. Phase 12's export/import work (T152–T153) needs T151, and its frontend work (T154–T157) needs only the contract (T154–T156 can be written before any backend exists; T157 needs T151).
+- **Phase 13** runs last.
+
+### Parallel Example: Phase 12
+
+```bash
+# Failing tests, all different files:
+Task: "Write failing backend tests in src-tauri/tests/physical_details_test.rs and fts_search_test.rs"   # T149
+Task: "Write failing export/import tests in export_test.rs and import_export_test.rs"                    # T152
+Task: "Write failing helper tests in src/lib/measure.test.ts and src/components/DecimalField.test.tsx"   # T154
+Task: "Write failing form/record tests in FirearmForm.test.tsx and FirearmRecordPage.test.tsx"           # T156
+```
+
+### Implementation Strategy
+
+1. **A9 first** (T143–T148): six tasks, one column, the smallest shippable increment.
+2. **A10 backend** (T149–T153): storage, validation, search and export/import, all testable without any UI.
+3. **A10 frontend and E2E** (T154–T159), then **Polish** (T160–T161).

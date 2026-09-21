@@ -34,6 +34,12 @@ sibling photos folder.
 | `disposition_price` | no | `Firearm.disposition_price` | whole dollars |
 | `insurance_policy_name` | no | `InsurancePolicy.name` (by lookup) | schedules the firearm under that policy; blank ⇒ unscheduled (covered by the blanket policy in force); unknown name on import → row error |
 | `scheduled_coverage_amount` | required if `insurance_policy_name` set; must be blank otherwise | `Firearm.scheduled_coverage_amount` | whole dollars |
+| `barrel_length_in` | no | `Firearm.barrel_length_hundredths` | decimal inches, up to two decimal places, `> 0` (FR-039), e.g. `16.25`; see Physical details below |
+| `overall_length_in` | no | `Firearm.overall_length_hundredths` | as `barrel_length_in` |
+| `weight_oz` | no | `Firearm.weight_tenths_oz` | decimal ounces, up to one decimal place, `> 0`, e.g. `40.5` |
+| `capacity` | no | `Firearm.capacity` | whole number `>= 1` |
+| `finish` | no | `Firearm.finish` | free text |
+| `condition` | no | `Firearm.condition` | one of `New in box`, `Like new`, `Excellent`, `Good`, `Fair`, `Poor`; matched case-insensitively, and `new_in_box` style values are accepted; unknown value → row error (as `firearm_type`) |
 | `photo_filenames` | no (export only; ignored on import per FR-019) | — | semicolon-delimited filenames in the sibling photos folder |
 
 ## Amounts (FR-037)
@@ -46,6 +52,17 @@ fraction (`450.00`), and drops a leading `$`, thousands commas, and
 surrounding whitespace; a value with non-zero cents (`450.50`), a negative
 value, or any other text is a row error naming the column (FR-020). Values
 are never rounded.
+
+## Physical details (FR-039)
+
+The six physical-detail columns follow the same rules as Amounts: blank is
+allowed; export writes plain numbers with no unit text and no trailing zeros
+(`16.25`, `18`, `40.5`); import accepts a number with at most the allowed
+decimal places (a zero fraction beyond that, e.g. `16.250`, is accepted) and a
+numeric cell; a value with more places (`16.255`), a value `<= 0`, a
+non-numeric value, a fractional or `< 1` capacity, or an unknown `condition`
+is a row error naming the column (FR-020). Values are never rounded. The
+columns sit after `scheduled_coverage_amount` and before `photo_filenames`.
 
 ## Export behavior
 

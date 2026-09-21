@@ -89,7 +89,7 @@ documents of typical consumer sizes (a few MB each).
 
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
-| I. Code Quality | Linting/static analysis, peer review, small single-purpose modules, no speculative abstraction | `clippy` + `rustfmt` for Rust, `eslint`/`prettier` for TS wired into CI; Rust backend split into focused modules (`db`, `models`, `commands`, `services::{valuation, insurance, import_export}`) with no premature abstraction beyond what FR-001–FR-038 require |
+| I. Code Quality | Linting/static analysis, peer review, small single-purpose modules, no speculative abstraction | `clippy` + `rustfmt` for Rust, `eslint`/`prettier` for TS wired into CI; Rust backend split into focused modules (`db`, `models`, `commands`, `services::{valuation, insurance, import_export}`) with no premature abstraction beyond what FR-001–FR-039 require |
 | II. Testing (NON-NEGOTIABLE) | Tests before done, red-green, real persistence (no mocks), regression tests for bugs | `cargo test` integration tests run against a real temp SQLCipher DB (via `rusqlite`'s in-memory-file or tempdir DB, never a mock connection); one test per acceptance scenario in spec.md; Vitest for pure frontend logic; WebdriverIO/`tauri-driver` E2E for full user-story flows |
 | III. UX Consistency | Single shared component library, consistent confirmation pattern, WCAG 2.1 AA | Single Radix-based component library (shadcn/ui) is the only source of buttons/dialogs/forms/tables; one shared `<ConfirmDialog>` component used for every destructive action (delete firearm, delete policy, bulk import overwrite); components chosen/audited for WCAG 2.1 AA |
 | IV. Performance | 100ms feedback / 1s completion for interactive ops, 500ms search, no UI-thread blocking, progress indication for bulk ops | All DB access happens in Rust via async Tauri commands off the UI thread; FTS5 index keeps search sub-500ms at 10k-row scale; import/export run as async commands emitting `tauri::Emitter` progress events consumed by a shared progress-bar component |
@@ -193,7 +193,7 @@ documented as such in `contracts/`.
 
 - **Code Quality**: schema and command surface stay in the small,
   single-purpose modules laid out in Project Structure; no new
-  abstraction was introduced beyond what FR-001–FR-038 require. Still PASS.
+  abstraction was introduced beyond what FR-001–FR-039 require. Still PASS.
 - **Testing**: data-model.md's validation rules and contracts/'s command
   error cases give concrete, real-persistence test targets for
   `cargo test` (one per acceptance scenario, per quickstart.md); nothing

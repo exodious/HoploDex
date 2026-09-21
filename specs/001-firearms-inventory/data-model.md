@@ -1,7 +1,7 @@
 # Phase 1 Data Model: Firearms Collection Inventory
 
 Derived from the Key Entities section of [spec.md](./spec.md) and the
-functional requirements (FR-001–FR-036). All tables live in the single
+functional requirements (FR-001–FR-039). All tables live in the single
 encrypted SQLCipher database described in [research.md](./research.md).
 Every table below is a real SQL table (or virtual table for FTS5) — none of
 this is mocked for testing; `cargo test` integration tests run against a
@@ -38,6 +38,12 @@ Primary record; corresponds directly to the spec's **Firearm** entity.
 | `caliber` | TEXT, not null | structured field |
 | `firearm_type_id` | INTEGER FK → FirearmType, not null | structured field |
 | `notes` | TEXT, nullable | free-form (FR-002), indexed by FTS5 |
+| `barrel_length_hundredths` | INTEGER, nullable | FR-039: barrel length in inches × 100 (`1625` = 16.25 in), `CHECK (barrel_length_hundredths IS NULL OR barrel_length_hundredths > 0)`; integer so no float error, in line with amounts (FR-037) |
+| `overall_length_hundredths` | INTEGER, nullable | FR-039: overall length in inches × 100, `CHECK (overall_length_hundredths IS NULL OR overall_length_hundredths > 0)` |
+| `weight_tenths_oz` | INTEGER, nullable | FR-039: unloaded weight in ounces × 10 (`405` = 40.5 oz, shown "2 lb 8.5 oz"), `CHECK (weight_tenths_oz IS NULL OR weight_tenths_oz > 0)` |
+| `capacity` | INTEGER, nullable | FR-039: rounds of the magazine or cylinder, `CHECK (capacity IS NULL OR capacity >= 1)` |
+| `finish` | TEXT, nullable | FR-039: free-form finish/color; blank stored as null; indexed by FTS5 |
+| `condition` | TEXT, nullable | FR-039: closed list `new_in_box`, `like_new`, `excellent`, `good`, `fair`, `poor` (displayed "New in box", "Like new", …), enforced by a `CHECK` on those values; distinct from the free-form `notes`; not indexed by FTS5 and not a grouping field |
 | `accessories` | TEXT, nullable | free-form list (FR-002), stored as delimited text or JSON array, indexed by FTS5 |
 | `status` | TEXT, not null, default 'active' | enum: `active`, `disposed` (FR-023, FR-025) |
 | `estimated_value` | INTEGER (whole dollars, ≥ 0), nullable | FR-005; null/0 treated as "no value set" for warning purposes (Edge Cases) |
@@ -73,6 +79,15 @@ human-readable errors):
   Input parsing accepts digits only (a pasted "$", commas, or spaces are
   dropped; a fractional part is rejected, not rounded, and on import a zero
   fraction such as "450.00" is accepted).
+- **Physical details (FR-039)**: all six columns are optional for every
+  firearm type. The columns hold scaled integers (inches × 100, ounces × 10),
+  so a measurement is never a float. The input layers (form and import) accept
+  at most two decimal places for lengths and one for weight and reject more,
+  never rounding; the command layer rejects any value `<= 0` (capacity `< 1`)
+  and any `condition` outside the list with `VALIDATION_ERROR` and a
+  `fieldErrors` entry. A blank `finish` is stored as null. Dispose, reverse
+  disposition and coverage changes start from the stored record, so these
+  columns carry through unchanged.
 - **Dates (FR-003, FR-004)**: `acquisition_date` and `disposition_date`,
   when set, must not be later than the user's current local date (today is
   allowed); `disposition_date` must not be earlier than `acquisition_date`
@@ -170,6 +185,7 @@ Acceptance Scenario 1–2).
 | `company_contact` | TEXT, nullable | phone/email/address, free text |
 | `agent_name` | TEXT, nullable | |
 | `agent_contact` | TEXT, nullable | |
+| `notes` | TEXT, nullable | FR-027: optional free-form notes; blank input stored as null (as `company_contact`); no length cap; not indexed by FTS5 (search covers firearms only, FR-013) and not exported |
 | `blanket_coverage_limit` | INTEGER (whole dollars, ≥ 0), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy |
 | `effective_start_date` | TEXT (ISO 8601 date), not null | |
 | `effective_end_date` | TEXT (ISO 8601 date), not null | drives 30-day and expired warnings (FR-028) |
@@ -234,7 +250,7 @@ replacing one never touches firearm rows.
 
 External-content FTS5 table over `Firearm`, kept in sync via `AFTER INSERT
 / UPDATE / DELETE` triggers, indexing: `make`, `model`, `nickname`, `serial_number`,
-`caliber`, `notes`, `accessories`, and the joined `FirearmType.name`.
+`caliber`, `notes`, `accessories`, `finish` (FR-039), and the joined `FirearmType.name`.
 Satisfies FR-013 (search across all recorded information including
 free-form notes) and US2 Acceptance Scenarios 3–4.
 

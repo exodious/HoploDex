@@ -94,6 +94,12 @@ Workflow gate.
     each blocked; then a disposition date before the acquisition date →
     blocked; today's date is accepted (Scenarios 13-14).
 
+15. Enter barrel length `16.25`, overall length, weight `40.5`, capacity,
+    finish and condition → the record shows "16.25 in", "2 lb 8.5 oz" and the
+    rest after reopening; type `16.255` in a length → rejected with a message
+    and nothing rounded; leave all six blank → saves and shows none; search a
+    word from the finish → the firearm is found (Scenario 17).
+
 ### US2 — Browse, Search, and Group (P2)
 
 1. Populate 5+ firearms spanning multiple types/calibers/makes, one with a
@@ -143,6 +149,9 @@ Workflow gate.
     first ends → accepted (Scenario 12).
 12. Delete the blanket policy currently in force → warned how many
     unscheduled firearms lose their coverage (Scenario 15).
+
+13. Enter notes on a policy and save → shown on the policy after reopening;
+    clear them → none shown (Scenario 16).
 
 ### US4 — Attach Photos and Documents (P4)
 
