@@ -60,6 +60,16 @@ Every original item is kept verbatim (a few are split at a sentence boundary, ma
   - **Not modeled (possible later refinement):** real blanket policies often have a per-item cap as well as an aggregate limit; 001 models only the aggregate.
   - **Implementation impact:** the implemented blanket-assignment UI and its tasks (T044-T055, `CoverageAssignment`, `ValueSummaryPanel`) and the `coverage_kind` column need rework; `/speckit-converge` should pick that up. No data migration (app unreleased).
 
+### A7. "Add" links on firearm view don't scroll to section (amends US1 "Add notes/accessories", UI flow)
+
+- [bug] The "add" links from the firearm detail page for adding notes and accessories open the firearm edit screen but do not scroll to or highlight the corresponding section (Notes or Accessories), leaving the user confused about where to enter the new item.
+  - **UNRESOLVED.** The edit page should either (a) automatically scroll to the target section when opened from an "add" link (pass target as a URL param or state), or (b) provide visual feedback (highlight, focus) to guide the user. Applies to at least: add note, add accessory. May also apply to add insurance assignment if that has an "add" link. Data model has no changes; UI refinement to `FirearmEdit` and/or the navigation logic. Constitution III (UI clarity).
+
+### A8. Dollar value input inconsistency (amends FR-013, FR-014, FR-027, FR-028, data-model columns for prices/amounts, contracts for value inputs)
+
+- [bug] Insurance policy amounts and individual firearm prices currently show or accept decimal precision (cents), but in practice only whole dollar amounts matter. Additionally, thousands separators (commas) in display should be formatted automatically, not user-entered or interactable.
+  - **UNRESOLVED.** (1) All dollar amount fields (insurance scheduled amounts, blanket limits, firearm acquisition price, firearm disposition price, estimated value) should accept and store whole dollars only; reject or strip any decimal input. (2) Display formatting should show commas as thousands separators automatically (e.g., "1000" displays as "1,000", "100" displays as "100"), but commas must not be user-enterable, storable, or selectable—purely display-side formatting. Input accepts digits only. Update data-model to document precision (whole dollars); update input contracts and UI components to enforce whole-dollar parsing, display-only comma formatting, and validation across all price/amount fields. Affects FR-013 (valuation), FR-014/015/027/028 (insurance amounts), and data-model price columns. Constitution III (UX consistency).
+
 ---
 
 ## Track B — New specs (proposed)
@@ -193,6 +203,11 @@ Supersedes: research §5 (random key generated at first run and held in the OS k
 
 - [feature] need a program icon
   - Asset + `tauri.conf.json` bundle icons (`cargo tauri icon`). No spec impact.
+
+### C5. Startup splash animation
+
+- [polish] The fresh-database animation shown on first run is visually polished but only displays once. Consider whether it belongs in a startup splash screen that appears on each app launch, rather than only on initial database creation.
+  - UX polish, not a requirement. Evaluate after 1.0 release based on whether a splash screen on startup is desired and whether the animation fits the branding intent.
 
 ---
 
