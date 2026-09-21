@@ -96,8 +96,7 @@ Workflow gate.
 
 15. Enter barrel length `16.25`, overall length, weight `2` lb and `8.5` oz (or `6.5` lb alone), capacity,
     finish and condition → the record shows "16.25 in", "2 lb 8.5 oz" and the
-    rest after reopening; type `16.255` in a length → rejected with a message
-    and nothing rounded; leave all six blank → saves and shows none; search a
+    rest after reopening; type `16.255` in a length → saved as 16.26 in; leave all six blank → saves and shows none; search a
     word from the finish → the firearm is found (Scenario 17).
 
 ### US2 — Browse, Search, and Group (P2)

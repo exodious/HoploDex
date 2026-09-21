@@ -26,10 +26,16 @@ describe("parseInches (FR-039)", () => {
     expect(parseInches("16.250")).toEqual({ ok: true, value: 1625 });
   });
 
-  it("refuses more than two decimal places instead of rounding", () => {
-    const result = parseInches("16.255");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/2 decimal places/);
+  it("rounds extra precision half up to the nearest hundredth", () => {
+    expect(parseInches("16.255")).toEqual({ ok: true, value: 1626 });
+    expect(parseInches("16.254")).toEqual({ ok: true, value: 1625 });
+    expect(parseInches("16.2549999")).toEqual({ ok: true, value: 1625 });
+    expect(parseInches("0.005")).toEqual({ ok: true, value: 1 });
+    expect(parseInches("9.999")).toEqual({ ok: true, value: 1000 });
+  });
+
+  it("refuses a value too small to round up to one hundredth", () => {
+    expect(parseInches("0.004")).toEqual({ ok: false, error: "Must be greater than 0." });
   });
 
   it("refuses zero, negative and non-numeric values", () => {
@@ -89,10 +95,11 @@ describe("parseWeight (FR-039)", () => {
     }
   });
 
-  it("refuses more than three decimal places in a box", () => {
-    const result = parseWeight("6.6251", "");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.pounds).toMatch(/3 decimal places/);
+  it("rounds the exact total half up, however many places are typed", () => {
+    expect(parseWeight("", "40.549999")).toEqual({ ok: true, value: 405 });
+    expect(parseWeight("", "40.55")).toEqual({ ok: true, value: 406 });
+    expect(parseWeight("6.6251", "")).toEqual({ ok: true, value: 1060 });
+    expect(parseWeight("2.53", "0.02")).toEqual({ ok: true, value: 405 }); // 40.50 oz
   });
 });
 

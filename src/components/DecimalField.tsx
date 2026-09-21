@@ -1,4 +1,3 @@
-import { hasTooManyPlaces, tooManyPlacesMessage } from "../lib/measure";
 import { TextField } from "./TextField";
 import type { TextFieldProps } from "./TextField";
 
@@ -6,11 +5,9 @@ export interface DecimalFieldProps extends Omit<
   TextFieldProps,
   "value" | "onChange" | "prefix" | "inputMode"
 > {
-  /** The text being edited; parse it with `parseInches`/`parseOunces` on submit. */
+  /** The text being edited; parse it with `parseInches`/`parseWeight` on submit. */
   value: string;
   onValueChange: (text: string) => void;
-  /** How many decimal places the value may have. */
-  places: number;
 }
 
 /** What the field keeps of typed or pasted text: a "$", commas and spaces
@@ -24,14 +21,13 @@ function sanitize(text: string): string {
 }
 
 /** Decimal input for a measurement (FR-039), modelled on `MoneyField`:
- * digits and one decimal point only. A value with more decimal places than
- * `places` gets a field-level message and is left as typed, never rounded. */
-export function DecimalField({ value, onValueChange, places, error, ...props }: DecimalFieldProps) {
-  const placesError = hasTooManyPlaces(value, places) ? tooManyPlacesMessage(places) : undefined;
+ * digits and one decimal point only. Extra decimal places are kept as typed;
+ * the parser rounds to the stored unit on submit. */
+export function DecimalField({ value, onValueChange, error, ...props }: DecimalFieldProps) {
   return (
     <TextField
       {...props}
-      error={error ?? placesError}
+      error={error}
       inputMode="decimal"
       autoComplete="off"
       value={value}

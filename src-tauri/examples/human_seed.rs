@@ -955,14 +955,14 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("firearm_type", "Handgun"),
             ]),
             row(&[
-                ("make", "Too"),
-                ("model", "Precise"),
+                ("make", "Text"),
+                ("model", "Not A Number"),
                 ("serial_number", "E-008"),
                 ("no_serial_attested", "FALSE"),
                 ("caliber", "9mm"),
                 ("firearm_type", "Handgun"),
-                ("barrel_length_in", "16.255"),
-                ("weight_oz", "40.55"),
+                ("barrel_length_in", "sixteen"),
+                ("weight_oz", "heavy"),
             ]),
             row(&[
                 ("make", "Empty"),

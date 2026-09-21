@@ -530,6 +530,20 @@ fn import_accepts_a_zero_fraction_beyond_the_precision() {
 }
 
 #[test]
+fn import_rounds_extra_precision_to_the_nearest_storable_unit() {
+    for (barrel, weight, hundredths, tenths) in [
+        ("16.255", "40.55", 1626, 406),
+        ("16.254", "40.54", 1625, 405),
+        ("18.005", "0.05", 1801, 1),
+        ("16.2549999", "40.5999", 1625, 406),
+    ] {
+        let firearm = imported_detail(&[("barrel_length_in", barrel), ("weight_oz", weight)]);
+        assert_eq!(firearm.barrel_length_hundredths, Some(hundredths), "{barrel}");
+        assert_eq!(firearm.weight_tenths_oz, Some(tenths), "{weight}");
+    }
+}
+
+#[test]
 fn import_reads_a_condition_in_any_letter_case_or_as_the_stored_form() {
     use hoplodex_lib::models::firearm::Condition;
 
@@ -548,14 +562,13 @@ fn import_reads_a_condition_in_any_letter_case_or_as_the_stored_form() {
 #[test]
 fn import_rejects_bad_physical_details_as_row_errors_naming_the_column() {
     for (column, bad) in [
-        ("barrel_length_in", "16.255"),
         ("barrel_length_in", "0"),
         ("barrel_length_in", "-1"),
         ("barrel_length_in", "abc"),
-        ("overall_length_in", "18.005"),
         ("overall_length_in", "0.00"),
-        ("weight_oz", "40.55"),
+        ("overall_length_in", "0.004"),
         ("weight_oz", "0"),
+        ("weight_oz", "0.04"),
         ("weight_oz", "-2"),
         ("weight_oz", "heavy"),
         ("capacity", "0"),

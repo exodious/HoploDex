@@ -4,11 +4,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DecimalField } from "./DecimalField";
 
-function Harness({ places = 2, initial = "" }: { places?: number; initial?: string }) {
+function Harness({ initial = "" }: { initial?: string }) {
   const [value, setValue] = useState(initial);
-  return (
-    <DecimalField label="Barrel length" places={places} value={value} onValueChange={setValue} />
-  );
+  return <DecimalField label="Barrel length" value={value} onValueChange={setValue} />;
 }
 
 const field = () => screen.getByLabelText("Barrel length") as HTMLInputElement;
@@ -32,35 +30,14 @@ describe("DecimalField (FR-039)", () => {
     expect(field().value).toBe("1.23");
   });
 
-  it("shows a field-level message for too many decimal places and never rounds", async () => {
+  it("keeps extra decimal places as typed, with no error (the parser rounds on submit)", async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
     await user.type(field(), "16.255");
 
     expect(field().value).toBe("16.255");
-    expect(screen.getByRole("alert")).toHaveTextContent(/2 decimal places/);
-    expect(field()).toHaveAttribute("aria-invalid", "true");
-  });
-
-  it("uses the places it is given", async () => {
-    const user = userEvent.setup();
-    render(<Harness places={1} />);
-
-    await user.type(field(), "40.55");
-
-    expect(screen.getByRole("alert")).toHaveTextContent(/1 decimal place/);
-  });
-
-  it("clears the message once the value fits again", async () => {
-    const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.type(field(), "16.255");
-    await user.type(field(), "{Backspace}");
-
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(field().value).toBe("16.25");
   });
 
   it("drops a pasted dollar sign, commas and spaces", async () => {
@@ -77,7 +54,6 @@ describe("DecimalField (FR-039)", () => {
     render(
       <DecimalField
         label="Barrel length"
-        places={2}
         value="0"
         onValueChange={() => {}}
         error="Must be greater than 0."

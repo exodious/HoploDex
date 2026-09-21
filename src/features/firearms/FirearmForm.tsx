@@ -12,13 +12,7 @@ import {
   TextField,
 } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
-import {
-  inchesToInput,
-  parseInches,
-  parseWeight,
-  WEIGHT_PLACES,
-  weightToInputs,
-} from "../../lib/measure";
+import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
@@ -427,7 +421,6 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             <div data-field="barrelLength">
               <DecimalField
                 label="Barrel length (in)"
-                places={2}
                 value={form.barrelLength}
                 onValueChange={(text) => update("barrelLength", text)}
                 onBlur={touch("barrelLength")}
@@ -438,7 +431,6 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             <div data-field="overallLength">
               <DecimalField
                 label="Overall length (in)"
-                places={2}
                 value={form.overallLength}
                 onValueChange={(text) => update("overallLength", text)}
                 onBlur={touch("overallLength")}
@@ -450,7 +442,6 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               <div data-field="weightPounds">
                 <DecimalField
                   label="Weight (lb)"
-                  places={WEIGHT_PLACES}
                   value={form.weightPounds}
                   onValueChange={(text) => update("weightPounds", text)}
                   onBlur={touch("weightPounds")}
@@ -461,7 +452,6 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               <div data-field="weightOunces">
                 <DecimalField
                   label="Weight (oz)"
-                  places={WEIGHT_PLACES}
                   value={form.weightOunces}
                   onValueChange={(text) => update("weightOunces", text)}
                   onBlur={touch("weightOunces")}

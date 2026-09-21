@@ -58,10 +58,12 @@ are never rounded.
 The six physical-detail columns follow the same rules as Amounts: blank is
 allowed; export writes plain numbers with no unit text and no trailing zeros
 (`16.25`, `18`, `40.5`); import accepts a number with at most the allowed
-decimal places (a zero fraction beyond that, e.g. `16.250`, is accepted) and a
-numeric cell; a value with more places (`16.255`), a value `<= 0`, a
-non-numeric value, a fractional or `< 1` capacity, or an unknown `condition`
-is a row error naming the column (FR-020). Values are never rounded. The
+decimal places and a numeric cell; a measurement with more places is rounded
+half up to the nearest storable unit (`16.255` → `16.26`, `40.54` → `40.5`;
+lengths keep hundredths of an inch, weight tenths of an ounce). A value `<= 0`
+(including one that rounds to 0), a non-numeric value, a fractional or `< 1`
+capacity, or an unknown `condition` is a row error naming the column
+(FR-020). Amounts and capacity are never rounded. The
 columns sit after `scheduled_coverage_amount` and before `photo_filenames`.
 
 ## Export behavior

@@ -395,7 +395,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await back();
   });
 
-  it("records physical details, refuses excess precision, and hides the panel when cleared (Scenario 17)", async () => {
+  it("records physical details, rounds excess precision, and hides the panel when cleared (Scenario 17)", async () => {
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();
     await fillFirearmForm({
@@ -425,17 +425,25 @@ describe("User Story 1 - Record a Firearm", () => {
       expect(shown).toContain(text);
     }
 
-    // More than two decimal places blocks the save with a message on the
-    // field; nothing is rounded and nothing is saved.
+    // Extra decimal places are rounded to the stored unit, not rejected:
+    // 16.255 in is saved as 16.26, and 2.53 lb (40.48 oz) as 2 lb 8.5 oz.
     await clickButton("Edit");
     await $('[role="dialog"]').waitForExist();
     await fill("Barrel length (in)", "16.255");
+    await fill("Weight (lb)", "2.53");
+    await fill("Weight (oz)", "");
     await clickButton("Save changes");
-    await expect($('[role="dialog"]*=Use at most 2 decimal places')).toExist();
-    expect(await fieldValue("Barrel length (in)")).toBe("16.255");
-    await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
-    expect((await panel.getText()).replace(/\s+/g, " ")).toContain("16.25 in");
+    await browser.waitUntil(
+      async () =>
+        (await $('section[aria-labelledby="physical-title"]').getText())
+          .replace(/\s+/g, " ")
+          .includes("16.26 in"),
+      { timeoutMsg: "the rounded barrel length never showed" },
+    );
+    expect(
+      (await $('section[aria-labelledby="physical-title"]').getText()).replace(/\s+/g, " "),
+    ).toContain("2 lb 8.5 oz");
 
     // Clearing all six saves normally and the panel disappears.
     await clickButton("Edit");

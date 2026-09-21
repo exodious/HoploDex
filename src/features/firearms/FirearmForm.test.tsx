@@ -370,20 +370,20 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
     expect(capacity()).toHaveValue("125");
   });
 
-  it("blocks the save with a field-level message for too many decimal places, and never rounds", async () => {
+  it("rounds extra decimal places to the stored unit instead of blocking", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(barrel(), "16.255");
-    await user.type(weightLb(), "6.6251");
+    await user.type(weightLb(), "2.53");
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
 
-    expect(screen.getByText("Use at most 2 decimal places.")).toBeInTheDocument();
-    expect(screen.getByText("Use at most 3 decimal places.")).toBeInTheDocument();
-    expect(barrel()).toHaveValue("16.255");
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      barrelLengthHundredths: 1626,
+      weightTenthsOz: 405,
+    });
   });
 
   it("blocks the save for a zero length and a capacity of 0", async () => {

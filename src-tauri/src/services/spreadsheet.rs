@@ -255,10 +255,12 @@ pub fn scaled_to_string(value: Option<i64>, places: u32) -> String {
 }
 
 /// Parses a physical-detail cell into a positive integer scaled by
-/// `10^places` (FR-039): `16.25` with 2 places is 1625. A zero fraction
-/// beyond `places` (`16.250`) is accepted; more precision, a sign, zero,
-/// or any other text is an `Err` naming `column`, never rounded. A blank
-/// cell is `None`. With 0 places it parses a whole number (a capacity).
+/// `10^places` (FR-039): `16.25` with 2 places is 1625. More precision than
+/// `places` is rounded half up to the nearest storable unit (`16.255` is
+/// 1626, `40.54` with 1 place is 405); a sign, zero (including a value that
+/// rounds to zero) or any other text is an `Err` naming `column`. A blank
+/// cell is `None`. With 0 places it parses a whole number (a capacity),
+/// where a fraction is an `Err`, since half a round means nothing.
 pub fn parse_scaled_decimal(
     column: &str,
     value: &Option<String>,
@@ -280,18 +282,14 @@ pub fn parse_scaled_decimal(
         return Err(format!("{column}: {raw:?} is not a number"));
     }
     let (kept, beyond) = fraction.split_at(fraction.len().min(places as usize));
-    if beyond.chars().any(|c| c != '0') {
-        let allowed = match places {
-            0 => "a whole number".to_string(),
-            1 => "at most 1 decimal place".to_string(),
-            n => format!("at most {n} decimal places"),
-        };
-        return Err(format!("{column}: {raw:?} must be {allowed}"));
+    if places == 0 && beyond.chars().any(|c| c != '0') {
+        return Err(format!("{column}: {raw:?} must be a whole number"));
     }
     let padded = format!("{kept:0<width$}", width = places as usize);
-    let scaled = format!("{whole}{padded}")
-        .parse::<i64>()
-        .map_err(|_| format!("{column}: {raw:?} is too large"))?;
+    let too_large = || format!("{column}: {raw:?} is too large");
+    let truncated = format!("{whole}{padded}").parse::<i64>().map_err(|_| too_large())?;
+    let round_up = beyond.starts_with(|c: char| c >= '5');
+    let scaled = if round_up { truncated.checked_add(1).ok_or_else(too_large)? } else { truncated };
     if scaled == 0 {
         return Err(format!("{column}: {raw:?} must be greater than 0"));
     }
