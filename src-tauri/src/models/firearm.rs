@@ -55,6 +55,33 @@ text_enum!(DispositionType {
     LostStolen => "lost_stolen",
 });
 
+text_enum!(Condition {
+    NewInBox => "new_in_box",
+    LikeNew => "like_new",
+    Excellent => "excellent",
+    Good => "good",
+    Fair => "fair",
+    Poor => "poor",
+});
+
+impl Condition {
+    /// Every grade, best first.
+    pub const ALL: [Condition; 6] =
+        [Self::NewInBox, Self::LikeNew, Self::Excellent, Self::Good, Self::Fair, Self::Poor];
+
+    /// How the grade is shown to the user, and exported (FR-039).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::NewInBox => "New in box",
+            Self::LikeNew => "Like new",
+            Self::Excellent => "Excellent",
+            Self::Good => "Good",
+            Self::Fair => "Fair",
+            Self::Poor => "Poor",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Firearm {
@@ -68,6 +95,16 @@ pub struct Firearm {
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
+    /// FR-039: hundredths of an inch.
+    pub barrel_length_hundredths: Option<i64>,
+    /// FR-039: hundredths of an inch.
+    pub overall_length_hundredths: Option<i64>,
+    /// FR-039: tenths of an ounce.
+    pub weight_tenths_oz: Option<i64>,
+    /// FR-039: rounds the magazine, cylinder or tube holds.
+    pub capacity: Option<i64>,
+    pub finish: Option<String>,
+    pub condition: Option<Condition>,
     pub status: FirearmStatus,
     pub estimated_value: Option<i64>,
     pub acquisition_source: Option<String>,
@@ -97,6 +134,12 @@ impl Firearm {
             nickname: row.get("nickname")?,
             notes: row.get("notes")?,
             accessories: row.get("accessories")?,
+            barrel_length_hundredths: row.get("barrel_length_hundredths")?,
+            overall_length_hundredths: row.get("overall_length_hundredths")?,
+            weight_tenths_oz: row.get("weight_tenths_oz")?,
+            capacity: row.get("capacity")?,
+            finish: row.get("finish")?,
+            condition: row.get("condition")?,
             status: row.get("status")?,
             estimated_value: row.get("estimated_value")?,
             acquisition_source: row.get("acquisition_source")?,
@@ -129,6 +172,16 @@ pub struct FirearmInput {
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
+    /// FR-039: hundredths of an inch.
+    pub barrel_length_hundredths: Option<i64>,
+    /// FR-039: hundredths of an inch.
+    pub overall_length_hundredths: Option<i64>,
+    /// FR-039: tenths of an ounce.
+    pub weight_tenths_oz: Option<i64>,
+    /// FR-039: rounds the magazine, cylinder or tube holds.
+    pub capacity: Option<i64>,
+    pub finish: Option<String>,
+    pub condition: Option<Condition>,
     pub status: FirearmStatus,
     pub estimated_value: Option<i64>,
     pub acquisition_source: Option<String>,
@@ -157,6 +210,12 @@ impl From<&Firearm> for FirearmInput {
             nickname: firearm.nickname.clone(),
             notes: firearm.notes.clone(),
             accessories: firearm.accessories.clone(),
+            barrel_length_hundredths: firearm.barrel_length_hundredths,
+            overall_length_hundredths: firearm.overall_length_hundredths,
+            weight_tenths_oz: firearm.weight_tenths_oz,
+            capacity: firearm.capacity,
+            finish: firearm.finish.clone(),
+            condition: firearm.condition,
             status: firearm.status,
             estimated_value: firearm.estimated_value,
             acquisition_source: firearm.acquisition_source.clone(),
@@ -173,9 +232,9 @@ impl From<&Firearm> for FirearmInput {
 }
 
 impl FirearmInput {
-    /// The input as it is stored: a blank nickname or serial number becomes
-    /// `None` and any other is trimmed (FR-031, FR-032: blank is not a value,
-    /// and comparison ignores surrounding whitespace).
+    /// The input as it is stored: a blank nickname, serial number or finish
+    /// becomes `None` and any other is trimmed (FR-031, FR-032, FR-039: blank
+    /// is not a value, and comparison ignores surrounding whitespace).
     pub fn normalized(&self) -> Self {
         let trimmed = |value: &Option<String>| {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
@@ -183,6 +242,7 @@ impl FirearmInput {
         Self {
             nickname: trimmed(&self.nickname),
             serial_number: trimmed(&self.serial_number),
+            finish: trimmed(&self.finish),
             ..self.clone()
         }
     }
@@ -234,6 +294,20 @@ fn checked_amount(
     }
 }
 
+/// FR-039: a length, weight or capacity, once it has decoded as a whole
+/// number (a fractional one never does), must be at least `min`.
+fn checked_measure(
+    field: &str,
+    message: &str,
+    value: Option<i64>,
+    min: i64,
+    errors: &mut HashMap<String, String>,
+) {
+    if value.is_some_and(|measure| measure < min) {
+        errors.insert(field.into(), message.into());
+    }
+}
+
 /// Validation rules from data-model.md's "Validation rules" section,
 /// enforced here (not just at the DB level) so import validation (FR-020)
 /// can produce per-row human-readable errors too.
@@ -259,6 +333,24 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         input.scheduled_coverage_amount,
         &mut errors,
     );
+
+    let positive = |what: &str| format!("{what} must be greater than 0.");
+    checked_measure(
+        "barrelLengthHundredths",
+        &positive("Barrel length"),
+        input.barrel_length_hundredths,
+        1,
+        &mut errors,
+    );
+    checked_measure(
+        "overallLengthHundredths",
+        &positive("Overall length"),
+        input.overall_length_hundredths,
+        1,
+        &mut errors,
+    );
+    checked_measure("weightTenthsOz", &positive("Weight"), input.weight_tenths_oz, 1, &mut errors);
+    checked_measure("capacity", "Capacity must be at least 1.", input.capacity, 1, &mut errors);
 
     // Acceptance Scenarios 6-7 and FR-029: a serial number or the attestation
     // that there is none, never both and never neither.

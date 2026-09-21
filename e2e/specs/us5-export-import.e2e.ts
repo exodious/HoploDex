@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
-import { choose, listedNames, search } from "../support/ui";
+import { choose, fillFirearmForm, listedNames, openFirearm, search } from "../support/ui";
+import { selectOption } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
@@ -36,6 +37,12 @@ const COLUMNS = [
   "disposition_price",
   "insurance_policy_name",
   "scheduled_coverage_amount",
+  "barrel_length_in",
+  "overall_length_in",
+  "weight_oz",
+  "capacity",
+  "finish",
+  "condition",
   "photo_filenames",
 ];
 const HEADER = COLUMNS.join(",");
@@ -206,5 +213,68 @@ describe("User Story 5 - Export and Import Records", () => {
     // Keeping the existing record means no duplicate was added.
     await search("ExportE2EGlock");
     expect(await listedNames()).toEqual(["ExportE2EGlock 19"]);
+  });
+
+  it("carries physical details through an export and a re-import (US1 Scenario 17, FR-039)", async () => {
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fillFirearmForm({
+      make: "PhysE2E",
+      model: "Colt",
+      caliber: ".45 ACP",
+      type: "Handgun",
+      serial: "PHYS-001",
+    });
+    await fill("Barrel length (in)", "5.25");
+    await fill("Overall length (in)", "8.5");
+    await fill("Weight (oz)", "38.5");
+    await fill("Capacity", "7");
+    await fill("Finish", "Parkerized");
+    await selectOption("Condition", "Like new");
+    await clickButton("Add firearm");
+    await $("#record-name").waitForExist();
+    await back();
+
+    await search("PhysE2E");
+    await clickButton("Export");
+    await $(".hd-choice__label=Current results (1)").waitForExist();
+    await choose("Current results (1)");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-physical-"));
+    await fill("Save to folder", dir);
+    await clickButton("Export");
+    await $(".hd-outcome__headline*=Exported 1 firearm").waitForExist({ timeout: 15000 });
+    await clickButton("Done");
+
+    // The six columns are plain numbers and the condition's display name.
+    const exported = fs.readdirSync(dir).find((f) => f.endsWith(".csv"))!;
+    const contents = fs.readFileSync(path.join(dir, exported), "utf-8");
+    const [header, row] = contents.trim().split("\n");
+    expect(header).toContain(
+      "barrel_length_in,overall_length_in,weight_oz,capacity,finish,condition,photo_filenames",
+    );
+    expect(row).toContain("5.25,8.5,38.5,7,Parkerized,Like new");
+
+    // Re-import the file as a different firearm, so it is added, not matched.
+    const copyPath = path.join(dir, "copy.csv");
+    fs.writeFileSync(
+      copyPath,
+      contents.replace("PhysE2E,Colt,,PHYS-001", "PhysE2E,Copy,,PHYS-002"),
+    );
+    await search("");
+    await importFile(copyPath);
+    expect(await tally("added")).toBe(1);
+    expect(await tally("failed")).toBe(0);
+    await clickButton("Done");
+
+    await search("PhysE2E");
+    await openFirearm("PhysE2E Copy");
+    const panel = await $('section[aria-labelledby="physical-title"]');
+    await panel.waitForExist();
+    const shown = (await panel.getText()).replace(/\s+/g, " ");
+    for (const text of ["5.25 in", "8.5 in", "2 lb 6.5 oz", "7 rounds", "Parkerized", "Like new"]) {
+      expect(shown).toContain(text);
+    }
+    await back();
+    await search("");
   });
 });

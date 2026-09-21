@@ -405,6 +405,8 @@ export interface NewFirearm {
   notes?: string;
   nickname?: string;
   acquisitionDate?: string;
+  /** FR-039: free text, searchable. */
+  finish?: string;
 }
 
 /** A firearm's display name as the app shows it: "Make Model", plus its
@@ -426,6 +428,7 @@ export async function fillFirearmForm(firearm: NewFirearm) {
   if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
   if (firearm.acquisitionDate) await fill("Date acquired", firearm.acquisitionDate);
   if (firearm.notes) await fill("Notes", firearm.notes);
+  if (firearm.finish) await fill("Finish", firearm.finish);
 }
 
 /** Adds a firearm through the Add firearm dialog, leaving the app on its

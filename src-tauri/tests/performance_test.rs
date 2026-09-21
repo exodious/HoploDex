@@ -23,6 +23,8 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
     let makes = ["Glock", "Sig", "Ruger", "Smith & Wesson", "Colt"];
     let calibers = ["9mm", ".45 ACP", ".22 LR", ".223", ".308"];
     let types = [1, 2, 3, 4];
+    let finishes = ["Blued", "Parkerized", "Cerakote", "Stainless", "Nickel"];
+    let conditions = ["new_in_box", "like_new", "excellent", "good", "fair", "poor"];
 
     let tx = db.conn.unchecked_transaction().unwrap();
     {
@@ -30,8 +32,13 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
             .prepare(
                 "INSERT INTO firearms (
                     make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
-                    notes, nickname, status, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'active', datetime('now'), datetime('now'))",
+                    notes, nickname, barrel_length_hundredths, overall_length_hundredths,
+                    weight_tenths_oz, capacity, finish, condition,
+                    status, created_at, updated_at
+                ) VALUES (
+                    ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                    'active', datetime('now'), datetime('now')
+                )",
             )
             .unwrap();
         for i in 0..RECORD_COUNT {
@@ -54,7 +61,19 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
                 // Every record has a nickname, which is unique among active
                 // firearms (FR-031): the index and the FTS column both carry
                 // the full load.
-                format!("Nick {i}")
+                format!("Nick {i}"),
+                // Every record carries all six physical details (FR-039), so
+                // `finish` loads the FTS index like the other text columns.
+                1_000 + (i % 3_000) as i64,
+                2_000 + (i % 4_000) as i64,
+                100 + (i % 900) as i64,
+                1 + (i % 30) as i64,
+                if i == RECORD_COUNT / 3 {
+                    "zorblax".to_string()
+                } else {
+                    format!("{} finish", finishes[i % finishes.len()])
+                },
+                conditions[i % conditions.len()],
             ])
             .unwrap();
         }
@@ -105,6 +124,42 @@ fn list_firearms_search_completes_within_budget_at_10k_records() {
         elapsed.as_millis() < BUDGET_MS,
         "list_firearms (FTS search) took {}ms, over the {BUDGET_MS}ms budget",
         elapsed.as_millis()
+    );
+}
+
+#[test]
+fn list_firearms_finish_search_completes_within_budget_at_10k_records() {
+    let db = TestDb::new();
+    seed_10k_firearms(&db);
+
+    let started = Instant::now();
+    let result = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("zorblax".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+
+    let total: usize = result.groups.iter().map(|g| g.firearms.len()).sum();
+    assert_eq!(total, 1, "the FTS search should find exactly the one uniquely-finished record");
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (finish search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+
+    // A word shared by every record still stays inside the budget.
+    let started = Instant::now();
+    let common = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("finish".into()), ..Default::default() },
+    )
+    .unwrap();
+    assert!(common.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 1);
+    assert!(
+        started.elapsed().as_millis() < BUDGET_MS,
+        "list_firearms (common finish word) took {}ms, over the {BUDGET_MS}ms budget",
+        started.elapsed().as_millis()
     );
 }
 

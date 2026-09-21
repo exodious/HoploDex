@@ -17,6 +17,12 @@ fn base_input() -> FirearmInput {
         firearm_type_id: 1,
         notes: Some("inherited from grandfather, minor pitting on barrel".into()),
         accessories: Some("leather holster; spare magazine".into()),
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
         status: FirearmStatus::Active,
         estimated_value: None,
         acquisition_source: None,
@@ -106,4 +112,24 @@ fn matches_a_partially_typed_last_word() {
     assert_eq!(search(&db.conn, "minor pit"), 1, "phrase ending in a partial word");
     assert_eq!(search(&db.conn, "pitting minor"), 0, "earlier words still form a phrase");
     assert_eq!(search(&db.conn, "\""), 0, "a stray quote is not a syntax error");
+}
+
+/// FR-039 / US1 Acceptance Scenario 17: a word in a firearm's finish is found.
+#[test]
+fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(
+        &db.conn,
+        &FirearmInput { finish: Some("Cerakote flat dark earth".into()), ..base_input() },
+    )
+    .unwrap();
+    assert_eq!(search(&db.conn, "Cerakote"), 1, "should match finish");
+
+    let edited = FirearmInput { finish: Some("Parkerized".into()), ..base_input() };
+    ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    assert_eq!(search(&db.conn, "Cerakote"), 0, "the old finish is no longer indexed");
+    assert_eq!(search(&db.conn, "Parkerized"), 1, "the edited finish is indexed");
+
+    ops::delete_firearm(&db.conn, created.id, true).unwrap();
+    assert_eq!(search(&db.conn, "Parkerized"), 0, "a deleted firearm is not found");
 }

@@ -479,3 +479,148 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     let listing = firearm_ops::list_firearms(&db2.conn, &Default::default()).unwrap();
     assert_eq!(listing.groups[0].firearms[0].estimated_value, Some(1250));
 }
+
+// --- Physical details (FR-039, spreadsheet-format.md "Physical details") ---
+
+fn imported_detail(cells: &[(&str, &str)]) -> hoplodex_lib::models::firearm::Firearm {
+    let db = TestDb::new();
+    let result = import_into(&db, &[csv_firearm("Glock", "19", "A1", cells)]);
+    assert_eq!(result.imported_count, 1, "{cells:?}: {:?}", result.row_errors);
+    let id =
+        firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap().groups[0].firearms[0].id;
+    firearm_ops::get_firearm(&db.conn, id).unwrap()
+}
+
+#[test]
+fn import_accepts_blank_physical_details() {
+    let firearm = imported_detail(&[]);
+    assert_eq!(firearm.barrel_length_hundredths, None);
+    assert_eq!(firearm.overall_length_hundredths, None);
+    assert_eq!(firearm.weight_tenths_oz, None);
+    assert_eq!(firearm.capacity, None);
+    assert_eq!(firearm.finish, None);
+    assert_eq!(firearm.condition, None);
+}
+
+#[test]
+fn import_reads_lengths_weight_capacity_finish_and_condition() {
+    use hoplodex_lib::models::firearm::Condition;
+
+    let firearm = imported_detail(&[
+        ("barrel_length_in", "16.25"),
+        ("overall_length_in", "18"),
+        ("weight_oz", "40.5"),
+        ("capacity", "15"),
+        ("finish", "Parkerized"),
+        ("condition", "Excellent"),
+    ]);
+    assert_eq!(firearm.barrel_length_hundredths, Some(1625));
+    assert_eq!(firearm.overall_length_hundredths, Some(1800));
+    assert_eq!(firearm.weight_tenths_oz, Some(405));
+    assert_eq!(firearm.capacity, Some(15));
+    assert_eq!(firearm.finish.as_deref(), Some("Parkerized"));
+    assert_eq!(firearm.condition, Some(Condition::Excellent));
+}
+
+#[test]
+fn import_accepts_a_zero_fraction_beyond_the_precision() {
+    let firearm = imported_detail(&[("barrel_length_in", "16.250"), ("weight_oz", "40.50")]);
+    assert_eq!(firearm.barrel_length_hundredths, Some(1625));
+    assert_eq!(firearm.weight_tenths_oz, Some(405));
+}
+
+#[test]
+fn import_reads_a_condition_in_any_letter_case_or_as_the_stored_form() {
+    use hoplodex_lib::models::firearm::Condition;
+
+    for (cell, expected) in [
+        ("like new", Condition::LikeNew),
+        ("LIKE NEW", Condition::LikeNew),
+        ("Like new", Condition::LikeNew),
+        ("new_in_box", Condition::NewInBox),
+        ("New in box", Condition::NewInBox),
+        ("POOR", Condition::Poor),
+    ] {
+        assert_eq!(imported_detail(&[("condition", cell)]).condition, Some(expected), "{cell}");
+    }
+}
+
+#[test]
+fn import_rejects_bad_physical_details_as_row_errors_naming_the_column() {
+    for (column, bad) in [
+        ("barrel_length_in", "16.255"),
+        ("barrel_length_in", "0"),
+        ("barrel_length_in", "-1"),
+        ("barrel_length_in", "abc"),
+        ("overall_length_in", "18.005"),
+        ("overall_length_in", "0.00"),
+        ("weight_oz", "40.55"),
+        ("weight_oz", "0"),
+        ("weight_oz", "-2"),
+        ("weight_oz", "heavy"),
+        ("capacity", "0"),
+        ("capacity", "12.5"),
+        ("capacity", "-3"),
+        ("capacity", "many"),
+        ("condition", "mint"),
+    ] {
+        let db = TestDb::new();
+        let result = import_into(&db, &[csv_firearm("Glock", "19", "A1", &[(column, bad)])]);
+        assert_eq!(result.imported_count, 0, "{column}={bad} must not import");
+        assert_eq!(result.row_errors.len(), 1, "{column}={bad}");
+        assert!(
+            result.row_errors[0].message.contains(column),
+            "{column}={bad}: message {:?} should name the column",
+            result.row_errors[0].message
+        );
+    }
+}
+
+#[test]
+fn an_export_re_imports_with_all_six_intact() {
+    use hoplodex_lib::models::firearm::Condition;
+
+    let db = TestDb::new();
+    let dest = TempDir::new().unwrap();
+    let mut input = support::firearm("Glock", "19", "A1");
+    input.barrel_length_hundredths = Some(1625);
+    input.overall_length_hundredths = Some(1800);
+    input.weight_tenths_oz = Some(405);
+    input.capacity = Some(15);
+    input.finish = Some("Cerakote".into());
+    input.condition = Some(Condition::NewInBox);
+    let created = firearm_ops::create_firearm(&db.conn, &input).unwrap();
+
+    for format in [SpreadsheetFormat::Csv, SpreadsheetFormat::Xlsx] {
+        let result = import_export_ops::export_collection(
+            &db.conn,
+            dest.path(),
+            "detail",
+            format,
+            &[created.id],
+            &mut |_, _| {},
+        )
+        .unwrap();
+
+        let db2 = TestDb::new();
+        let reimported = import_export_ops::import_collection(
+            &db2.conn,
+            &result.spreadsheet_path,
+            format,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap();
+        assert_eq!(reimported.imported_count, 1, "{:?}", reimported.row_errors);
+        let id = firearm_ops::list_firearms(&db2.conn, &Default::default()).unwrap().groups[0]
+            .firearms[0]
+            .id;
+        let back = firearm_ops::get_firearm(&db2.conn, id).unwrap();
+        assert_eq!(back.barrel_length_hundredths, Some(1625));
+        assert_eq!(back.overall_length_hundredths, Some(1800));
+        assert_eq!(back.weight_tenths_oz, Some(405));
+        assert_eq!(back.capacity, Some(15));
+        assert_eq!(back.finish.as_deref(), Some("Cerakote"));
+        assert_eq!(back.condition, Some(Condition::NewInBox));
+    }
+}

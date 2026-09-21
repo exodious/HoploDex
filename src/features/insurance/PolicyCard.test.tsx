@@ -16,6 +16,7 @@ const base: InsurancePolicy = {
   companyContact: null,
   agentName: null,
   agentContact: null,
+  notes: null,
   blanketCoverageLimit: 10_000,
   effectiveStartDate: "2025-07-01",
   effectiveEndDate: "2099-06-30",
@@ -194,5 +195,20 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
 
     expect(screen.getByText("Ended Mar 1, 2026")).toBeInTheDocument();
     expect(screen.queryByText(/Expired/)).not.toBeInTheDocument();
+  });
+
+  it("shows the notes, keeping line breaks, when the policy has any", () => {
+    renderCard({ ...base, notes: "Renews in January.\nAsk about the rider." });
+
+    expect(screen.getByText("Notes")).toBeInTheDocument();
+    const notes = screen.getByText(/Renews in January\./);
+    // textContent, not toHaveTextContent, which collapses the line break.
+    expect(notes.textContent).toBe("Renews in January.\nAsk about the rider.");
+  });
+
+  it("shows no notes row when the policy has none", () => {
+    renderCard(base);
+
+    expect(screen.queryByText("Notes")).not.toBeInTheDocument();
   });
 });

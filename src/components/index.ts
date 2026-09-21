@@ -8,6 +8,8 @@ export { TextArea } from "./TextArea";
 export type { TextAreaProps } from "./TextArea";
 export { MoneyField } from "./MoneyField";
 export type { MoneyFieldProps } from "./MoneyField";
+export { DecimalField } from "./DecimalField";
+export type { DecimalFieldProps } from "./DecimalField";
 export { DateField } from "./DateField";
 export type { DateFieldProps } from "./DateField";
 export { Checkbox } from "./Checkbox";

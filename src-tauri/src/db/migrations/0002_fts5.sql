@@ -9,6 +9,7 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
     caliber,
     notes,
     accessories,
+    finish,
     firearm_type_name,
     content = 'firearms',
     content_rowid = 'id'
@@ -17,7 +18,7 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
 CREATE TRIGGER firearms_fts_after_insert AFTER INSERT ON firearms
 BEGIN
     INSERT INTO firearms_fts (
-        rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
+        rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name
     )
     VALUES (
         new.id,
@@ -28,6 +29,7 @@ BEGIN
         new.caliber,
         new.notes,
         new.accessories,
+        new.finish,
         (SELECT name FROM firearm_types WHERE id = new.firearm_type_id)
     );
 END;
@@ -35,7 +37,7 @@ END;
 CREATE TRIGGER firearms_fts_after_delete AFTER DELETE ON firearms
 BEGIN
     INSERT INTO firearms_fts (
-        firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
+        firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name
     )
     VALUES (
         'delete',
@@ -47,6 +49,7 @@ BEGIN
         old.caliber,
         old.notes,
         old.accessories,
+        old.finish,
         (SELECT name FROM firearm_types WHERE id = old.firearm_type_id)
     );
 END;
@@ -54,7 +57,7 @@ END;
 CREATE TRIGGER firearms_fts_after_update AFTER UPDATE ON firearms
 BEGIN
     INSERT INTO firearms_fts (
-        firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
+        firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name
     )
     VALUES (
         'delete',
@@ -66,10 +69,11 @@ BEGIN
         old.caliber,
         old.notes,
         old.accessories,
+        old.finish,
         (SELECT name FROM firearm_types WHERE id = old.firearm_type_id)
     );
     INSERT INTO firearms_fts (
-        rowid, make, model, nickname, serial_number, caliber, notes, accessories, firearm_type_name
+        rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name
     )
     VALUES (
         new.id,
@@ -80,6 +84,7 @@ BEGIN
         new.caliber,
         new.notes,
         new.accessories,
+        new.finish,
         (SELECT name FROM firearm_types WHERE id = new.firearm_type_id)
     );
 END;

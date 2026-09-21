@@ -11,6 +11,8 @@ export interface InsurancePolicy {
   companyContact: string | null;
   agentName: string | null;
   agentContact: string | null;
+  /** Free-form notes (FR-027); null when there are none. */
+  notes: string | null;
   /** Set for a blanket policy (FR-036); null for a schedule-only one. */
   blanketCoverageLimit: number | null;
   effectiveStartDate: string;

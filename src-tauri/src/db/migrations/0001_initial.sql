@@ -17,6 +17,8 @@ CREATE TABLE insurance_policies (
     company_contact TEXT,
     agent_name TEXT,
     agent_contact TEXT,
+    -- FR-027: optional free-form notes; blank input is stored as null.
+    notes TEXT,
     -- FR-027/FR-036: set => a blanket policy, whose limit is shared by every
     -- firearm not individually scheduled while the policy is in force.
     blanket_coverage_limit INTEGER CHECK (blanket_coverage_limit IS NULL OR blanket_coverage_limit >= 0),
@@ -40,6 +42,15 @@ CREATE TABLE firearms (
     firearm_type_id INTEGER NOT NULL REFERENCES firearm_types (id),
     notes TEXT,
     accessories TEXT,
+    -- FR-039: optional physical details. Lengths are stored in hundredths of
+    -- an inch, weight in tenths of an ounce, so they stay exact integers.
+    barrel_length_hundredths INTEGER CHECK (barrel_length_hundredths IS NULL OR barrel_length_hundredths > 0),
+    overall_length_hundredths INTEGER CHECK (overall_length_hundredths IS NULL OR overall_length_hundredths > 0),
+    weight_tenths_oz INTEGER CHECK (weight_tenths_oz IS NULL OR weight_tenths_oz > 0),
+    capacity INTEGER CHECK (capacity IS NULL OR capacity >= 1),
+    finish TEXT,
+    condition TEXT
+        CHECK (condition IS NULL OR condition IN ('new_in_box', 'like_new', 'excellent', 'good', 'fair', 'poor')),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disposed')),
     estimated_value INTEGER CHECK (estimated_value IS NULL OR estimated_value >= 0),
     acquisition_source TEXT,

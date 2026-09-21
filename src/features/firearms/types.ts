@@ -5,6 +5,10 @@ export type FirearmStatus = "active" | "disposed";
 
 export type DispositionType = "sold" | "traded" | "gifted" | "destroyed" | "lost_stolen";
 
+/** How worn a firearm is (FR-039), best first. Distinct from the free-form
+ * notes. Mirrors `Condition` in src-tauri/src/models/firearm.rs. */
+export type Condition = "new_in_box" | "like_new" | "excellent" | "good" | "fair" | "poor";
+
 export interface Firearm {
   id: number;
   make: string;
@@ -16,6 +20,16 @@ export interface Firearm {
   firearmTypeId: number;
   notes: string | null;
   accessories: string | null;
+  /** FR-039: hundredths of an inch; format with `lib/measure`. */
+  barrelLengthHundredths: number | null;
+  /** FR-039: hundredths of an inch. */
+  overallLengthHundredths: number | null;
+  /** FR-039: tenths of an ounce. */
+  weightTenthsOz: number | null;
+  /** FR-039: rounds the magazine, cylinder or tube holds. */
+  capacity: number | null;
+  finish: string | null;
+  condition: Condition | null;
   status: FirearmStatus;
   estimatedValue: number | null;
   acquisitionSource: string | null;
@@ -93,6 +107,19 @@ export const DISPOSITION_TYPE_OPTIONS: { value: DispositionType; label: string }
   { value: "destroyed", label: "Destroyed" },
   { value: "lost_stolen", label: "Lost or stolen" },
 ];
+
+export const CONDITION_OPTIONS: { value: Condition; label: string }[] = [
+  { value: "new_in_box", label: "New in box" },
+  { value: "like_new", label: "Like new" },
+  { value: "excellent", label: "Excellent" },
+  { value: "good", label: "Good" },
+  { value: "fair", label: "Fair" },
+  { value: "poor", label: "Poor" },
+];
+
+export function conditionLabel(condition: Condition): string {
+  return CONDITION_OPTIONS.find((o) => o.value === condition)?.label ?? condition;
+}
 
 export function dispositionLabel(type: DispositionType | null): string {
   return DISPOSITION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? "Disposed";

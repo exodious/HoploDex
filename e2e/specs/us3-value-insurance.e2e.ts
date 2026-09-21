@@ -1,4 +1,14 @@
-import { $, addFirearm, back, browser, choose, clickButton, expect, fill } from "../support/ui";
+import {
+  $,
+  addFirearm,
+  back,
+  browser,
+  choose,
+  clickButton,
+  expect,
+  fieldValue,
+  fill,
+} from "../support/ui";
 import { goTo, isButtonDisabled, openFirearm, policyCardText, selectOption } from "../support/ui";
 import { titleBlock, toggle } from "../support/ui";
 
@@ -368,6 +378,32 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     // unscheduled firearm is uninsured again.
     await openCoverage("InsE2ESig P226");
     expect(await titleBlock("Coverage")).toBe("Uninsured");
+  });
+
+  it("keeps free-form notes on a policy, and shows none once they are cleared (Scenario 16)", async () => {
+    const notes = "Renews in January. Appraisal is in the safe.";
+    await addPolicy({
+      name: "InsE2E Renewal",
+      policyNumber: "N-1",
+      startDate: isoDaysFromNow(-30),
+      endDate: isoDaysFromNow(300),
+    });
+    await goTo("Insurance");
+    expect(await policyCardText("InsE2E Renewal")).not.toContain("Notes");
+
+    await editPolicy("InsE2E Renewal", { Notes: notes });
+    expect(await policyCardText("InsE2E Renewal")).toContain(notes);
+
+    // Reopening the form shows what was saved.
+    await clickInPolicyCard("InsE2E Renewal", "Edit");
+    expect(await fieldValue("Notes")).toBe(notes);
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await editPolicy("InsE2E Renewal", { Notes: "" });
+    const cleared = await policyCardText("InsE2E Renewal");
+    expect(cleared).not.toContain(notes);
+    expect(cleared).not.toContain("Notes");
   });
 });
 

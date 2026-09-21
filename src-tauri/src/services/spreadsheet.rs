@@ -49,6 +49,12 @@ pub const COLUMNS: &[&str] = &[
     "disposition_price",
     "insurance_policy_name",
     "scheduled_coverage_amount",
+    "barrel_length_in",
+    "overall_length_in",
+    "weight_oz",
+    "capacity",
+    "finish",
+    "condition",
     "photo_filenames",
 ];
 
@@ -76,11 +82,17 @@ pub struct FirearmExportRow {
     pub disposition_price: String,
     pub insurance_policy_name: String,
     pub scheduled_coverage_amount: String,
+    pub barrel_length_in: String,
+    pub overall_length_in: String,
+    pub weight_oz: String,
+    pub capacity: String,
+    pub finish: String,
+    pub condition: String,
     pub photo_filenames: String,
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 21] {
+    fn as_fields(&self) -> [&str; 27] {
         [
             &self.make,
             &self.model,
@@ -102,6 +114,12 @@ impl FirearmExportRow {
             &self.disposition_price,
             &self.insurance_policy_name,
             &self.scheduled_coverage_amount,
+            &self.barrel_length_in,
+            &self.overall_length_in,
+            &self.weight_oz,
+            &self.capacity,
+            &self.finish,
+            &self.condition,
             &self.photo_filenames,
         ]
     }
@@ -133,6 +151,12 @@ pub struct RawImportRow {
     pub disposition_price: Option<String>,
     pub insurance_policy_name: Option<String>,
     pub scheduled_coverage_amount: Option<String>,
+    pub barrel_length_in: Option<String>,
+    pub overall_length_in: Option<String>,
+    pub weight_oz: Option<String>,
+    pub capacity: Option<String>,
+    pub finish: Option<String>,
+    pub condition: Option<String>,
 }
 
 fn non_blank(value: &str) -> Option<String> {
@@ -167,6 +191,12 @@ fn row_from_cells(cells: &[String]) -> RawImportRow {
         disposition_price: non_blank(cell(17)),
         insurance_policy_name: non_blank(cell(18)),
         scheduled_coverage_amount: non_blank(cell(19)),
+        barrel_length_in: non_blank(cell(20)),
+        overall_length_in: non_blank(cell(21)),
+        weight_oz: non_blank(cell(22)),
+        capacity: non_blank(cell(23)),
+        finish: non_blank(cell(24)),
+        condition: non_blank(cell(25)),
     }
 }
 
@@ -206,6 +236,66 @@ pub fn parse_whole_dollars(column: &str, value: &Option<String>) -> Result<Optio
         .parse::<i64>()
         .map(Some)
         .map_err(|_| format!("{column}: {raw:?} is too large to be an amount"))
+}
+
+/// Formats a stored scaled integer (`1625` hundredths, `405` tenths) as a
+/// plain decimal with no trailing zeros (`16.25`, `18`, `40.5`), or `""` when
+/// absent — the spreadsheet-format.md "Physical details" convention (FR-039).
+pub fn scaled_to_string(value: Option<i64>, places: u32) -> String {
+    let Some(value) = value else {
+        return String::new();
+    };
+    let scale = 10_i64.pow(places);
+    let (whole, fraction) = (value / scale, value % scale);
+    if fraction == 0 {
+        return whole.to_string();
+    }
+    let fraction = format!("{fraction:0width$}", width = places as usize);
+    format!("{whole}.{}", fraction.trim_end_matches('0'))
+}
+
+/// Parses a physical-detail cell into a positive integer scaled by
+/// `10^places` (FR-039): `16.25` with 2 places is 1625. A zero fraction
+/// beyond `places` (`16.250`) is accepted; more precision, a sign, zero,
+/// or any other text is an `Err` naming `column`, never rounded. A blank
+/// cell is `None`. With 0 places it parses a whole number (a capacity).
+pub fn parse_scaled_decimal(
+    column: &str,
+    value: &Option<String>,
+    places: u32,
+) -> Result<Option<i64>, String> {
+    let Some(raw) = value.as_deref().map(str::trim).filter(|raw| !raw.is_empty()) else {
+        return Ok(None);
+    };
+    let (whole, fraction) = match raw.split_once('.') {
+        Some((whole, fraction)) => (whole, fraction),
+        None => (raw, ""),
+    };
+    let digits = |text: &str| text.chars().all(|c| c.is_ascii_digit());
+    let well_formed = !whole.is_empty()
+        && digits(whole)
+        && digits(fraction)
+        && (!raw.contains('.') || !fraction.is_empty());
+    if !well_formed {
+        return Err(format!("{column}: {raw:?} is not a number"));
+    }
+    let (kept, beyond) = fraction.split_at(fraction.len().min(places as usize));
+    if beyond.chars().any(|c| c != '0') {
+        let allowed = match places {
+            0 => "a whole number".to_string(),
+            1 => "at most 1 decimal place".to_string(),
+            n => format!("at most {n} decimal places"),
+        };
+        return Err(format!("{column}: {raw:?} must be {allowed}"));
+    }
+    let padded = format!("{kept:0<width$}", width = places as usize);
+    let scaled = format!("{whole}{padded}")
+        .parse::<i64>()
+        .map_err(|_| format!("{column}: {raw:?} is too large"))?;
+    if scaled == 0 {
+        return Err(format!("{column}: {raw:?} must be greater than 0"));
+    }
+    Ok(Some(scaled))
 }
 
 pub fn write_spreadsheet(

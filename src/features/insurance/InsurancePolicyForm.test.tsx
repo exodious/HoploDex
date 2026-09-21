@@ -75,6 +75,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
           companyContact: null,
           agentName: null,
           agentContact: null,
+          notes: null,
           blanketCoverageLimit: null,
           effectiveStartDate: "2026-01-01",
           effectiveEndDate: "2026-12-31",
@@ -91,5 +92,62 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     );
 
     expect(screen.getByLabelText("Blanket coverage limit")).toHaveValue("");
+  });
+
+  it("submits blank notes as null", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<InsurancePolicyForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(screen.getByLabelText("Notes"), "   ");
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+
+    expect(onSubmit.mock.calls[0][0].notes).toBeNull();
+  });
+
+  it("submits entered notes, keeping line breaks", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<InsurancePolicyForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(
+      screen.getByLabelText("Notes"),
+      "Renews in January.{Enter}Ask about the rider.",
+    );
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+
+    expect(onSubmit.mock.calls[0][0].notes).toBe("Renews in January.\nAsk about the rider.");
+  });
+
+  it("prefills the notes from an existing policy", () => {
+    render(
+      <InsurancePolicyForm
+        initialValues={{
+          id: 1,
+          name: "Rider",
+          policyNumber: "R-1",
+          insuranceCompany: "Acme",
+          companyContact: null,
+          agentName: null,
+          agentContact: null,
+          notes: "Keep the appraisal with this policy.",
+          blanketCoverageLimit: null,
+          effectiveStartDate: "2026-01-01",
+          effectiveEndDate: "2026-12-31",
+          createdAt: "",
+          updatedAt: "",
+          isInForce: true,
+          isExpired: false,
+          isExpiringSoon: false,
+          expiringWarning: false,
+          expiredWarning: false,
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Notes")).toHaveValue("Keep the appraisal with this policy.");
   });
 });

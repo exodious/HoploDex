@@ -148,6 +148,13 @@ export function PolicyCard({
           )}
         </dl>
       )}
+
+      {policy.notes && (
+        <div className="hd-policy__notes">
+          <span className="hd-eyebrow">Notes</span>
+          <p>{policy.notes}</p>
+        </div>
+      )}
     </article>
   );
 }

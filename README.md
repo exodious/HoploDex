@@ -196,6 +196,14 @@ in `import-samples/` (clean, conflicting and invalid rows) to try File >
 Import with. The app is pointed at it through `XDG_*_HOME`, so your real
 collection is never opened. Linux only.
 
+**Changing the data model?** Update the seed in the same change. The seed
+compiles when a new field is simply left out, so
+`src-tauri/tests/human_seed_coverage_test.rs` runs it against a temporary
+database and fails if any column is empty in every row, if a `CHECK ... IN`
+value never appears, or if no import sample fills a spreadsheet column. Fix a
+failure by seeding a record that uses the new field (and adding it to the
+import samples), not by loosening the test.
+
 ### Linting & formatting
 
 ```bash

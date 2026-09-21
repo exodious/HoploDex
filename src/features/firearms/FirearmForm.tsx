@@ -5,17 +5,19 @@ import {
   Checkbox,
   ChoiceCards,
   DateField,
+  DecimalField,
   MoneyField,
   Select,
   TextArea,
   TextField,
 } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
+import { inchesToInput, ouncesToInput, parseInches, parseOunces } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
-import { DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
-import type { DispositionType, Firearm, FirearmInput } from "./types";
+import { CONDITION_OPTIONS, DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
+import type { Condition, DispositionType, Firearm, FirearmInput } from "./types";
 import "./forms.css";
 
 /** A field the form can open on, for the record page's "Add" links. */
@@ -44,6 +46,12 @@ interface FormState {
   noSerialAttested: boolean;
   notes: string;
   accessories: string;
+  barrelLength: string;
+  overallLength: string;
+  weight: string;
+  capacity: string;
+  finish: string;
+  condition: Condition | "";
   estimatedValue: string;
   acquisitionSource: string;
   acquisitionDate: string;
@@ -56,6 +64,16 @@ interface FormState {
 
 type Field = keyof FormState;
 
+/** The name the backend gives a field when it rejects it. */
+const SERVER_FIELD: Partial<Record<Field, string>> = {
+  barrelLength: "barrelLengthHundredths",
+  overallLength: "overallLengthHundredths",
+  weight: "weightTenthsOz",
+};
+
+/** Sent for the condition's "Not recorded" option: a Select item can't be "". */
+const NOT_RECORDED = "none";
+
 function toFormState(firearm?: Firearm): FormState {
   return {
     make: firearm?.make ?? "",
@@ -67,6 +85,12 @@ function toFormState(firearm?: Firearm): FormState {
     noSerialAttested: firearm?.noSerialAttested ?? false,
     notes: firearm?.notes ?? "",
     accessories: firearm?.accessories ?? "",
+    barrelLength: inchesToInput(firearm?.barrelLengthHundredths ?? null),
+    overallLength: inchesToInput(firearm?.overallLengthHundredths ?? null),
+    weight: ouncesToInput(firearm?.weightTenthsOz ?? null),
+    capacity: firearm?.capacity == null ? "" : String(firearm.capacity),
+    finish: firearm?.finish ?? "",
+    condition: firearm?.condition ?? "",
     estimatedValue: dollarsToInput(firearm?.estimatedValue ?? null),
     acquisitionSource: firearm?.acquisitionSource ?? "",
     acquisitionDate: firearm?.acquisitionDate ?? "",
@@ -98,6 +122,17 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
   for (const field of ["estimatedValue", "acquisitionPrice"] as const) {
     const parsed = parseDollars(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
+  }
+  for (const [field, parse] of [
+    ["barrelLength", parseInches],
+    ["overallLength", parseInches],
+    ["weight", parseOunces],
+  ] as const) {
+    const parsed = parse(form[field]);
+    if (!parsed.ok) errors[field] = parsed.error;
+  }
+  if (form.capacity !== "" && !(Number(form.capacity) >= 1)) {
+    errors.capacity = "Capacity must be at least 1.";
   }
   const acquired = parseDateInput(form.acquisitionDate);
   if (!acquired.ok) errors.acquisitionDate = acquired.error;
@@ -131,6 +166,12 @@ function dollars(text: string): number | null {
   return parsed.ok ? parsed.dollars : null;
 }
 
+/** The scaled integer for a physical-detail field already validated. */
+function measure(parse: typeof parseInches, text: string): number | null {
+  const parsed = parse(text);
+  return parsed.ok ? parsed.value : null;
+}
+
 function isoDate(text: string): string | null {
   const parsed = parseDateInput(text);
   return parsed.ok ? parsed.iso : null;
@@ -144,6 +185,10 @@ const FIELD_ORDER: Field[] = [
   "firearmTypeId",
   "caliber",
   "serialNumber",
+  "barrelLength",
+  "overallLength",
+  "weight",
+  "capacity",
   "estimatedValue",
   "acquisitionDate",
   "acquisitionPrice",
@@ -185,7 +230,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const clientErrors = validate(form, disposed);
   const errorFor = (field: Field): string | undefined =>
     touched[field] || submitted
-      ? (clientErrors[field] ?? serverError?.fieldErrors?.[field])
+      ? (clientErrors[field] ?? serverError?.fieldErrors?.[SERVER_FIELD[field] ?? field])
       : undefined;
   // Blurring an empty field doesn't flag it; "required" errors wait for a
   // submit attempt, so tabbing through the form isn't a wall of red.
@@ -218,6 +263,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
       accessories: blankToNull(form.accessories),
+      barrelLengthHundredths: measure(parseInches, form.barrelLength),
+      overallLengthHundredths: measure(parseInches, form.overallLength),
+      weightTenthsOz: measure(parseOunces, form.weight),
+      capacity: form.capacity === "" ? null : Number(form.capacity),
+      finish: blankToNull(form.finish),
+      condition: form.condition === "" ? null : form.condition,
       estimatedValue: dollars(form.estimatedValue),
       acquisitionSource: blankToNull(form.acquisitionSource),
       acquisitionDate: isoDate(form.acquisitionDate),
@@ -352,6 +403,72 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             </div>
           </div>
         </section>
+
+        <fieldset className="hd-form-section hd-form-fieldset">
+          <legend className="hd-form-section__title">Physical details</legend>
+          <div className="hd-form-grid hd-form-grid--3">
+            <div data-field="barrelLength">
+              <DecimalField
+                label="Barrel length (in)"
+                places={2}
+                value={form.barrelLength}
+                onValueChange={(text) => update("barrelLength", text)}
+                onBlur={touch("barrelLength")}
+                error={errorFor("barrelLength")}
+                placeholder="e.g. 4.25"
+              />
+            </div>
+            <div data-field="overallLength">
+              <DecimalField
+                label="Overall length (in)"
+                places={2}
+                value={form.overallLength}
+                onValueChange={(text) => update("overallLength", text)}
+                onBlur={touch("overallLength")}
+                error={errorFor("overallLength")}
+                placeholder="e.g. 7.4"
+              />
+            </div>
+            <div data-field="weight">
+              <DecimalField
+                label="Weight (oz)"
+                places={1}
+                value={form.weight}
+                onValueChange={(text) => update("weight", text)}
+                onBlur={touch("weight")}
+                error={errorFor("weight")}
+                hint="Ounces, e.g. 40.5. Shown as pounds and ounces."
+              />
+            </div>
+            <div data-field="capacity">
+              <TextField
+                label="Capacity"
+                inputMode="numeric"
+                autoComplete="off"
+                value={form.capacity}
+                onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
+                onBlur={touch("capacity")}
+                error={errorFor("capacity")}
+                hint="Rounds in the magazine, cylinder or tube."
+              />
+            </div>
+            <TextField
+              label="Finish"
+              value={form.finish}
+              onChange={(e) => update("finish", e.target.value)}
+              placeholder="e.g. Blued, Cerakote"
+              hint="Searchable."
+            />
+            <Select
+              label="Condition"
+              value={form.condition || NOT_RECORDED}
+              onValueChange={(value) =>
+                update("condition", value === NOT_RECORDED ? "" : (value as Condition))
+              }
+              options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
+            />
+          </div>
+        </fieldset>
 
         <section className="hd-form-section" aria-labelledby="ff-value">
           <h3 className="hd-form-section__title" id="ff-value">

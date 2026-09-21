@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge, Button, ConfirmDialog, Dialog, Icon, useToast } from "../../components";
 import { formatDate } from "../../lib/dates";
+import { formatInches, formatWeight } from "../../lib/measure";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { BackLink } from "../app/BackLink";
@@ -22,7 +23,7 @@ import { FirearmForm } from "./FirearmForm";
 import type { FocusField } from "./FirearmForm";
 import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
-import { dispositionLabel, firearmTypeOption } from "./types";
+import { conditionLabel, dispositionLabel, firearmTypeOption } from "./types";
 import type {
   DisposeFirearmInput,
   Firearm,
@@ -246,6 +247,38 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         <div className="hd-record__main">
           <PhotoGallery firearm={firearm} onChanged={handleMediaChanged} />
 
+          {hasPhysicalDetails(firearm) && (
+            <section className="hd-panel" aria-labelledby="physical-title">
+              <header className="hd-panel__head">
+                <h2 className="hd-panel__title" id="physical-title">
+                  Physical details
+                </h2>
+              </header>
+              <dl className="hd-facts">
+                {firearm.barrelLengthHundredths != null && (
+                  <Fact label="Barrel length">{`${formatInches(firearm.barrelLengthHundredths)} in`}</Fact>
+                )}
+                {firearm.overallLengthHundredths != null && (
+                  <Fact label="Overall length">
+                    {`${formatInches(firearm.overallLengthHundredths)} in`}
+                  </Fact>
+                )}
+                {firearm.weightTenthsOz != null && (
+                  <Fact label="Weight">{formatWeight(firearm.weightTenthsOz)}</Fact>
+                )}
+                {firearm.capacity != null && (
+                  <Fact label="Capacity">
+                    {`${firearm.capacity} ${firearm.capacity === 1 ? "round" : "rounds"}`}
+                  </Fact>
+                )}
+                {firearm.finish && <Fact label="Finish">{firearm.finish}</Fact>}
+                {firearm.condition && (
+                  <Fact label="Condition">{conditionLabel(firearm.condition)}</Fact>
+                )}
+              </dl>
+            </section>
+          )}
+
           <section className="hd-panel" aria-labelledby="notes-title">
             <header className="hd-panel__head">
               <h2 className="hd-panel__title" id="notes-title">
@@ -439,6 +472,19 @@ function PlateFigure({
       />
       {original && <img className="hd-plate__photo" src={original} alt="" />}
     </div>
+  );
+}
+
+/** Whether any of FR-039's six optional details is recorded, so a record
+ * with none shows no empty panel. */
+function hasPhysicalDetails(firearm: Firearm): boolean {
+  return (
+    firearm.barrelLengthHundredths != null ||
+    firearm.overallLengthHundredths != null ||
+    firearm.weightTenthsOz != null ||
+    firearm.capacity != null ||
+    Boolean(firearm.finish) ||
+    firearm.condition != null
   );
 }
 

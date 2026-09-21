@@ -26,7 +26,7 @@ use hoplodex_lib::commands::firearms::{
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
-use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
+use hoplodex_lib::models::firearm::{Condition, DispositionType, FirearmInput, FirearmStatus};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
@@ -155,6 +155,12 @@ fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> F
         nickname: None,
         notes: None,
         accessories: None,
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
         status: FirearmStatus::Active,
         estimated_value: None,
         acquisition_source: None,
@@ -183,20 +189,26 @@ struct Policies {
 /// whenever the database is seeded: in force, expiring soon, expired, and
 /// an expired blanket policy that a renewal has replaced.
 fn seed_policies(conn: &Connection) -> Policies {
-    let policy =
-        |name: &str, number: &str, company: &str, limit: Option<i64>, start: i64, end: i64| {
-            InsurancePolicyInput {
-                name: name.into(),
-                policy_number: number.into(),
-                insurance_company: company.into(),
-                company_contact: text("1-800-555-0142"),
-                agent_name: text("Pat Alvarez"),
-                agent_contact: text("pat.alvarez@example.com"),
-                blanket_coverage_limit: limit,
-                effective_start_date: day(start),
-                effective_end_date: day(end),
-            }
-        };
+    let policy = |name: &str,
+                  number: &str,
+                  company: &str,
+                  limit: Option<i64>,
+                  start: i64,
+                  end: i64,
+                  notes: Option<&str>| {
+        InsurancePolicyInput {
+            name: name.into(),
+            policy_number: number.into(),
+            insurance_company: company.into(),
+            company_contact: text("1-800-555-0142"),
+            agent_name: text("Pat Alvarez"),
+            agent_contact: text("pat.alvarez@example.com"),
+            notes: notes.map(str::to_owned),
+            blanket_coverage_limit: limit,
+            effective_start_date: day(start),
+            effective_end_date: day(end),
+        }
+    };
     let create = |input: InsurancePolicyInput| {
         must(insurance_ops::create_policy(conn, &input), &input.name.clone()).id
     };
@@ -210,6 +222,7 @@ fn seed_policies(conn: &Connection) -> Policies {
         Some(10_000),
         -530,
         -166,
+        None,
     ));
     Policies {
         collector: create(policy(
@@ -219,6 +232,9 @@ fn seed_policies(conn: &Connection) -> Policies {
             None,
             -335,
             20,
+            Some(
+                "Renewal quote requested.\nAppraisals for the scheduled firearms are in the safe.",
+            ),
         )),
         expired_rider: create(policy(
             "Range Bag Rider",
@@ -227,8 +243,17 @@ fn seed_policies(conn: &Connection) -> Policies {
             None,
             -700,
             -40,
+            None,
         )),
-        vault: create(policy("Vault Schedule", "VS-559031", "Heritage Fine Arts", None, -100, 265)),
+        vault: create(policy(
+            "Vault Schedule",
+            "VS-559031",
+            "Heritage Fine Arts",
+            None,
+            -100,
+            265,
+            None,
+        )),
     }
 }
 
@@ -243,6 +268,9 @@ fn seed_blanket(conn: &Connection, limit: i64) {
         company_contact: text("1-800-555-0142"),
         agent_name: text("Pat Alvarez"),
         agent_contact: text("pat.alvarez@example.com"),
+        notes: text(
+            "Covers every firearm not scheduled individually.\nClaims line: 1-800-555-0142.",
+        ),
         blanket_coverage_limit: Some(limit),
         effective_start_date: day(-165),
         effective_end_date: day(200),
@@ -250,7 +278,8 @@ fn seed_blanket(conn: &Connection, limit: i64) {
     must(insurance_ops::create_policy(conn, &input), "the current blanket policy");
 }
 
-fn seed(conn: &Connection, extra: usize) {
+/// `pub` so `tests/human_seed_coverage_test.rs` can run it.
+pub fn seed(conn: &Connection, extra: usize) {
     let policies = seed_policies(conn);
     let extras = generated_firearms(extra);
     let extras_value: i64 = extras.iter().filter_map(|f| f.estimated_value).sum();
@@ -293,6 +322,12 @@ fn seed(conn: &Connection, extra: usize) {
         acquisition_source: text("Ridgeline Arms"),
         acquisition_date: text("2021-03-14"),
         acquisition_price: Some(529),
+        barrel_length_hundredths: Some(402),
+        overall_length_hundredths: Some(740),
+        weight_tenths_oz: Some(236),
+        capacity: Some(15),
+        finish: text("Black nDLC"),
+        condition: Some(Condition::Excellent),
         ..base("Glock", "19 Gen5", "BXKT482", "9mm", HANDGUN)
     });
     photos(
@@ -326,6 +361,12 @@ fn seed(conn: &Connection, extra: usize) {
         acquisition_source: text("Gun show"),
         acquisition_date: text("2018-09-02"),
         acquisition_price: Some(340),
+        barrel_length_hundredths: Some(1620),
+        overall_length_hundredths: Some(3700),
+        weight_tenths_oz: Some(736),
+        capacity: Some(10),
+        finish: text("Matte black"),
+        condition: Some(Condition::Good),
         ..base("Ruger", "10/22 Takedown", "0012-34567", ".22 LR", RIFLE)
     });
 
@@ -334,6 +375,12 @@ fn seed(conn: &Connection, extra: usize) {
         accessories: text("Extra 20-inch barrel, Vang Comp magazine tube extension, sling swivels, 4-shell side saddle, Limbsaver recoil pad, spare bead sight, cleaning kit"),
         estimated_value: Some(650),
         acquisition_date: text("2012-11-23"),
+        barrel_length_hundredths: Some(2800),
+        overall_length_hundredths: Some(4850),
+        weight_tenths_oz: Some(1160),
+        capacity: Some(4),
+        finish: text("Blued, walnut stock"),
+        condition: Some(Condition::Good),
         ..base("Remington", "870 Wingmaster", "RS12345M", "12 gauge", SHOTGUN)
     });
 
@@ -343,6 +390,12 @@ fn seed(conn: &Connection, extra: usize) {
         acquisition_source: text("Ridgeline Arms"),
         acquisition_date: text("2020-02-08"),
         acquisition_price: Some(1_749),
+        barrel_length_hundredths: Some(1850),
+        overall_length_hundredths: Some(4000),
+        weight_tenths_oz: Some(1248),
+        capacity: Some(5),
+        finish: text("Matte black"),
+        condition: Some(Condition::LikeNew),
         ..base("Benelli", "M4 Super 90", "M123456", "12 gauge", SHOTGUN)
     });
     photos(benelli, &[("benelli-m4.png", gradient_image(600, 800, 25, false), "image/png")]);
@@ -363,6 +416,8 @@ fn seed(conn: &Connection, extra: usize) {
         acquisition_source: text("Dana Whitfield"),
         acquisition_date: text("2025-10-11"),
         acquisition_price: Some(500),
+        finish: text("Stainless slide, black frame"),
+        condition: Some(Condition::NewInBox),
         ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
     });
     photos(p365, &[("p365.png", gradient_image(800, 600, 160, false), "image/png")]);
@@ -373,6 +428,12 @@ fn seed(conn: &Connection, extra: usize) {
         acquisition_source: text("Civilian Marksmanship Program"),
         acquisition_date: text("2016-05-19"),
         acquisition_price: Some(1_050),
+        barrel_length_hundredths: Some(2400),
+        overall_length_hundredths: Some(4360),
+        weight_tenths_oz: Some(1520),
+        capacity: Some(8),
+        finish: text("Parkerized"),
+        condition: Some(Condition::Fair),
         ..base("Springfield Armory", "M1 Garand", "1234567", ".30-06", RIFLE)
     });
 
@@ -392,6 +453,12 @@ fn seed(conn: &Connection, extra: usize) {
         notes: text("Black powder; no serial number."),
         estimated_value: Some(250),
         acquisition_date: text("2019-08-03"),
+        barrel_length_hundredths: Some(800),
+        overall_length_hundredths: Some(1300),
+        weight_tenths_oz: Some(400),
+        capacity: Some(6),
+        finish: text("Blued"),
+        condition: Some(Condition::Poor),
         ..base("Pedersoli", "1858 Remington Replica", "", ".44 black powder", OTHER)
     });
 
@@ -570,6 +637,13 @@ fn seed(conn: &Connection, extra: usize) {
     });
     dispose(patriot, DispositionType::Traded, "Ridgeline Arms", "2025-06-30", 400);
 
+    let cracked = add(FirearmInput {
+        estimated_value: Some(0),
+        acquisition_date: text("2019-04-20"),
+        ..base("Remington", "Model 700 (cracked receiver)", "RR700-2231", ".30-06", RIFLE)
+    });
+    dispose(cracked, DispositionType::Destroyed, "County buyback program", "2025-02-11", 0);
+
     // -- Generated filler for scrolling, grouping and search ----------------
 
     for input in extras {
@@ -688,7 +762,7 @@ fn simple_pdf(lines: &[&str]) -> Vec<u8> {
 /// Spreadsheets to try File > Import with, each shaped to hit a different
 /// path: a clean import, conflicts with the seeded collection, and rows that
 /// fail validation. Written next to the database, never imported here.
-fn write_import_samples(dir: &Path) -> PathBuf {
+pub fn write_import_samples(dir: &Path) -> PathBuf {
     std::fs::create_dir_all(dir).expect("create the import samples directory");
 
     let row = |cells: &[(&str, &str)]| -> Vec<String> {
@@ -723,6 +797,12 @@ fn write_import_samples(dir: &Path) -> PathBuf {
                 ("firearm_type", "Shotgun"),
                 ("estimated_value", "1100"),
                 ("acquisition_date", "2024-09-14"),
+                ("barrel_length_in", "28"),
+                ("overall_length_in", "48.5"),
+                ("weight_oz", "113.5"),
+                ("capacity", "4"),
+                ("finish", "Black anodized"),
+                ("condition", "New in box"),
             ]),
             row(&[
                 ("make", "Tikka"),
@@ -735,6 +815,28 @@ fn write_import_samples(dir: &Path) -> PathBuf {
                 ("estimated_value", "$1,050"),
                 ("insurance_policy_name", "Vault Schedule"),
                 ("scheduled_coverage_amount", "1200"),
+                // A zero fraction beyond the precision, and any letter case.
+                ("barrel_length_in", "24.500"),
+                ("capacity", "3"),
+                ("condition", "like new"),
+            ]),
+            // A record that is already disposed of, with its acquisition details.
+            row(&[
+                ("make", "Winchester"),
+                ("model", "Model 94"),
+                ("serial_number", "W94-88231"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".30-30 Win"),
+                ("firearm_type", "Rifle"),
+                ("accessories", "Leather sling, original box"),
+                ("status", "disposed"),
+                ("acquisition_source", "Estate sale"),
+                ("acquisition_date", "2016-05-21"),
+                ("acquisition_price", "450"),
+                ("disposition_type", "sold"),
+                ("disposition_recipient", "Ridgeline Arms"),
+                ("disposition_date", "2024-11-02"),
+                ("disposition_price", "700"),
             ]),
             row(&[
                 ("make", "Homebuilt"),
@@ -761,6 +863,7 @@ fn write_import_samples(dir: &Path) -> PathBuf {
                 ("firearm_type", "Handgun"),
                 ("estimated_value", "600"),
                 ("notes", "Updated by import."),
+                ("finish", "Cerakote"),
             ]),
             // Matches the seeded Ruger 10/22 ignoring letter case.
             row(&[
@@ -850,6 +953,34 @@ fn write_import_samples(dir: &Path) -> PathBuf {
                 ("no_serial_attested", "TRUE"),
                 ("caliber", "9mm"),
                 ("firearm_type", "Handgun"),
+            ]),
+            row(&[
+                ("make", "Too"),
+                ("model", "Precise"),
+                ("serial_number", "E-008"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("barrel_length_in", "16.255"),
+                ("weight_oz", "40.55"),
+            ]),
+            row(&[
+                ("make", "Empty"),
+                ("model", "Magazine"),
+                ("serial_number", "E-009"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("capacity", "0"),
+            ]),
+            row(&[
+                ("make", "Unknown"),
+                ("model", "Condition"),
+                ("serial_number", "E-010"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("condition", "Mint"),
             ]),
             row(&[
                 ("make", "Good"),

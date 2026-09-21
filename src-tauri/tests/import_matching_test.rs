@@ -28,6 +28,12 @@ fn existing_firearm() -> FirearmInput {
         firearm_type_id: 1,
         notes: Some("original notes".into()),
         accessories: None,
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
         status: FirearmStatus::Active,
         estimated_value: Some(50000),
         acquisition_source: None,
@@ -484,4 +490,47 @@ fn apply_to_remaining_resolves_conflicts_not_explicitly_listed() {
         firearm_ops::get_firearm(&db.conn, e2.id).unwrap().notes.as_deref(),
         Some("row two")
     );
+}
+
+/// FR-039: overwriting an existing record from a file updates the physical
+/// details along with the rest.
+#[test]
+fn overwriting_a_conflict_updates_the_physical_details() {
+    let db = TestDb::new();
+    let dir = TempDir::new().unwrap();
+    let store = ImportSessionStore::new();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    assert_eq!(existing.capacity, None);
+
+    let path = write_csv(
+        &dir,
+        &csv_file(&[csv_firearm(
+            "Glock",
+            "19",
+            "ABC123",
+            &[("barrel_length_in", "4.02"), ("capacity", "15"), ("finish", "nDLC")],
+        )]),
+    );
+    let imported = import_export_ops::import_collection(
+        &db.conn,
+        &path,
+        SpreadsheetFormat::Csv,
+        &store,
+        &mut |_, _| {},
+    )
+    .unwrap();
+    let conflict_id = imported.conflicts[0].conflict_id.clone();
+    import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        &store,
+        &imported.session_id,
+        &[ConflictResolution { conflict_id, action: "overwrite".into() }],
+        None,
+    )
+    .unwrap();
+
+    let updated = firearm_ops::get_firearm(&db.conn, existing.id).unwrap();
+    assert_eq!(updated.barrel_length_hundredths, Some(402));
+    assert_eq!(updated.capacity, Some(15));
+    assert_eq!(updated.finish.as_deref(), Some("nDLC"));
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
 import { FirearmForm } from "./FirearmForm";
@@ -194,6 +194,190 @@ describe("FirearmForm nickname (FR-031)", () => {
       />,
     );
     expect(screen.getByLabelText("Nickname")).toHaveValue("Snake");
+  });
+});
+
+describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", () => {
+  const group = () => screen.getByRole("group", { name: "Physical details" });
+  const barrel = () => within(group()).getByLabelText("Barrel length (in)");
+  const overall = () => within(group()).getByLabelText("Overall length (in)");
+  const weight = () => within(group()).getByLabelText("Weight (oz)");
+  const capacity = () => within(group()).getByLabelText("Capacity");
+  const finish = () => within(group()).getByLabelText("Finish");
+
+  async function pickCondition(user: ReturnType<typeof userEvent.setup>, option: string) {
+    await user.click(within(group()).getByRole("combobox", { name: "Condition" }));
+    await user.click(await screen.findByRole("option", { name: option }));
+  }
+
+  it("has a Physical details group with all six fields", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    for (const field of [barrel(), overall(), weight(), capacity(), finish()]) {
+      expect(field).toBeInTheDocument();
+    }
+    expect(within(group()).getByRole("combobox", { name: "Condition" })).toBeInTheDocument();
+  });
+
+  it("offers Not recorded and the six grades, best first", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(within(group()).getByRole("combobox", { name: "Condition" }));
+
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options).toEqual([
+      "Not recorded",
+      "New in box",
+      "Like new",
+      "Excellent",
+      "Good",
+      "Fair",
+      "Poor",
+    ]);
+  });
+
+  it("submits blanks as null", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      barrelLengthHundredths: null,
+      overallLengthHundredths: null,
+      weightTenthsOz: null,
+      capacity: null,
+      finish: null,
+      condition: null,
+    });
+  });
+
+  it("submits entered values as the scaled integers", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(barrel(), "16.25");
+    await user.type(overall(), "18");
+    await user.type(weight(), "40.5");
+    await user.type(capacity(), "15");
+    await user.type(finish(), "  Cerakote  ");
+    await pickCondition(user, "Like new");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      barrelLengthHundredths: 1625,
+      overallLengthHundredths: 1800,
+      weightTenthsOz: 405,
+      capacity: 15,
+      finish: "Cerakote",
+      condition: "like_new",
+    });
+  });
+
+  it("submits null for Not recorded after a grade was chosen", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await pickCondition(user, "Good");
+    await pickCondition(user, "Not recorded");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit.mock.calls[0][0].condition).toBeNull();
+  });
+
+  it("prefills from the record", () => {
+    render(
+      <FirearmForm
+        initialValues={
+          {
+            id: 1,
+            make: "Colt",
+            model: "Python",
+            status: "active",
+            barrelLengthHundredths: 1625,
+            overallLengthHundredths: 1800,
+            weightTenthsOz: 405,
+            capacity: 6,
+            finish: "Blued",
+            condition: "excellent",
+          } as Firearm
+        }
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(barrel()).toHaveValue("16.25");
+    expect(overall()).toHaveValue("18");
+    expect(weight()).toHaveValue("40.5");
+    expect(capacity()).toHaveValue("6");
+    expect(finish()).toHaveValue("Blued");
+    expect(within(group()).getByRole("combobox", { name: "Condition" })).toHaveTextContent(
+      "Excellent",
+    );
+  });
+
+  it("accepts only digits in capacity", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.type(capacity(), "1a2.5");
+
+    expect(capacity()).toHaveValue("125");
+  });
+
+  it("blocks the save with a field-level message for too many decimal places, and never rounds", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(barrel(), "16.255");
+    await user.type(weight(), "40.55");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(screen.getByText("Use at most 2 decimal places.")).toBeInTheDocument();
+    expect(screen.getByText("Use at most 1 decimal place.")).toBeInTheDocument();
+    expect(barrel()).toHaveValue("16.255");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("blocks the save for a zero length and a capacity of 0", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(overall(), "0");
+    await user.type(capacity(), "0");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(screen.getByText("Must be greater than 0.")).toBeInTheDocument();
+    expect(screen.getByText("Capacity must be at least 1.")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("shows the backend's message on the field it names", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "The firearm record has validation errors.",
+        fieldErrors: { weightTenthsOz: "Weight must be greater than 0." },
+      }),
+    );
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(await screen.findByText("Weight must be greater than 0.")).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
@@ -37,6 +37,12 @@ const firearm: FirearmDetail = {
   thumbnailPhotoId: null,
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
+  barrelLengthHundredths: null,
+  overallLengthHundredths: null,
+  weightTenthsOz: null,
+  capacity: null,
+  finish: null,
+  condition: null,
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
@@ -102,5 +108,52 @@ describe("FirearmRecordPage 'Add' links (FR-038, US1 Acceptance Scenario 15)", (
     const make = await screen.findByLabelText(/^Make/);
     await waitFor(() => expect(make).toHaveFocus());
     expect(document.querySelector("[data-highlight]")).toBeNull();
+  });
+});
+
+describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows the recorded values in a Physical details panel", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      barrelLengthHundredths: 1625,
+      overallLengthHundredths: 3600,
+      weightTenthsOz: 405,
+      capacity: 15,
+      finish: "Cerakote flat dark earth",
+      condition: "excellent",
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Physical details" });
+    expect(within(panel).getByText("16.25 in")).toBeInTheDocument();
+    expect(within(panel).getByText("36 in")).toBeInTheDocument();
+    expect(within(panel).getByText("2 lb 8.5 oz")).toBeInTheDocument();
+    expect(within(panel).getByText("15 rounds")).toBeInTheDocument();
+    expect(within(panel).getByText("Cerakote flat dark earth")).toBeInTheDocument();
+    expect(within(panel).getByText("Excellent")).toBeInTheDocument();
+  });
+
+  it("shows only the values that are recorded", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, capacity: 1, condition: "like_new" });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Physical details" });
+    expect(within(panel).getByText("1 round")).toBeInTheDocument();
+    expect(within(panel).getByText("Like new")).toBeInTheDocument();
+    expect(within(panel).queryByText("Barrel length")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Weight")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Finish")).not.toBeInTheDocument();
+  });
+
+  it("omits the panel when none are recorded", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    await screen.findByText("No notes recorded.");
+    expect(screen.queryByRole("region", { name: "Physical details" })).not.toBeInTheDocument();
   });
 });

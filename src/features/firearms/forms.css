@@ -7,6 +7,20 @@
   gap: var(--space-4);
 }
 
+/* A fieldset section: drop the browser's box, and give the legend the gap that
+   `gap` can't (a legend isn't a flex item). */
+.hd-form-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.hd-form-fieldset > legend {
+  padding: 0;
+  margin-bottom: var(--space-4);
+}
+
 .hd-form-section + .hd-form-section {
   margin-top: var(--space-6);
   padding-top: var(--space-5);

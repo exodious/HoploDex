@@ -15,6 +15,7 @@ pub struct InsurancePolicy {
     pub company_contact: Option<String>,
     pub agent_name: Option<String>,
     pub agent_contact: Option<String>,
+    pub notes: Option<String>,
     /// Set for a blanket policy (FR-036), absent for a schedule-only one.
     pub blanket_coverage_limit: Option<i64>,
     pub effective_start_date: String,
@@ -33,6 +34,7 @@ impl InsurancePolicy {
             company_contact: row.get("company_contact")?,
             agent_name: row.get("agent_name")?,
             agent_contact: row.get("agent_contact")?,
+            notes: row.get("notes")?,
             blanket_coverage_limit: row.get("blanket_coverage_limit")?,
             effective_start_date: row.get("effective_start_date")?,
             effective_end_date: row.get("effective_end_date")?,
@@ -53,10 +55,19 @@ pub struct InsurancePolicyInput {
     pub company_contact: Option<String>,
     pub agent_name: Option<String>,
     pub agent_contact: Option<String>,
+    pub notes: Option<String>,
     /// Set for a blanket policy (FR-036), absent for a schedule-only one.
     pub blanket_coverage_limit: Option<i64>,
     pub effective_start_date: String,
     pub effective_end_date: String,
+}
+
+impl InsurancePolicyInput {
+    /// Notes as stored: trimmed, and a blank or whitespace-only entry is no
+    /// notes at all (FR-027).
+    pub fn normalized_notes(&self) -> Option<&str> {
+        self.notes.as_deref().map(str::trim).filter(|notes| !notes.is_empty())
+    }
 }
 
 /// Validation rules from data-model.md's InsurancePolicy section.

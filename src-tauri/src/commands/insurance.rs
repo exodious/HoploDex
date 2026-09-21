@@ -205,10 +205,10 @@ pub mod ops {
         conn.execute(
             "INSERT INTO insurance_policies (
                 name, policy_number, insurance_company, company_contact, agent_name, agent_contact,
-                blanket_coverage_limit, effective_start_date, effective_end_date, created_at, updated_at
+                notes, blanket_coverage_limit, effective_start_date, effective_end_date, created_at, updated_at
             ) VALUES (
                 :name, :policy_number, :insurance_company, :company_contact, :agent_name, :agent_contact,
-                :blanket_coverage_limit, :effective_start_date, :effective_end_date,
+                :notes, :blanket_coverage_limit, :effective_start_date, :effective_end_date,
                 datetime('now'), datetime('now')
             )",
             named_params! {
@@ -218,6 +218,7 @@ pub mod ops {
                 ":company_contact": input.company_contact,
                 ":agent_name": input.agent_name,
                 ":agent_contact": input.agent_contact,
+                ":notes": input.normalized_notes(),
                 ":blanket_coverage_limit": input.blanket_coverage_limit,
                 ":effective_start_date": input.effective_start_date,
                 ":effective_end_date": input.effective_end_date,
@@ -244,6 +245,7 @@ pub mod ops {
                     company_contact = :company_contact,
                     agent_name = :agent_name,
                     agent_contact = :agent_contact,
+                    notes = :notes,
                     blanket_coverage_limit = :blanket_coverage_limit,
                     effective_start_date = :effective_start_date,
                     effective_end_date = :effective_end_date,
@@ -257,6 +259,7 @@ pub mod ops {
                     ":company_contact": input.company_contact,
                     ":agent_name": input.agent_name,
                     ":agent_contact": input.agent_contact,
+                    ":notes": input.normalized_notes(),
                     ":blanket_coverage_limit": input.blanket_coverage_limit,
                     ":effective_start_date": input.effective_start_date,
                     ":effective_end_date": input.effective_end_date,

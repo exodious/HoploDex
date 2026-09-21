@@ -12,6 +12,7 @@ import {
   listedNames,
   openFirearm,
   pasteInto,
+  selectOption,
   titleBlock,
   toggle,
 } from "../support/ui";
@@ -391,6 +392,66 @@ describe("User Story 1 - Record a Firearm", () => {
     await $('[role="dialog"]').waitForExist();
     expect(await fieldValue("Estimated replacement value")).toBe("1250");
     await clickButton("Cancel");
+    await back();
+  });
+
+  it("records physical details, refuses excess precision, and hides the panel when cleared (Scenario 17)", async () => {
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fillFirearmForm({
+      make: "E2EPhys",
+      model: "Details",
+      caliber: "5.56",
+      type: "Rifle",
+      serial: "PHYS-1",
+    });
+    await fill("Barrel length (in)", "16.25");
+    await fill("Overall length (in)", "36");
+    await fill("Weight (oz)", "40.5");
+    await fill("Capacity", "30");
+    await fill("Finish", "Cerakote flat dark earth");
+    await selectOption("Condition", "Excellent");
+    await clickButton("Add firearm");
+    await $("#record-name").waitForExist();
+
+    // Reopened from the collection, the record shows them.
+    await back();
+    await openFirearm("E2EPhys Details");
+    const panel = await $('section[aria-labelledby="physical-title"]');
+    await panel.waitForExist();
+    const shown = (await panel.getText()).replace(/\s+/g, " ");
+    for (const text of ["16.25 in", "36 in", "2 lb 8.5 oz", "30 rounds", "Cerakote", "Excellent"]) {
+      expect(shown).toContain(text);
+    }
+
+    // More than two decimal places blocks the save with a message on the
+    // field; nothing is rounded and nothing is saved.
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Barrel length (in)", "16.255");
+    await clickButton("Save changes");
+    await expect($('[role="dialog"]*=Use at most 2 decimal places')).toExist();
+    expect(await fieldValue("Barrel length (in)")).toBe("16.255");
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    expect((await panel.getText()).replace(/\s+/g, " ")).toContain("16.25 in");
+
+    // Clearing all six saves normally and the panel disappears.
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    for (const label of [
+      "Barrel length (in)",
+      "Overall length (in)",
+      "Weight (oz)",
+      "Capacity",
+      "Finish",
+    ]) {
+      await fill(label, "");
+    }
+    await selectOption("Condition", "Not recorded");
+    await clickButton("Save changes");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await $('section[aria-labelledby="physical-title"]').waitForExist({ reverse: true });
     await back();
   });
 });

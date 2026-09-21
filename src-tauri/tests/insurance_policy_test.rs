@@ -318,3 +318,55 @@ fn the_database_itself_refuses_a_negative_limit_or_scheduled_amount() {
         )
         .is_err());
 }
+
+/// FR-027 / US3 Acceptance Scenario 16: a policy carries optional free-form
+/// notes; a blank entry is stored as no notes.
+#[test]
+fn notes_are_stored_and_returned_from_create_update_and_list() {
+    let db = TestDb::new();
+    let mut input = blanket("Homeowners", "2025-01-01", "2026-01-01");
+    input.notes = Some("  Renews in January.\nAsk about the rider.  ".into());
+
+    let created = insurance_ops::create_policy(&db.conn, &input).unwrap();
+    assert_eq!(created.notes.as_deref(), Some("Renews in January.\nAsk about the rider."));
+
+    input.notes = Some("Renewal quote received.".into());
+    let updated = insurance_ops::update_policy(&db.conn, created.id, &input).unwrap();
+    assert_eq!(updated.notes.as_deref(), Some("Renewal quote received."));
+
+    let listed = insurance_ops::list_policy_views(&db.conn).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].policy.notes.as_deref(), Some("Renewal quote received."));
+}
+
+#[test]
+fn blank_or_whitespace_only_notes_are_stored_as_null() {
+    let db = TestDb::new();
+    let mut input = policy("Rider", "2025-01-01", "2026-01-01", None);
+
+    for blank in ["", "   ", "\n\t "] {
+        input.notes = Some(blank.into());
+        let created = insurance_ops::create_policy(&db.conn, &input).unwrap();
+        assert_eq!(created.notes, None, "{blank:?} on create should be stored as null");
+
+        input.notes = Some("Something".into());
+        insurance_ops::update_policy(&db.conn, created.id, &input).unwrap();
+        input.notes = Some(blank.into());
+        let updated = insurance_ops::update_policy(&db.conn, created.id, &input).unwrap();
+        assert_eq!(updated.notes, None, "{blank:?} on update should be stored as null");
+    }
+}
+
+#[test]
+fn notes_are_cleared_when_updated_with_null() {
+    let db = TestDb::new();
+    let mut input = blanket("Homeowners", "2025-01-01", "2026-01-01");
+    input.notes = Some("Keep the original appraisal with this policy.".into());
+    let created = insurance_ops::create_policy(&db.conn, &input).unwrap();
+    assert!(created.notes.is_some());
+
+    input.notes = None;
+    let updated = insurance_ops::update_policy(&db.conn, created.id, &input).unwrap();
+    assert_eq!(updated.notes, None);
+    assert_eq!(insurance_ops::get_policy(&db.conn, created.id).unwrap().notes, None);
+}

@@ -10,11 +10,11 @@ use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::firearm::{
-    validate_firearm_input, DispositionType, FirearmInput, FirearmStatus,
+    validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus,
 };
 use crate::services::spreadsheet::{
-    dollars_to_string, parse_whole_dollars, read_spreadsheet, write_spreadsheet, FirearmExportRow,
-    RawImportRow, SpreadsheetFormat,
+    dollars_to_string, parse_scaled_decimal, parse_whole_dollars, read_spreadsheet,
+    scaled_to_string, write_spreadsheet, FirearmExportRow, RawImportRow, SpreadsheetFormat,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -191,6 +191,12 @@ pub mod ops {
                 disposition_price: dollars_to_string(firearm.disposition_price),
                 insurance_policy_name: insurance_policy_name.unwrap_or_default(),
                 scheduled_coverage_amount: dollars_to_string(firearm.scheduled_coverage_amount),
+                barrel_length_in: scaled_to_string(firearm.barrel_length_hundredths, 2),
+                overall_length_in: scaled_to_string(firearm.overall_length_hundredths, 2),
+                weight_oz: scaled_to_string(firearm.weight_tenths_oz, 1),
+                capacity: scaled_to_string(firearm.capacity, 0),
+                finish: firearm.finish.unwrap_or_default(),
+                condition: firearm.condition.map(|c| c.label().to_string()).unwrap_or_default(),
                 photo_filenames: photo_filenames.join(";"),
             });
 
@@ -220,6 +226,16 @@ pub mod ops {
             "lost_stolen" => Ok(DispositionType::LostStolen),
             other => Err(format!("Unknown disposition type: {other}")),
         }
+    }
+
+    /// A condition cell: the display name (`Like new`) or the stored form
+    /// (`like_new`), in any letter case (FR-039).
+    fn parse_condition(value: &str) -> Result<Condition, String> {
+        let wanted = value.trim().to_lowercase();
+        Condition::ALL
+            .into_iter()
+            .find(|c| c.label().to_lowercase() == wanted || c.as_str() == wanted)
+            .ok_or_else(|| format!("condition: unknown condition {value:?}"))
     }
 
     /// The reason shown for a failing row: every per-field message (the
@@ -291,6 +307,20 @@ pub mod ops {
             nickname: raw.nickname.clone(),
             notes: raw.notes.clone(),
             accessories: raw.accessories.clone(),
+            barrel_length_hundredths: parse_scaled_decimal(
+                "barrel_length_in",
+                &raw.barrel_length_in,
+                2,
+            )?,
+            overall_length_hundredths: parse_scaled_decimal(
+                "overall_length_in",
+                &raw.overall_length_in,
+                2,
+            )?,
+            weight_tenths_oz: parse_scaled_decimal("weight_oz", &raw.weight_oz, 1)?,
+            capacity: parse_scaled_decimal("capacity", &raw.capacity, 0)?,
+            finish: raw.finish.clone(),
+            condition: raw.condition.as_deref().map(parse_condition).transpose()?,
             status,
             estimated_value: parse_whole_dollars("estimated_value", &raw.estimated_value)?,
             acquisition_source: raw.acquisition_source.clone(),
