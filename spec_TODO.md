@@ -210,6 +210,11 @@ Supersedes: research §5 (random key generated at first run and held in the OS k
 - [polish] The fresh-database animation shown on first run is visually polished but only displays once. Consider whether it belongs in a startup splash screen that appears on each app launch, rather than only on initial database creation.
   - UX polish, not a requirement. Evaluate after 1.0 release based on whether a splash screen on startup is desired and whether the animation fits the branding intent.
 
+### C6. Database migration strategy (post-1.0)
+
+- [infrastructure] After the first release, any non-backwards-compatible changes to the data model will require a database migration path for existing user databases, and a major version bump (semver) to signal the breaking change.
+  - **Scope:** moot until 1.0 ships and production databases exist. The current `schema_migrations` table tracks applied migrations, and the forward-compat guard in B5 (schema version check at open) provides the groundwork. Post-release, establish a versioning policy: define what constitutes a breaking vs. compatible schema change, how migrations are authored and tested, and the UI flow when a user's database is on an older schema than the app (prompt to back up, show migration summary, apply, or defer to next major version). Until then, dev and early-access databases are recreated as specs change; no migration burden. Document the eventual policy in the constitution once 1.0 nears.
+
 ---
 
 ## Decisions needed before proceeding
