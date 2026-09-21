@@ -16,7 +16,10 @@ React + TypeScript frontend for UI, and a Rust backend owning all
 persistence, encryption, business logic (value/insurance calculations,
 import matching), and file-format I/O, communicating over Tauri's async
 IPC command layer so no data-mutating or long-running operation blocks the
-UI thread.
+UI thread. Dollar amounts are stored as whole-dollar integers (FR-037);
+insurance is scheduled per firearm under a policy, and every unscheduled
+firearm is implicitly covered by the one blanket policy in force, computed
+from policy dates and never assigned per firearm (FR-014, FR-036).
 
 ## Technical Context
 
@@ -46,8 +49,12 @@ database per the constitution's no-mocks rule; Vitest + React Testing
 Library for frontend unit tests; WebdriverIO driven through `tauri-driver`
 (Tauri's officially supported WebDriver harness) for E2E tests covering the
 five user-story acceptance scenarios end-to-end against the built app. Format,
-lint, test, and build run in CI on Windows, macOS, and Linux so FR-022's
-cross-platform requirement is verified rather than assumed.
+lint, test, and build are defined as a CI workflow for Windows, macOS, and
+Linux so FR-022's cross-platform requirement can be verified rather than
+assumed. The workflow is intentionally kept disabled
+(`.github/workflows-disabled/`) until the owner enables it; until then the
+same checks are run locally, which is a documented, owner-approved deviation
+from Constitution I's automated-gate requirement.
 
 **Target Platform**: Desktop — Windows 10+, macOS 12+, Linux (glibc,
 WebKitGTK) — single codebase, no server component, fully offline-capable.
@@ -82,11 +89,11 @@ documents of typical consumer sizes (a few MB each).
 
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
-| I. Code Quality | Linting/static analysis, peer review, small single-purpose modules, no speculative abstraction | `clippy` + `rustfmt` for Rust, `eslint`/`prettier` for TS wired into CI; Rust backend split into focused modules (`db`, `models`, `commands`, `services::{valuation, insurance, import_export}`) with no premature abstraction beyond what FR-001–FR-030 require |
+| I. Code Quality | Linting/static analysis, peer review, small single-purpose modules, no speculative abstraction | `clippy` + `rustfmt` for Rust, `eslint`/`prettier` for TS wired into CI; Rust backend split into focused modules (`db`, `models`, `commands`, `services::{valuation, insurance, import_export}`) with no premature abstraction beyond what FR-001–FR-038 require |
 | II. Testing (NON-NEGOTIABLE) | Tests before done, red-green, real persistence (no mocks), regression tests for bugs | `cargo test` integration tests run against a real temp SQLCipher DB (via `rusqlite`'s in-memory-file or tempdir DB, never a mock connection); one test per acceptance scenario in spec.md; Vitest for pure frontend logic; WebdriverIO/`tauri-driver` E2E for full user-story flows |
 | III. UX Consistency | Single shared component library, consistent confirmation pattern, WCAG 2.1 AA | Single Radix-based component library (shadcn/ui) is the only source of buttons/dialogs/forms/tables; one shared `<ConfirmDialog>` component used for every destructive action (delete firearm, delete policy, bulk import overwrite); components chosen/audited for WCAG 2.1 AA |
 | IV. Performance | 100ms feedback / 1s completion for interactive ops, 500ms search, no UI-thread blocking, progress indication for bulk ops | All DB access happens in Rust via async Tauri commands off the UI thread; FTS5 index keeps search sub-500ms at 10k-row scale; import/export run as async commands emitting `tauri::Emitter` progress events consumed by a shared progress-bar component |
-| V. User Privacy | Local/encrypted storage, no unconsented transmission, no telemetry on collection contents, clear export disclosure, real deletion | SQLCipher encrypts the entire DB file at rest; `keyring` stores the passphrase in the OS credential store, never logged; no analytics/telemetry dependency is introduced; export screen explicitly states the destination folder and that files leave the device unencrypted; deleting a firearm issues a real `DELETE` (plus vacuuming BLOB pages) rather than a soft-delete flag |
+| V. User Privacy | Local/encrypted storage, no unconsented transmission, no telemetry on collection contents, clear export disclosure, real deletion | SQLCipher encrypts the entire DB file at rest; `keyring` stores the passphrase in the OS credential store, never logged; no analytics/telemetry dependency is introduced; export dialog explicitly states the destination folder and that files leave the device unencrypted (T139–T140); the webview gets a restrictive CSP and no network-capable plugin is enabled (T141–T142); deleting a firearm, photo, or document issues a real `DELETE` rather than a soft-delete flag, with `PRAGMA secure_delete = ON` zeroing freed pages and a `VACUUM` after deletion returning the space, so deleted BLOB content does not linger in the file (T137–T138) |
 | Security & Data Handling | Encryption at rest, opt-in-only network features, vetted dependencies, no unauthorized external access | No network/sync feature exists in this feature at all (FR-021); all chosen dependencies (`rusqlite`, `keyring`, `rust_xlsxwriter`, `calamine`) are local-only, reviewed for absence of phone-home behavior in research.md; the DB file lives in the OS app-data directory, not a shared/exposed location |
 
 **Result**: PASS — no violations requiring Complexity Tracking justification.
@@ -120,7 +127,7 @@ src-tauri/
 │   ├── db/
 │   │   ├── mod.rs            # SQLCipher connection pool, key unlock, migrations
 │   │   └── migrations/       # versioned SQL migrations (schema + FTS5 tables)
-│   ├── models/                # Firearm, Photo, DocumentAttachment,
+│   ├── models/                # Firearm, DispositionHistory, Photo, DocumentAttachment,
 │   │                          # InsurancePolicy, InsuranceCoverage, GenericThumbnail
 │   ├── commands/               # #[tauri::command] async handlers (thin IPC layer)
 │   │   ├── firearms.rs
@@ -129,6 +136,8 @@ src-tauri/
 │   │   ├── insurance.rs
 │   │   └── import_export.rs
 │   └── services/                # pure business logic, unit/integration tested
+│       ├── secure_delete.rs     # overwrite-then-unlink for decrypted temp copies (FR-035)
+│       ├── thumbnails.rs        # generic-thumbnail fallback resolution (FR-009)
 │       ├── valuation.rs         # value-summary computation (FR-015)
 │       ├── insurance_status.rs  # under/uninsured + policy-expiry rules (FR-016/017/024/028)
 │       ├── import_matching.rs   # make+model+serial matching & conflict resolution (FR-026/030)
@@ -184,7 +193,7 @@ documented as such in `contracts/`.
 
 - **Code Quality**: schema and command surface stay in the small,
   single-purpose modules laid out in Project Structure; no new
-  abstraction was introduced beyond what FR-001–FR-030 require. Still PASS.
+  abstraction was introduced beyond what FR-001–FR-038 require. Still PASS.
 - **Testing**: data-model.md's validation rules and contracts/'s command
   error cases give concrete, real-persistence test targets for
   `cargo test` (one per acceptance scenario, per quickstart.md); nothing

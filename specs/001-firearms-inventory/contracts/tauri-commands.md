@@ -49,7 +49,7 @@ type CommandError = {
 
 - **Input**: `id: number`, `FirearmInput` (partial or full; validation
   rules from data-model.md apply to the resulting record).
-- **Output**: `Firearm` plus `warnings: string[]` (as `create_firearm`).
+- **Output**: `Firearm` (as `create_firearm`).
 - **Errors**: `VALIDATION_ERROR` (same uniqueness rules, excluding the
   record itself), `NOT_FOUND`.
 

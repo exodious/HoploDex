@@ -186,9 +186,11 @@ npm run format:check
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main`/`develop` and on every
-pull request, on Windows, macOS and Linux: it builds the frontend, then runs
-`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+The CI definition lives in `.github/workflows-disabled/ci.yml` and is
+**currently disabled**; move it to `.github/workflows/` to enable it. Until
+then, run the checks below locally. When enabled it runs on every push to
+`main`/`develop` and on every pull request, on Windows, macOS and Linux: it
+builds the frontend, then runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
 `eslint`, `prettier --check`, `vitest`, and finally `tauri build --no-bundle`.
 The Rust crate embeds the built frontend, which is why the frontend builds
 first. The WebdriverIO E2E suite isn't part of CI: it needs a display and a
