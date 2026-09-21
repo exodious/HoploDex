@@ -24,17 +24,28 @@ sibling photos folder.
 | `notes` | no | `Firearm.notes` | free text |
 | `accessories` | no | `Firearm.accessories` | semicolon-delimited list |
 | `status` | no (default `active`) | `Firearm.status` | `active` / `disposed` |
-| `estimated_value` | no | `Firearm.estimated_value` | decimal currency, e.g. `450.00` |
+| `estimated_value` | no | `Firearm.estimated_value` | whole dollars, e.g. `450` (see Amounts below) |
 | `acquisition_source` | no | `Firearm.acquisition_source` | |
 | `acquisition_date` | no | `Firearm.acquisition_date` | `YYYY-MM-DD`; a future date is a row error (FR-003) |
-| `acquisition_price` | no | `Firearm.acquisition_price` | decimal currency |
+| `acquisition_price` | no | `Firearm.acquisition_price` | whole dollars |
 | `disposition_type` | required if `status=disposed` | `Firearm.disposition_type` | `sold`/`traded`/`gifted`/`destroyed`/`lost_stolen` |
 | `disposition_recipient` | required if `status=disposed` | `Firearm.disposition_recipient` | |
 | `disposition_date` | required if `status=disposed` | `Firearm.disposition_date` | `YYYY-MM-DD`; a future date, or a date before `acquisition_date`, is a row error (FR-004) |
-| `disposition_price` | no | `Firearm.disposition_price` | decimal currency |
+| `disposition_price` | no | `Firearm.disposition_price` | whole dollars |
 | `insurance_policy_name` | no | `InsurancePolicy.name` (by lookup) | schedules the firearm under that policy; blank ⇒ unscheduled (covered by the blanket policy in force); unknown name on import → row error |
-| `scheduled_coverage_amount` | required if `insurance_policy_name` set; must be blank otherwise | `Firearm.scheduled_coverage_amount` | decimal currency |
+| `scheduled_coverage_amount` | required if `insurance_policy_name` set; must be blank otherwise | `Firearm.scheduled_coverage_amount` | whole dollars |
 | `photo_filenames` | no (export only; ignored on import per FR-019) | — | semicolon-delimited filenames in the sibling photos folder |
+
+## Amounts (FR-037)
+
+`estimated_value`, `acquisition_price`, `disposition_price` and
+`scheduled_coverage_amount` are whole U.S. dollars. Export writes plain
+digits (`1250`, no `$`, no thousands separator, no decimals). Import accepts
+a whole number, a numeric cell with a whole value, or text with a zero
+fraction (`450.00`), and drops a leading `$`, thousands commas, and
+surrounding whitespace; a value with non-zero cents (`450.50`), a negative
+value, or any other text is a row error naming the column (FR-020). Values
+are never rounded.
 
 ## Export behavior
 

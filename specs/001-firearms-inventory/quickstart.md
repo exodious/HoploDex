@@ -58,8 +58,13 @@ Workflow gate.
    (Acceptance Scenario 1).
 3. Edit a field (add a note: "scratch on left side") → confirm it persists
    on reopen (Scenario 2).
+   On a firearm with no notes or accessories, follow the "Add" link beside
+   each empty list → the edit form opens scrolled to, focused on, and
+   highlighting that field (Scenario 15).
 4. Add acquisition details (source, date, price) → confirm shown on the
-   record (Scenario 3).
+   record (Scenario 3). Type `1250.50` or `1,250` into the price field →
+   the `.` and `,` are not accepted; paste `1250.50` → rejected with a
+   whole-dollar message; enter `1250` → shown as "$1,250" (Scenario 16).
 5. Mark it disposed (recipient, date, price, type) → confirm status flips
    to disposed while history remains (Scenario 4).
 6. Delete a different firearm → confirm the confirmation prompt appears,

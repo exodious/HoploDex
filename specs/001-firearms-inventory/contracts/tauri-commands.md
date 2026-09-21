@@ -12,6 +12,14 @@ UI thread (constitution Principle IV). Long-running commands (`import_*`,
 named `"{command}:progress"` with a `{ processed: number, total: number }`
 payload, so the frontend can render a shared progress-bar component.
 
+Every monetary number in a command's input or output (`estimatedValue`,
+`acquisitionPrice`, `dispositionPrice`, `price`, `scheduledCoverageAmount`,
+`scheduledAmount`, `blanketCoverageLimit`, `limit`, `total`, `collectionTotal`)
+is a non-negative integer number of whole U.S. dollars (FR-037). The backend
+rejects a fractional or negative value with `VALIDATION_ERROR` and a
+`fieldErrors` entry; it never rounds. Thousands separators are a display
+concern of the frontend only and never cross this boundary.
+
 All error returns use a common shape:
 
 ```ts
@@ -185,7 +193,7 @@ type CommandError = {
 - **Output**:
   ```ts
   {
-    collectionTotal: number;               // cents, all active firearms
+    collectionTotal: number;               // whole dollars, all active firearms
     blanket: {                             // blanket policy in force today; null if none
       policyId: number;
       policyName: string;

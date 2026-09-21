@@ -40,17 +40,17 @@ Primary record; corresponds directly to the spec's **Firearm** entity.
 | `notes` | TEXT, nullable | free-form (FR-002), indexed by FTS5 |
 | `accessories` | TEXT, nullable | free-form list (FR-002), stored as delimited text or JSON array, indexed by FTS5 |
 | `status` | TEXT, not null, default 'active' | enum: `active`, `disposed` (FR-023, FR-025) |
-| `estimated_value` | INTEGER (cents), nullable | FR-005; null/0 treated as "no value set" for warning purposes (Edge Cases) |
+| `estimated_value` | INTEGER (whole dollars, ≥ 0), nullable | FR-005; null/0 treated as "no value set" for warning purposes (Edge Cases) |
 | `acquisition_source` | TEXT, nullable | FR-003 |
 | `acquisition_date` | TEXT (ISO 8601 date), nullable | FR-003 |
-| `acquisition_price` | INTEGER (cents), nullable | FR-003 |
+| `acquisition_price` | INTEGER (whole dollars, ≥ 0), nullable | FR-003 |
 | `disposition_type` | TEXT, nullable | enum: `sold`, `traded`, `gifted`, `destroyed`, `lost_stolen`; required when `status = disposed` (FR-004) |
 | `disposition_recipient` | TEXT, nullable | FR-004 |
 | `disposition_date` | TEXT (ISO 8601 date), nullable | FR-004 |
-| `disposition_price` | INTEGER (cents), nullable | FR-004 |
+| `disposition_price` | INTEGER (whole dollars, ≥ 0), nullable | FR-004 |
 | `thumbnail_photo_id` | INTEGER FK → Photo, nullable | FR-008; null ⇒ use FirearmType's generic thumbnail (FR-009) |
 | `insurance_policy_id` | INTEGER FK → InsurancePolicy, nullable | FR-014, FR-027: set only when the firearm is individually scheduled under that policy; null ⇒ unscheduled, covered by the blanket policy in force (computed, never stored per firearm, FR-036) |
-| `scheduled_coverage_amount` | INTEGER (cents), nullable | FR-014, FR-024: set iff `insurance_policy_id` is set |
+| `scheduled_coverage_amount` | INTEGER (whole dollars, ≥ 0), nullable | FR-014, FR-024: set iff `insurance_policy_id` is set |
 | `created_at` / `updated_at` | TEXT (ISO 8601 datetime), not null | audit trail, also drives "last updated" ordering if needed |
 
 **Validation rules** (enforced in `services::firearms` / command layer, not
@@ -66,6 +66,13 @@ human-readable errors):
 - `insurance_policy_id` and `scheduled_coverage_amount` are either both set
   (individually scheduled) or both null (unscheduled). Blanket coverage is
   never stored on the firearm; see Insurance Coverage below (FR-036).
+- **Amounts (FR-037)**: every price, value, coverage amount, and limit is a
+  whole number of U.S. dollars, `>= 0` (`CHECK (col IS NULL OR col >= 0)`); the
+  columns hold dollars, not cents, so sums and comparisons are exact. Cents
+  are never stored. Thousands separators exist only in display formatting.
+  Input parsing accepts digits only (a pasted "$", commas, or spaces are
+  dropped; a fractional part is rejected, not rounded, and on import a zero
+  fraction such as "450.00" is accepted).
 - **Dates (FR-003, FR-004)**: `acquisition_date` and `disposition_date`,
   when set, must not be later than the user's current local date (today is
   allowed); `disposition_date` must not be earlier than `acquisition_date`
@@ -118,7 +125,7 @@ Retained past dispositions of a firearm that was restored to active
 | `disposition_type` | TEXT, not null | same enum as `Firearm.disposition_type` |
 | `disposition_recipient` | TEXT, not null | |
 | `disposition_date` | TEXT (ISO 8601 date), not null | |
-| `disposition_price` | INTEGER (cents), nullable | |
+| `disposition_price` | INTEGER (whole dollars, ≥ 0), nullable | |
 | `reversed_at` | TEXT (ISO 8601 datetime), not null | when the user reversed it |
 
 Not indexed by FTS5 and not included in the spreadsheet export/import (one
@@ -163,7 +170,7 @@ Acceptance Scenario 1–2).
 | `company_contact` | TEXT, nullable | phone/email/address, free text |
 | `agent_name` | TEXT, nullable | |
 | `agent_contact` | TEXT, nullable | |
-| `blanket_coverage_limit` | INTEGER (cents), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy |
+| `blanket_coverage_limit` | INTEGER (whole dollars, ≥ 0), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy |
 | `effective_start_date` | TEXT (ISO 8601 date), not null | |
 | `effective_end_date` | TEXT (ISO 8601 date), not null | drives 30-day and expired warnings (FR-028) |
 | `created_at` / `updated_at` | TEXT (ISO 8601 datetime), not null | |
