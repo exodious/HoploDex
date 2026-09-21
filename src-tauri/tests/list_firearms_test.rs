@@ -18,6 +18,12 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         firearm_type_id,
         notes: None,
         accessories: None,
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
         status: FirearmStatus::Active,
         estimated_value: None,
         acquisition_source: None,
@@ -28,7 +34,7 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         disposition_date: None,
         disposition_price: None,
         insurance_policy_id: None,
-        coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }
@@ -167,7 +173,8 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
             company_contact: None,
             agent_name: None,
             agent_contact: None,
-            blanket_coverage_limit: 100_000,
+            notes: None,
+            blanket_coverage_limit: None,
             effective_start_date: "2020-01-01".into(),
             effective_end_date: "2099-01-01".into(),
         },
@@ -177,7 +184,7 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     let mut covered = firearm("Glock", "19", "9mm", 1);
     covered.serial_number = Some("AAA111".into());
     covered.insurance_policy_id = Some(policy.id);
-    covered.coverage_kind = Some(hoplodex_lib::models::firearm::CoverageKind::Blanket);
+    covered.scheduled_coverage_amount = Some(60_000);
     ops::create_firearm(&db.conn, &covered).unwrap();
 
     let mut twin = firearm("Glock", "19", "9mm", 1);
@@ -190,12 +197,9 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     let with_serial = summaries.iter().find(|f| f.serial_number.is_some()).unwrap();
     assert_eq!(with_serial.serial_number.as_deref(), Some("AAA111"));
     assert_eq!(with_serial.insurance_policy_id, Some(policy.id));
-    assert_eq!(
-        with_serial.coverage_kind,
-        Some(hoplodex_lib::models::firearm::CoverageKind::Blanket)
-    );
+    assert_eq!(with_serial.scheduled_coverage_amount, Some(60_000));
 
     let without_serial = summaries.iter().find(|f| f.serial_number.is_none()).unwrap();
     assert_eq!(without_serial.insurance_policy_id, None);
-    assert_eq!(without_serial.coverage_kind, None);
+    assert_eq!(without_serial.scheduled_coverage_amount, None);
 }

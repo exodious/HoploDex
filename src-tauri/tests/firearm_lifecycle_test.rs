@@ -18,6 +18,12 @@ fn sample_input() -> FirearmInput {
         firearm_type_id: 1,
         notes: None,
         accessories: None,
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
         status: FirearmStatus::Active,
         estimated_value: Some(50000),
         acquisition_source: None,
@@ -28,7 +34,7 @@ fn sample_input() -> FirearmInput {
         disposition_date: None,
         disposition_price: None,
         insurance_policy_id: None,
-        coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }
@@ -161,4 +167,235 @@ fn deleting_a_firearm_cascades_to_its_photos_and_documents() {
         .unwrap();
     assert_eq!(photo_count, 0);
     assert_eq!(doc_count, 0);
+}
+
+// --- Date rules (FR-003 / FR-004, US1 Acceptance Scenarios 13-14) ---
+
+fn today() -> chrono::NaiveDate {
+    chrono::Local::now().date_naive()
+}
+
+fn iso(date: chrono::NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+fn dispose_input(date: &str) -> DisposeFirearmInput {
+    DisposeFirearmInput {
+        disposition_type: DispositionType::Sold,
+        recipient: "Jane Doe".into(),
+        date: date.into(),
+        price: 40000,
+    }
+}
+
+#[test]
+fn scenario_13_a_future_acquisition_date_is_blocked_but_today_and_earlier_are_accepted() {
+    let db = TestDb::new();
+
+    let mut future = sample_input();
+    future.acquisition_date = Some(iso(today() + chrono::Duration::days(1)));
+    let err = ops::create_firearm(&db.conn, &future).expect_err("future date must be blocked");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
+
+    let mut current = sample_input();
+    current.acquisition_date = Some(iso(today()));
+    assert!(ops::create_firearm(&db.conn, &current).is_ok(), "today is allowed");
+
+    let mut past = sample_input();
+    past.serial_number = Some("PAST-1".into());
+    past.acquisition_date = Some("1968-10-22".into());
+    assert!(ops::create_firearm(&db.conn, &past).is_ok());
+}
+
+#[test]
+fn scenario_13_a_future_acquisition_date_is_blocked_on_update_too() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+
+    let mut edited = sample_input();
+    edited.acquisition_date = Some(iso(today() + chrono::Duration::days(30)));
+    let err = ops::update_firearm(&db.conn, created.id, &edited).expect_err("blocked");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().acquisition_date, None);
+}
+
+#[test]
+fn scenario_13_a_future_disposition_date_is_blocked_on_dispose_and_update() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let tomorrow = iso(today() + chrono::Duration::days(1));
+
+    let err = ops::dispose_firearm(&db.conn, created.id, &dispose_input(&tomorrow))
+        .expect_err("future disposition date must be blocked");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().status, FirearmStatus::Active);
+
+    let mut edited = sample_input();
+    edited.status = FirearmStatus::Disposed;
+    edited.disposition_type = Some(DispositionType::Sold);
+    edited.disposition_recipient = Some("Jane Doe".into());
+    edited.disposition_date = Some(tomorrow);
+    edited.disposition_price = Some(1);
+    let err = ops::update_firearm(&db.conn, created.id, &edited).expect_err("blocked");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
+
+    assert!(ops::dispose_firearm(&db.conn, created.id, &dispose_input(&iso(today()))).is_ok());
+}
+
+#[test]
+fn scenario_14_a_disposition_before_the_acquisition_date_is_blocked() {
+    let db = TestDb::new();
+    let mut input = sample_input();
+    input.acquisition_date = Some("2025-03-01".into());
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+
+    let err = ops::dispose_firearm(&db.conn, created.id, &dispose_input("2025-02-28"))
+        .expect_err("disposition before acquisition must be blocked");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().status, FirearmStatus::Active);
+
+    // The same day is fine.
+    let disposed = ops::dispose_firearm(&db.conn, created.id, &dispose_input("2025-03-01"));
+    assert!(disposed.is_ok());
+}
+
+#[test]
+fn a_disposition_date_is_not_compared_when_there_is_no_acquisition_date() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    assert!(ops::dispose_firearm(&db.conn, created.id, &dispose_input("1990-01-01")).is_ok());
+}
+
+#[test]
+fn a_date_that_is_not_a_real_calendar_date_is_rejected() {
+    let db = TestDb::new();
+    let mut input = sample_input();
+    input.acquisition_date = Some("03/01/2025".into());
+    let err = ops::create_firearm(&db.conn, &input).expect_err("not YYYY-MM-DD");
+    assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
+}
+
+// --- Whole-dollar amounts (FR-037, US1 Acceptance Scenario 16) ---
+
+fn assert_field_error(err: &hoplodex_lib::commands::CommandError, field: &str) {
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(
+        err.field_errors.as_ref().is_some_and(|fields| fields.contains_key(field)),
+        "expected a field error for {field}, got {err:?}"
+    );
+}
+
+#[test]
+fn a_negative_amount_is_rejected_on_create_and_update_with_a_field_error() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+
+    type Set = fn(&mut FirearmInput);
+    let cases: [(&str, Set); 2] = [
+        ("estimatedValue", |i| i.estimated_value = Some(-1)),
+        ("acquisitionPrice", |i| i.acquisition_price = Some(-5)),
+    ];
+    for (field, set) in cases {
+        let mut bad = sample_input();
+        bad.serial_number = Some(format!("NEG-{field}"));
+        set(&mut bad);
+        assert_field_error(&ops::create_firearm(&db.conn, &bad).expect_err("create"), field);
+        assert_field_error(
+            &ops::update_firearm(&db.conn, created.id, &bad).expect_err("update"),
+            field,
+        );
+    }
+
+    let mut bad_price = sample_input();
+    bad_price.status = FirearmStatus::Disposed;
+    bad_price.disposition_type = Some(DispositionType::Sold);
+    bad_price.disposition_recipient = Some("Jane Doe".into());
+    bad_price.disposition_date = Some("2025-01-01".into());
+    bad_price.disposition_price = Some(-1);
+    let err = ops::update_firearm(&db.conn, created.id, &bad_price).expect_err("update");
+    assert_field_error(&err, "dispositionPrice");
+
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().estimated_value, Some(50000));
+}
+
+#[test]
+fn a_negative_disposition_price_is_rejected_by_dispose_firearm() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+
+    let mut input = dispose_input("2025-01-01");
+    input.price = -40000;
+    let err = ops::dispose_firearm(&db.conn, created.id, &input).expect_err("negative price");
+    assert_field_error(&err, "dispositionPrice");
+    assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().status, FirearmStatus::Active);
+}
+
+#[test]
+fn a_zero_amount_is_a_valid_whole_dollar_amount() {
+    let db = TestDb::new();
+    let mut input = sample_input();
+    input.estimated_value = Some(0);
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    assert_eq!(created.estimated_value, Some(0));
+}
+
+#[test]
+fn an_amount_is_stored_as_the_whole_dollars_entered() {
+    let db = TestDb::new();
+    let mut input = sample_input();
+    input.estimated_value = Some(1250);
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+
+    let stored: i64 = db
+        .conn
+        .query_row("SELECT estimated_value FROM firearms WHERE id = ?1", [created.id], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored, 1250, "the column holds dollars, not cents");
+}
+
+#[test]
+fn a_fractional_amount_is_refused_when_the_arguments_are_decoded_never_rounded() {
+    let mut input = serde_json::json!({
+        "make": "Glock", "model": "19", "serialNumber": "ABC123", "noSerialAttested": false,
+        "caliber": "9mm", "firearmTypeId": 1, "status": "active", "estimatedValue": 1250
+    });
+    assert!(serde_json::from_value::<FirearmInput>(input.clone()).is_ok());
+
+    for field in
+        ["estimatedValue", "acquisitionPrice", "dispositionPrice", "scheduledCoverageAmount"]
+    {
+        input[field] = serde_json::json!(1250.5);
+        assert!(
+            serde_json::from_value::<FirearmInput>(input.clone()).is_err(),
+            "{field}=1250.5 must not decode"
+        );
+        input.as_object_mut().unwrap().remove(field);
+    }
+
+    let dispose = serde_json::json!({
+        "dispositionType": "sold", "recipient": "Jane", "date": "2025-01-01", "price": 400.5
+    });
+    assert!(serde_json::from_value::<DisposeFirearmInput>(dispose).is_err());
+}
+
+#[test]
+fn the_database_itself_refuses_a_negative_amount() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+
+    for column in ["estimated_value", "acquisition_price", "disposition_price"] {
+        let result = db
+            .conn
+            .execute(&format!("UPDATE firearms SET {column} = -1 WHERE id = ?1"), [created.id]);
+        assert!(result.is_err(), "{column} must have a >= 0 CHECK");
+    }
+    let result = db.conn.execute(
+        "INSERT INTO disposition_history (firearm_id, disposition_type, disposition_recipient,
+            disposition_date, disposition_price, reversed_at)
+         VALUES (?1, 'sold', 'Jane', '2025-01-01', -1, '2025-01-02')",
+        [created.id],
+    );
+    assert!(result.is_err(), "disposition_history.disposition_price must have a >= 0 CHECK");
 }

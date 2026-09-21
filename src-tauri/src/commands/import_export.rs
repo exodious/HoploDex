@@ -10,11 +10,11 @@ use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::firearm::{
-    validate_firearm_input, CoverageKind, DispositionType, FirearmInput, FirearmStatus,
+    validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus,
 };
 use crate::services::spreadsheet::{
-    cents_to_decimal_string, parse_decimal_to_cents, read_spreadsheet, write_spreadsheet,
-    FirearmExportRow, RawImportRow, SpreadsheetFormat,
+    dollars_to_string, parse_scaled_decimal, parse_whole_dollars, read_spreadsheet,
+    scaled_to_string, write_spreadsheet, FirearmExportRow, RawImportRow, SpreadsheetFormat,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +39,9 @@ pub struct ImportConflict {
     pub conflict_id: String,
     pub row: usize,
     pub existing_firearm_id: i64,
+    /// Whether "create a duplicate" may be offered: false where FR-032 would
+    /// block the resulting record (FR-026).
+    pub duplicate_allowed: bool,
     pub make: String,
     pub model: String,
     pub serial_number: Option<String>,
@@ -66,10 +69,15 @@ pub struct ConflictResolution {
 #[serde(rename_all = "camelCase")]
 pub struct ResolveResult {
     pub resolved_count: usize,
+    /// Conflicts the chosen action could not be applied to (a duplicate
+    /// FR-032 forbids, an overwrite that fails validation). They stay open
+    /// in the import session, so a different action can still be chosen.
+    pub unresolved: Vec<RowError>,
 }
 
 struct PendingConflict {
     conflict_id: String,
+    row: usize,
     existing_firearm_id: i64,
     new_input: FirearmInput,
 }
@@ -161,6 +169,7 @@ pub mod ops {
             rows.push(FirearmExportRow {
                 make: firearm.make,
                 model: firearm.model,
+                nickname: firearm.nickname.unwrap_or_default(),
                 serial_number: firearm.serial_number.unwrap_or_default(),
                 no_serial_attested: if firearm.no_serial_attested { "TRUE" } else { "FALSE" }
                     .to_string(),
@@ -169,25 +178,25 @@ pub mod ops {
                 notes: firearm.notes.unwrap_or_default(),
                 accessories: firearm.accessories.unwrap_or_default(),
                 status: firearm.status.as_str().to_string(),
-                estimated_value: cents_to_decimal_string(firearm.estimated_value),
+                estimated_value: dollars_to_string(firearm.estimated_value),
                 acquisition_source: firearm.acquisition_source.unwrap_or_default(),
                 acquisition_date: firearm.acquisition_date.unwrap_or_default(),
-                acquisition_price: cents_to_decimal_string(firearm.acquisition_price),
+                acquisition_price: dollars_to_string(firearm.acquisition_price),
                 disposition_type: firearm
                     .disposition_type
                     .map(|d| d.as_str().to_string())
                     .unwrap_or_default(),
                 disposition_recipient: firearm.disposition_recipient.unwrap_or_default(),
                 disposition_date: firearm.disposition_date.unwrap_or_default(),
-                disposition_price: cents_to_decimal_string(firearm.disposition_price),
+                disposition_price: dollars_to_string(firearm.disposition_price),
                 insurance_policy_name: insurance_policy_name.unwrap_or_default(),
-                coverage_kind: firearm
-                    .coverage_kind
-                    .map(|c| c.as_str().to_string())
-                    .unwrap_or_default(),
-                scheduled_coverage_amount: cents_to_decimal_string(
-                    firearm.scheduled_coverage_amount,
-                ),
+                scheduled_coverage_amount: dollars_to_string(firearm.scheduled_coverage_amount),
+                barrel_length_in: scaled_to_string(firearm.barrel_length_hundredths, 2),
+                overall_length_in: scaled_to_string(firearm.overall_length_hundredths, 2),
+                weight_oz: scaled_to_string(firearm.weight_tenths_oz, 1),
+                capacity: scaled_to_string(firearm.capacity, 0),
+                finish: firearm.finish.unwrap_or_default(),
+                condition: firearm.condition.map(|c| c.label().to_string()).unwrap_or_default(),
                 photo_filenames: photo_filenames.join(";"),
             });
 
@@ -219,12 +228,30 @@ pub mod ops {
         }
     }
 
-    fn parse_coverage_kind(value: &str) -> Result<CoverageKind, String> {
-        match value.to_lowercase().as_str() {
-            "individually_scheduled" => Ok(CoverageKind::IndividuallyScheduled),
-            "blanket" => Ok(CoverageKind::Blanket),
-            other => Err(format!("Unknown coverage kind: {other}")),
-        }
+    /// A condition cell: the display name (`Like new`) or the stored form
+    /// (`like_new`), in any letter case (FR-039).
+    fn parse_condition(value: &str) -> Result<Condition, String> {
+        let wanted = value.trim().to_lowercase();
+        Condition::ALL
+            .into_iter()
+            .find(|c| c.label().to_lowercase() == wanted || c.as_str() == wanted)
+            .ok_or_else(|| format!("condition: unknown condition {value:?}"))
+    }
+
+    /// The reason shown for a failing row: every per-field message (the
+    /// summary line alone says nothing about which field is wrong), in a
+    /// stable order.
+    fn row_message(error: &CommandError) -> String {
+        let Some(fields) = &error.field_errors else {
+            return error.message.clone();
+        };
+        let mut messages: Vec<_> = fields.iter().collect();
+        messages.sort();
+        messages
+            .iter()
+            .map(|(field, message)| format!("{field}: {message}"))
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 
     /// Parses and validates one raw spreadsheet row into a `FirearmInput`,
@@ -255,7 +282,6 @@ pub mod ops {
 
         let disposition_type =
             raw.disposition_type.as_deref().map(parse_disposition_type).transpose()?;
-        let coverage_kind = raw.coverage_kind.as_deref().map(parse_coverage_kind).transpose()?;
 
         let insurance_policy_id = match &raw.insurance_policy_name {
             None => None,
@@ -278,23 +304,40 @@ pub mod ops {
             no_serial_attested: parse_bool(&raw.no_serial_attested),
             caliber,
             firearm_type_id,
+            nickname: raw.nickname.clone(),
             notes: raw.notes.clone(),
             accessories: raw.accessories.clone(),
+            barrel_length_hundredths: parse_scaled_decimal(
+                "barrel_length_in",
+                &raw.barrel_length_in,
+                2,
+            )?,
+            overall_length_hundredths: parse_scaled_decimal(
+                "overall_length_in",
+                &raw.overall_length_in,
+                2,
+            )?,
+            weight_tenths_oz: parse_scaled_decimal("weight_oz", &raw.weight_oz, 1)?,
+            capacity: parse_scaled_decimal("capacity", &raw.capacity, 0)?,
+            finish: raw.finish.clone(),
+            condition: raw.condition.as_deref().map(parse_condition).transpose()?,
             status,
-            estimated_value: parse_decimal_to_cents(&raw.estimated_value),
+            estimated_value: parse_whole_dollars("estimated_value", &raw.estimated_value)?,
             acquisition_source: raw.acquisition_source.clone(),
             acquisition_date: raw.acquisition_date.clone(),
-            acquisition_price: parse_decimal_to_cents(&raw.acquisition_price),
+            acquisition_price: parse_whole_dollars("acquisition_price", &raw.acquisition_price)?,
             disposition_type,
             disposition_recipient: raw.disposition_recipient.clone(),
             disposition_date: raw.disposition_date.clone(),
-            disposition_price: parse_decimal_to_cents(&raw.disposition_price),
+            disposition_price: parse_whole_dollars("disposition_price", &raw.disposition_price)?,
             insurance_policy_id,
-            coverage_kind,
-            scheduled_coverage_amount: parse_decimal_to_cents(&raw.scheduled_coverage_amount),
+            scheduled_coverage_amount: parse_whole_dollars(
+                "scheduled_coverage_amount",
+                &raw.scheduled_coverage_amount,
+            )?,
         };
 
-        validate_firearm_input(&input).map_err(|e| e.message)?;
+        validate_firearm_input(&input).map_err(|e| row_message(&e))?;
         Ok(input)
     }
 
@@ -337,20 +380,30 @@ pub mod ops {
                                 conflict_id: conflict_id.clone(),
                                 row: row_number,
                                 existing_firearm_id,
+                                duplicate_allowed: firearm_ops::check_uniqueness(
+                                    conn, None, &input,
+                                )
+                                .is_ok(),
                                 make: input.make.clone(),
                                 model: input.model.clone(),
                                 serial_number: input.serial_number.clone(),
                             });
                             pending.push(PendingConflict {
                                 conflict_id,
+                                row: row_number,
                                 existing_firearm_id,
                                 new_input: input,
                             });
                         }
-                        None => {
-                            firearm_ops::create_firearm(conn, &input)?;
-                            imported_count += 1;
-                        }
+                        None => match firearm_ops::create_firearm(conn, &input) {
+                            Ok(_) => imported_count += 1,
+                            // Rules that need the rest of the collection to
+                            // judge (nickname/identity uniqueness) fail one
+                            // row, not the whole import (FR-020).
+                            Err(e) if e.code == "VALIDATION_ERROR" => row_errors
+                                .push(RowError { row: row_number, message: row_message(&e) }),
+                            Err(e) => return Err(e),
+                        },
                     }
                 }
             }
@@ -377,9 +430,11 @@ pub mod ops {
 
     /// Applies each conflict's resolution: `overwrite` updates the existing
     /// record, `duplicate` inserts the imported row as a new record
-    /// alongside it, `skip` (the default, including any conflict not
-    /// covered by `resolutions` or `apply_to_remaining`) leaves the
-    /// existing record untouched.
+    /// alongside it (only where FR-032 allows), `skip` (the default,
+    /// including any conflict not covered by `resolutions` or
+    /// `apply_to_remaining`) leaves the existing record untouched. A conflict
+    /// the action can't be applied to is reported in `unresolved` and stays
+    /// open in the session.
     pub fn resolve_import_conflicts(
         conn: &Connection,
         store: &ImportSessionStore,
@@ -398,29 +453,43 @@ pub mod ops {
             resolutions.iter().map(|r| (r.conflict_id.as_str(), r.action.as_str())).collect();
 
         let mut resolved_count = 0;
+        let mut unresolved = Vec::new();
+        let mut still_open = Vec::new();
         for conflict in pending {
             let action = explicit
                 .get(conflict.conflict_id.as_str())
                 .copied()
                 .or(apply_to_remaining)
                 .unwrap_or("skip");
-            match action {
-                "overwrite" => {
-                    firearm_ops::update_firearm(
-                        conn,
-                        conflict.existing_firearm_id,
-                        &conflict.new_input,
-                    )?;
+            let outcome = match action {
+                "overwrite" => firearm_ops::update_firearm(
+                    conn,
+                    conflict.existing_firearm_id,
+                    &conflict.new_input,
+                )
+                .map(drop),
+                "duplicate" => firearm_ops::create_firearm(conn, &conflict.new_input).map(drop),
+                _ => Ok(()), // "skip", or an unrecognized action, leaves the existing record untouched
+            };
+            match outcome {
+                Ok(()) => resolved_count += 1,
+                Err(e) if e.code == "VALIDATION_ERROR" => {
+                    unresolved.push(RowError { row: conflict.row, message: row_message(&e) });
+                    still_open.push(conflict);
                 }
-                "duplicate" => {
-                    firearm_ops::create_firearm(conn, &conflict.new_input)?;
-                }
-                _ => {} // "skip", or an unrecognized action, leaves the existing record untouched
+                Err(e) => return Err(e),
             }
-            resolved_count += 1;
         }
 
-        Ok(ResolveResult { resolved_count })
+        if !still_open.is_empty() {
+            store
+                .pending
+                .lock()
+                .expect("import session mutex poisoned")
+                .insert(session_id.to_string(), still_open);
+        }
+
+        Ok(ResolveResult { resolved_count, unresolved })
     }
 }
 

@@ -31,7 +31,13 @@ export function useCollection(): CollectionState {
   return state;
 }
 
-/** "Glock 19" — the display name for a firearm. */
-export function firearmName(firearm: { make: string; model: string }): string {
-  return `${firearm.make} ${firearm.model}`;
+/** "Glock 19", or `Glock 19 “Old Faithful”` when it has a nickname (FR-031)
+ * — the display name for a firearm wherever it is named in plain text. */
+export function firearmName(firearm: {
+  make: string;
+  model: string;
+  nickname?: string | null;
+}): string {
+  const name = `${firearm.make} ${firearm.model}`;
+  return firearm.nickname ? `${name} “${firearm.nickname}”` : name;
 }

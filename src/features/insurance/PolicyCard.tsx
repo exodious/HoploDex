@@ -1,15 +1,18 @@
 import { Badge, Button, InsuranceWarningBadge } from "../../components";
 import { formatDate } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { firearmName } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
 import type { FirearmSummary } from "../browse/types";
-import { policyExpiry } from "./coverage";
-import type { InsurancePolicy, PolicySummary } from "./types";
+import { expiryLabel } from "./coverage";
+import type { BlanketSummary, InsurancePolicy, PolicySummary } from "./types";
 
-/** One policy: its term, blanket usage, scheduled firearms, and contacts. */
+/** One policy: its term, its blanket usage when it is the blanket policy in
+ * force, the firearms scheduled under it, and contacts (FR-015, FR-027,
+ * FR-028, FR-036). */
 export function PolicyCard({
   policy,
+  blanket,
   summary,
   firearms,
   onOpen,
@@ -17,22 +20,21 @@ export function PolicyCard({
   onDelete,
 }: {
   policy: InsurancePolicy;
+  /** The blanket policy in force today, if any. */
+  blanket: BlanketSummary | null;
   /** Makes the name a link to the policy's own page; omitted on that page. */
   onOpen?: () => void;
   summary: PolicySummary | undefined;
+  /** The active firearms scheduled under this policy. */
   firearms: FirearmSummary[];
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const expiry = policyExpiry(policy.effectiveEndDate);
-  const blanket = firearms.filter((f) => f.coverageKind === "blanket");
-  const scheduled = firearms.filter((f) => f.coverageKind === "individually_scheduled");
   const scheduledAmounts = new Map(
     (summary?.individuallyScheduled ?? []).map((s) => [s.firearmId, s]),
   );
-  const blanketTotal = summary?.blanketTotal ?? 0;
   const limit = policy.blanketCoverageLimit;
-  const over = blanketTotal > limit;
+  const inForce = blanket?.policyId === policy.id ? blanket : null;
 
   return (
     <article className="hd-policy" aria-labelledby={`policy-${policy.id}`}>
@@ -70,78 +72,62 @@ export function PolicyCard({
         <span>
           {formatDate(policy.effectiveStartDate)} – {formatDate(policy.effectiveEndDate)}
         </span>
-        {expiry.expired ? (
-          <InsuranceWarningBadge
-            kind="expired"
-            label={`Expired ${formatDate(policy.effectiveEndDate)}`}
-          />
-        ) : expiry.expiringSoon ? (
-          <InsuranceWarningBadge
-            kind="expiring_soon"
-            label={
-              expiry.daysLeft === 0
-                ? "Expires today"
-                : `Expires in ${expiry.daysLeft} ${expiry.daysLeft === 1 ? "day" : "days"}`
-            }
-          />
-        ) : (
-          <Badge tone="ok">In force</Badge>
-        )}
+        <TermBadge policy={policy} />
       </div>
-      {expiry.expired && (
+      {policy.isExpired && policy.expiredWarning && (
         <p className="hd-policy__alert">
-          Every firearm on an expired policy counts as uninsured. If it has been renewed, edit the
-          end date.
+          {firearms.length > 0
+            ? "Every firearm scheduled on an expired policy counts as uninsured. If it has been renewed, edit the end date."
+            : "If it has been renewed, edit the end date."}
         </p>
       )}
 
-      {blanket.length > 0 ? (
-        <div className="hd-policy__block">
-          <div className="hd-policy__block-head">
-            <span className="hd-eyebrow">Blanket coverage</span>
-            <span className="hd-muted hd-num">
-              {blanket.length} {blanket.length === 1 ? "firearm" : "firearms"}
-            </span>
-          </div>
-          <Meter value={blanketTotal} limit={limit} />
-          <p className="hd-policy__figures">
-            <strong className="hd-num">{formatCents(blanketTotal, { whole: true })}</strong>
-            <span className="hd-muted">
-              {" "}
-              of <span className="hd-num">{formatCents(limit, { whole: true })}</span> limit
-            </span>
-            {over ? (
-              <InsuranceWarningBadge
-                kind="under_insured"
-                label={`Over by ${formatCents(blanketTotal - limit, { whole: true })}`}
-              />
-            ) : (
+      {limit != null &&
+        (inForce ? (
+          <div className="hd-policy__block">
+            <div className="hd-policy__block-head">
+              <span className="hd-eyebrow">Blanket coverage</span>
               <span className="hd-muted hd-num">
-                {" "}
-                · {formatCents(limit - blanketTotal, { whole: true })} to spare
+                {inForce.firearmCount} {inForce.firearmCount === 1 ? "firearm" : "firearms"}
               </span>
-            )}
-          </p>
-          <FirearmLinkList firearms={blanket} inline />
-        </div>
-      ) : (
-        limit > 0 && (
+            </div>
+            <Meter value={inForce.total} limit={limit} />
+            <p className="hd-policy__figures">
+              <strong className="hd-num">{formatDollars(inForce.total)}</strong>
+              <span className="hd-muted">
+                {" "}
+                of <span className="hd-num">{formatDollars(limit)}</span> limit
+              </span>
+              {inForce.total > limit ? (
+                <InsuranceWarningBadge
+                  kind="under_insured"
+                  label={`Over by ${formatDollars(inForce.total - limit)}`}
+                />
+              ) : (
+                <span className="hd-muted hd-num">
+                  {" "}
+                  · {formatDollars(limit - inForce.total)} to spare
+                </span>
+              )}
+            </p>
+            <p className="hd-policy__note">Covers every firearm not scheduled individually.</p>
+          </div>
+        ) : (
           <p className="hd-policy__block hd-muted">
-            Blanket limit <span className="hd-num">{formatCents(limit, { whole: true })}</span>,
-            with no firearms assigned to it yet.
+            Blanket limit <span className="hd-num">{formatDollars(limit)}</span> — not in force, so
+            it covers no firearms.
           </p>
-        )
-      )}
+        ))}
 
-      {scheduled.length > 0 && (
+      {firearms.length > 0 && (
         <div className="hd-policy__block">
           <div className="hd-policy__block-head">
             <span className="hd-eyebrow">Scheduled individually</span>
           </div>
           <ScheduledTable
-            firearms={scheduled}
+            firearms={firearms}
             amounts={scheduledAmounts}
-            expired={expiry.expired}
+            expired={policy.isExpired}
           />
         </div>
       )}
@@ -162,8 +148,34 @@ export function PolicyCard({
           )}
         </dl>
       )}
+
+      {policy.notes && (
+        <div className="hd-policy__notes">
+          <span className="hd-eyebrow">Notes</span>
+          <p>{policy.notes}</p>
+        </div>
+      )}
     </article>
   );
+}
+
+/** The policy's state today. Which warnings show is the backend's call, so a
+ * blanket policy that a successor has taken over from reads as history
+ * rather than a lapse (FR-028). */
+function TermBadge({ policy }: { policy: InsurancePolicy }) {
+  if (policy.expiredWarning) {
+    return <InsuranceWarningBadge kind="expired" label={expiryLabel(policy)} />;
+  }
+  if (policy.isExpired) {
+    return <Badge tone="neutral">Ended {formatDate(policy.effectiveEndDate)}</Badge>;
+  }
+  if (policy.expiringWarning) {
+    return <InsuranceWarningBadge kind="expiring_soon" label={expiryLabel(policy)} />;
+  }
+  if (!policy.isInForce) {
+    return <Badge tone="info">Starts {formatDate(policy.effectiveStartDate)}</Badge>;
+  }
+  return <Badge tone="ok">In force</Badge>;
 }
 
 function Meter({ value, limit }: { value: number; limit: number }) {
@@ -220,9 +232,9 @@ function ScheduledTable({
                   <span className="hd-serial hd-mini-table__serial">{firearm.serialNumber}</span>
                 )}
               </td>
-              <td className="hd-table__num hd-num">{formatCents(firearm.estimatedValue)}</td>
+              <td className="hd-table__num hd-num">{formatDollars(firearm.estimatedValue)}</td>
               <td className="hd-table__num hd-num">
-                {formatCents(entry?.scheduledAmount ?? null)}
+                {formatDollars(entry?.scheduledAmount ?? null)}
               </td>
               <td className="hd-mini-table__status">
                 {expired ? (
@@ -230,7 +242,7 @@ function ScheduledTable({
                 ) : firearm.insuranceWarning === "under_insured" ? (
                   <InsuranceWarningBadge
                     kind="under_insured"
-                    label={`${formatCents(shortfall)} short`}
+                    label={`${formatDollars(shortfall)} short`}
                   />
                 ) : firearm.estimatedValue ? (
                   <Badge tone="ok">Covered</Badge>
@@ -285,7 +297,7 @@ export function FirearmLinkList({
             )}
             {showValue && (
               <span className="hd-linklist__value hd-num">
-                {formatCents(firearm.estimatedValue)}
+                {formatDollars(firearm.estimatedValue)}
               </span>
             )}
           </li>

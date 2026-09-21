@@ -9,6 +9,7 @@ use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::document_attachment::{DocumentAttachment, DocumentDetail, DocumentSummary};
 use crate::services::attachments::read_attachment_file;
+use crate::services::secure_delete::secure_delete_dir;
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -93,6 +94,7 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No document was found with that id."));
         }
+        crate::db::reclaim_freed_space(conn);
         Ok(DeleteResult { deleted: true })
     }
 
@@ -113,6 +115,14 @@ pub mod ops {
         Ok(path)
     }
 
+    /// Securely deletes every temporary copy `open_document` left under
+    /// `dir` (FR-035), returning the files that could not be deleted. Run on
+    /// normal exit, and again at every startup as the backstop for crashes,
+    /// forced kills, and anything a previous run failed to delete.
+    pub fn clear_opened_documents(dir: &Path) -> Vec<PathBuf> {
+        secure_delete_dir(dir)
+    }
+
     fn safe_file_name(original: &str) -> String {
         let last_component = original.rsplit(['/', '\\']).next().unwrap_or_default();
         let cleaned: String = last_component
@@ -129,9 +139,21 @@ pub mod ops {
 }
 
 /// Folder under the app cache directory that holds the temporary copies
-/// `open_document` hands to the OS. Cleared at every startup so decrypted
-/// copies don't accumulate outside the encrypted database.
+/// `open_document` hands to the OS. Cleared on exit and again at startup
+/// (FR-035) so decrypted copies never outlive the session that made them.
 pub const OPENED_DOCUMENTS_DIR: &str = "opened-documents";
+
+/// Clears [`OPENED_DOCUMENTS_DIR`] under the app cache directory, logging
+/// (never failing on) anything that couldn't be deleted — the next startup
+/// sweep retries it.
+pub fn clear_opened_documents_cache(app: &AppHandle) {
+    let Ok(cache_dir) = app.path().app_cache_dir() else {
+        return;
+    };
+    for path in ops::clear_opened_documents(&cache_dir.join(OPENED_DOCUMENTS_DIR)) {
+        log::warn!("could not delete opened-document copy {}", path.display());
+    }
+}
 
 /// Reopens a document from its record (FR-010) in the OS default app for
 /// its file type, via a temporary copy under [`OPENED_DOCUMENTS_DIR`].

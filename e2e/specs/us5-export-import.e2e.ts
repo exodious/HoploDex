@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
-import { choose, listedNames, search } from "../support/ui";
+import { choose, fillFirearmForm, listedNames, openFirearm, search } from "../support/ui";
+import { selectOption } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
@@ -14,8 +15,68 @@ import { choose, listedNames, search } from "../support/ui";
  * e2e/support/ui.ts for why interactions go through page JS.
  */
 
-const HEADER =
-  "make,model,serial_number,no_serial_attested,caliber,firearm_type,notes,accessories,status,estimated_value,acquisition_source,acquisition_date,acquisition_price,disposition_type,disposition_recipient,disposition_date,disposition_price,insurance_policy_name,coverage_kind,scheduled_coverage_amount,photo_filenames";
+/** The spreadsheet's columns, in order (contracts/spreadsheet-format.md). */
+const COLUMNS = [
+  "make",
+  "model",
+  "nickname",
+  "serial_number",
+  "no_serial_attested",
+  "caliber",
+  "firearm_type",
+  "notes",
+  "accessories",
+  "status",
+  "estimated_value",
+  "acquisition_source",
+  "acquisition_date",
+  "acquisition_price",
+  "disposition_type",
+  "disposition_recipient",
+  "disposition_date",
+  "disposition_price",
+  "insurance_policy_name",
+  "scheduled_coverage_amount",
+  "barrel_length_in",
+  "overall_length_in",
+  "weight_oz",
+  "capacity",
+  "finish",
+  "condition",
+  "photo_filenames",
+];
+const HEADER = COLUMNS.join(",");
+
+/** One data row from named cells; every column not named is blank. */
+function csvRow(cells: Record<string, string>): string {
+  for (const name of Object.keys(cells)) {
+    if (!COLUMNS.includes(name)) throw new Error(`unknown spreadsheet column ${name}`);
+  }
+  return COLUMNS.map((column) => cells[column] ?? "").join(",");
+}
+
+/** A whole import file: the header plus the given rows. */
+function csvFile(...rows: string[]): string {
+  return `${[HEADER, ...rows].join("\n")}\n`;
+}
+
+/** A valid Handgun row for a make/model/serial, with any extra cells. */
+function firearmRow(
+  make: string,
+  model: string,
+  serial: string,
+  extra: Record<string, string> = {},
+): string {
+  return csvRow({
+    make,
+    model,
+    serial_number: serial,
+    no_serial_attested: "FALSE",
+    caliber: "9mm",
+    firearm_type: "Handgun",
+    ...extra,
+  });
+}
 
 async function importFile(csvPath: string) {
   await clickButton("Import");
@@ -73,7 +134,13 @@ describe("User Story 5 - Export and Import Records", () => {
     const csvPath = path.join(workDir, "import-new.csv");
     fs.writeFileSync(
       csvPath,
-      `${HEADER}\nImportE2ERuger,10-22,IMP-001,FALSE,.22 LR,Rifle,,,,300.00,,,,,,,,,,,\n`,
+      csvFile(
+        firearmRow("ImportE2ERuger", "10-22", "IMP-001", {
+          caliber: ".22 LR",
+          firearm_type: "Rifle",
+          estimated_value: "300.00",
+        }),
+      ),
     );
 
     await importFile(csvPath);
@@ -90,7 +157,10 @@ describe("User Story 5 - Export and Import Records", () => {
     const csvPath = path.join(workDir, "import-mixed.csv");
     fs.writeFileSync(
       csvPath,
-      `${HEADER}\n,BadRow,IMP-BAD,FALSE,9mm,Handgun,,,,100.00,,,,,,,,,,,\nImportE2ESig,P226,IMP-002,FALSE,9mm,Handgun,,,,400.00,,,,,,,,,,,\n`,
+      csvFile(
+        firearmRow("", "BadRow", "IMP-BAD", { estimated_value: "100.00" }),
+        firearmRow("ImportE2ESig", "P226", "IMP-002", { estimated_value: "400.00" }),
+      ),
     );
 
     await importFile(csvPath);
@@ -128,7 +198,7 @@ describe("User Story 5 - Export and Import Records", () => {
     const csvPath = path.join(workDir, "import-conflict.csv");
     fs.writeFileSync(
       csvPath,
-      `${HEADER}\nExportE2EGlock,19,EXP-001,FALSE,9mm,Handgun,re-imported,,,,,,,,,,,,,,\n`,
+      csvFile(firearmRow("ExportE2EGlock", "19", "EXP-001", { notes: "re-imported" })),
     );
 
     await importFile(csvPath);
@@ -143,5 +213,69 @@ describe("User Story 5 - Export and Import Records", () => {
     // Keeping the existing record means no duplicate was added.
     await search("ExportE2EGlock");
     expect(await listedNames()).toEqual(["ExportE2EGlock 19"]);
+  });
+
+  it("carries physical details through an export and a re-import (US1 Scenario 17, FR-039)", async () => {
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fillFirearmForm({
+      make: "PhysE2E",
+      model: "Colt",
+      caliber: ".45 ACP",
+      type: "Handgun",
+      serial: "PHYS-001",
+    });
+    await fill("Barrel length (in)", "5.25");
+    await fill("Overall length (in)", "8.5");
+    await fill("Weight (lb)", "2");
+    await fill("Weight (oz)", "6.5");
+    await fill("Capacity", "7");
+    await fill("Finish", "Parkerized");
+    await selectOption("Condition", "Like new");
+    await clickButton("Add firearm");
+    await $("#record-name").waitForExist();
+    await back();
+
+    await search("PhysE2E");
+    await clickButton("Export");
+    await $(".hd-choice__label=Current results (1)").waitForExist();
+    await choose("Current results (1)");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-physical-"));
+    await fill("Save to folder", dir);
+    await clickButton("Export");
+    await $(".hd-outcome__headline*=Exported 1 firearm").waitForExist({ timeout: 15000 });
+    await clickButton("Done");
+
+    // The six columns are plain numbers and the condition's display name.
+    const exported = fs.readdirSync(dir).find((f) => f.endsWith(".csv"))!;
+    const contents = fs.readFileSync(path.join(dir, exported), "utf-8");
+    const [header, row] = contents.trim().split("\n");
+    expect(header).toContain(
+      "barrel_length_in,overall_length_in,weight_oz,capacity,finish,condition,photo_filenames",
+    );
+    expect(row).toContain("5.25,8.5,38.5,7,Parkerized,Like new");
+
+    // Re-import the file as a different firearm, so it is added, not matched.
+    const copyPath = path.join(dir, "copy.csv");
+    fs.writeFileSync(
+      copyPath,
+      contents.replace("PhysE2E,Colt,,PHYS-001", "PhysE2E,Copy,,PHYS-002"),
+    );
+    await search("");
+    await importFile(copyPath);
+    expect(await tally("added")).toBe(1);
+    expect(await tally("failed")).toBe(0);
+    await clickButton("Done");
+
+    await search("PhysE2E");
+    await openFirearm("PhysE2E Copy");
+    const panel = await $('section[aria-labelledby="physical-title"]');
+    await panel.waitForExist();
+    const shown = (await panel.getText()).replace(/\s+/g, " ");
+    for (const text of ["5.25 in", "8.5 in", "2 lb 6.5 oz", "7 rounds", "Parkerized", "Like new"]) {
+      expect(shown).toContain(text);
+    }
+    await back();
+    await search("");
   });
 });

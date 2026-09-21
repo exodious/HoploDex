@@ -3,9 +3,35 @@
 
 use std::sync::Mutex;
 
+use hoplodex_lib::commands::documents::clear_opened_documents_cache;
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db::{self, DbHandle};
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
+
+/// A session shutdown (SIGTERM, SIGHUP) or Ctrl+C asks the app to exit. Left
+/// alone the process would just die, skipping the exit handler below, so route
+/// them through the normal exit path: decrypted document copies must not
+/// outlive the session even when the OS ends it (FR-035).
+#[cfg(unix)]
+fn exit_on_termination_signals(app: tauri::AppHandle) {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    tauri::async_runtime::spawn(async move {
+        let (Ok(mut terminate), Ok(mut hangup), Ok(mut interrupt)) = (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::hangup()),
+            signal(SignalKind::interrupt()),
+        ) else {
+            return;
+        };
+        tokio::select! {
+            _ = terminate.recv() => {}
+            _ = hangup.recv() => {}
+            _ = interrupt.recv() => {}
+        }
+        app.exit(0);
+    });
+}
 
 fn main() {
     tauri::Builder::default()
@@ -13,13 +39,11 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Temporary document copies from a previous session's
-            // `open_document` calls; nothing depends on them surviving.
-            if let Ok(cache_dir) = app.path().app_cache_dir() {
-                let _ = std::fs::remove_dir_all(
-                    cache_dir.join(hoplodex_lib::commands::documents::OPENED_DOCUMENTS_DIR),
-                );
-            }
+            // Backstop for a crash or forced kill: decrypted document copies
+            // a previous session couldn't clean up on exit (FR-035).
+            clear_opened_documents_cache(app.handle());
+            #[cfg(unix)]
+            exit_on_termination_signals(app.handle().clone());
             let conn = db::init_app_db(app.handle())?;
             app.manage(DbHandle(Mutex::new(conn)));
             app.manage(ImportSessionStore::new());
@@ -29,12 +53,14 @@ fn main() {
             hoplodex_lib::commands::firearms::create_firearm,
             hoplodex_lib::commands::firearms::update_firearm,
             hoplodex_lib::commands::firearms::dispose_firearm,
+            hoplodex_lib::commands::firearms::reverse_disposition,
             hoplodex_lib::commands::firearms::delete_firearm,
             hoplodex_lib::commands::firearms::get_firearm,
             hoplodex_lib::commands::firearms::list_firearms,
             hoplodex_lib::commands::insurance::list_insurance_policies,
             hoplodex_lib::commands::insurance::create_insurance_policy,
             hoplodex_lib::commands::insurance::update_insurance_policy,
+            hoplodex_lib::commands::insurance::get_policy_deletion_impact,
             hoplodex_lib::commands::insurance::delete_insurance_policy,
             hoplodex_lib::commands::insurance::assign_firearm_coverage,
             hoplodex_lib::commands::insurance::get_value_summary,
@@ -56,6 +82,13 @@ fn main() {
             hoplodex_lib::commands::import_export::import_collection,
             hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Decrypted copies of opened documents live only as long as the
+            // session (FR-035); the startup sweep covers abnormal exits.
+            if let RunEvent::Exit = event {
+                clear_opened_documents_cache(app);
+            }
+        });
 }

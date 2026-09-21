@@ -349,3 +349,10 @@
     display: none;
   }
 }
+
+/* The nickname beside a firearm's make and model (FR-031): quieter than the
+   name itself, so it reads as a label rather than part of the model. */
+.hd-nickname {
+  font-weight: 500;
+  color: var(--ink-2);
+}

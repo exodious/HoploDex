@@ -83,6 +83,16 @@
   overflow-wrap: anywhere;
 }
 
+/* The nickname sits under the make and model at a fraction of their size. */
+.hd-plate__name .hd-nickname {
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-body);
+  font-size: 0.4em;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
 .hd-plate__stamp {
   display: flex;
   align-items: center;
@@ -269,4 +279,17 @@
   .hd-record__bar {
     flex-wrap: wrap;
   }
+}
+
+.hd-past-dispositions {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.hd-past-dispositions__restored {
+  display: block;
 }

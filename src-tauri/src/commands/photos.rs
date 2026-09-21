@@ -179,6 +179,7 @@ pub mod ops {
             .map_err(CommandError::from_db)?;
         }
 
+        crate::db::reclaim_freed_space(conn);
         Ok(DeleteResult { deleted: true })
     }
 }

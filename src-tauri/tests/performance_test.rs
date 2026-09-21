@@ -11,11 +11,10 @@ use std::time::Instant;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
-use hoplodex_lib::models::firearm::CoverageKind;
-use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::valuation::get_value_summary;
 use rusqlite::params;
-use support::TestDb;
+use support::{policy, TestDb};
 
 const RECORD_COUNT: usize = 10_000;
 const BUDGET_MS: u128 = 500;
@@ -24,6 +23,8 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
     let makes = ["Glock", "Sig", "Ruger", "Smith & Wesson", "Colt"];
     let calibers = ["9mm", ".45 ACP", ".22 LR", ".223", ".308"];
     let types = [1, 2, 3, 4];
+    let finishes = ["Blued", "Parkerized", "Cerakote", "Stainless", "Nickel"];
+    let conditions = ["new_in_box", "like_new", "excellent", "good", "fair", "poor"];
 
     let tx = db.conn.unchecked_transaction().unwrap();
     {
@@ -31,8 +32,13 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
             .prepare(
                 "INSERT INTO firearms (
                     make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
-                    notes, status, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, 'active', datetime('now'), datetime('now'))",
+                    notes, nickname, barrel_length_hundredths, overall_length_hundredths,
+                    weight_tenths_oz, capacity, finish, condition,
+                    status, created_at, updated_at
+                ) VALUES (
+                    ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                    'active', datetime('now'), datetime('now')
+                )",
             )
             .unwrap();
         for i in 0..RECORD_COUNT {
@@ -51,7 +57,23 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
                 serial,
                 caliber,
                 firearm_type_id,
-                notes
+                notes,
+                // Every record has a nickname, which is unique among active
+                // firearms (FR-031): the index and the FTS column both carry
+                // the full load.
+                format!("Nick {i}"),
+                // Every record carries all six physical details (FR-039), so
+                // `finish` loads the FTS index like the other text columns.
+                1_000 + (i % 3_000) as i64,
+                2_000 + (i % 4_000) as i64,
+                100 + (i % 900) as i64,
+                1 + (i % 30) as i64,
+                if i == RECORD_COUNT / 3 {
+                    "zorblax".to_string()
+                } else {
+                    format!("{} finish", finishes[i % finishes.len()])
+                },
+                conditions[i % conditions.len()],
             ])
             .unwrap();
         }
@@ -106,6 +128,42 @@ fn list_firearms_search_completes_within_budget_at_10k_records() {
 }
 
 #[test]
+fn list_firearms_finish_search_completes_within_budget_at_10k_records() {
+    let db = TestDb::new();
+    seed_10k_firearms(&db);
+
+    let started = Instant::now();
+    let result = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("zorblax".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+
+    let total: usize = result.groups.iter().map(|g| g.firearms.len()).sum();
+    assert_eq!(total, 1, "the FTS search should find exactly the one uniquely-finished record");
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (finish search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+
+    // A word shared by every record still stays inside the budget.
+    let started = Instant::now();
+    let common = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("finish".into()), ..Default::default() },
+    )
+    .unwrap();
+    assert!(common.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 1);
+    assert!(
+        started.elapsed().as_millis() < BUDGET_MS,
+        "list_firearms (common finish word) took {}ms, over the {BUDGET_MS}ms budget",
+        started.elapsed().as_millis()
+    );
+}
+
+#[test]
 fn list_firearms_grouped_completes_within_budget_at_10k_records() {
     let db = TestDb::new();
     seed_10k_firearms(&db);
@@ -127,39 +185,49 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
 }
 
 #[test]
+fn list_firearms_nickname_search_completes_within_budget_at_10k_records() {
+    let db = TestDb::new();
+    seed_10k_firearms(&db);
+
+    let started = Instant::now();
+    let result = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("Nick 4242".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+
+    let found: Vec<_> = result.groups.iter().flat_map(|g| &g.firearms).collect();
+    assert!(found.iter().any(|f| f.nickname.as_deref() == Some("Nick 4242")));
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (nickname search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+/// The value summary does real work at this scale: the blanket policy in
+/// force totals every unscheduled firearm, a fifth of the collection is
+/// scheduled under a schedule-only policy, and most carry a value.
+#[test]
 fn get_value_summary_completes_within_budget_at_10k_records() {
     let db = TestDb::new();
     let ids = seed_10k_firearms(&db);
 
-    // Give a meaningful fraction of firearms an estimated value and
-    // insurance coverage so the summary computation has real aggregation
-    // work to do, not just zeros.
-    let policy = insurance_ops::create_policy(
+    insurance_ops::create_policy(
         &db.conn,
-        &InsurancePolicyInput {
-            name: "Perf Policy".into(),
-            policy_number: "PERF-1".into(),
-            insurance_company: "Acme".into(),
-            company_contact: None,
-            agent_name: None,
-            agent_contact: None,
-            blanket_coverage_limit: 100_000_000,
-            effective_start_date: "2020-01-01".into(),
-            effective_end_date: "2035-01-01".into(),
-        },
+        &policy("Perf blanket", "2020-01-01", "2099-01-01", Some(100_000_000)),
+    )
+    .unwrap();
+    let rider = insurance_ops::create_policy(
+        &db.conn,
+        &policy("Perf rider", "2020-01-01", "2099-01-01", None),
     )
     .unwrap();
 
     db.conn.execute_batch("UPDATE firearms SET estimated_value = 50000 WHERE id % 3 = 0").unwrap();
     for &id in ids.iter().step_by(5) {
-        insurance_ops::assign_firearm_coverage(
-            &db.conn,
-            id,
-            Some(policy.id),
-            Some(CoverageKind::Blanket),
-            None,
-        )
-        .unwrap();
+        insurance_ops::assign_firearm_coverage(&db.conn, id, Some(rider.id), Some(40_000)).unwrap();
     }
 
     let started = Instant::now();
@@ -167,9 +235,60 @@ fn get_value_summary_completes_within_budget_at_10k_records() {
     let elapsed = started.elapsed();
 
     assert!(summary.collection_total > 0);
+    assert!(summary.blanket.as_ref().is_some_and(|b| b.firearm_count > 0));
+    assert!(!summary.by_policy.is_empty());
     assert!(
         elapsed.as_millis() < BUDGET_MS,
         "get_value_summary took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+/// Browse rows carry each firearm's insurance warning, which needs the
+/// blanket computation too.
+#[test]
+fn list_firearms_with_blanket_coverage_completes_within_budget_at_10k_records() {
+    let db = TestDb::new();
+    seed_10k_firearms(&db);
+    insurance_ops::create_policy(
+        &db.conn,
+        &policy("Perf blanket", "2020-01-01", "2099-01-01", Some(1_000_000)),
+    )
+    .unwrap();
+    db.conn.execute_batch("UPDATE firearms SET estimated_value = 50000 WHERE id % 3 = 0").unwrap();
+
+    let started = Instant::now();
+    let result = firearm_ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
+    let elapsed = started.elapsed();
+
+    let flagged = result
+        .groups
+        .iter()
+        .flat_map(|g| &g.firearms)
+        .filter(|f| f.insurance_warning != InsuranceWarning::None)
+        .count();
+    assert!(flagged > 0, "the blanket total is far over its limit, so firearms are flagged");
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (with blanket warnings) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+#[test]
+fn deleting_a_firearm_completes_within_the_interactive_budget_at_10k_records() {
+    // Deleting vacuums the file to return the freed space (Constitution V),
+    // which must stay inside the 1s completion budget (Constitution IV).
+    let db = TestDb::new();
+    let ids = seed_10k_firearms(&db);
+
+    let started = Instant::now();
+    firearm_ops::delete_firearm(&db.conn, ids[RECORD_COUNT / 2], true).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "delete (with vacuum) took {}ms at {RECORD_COUNT} records; budget is 1000ms",
         elapsed.as_millis()
     );
 }

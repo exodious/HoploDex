@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { daysUntil, formatDate, parseDateInput } from "./dates";
+import {
+  daysUntil,
+  dispositionOrderError,
+  formatDate,
+  futureDateError,
+  parseDateInput,
+} from "./dates";
 
 describe("parseDateInput", () => {
   it("accepts ISO and US month/day/year forms and normalizes to ISO", () => {
@@ -27,5 +33,33 @@ describe("daysUntil", () => {
   it("counts whole calendar days", () => {
     expect(daysUntil("2026-01-31", "2026-01-01")).toBe(30);
     expect(daysUntil("2025-12-27", "2026-01-01")).toBe(-5);
+  });
+});
+
+describe("futureDateError (FR-003 / FR-004)", () => {
+  it("allows today and earlier, and blank", () => {
+    expect(futureDateError("2026-09-20", "Acquisition date", "2026-09-20")).toBeUndefined();
+    expect(futureDateError("1968-10-22", "Acquisition date", "2026-09-20")).toBeUndefined();
+    expect(futureDateError(null, "Acquisition date", "2026-09-20")).toBeUndefined();
+  });
+
+  it("blocks a date after today, naming the field", () => {
+    expect(futureDateError("2026-09-21", "Disposition date", "2026-09-20")).toBe(
+      "Disposition date can't be in the future.",
+    );
+  });
+});
+
+describe("dispositionOrderError (FR-004)", () => {
+  it("blocks a disposition before the acquisition, but not the same day", () => {
+    expect(dispositionOrderError("2025-03-01", "2025-02-28")).toBe(
+      "Disposition date can't be earlier than the acquisition date.",
+    );
+    expect(dispositionOrderError("2025-03-01", "2025-03-01")).toBeUndefined();
+  });
+
+  it("does not compare when either date is missing", () => {
+    expect(dispositionOrderError(null, "2025-02-28")).toBeUndefined();
+    expect(dispositionOrderError("2025-03-01", null)).toBeUndefined();
   });
 });

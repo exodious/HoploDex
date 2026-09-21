@@ -15,6 +15,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
       caliber: "9mm-Browse",
       type: "Handgun",
       serial: "BR-001",
+      finish: "distinctivefinishnitrocarb",
     });
     await back();
     await addFirearm({
@@ -100,5 +101,11 @@ describe("User Story 2 - Browse, Search, and Group", () => {
         "BrowseMossberg 500-Browse",
       ]),
     );
+  });
+
+  it("finds a firearm by a word in its finish (US1 Scenario 17)", async () => {
+    await search("distinctivefinishnitrocarb");
+    expect(await listedNames()).toEqual(["BrowseSig P226"]);
+    await search("");
   });
 });

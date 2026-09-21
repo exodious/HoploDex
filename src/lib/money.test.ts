@@ -1,48 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { centsToInput, formatCents, parseDollars } from "./money";
+import { dollarsToInput, formatDollars, parseDollars } from "./money";
 
-describe("parseDollars", () => {
+describe("parseDollars (FR-037)", () => {
   it("treats a blank field as no value", () => {
-    expect(parseDollars("  ")).toEqual({ ok: true, cents: null });
+    expect(parseDollars("  ")).toEqual({ ok: true, dollars: null });
+    expect(parseDollars("")).toEqual({ ok: true, dollars: null });
   });
 
-  it("reads thousands separators and a leading dollar sign instead of truncating", () => {
-    // Regression: parseFloat("1,200.00") is 1, which silently saved $1.00.
-    expect(parseDollars("1,200.00")).toEqual({ ok: true, cents: 120000 });
-    expect(parseDollars("$ 12,345")).toEqual({ ok: true, cents: 1234500 });
+  it("reads digits as whole dollars", () => {
+    expect(parseDollars("1250")).toEqual({ ok: true, dollars: 1250 });
+    expect(parseDollars("0")).toEqual({ ok: true, dollars: 0 });
   });
 
-  it("converts without floating-point drift", () => {
-    expect(parseDollars("0.29")).toEqual({ ok: true, cents: 29 });
-    expect(parseDollars("1234.5")).toEqual({ ok: true, cents: 123450 });
-    expect(parseDollars(".5")).toEqual({ ok: true, cents: 50 });
+  it("drops a dollar sign, thousands commas and spaces instead of truncating", () => {
+    // Regression: parseFloat("1,200") is 1, which silently saved $1.
+    expect(parseDollars("1,200")).toEqual({ ok: true, dollars: 1200 });
+    expect(parseDollars("$ 12,345")).toEqual({ ok: true, dollars: 12345 });
+    expect(parseDollars(" $1,250 ")).toEqual({ ok: true, dollars: 1250 });
+  });
+
+  it("rejects a fractional part rather than rounding or truncating it", () => {
+    // Silent rounding could change an amount by a factor of 100.
+    for (const text of ["1250.50", "0.29", ".5", "1250.00", "1250."]) {
+      const parsed = parseDollars(text);
+      expect(parsed.ok, text).toBe(false);
+      if (!parsed.ok) expect(parsed.error).toMatch(/whole dollars/i);
+    }
   });
 
   it("rejects text that is not an amount rather than guessing", () => {
     // Regression: parseFloat("12abc") is 12.
-    expect(parseDollars("12abc").ok).toBe(false);
-    expect(parseDollars("1.234").ok).toBe(false);
-    expect(parseDollars("-5").ok).toBe(false);
-    expect(parseDollars("1,2,3.00").ok).toBe(false);
+    for (const text of ["12abc", "-5", "1e3", "abc"]) {
+      expect(parseDollars(text).ok, text).toBe(false);
+    }
+  });
+
+  it("rejects an amount too large to hold exactly", () => {
+    expect(parseDollars("99999999999999999999").ok).toBe(false);
   });
 });
 
-describe("formatCents", () => {
-  it("groups thousands and shows an em dash for no value", () => {
-    expect(formatCents(123456789)).toBe("$1,234,567.89");
-    expect(formatCents(null)).toBe("—");
+describe("formatDollars (FR-037)", () => {
+  it("groups thousands and never shows cents", () => {
+    expect(formatDollars(1000)).toBe("$1,000");
+    expect(formatDollars(100)).toBe("$100");
+    expect(formatDollars(1250)).toBe("$1,250");
+    expect(formatDollars(1234567)).toBe("$1,234,567");
+    expect(formatDollars(0)).toBe("$0");
   });
 
-  it("can drop the cents on whole-dollar display amounts", () => {
-    expect(formatCents(4825000, { whole: true })).toBe("$48,250");
-    expect(formatCents(4825050, { whole: true })).toBe("$48,250.50");
+  it("shows an em dash for no value", () => {
+    expect(formatDollars(null)).toBe("—");
   });
 });
 
-describe("centsToInput", () => {
-  it("round-trips through parseDollars", () => {
-    expect(centsToInput(120050)).toBe("1,200.50");
-    expect(parseDollars(centsToInput(120050))).toEqual({ ok: true, cents: 120050 });
-    expect(centsToInput(null)).toBe("");
+describe("dollarsToInput", () => {
+  it("is plain digits with no grouping, and round-trips through parseDollars", () => {
+    expect(dollarsToInput(1250)).toBe("1250");
+    expect(dollarsToInput(0)).toBe("0");
+    expect(dollarsToInput(null)).toBe("");
+    expect(parseDollars(dollarsToInput(1250))).toEqual({ ok: true, dollars: 1250 });
   });
 });

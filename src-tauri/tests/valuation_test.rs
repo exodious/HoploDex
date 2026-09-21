@@ -1,55 +1,19 @@
 //! Integration tests for `services::valuation`'s always-current value
-//! summary (spec.md US3 Acceptance Scenarios 5-6; FR-015), run against a
-//! real temporary SQLCipher database.
+//! summary (spec.md US3 Acceptance Scenarios 5-6, 11, 13; FR-015/036), run
+//! against a real temporary SQLCipher database.
 
 mod support;
 
-use chrono::{Duration, Local};
 use hoplodex_lib::commands::firearms::{ops as firearm_ops, DisposeFirearmInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
-use hoplodex_lib::models::firearm::{CoverageKind, DispositionType, FirearmInput, FirearmStatus};
-use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
-use hoplodex_lib::services::valuation::get_value_summary;
-use support::TestDb;
+use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
+use hoplodex_lib::services::valuation::{get_value_summary, get_value_summary_as_of};
+use support::{date, firearm, policy, TestDb};
 
-fn firearm(make: &str, value: i64) -> FirearmInput {
-    FirearmInput {
-        make: make.into(),
-        model: "M".into(),
-        serial_number: Some(format!("{make}-SN")),
-        no_serial_attested: false,
-        caliber: "9mm".into(),
-        firearm_type_id: 1,
-        notes: None,
-        accessories: None,
-        status: FirearmStatus::Active,
-        estimated_value: Some(value),
-        acquisition_source: None,
-        acquisition_date: None,
-        acquisition_price: None,
-        disposition_type: None,
-        disposition_recipient: None,
-        disposition_date: None,
-        disposition_price: None,
-        insurance_policy_id: None,
-        coverage_kind: None,
-        scheduled_coverage_amount: None,
-    }
-}
+const TODAY: &str = "2026-06-15";
 
-fn far_future_policy(name: &str) -> InsurancePolicyInput {
-    let end = (Local::now().date_naive() + Duration::days(365)).format("%Y-%m-%d").to_string();
-    InsurancePolicyInput {
-        name: name.into(),
-        policy_number: "P".into(),
-        insurance_company: "Acme".into(),
-        company_contact: None,
-        agent_name: None,
-        agent_contact: None,
-        blanket_coverage_limit: 1_000_000,
-        effective_start_date: "2020-01-01".into(),
-        effective_end_date: end,
-    }
+fn valued(make: &str, value: i64) -> FirearmInput {
+    FirearmInput { estimated_value: Some(value), ..firearm(make, "M", &format!("{make}-SN")) }
 }
 
 #[test]
@@ -59,14 +23,13 @@ fn scenario_5_total_updates_immediately_after_every_mutation() {
     let initial = get_value_summary(&db.conn).unwrap();
     assert_eq!(initial.collection_total, 0);
 
-    let a = firearm_ops::create_firearm(&db.conn, &firearm("Glock", 50000)).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50000)).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 50000);
 
-    let b = firearm_ops::create_firearm(&db.conn, &firearm("Sig", 30000)).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30000)).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 80000);
 
-    let mut edited = firearm("Glock", 60000);
-    firearm_ops::update_firearm(&db.conn, a.id, &edited).unwrap();
+    firearm_ops::update_firearm(&db.conn, a.id, &valued("Glock", 60000)).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 90000);
 
     firearm_ops::dispose_firearm(
@@ -88,49 +51,123 @@ fn scenario_5_total_updates_immediately_after_every_mutation() {
 
     firearm_ops::delete_firearm(&db.conn, b.id, true).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 0);
-
-    // silence unused-variable warning for edited (input reused above)
-    let _ = &mut edited;
 }
 
 #[test]
-fn scenario_6_breaks_down_by_policy_and_unassigned_group() {
+fn scenario_6_breaks_down_into_the_blanket_policy_scheduled_firearms_and_uninsured() {
     let db = TestDb::new();
-    let policy_a = insurance_ops::create_policy(&db.conn, &far_future_policy("Policy A")).unwrap();
-    let policy_b = insurance_ops::create_policy(&db.conn, &far_future_policy("Policy B")).unwrap();
-
-    let f1 = firearm_ops::create_firearm(&db.conn, &firearm("Glock", 50000)).unwrap();
-    insurance_ops::assign_firearm_coverage(
+    let blanket = insurance_ops::create_policy(
         &db.conn,
-        f1.id,
-        Some(policy_a.id),
-        Some(CoverageKind::IndividuallyScheduled),
-        Some(50000),
+        &policy("Blanket", "2026-01-01", "2026-12-31", Some(60_000)),
+    )
+    .unwrap();
+    let rider =
+        insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
+            .unwrap();
+
+    let scheduled = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    insurance_ops::assign_firearm_coverage(&db.conn, scheduled.id, Some(rider.id), Some(40_000))
+        .unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000)).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Ruger", 40_000)).unwrap();
+
+    let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
+
+    assert_eq!(summary.collection_total, 120_000);
+    let b = summary.blanket.expect("a blanket policy is in force");
+    assert_eq!((b.policy_id, b.policy_name.as_str()), (blanket.id, "Blanket"));
+    assert_eq!((b.limit, b.total, b.firearm_count), (60_000, 70_000, 2));
+    assert!(b.under_insured, "the unscheduled firearms are worth more than the limit");
+
+    assert_eq!(summary.by_policy.len(), 1, "only policies with scheduled firearms are listed");
+    let r = &summary.by_policy[0];
+    assert_eq!(r.policy_id, rider.id);
+    assert_eq!(r.individually_scheduled.len(), 1);
+    let entry = &r.individually_scheduled[0];
+    assert_eq!(
+        (entry.firearm_id, entry.estimated_value, entry.scheduled_amount, entry.under_insured),
+        (scheduled.id, 50_000, 40_000, true)
+    );
+
+    assert!(summary.uninsured.is_empty(), "a blanket policy covers the rest");
+}
+
+#[test]
+fn with_no_blanket_policy_in_force_unscheduled_firearms_are_the_uninsured_group() {
+    let db = TestDb::new();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000)).unwrap();
+
+    let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
+
+    assert!(summary.blanket.is_none());
+    let mut ids: Vec<_> =
+        summary.uninsured.iter().map(|u| (u.firearm_id, u.estimated_value)).collect();
+    ids.sort();
+    assert_eq!(ids, vec![(a.id, 50_000), (b.id, 30_000)]);
+}
+
+#[test]
+fn scenario_13_entering_a_blanket_policy_moves_the_firearms_out_of_uninsured_without_editing_them()
+{
+    let db = TestDb::new();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    assert_eq!(get_value_summary_as_of(&db.conn, date(TODAY)).unwrap().uninsured.len(), 1);
+
+    insurance_ops::create_policy(
+        &db.conn,
+        &policy("Blanket", "2026-01-01", "2026-12-31", Some(100_000)),
     )
     .unwrap();
 
-    let f2 = firearm_ops::create_firearm(&db.conn, &firearm("Sig", 30000)).unwrap();
-    insurance_ops::assign_firearm_coverage(
+    let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
+    assert!(summary.uninsured.is_empty());
+    assert!(!summary.blanket.unwrap().under_insured);
+}
+
+#[test]
+fn a_policy_with_scheduled_firearms_reports_its_expiry_state() {
+    let db = TestDb::new();
+    let expired = insurance_ops::create_policy(
         &db.conn,
-        f2.id,
-        Some(policy_b.id),
-        Some(CoverageKind::Blanket),
-        None,
+        &policy("Old rider", "2025-01-01", "2026-05-01", None),
+    )
+    .unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(expired.id), Some(90_000)).unwrap();
+
+    let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
+
+    let entry = &summary.by_policy[0];
+    assert!(entry.is_expired);
+    assert!(
+        entry.individually_scheduled[0].under_insured,
+        "a firearm on an expired policy is counted as uninsured whatever its amount"
+    );
+}
+
+#[test]
+fn disposed_firearms_leave_every_part_of_the_summary() {
+    let db = TestDb::new();
+    let rider =
+        insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
+            .unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(rider.id), Some(50_000)).unwrap();
+    firearm_ops::dispose_firearm(
+        &db.conn,
+        f.id,
+        &DisposeFirearmInput {
+            disposition_type: DispositionType::Sold,
+            recipient: "Jane".into(),
+            date: "2026-02-01".into(),
+            price: 1,
+        },
     )
     .unwrap();
 
-    let f3 = firearm_ops::create_firearm(&db.conn, &firearm("Ruger", 20000)).unwrap();
-
-    let summary = get_value_summary(&db.conn).unwrap();
-    assert_eq!(summary.collection_total, 100000);
-    assert_eq!(summary.by_policy.len(), 2);
-    assert_eq!(summary.unassigned.len(), 1);
-    assert_eq!(summary.unassigned[0].firearm_id, f3.id);
-
-    let a_summary = summary.by_policy.iter().find(|p| p.policy_id == policy_a.id).unwrap();
-    assert_eq!(a_summary.individually_scheduled.len(), 1);
-    assert_eq!(a_summary.individually_scheduled[0].firearm_id, f1.id);
-
-    let b_summary = summary.by_policy.iter().find(|p| p.policy_id == policy_b.id).unwrap();
-    assert_eq!(b_summary.blanket_total, 30000);
+    let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
+    assert_eq!(summary.collection_total, 0);
+    assert!(summary.by_policy.is_empty());
+    assert!(summary.uninsured.is_empty());
 }

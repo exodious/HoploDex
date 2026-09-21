@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Button, DateField, MoneyField, TextField } from "../../components";
+import { Button, DateField, MoneyField, TextArea, TextField } from "../../components";
 import { parseDateInput } from "../../lib/dates";
-import { centsToInput, parseDollars } from "../../lib/money";
+import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 import "../firearms/forms.css";
@@ -20,6 +20,7 @@ interface FormState {
   companyContact: string;
   agentName: string;
   agentContact: string;
+  notes: string;
   blanketCoverageLimit: string;
   effectiveStartDate: string;
   effectiveEndDate: string;
@@ -35,7 +36,8 @@ function toFormState(policy?: InsurancePolicy): FormState {
     companyContact: policy?.companyContact ?? "",
     agentName: policy?.agentName ?? "",
     agentContact: policy?.agentContact ?? "",
-    blanketCoverageLimit: policy ? centsToInput(policy.blanketCoverageLimit) : "",
+    notes: policy?.notes ?? "",
+    blanketCoverageLimit: policy ? dollarsToInput(policy.blanketCoverageLimit) : "",
     effectiveStartDate: policy?.effectiveStartDate ?? "",
     effectiveEndDate: policy?.effectiveEndDate ?? "",
   };
@@ -126,7 +128,9 @@ export function InsurancePolicyForm({
       companyContact: blankToNull(form.companyContact),
       agentName: blankToNull(form.agentName),
       agentContact: blankToNull(form.agentContact),
-      blanketCoverageLimit: (limit.ok && limit.cents) || 0,
+      notes: blankToNull(form.notes),
+      // Blank means no blanket limit: a schedule-only policy (FR-036).
+      blanketCoverageLimit: limit.ok ? limit.dollars : null,
       effectiveStartDate: (parseDateInput(form.effectiveStartDate) as { iso: string }).iso,
       effectiveEndDate: (parseDateInput(form.effectiveEndDate) as { iso: string }).iso,
     };
@@ -187,7 +191,7 @@ export function InsurancePolicyForm({
                 onValueChange={set("blanketCoverageLimit")}
                 onBlur={touch("blanketCoverageLimit")}
                 error={errorFor("blanketCoverageLimit")}
-                hint="The shared limit for firearms covered under the blanket. Leave blank if there is none."
+                hint="Makes this a blanket policy: its limit is shared by every firearm not scheduled individually while it is in force. Leave blank for a policy that only covers firearms scheduled on it."
               />
             </div>
           </div>
@@ -239,6 +243,19 @@ export function InsurancePolicyForm({
               {...bind("agentContact")}
             />
           </div>
+        </section>
+
+        <section className="hd-form-section" aria-labelledby="pf-notes">
+          <h3 className="hd-form-section__title" id="pf-notes">
+            Other details
+          </h3>
+          <TextArea
+            label="Notes"
+            hint="Renewal reminders, endorsements, where the paperwork is kept — anything worth recording."
+            rows={4}
+            value={form.notes}
+            onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+          />
         </section>
       </div>
 

@@ -1,4 +1,7 @@
 use hoplodex_lib::db;
+use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -31,6 +34,8 @@ impl Default for TestDb {
 /// A tiny (20x20, solid red) but genuinely valid PNG, so
 /// `services::photos`'s real image-decoding thumbnail generator has real
 /// bytes to decode — no mocks, per the constitution.
+// Shared by every integration-test crate, but only some of them use each helper.
+#[allow(dead_code)]
 pub fn sample_png_bytes() -> Vec<u8> {
     vec![
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 20, 0, 0, 0, 20, 8,
@@ -38,4 +43,105 @@ pub fn sample_png_bytes() -> Vec<u8> {
         54, 98, 24, 213, 60, 170, 121, 84, 243, 168, 230, 129, 213, 12, 0, 49, 205, 142, 128, 132,
         11, 139, 140, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ]
+}
+
+/// One spreadsheet data row built from named cells, in the real export
+/// column order (so adding or dropping a column never means hand-editing
+/// positional literals). Columns not named are blank; a later entry for the
+/// same column wins.
+#[allow(dead_code)]
+pub fn csv_row(cells: &[(&str, &str)]) -> String {
+    for (name, _) in cells {
+        assert!(COLUMNS.contains(name), "unknown spreadsheet column {name}");
+    }
+    COLUMNS
+        .iter()
+        .map(|column| {
+            cells.iter().rev().find(|(name, _)| name == column).map_or("", |(_, value)| value)
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// A complete, valid Handgun row for `make`/`model`/`serial` (a blank
+/// serial means "no serial number", attested), with `extra` cells layered
+/// on top.
+#[allow(dead_code)]
+pub fn csv_firearm(make: &str, model: &str, serial: &str, extra: &[(&str, &str)]) -> String {
+    let mut cells = vec![
+        ("make", make),
+        ("model", model),
+        ("serial_number", serial),
+        ("no_serial_attested", if serial.is_empty() { "TRUE" } else { "FALSE" }),
+        ("caliber", "9mm"),
+        ("firearm_type", "Handgun"),
+        ("estimated_value", "500.00"),
+    ];
+    cells.extend_from_slice(extra);
+    csv_row(&cells)
+}
+
+/// The export header plus `rows`, newline-terminated — a whole import file.
+#[allow(dead_code)]
+pub fn csv_file(rows: &[String]) -> String {
+    let mut lines = vec![COLUMNS.join(",")];
+    lines.extend_from_slice(rows);
+    lines.join("\n") + "\n"
+}
+
+/// A valid, active Handgun record for `make`/`model`/`serial`, every other
+/// optional field empty — tests set only what they exercise.
+#[allow(dead_code)]
+pub fn firearm(make: &str, model: &str, serial: &str) -> FirearmInput {
+    FirearmInput {
+        make: make.into(),
+        model: model.into(),
+        serial_number: Some(serial.into()),
+        no_serial_attested: false,
+        caliber: "9mm".into(),
+        firearm_type_id: 1,
+        nickname: None,
+        notes: None,
+        accessories: None,
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
+        status: FirearmStatus::Active,
+        estimated_value: None,
+        acquisition_source: None,
+        acquisition_date: None,
+        acquisition_price: None,
+        disposition_type: None,
+        disposition_recipient: None,
+        disposition_date: None,
+        disposition_price: None,
+        insurance_policy_id: None,
+        scheduled_coverage_amount: None,
+    }
+}
+
+/// A valid policy running `start` to `end` (ISO dates); a `limit` makes it
+/// a blanket policy, `None` a schedule-only one.
+#[allow(dead_code)]
+pub fn policy(name: &str, start: &str, end: &str, limit: Option<i64>) -> InsurancePolicyInput {
+    InsurancePolicyInput {
+        name: name.into(),
+        policy_number: format!("{name}-1"),
+        insurance_company: "Acme Insurance".into(),
+        company_contact: None,
+        agent_name: None,
+        agent_contact: None,
+        notes: None,
+        blanket_coverage_limit: limit,
+        effective_start_date: start.into(),
+        effective_end_date: end.into(),
+    }
+}
+
+#[allow(dead_code)]
+pub fn date(iso: &str) -> chrono::NaiveDate {
+    chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").unwrap()
 }

@@ -4,8 +4,9 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::db::DbHandle;
+use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
-    validate_firearm_input, CoverageKind, DispositionType, Firearm, FirearmInput, FirearmStatus,
+    validate_firearm_input, DispositionType, Firearm, FirearmInput, FirearmStatus,
 };
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
@@ -18,6 +19,35 @@ pub struct DisposeFirearmInput {
     pub recipient: String,
     pub date: String,
     pub price: i64,
+}
+
+/// What the user chose to do with the disposition being reversed (FR-033).
+/// Required: the frontend asks and the backend never picks for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryChoice {
+    Keep,
+    Discard,
+}
+
+/// Input for `reverse_disposition`. `nickname` renames the firearm in the
+/// same step, to resolve a FR-031 clash; blank or absent keeps it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReverseDispositionInput {
+    pub history: HistoryChoice,
+    #[serde(default)]
+    pub nickname: Option<String>,
+}
+
+/// `get_firearm`'s output: the record plus its retained dispositions,
+/// newest first (FR-033).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirearmDetail {
+    #[serde(flatten)]
+    pub firearm: Firearm,
+    pub disposition_history: Vec<DispositionHistoryEntry>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -61,6 +91,8 @@ pub struct FirearmSummary {
     pub id: i64,
     pub make: String,
     pub model: String,
+    /// Shown alongside make and model wherever the firearm is named (FR-031).
+    pub nickname: Option<String>,
     /// Tells apart firearms sharing a make and model in browse views.
     pub serial_number: Option<String>,
     pub caliber: String,
@@ -70,10 +102,11 @@ pub struct FirearmSummary {
     pub generic_thumbnail_key: String,
     pub estimated_value: Option<i64>,
     pub insurance_warning: InsuranceWarning,
-    /// Coverage assignment, so the insurance view can list each policy's
-    /// firearms without fetching every full record.
+    /// Scheduled coverage (both null when unscheduled, i.e. covered by the
+    /// blanket policy in force), so the insurance view can list each
+    /// policy's firearms without fetching every full record.
     pub insurance_policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
+    pub scheduled_coverage_amount: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -106,25 +139,165 @@ pub mod ops {
         .ok_or_else(|| CommandError::not_found("No firearm was found with that id."))
     }
 
+    /// A record already in the collection that a new or edited firearm
+    /// clashes with, described for the message naming it.
+    struct Clash {
+        make: String,
+        model: String,
+        nickname: Option<String>,
+        serial_number: Option<String>,
+    }
+
+    impl Clash {
+        fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+            Ok(Self {
+                make: row.get(0)?,
+                model: row.get(1)?,
+                nickname: row.get(2)?,
+                serial_number: row.get(3)?,
+            })
+        }
+    }
+
+    impl std::fmt::Display for Clash {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{} {}", self.make, self.model)?;
+            if let Some(nickname) = &self.nickname {
+                write!(f, " \"{nickname}\"")?;
+            }
+            if let Some(serial) = &self.serial_number {
+                write!(f, " (serial {serial})")?;
+            }
+            Ok(())
+        }
+    }
+
+    /// The active firearm (other than `exclude_id`, the record being edited,
+    /// which never clashes with itself) whose nickname matches, ignoring case
+    /// and surrounding whitespace.
+    fn find_nickname_clash(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        nickname: &str,
+    ) -> Result<Option<Clash>, CommandError> {
+        conn.query_row(
+            "SELECT make, model, nickname, serial_number FROM firearms
+             WHERE status = 'active' AND id IS NOT :exclude
+               AND lower(trim(nickname)) = lower(trim(:nickname))",
+            named_params! { ":exclude": exclude_id, ":nickname": nickname },
+            Clash::from_row,
+        )
+        .optional()
+        .map_err(CommandError::from_db)
+    }
+
+    /// The active firearm (other than `exclude_id`) with the same make,
+    /// model and serial number, ignoring case and surrounding whitespace.
+    pub(crate) fn find_identity_clash(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        make: &str,
+        model: &str,
+        serial_number: &str,
+    ) -> Result<Option<i64>, CommandError> {
+        conn.query_row(
+            "SELECT id FROM firearms
+             WHERE status = 'active' AND id IS NOT :exclude
+               AND lower(trim(make)) = lower(trim(:make))
+               AND lower(trim(model)) = lower(trim(:model))
+               AND lower(trim(serial_number)) = lower(trim(:serial))",
+            named_params! {
+                ":exclude": exclude_id,
+                ":make": make,
+                ":model": model,
+                ":serial": serial_number,
+            },
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(CommandError::from_db)
+    }
+
+    /// FR-031 and FR-032, against the other active firearms. A disposed
+    /// record has released its nickname and never competes for an identity,
+    /// so neither it nor a record with no serial number is compared. Every
+    /// clash is reported at once, each on its own field.
+    pub fn check_uniqueness(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        input: &FirearmInput,
+    ) -> Result<(), CommandError> {
+        if input.status != FirearmStatus::Active {
+            return Ok(());
+        }
+        let mut errors = std::collections::HashMap::new();
+
+        if let Some(nickname) = &input.nickname {
+            if let Some(other) = find_nickname_clash(conn, exclude_id, nickname)? {
+                errors.insert(
+                    "nickname".to_string(),
+                    format!("That nickname is already used by {other}."),
+                );
+            }
+        }
+
+        if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty()) {
+            if let Some(other_id) =
+                find_identity_clash(conn, exclude_id, &input.make, &input.model, serial)?
+            {
+                let other = describe_firearm(conn, other_id)?;
+                errors.insert(
+                    "serialNumber".to_string(),
+                    format!(
+                        "{other} already has this make, model and serial number. \
+                         Change one of them, or dispose of or delete the other record."
+                    ),
+                );
+            }
+        }
+
+        if errors.is_empty() {
+            return Ok(());
+        }
+        let mut messages: Vec<_> = errors.values().cloned().collect();
+        messages.sort();
+        Err(CommandError::validation(messages.join(" "), errors))
+    }
+
+    fn describe_firearm(conn: &Connection, id: i64) -> Result<Clash, CommandError> {
+        conn.query_row(
+            "SELECT make, model, nickname, serial_number FROM firearms WHERE id = :id",
+            named_params! { ":id": id },
+            Clash::from_row,
+        )
+        .map_err(CommandError::from_db)
+    }
+
     pub fn create_firearm(
         conn: &Connection,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
+        let input = &input.normalized();
         validate_firearm_input(input)?;
+        check_uniqueness(conn, None, input)?;
         conn.execute(
             "INSERT INTO firearms (
-                make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
-                notes, accessories, status, estimated_value,
+                make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
+                notes, accessories,
+                barrel_length_hundredths, overall_length_hundredths, weight_tenths_oz,
+                capacity, finish, condition, status, estimated_value,
                 acquisition_source, acquisition_date, acquisition_price,
                 disposition_type, disposition_recipient, disposition_date, disposition_price,
-                insurance_policy_id, coverage_kind, scheduled_coverage_amount,
+                insurance_policy_id, scheduled_coverage_amount,
                 created_at, updated_at
             ) VALUES (
-                :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id,
-                :notes, :accessories, :status, :estimated_value,
+                :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id, :nickname,
+                :notes, :accessories,
+                :barrel_length_hundredths, :overall_length_hundredths, :weight_tenths_oz,
+                :capacity, :finish, :condition, :status, :estimated_value,
                 :acquisition_source, :acquisition_date, :acquisition_price,
                 :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
-                :insurance_policy_id, :coverage_kind, :scheduled_coverage_amount,
+                :insurance_policy_id, :scheduled_coverage_amount,
                 datetime('now'), datetime('now')
             )",
             named_params! {
@@ -134,8 +307,15 @@ pub mod ops {
                 ":no_serial_attested": input.no_serial_attested,
                 ":caliber": input.caliber,
                 ":firearm_type_id": input.firearm_type_id,
+                ":nickname": input.nickname,
                 ":notes": input.notes,
                 ":accessories": input.accessories,
+                ":barrel_length_hundredths": input.barrel_length_hundredths,
+                ":overall_length_hundredths": input.overall_length_hundredths,
+                ":weight_tenths_oz": input.weight_tenths_oz,
+                ":capacity": input.capacity,
+                ":finish": input.finish,
+                ":condition": input.condition,
                 ":status": input.status,
                 ":estimated_value": input.estimated_value,
                 ":acquisition_source": input.acquisition_source,
@@ -146,7 +326,6 @@ pub mod ops {
                 ":disposition_date": input.disposition_date,
                 ":disposition_price": input.disposition_price,
                 ":insurance_policy_id": input.insurance_policy_id,
-                ":coverage_kind": input.coverage_kind,
                 ":scheduled_coverage_amount": input.scheduled_coverage_amount,
             },
         )
@@ -160,7 +339,9 @@ pub mod ops {
         id: i64,
         input: &FirearmInput,
     ) -> Result<Firearm, CommandError> {
+        let input = &input.normalized();
         validate_firearm_input(input)?;
+        check_uniqueness(conn, Some(id), input)?;
         let updated = conn
             .execute(
                 "UPDATE firearms SET
@@ -170,8 +351,15 @@ pub mod ops {
                     no_serial_attested = :no_serial_attested,
                     caliber = :caliber,
                     firearm_type_id = :firearm_type_id,
+                    nickname = :nickname,
                     notes = :notes,
                     accessories = :accessories,
+                    barrel_length_hundredths = :barrel_length_hundredths,
+                    overall_length_hundredths = :overall_length_hundredths,
+                    weight_tenths_oz = :weight_tenths_oz,
+                    capacity = :capacity,
+                    finish = :finish,
+                    condition = :condition,
                     status = :status,
                     estimated_value = :estimated_value,
                     acquisition_source = :acquisition_source,
@@ -182,7 +370,6 @@ pub mod ops {
                     disposition_date = :disposition_date,
                     disposition_price = :disposition_price,
                     insurance_policy_id = :insurance_policy_id,
-                    coverage_kind = :coverage_kind,
                     scheduled_coverage_amount = :scheduled_coverage_amount,
                     updated_at = datetime('now')
                 WHERE id = :id",
@@ -194,8 +381,15 @@ pub mod ops {
                     ":no_serial_attested": input.no_serial_attested,
                     ":caliber": input.caliber,
                     ":firearm_type_id": input.firearm_type_id,
+                    ":nickname": input.nickname,
                     ":notes": input.notes,
                     ":accessories": input.accessories,
+                    ":barrel_length_hundredths": input.barrel_length_hundredths,
+                    ":overall_length_hundredths": input.overall_length_hundredths,
+                    ":weight_tenths_oz": input.weight_tenths_oz,
+                    ":capacity": input.capacity,
+                    ":finish": input.finish,
+                    ":condition": input.condition,
                     ":status": input.status,
                     ":estimated_value": input.estimated_value,
                     ":acquisition_source": input.acquisition_source,
@@ -206,8 +400,7 @@ pub mod ops {
                     ":disposition_date": input.disposition_date,
                     ":disposition_price": input.disposition_price,
                     ":insurance_policy_id": input.insurance_policy_id,
-                    ":coverage_kind": input.coverage_kind,
-                    ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                        ":scheduled_coverage_amount": input.scheduled_coverage_amount,
                 },
             )
             .map_err(CommandError::from_db)?;
@@ -226,29 +419,96 @@ pub mod ops {
         let current = get_firearm(conn, id)?;
 
         let updated_input = FirearmInput {
-            make: current.make,
-            model: current.model,
-            serial_number: current.serial_number,
-            no_serial_attested: current.no_serial_attested,
-            caliber: current.caliber,
-            firearm_type_id: current.firearm_type_id,
-            notes: current.notes,
-            accessories: current.accessories,
             status: FirearmStatus::Disposed,
-            estimated_value: current.estimated_value,
-            acquisition_source: current.acquisition_source,
-            acquisition_date: current.acquisition_date,
-            acquisition_price: current.acquisition_price,
             disposition_type: Some(input.disposition_type),
             disposition_recipient: Some(input.recipient.clone()),
             disposition_date: Some(input.date.clone()),
             disposition_price: Some(input.price),
-            insurance_policy_id: current.insurance_policy_id,
-            coverage_kind: current.coverage_kind,
-            scheduled_coverage_amount: current.scheduled_coverage_amount,
+            ..FirearmInput::from(&current)
         };
 
         update_firearm(conn, id, &updated_input)
+    }
+
+    pub fn get_firearm_detail(conn: &Connection, id: i64) -> Result<FirearmDetail, CommandError> {
+        let firearm = get_firearm(conn, id)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT * FROM disposition_history WHERE firearm_id = :id
+                 ORDER BY reversed_at DESC, id DESC",
+            )
+            .map_err(CommandError::from_db)?;
+        let disposition_history = stmt
+            .query_map(named_params! { ":id": id }, DispositionHistoryEntry::from_row)
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+        Ok(FirearmDetail { firearm, disposition_history })
+    }
+
+    /// Restores a disposed firearm to active status (FR-033). With `keep`
+    /// the current disposition is copied to `disposition_history` first.
+    /// Runs in one transaction, and the restored record goes through the
+    /// same save path as an edit, so FR-031/FR-032 are re-applied against
+    /// the firearms active now: a clash fails the whole reversal, naming
+    /// the other record, with nothing changed.
+    pub fn reverse_disposition(
+        conn: &Connection,
+        id: i64,
+        input: &ReverseDispositionInput,
+    ) -> Result<Firearm, CommandError> {
+        let current = get_firearm(conn, id)?;
+        let (Some(disposition_type), Some(recipient), Some(date)) = (
+            current.disposition_type,
+            current.disposition_recipient.clone(),
+            current.disposition_date.clone(),
+        ) else {
+            return Err(CommandError::new(
+                "VALIDATION_ERROR",
+                "Only a disposed firearm can have its disposition reversed.",
+            ));
+        };
+        if current.status != FirearmStatus::Disposed {
+            return Err(CommandError::new(
+                "VALIDATION_ERROR",
+                "Only a disposed firearm can have its disposition reversed.",
+            ));
+        }
+
+        let restored = FirearmInput {
+            status: FirearmStatus::Active,
+            disposition_type: None,
+            disposition_recipient: None,
+            disposition_date: None,
+            disposition_price: None,
+            nickname: match input.nickname.as_deref().map(str::trim) {
+                Some(renamed) if !renamed.is_empty() => Some(renamed.to_owned()),
+                _ => current.nickname.clone(),
+            },
+            ..FirearmInput::from(&current)
+        };
+
+        // Dropped without commit on any error below, which rolls it back.
+        let tx = conn.unchecked_transaction().map_err(CommandError::from_db)?;
+        if input.history == HistoryChoice::Keep {
+            conn.execute(
+                "INSERT INTO disposition_history (
+                    firearm_id, disposition_type, disposition_recipient,
+                    disposition_date, disposition_price, reversed_at
+                ) VALUES (:firearm_id, :type, :recipient, :date, :price, datetime('now'))",
+                named_params! {
+                    ":firearm_id": id,
+                    ":type": disposition_type,
+                    ":recipient": recipient,
+                    ":date": date,
+                    ":price": current.disposition_price,
+                },
+            )
+            .map_err(CommandError::from_db)?;
+        }
+        let restored = update_firearm(conn, id, &restored)?;
+        tx.commit().map_err(CommandError::from_db)?;
+        Ok(restored)
     }
 
     pub fn delete_firearm(
@@ -271,6 +531,8 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No firearm was found with that id."));
         }
+        // Its photos and documents went with it: return their space (Constitution V).
+        crate::db::reclaim_freed_space(conn);
         Ok(DeleteResult { deleted: true })
     }
 
@@ -331,7 +593,7 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
 
-        let policy_aggregates = crate::services::insurance_status::load_policy_aggregates(conn)?;
+        let insurance = crate::services::insurance_status::load_context(conn)?;
 
         let mut summaries = Vec::new();
         for row in rows {
@@ -340,9 +602,8 @@ pub mod ops {
             let insurance_warning = crate::services::insurance_status::firearm_warning(
                 firearm.estimated_value,
                 firearm.insurance_policy_id,
-                firearm.coverage_kind,
                 firearm.scheduled_coverage_amount,
-                &policy_aggregates,
+                &insurance,
             );
             summaries.push((
                 match input.group_by {
@@ -355,6 +616,7 @@ pub mod ops {
                     id: firearm.id,
                     make: firearm.make,
                     model: firearm.model,
+                    nickname: firearm.nickname,
                     serial_number: firearm.serial_number,
                     caliber: firearm.caliber,
                     firearm_type_name,
@@ -364,7 +626,7 @@ pub mod ops {
                     estimated_value: firearm.estimated_value,
                     insurance_warning,
                     insurance_policy_id: firearm.insurance_policy_id,
-                    coverage_kind: firearm.coverage_kind,
+                    scheduled_coverage_amount: firearm.scheduled_coverage_amount,
                 },
             ));
         }
@@ -412,6 +674,16 @@ pub async fn dispose_firearm(
 }
 
 #[tauri::command]
+pub async fn reverse_disposition(
+    id: i64,
+    input: ReverseDispositionInput,
+    state: State<'_, DbHandle>,
+) -> Result<Firearm, CommandError> {
+    let conn = state.0.lock().expect("db mutex poisoned");
+    ops::reverse_disposition(&conn, id, &input)
+}
+
+#[tauri::command]
 pub async fn delete_firearm(
     id: i64,
     confirmed: bool,
@@ -422,9 +694,12 @@ pub async fn delete_firearm(
 }
 
 #[tauri::command]
-pub async fn get_firearm(id: i64, state: State<'_, DbHandle>) -> Result<Firearm, CommandError> {
+pub async fn get_firearm(
+    id: i64,
+    state: State<'_, DbHandle>,
+) -> Result<FirearmDetail, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_firearm(&conn, id)
+    ops::get_firearm_detail(&conn, id)
 }
 
 #[tauri::command]

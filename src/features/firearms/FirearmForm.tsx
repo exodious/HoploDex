@@ -1,26 +1,37 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Button,
   Checkbox,
   ChoiceCards,
   DateField,
+  DecimalField,
   MoneyField,
   Select,
   TextArea,
   TextField,
 } from "../../components";
-import { parseDateInput } from "../../lib/dates";
-import { centsToInput, parseDollars } from "../../lib/money";
+import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
+import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
+import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
-import { DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
-import type { DispositionType, Firearm, FirearmInput } from "./types";
+import { CONDITION_OPTIONS, DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
+import type { Condition, DispositionType, Firearm, FirearmInput } from "./types";
 import "./forms.css";
+
+/** A field the form can open on, for the record page's "Add" links. */
+export type FocusField = "notes" | "accessories";
+
+/** How long the section stays highlighted after the form opens on a field. */
+const HIGHLIGHT_MS = 1800;
 
 export interface FirearmFormProps {
   /** Present in edit mode; omitted when creating a new record. */
   initialValues?: Firearm;
+  /** Opens with this field scrolled into view, focused, and its section
+   * briefly highlighted (FR-038). */
+  focusField?: FocusField;
   onSubmit: (input: FirearmInput) => Promise<void>;
   onCancel?: () => void;
 }
@@ -28,12 +39,20 @@ export interface FirearmFormProps {
 interface FormState {
   make: string;
   model: string;
+  nickname: string;
   caliber: string;
   firearmTypeId: string;
   serialNumber: string;
   noSerialAttested: boolean;
   notes: string;
   accessories: string;
+  barrelLength: string;
+  overallLength: string;
+  weightPounds: string;
+  weightOunces: string;
+  capacity: string;
+  finish: string;
+  condition: Condition | "";
   estimatedValue: string;
   acquisitionSource: string;
   acquisitionDate: string;
@@ -46,24 +65,46 @@ interface FormState {
 
 type Field = keyof FormState;
 
+/** The name the backend gives a field when it rejects it. */
+const SERVER_FIELD: Partial<Record<Field, string>> = {
+  barrelLength: "barrelLengthHundredths",
+  overallLength: "overallLengthHundredths",
+  weightPounds: "weightTenthsOz",
+};
+
+/** Sent for the condition's "Not recorded" option: a Select item can't be "". */
+const NOT_RECORDED = "none";
+
+function weightFields(tenthsOz: number | null) {
+  const { pounds, ounces } = weightToInputs(tenthsOz);
+  return { weightPounds: pounds, weightOunces: ounces };
+}
+
 function toFormState(firearm?: Firearm): FormState {
   return {
     make: firearm?.make ?? "",
     model: firearm?.model ?? "",
+    nickname: firearm?.nickname ?? "",
     caliber: firearm?.caliber ?? "",
     firearmTypeId: firearm ? String(firearm.firearmTypeId) : "",
     serialNumber: firearm?.serialNumber ?? "",
     noSerialAttested: firearm?.noSerialAttested ?? false,
     notes: firearm?.notes ?? "",
     accessories: firearm?.accessories ?? "",
-    estimatedValue: centsToInput(firearm?.estimatedValue ?? null),
+    barrelLength: inchesToInput(firearm?.barrelLengthHundredths ?? null),
+    overallLength: inchesToInput(firearm?.overallLengthHundredths ?? null),
+    ...weightFields(firearm?.weightTenthsOz ?? null),
+    capacity: firearm?.capacity == null ? "" : String(firearm.capacity),
+    finish: firearm?.finish ?? "",
+    condition: firearm?.condition ?? "",
+    estimatedValue: dollarsToInput(firearm?.estimatedValue ?? null),
     acquisitionSource: firearm?.acquisitionSource ?? "",
     acquisitionDate: firearm?.acquisitionDate ?? "",
-    acquisitionPrice: centsToInput(firearm?.acquisitionPrice ?? null),
+    acquisitionPrice: dollarsToInput(firearm?.acquisitionPrice ?? null),
     dispositionType: firearm?.dispositionType ?? "",
     dispositionRecipient: firearm?.dispositionRecipient ?? "",
     dispositionDate: firearm?.dispositionDate ?? "",
-    dispositionPrice: centsToInput(firearm?.dispositionPrice ?? null),
+    dispositionPrice: dollarsToInput(firearm?.dispositionPrice ?? null),
   };
 }
 
@@ -88,8 +129,24 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     const parsed = parseDollars(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
   }
+  for (const field of ["barrelLength", "overallLength"] as const) {
+    const parsed = parseInches(form[field]);
+    if (!parsed.ok) errors[field] = parsed.error;
+  }
+  const weight = parseWeight(form.weightPounds, form.weightOunces);
+  if (!weight.ok) {
+    if (weight.errors.pounds) errors.weightPounds = weight.errors.pounds;
+    if (weight.errors.ounces) errors.weightOunces = weight.errors.ounces;
+  }
+  if (form.capacity !== "" && !(Number(form.capacity) >= 1)) {
+    errors.capacity = "Capacity must be at least 1.";
+  }
   const acquired = parseDateInput(form.acquisitionDate);
   if (!acquired.ok) errors.acquisitionDate = acquired.error;
+  else {
+    const future = futureDateError(acquired.iso, "Acquisition date");
+    if (future) errors.acquisitionDate = future;
+  }
 
   if (disposed) {
     if (!form.dispositionType) errors.dispositionType = "Choose what happened to it.";
@@ -98,16 +155,28 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     const date = parseDateInput(form.dispositionDate);
     if (!date.ok) errors.dispositionDate = date.error;
     else if (!date.iso) errors.dispositionDate = "Enter the date.";
+    else {
+      const problem =
+        futureDateError(date.iso, "Disposition date") ??
+        dispositionOrderError(acquired.ok ? acquired.iso : null, date.iso);
+      if (problem) errors.dispositionDate = problem;
+    }
     const price = parseDollars(form.dispositionPrice);
     if (!price.ok) errors.dispositionPrice = price.error;
-    else if (price.cents == null) errors.dispositionPrice = "Enter the price, or 0.";
+    else if (price.dollars == null) errors.dispositionPrice = "Enter the price, or 0.";
   }
   return errors;
 }
 
-function cents(text: string): number | null {
+function dollars(text: string): number | null {
   const parsed = parseDollars(text);
-  return parsed.ok ? parsed.cents : null;
+  return parsed.ok ? parsed.dollars : null;
+}
+
+/** The scaled integer for a physical-detail field already validated. */
+function measure(parse: typeof parseInches, text: string): number | null {
+  const parsed = parse(text);
+  return parsed.ok ? parsed.value : null;
 }
 
 function isoDate(text: string): string | null {
@@ -119,9 +188,15 @@ function isoDate(text: string): string | null {
 const FIELD_ORDER: Field[] = [
   "make",
   "model",
+  "nickname",
   "firearmTypeId",
   "caliber",
   "serialNumber",
+  "barrelLength",
+  "overallLength",
+  "weightPounds",
+  "weightOunces",
+  "capacity",
   "estimatedValue",
   "acquisitionDate",
   "acquisitionPrice",
@@ -135,7 +210,7 @@ const FIELD_ORDER: Field[] = [
  * set from the record's own coverage panel; a disposed record's
  * disposition details can be corrected here. Renders its own dialog body
  * and footer (use inside `<Dialog bare>`). */
-export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormProps) {
+export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: FirearmFormProps) {
   const disposed = initialValues?.status === "disposed";
   const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
@@ -143,11 +218,27 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<CommandFailure | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const accessoriesRef = useRef<HTMLTextAreaElement>(null);
+  // Motion-free under prefers-reduced-motion: still marked, so the user can
+  // see where to type, but neither animated nor smooth-scrolled.
+  const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
+
+  useEffect(() => {
+    const field = focusField === "notes" ? notesRef.current : accessoriesRef.current;
+    if (!focusField || !field) return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    field.focus({ preventScroll: true });
+    field.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+    setHighlight(reduceMotion ? "static" : "animated");
+    const timer = setTimeout(() => setHighlight(null), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [focusField]);
 
   const clientErrors = validate(form, disposed);
   const errorFor = (field: Field): string | undefined =>
     touched[field] || submitted
-      ? (clientErrors[field] ?? serverError?.fieldErrors?.[field])
+      ? (clientErrors[field] ?? serverError?.fieldErrors?.[SERVER_FIELD[field] ?? field])
       : undefined;
   // Blurring an empty field doesn't flag it; "required" errors wait for a
   // submit attempt, so tabbing through the form isn't a wall of red.
@@ -170,26 +261,35 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
       return;
     }
 
+    const weight = parseWeight(form.weightPounds, form.weightOunces);
+    const weightTenths = weight.ok ? weight.value : null;
+
     const input: FirearmInput = {
       make: form.make.trim(),
       model: form.model.trim(),
+      nickname: blankToNull(form.nickname),
       caliber: form.caliber.trim(),
       firearmTypeId: Number(form.firearmTypeId),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
       accessories: blankToNull(form.accessories),
-      estimatedValue: cents(form.estimatedValue),
+      barrelLengthHundredths: measure(parseInches, form.barrelLength),
+      overallLengthHundredths: measure(parseInches, form.overallLength),
+      weightTenthsOz: weightTenths,
+      capacity: form.capacity === "" ? null : Number(form.capacity),
+      finish: blankToNull(form.finish),
+      condition: form.condition === "" ? null : form.condition,
+      estimatedValue: dollars(form.estimatedValue),
       acquisitionSource: blankToNull(form.acquisitionSource),
       acquisitionDate: isoDate(form.acquisitionDate),
-      acquisitionPrice: cents(form.acquisitionPrice),
+      acquisitionPrice: dollars(form.acquisitionPrice),
       status: initialValues?.status ?? "active",
       dispositionType: disposed ? (form.dispositionType as DispositionType) : null,
       dispositionRecipient: disposed ? form.dispositionRecipient.trim() : null,
       dispositionDate: disposed ? isoDate(form.dispositionDate) : null,
-      dispositionPrice: disposed ? cents(form.dispositionPrice) : null,
+      dispositionPrice: disposed ? dollars(form.dispositionPrice) : null,
       insurancePolicyId: initialValues?.insurancePolicyId ?? null,
-      coverageKind: initialValues?.coverageKind ?? null,
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
     };
 
@@ -245,6 +345,17 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
                 placeholder="e.g. Model 29"
               />
             </div>
+          </div>
+
+          <div data-field="nickname">
+            <TextField
+              label="Nickname"
+              value={form.nickname}
+              onChange={(e) => update("nickname", e.target.value)}
+              error={errorFor("nickname")}
+              hint="Optional. Tells apart firearms with the same make and model; each active firearm needs its own."
+              placeholder="e.g. Range gun"
+            />
           </div>
 
           <div data-field="firearmTypeId">
@@ -304,6 +415,84 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
           </div>
         </section>
 
+        <fieldset className="hd-form-section hd-form-fieldset">
+          <legend className="hd-form-section__title">Physical details</legend>
+          <div className="hd-form-grid hd-form-grid--3">
+            <div data-field="barrelLength">
+              <DecimalField
+                label="Barrel length (in)"
+                value={form.barrelLength}
+                onValueChange={(text) => update("barrelLength", text)}
+                onBlur={touch("barrelLength")}
+                error={errorFor("barrelLength")}
+                placeholder="e.g. 4.25"
+              />
+            </div>
+            <div data-field="overallLength">
+              <DecimalField
+                label="Overall length (in)"
+                value={form.overallLength}
+                onValueChange={(text) => update("overallLength", text)}
+                onBlur={touch("overallLength")}
+                error={errorFor("overallLength")}
+                placeholder="e.g. 7.4"
+              />
+            </div>
+            <div className="hd-form-pair">
+              <div data-field="weightPounds">
+                <DecimalField
+                  label="Weight (lb)"
+                  value={form.weightPounds}
+                  onValueChange={(text) => update("weightPounds", text)}
+                  onBlur={touch("weightPounds")}
+                  error={errorFor("weightPounds")}
+                  placeholder="e.g. 6.5"
+                />
+              </div>
+              <div data-field="weightOunces">
+                <DecimalField
+                  label="Weight (oz)"
+                  value={form.weightOunces}
+                  onValueChange={(text) => update("weightOunces", text)}
+                  onBlur={touch("weightOunces")}
+                  error={errorFor("weightOunces")}
+                  placeholder="e.g. 8"
+                />
+              </div>
+              <p className="hd-form-pair__hint">
+                Fill in either or both. Saved to the nearest 0.1 oz.
+              </p>
+            </div>
+            <div data-field="capacity">
+              <TextField
+                label="Capacity"
+                inputMode="numeric"
+                autoComplete="off"
+                value={form.capacity}
+                onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
+                onBlur={touch("capacity")}
+                error={errorFor("capacity")}
+                hint="Rounds in the magazine, cylinder or tube."
+              />
+            </div>
+            <TextField
+              label="Finish"
+              value={form.finish}
+              onChange={(e) => update("finish", e.target.value)}
+              placeholder="e.g. Blued, Cerakote"
+              hint="Searchable."
+            />
+            <Select
+              label="Condition"
+              value={form.condition || NOT_RECORDED}
+              onValueChange={(value) =>
+                update("condition", value === NOT_RECORDED ? "" : (value as Condition))
+              }
+              options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
+            />
+          </div>
+        </fieldset>
+
         <section className="hd-form-section" aria-labelledby="ff-value">
           <h3 className="hd-form-section__title" id="ff-value">
             Value
@@ -337,6 +526,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
               <DateField
                 label="Date acquired"
                 value={form.acquisitionDate}
+                max={todayIso()}
                 onValueChange={(text) => update("acquisitionDate", text)}
                 onBlur={touch("acquisitionDate")}
                 error={errorFor("acquisitionDate")}
@@ -354,12 +544,17 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
           </div>
         </section>
 
-        <section className="hd-form-section" aria-labelledby="ff-condition">
+        <section
+          className="hd-form-section"
+          aria-labelledby="ff-condition"
+          data-highlight={highlight ?? undefined}
+        >
           <h3 className="hd-form-section__title" id="ff-condition">
             Condition and accessories
           </h3>
           <div className="hd-form-grid hd-form-grid--2">
             <TextArea
+              ref={notesRef}
               label="Notes"
               value={form.notes}
               onChange={(e) => update("notes", e.target.value)}
@@ -367,6 +562,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
               rows={4}
             />
             <TextArea
+              ref={accessoriesRef}
               label="Accessories"
               value={form.accessories}
               onChange={(e) => update("accessories", e.target.value)}
@@ -407,6 +603,7 @@ export function FirearmForm({ initialValues, onSubmit, onCancel }: FirearmFormPr
                   label="Date"
                   required
                   value={form.dispositionDate}
+                  max={todayIso()}
                   onValueChange={(text) => update("dispositionDate", text)}
                   onBlur={touch("dispositionDate")}
                   error={errorFor("dispositionDate")}

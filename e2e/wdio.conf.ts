@@ -1,7 +1,8 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import type { Options } from "@wdio/types";
 import { browser } from "@wdio/globals";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,45 @@ const application = path.resolve(
 );
 
 let tauriDriver: ChildProcess | undefined;
+let sandbox: string | undefined;
+
+/**
+ * Points the app at a throwaway data/config/cache directory for this session.
+ *
+ * The E2E build uses an in-memory keyring that generates a new database key on
+ * every launch, so a database left behind by one spec can never be opened by
+ * the next: SQLCipher fails its HMAC check and the app never comes up, which
+ * leaves the next session request hanging until it times out. A fresh
+ * directory per session avoids that, and also keeps E2E runs away from the
+ * developer's real database.
+ *
+ * Set on this process's environment, which tauri-driver, and through it the
+ * app, inherits.
+ */
+function isolateAppData() {
+  sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-"));
+  const [data, cache, config] = ["data", "cache", "config"].map((name) => {
+    const dir = path.join(sandbox!, name);
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  });
+
+  if (process.platform === "linux") {
+    process.env.XDG_DATA_HOME = data;
+    process.env.XDG_CACHE_HOME = cache;
+    process.env.XDG_CONFIG_HOME = config;
+    // The document test opens a PDF through xdg-open, which would start a real
+    // viewer. Mapping the type to a no-op in mimeapps.list isn't reliable (the
+    // desktop environment's own defaults win), so put a stub first on PATH.
+    const bin = path.join(sandbox, "bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "xdg-open"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
+  } else if (process.platform === "win32") {
+    process.env.APPDATA = data;
+    process.env.LOCALAPPDATA = cache;
+  }
+}
 
 /**
  * A prior run's tauri-driver/WebKitWebDriver can be left holding these
@@ -65,7 +105,7 @@ function findNativeDriver(): string | undefined {
   }
 }
 
-export const config: Options.Testrunner = {
+export const config: WebdriverIO.Config = {
   runner: "local",
   specs: ["./specs/**/*.e2e.ts"],
   maxInstances: 1,
@@ -93,6 +133,7 @@ export const config: Options.Testrunner = {
 
   beforeSession: () => {
     killProcessesOnPorts([4444, 4445]);
+    isolateAppData();
     spawnSync(
       "cargo",
       [
@@ -115,8 +156,16 @@ export const config: Options.Testrunner = {
     });
   },
 
-  afterSession: () => {
+  afterSession: async () => {
     tauriDriver?.kill();
+    if (!sandbox) return;
+    // The app and its webview are still shutting down, and write cache files
+    // as they go, so removing the directory once can leave some behind.
+    for (let attempt = 0; attempt < 5 && fs.existsSync(sandbox); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
+    sandbox = undefined;
   },
 
   before: async () => {

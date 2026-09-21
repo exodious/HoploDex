@@ -1,0 +1,91 @@
+# Format, lint, test and build on Windows, macOS and Linux, so the
+# cross-platform requirement (FR-022) is verified on every change rather than
+# assumed (plan.md, Testing; constitution I). Mirrors the commands in the
+# README's "Test" and "Linting & formatting" sections.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config perl \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev \
+            libsoup-3.0-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # SQLCipher needs a crypto library. Linux uses libssl-dev (above) and
+      # macOS uses CommonCrypto with nothing to install, but on Windows
+      # rusqlite's build script refuses to continue without OPENSSL_DIR.
+      - name: Install OpenSSL for SQLCipher (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install openssl:x64-windows-static-md
+          "OPENSSL_DIR=C:\vcpkg\installed\x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "OPENSSL_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # The Rust crate embeds the built frontend (tauri.conf.json's
+      # frontendDist), so it has to exist before anything compiles it.
+      - name: Build the frontend
+        run: npm run build
+
+      - name: Rust format
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust lint
+        run: cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: Frontend lint
+        run: npm run lint
+
+      - name: Frontend format
+        run: npm run format:check
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Build the app
+        run: npx tauri build --no-bundle

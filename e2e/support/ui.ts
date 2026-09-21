@@ -55,6 +55,22 @@ export async function clickButton(text: string) {
   await browser.pause(SETTLE_MS);
 }
 
+/** Whether the button with this visible text, in the innermost open dialog,
+ * is disabled. (An attribute selector can't express "button with this text"
+ * after a descendant combinator, so this reads it from the page.) */
+export async function isButtonDisabled(text: string): Promise<boolean> {
+  return browser.execute(
+    new Function(
+      "text",
+      `${SCOPE_JS}
+      const button = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
+      if (!button) throw new Error("no button " + text);
+      return button.disabled;`,
+    ) as (text: string) => boolean,
+    text,
+  );
+}
+
 /** Clicks one of the app's top-bar section tabs ("Collection", "Insurance"). */
 export async function goTo(section: "Collection" | "Insurance") {
   await browser.execute((name: string) => {
@@ -89,6 +105,125 @@ export async function fill(label: string, value: string) {
   );
   if (!found) throw new Error(`no field labelled "${label}"`);
   await browser.pause(100);
+}
+
+/** The current text of a labelled field in the open dialog. */
+export async function fieldValue(label: string): Promise<string> {
+  const value = await browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      return field ? field.value : null;`,
+    ) as (label: string) => string | null,
+    label,
+  );
+  if (value === null) throw new Error(`no field labelled "${label}"`);
+  return value;
+}
+
+/** Pastes `text` into a labelled field, as the clipboard would: a real
+ * `paste` event carrying the text, so the field can refuse it before it
+ * changes anything (`fill` sets a value directly and never fires one). */
+export async function pasteInto(label: string, text: string) {
+  const found = await browser.execute(
+    new Function(
+      "label",
+      "text",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      if (!field) return false;
+      field.focus();
+      const data = new DataTransfer();
+      data.setData("text/plain", text);
+      const paste = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+      const proceed = field.dispatchEvent(paste);
+      if (proceed) {
+        // Nobody refused it: insert what the browser would have.
+        const proto = HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(field, field.value + text);
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return true;`,
+    ) as (label: string, text: string) => boolean,
+    label,
+    text,
+  );
+  if (!found) throw new Error(`no field labelled "${label}"`);
+  await browser.pause(150);
+}
+
+/** The visible label of the field that has keyboard focus, or null. */
+export async function focusedFieldLabel(): Promise<string | null> {
+  return browser.execute(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active?.id) return null;
+    const label = document.querySelector(`label[for="${active.id}"]`);
+    return label ? (label.textContent ?? "").trim() : null;
+  });
+}
+
+/** Whether the labelled field is fully inside the visible window, i.e. was
+ * scrolled into view rather than left below a dialog's fold. */
+export async function isFieldInView(label: string): Promise<boolean> {
+  return browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      if (!field) return false;
+      const box = field.getBoundingClientRect();
+      return box.top >= 0 && box.bottom <= window.innerHeight;`,
+    ) as (label: string) => boolean,
+    label,
+  );
+}
+
+/** Follows the "Add" link beside an empty-state line such as
+ * "No notes recorded." on a firearm's record. */
+export async function followAddLink(emptyText: string) {
+  const found = await browser.execute((text: string) => {
+    const line = [...document.querySelectorAll(".hd-panel__empty")].find((p) =>
+      p.textContent?.includes(text),
+    );
+    const link = line?.querySelector<HTMLElement>("button");
+    link?.click();
+    return Boolean(link);
+  }, emptyText);
+  if (!found) throw new Error(`no "Add" link beside "${emptyText}"`);
+  await browser.pause(SETTLE_MS);
+}
+
+/** Whether a form section in the open dialog is currently highlighted (FR-038). */
+export async function hasHighlightedSection(): Promise<boolean> {
+  return browser.execute(() => Boolean(document.querySelector('[role="dialog"] [data-highlight]')));
+}
+
+/** Whether the labelled text field in the open dialog is disabled. */
+export async function isFieldDisabled(label: string): Promise<boolean> {
+  const state = await browser.execute(
+    new Function(
+      "label",
+      `${SCOPE_JS}
+      const labelEl = [...scope.querySelectorAll("label")].find(
+        (l) => l.textContent.trim() === label && l.htmlFor,
+      );
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      return field ? field.disabled : null;`,
+    ) as (label: string) => boolean | null,
+    label,
+  );
+  if (state === null) throw new Error(`no field labelled "${label}"`);
+  return state;
 }
 
 /** Picks a radio choice (type cards, segmented controls, coverage kind…)
@@ -268,6 +403,32 @@ export interface NewFirearm {
   noSerial?: boolean;
   valueDollars?: string;
   notes?: string;
+  nickname?: string;
+  acquisitionDate?: string;
+  /** FR-039: free text, searchable. */
+  finish?: string;
+}
+
+/** A firearm's display name as the app shows it: "Make Model", plus its
+ * nickname in curly quotes when it has one (FR-031). */
+export function displayName(firearm: { make: string; model: string; nickname?: string }) {
+  const name = `${firearm.make} ${firearm.model}`;
+  return firearm.nickname ? `${name} “${firearm.nickname}”` : name;
+}
+
+/** Fills the open Add firearm dialog without saving it. */
+export async function fillFirearmForm(firearm: NewFirearm) {
+  await fill("Make", firearm.make);
+  await fill("Model", firearm.model);
+  if (firearm.nickname) await fill("Nickname", firearm.nickname);
+  await choose(firearm.type);
+  await fill("Caliber", firearm.caliber);
+  if (firearm.serial) await fill("Serial number", firearm.serial);
+  if (firearm.noSerial) await toggle("This firearm has no serial number");
+  if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
+  if (firearm.acquisitionDate) await fill("Date acquired", firearm.acquisitionDate);
+  if (firearm.notes) await fill("Notes", firearm.notes);
+  if (firearm.finish) await fill("Finish", firearm.finish);
 }
 
 /** Adds a firearm through the Add firearm dialog, leaving the app on its
@@ -275,20 +436,15 @@ export interface NewFirearm {
 export async function addFirearm(firearm: NewFirearm) {
   await clickButton("Add firearm");
   await $('[role="dialog"]').waitForExist();
-  await fill("Make", firearm.make);
-  await fill("Model", firearm.model);
-  await choose(firearm.type);
-  await fill("Caliber", firearm.caliber);
-  if (firearm.serial) await fill("Serial number", firearm.serial);
-  if (firearm.noSerial) await toggle("This firearm has no serial number");
-  if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
-  if (firearm.notes) await fill("Notes", firearm.notes);
+  await fillFirearmForm(firearm);
   await clickButton("Add firearm");
+  const expected = displayName(firearm);
   await browser.waitUntil(
     async () =>
       (await $("#record-name").isExisting()) &&
-      (await $("#record-name").getText()) === `${firearm.make} ${firearm.model}`,
-    { timeout: 8000, timeoutMsg: `record for ${firearm.make} ${firearm.model} never opened` },
+      // The nickname sits on its own line, so compare with whitespace collapsed.
+      (await $("#record-name").getText()).replace(/\s+/g, " ") === expected,
+    { timeout: 8000, timeoutMsg: `record for ${expected} never opened` },
   );
   await browser.pause(300);
 }

@@ -15,6 +15,9 @@ src-tauri/gen/
 e2e/wdio-logs/
 e2e/.wdio-tauri-driver*
 
+# Human-testing data: database, webview state and import samples (scripts/human-testing.sh)
+.human-testing/
+
 # Test artifacts
 coverage/
 *.tsbuildinfo

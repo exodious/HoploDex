@@ -71,6 +71,13 @@ On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
   on Windows 10/11; otherwise get it from the
   [WebView2 runtime page](https://developer.microsoft.com/microsoft-edge/webview2/)).
 
+  SQLCipher also needs OpenSSL here (macOS uses CommonCrypto and Linux uses
+  `libssl-dev`, so neither needs anything extra). Install it, for example
+  with [vcpkg](https://vcpkg.io) — `vcpkg install openssl:x64-windows-static-md` —
+  and set `OPENSSL_DIR` (e.g. `C:\vcpkg\installed\x64-windows-static-md`) and
+  `OPENSSL_STATIC=1` before building. The build stops with "Missing
+  environment variable OPENSSL_DIR" otherwise.
+
 **End-to-end (E2E) testing extras — Linux only:**
 
 Debian/Ubuntu:
@@ -157,16 +164,62 @@ npm test                                          # Vitest frontend unit tests
 npm run test:e2e                                  # WebdriverIO E2E, driven against the built app
 ```
 
+The E2E suite can't watch the app exit (WebKitWebDriver ends a session by
+killing it), so `e2e/scripts/quit-cleanup.py` checks that decrypted document
+copies are removed when the app quits — window closed, SIGTERM, SIGHUP or
+SIGINT — against the built binary: `xvfb-run -a python3
+e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).
+
 `npm run test:e2e` builds a release binary with `cargo build --release
 --features custom-protocol` and drives it via `tauri-driver`. On Linux it
 runs under an isolated `xvfb` virtual display (via `xvfb-run`), so it never
 touches your real desktop, and it self-heals after an interrupted prior
 run (killing anything left over on its ports before starting).
 
+### Human testing
+
+To poke at the app by hand (look and feel, workflows) against a realistic
+collection instead of an empty one:
+
+```bash
+scripts/human-testing.sh                # seed on first use, then launch `tauri dev`
+scripts/human-testing.sh --reset        # throw the data away and reseed
+scripts/human-testing.sh --extra 200    # also generate 200 plain firearms
+```
+
+The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own
+command layer, so it covers photos, documents, dispositions and every
+insurance state: healthy, under-insured, uninsured (expired policy), and a
+policy expiring soon. Policy dates are relative to the day it is seeded. The
+data lives in `.human-testing/` (git-ignored), along with three spreadsheets
+in `import-samples/` (clean, conflicting and invalid rows) to try File >
+Import with. The app is pointed at it through `XDG_*_HOME`, so your real
+collection is never opened. Linux only.
+
+**Changing the data model?** Update the seed in the same change. The seed
+compiles when a new field is simply left out, so
+`src-tauri/tests/human_seed_coverage_test.rs` runs it against a temporary
+database and fails if any column is empty in every row, if a `CHECK ... IN`
+value never appears, or if no import sample fills a spreadsheet column. Fix a
+failure by seeding a record that uses the new field (and adding it to the
+import samples), not by loosening the test.
+
 ### Linting & formatting
 
 ```bash
-cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml
+cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 npm run lint
 npm run format:check
 ```
+
+### Continuous integration
+
+The CI definition lives in `.github/workflows-disabled/ci.yml` and is
+**currently disabled**; move it to `.github/workflows/` to enable it. Until
+then, run the checks below locally. When enabled it runs on every push to
+`main`/`develop` and on every pull request, on Windows, macOS and Linux: it
+builds the frontend, then runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+`eslint`, `prettier --check`, `vitest`, and finally `tauri build --no-bundle`.
+The Rust crate embeds the built frontend, which is why the frontend builds
+first. The WebdriverIO E2E suite isn't part of CI: it needs a display and a
+platform WebDriver, so run `npm run test:e2e` locally.

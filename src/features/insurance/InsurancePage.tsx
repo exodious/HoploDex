@@ -1,5 +1,5 @@
 import { Button, Icon } from "../../components";
-import { formatCents } from "../../lib/money";
+import { formatDollars } from "../../lib/money";
 import { BackLink } from "../app/BackLink";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
@@ -27,8 +27,8 @@ export function InsurancePage() {
   const unvalued = active.filter((f) => !f.estimatedValue);
 
   const { add, edit, remove, dialogs } = usePolicyEditors();
-  const assignedTo = (policy: InsurancePolicy) =>
-    firearms.filter((f) => f.insurancePolicyId === policy.id);
+  const scheduledOn = (policy: InsurancePolicy) =>
+    firearms.filter((f) => f.insurancePolicyId === policy.id && f.status === "active");
 
   return (
     <>
@@ -41,9 +41,7 @@ export function InsurancePage() {
         <div>
           <h1 className="hd-page-title">Insurance</h1>
           <p className="hd-page-sub">
-            <strong className="hd-num">
-              {formatCents(summary?.collectionTotal ?? 0, { whole: true })}
-            </strong>{" "}
+            <strong className="hd-num">{formatDollars(summary?.collectionTotal ?? 0)}</strong>{" "}
             estimated replacement value across <span className="hd-num">{active.length}</span>{" "}
             active {active.length === 1 ? "firearm" : "firearms"}
           </p>
@@ -71,9 +69,9 @@ export function InsurancePage() {
           <div className="hd-empty hd-empty--compact">
             <Icon name="shield" size={28} />
             <p className="hd-empty__text">
-              Add each policy that covers your firearms, whether that's a rider on a homeowner's
-              policy or a dedicated collection policy. Then assign firearms to it from their
-              records.
+              Add each policy that covers your firearms. A blanket policy, with a coverage limit,
+              covers every firearm you haven't scheduled, with nothing to assign. A policy without a
+              limit covers only the firearms you schedule on it from their records.
             </p>
             <Button variant="primary" icon="plus" onClick={() => add()}>
               Add policy
@@ -85,8 +83,9 @@ export function InsurancePage() {
               <PolicyCard
                 key={policy.id}
                 policy={policy}
+                blanket={summary?.blanket ?? null}
                 summary={summary?.byPolicy.find((p) => p.policyId === policy.id)}
-                firearms={assignedTo(policy).filter((f) => f.status === "active")}
+                firearms={scheduledOn(policy)}
                 onOpen={() => open({ page: "policy", id: policy.id })}
                 onEdit={() => edit(policy)}
                 onDelete={() => remove(policy)}
@@ -105,7 +104,7 @@ export function InsurancePage() {
             {uninsured.length > 0 && (
               <FirearmLinkList
                 title="Uninsured"
-                note="No policy, or the policy has expired."
+                note="No blanket policy is in force for them, or the policy they're scheduled on has expired."
                 firearms={uninsured}
                 showValue
               />
@@ -192,7 +191,7 @@ function CoverageOverview({
           <li key={s.key}>
             <span className={`hd-overview__swatch hd-overview__seg--${s.key}`} aria-hidden />
             <span className="hd-overview__label">{s.label}</span>
-            <strong className="hd-num">{formatCents(s.shown, { whole: true })}</strong>
+            <strong className="hd-num">{formatDollars(s.shown)}</strong>
             {s.suffix && <span className="hd-muted">{s.suffix}</span>}
             <span className="hd-muted hd-num">
               {s.count} {s.count === 1 ? "firearm" : "firearms"}

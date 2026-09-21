@@ -55,10 +55,32 @@ text_enum!(DispositionType {
     LostStolen => "lost_stolen",
 });
 
-text_enum!(CoverageKind {
-    IndividuallyScheduled => "individually_scheduled",
-    Blanket => "blanket",
+text_enum!(Condition {
+    NewInBox => "new_in_box",
+    LikeNew => "like_new",
+    Excellent => "excellent",
+    Good => "good",
+    Fair => "fair",
+    Poor => "poor",
 });
+
+impl Condition {
+    /// Every grade, best first.
+    pub const ALL: [Condition; 6] =
+        [Self::NewInBox, Self::LikeNew, Self::Excellent, Self::Good, Self::Fair, Self::Poor];
+
+    /// How the grade is shown to the user, and exported (FR-039).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::NewInBox => "New in box",
+            Self::LikeNew => "Like new",
+            Self::Excellent => "Excellent",
+            Self::Good => "Good",
+            Self::Fair => "Fair",
+            Self::Poor => "Poor",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,8 +92,19 @@ pub struct Firearm {
     pub no_serial_attested: bool,
     pub caliber: String,
     pub firearm_type_id: i64,
+    pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
+    /// FR-039: hundredths of an inch.
+    pub barrel_length_hundredths: Option<i64>,
+    /// FR-039: hundredths of an inch.
+    pub overall_length_hundredths: Option<i64>,
+    /// FR-039: tenths of an ounce.
+    pub weight_tenths_oz: Option<i64>,
+    /// FR-039: rounds the magazine, cylinder or tube holds.
+    pub capacity: Option<i64>,
+    pub finish: Option<String>,
+    pub condition: Option<Condition>,
     pub status: FirearmStatus,
     pub estimated_value: Option<i64>,
     pub acquisition_source: Option<String>,
@@ -83,7 +116,6 @@ pub struct Firearm {
     pub disposition_price: Option<i64>,
     pub thumbnail_photo_id: Option<i64>,
     pub insurance_policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
     pub scheduled_coverage_amount: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
@@ -99,8 +131,15 @@ impl Firearm {
             no_serial_attested: row.get("no_serial_attested")?,
             caliber: row.get("caliber")?,
             firearm_type_id: row.get("firearm_type_id")?,
+            nickname: row.get("nickname")?,
             notes: row.get("notes")?,
             accessories: row.get("accessories")?,
+            barrel_length_hundredths: row.get("barrel_length_hundredths")?,
+            overall_length_hundredths: row.get("overall_length_hundredths")?,
+            weight_tenths_oz: row.get("weight_tenths_oz")?,
+            capacity: row.get("capacity")?,
+            finish: row.get("finish")?,
+            condition: row.get("condition")?,
             status: row.get("status")?,
             estimated_value: row.get("estimated_value")?,
             acquisition_source: row.get("acquisition_source")?,
@@ -112,7 +151,6 @@ impl Firearm {
             disposition_price: row.get("disposition_price")?,
             thumbnail_photo_id: row.get("thumbnail_photo_id")?,
             insurance_policy_id: row.get("insurance_policy_id")?,
-            coverage_kind: row.get("coverage_kind")?,
             scheduled_coverage_amount: row.get("scheduled_coverage_amount")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
@@ -131,8 +169,19 @@ pub struct FirearmInput {
     pub no_serial_attested: bool,
     pub caliber: String,
     pub firearm_type_id: i64,
+    pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
+    /// FR-039: hundredths of an inch.
+    pub barrel_length_hundredths: Option<i64>,
+    /// FR-039: hundredths of an inch.
+    pub overall_length_hundredths: Option<i64>,
+    /// FR-039: tenths of an ounce.
+    pub weight_tenths_oz: Option<i64>,
+    /// FR-039: rounds the magazine, cylinder or tube holds.
+    pub capacity: Option<i64>,
+    pub finish: Option<String>,
+    pub condition: Option<Condition>,
     pub status: FirearmStatus,
     pub estimated_value: Option<i64>,
     pub acquisition_source: Option<String>,
@@ -143,12 +192,120 @@ pub struct FirearmInput {
     pub disposition_date: Option<String>,
     pub disposition_price: Option<i64>,
     pub insurance_policy_id: Option<i64>,
-    pub coverage_kind: Option<CoverageKind>,
     pub scheduled_coverage_amount: Option<i64>,
+}
+
+/// The record as an input that would save it unchanged — the starting point
+/// for commands that change only part of a firearm (dispose, reverse a
+/// disposition, assign coverage).
+impl From<&Firearm> for FirearmInput {
+    fn from(firearm: &Firearm) -> Self {
+        Self {
+            make: firearm.make.clone(),
+            model: firearm.model.clone(),
+            serial_number: firearm.serial_number.clone(),
+            no_serial_attested: firearm.no_serial_attested,
+            caliber: firearm.caliber.clone(),
+            firearm_type_id: firearm.firearm_type_id,
+            nickname: firearm.nickname.clone(),
+            notes: firearm.notes.clone(),
+            accessories: firearm.accessories.clone(),
+            barrel_length_hundredths: firearm.barrel_length_hundredths,
+            overall_length_hundredths: firearm.overall_length_hundredths,
+            weight_tenths_oz: firearm.weight_tenths_oz,
+            capacity: firearm.capacity,
+            finish: firearm.finish.clone(),
+            condition: firearm.condition,
+            status: firearm.status,
+            estimated_value: firearm.estimated_value,
+            acquisition_source: firearm.acquisition_source.clone(),
+            acquisition_date: firearm.acquisition_date.clone(),
+            acquisition_price: firearm.acquisition_price,
+            disposition_type: firearm.disposition_type,
+            disposition_recipient: firearm.disposition_recipient.clone(),
+            disposition_date: firearm.disposition_date.clone(),
+            disposition_price: firearm.disposition_price,
+            insurance_policy_id: firearm.insurance_policy_id,
+            scheduled_coverage_amount: firearm.scheduled_coverage_amount,
+        }
+    }
+}
+
+impl FirearmInput {
+    /// The input as it is stored: a blank nickname, serial number or finish
+    /// becomes `None` and any other is trimmed (FR-031, FR-032, FR-039: blank
+    /// is not a value, and comparison ignores surrounding whitespace).
+    pub fn normalized(&self) -> Self {
+        let trimmed = |value: &Option<String>| {
+            value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
+        };
+        Self {
+            nickname: trimmed(&self.nickname),
+            serial_number: trimmed(&self.serial_number),
+            finish: trimmed(&self.finish),
+            ..self.clone()
+        }
+    }
 }
 
 fn is_blank(value: &Option<String>) -> bool {
     value.as_deref().map(str::trim).unwrap_or("").is_empty()
+}
+
+/// Parses an optional `YYYY-MM-DD` date that must not be later than
+/// `today` (FR-003/FR-004: today is allowed). A blank date is fine — both
+/// dates are optional — and yields `None`; a bad one records an error under
+/// `field` and also yields `None`.
+fn checked_date(
+    field: &str,
+    label: &str,
+    value: &Option<String>,
+    today: chrono::NaiveDate,
+    errors: &mut HashMap<String, String>,
+) -> Option<chrono::NaiveDate> {
+    if is_blank(value) {
+        return None;
+    }
+    match chrono::NaiveDate::parse_from_str(value.as_deref().unwrap_or_default().trim(), "%Y-%m-%d")
+    {
+        Ok(date) if date > today => {
+            errors.insert(field.into(), format!("{label} can't be in the future."));
+            None
+        }
+        Ok(date) => Some(date),
+        Err(_) => {
+            errors.insert(field.into(), format!("{label} must be a date in YYYY-MM-DD format."));
+            None
+        }
+    }
+}
+
+/// FR-037: an amount is a whole number of dollars, so once it has decoded
+/// (a fractional number never does) the only thing left to refuse is a
+/// negative one.
+fn checked_amount(
+    field: &str,
+    label: &str,
+    value: Option<i64>,
+    errors: &mut HashMap<String, String>,
+) {
+    if value.is_some_and(|dollars| dollars < 0) {
+        errors.insert(field.into(), format!("{label} can't be negative."));
+    }
+}
+
+/// FR-039: a length, weight or capacity, once it has decoded as a whole
+/// number (a fractional one never does), must be at least `min`.
+fn checked_measure(
+    field: &str,
+    message: &str,
+    value: Option<i64>,
+    min: i64,
+    errors: &mut HashMap<String, String>,
+) {
+    if value.is_some_and(|measure| measure < min) {
+        errors.insert(field.into(), message.into());
+    }
 }
 
 /// Validation rules from data-model.md's "Validation rules" section,
@@ -167,13 +324,73 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         errors.insert("caliber".into(), "Caliber is required.".into());
     }
 
-    // Acceptance Scenarios 6-7: blank serial number is only allowed when
-    // explicitly attested; providing a serial number is always fine.
+    checked_amount("estimatedValue", "Estimated value", input.estimated_value, &mut errors);
+    checked_amount("acquisitionPrice", "Acquisition price", input.acquisition_price, &mut errors);
+    checked_amount("dispositionPrice", "Disposition price", input.disposition_price, &mut errors);
+    checked_amount(
+        "scheduledCoverageAmount",
+        "Scheduled coverage amount",
+        input.scheduled_coverage_amount,
+        &mut errors,
+    );
+
+    let positive = |what: &str| format!("{what} must be greater than 0.");
+    checked_measure(
+        "barrelLengthHundredths",
+        &positive("Barrel length"),
+        input.barrel_length_hundredths,
+        1,
+        &mut errors,
+    );
+    checked_measure(
+        "overallLengthHundredths",
+        &positive("Overall length"),
+        input.overall_length_hundredths,
+        1,
+        &mut errors,
+    );
+    checked_measure("weightTenthsOz", &positive("Weight"), input.weight_tenths_oz, 1, &mut errors);
+    checked_measure("capacity", "Capacity must be at least 1.", input.capacity, 1, &mut errors);
+
+    // Acceptance Scenarios 6-7 and FR-029: a serial number or the attestation
+    // that there is none, never both and never neither.
     if is_blank(&input.serial_number) && !input.no_serial_attested {
         errors.insert(
             "serialNumber".into(),
             "Enter a serial number, or confirm this firearm has none.".into(),
         );
+    } else if !is_blank(&input.serial_number) && input.no_serial_attested {
+        errors.insert(
+            "serialNumber".into(),
+            "A firearm with no serial number can't also have one. Clear the serial number, \
+             or uncheck the box."
+                .into(),
+        );
+    }
+
+    // FR-003/FR-004: judged against the user's local date, not UTC.
+    let today = chrono::Local::now().date_naive();
+    let acquired = checked_date(
+        "acquisitionDate",
+        "Acquisition date",
+        &input.acquisition_date,
+        today,
+        &mut errors,
+    );
+    let disposed_on = checked_date(
+        "dispositionDate",
+        "Disposition date",
+        &input.disposition_date,
+        today,
+        &mut errors,
+    );
+    if let (Some(acquired), Some(disposed_on)) = (acquired, disposed_on) {
+        if disposed_on < acquired {
+            errors.insert(
+                "dispositionDate".into(),
+                "Disposition date can't be earlier than the acquisition date.".into(),
+            );
+        }
     }
 
     match input.status {
@@ -211,43 +428,22 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         }
     }
 
-    match input.coverage_kind {
-        Some(CoverageKind::IndividuallyScheduled) => {
-            if input.insurance_policy_id.is_none() {
-                errors.insert(
-                    "insurancePolicyId".into(),
-                    "Select a policy for individually-scheduled coverage.".into(),
-                );
-            }
-            if input.scheduled_coverage_amount.is_none() {
-                errors.insert(
-                    "scheduledCoverageAmount".into(),
-                    "Enter a scheduled coverage amount.".into(),
-                );
-            }
+    // FR-014/FR-036: scheduled under a policy with its own amount, or not at
+    // all. There is no per-firearm blanket assignment.
+    match (input.insurance_policy_id, input.scheduled_coverage_amount) {
+        (Some(_), None) => {
+            errors.insert(
+                "scheduledCoverageAmount".into(),
+                "Enter the amount scheduled on the policy.".into(),
+            );
         }
-        Some(CoverageKind::Blanket) => {
-            if input.insurance_policy_id.is_none() {
-                errors.insert(
-                    "insurancePolicyId".into(),
-                    "Select a policy for blanket coverage.".into(),
-                );
-            }
-            if input.scheduled_coverage_amount.is_some() {
-                errors.insert(
-                    "scheduledCoverageAmount".into(),
-                    "Blanket-covered firearms draw from the policy's shared limit, not an individual amount.".into(),
-                );
-            }
+        (None, Some(_)) => {
+            errors.insert(
+                "insurancePolicyId".into(),
+                "Choose the policy this amount is scheduled on.".into(),
+            );
         }
-        None => {
-            if input.insurance_policy_id.is_some() {
-                errors.insert(
-                    "coverageKind".into(),
-                    "Select how this firearm is covered by the assigned policy.".into(),
-                );
-            }
-        }
+        _ => {}
     }
 
     if errors.is_empty() {

@@ -19,6 +19,12 @@ fn sample_firearm() -> FirearmInput {
         firearm_type_id: 1,
         notes: None,
         accessories: None,
+        barrel_length_hundredths: None,
+        overall_length_hundredths: None,
+        weight_tenths_oz: None,
+        capacity: None,
+        finish: None,
+        condition: None,
         status: FirearmStatus::Active,
         estimated_value: None,
         acquisition_source: None,
@@ -29,7 +35,7 @@ fn sample_firearm() -> FirearmInput {
         disposition_date: None,
         disposition_price: None,
         insurance_policy_id: None,
-        coverage_kind: None,
+        nickname: None,
         scheduled_coverage_amount: None,
     }
 }

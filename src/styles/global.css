@@ -135,6 +135,12 @@ svg {
   text-decoration-thickness: 2px;
 }
 
+.hd-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

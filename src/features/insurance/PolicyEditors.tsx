@@ -1,16 +1,15 @@
 import { useState } from "react";
-import { Button, ConfirmDialog, Dialog, useToast } from "../../components";
-import { CommandFailure } from "../../services/tauriClient";
+import { Dialog, useToast } from "../../components";
 import { useCollection } from "../app/collectionStore";
-import { FirearmLinkList } from "./PolicyCard";
 import * as insuranceService from "./insuranceService";
 import { InsurancePolicyForm } from "./InsurancePolicyForm";
+import { PolicyDeleteDialog } from "./PolicyDeleteDialog";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 
 /** What the add/edit and delete dialogs need from a page: which policy each
  * is open for, and the callbacks that open them. */
 export function usePolicyEditors(onDeleted?: () => void) {
-  const { firearms, refresh } = useCollection();
+  const { refresh } = useCollection();
   const notify = useToast();
   const [editing, setEditing] = useState<InsurancePolicy | "new" | null>(null);
   const [deleting, setDeleting] = useState<InsurancePolicy | null>(null);
@@ -27,22 +26,12 @@ export function usePolicyEditors(onDeleted?: () => void) {
     await refresh();
   }
 
-  async function handleDelete(policy: InsurancePolicy) {
-    try {
-      await insuranceService.deleteInsurancePolicy(policy.id, true);
-      notify(`Deleted ${policy.name}.`);
-      onDeleted?.();
-      await refresh();
-    } catch (e) {
-      notify(
-        e instanceof CommandFailure ? e.message : `${policy.name} couldn't be deleted.`,
-        "error",
-      );
-    }
+  async function handleDeleted(policy: InsurancePolicy) {
+    setDeleting(null);
+    notify(`Deleted ${policy.name}.`);
+    onDeleted?.();
+    await refresh();
   }
-
-  const assignedTo = (policy: InsurancePolicy) =>
-    firearms.filter((f) => f.insurancePolicyId === policy.id);
 
   const dialogs = (
     <>
@@ -60,28 +49,12 @@ export function usePolicyEditors(onDeleted?: () => void) {
         />
       </Dialog>
 
-      {deleting && assignedTo(deleting).length > 0 ? (
-        <Dialog
+      {deleting && (
+        <PolicyDeleteDialog
           open
           onOpenChange={(open) => !open && setDeleting(null)}
-          title={`${deleting.name} still covers firearms`}
-          description="Assign these firearms to another policy, or mark them not insured, before deleting it. Deleting it first would silently leave them uninsured."
-          footer={
-            <Button variant="primary" onClick={() => setDeleting(null)}>
-              OK
-            </Button>
-          }
-        >
-          <FirearmLinkList firearms={assignedTo(deleting)} onNavigate={() => setDeleting(null)} />
-        </Dialog>
-      ) : (
-        <ConfirmDialog
-          open={deleting != null}
-          onOpenChange={(open) => !open && setDeleting(null)}
-          title={`Delete ${deleting?.name ?? "this policy"}?`}
-          description="The policy and its details will be permanently removed. No firearms are assigned to it."
-          confirmLabel="Delete policy"
-          onConfirm={() => (deleting ? handleDelete(deleting) : undefined)}
+          policy={deleting}
+          onDeleted={() => handleDeleted(deleting)}
         />
       )}
     </>

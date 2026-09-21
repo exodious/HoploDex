@@ -7,10 +7,47 @@
   gap: var(--space-4);
 }
 
+/* A fieldset section: drop the browser's box, and give the legend the gap that
+   `gap` can't (a legend isn't a flex item). */
+.hd-form-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.hd-form-fieldset > legend {
+  padding: 0;
+  margin-bottom: var(--space-4);
+}
+
 .hd-form-section + .hd-form-section {
   margin-top: var(--space-6);
   padding-top: var(--space-5);
   border-top: 1px solid var(--rule);
+}
+
+/* FR-038: the section a form opened on, marked briefly so the user sees where
+   to type. Under prefers-reduced-motion it is tinted but not animated. */
+.hd-form-section[data-highlight] {
+  background: var(--niter-wash);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 var(--space-2) var(--niter-wash);
+}
+
+.hd-form-section[data-highlight="animated"] {
+  animation: hd-section-highlight 1.8s ease-out;
+}
+
+@keyframes hd-section-highlight {
+  from {
+    background: var(--niter-wash);
+    box-shadow: 0 0 0 var(--space-2) var(--niter-wash);
+  }
+  to {
+    background: transparent;
+    box-shadow: 0 0 0 var(--space-2) transparent;
+  }
 }
 
 .hd-form-section__title {
@@ -59,4 +96,19 @@
   .hd-form-grid--3 {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Two side-by-side inputs for one value (weight as lb and oz). */
+.hd-form-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.hd-form-pair__hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
 }

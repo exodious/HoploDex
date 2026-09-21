@@ -31,6 +31,7 @@ impl SpreadsheetFormat {
 pub const COLUMNS: &[&str] = &[
     "make",
     "model",
+    "nickname",
     "serial_number",
     "no_serial_attested",
     "caliber",
@@ -47,8 +48,13 @@ pub const COLUMNS: &[&str] = &[
     "disposition_date",
     "disposition_price",
     "insurance_policy_name",
-    "coverage_kind",
     "scheduled_coverage_amount",
+    "barrel_length_in",
+    "overall_length_in",
+    "weight_oz",
+    "capacity",
+    "finish",
+    "condition",
     "photo_filenames",
 ];
 
@@ -58,6 +64,7 @@ pub const COLUMNS: &[&str] = &[
 pub struct FirearmExportRow {
     pub make: String,
     pub model: String,
+    pub nickname: String,
     pub serial_number: String,
     pub no_serial_attested: String,
     pub caliber: String,
@@ -74,16 +81,22 @@ pub struct FirearmExportRow {
     pub disposition_date: String,
     pub disposition_price: String,
     pub insurance_policy_name: String,
-    pub coverage_kind: String,
     pub scheduled_coverage_amount: String,
+    pub barrel_length_in: String,
+    pub overall_length_in: String,
+    pub weight_oz: String,
+    pub capacity: String,
+    pub finish: String,
+    pub condition: String,
     pub photo_filenames: String,
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 21] {
+    fn as_fields(&self) -> [&str; 27] {
         [
             &self.make,
             &self.model,
+            &self.nickname,
             &self.serial_number,
             &self.no_serial_attested,
             &self.caliber,
@@ -100,8 +113,13 @@ impl FirearmExportRow {
             &self.disposition_date,
             &self.disposition_price,
             &self.insurance_policy_name,
-            &self.coverage_kind,
             &self.scheduled_coverage_amount,
+            &self.barrel_length_in,
+            &self.overall_length_in,
+            &self.weight_oz,
+            &self.capacity,
+            &self.finish,
+            &self.condition,
             &self.photo_filenames,
         ]
     }
@@ -115,6 +133,7 @@ impl FirearmExportRow {
 pub struct RawImportRow {
     pub make: Option<String>,
     pub model: Option<String>,
+    pub nickname: Option<String>,
     pub serial_number: Option<String>,
     pub no_serial_attested: Option<String>,
     pub caliber: Option<String>,
@@ -131,8 +150,13 @@ pub struct RawImportRow {
     pub disposition_date: Option<String>,
     pub disposition_price: Option<String>,
     pub insurance_policy_name: Option<String>,
-    pub coverage_kind: Option<String>,
     pub scheduled_coverage_amount: Option<String>,
+    pub barrel_length_in: Option<String>,
+    pub overall_length_in: Option<String>,
+    pub weight_oz: Option<String>,
+    pub capacity: Option<String>,
+    pub finish: Option<String>,
+    pub condition: Option<String>,
 }
 
 fn non_blank(value: &str) -> Option<String> {
@@ -149,44 +173,127 @@ fn row_from_cells(cells: &[String]) -> RawImportRow {
     RawImportRow {
         make: non_blank(cell(0)),
         model: non_blank(cell(1)),
-        serial_number: non_blank(cell(2)),
-        no_serial_attested: non_blank(cell(3)),
-        caliber: non_blank(cell(4)),
-        firearm_type: non_blank(cell(5)),
-        notes: non_blank(cell(6)),
-        accessories: non_blank(cell(7)),
-        status: non_blank(cell(8)),
-        estimated_value: non_blank(cell(9)),
-        acquisition_source: non_blank(cell(10)),
-        acquisition_date: non_blank(cell(11)),
-        acquisition_price: non_blank(cell(12)),
-        disposition_type: non_blank(cell(13)),
-        disposition_recipient: non_blank(cell(14)),
-        disposition_date: non_blank(cell(15)),
-        disposition_price: non_blank(cell(16)),
-        insurance_policy_name: non_blank(cell(17)),
-        coverage_kind: non_blank(cell(18)),
+        nickname: non_blank(cell(2)),
+        serial_number: non_blank(cell(3)),
+        no_serial_attested: non_blank(cell(4)),
+        caliber: non_blank(cell(5)),
+        firearm_type: non_blank(cell(6)),
+        notes: non_blank(cell(7)),
+        accessories: non_blank(cell(8)),
+        status: non_blank(cell(9)),
+        estimated_value: non_blank(cell(10)),
+        acquisition_source: non_blank(cell(11)),
+        acquisition_date: non_blank(cell(12)),
+        acquisition_price: non_blank(cell(13)),
+        disposition_type: non_blank(cell(14)),
+        disposition_recipient: non_blank(cell(15)),
+        disposition_date: non_blank(cell(16)),
+        disposition_price: non_blank(cell(17)),
+        insurance_policy_name: non_blank(cell(18)),
         scheduled_coverage_amount: non_blank(cell(19)),
+        barrel_length_in: non_blank(cell(20)),
+        overall_length_in: non_blank(cell(21)),
+        weight_oz: non_blank(cell(22)),
+        capacity: non_blank(cell(23)),
+        finish: non_blank(cell(24)),
+        condition: non_blank(cell(25)),
     }
 }
 
-/// Formats an integer-cents amount as a decimal currency string (e.g.
-/// `450.00`), or `""` when absent — the spreadsheet-format.md convention.
-pub fn cents_to_decimal_string(cents: Option<i64>) -> String {
-    match cents {
-        Some(c) => format!("{:.2}", c as f64 / 100.0),
-        None => String::new(),
-    }
+/// Formats a whole-dollar amount as plain digits (`1250`: no `$`, no
+/// thousands separator, no decimals), or `""` when absent — the
+/// spreadsheet-format.md "Amounts" convention (FR-037).
+pub fn dollars_to_string(dollars: Option<i64>) -> String {
+    dollars.map(|d| d.to_string()).unwrap_or_default()
 }
 
-/// Parses a decimal currency string (e.g. `450.00`) into integer cents;
-/// blank/unparsable input yields `None`.
-pub fn parse_decimal_to_cents(value: &Option<String>) -> Option<i64> {
-    let raw = value.as_deref()?.trim();
-    if raw.is_empty() {
-        return None;
+/// Parses an amount cell into whole dollars (FR-037). A leading `$`,
+/// thousands commas and whitespace are dropped, and a zero fraction
+/// (`450.00`) is accepted; a value with non-zero cents, a sign, or any other
+/// text is an `Err` naming `column`, never rounded. A blank cell is `None`.
+pub fn parse_whole_dollars(column: &str, value: &Option<String>) -> Result<Option<i64>, String> {
+    let Some(raw) = value.as_deref() else {
+        return Ok(None);
+    };
+    let cleaned: String =
+        raw.chars().filter(|c| !c.is_whitespace() && *c != '$' && *c != ',').collect();
+    if cleaned.is_empty() && raw.trim().is_empty() {
+        return Ok(None);
     }
-    raw.parse::<f64>().ok().map(|parsed| (parsed * 100.0).round() as i64)
+
+    let (whole, fraction) = match cleaned.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (cleaned.as_str(), None),
+    };
+    let digits_only = |text: &str| !text.is_empty() && text.chars().all(|c| c.is_ascii_digit());
+    if !digits_only(whole) || fraction.is_some_and(|f| !digits_only(f)) {
+        return Err(format!("{column}: {raw:?} is not a whole-dollar amount"));
+    }
+    if fraction.is_some_and(|f| f.chars().any(|c| c != '0')) {
+        return Err(format!("{column}: whole dollars only, but {raw:?} has cents"));
+    }
+    whole
+        .parse::<i64>()
+        .map(Some)
+        .map_err(|_| format!("{column}: {raw:?} is too large to be an amount"))
+}
+
+/// Formats a stored scaled integer (`1625` hundredths, `405` tenths) as a
+/// plain decimal with no trailing zeros (`16.25`, `18`, `40.5`), or `""` when
+/// absent — the spreadsheet-format.md "Physical details" convention (FR-039).
+pub fn scaled_to_string(value: Option<i64>, places: u32) -> String {
+    let Some(value) = value else {
+        return String::new();
+    };
+    let scale = 10_i64.pow(places);
+    let (whole, fraction) = (value / scale, value % scale);
+    if fraction == 0 {
+        return whole.to_string();
+    }
+    let fraction = format!("{fraction:0width$}", width = places as usize);
+    format!("{whole}.{}", fraction.trim_end_matches('0'))
+}
+
+/// Parses a physical-detail cell into a positive integer scaled by
+/// `10^places` (FR-039): `16.25` with 2 places is 1625. More precision than
+/// `places` is rounded half up to the nearest storable unit (`16.255` is
+/// 1626, `40.54` with 1 place is 405); a sign, zero (including a value that
+/// rounds to zero) or any other text is an `Err` naming `column`. A blank
+/// cell is `None`. With 0 places it parses a whole number (a capacity),
+/// where a fraction is an `Err`, since half a round means nothing.
+pub fn parse_scaled_decimal(
+    column: &str,
+    value: &Option<String>,
+    places: u32,
+) -> Result<Option<i64>, String> {
+    let Some(raw) = value.as_deref().map(str::trim).filter(|raw| !raw.is_empty()) else {
+        return Ok(None);
+    };
+    let (whole, fraction) = match raw.split_once('.') {
+        Some((whole, fraction)) => (whole, fraction),
+        None => (raw, ""),
+    };
+    let digits = |text: &str| text.chars().all(|c| c.is_ascii_digit());
+    let well_formed = !whole.is_empty()
+        && digits(whole)
+        && digits(fraction)
+        && (!raw.contains('.') || !fraction.is_empty());
+    if !well_formed {
+        return Err(format!("{column}: {raw:?} is not a number"));
+    }
+    let (kept, beyond) = fraction.split_at(fraction.len().min(places as usize));
+    if places == 0 && beyond.chars().any(|c| c != '0') {
+        return Err(format!("{column}: {raw:?} must be a whole number"));
+    }
+    let padded = format!("{kept:0<width$}", width = places as usize);
+    let too_large = || format!("{column}: {raw:?} is too large");
+    let truncated = format!("{whole}{padded}").parse::<i64>().map_err(|_| too_large())?;
+    let round_up = beyond.starts_with(|c: char| c >= '5');
+    let scaled = if round_up { truncated.checked_add(1).ok_or_else(too_large)? } else { truncated };
+    if scaled == 0 {
+        return Err(format!("{column}: {raw:?} must be greater than 0"));
+    }
+    Ok(Some(scaled))
 }
 
 pub fn write_spreadsheet(

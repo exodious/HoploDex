@@ -1,14 +1,4 @@
-import {
-  $,
-  addFirearm,
-  back,
-  browser,
-  choose,
-  clickButton,
-  clickEl,
-  expect,
-  fill,
-} from "../support/ui";
+import { $, addFirearm, back, browser, clickButton, clickEl, expect, fill } from "../support/ui";
 import { goTo, openFirearm, selectOption } from "../support/ui";
 
 /**
@@ -26,15 +16,11 @@ function isoDaysFromNow(days: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-async function assignCoverage(
-  policyName: string,
-  kind: "Scheduled individually" | "Blanket",
-  amountDollars?: string,
-) {
+/** Schedules the open record's firearm on a policy with its own amount. */
+async function schedule(policyName: string, amountDollars: string) {
   await clickButton((await $("button=Change").isExisting()) ? "Change" : "Assign");
   await selectOption("Policy", policyName);
-  await choose(kind);
-  if (amountDollars) await fill("Scheduled amount", amountDollars);
+  await fill("Scheduled amount", amountDollars);
   await clickButton("Save coverage");
   await $('[role="dialog"]').waitForExist({ reverse: true });
   await browser.pause(400);
@@ -65,23 +51,33 @@ describe("UI review follow-ups", () => {
     await fill("Policy name", "InsE2E Review Policy");
     await fill("Policy number", "REV-1");
     await fill("Insurance company", "Acme Insurance");
-    await fill("Blanket coverage limit", "1,000.00");
+    await fill("Blanket coverage limit", "1000");
     await fill("Coverage starts", "2020-01-01");
     await fill("Coverage ends", isoDaysFromNow(365));
     await clickButton("Add policy");
     await $("article.hd-policy*=InsE2E Review Policy").waitForExist();
+
+    // A schedule-only policy that has lapsed, so a firearm scheduled on it is
+    // uninsured. Named to sort after the blanket policy in the listing.
+    await clickButton("Add policy");
+    await fill("Policy name", "InsE2E Review Rider (expired)");
+    await fill("Policy number", "REV-2");
+    await fill("Insurance company", "Acme Insurance");
+    await fill("Coverage starts", "2020-01-01");
+    await fill("Coverage ends", isoDaysFromNow(-10));
+    await clickButton("Add policy");
+    await $("article.hd-policy*=InsE2E Review Rider (expired)").waitForExist();
     await goTo("Collection");
 
-    // Blanket-covered, $4,000 over the policy's limit.
+    // Unscheduled, so covered by the blanket policy, and $4,000 over its limit.
     await addFirearm({
       make: "InsE2EReview",
       model: "Rifle",
       caliber: ".308",
       type: "Rifle",
       serial: "REV-R",
-      valueDollars: "5,000.00",
+      valueDollars: "5000",
     });
-    await assignCoverage("InsE2E Review Policy", "Blanket");
     await back();
 
     // Scheduled for $1,500 of a $2,000 value: $500 short.
@@ -91,20 +87,21 @@ describe("UI review follow-ups", () => {
       caliber: "9mm",
       type: "Handgun",
       serial: "REV-P",
-      valueDollars: "2,000.00",
+      valueDollars: "2000",
     });
-    await assignCoverage("InsE2E Review Policy", "Scheduled individually", "1,500.00");
+    await schedule("InsE2E Review Policy", "1500");
     await back();
 
-    // No policy at all: uninsured.
+    // Scheduled on a policy that has expired: uninsured.
     await addFirearm({
       make: "InsE2EReview",
       model: "Pump",
       caliber: "12 gauge",
       type: "Shotgun",
       serial: "REV-S",
-      valueDollars: "600.00",
+      valueDollars: "600",
     });
+    await schedule("InsE2E Review Rider (expired)", "600");
     await back();
   });
 
@@ -117,7 +114,7 @@ describe("UI review follow-ups", () => {
   });
 
   it("counts only firearms on the Insurance tab, and recounts after a delete", async () => {
-    // Two under-insured and one uninsured firearm — the policy isn't counted.
+    // Two under-insured and one uninsured firearm — the policies aren't counted.
     expect(await insuranceTabCount()).toBe(3);
 
     await goTo("Collection");

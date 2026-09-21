@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge, Button, ConfirmDialog, Dialog, Icon, useToast } from "../../components";
 import { formatDate } from "../../lib/dates";
-import { formatCents } from "../../lib/money";
+import { formatInches, formatWeight } from "../../lib/measure";
+import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { BackLink } from "../app/BackLink";
 import { firearmName, useCollection } from "../app/collectionStore";
+import { FirearmName } from "../app/FirearmName";
 import { useNavigation } from "../app/navigation";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { CoverageDialog } from "../insurance/CoverageDialog";
@@ -15,14 +17,23 @@ import type { AssignCoverageInput } from "../insurance/types";
 import { DocumentList } from "../media/DocumentList";
 import * as mediaService from "../media/mediaService";
 import { PhotoGallery } from "../media/PhotoGallery";
+import { DispositionHistoryList } from "./DispositionHistoryList";
 import { DisposeDialog } from "./DisposeDialog";
 import { FirearmForm } from "./FirearmForm";
+import type { FocusField } from "./FirearmForm";
+import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
-import { dispositionLabel, firearmTypeOption } from "./types";
-import type { DisposeFirearmInput, Firearm, FirearmInput } from "./types";
+import { conditionLabel, dispositionLabel, firearmTypeOption } from "./types";
+import type {
+  DisposeFirearmInput,
+  Firearm,
+  FirearmDetail,
+  FirearmInput,
+  ReverseDispositionInput,
+} from "./types";
 import "./record.css";
 
-type RecordDialog = "edit" | "dispose" | "delete" | "coverage";
+type RecordDialog = "edit" | "dispose" | "restore" | "delete" | "coverage";
 
 export interface FirearmRecordPageProps {
   id: number;
@@ -35,12 +46,14 @@ function failureMessage(e: unknown, fallback: string): string {
 /** One firearm's full record (US1, US3, US4): identity plate, coverage,
  * photos, documents, acquisition and disposition history. */
 export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
-  const { firearmsById, policiesById, revision, refresh } = useCollection();
+  const { firearmsById, policiesById, summary: valueSummary, revision, refresh } = useCollection();
   const { open, back } = useNavigation();
   const notify = useToast();
-  const [firearm, setFirearm] = useState<Firearm | null>(null);
+  const [firearm, setFirearm] = useState<FirearmDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
+  // The field the edit form opens on, when reached from an "Add" link.
+  const [editFocus, setEditFocus] = useState<FocusField>();
 
   useEffect(() => {
     let cancelled = false;
@@ -90,15 +103,32 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const summary = firearmsById.get(firearm.id);
   const policy =
     firearm.insurancePolicyId != null ? policiesById.get(firearm.insurancePolicyId) : undefined;
-  const coverage = coverageStatus(firearm, summary?.insuranceWarning ?? "none", policy);
+  const blanket = valueSummary?.blanket ?? null;
+  const coverage = coverageStatus(firearm, summary?.insuranceWarning ?? "none", policy, blanket);
+  // An unscheduled firearm is covered by the blanket policy in force.
+  const blanketPolicy =
+    !policy && blanket && firearm.status === "active"
+      ? policiesById.get(blanket.policyId)
+      : undefined;
+  const coveringPolicy = policy ?? blanketPolicy;
   const type = firearmTypeOption(firearm.firearmTypeId);
   const disposed = firearm.status === "disposed";
 
   async function afterChange(updated: Firearm, message: string) {
-    setFirearm(updated);
+    // The refresh below reloads the retained history; keep what's shown
+    // until it arrives.
+    setFirearm((current) => ({
+      ...updated,
+      dispositionHistory: current?.dispositionHistory ?? [],
+    }));
     setDialog(null);
     await refresh();
     notify(message);
+  }
+
+  function editField(field: FocusField) {
+    setEditFocus(field);
+    setDialog("edit");
   }
 
   async function handleUpdate(input: FirearmInput) {
@@ -112,6 +142,11 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       updated,
       `Marked ${firearmName(updated)} as ${dispositionLabel(updated.dispositionType).toLowerCase()}.`,
     );
+  }
+
+  async function handleRestore(input: ReverseDispositionInput) {
+    const restored = await firearmsService.reverseDisposition(id, input);
+    await afterChange(restored, `Restored ${firearmName(restored)} to the collection.`);
   }
 
   async function handleCoverage(input: AssignCoverageInput) {
@@ -141,10 +176,20 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       <div className="hd-record__bar">
         {back && <BackLink target={back} escapes />}
         <div className="hd-record__actions">
-          <Button icon="pencil" onClick={() => setDialog("edit")}>
+          <Button
+            icon="pencil"
+            onClick={() => {
+              setEditFocus(undefined);
+              setDialog("edit");
+            }}
+          >
             Edit
           </Button>
-          {!disposed && (
+          {disposed ? (
+            <Button icon="archive" onClick={() => setDialog("restore")}>
+              Restore to collection
+            </Button>
+          ) : (
             <Button icon="archive" onClick={() => setDialog("dispose")}>
               Mark disposed
             </Button>
@@ -168,7 +213,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               )}
             </p>
             <h1 className="hd-plate__name" id="record-name">
-              {name}
+              <FirearmName firearm={firearm} />
             </h1>
             <p className="hd-plate__stamp">
               <span className="hd-plate__stamp-label">Serial no.</span>
@@ -189,7 +234,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               : "Active"}
           </TitleCell>
           <TitleCell label="Replacement value">
-            <span className="hd-num">{formatCents(firearm.estimatedValue)}</span>
+            <span className="hd-num">{formatDollars(firearm.estimatedValue)}</span>
           </TitleCell>
           <TitleCell label="Acquired">{formatDate(firearm.acquisitionDate)}</TitleCell>
           <TitleCell label="Coverage">
@@ -202,6 +247,38 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         <div className="hd-record__main">
           <PhotoGallery firearm={firearm} onChanged={handleMediaChanged} />
 
+          {hasPhysicalDetails(firearm) && (
+            <section className="hd-panel" aria-labelledby="physical-title">
+              <header className="hd-panel__head">
+                <h2 className="hd-panel__title" id="physical-title">
+                  Physical details
+                </h2>
+              </header>
+              <dl className="hd-facts">
+                {firearm.barrelLengthHundredths != null && (
+                  <Fact label="Barrel length">{`${formatInches(firearm.barrelLengthHundredths)} in`}</Fact>
+                )}
+                {firearm.overallLengthHundredths != null && (
+                  <Fact label="Overall length">
+                    {`${formatInches(firearm.overallLengthHundredths)} in`}
+                  </Fact>
+                )}
+                {firearm.weightTenthsOz != null && (
+                  <Fact label="Weight">{formatWeight(firearm.weightTenthsOz)}</Fact>
+                )}
+                {firearm.capacity != null && (
+                  <Fact label="Capacity">
+                    {`${firearm.capacity} ${firearm.capacity === 1 ? "round" : "rounds"}`}
+                  </Fact>
+                )}
+                {firearm.finish && <Fact label="Finish">{firearm.finish}</Fact>}
+                {firearm.condition && (
+                  <Fact label="Condition">{conditionLabel(firearm.condition)}</Fact>
+                )}
+              </dl>
+            </section>
+          )}
+
           <section className="hd-panel" aria-labelledby="notes-title">
             <header className="hd-panel__head">
               <h2 className="hd-panel__title" id="notes-title">
@@ -211,13 +288,13 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
             <TextBlock
               text={firearm.notes}
               empty="No notes recorded."
-              onAdd={() => setDialog("edit")}
+              onAdd={() => editField("notes")}
             />
             <h3 className="hd-subhead">Accessories</h3>
             <TextBlock
               text={firearm.accessories}
               empty="No accessories recorded."
-              onAdd={() => setDialog("edit")}
+              onAdd={() => editField("accessories")}
             />
           </section>
 
@@ -233,17 +310,18 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 {firearm.acquisitionDate && formatDate(firearm.acquisitionDate)}
               </Fact>
               <Fact label="Price paid">
-                {firearm.acquisitionPrice != null && formatCents(firearm.acquisitionPrice)}
+                {firearm.acquisitionPrice != null && formatDollars(firearm.acquisitionPrice)}
               </Fact>
               {disposed && (
                 <>
                   <Fact label="Disposition">{dispositionLabel(firearm.dispositionType)}</Fact>
                   <Fact label="Transferred to">{firearm.dispositionRecipient}</Fact>
                   <Fact label="Date">{formatDate(firearm.dispositionDate)}</Fact>
-                  <Fact label="Price received">{formatCents(firearm.dispositionPrice)}</Fact>
+                  <Fact label="Price received">{formatDollars(firearm.dispositionPrice)}</Fact>
                 </>
               )}
             </dl>
+            <DispositionHistoryList entries={firearm.dispositionHistory} />
             <p className="hd-record__stamp">
               Record added {formatDate(firearm.createdAt.slice(0, 10))}
               {firearm.updatedAt !== firearm.createdAt &&
@@ -276,23 +354,23 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               </p>
               <p className="hd-coverage__detail">{coverage.detail}</p>
             </div>
-            {policy && (
+            {coveringPolicy && (
               <dl className="hd-facts hd-facts--compact">
                 <Fact label="Policy">
                   <button
                     type="button"
                     className="hd-link"
-                    onClick={() => open({ page: "policy", id: policy.id })}
+                    onClick={() => open({ page: "policy", id: coveringPolicy.id })}
                   >
-                    {policy.name}
+                    {coveringPolicy.name}
                   </button>
                 </Fact>
                 <Fact label="Coverage">
-                  {firearm.coverageKind === "individually_scheduled"
-                    ? `Scheduled, ${formatCents(firearm.scheduledCoverageAmount)}`
-                    : "Blanket"}
+                  {policy
+                    ? `Scheduled, ${formatDollars(firearm.scheduledCoverageAmount)}`
+                    : "Blanket, not scheduled"}
                 </Fact>
-                <Fact label="Term">{expiryLabel(policy.effectiveEndDate)}</Fact>
+                <Fact label="Term">{expiryLabel(coveringPolicy)}</Fact>
               </dl>
             )}
           </section>
@@ -310,6 +388,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       >
         <FirearmForm
           initialValues={firearm}
+          focusField={editFocus}
           onSubmit={handleUpdate}
           onCancel={() => setDialog(null)}
         />
@@ -320,6 +399,13 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         onOpenChange={(open) => !open && setDialog(null)}
         firearm={firearm}
         onDispose={handleDispose}
+      />
+
+      <RestoreDialog
+        open={dialog === "restore"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        firearm={firearm}
+        onRestore={handleRestore}
       />
 
       <CoverageDialog
@@ -386,6 +472,19 @@ function PlateFigure({
       />
       {original && <img className="hd-plate__photo" src={original} alt="" />}
     </div>
+  );
+}
+
+/** Whether any of FR-039's six optional details is recorded, so a record
+ * with none shows no empty panel. */
+function hasPhysicalDetails(firearm: Firearm): boolean {
+  return (
+    firearm.barrelLengthHundredths != null ||
+    firearm.overallLengthHundredths != null ||
+    firearm.weightTenthsOz != null ||
+    firearm.capacity != null ||
+    Boolean(firearm.finish) ||
+    firearm.condition != null
   );
 }
 

@@ -36,4 +36,22 @@ describe("DateField", () => {
 
     expect(screen.getByLabelText("Date acquired")).toHaveValue("2019-03-14");
   });
+
+  it("disables calendar days after `max`", async () => {
+    const user = userEvent.setup();
+    render(
+      <DateField
+        label="Date acquired"
+        value="2026-09-10"
+        onValueChange={() => {}}
+        max="2026-09-20"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Choose date acquired from a calendar" }));
+
+    const day = (iso: string) => document.querySelector<HTMLButtonElement>(`[data-iso="${iso}"]`);
+    expect(day("2026-09-20")).toBeEnabled();
+    expect(day("2026-09-21")).toBeDisabled();
+  });
 });

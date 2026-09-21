@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-export type ToastTone = "success" | "error";
+export type ToastTone = "success" | "warning" | "error";
 
 export type Notify = (message: string, tone?: ToastTone) => void;
 

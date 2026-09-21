@@ -68,3 +68,25 @@ export function parseDateInput(input: string): ParsedDate {
   }
   return { ok: true, iso: toIso(y, m, d) };
 }
+
+/** FR-003 / FR-004: an acquisition or disposition date can't be after
+ * today (today itself is fine). Messages match the backend's, which
+ * enforces the same rule. `undefined` means the date is acceptable. */
+export function futureDateError(
+  iso: string | null,
+  label: string,
+  today: string = todayIso(),
+): string | undefined {
+  return iso && iso > today ? `${label} can't be in the future.` : undefined;
+}
+
+/** FR-004: a disposition can't predate the acquisition. Nothing to compare
+ * unless both dates are recorded. */
+export function dispositionOrderError(
+  acquiredIso: string | null,
+  disposedIso: string | null,
+): string | undefined {
+  return acquiredIso && disposedIso && disposedIso < acquiredIso
+    ? "Disposition date can't be earlier than the acquisition date."
+    : undefined;
+}

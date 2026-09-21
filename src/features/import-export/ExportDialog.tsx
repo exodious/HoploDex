@@ -189,11 +189,17 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
           }
         />
 
-        <p className="hd-privacy-note">
+        <p className="hd-privacy-note" role="note">
           <Icon name="alert" size={16} />
           <span>
-            Exported files aren’t encrypted. Anyone who can open that folder can read these records,
-            including serial numbers and values.
+            The spreadsheet and the photos will be written to{" "}
+            {folder.trim() ? (
+              <strong className="hd-privacy-note__path">{folder.trim()}</strong>
+            ) : (
+              "the folder you choose"
+            )}
+            , unencrypted and outside HoploDex’s encrypted database. Anyone who can open that folder
+            can read these records, including serial numbers and values.
           </span>
         </p>
 

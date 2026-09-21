@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
-import { formatCents } from "../../lib/money";
+import { daysUntil } from "../../lib/dates";
+import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
-import { policyExpiry } from "../insurance/coverage";
 import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
@@ -121,7 +121,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
   if (loaded && firearms.length === 0) {
     return (
       <>
-        <PageHeader activeCount={0} valueCents={0} disposedCount={0} />
+        <PageHeader activeCount={0} valueDollars={0} disposedCount={0} />
         <div className="hd-empty">
           <div className="hd-empty__art">
             <TypeDrawing typeKey="rifle" animate />
@@ -149,7 +149,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     <>
       <PageHeader
         activeCount={activeCount}
-        valueCents={summary?.collectionTotal ?? 0}
+        valueDollars={summary?.collectionTotal ?? 0}
         disposedCount={disposedCount}
       />
 
@@ -240,11 +240,11 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
 
 function PageHeader({
   activeCount,
-  valueCents,
+  valueDollars,
   disposedCount,
 }: {
   activeCount: number;
-  valueCents: number;
+  valueDollars: number;
   disposedCount: number;
 }) {
   const { openDialog } = useNavigation();
@@ -259,8 +259,8 @@ function PageHeader({
             <>
               <strong className="hd-num">{activeCount}</strong>{" "}
               {activeCount === 1 ? "firearm" : "firearms"} ·{" "}
-              <strong className="hd-num">{formatCents(valueCents, { whole: true })}</strong>{" "}
-              estimated replacement value
+              <strong className="hd-num">{formatDollars(valueDollars)}</strong> estimated
+              replacement value
               {disposedCount > 0 && (
                 <>
                   {" "}
@@ -293,9 +293,9 @@ function AttentionBanner() {
   const { open } = useNavigation();
 
   const flagged = firearms.filter((f) => f.status === "active" && f.insuranceWarning !== "none");
-  const lapsing = policies
-    .map((policy) => ({ policy, expiry: policyExpiry(policy.effectiveEndDate) }))
-    .filter(({ expiry }) => expiry.expired || expiry.expiringSoon);
+  // The backend's warning flags, which already leave out a blanket policy
+  // that has been renewed or replaced (FR-028).
+  const lapsing = policies.filter((policy) => policy.expiredWarning || policy.expiringWarning);
   if (flagged.length === 0 && lapsing.length === 0) return null;
 
   const parts: string[] = [];
@@ -304,11 +304,12 @@ function AttentionBanner() {
       `${flagged.length} ${flagged.length === 1 ? "firearm is" : "firearms are"} uninsured or under-insured`,
     );
   }
-  for (const { policy, expiry } of lapsing) {
+  for (const policy of lapsing) {
+    const daysLeft = daysUntil(policy.effectiveEndDate);
     parts.push(
-      expiry.expired
+      policy.expiredWarning
         ? `“${policy.name}” has expired`
-        : `“${policy.name}” expires in ${expiry.daysLeft} ${expiry.daysLeft === 1 ? "day" : "days"}`,
+        : `“${policy.name}” expires in ${daysLeft} ${daysLeft === 1 ? "day" : "days"}`,
     );
   }
 

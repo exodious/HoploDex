@@ -1,16 +1,16 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Button, ChoiceCards, Dialog, MoneyField, Select } from "../../components";
-import { centsToInput, formatCents, parseDollars } from "../../lib/money";
+import { Button, Dialog, MoneyField, Select } from "../../components";
+import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
-import type { CoverageKind, Firearm } from "../firearms/types";
+import type { Firearm } from "../firearms/types";
 import { expiryLabel } from "./coverage";
 import type { AssignCoverageInput } from "./types";
 import "../firearms/forms.css";
 
-const NOT_INSURED = "none";
+const NOT_SCHEDULED = "none";
 
 export interface CoverageDialogProps {
   open: boolean;
@@ -19,15 +19,16 @@ export interface CoverageDialogProps {
   onSave: (input: AssignCoverageInput) => Promise<void>;
 }
 
-/** Assigns a firearm to an insurance policy, as individually scheduled or
- * blanket-covered (US3, FR-014). */
+/** Schedules a firearm under an insurance policy with its own coverage
+ * amount, or leaves it unscheduled (US3, FR-014, FR-036). An unscheduled
+ * firearm needs no assignment: the blanket policy in force covers it. */
 export function CoverageDialog({ open, onOpenChange, firearm, onSave }: CoverageDialogProps) {
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title="Insurance coverage"
-      description={`Which policy covers ${firearmName(firearm)}, and how.`}
+      description={`Whether ${firearmName(firearm)} is scheduled on its own policy, or covered by your blanket policy.`}
       bare
     >
       <CoverageForm firearm={firearm} onSave={onSave} onCancel={() => onOpenChange(false)} />
@@ -44,58 +45,38 @@ function CoverageForm({
   onSave: (input: AssignCoverageInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const { policies, policiesById, firearms } = useCollection();
+  const { policies, summary } = useCollection();
   const { open: goTo } = useNavigation();
   const [policyId, setPolicyId] = useState(
-    firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_INSURED,
+    firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_SCHEDULED,
   );
-  const [kind, setKind] = useState<CoverageKind | "">(firearm.coverageKind ?? "");
-  const [amount, setAmount] = useState(centsToInput(firearm.scheduledCoverageAmount));
+  const [amount, setAmount] = useState(dollarsToInput(firearm.scheduledCoverageAmount));
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const insured = policyId !== NOT_INSURED;
-  const policy = insured ? policiesById.get(Number(policyId)) : undefined;
-  const blanketMates = firearms.filter(
-    (f) =>
-      f.status === "active" &&
-      f.id !== firearm.id &&
-      f.insurancePolicyId === policy?.id &&
-      f.coverageKind === "blanket",
-  ).length;
+  const scheduled = policyId !== NOT_SCHEDULED;
+  const blanket = summary?.blanket ?? null;
   const parsedAmount = parseDollars(amount);
-
-  const errors = {
-    kind: insured && !kind ? "Choose how the policy covers it." : undefined,
-    amount:
-      insured && kind === "individually_scheduled"
-        ? !parsedAmount.ok
-          ? parsedAmount.error
-          : parsedAmount.cents == null
-            ? "Enter the amount scheduled on the policy."
-            : undefined
-        : undefined,
-  };
+  const amountError = !scheduled
+    ? undefined
+    : !parsedAmount.ok
+      ? parsedAmount.error
+      : parsedAmount.dollars == null
+        ? "Enter the amount scheduled on the policy."
+        : undefined;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSubmitted(true);
-    if (errors.kind || errors.amount) return;
+    if (amountError) return;
 
     setSubmitting(true);
     setServerError(null);
     try {
       await onSave(
-        insured
-          ? {
-              policyId: Number(policyId),
-              coverageKind: kind as CoverageKind,
-              scheduledCoverageAmount:
-                kind === "individually_scheduled" && parsedAmount.ok
-                  ? (parsedAmount.cents ?? undefined)
-                  : undefined,
-            }
+        scheduled && parsedAmount.ok && parsedAmount.dollars != null
+          ? { policyId: Number(policyId), scheduledCoverageAmount: parsedAmount.dollars }
           : { policyId: null },
       );
     } catch (e) {
@@ -111,7 +92,8 @@ function CoverageForm({
         <div className="hd-dialog__body">
           <p className="hd-form-note">
             You haven’t added any insurance policies yet. Add one on the Insurance page, then come
-            back to assign this firearm to it.
+            back to schedule this firearm on it. A blanket policy covers every firearm you don’t
+            schedule, with no assignment needed.
           </p>
         </div>
         <footer className="hd-dialog__footer">
@@ -137,55 +119,37 @@ function CoverageForm({
         <Select
           label="Policy"
           value={policyId}
-          onValueChange={(value) => {
-            setPolicyId(value);
-            if (value === NOT_INSURED) setKind("");
-          }}
+          onValueChange={setPolicyId}
           options={[
-            { value: NOT_INSURED, label: "Not insured" },
+            {
+              value: NOT_SCHEDULED,
+              label: "Not scheduled",
+              detail: blanket ? `Covered by ${blanket.policyName}` : "Uninsured today",
+            },
             ...policies.map((p) => ({
               value: String(p.id),
               label: p.name,
-              detail: `${p.insuranceCompany} · ${expiryLabel(p.effectiveEndDate)}`,
+              detail: `${p.insuranceCompany} · ${expiryLabel(p)}`,
             })),
           ]}
         />
-        {insured && (
-          <ChoiceCards<CoverageKind>
-            label="How it’s covered"
-            required
-            value={kind}
-            onChange={setKind}
-            error={submitted ? errors.kind : undefined}
-            minCardWidth={200}
-            options={[
-              {
-                value: "individually_scheduled",
-                label: "Scheduled individually",
-                description: "Listed on the policy with its own coverage amount.",
-              },
-              {
-                value: "blanket",
-                label: "Blanket",
-                description: !policy
-                  ? "Shares the policy's blanket limit."
-                  : policy.blanketCoverageLimit === 0
-                    ? "This policy has no blanket limit, so blanket coverage would leave it under-insured."
-                    : `Shares the ${formatCents(policy.blanketCoverageLimit, { whole: true })} blanket limit${blanketMates > 0 ? ` with ${blanketMates} other ${blanketMates === 1 ? "firearm" : "firearms"}` : ""}.`,
-              },
-            ]}
-          />
+        {!scheduled && (
+          <p className="hd-form-note">
+            {blanket
+              ? `Not scheduled, so it's covered by ${blanket.policyName}, along with every other firearm that isn't scheduled. Its value counts toward that policy's ${formatDollars(blanket.limit)} limit.`
+              : "No blanket policy is in force, so an unscheduled firearm is uninsured. Add a blanket policy on the Insurance page, or schedule this firearm on a policy."}
+          </p>
         )}
-        {insured && kind === "individually_scheduled" && (
+        {scheduled && (
           <MoneyField
             label="Scheduled amount"
             required
             value={amount}
             onValueChange={setAmount}
-            error={submitted ? errors.amount : undefined}
+            error={submitted ? amountError : undefined}
             hint={
               firearm.estimatedValue != null
-                ? `Its estimated replacement value is ${formatCents(firearm.estimatedValue)}.`
+                ? `Its estimated replacement value is ${formatDollars(firearm.estimatedValue)}.`
                 : "It has no estimated value yet, so coverage can't be checked."
             }
           />

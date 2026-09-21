@@ -27,6 +27,23 @@ const SAMPLE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAGUlEQVR42mNgaPhPPhrVPKp5VPOo5oHVDADApFaPDOtbFgAAAABJRU5ErkJggg==";
 const SAMPLE_PDF_BASE64 = Buffer.from("%PDF-1.4 sample receipt contents").toString("base64");
 
+// The run's isolated cache/data dirs (see the E2E isolation notes): the
+// opened-document copies live under the cache dir. Checks that touch the
+// filesystem only run when the run is isolated, so they can never reach a
+// real user's data.
+const cacheHome = process.env.XDG_CACHE_HOME;
+const dataHome = process.env.XDG_DATA_HOME;
+const openedRoot = cacheHome && path.join(cacheHome, "com.hoplodex.app", "opened-documents");
+
+function filesUnder(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory() ? filesUnder(path.join(dir, entry.name)) : [path.join(dir, entry.name)],
+    );
+}
+
 describe("User Story 4 - Attach Photos and Documents", () => {
   it("shows a firearm with no photos with its type's generic drawing (Scenario 3)", async () => {
     await addFirearm({
@@ -54,8 +71,18 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     await $(".hd-photo").waitForExist();
     await expect($(".hd-photo__tag*=Thumbnail")).toExist();
-    // The record's plate now shows the photo instead of the drawing.
+    // The record's plate now shows the photo instead of the drawing, and it
+    // really decoded: a Content-Security-Policy that refused `data:` images
+    // would leave the element in place with nothing drawn.
     await expect($(".hd-plate__figure img")).toExist();
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const img = document.querySelector<HTMLImageElement>(".hd-plate__figure img");
+          return Boolean(img?.complete && img.naturalWidth > 0);
+        }),
+      { timeoutMsg: "the photo on the record never rendered" },
+    );
 
     await back();
     await browser.waitUntil(async () => (await rowThumbnail("InsE2EMediaGlock 43")) === "photo", {
@@ -121,5 +148,54 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       expect(copies.length).toBe(1);
       expect(fs.readFileSync(copies[0], "utf-8")).toBe("%PDF-1.4 sample receipt contents");
     }
+  });
+
+  // Scenario 5: no decrypted copy outlives the session (FR-035, SC-010).
+  // Ending a WebDriver session kills the app without letting it run its exit
+  // handler, which makes it a faithful crash: whatever Scenario 4's "Open"
+  // left behind must be swept at the next launch. Clean exit (window closed, or
+  // SIGTERM/SIGHUP/SIGINT) can't be observed through WebDriver and is checked
+  // against the real binary by e2e/scripts/quit-cleanup.py.
+  it("deletes the opened copy at the next launch after an abrupt termination (Scenario 5)", async function () {
+    if (!openedRoot || !dataHome) return this.skip();
+    expect(filesUnder(openedRoot).length).toBe(1);
+
+    // The E2E build's mock keyring makes a new key every launch, so the
+    // previous launch's scratch database can't be reopened. Drop it (inside
+    // this run's own data dir only) so the relaunch starts fresh.
+    const dbDir = path.join(dataHome, "com.hoplodex.app");
+    for (const name of fs.readdirSync(dbDir).filter((f) => f.startsWith("hoplodex.db"))) {
+      fs.rmSync(path.join(dbDir, name));
+    }
+
+    await browser.reloadSession();
+
+    await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {
+      timeout: 10000,
+      timeoutMsg: "a decrypted document copy survived a relaunch",
+    });
+  });
+  it("refuses every request that would leave the device (FR-021, SC-008)", async () => {
+    // A restrictive Content-Security-Policy is what stops the webview, and so
+    // anything the UI is ever made to run, from sending records anywhere.
+    const violations: string[] = await browser.executeAsync((done: (blocked: string[]) => void) => {
+      const blocked: string[] = [];
+      document.addEventListener("securitypolicyviolation", (e) =>
+        blocked.push(e.effectiveDirective),
+      );
+      const attempts = [
+        fetch("https://example.com/collect").catch(() => {}),
+        new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onerror = () => resolve();
+          img.onload = () => resolve();
+          img.src = "https://example.com/pixel.png";
+        }),
+      ];
+      Promise.all(attempts).then(() => setTimeout(() => done(blocked), 300));
+    });
+
+    expect(violations).toContain("connect-src");
+    expect(violations).toContain("img-src");
   });
 });
