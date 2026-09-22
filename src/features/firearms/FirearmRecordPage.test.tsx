@@ -210,3 +210,44 @@ describe("FirearmRecordPage identification (US1)", () => {
     expect(within(panel).queryByText("Importer")).not.toBeInTheDocument();
   });
 });
+
+// specs/002-firearm-identification contracts/ui-identification.md §5, US2-1, US2-2
+describe("FirearmRecordPage original maker's marks (US2)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows a labeled block with the recorded maker, model and serial number", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      origin: "imported",
+      originalMake: "Fabrique Nationale",
+      originalModel: "High Power",
+      originalSerialNumber: "FN-99001",
+    });
+    renderPage();
+
+    const block = await screen.findByRole("region", { name: "Original maker's marks" });
+    expect(within(block).getByText("Fabrique Nationale")).toBeInTheDocument();
+    expect(within(block).getByText("High Power")).toBeInTheDocument();
+    expect(within(block).getByText("FN-99001")).toBeInTheDocument();
+  });
+
+  it("renders when only one of the three values is recorded", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, origin: "imported", originalMake: "Inland" });
+    renderPage();
+
+    const block = await screen.findByRole("region", { name: "Original maker's marks" });
+    expect(within(block).getByText("Inland")).toBeInTheDocument();
+  });
+
+  it("is absent when no original marks are recorded", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    await screen.findByRole("region", { name: "Identification" });
+    expect(
+      screen.queryByRole("region", { name: "Original maker's marks" }),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -633,6 +633,42 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("FN", "Model 1922", "FN-88431", ".32 ACP", HANDGUN)
     });
 
+    // -- specs/002-firearm-identification User Story 2: original maker's marks --
+
+    // The importer assigned its own serial number (per the paperwork); the
+    // maker's own make, model and serial are entered as the original marks
+    // (contracts/ui-identification.md §8 example 3).
+    add(FirearmInput {
+        notes: text(
+            "Importer re-stamped a new serial on the receiver; the maker's original \
+                      marks are still legible underneath.",
+        ),
+        estimated_value: Some(720),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2021-03-19"),
+        acquisition_price: Some(650),
+        origin: Some(Origin::Imported),
+        country_of_manufacture: text("Austria"),
+        importer_name: text("Global Arms Import Co."),
+        original_make: text("Glock"),
+        original_model: text("19"),
+        original_serial_number: text("AWC442"),
+        ..base("Ridgeline Arms", "Imported Glock 19", "RA-70019", "9mm", HANDGUN)
+    });
+
+    // The importer adopted the maker's own model and serial as the main
+    // marks: no separate original-marks entry is needed (US2-3).
+    add(FirearmInput {
+        notes: text("Importer's stamp only; the maker's marks are already the main marks."),
+        estimated_value: Some(480),
+        acquisition_source: text("Online auction"),
+        acquisition_date: text("2020-10-02"),
+        origin: Some(Origin::Imported),
+        country_of_manufacture: text("Italy"),
+        importer_name: text("Global Arms Import Co."),
+        ..base("Beretta", "92FS", "BER556213", "9mm", HANDGUN)
+    });
+
     // -- Disposed ------------------------------------------------------------
 
     let kel_tec = add(FirearmInput {

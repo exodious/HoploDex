@@ -265,6 +265,21 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
             </dl>
           </section>
 
+          {hasOriginalMarks(firearm) && (
+            <section className="hd-panel" aria-labelledby="original-marks-title">
+              <header className="hd-panel__head">
+                <h2 className="hd-panel__title" id="original-marks-title">
+                  Original maker's marks
+                </h2>
+              </header>
+              <dl className="hd-facts">
+                <Fact label="Maker">{firearm.originalMake}</Fact>
+                <Fact label="Model">{firearm.originalModel}</Fact>
+                <Fact label="Serial number">{firearm.originalSerialNumber}</Fact>
+              </dl>
+            </section>
+          )}
+
           {hasPhysicalDetails(firearm) && (
             <section className="hd-panel" aria-labelledby="physical-title">
               <header className="hd-panel__head">
@@ -498,6 +513,12 @@ function PlateFigure({
  * (data-model.md's "Derived display values"). */
 function countryOfManufactureDisplay(firearm: Firearm): string | null {
   return firearm.origin === "reimported" ? "United States" : firearm.countryOfManufacture;
+}
+
+/** specs/002-firearm-identification US2-2: the "Original maker's marks"
+ * block renders only when at least one of the three values is recorded. */
+function hasOriginalMarks(firearm: Firearm): boolean {
+  return Boolean(firearm.originalMake || firearm.originalModel || firearm.originalSerialNumber);
 }
 
 /** Whether any of FR-039's six optional details is recorded, so a record

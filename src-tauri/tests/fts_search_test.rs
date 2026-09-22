@@ -233,3 +233,28 @@ fn searching_country_for_a_reimported_firearm_finds_united_states() {
         "a re-imported firearm's country is displayed and searched as United States"
     );
 }
+
+// specs/002-firearm-identification US2-5: the original manufacturer's marks
+// are searchable too.
+
+#[test]
+fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("SRCH-3".into()),
+            origin: Some(Origin::Imported),
+            original_make: Some("Fabrique Nationale".into()),
+            original_model: Some("High Power".into()),
+            original_serial_number: Some("FN-99001".into()),
+            ..base_input()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "FN-99001"), 1, "should match the original serial number");
+    assert_eq!(search(&db.conn, "Fabrique Nationale"), 1, "should match the original maker");
+}

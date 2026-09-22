@@ -660,3 +660,106 @@ describe("FirearmForm origin control (US1)", () => {
     ).toBeInTheDocument();
   });
 });
+
+// specs/002-firearm-identification contracts/ui-identification.md §2, US2
+describe("FirearmForm original maker's marks (US2)", () => {
+  const group = () => screen.getByRole("group", { name: "Original maker's marks" });
+
+  it("shows the fieldset for an import-marked origin, with a hint and all three fields optional", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+
+    expect(
+      screen.getByText(
+        "Only if the original maker's marks differ from the make, model and serial number above, or you want both.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(group()).getByLabelText("Original maker")).not.toBeRequired();
+    expect(within(group()).getByLabelText("Original model")).not.toBeRequired();
+    expect(within(group()).getByLabelText("Original serial number")).not.toBeRequired();
+  });
+
+  it("shows the fieldset for a re-imported origin too", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Re-imported/ }));
+
+    expect(within(group()).getByLabelText("Original maker")).toBeInTheDocument();
+  });
+
+  it("shows no original-marks fields for a domestic or unspecified origin", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(screen.queryByRole("group", { name: "Original maker's marks" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    expect(screen.queryByRole("group", { name: "Original maker's marks" })).not.toBeInTheDocument();
+  });
+
+  it("submits a partial set with no message", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.type(within(group()).getByLabelText("Original maker"), "Fabrique Nationale");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      originalMake: "Fabrique Nationale",
+      originalModel: null,
+      originalSerialNumber: null,
+    });
+  });
+
+  it("submits all three fields, and null when left blank", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.type(within(group()).getByLabelText("Original maker"), "Fabrique Nationale");
+    await user.type(within(group()).getByLabelText("Original model"), "High Power");
+    await user.type(within(group()).getByLabelText("Original serial number"), "FN-99001");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      originalMake: "Fabrique Nationale",
+      originalModel: "High Power",
+      originalSerialNumber: "FN-99001",
+    });
+  });
+
+  it("discards original marks (with importer) when moving away from an import-marked origin", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.type(within(group()).getByLabelText("Original maker"), "Fabrique Nationale");
+
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Discard and change" }));
+
+    expect(screen.queryByRole("group", { name: "Original maker's marks" })).not.toBeInTheDocument();
+  });
+
+  it("carries original marks over when moving between Imported and Re-imported", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.type(within(group()).getByLabelText("Original maker"), "Fabrique Nationale");
+
+    await user.click(screen.getByRole("radio", { name: /^Re-imported/ }));
+
+    expect(within(group()).getByLabelText("Original maker")).toHaveValue("Fabrique Nationale");
+  });
+});

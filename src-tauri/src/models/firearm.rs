@@ -530,6 +530,21 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         errors.insert("countryOfManufacture".into(), message.into());
     }
 
+    // specs/002-firearm-identification FR-004: the original manufacturer's
+    // marks only apply to import-marked origins, same gating as importer_name.
+    for (field, label, value) in [
+        ("originalMake", "Original maker", &input.original_make),
+        ("originalModel", "Original model", &input.original_model),
+        ("originalSerialNumber", "Original serial number", &input.original_serial_number),
+    ] {
+        if !is_blank(value) && !import_marked {
+            errors.insert(
+                field.into(),
+                format!("{label} applies only to an imported or re-imported firearm."),
+            );
+        }
+    }
+
     // FR-014/FR-036: scheduled under a policy with its own amount, or not at
     // all. There is no per-firearm blanket assignment.
     match (input.insurance_policy_id, input.scheduled_coverage_amount) {

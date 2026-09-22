@@ -41,17 +41,26 @@ function yearOfManufactureError(text: string): string | undefined {
 
 /** specs/002-firearm-identification FR-010/research.md §8: what changing
  * origin away from `from` to `to` would discard, given the form's current
- * importer/country values — `null` when nothing is lost. */
+ * importer/country/original-marks values — `null` when nothing is lost. */
 type OriginDiscard = "country" | "importerAndMarks";
 
 function importMarked(origin: Origin | ""): boolean {
   return origin === "imported" || origin === "reimported";
 }
 
+type DiscardableFields = Pick<
+  FormState,
+  | "countryOfManufacture"
+  | "importerName"
+  | "originalMake"
+  | "originalModel"
+  | "originalSerialNumber"
+>;
+
 function originDiscard(
   from: Origin | "",
   to: Origin | "",
-  form: Pick<FormState, "countryOfManufacture" | "importerName">,
+  form: DiscardableFields,
 ): OriginDiscard | null {
   if (from === "imported" && to === "reimported") {
     return form.countryOfManufacture.trim() !== "" ? "country" : null;
@@ -59,7 +68,14 @@ function originDiscard(
   if (importMarked(from) && !importMarked(to)) {
     const hasImporter = form.importerName.trim() !== "";
     const hasCountry = form.countryOfManufacture.trim() !== "";
-    return hasImporter || hasCountry ? "importerAndMarks" : null;
+    // specs/002-firearm-identification US2: the "Original maker's marks"
+    // fieldset only exists for an import-marked origin, so it is discarded
+    // alongside importer and country (T024).
+    const hasOriginalMarks =
+      form.originalMake.trim() !== "" ||
+      form.originalModel.trim() !== "" ||
+      form.originalSerialNumber.trim() !== "";
+    return hasImporter || hasCountry || hasOriginalMarks ? "importerAndMarks" : null;
   }
   return null;
 }
@@ -109,6 +125,9 @@ interface FormState {
   yearOfManufacture: string;
   countryOfManufacture: string;
   importerName: string;
+  originalMake: string;
+  originalModel: string;
+  originalSerialNumber: string;
 }
 
 type Field = keyof FormState;
@@ -157,6 +176,9 @@ function toFormState(firearm?: Firearm): FormState {
     yearOfManufacture: firearm?.yearOfManufacture == null ? "" : String(firearm.yearOfManufacture),
     countryOfManufacture: firearm?.countryOfManufacture ?? "",
     importerName: firearm?.importerName ?? "",
+    originalMake: firearm?.originalMake ?? "",
+    originalModel: firearm?.originalModel ?? "",
+    originalSerialNumber: firearm?.originalSerialNumber ?? "",
   };
 }
 
@@ -337,6 +359,14 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     ) {
       items.push(`the country of manufacture (${form.countryOfManufacture.trim()})`);
     }
+    if (pendingOrigin?.discard === "importerAndMarks") {
+      const marks = [form.originalMake, form.originalModel, form.originalSerialNumber]
+        .map((v) => v.trim())
+        .filter((v) => v !== "");
+      if (marks.length > 0) {
+        items.push(`the original maker's marks (${marks.join(", ")})`);
+      }
+    }
     return `Changing the origin will discard ${items.join(" and ")}. It can't be recovered once saved.`;
   }
 
@@ -348,6 +378,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       origin: next,
       countryOfManufacture: "",
       importerName: discard === "importerAndMarks" ? "" : prev.importerName,
+      originalMake: discard === "importerAndMarks" ? "" : prev.originalMake,
+      originalModel: discard === "importerAndMarks" ? "" : prev.originalModel,
+      originalSerialNumber: discard === "importerAndMarks" ? "" : prev.originalSerialNumber,
     }));
     setPendingOrigin(null);
   }
@@ -397,11 +430,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       yearOfManufacture: form.yearOfManufacture === "" ? null : Number(form.yearOfManufacture),
       countryOfManufacture: blankToNull(form.countryOfManufacture),
       importerName: blankToNull(form.importerName),
-      // specs/002-firearm-identification User Story 2 adds the fields for
-      // these; the form has nowhere to enter them yet.
-      originalMake: null,
-      originalModel: null,
-      originalSerialNumber: null,
+      originalMake: blankToNull(form.originalMake),
+      originalModel: blankToNull(form.originalModel),
+      originalSerialNumber: blankToNull(form.originalSerialNumber),
     };
 
     setSubmitting(true);
@@ -569,6 +600,45 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 />
               </div>
             </div>
+
+            {importMarked(form.origin) && (
+              <fieldset className="hd-form-section hd-form-fieldset">
+                <legend className="hd-form-section__title">Original maker's marks</legend>
+                <p className="hd-field__hint">
+                  Only if the original maker's marks differ from the make, model and serial number
+                  above, or you want both.
+                </p>
+                <div className="hd-form-grid hd-form-grid--3">
+                  <div data-field="originalMake">
+                    <TextField
+                      label="Original maker"
+                      value={form.originalMake}
+                      onChange={(e) => update("originalMake", e.target.value)}
+                      onBlur={touch("originalMake")}
+                      error={errorFor("originalMake")}
+                    />
+                  </div>
+                  <div data-field="originalModel">
+                    <TextField
+                      label="Original model"
+                      value={form.originalModel}
+                      onChange={(e) => update("originalModel", e.target.value)}
+                      onBlur={touch("originalModel")}
+                      error={errorFor("originalModel")}
+                    />
+                  </div>
+                  <div data-field="originalSerialNumber">
+                    <TextField
+                      label="Original serial number"
+                      value={form.originalSerialNumber}
+                      onChange={(e) => update("originalSerialNumber", e.target.value)}
+                      onBlur={touch("originalSerialNumber")}
+                      error={errorFor("originalSerialNumber")}
+                    />
+                  </div>
+                </div>
+              </fieldset>
+            )}
 
             <div className="hd-form-grid hd-form-grid--2">
               <div data-field="caliber">

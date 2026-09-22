@@ -185,3 +185,114 @@ fn a_non_blank_country_on_a_domestic_record_is_rejected() {
         "countryOfManufacture",
     );
 }
+
+// specs/002-firearm-identification User Story 2: the original manufacturer's
+// make, model and serial number, alongside the main marks, on an imported or
+// re-imported firearm (FR-004).
+
+#[test]
+fn original_marks_round_trip_on_an_imported_firearm_distinct_from_the_main_marks() {
+    let db = TestDb::new();
+    let input = FirearmInput {
+        origin: Some(Origin::Imported),
+        original_make: Some("Fabrique Nationale".into()),
+        original_model: Some("High Power".into()),
+        original_serial_number: Some("FN-99001".into()),
+        ..firearm("Ridgeline Arms", "Imported Hi-Power", "RA-5001")
+    };
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    assert_eq!(created.make, "Ridgeline Arms");
+    assert_eq!(created.serial_number.as_deref(), Some("RA-5001"));
+    assert_eq!(created.original_make.as_deref(), Some("Fabrique Nationale"));
+    assert_eq!(created.original_model.as_deref(), Some("High Power"));
+    assert_eq!(created.original_serial_number.as_deref(), Some("FN-99001"));
+
+    let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
+    assert_eq!(fetched.original_make.as_deref(), Some("Fabrique Nationale"));
+    assert_eq!(fetched.original_model.as_deref(), Some("High Power"));
+    assert_eq!(fetched.original_serial_number.as_deref(), Some("FN-99001"));
+
+    let edited = FirearmInput {
+        original_serial_number: Some("FN-99002".into()),
+        ..FirearmInput::from(&created)
+    };
+    let updated = ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    assert_eq!(updated.original_serial_number.as_deref(), Some("FN-99002"));
+}
+
+#[test]
+fn original_marks_round_trip_on_a_reimported_firearm() {
+    let db = TestDb::new();
+    let input = FirearmInput {
+        origin: Some(Origin::Reimported),
+        importer_name: Some("Century International Arms".into()),
+        original_make: Some("Inland".into()),
+        original_model: Some("M1 Carbine".into()),
+        original_serial_number: Some("IN-2245567".into()),
+        ..firearm("Inland", "M1 Carbine", "IN-2245567")
+    };
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    assert_eq!(created.original_make.as_deref(), Some("Inland"));
+    assert_eq!(created.original_model.as_deref(), Some("M1 Carbine"));
+    assert_eq!(created.original_serial_number.as_deref(), Some("IN-2245567"));
+}
+
+#[test]
+fn a_partial_set_of_original_marks_is_accepted_as_entered() {
+    let db = TestDb::new();
+    let input = FirearmInput {
+        origin: Some(Origin::Imported),
+        original_make: Some("Fabrique Nationale".into()),
+        ..firearm("Ridgeline Arms", "Imported Hi-Power", "RA-5002")
+    };
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    assert_eq!(created.original_make.as_deref(), Some("Fabrique Nationale"));
+    assert_eq!(created.original_model, None);
+    assert_eq!(created.original_serial_number, None);
+}
+
+#[test]
+fn leaving_all_three_original_marks_blank_saves_normally() {
+    let db = TestDb::new();
+    let input =
+        FirearmInput { origin: Some(Origin::Imported), ..firearm("FN", "Model 1922", "FN-1") };
+    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    assert_eq!(created.original_make, None);
+    assert_eq!(created.original_model, None);
+    assert_eq!(created.original_serial_number, None);
+}
+
+#[test]
+fn a_non_blank_original_make_on_a_domestic_record_is_rejected() {
+    field_error(
+        &FirearmInput {
+            origin: Some(Origin::Domestic),
+            original_make: Some("Some Maker".into()),
+            ..firearm("Colt", "1911A1", "BAD-8")
+        },
+        "originalMake",
+    );
+}
+
+#[test]
+fn a_non_blank_original_model_on_an_unspecified_origin_record_is_rejected() {
+    field_error(
+        &FirearmInput {
+            original_model: Some("Some Model".into()),
+            ..firearm("Colt", "1911A1", "BAD-9")
+        },
+        "originalModel",
+    );
+}
+
+#[test]
+fn a_non_blank_original_serial_number_on_a_domestic_record_is_rejected() {
+    field_error(
+        &FirearmInput {
+            origin: Some(Origin::Domestic),
+            original_serial_number: Some("SN-1".into()),
+            ..firearm("Colt", "1911A1", "BAD-10")
+        },
+        "originalSerialNumber",
+    );
+}
