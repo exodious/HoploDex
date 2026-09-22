@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { FirearmRecordPage } from "./FirearmRecordPage";
-import type { FirearmDetail } from "./types";
+import { ORIGIN_OPTIONS } from "./types";
+import type { FirearmDetail, Origin } from "./types";
 
 const getFirearm = vi.fn();
 
@@ -209,6 +210,21 @@ describe("FirearmRecordPage identification (US1)", () => {
     expect(within(panel).queryByText("Country of manufacture")).not.toBeInTheDocument();
     expect(within(panel).queryByText("Importer")).not.toBeInTheDocument();
   });
+
+  // specs/002-firearm-identification research.md §6: the origin label must
+  // agree across the SQL CASE (0002_fts5.sql), Origin::label() and
+  // ORIGIN_OPTIONS — this is the TypeScript side of that guard, checking
+  // ORIGIN_OPTIONS' labels are what the record page actually shows.
+  it.each(ORIGIN_OPTIONS.filter((o) => o.value !== "").map((o) => [o.value, o.label]))(
+    "shows %s as %s",
+    async (origin, label) => {
+      getFirearm.mockResolvedValue({ ...firearm, origin: origin as Origin });
+      renderPage();
+
+      const panel = await screen.findByRole("region", { name: "Identification" });
+      expect(within(panel).getByText(label)).toBeInTheDocument();
+    },
+  );
 });
 
 // specs/002-firearm-identification contracts/ui-identification.md §5, US2-1, US2-2

@@ -174,3 +174,42 @@ fn editing_a_firearm_into_a_match_also_warns() {
     let confirmed = ops::update_firearm(&db.conn, other.id, &edited, true).unwrap();
     assert_eq!(confirmed.original_serial_number.as_deref(), Some("FN-6"));
 }
+
+// specs/002-firearm-identification FR-006: the same non-judgment guarantee
+// for the ORIGINAL_MARKS_MATCH warning.
+#[test]
+fn the_original_marks_match_message_never_judges_legality() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &with_original_marks(
+            "Ridgeline Arms",
+            "Hi-Power",
+            "RA-WORDING",
+            "FN",
+            "High Power",
+            "FN-WORDING",
+        ),
+        false,
+    )
+    .unwrap();
+
+    let err = ops::create_firearm(
+        &db.conn,
+        &with_original_marks(
+            "Century Arms",
+            "Clone",
+            "CA-WORDING",
+            "FN",
+            "High Power",
+            "FN-WORDING",
+        ),
+        false,
+    )
+    .expect_err("warns");
+    assert_eq!(err.code, "ORIGINAL_MARKS_MATCH");
+    let message = err.message.to_lowercase();
+    for word in ["legal", "illegal", "lawful", "unlawful", "permitted", "prohibited"] {
+        assert!(!message.contains(word), "message should not judge legality: {message:?}");
+    }
+}

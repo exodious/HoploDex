@@ -54,6 +54,12 @@ type CommandError = {
   range — a length or weight `<= 0`, a capacity `< 1`, or an unknown
   `condition` — FR-039, with a `fieldErrors` entry naming the field).
 
+_Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
+`FirearmInput` gains the seven identification fields; a
+`confirmedWarnings?: boolean` argument and the `ORIGINAL_MARKS_MATCH` error
+code are added; the make/model/serial clash is accepted, not blocked, when
+both records have a year of manufacture and the years differ._
+
 ### `update_firearm`
 
 - **Input**: `id: number`, `FirearmInput` (partial or full; validation
@@ -61,6 +67,9 @@ type CommandError = {
 - **Output**: `Firearm` (as `create_firearm`).
 - **Errors**: `VALIDATION_ERROR` (same uniqueness rules, excluding the
   record itself), `NOT_FOUND`.
+
+_Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
+as `create_firearm`._
 
 ### `dispose_firearm`
 
@@ -85,6 +94,11 @@ type CommandError = {
   status change, history insert, and column clear happen in one
   transaction. Frontend re-invokes `get_value_summary` afterwards (the
   firearm re-enters the value summary, FR-015/FR-025).
+
+_Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
+input gains `confirmedWarnings?: boolean`; errors also include the
+FR-007/FR-008 year exception and `ORIGINAL_MARKS_MATCH`, both inside the
+same transaction as the status change and history insert._
 
 ### `delete_firearm`
 
@@ -133,6 +147,10 @@ type CommandError = {
 - **Performance contract**: MUST return within 500ms at 10,000-record
   scale (Principle IV) — implemented via the FTS5 index and indexed
   columns on `firearm_type_id`/`caliber`/`make`.
+
+_Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
+`groupBy` gains `"origin"`; `query` also matches origin, year, country,
+importer and original marks._
 
 ## Insurance & valuation (User Story 3)
 
@@ -351,6 +369,12 @@ type CommandError = {
   resolution rather than being silently applied. FR-031/FR-032 apply per
   row: a duplicate nickname is a row error; a `duplicate` resolution is
   only valid where FR-032 would allow the resulting record.
+
+_Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
+output gains `warnings: { row: number; message: string }[]` for the FR-009
+original-marks match (a row still imports); a row's main-marks match is not
+a conflict at all when both it and the existing record have a year of
+manufacture and the years differ._
 
 ### `resolve_import_conflicts`
 

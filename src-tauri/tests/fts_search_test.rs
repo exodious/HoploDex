@@ -266,3 +266,103 @@ fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
     assert_eq!(search(&db.conn, "FN-99001"), 1, "should match the original serial number");
     assert_eq!(search(&db.conn, "Fabrique Nationale"), 1, "should match the original maker");
 }
+
+// specs/002-firearm-identification research.md §6: the origin label exists
+// in three places (the SQL CASE in 0002_fts5.sql, Origin::label(), and
+// ORIGIN_OPTIONS in src/features/firearms/types.ts, checked by a separate
+// Vitest test). This walks every Origin variant, searching by its exact
+// `label()` text, so the SQL and Rust copies can't silently drift apart —
+// if either changed without the other, the search would stop matching.
+#[test]
+fn every_origin_is_found_by_searching_its_own_label() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    for (i, origin) in
+        [Origin::Domestic, Origin::Imported, Origin::Reimported].into_iter().enumerate()
+    {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                serial_number: Some(format!("LABEL-{i}")),
+                origin: Some(origin),
+                ..base_input()
+            },
+            false,
+        )
+        .unwrap();
+    }
+
+    for origin in [Origin::Domestic, Origin::Imported, Origin::Reimported] {
+        assert_eq!(
+            search(&db.conn, origin.label()),
+            if origin == Origin::Imported { 2 } else { 1 },
+            "searching {:?}'s own label() should find it via the SQL CASE (\"imported\" also \
+             matches \"Re-imported\")",
+            origin
+        );
+    }
+}
+
+// specs/002-firearm-identification SC-006: at collection scale, a search on
+// any of the seven new fields still finds exactly the one firearm carrying
+// it, not a false positive from the rest of the collection.
+#[test]
+fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    const FILLER_COUNT: usize = 499;
+    for i in 0..FILLER_COUNT {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                make: format!("Filler Make {i}"),
+                model: format!("Filler Model {i}"),
+                serial_number: Some(format!("FILLER-{i}")),
+                ..base_input()
+            },
+            false,
+        )
+        .unwrap();
+    }
+
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            make: "Distinctive Make".into(),
+            model: "Distinctive Model".into(),
+            serial_number: Some("DISTINCTIVE-MAIN".into()),
+            origin: Some(Origin::Imported),
+            year_of_manufacture: Some(1601),
+            country_of_manufacture: Some("Ruritania".into()),
+            importer_name: Some("Uniquestar Imports LLC".into()),
+            original_make: Some("Zzyzx Arms".into()),
+            original_model: Some("Model Zeta".into()),
+            original_serial_number: Some("ZZ-999999".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    let total: usize = ops::list_firearms(&db.conn, &ListFirearmsInput::default())
+        .unwrap()
+        .groups
+        .iter()
+        .map(|g| g.firearms.len())
+        .sum();
+    assert_eq!(total, FILLER_COUNT + 1, "sanity: every record was actually saved");
+
+    for (query, what) in [
+        ("Imported", "origin"),
+        ("1601", "year of manufacture"),
+        ("Ruritania", "country of manufacture"),
+        ("Uniquestar Imports LLC", "importer name"),
+        ("Zzyzx Arms", "original maker"),
+        ("Model Zeta", "original model"),
+        ("ZZ-999999", "original serial number"),
+    ] {
+        assert_eq!(search(&db.conn, query), 1, "searching {what} ({query:?}) among 500 records");
+    }
+}

@@ -341,3 +341,20 @@ fn the_database_refuses_a_record_with_both_a_serial_number_and_the_attestation()
 
     assert!(backstop.is_err(), "the CHECK backs up FR-029");
 }
+
+// specs/002-firearm-identification FR-006: the app never states or implies
+// a mark, year or import is legal or illegal.
+#[test]
+fn the_fr_008_identity_clash_message_never_judges_legality() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "WORDING-CHECK-1", None), false)
+        .unwrap();
+
+    let err =
+        ops::create_firearm(&db.conn, &with_year("Colt", "1873", "WORDING-CHECK-1", None), false)
+            .expect_err("blocked");
+    let message = blocked_message(&err).to_lowercase();
+    for word in ["legal", "illegal", "lawful", "unlawful", "permitted", "prohibited"] {
+        assert!(!message.contains(word), "message should not judge legality: {message:?}");
+    }
+}
