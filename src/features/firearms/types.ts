@@ -9,6 +9,10 @@ export type DispositionType = "sold" | "traded" | "gifted" | "destroyed" | "lost
  * notes. Mirrors `Condition` in src-tauri/src/models/firearm.rs. */
 export type Condition = "new_in_box" | "like_new" | "excellent" | "good" | "fair" | "poor";
 
+/** specs/002-firearm-identification FR-001: `null` means not specified.
+ * Mirrors `Origin` in src-tauri/src/models/firearm.rs. */
+export type Origin = "domestic" | "imported" | "reimported";
+
 export interface Firearm {
   id: number;
   make: string;
@@ -42,6 +46,18 @@ export interface Firearm {
   thumbnailPhotoId: number | null;
   insurancePolicyId: number | null;
   scheduledCoverageAmount: number | null;
+  /** specs/002-firearm-identification FR-001: `null` means not specified. */
+  origin: Origin | null;
+  /** specs/002-firearm-identification FR-003. */
+  yearOfManufacture: number | null;
+  /** specs/002-firearm-identification FR-002: only for `origin === "imported"`. */
+  countryOfManufacture: string | null;
+  /** specs/002-firearm-identification FR-002: import-marked origins only. */
+  importerName: string | null;
+  /** specs/002-firearm-identification FR-004: import-marked origins only. */
+  originalMake: string | null;
+  originalModel: string | null;
+  originalSerialNumber: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -123,4 +139,23 @@ export function conditionLabel(condition: Condition): string {
 
 export function dispositionLabel(type: DispositionType | null): string {
   return DISPOSITION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? "Disposed";
+}
+
+/** specs/002-firearm-identification contracts/ui-identification.md §1. Kept
+ * in step with the SQL `CASE` in 0002_fts5.sql and `Origin::label()` in
+ * src-tauri/src/models/firearm.rs (research.md §6). */
+export const ORIGIN_OPTIONS: { value: Origin | ""; label: string; description: string }[] = [
+  { value: "domestic", label: "Domestic", description: "Made in the U.S." },
+  { value: "imported", label: "Imported", description: "Made abroad and brought in" },
+  {
+    value: "reimported",
+    label: "Re-imported",
+    description: "Made in the U.S., exported, then brought back in",
+  },
+  { value: "", label: "Not specified", description: "Leave this if you're not sure." },
+];
+
+export function originLabel(origin: Origin | null): string {
+  if (origin === null) return "Not specified";
+  return ORIGIN_OPTIONS.find((o) => o.value === origin)?.label ?? origin;
 }

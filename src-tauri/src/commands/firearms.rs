@@ -289,6 +289,8 @@ pub mod ops {
                 acquisition_source, acquisition_date, acquisition_price,
                 disposition_type, disposition_recipient, disposition_date, disposition_price,
                 insurance_policy_id, scheduled_coverage_amount,
+                origin, year_of_manufacture, country_of_manufacture, importer_name,
+                original_make, original_model, original_serial_number,
                 created_at, updated_at
             ) VALUES (
                 :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id, :nickname,
@@ -298,6 +300,8 @@ pub mod ops {
                 :acquisition_source, :acquisition_date, :acquisition_price,
                 :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
                 :insurance_policy_id, :scheduled_coverage_amount,
+                :origin, :year_of_manufacture, :country_of_manufacture, :importer_name,
+                :original_make, :original_model, :original_serial_number,
                 datetime('now'), datetime('now')
             )",
             named_params! {
@@ -327,6 +331,13 @@ pub mod ops {
                 ":disposition_price": input.disposition_price,
                 ":insurance_policy_id": input.insurance_policy_id,
                 ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                ":origin": input.origin,
+                ":year_of_manufacture": input.year_of_manufacture,
+                ":country_of_manufacture": input.country_of_manufacture,
+                ":importer_name": input.importer_name,
+                ":original_make": input.original_make,
+                ":original_model": input.original_model,
+                ":original_serial_number": input.original_serial_number,
             },
         )
         .map_err(CommandError::from_db)?;
@@ -371,6 +382,13 @@ pub mod ops {
                     disposition_price = :disposition_price,
                     insurance_policy_id = :insurance_policy_id,
                     scheduled_coverage_amount = :scheduled_coverage_amount,
+                    origin = :origin,
+                    year_of_manufacture = :year_of_manufacture,
+                    country_of_manufacture = :country_of_manufacture,
+                    importer_name = :importer_name,
+                    original_make = :original_make,
+                    original_model = :original_model,
+                    original_serial_number = :original_serial_number,
                     updated_at = datetime('now')
                 WHERE id = :id",
                 named_params! {
@@ -401,6 +419,13 @@ pub mod ops {
                     ":disposition_price": input.disposition_price,
                     ":insurance_policy_id": input.insurance_policy_id,
                         ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                    ":origin": input.origin,
+                    ":year_of_manufacture": input.year_of_manufacture,
+                    ":country_of_manufacture": input.country_of_manufacture,
+                    ":importer_name": input.importer_name,
+                    ":original_make": input.original_make,
+                    ":original_model": input.original_model,
+                    ":original_serial_number": input.original_serial_number,
                 },
             )
             .map_err(CommandError::from_db)?;

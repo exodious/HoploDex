@@ -120,6 +120,13 @@ pub fn firearm(make: &str, model: &str, serial: &str) -> FirearmInput {
         disposition_price: None,
         insurance_policy_id: None,
         scheduled_coverage_amount: None,
+        origin: None,
+        year_of_manufacture: None,
+        country_of_manufacture: None,
+        importer_name: None,
+        original_make: None,
+        original_model: None,
+        original_serial_number: None,
     }
 }
 

@@ -67,13 +67,32 @@ CREATE TABLE firearms (
     thumbnail_photo_id INTEGER REFERENCES photos (id) ON DELETE SET NULL,
     insurance_policy_id INTEGER REFERENCES insurance_policies (id) ON DELETE RESTRICT,
     scheduled_coverage_amount INTEGER CHECK (scheduled_coverage_amount IS NULL OR scheduled_coverage_amount >= 0),
+    -- specs/002-firearm-identification: how the firearm is identified and
+    -- marked. `origin` NULL means not specified. See data-model.md's
+    -- "Entity: Firearm (extended)".
+    origin TEXT,
+    year_of_manufacture INTEGER,
+    country_of_manufacture TEXT,
+    importer_name TEXT,
+    original_make TEXT,
+    original_model TEXT,
+    original_serial_number TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     -- FR-029: a serial number, or the attestation that there is none; never both.
     CHECK ((serial_number IS NOT NULL) <> (no_serial_attested = 1)),
     -- FR-014/FR-036: scheduled under a policy with its own amount, or not
     -- scheduled at all. Blanket coverage is computed, never stored here.
-    CHECK ((insurance_policy_id IS NULL) = (scheduled_coverage_amount IS NULL))
+    CHECK ((insurance_policy_id IS NULL) = (scheduled_coverage_amount IS NULL)),
+    -- specs/002-firearm-identification FR-001..FR-004
+    CHECK (origin IS NULL OR origin IN ('domestic', 'imported', 'reimported')),
+    CHECK (year_of_manufacture IS NULL OR year_of_manufacture BETWEEN 1400 AND 9999),
+    CHECK (country_of_manufacture IS NULL OR origin = 'imported'),
+    CHECK (
+        (importer_name IS NULL AND original_make IS NULL
+         AND original_model IS NULL AND original_serial_number IS NULL)
+        OR origin IN ('imported', 'reimported')
+    )
 );
 
 CREATE INDEX idx_firearms_type ON firearms (firearm_type_id);
