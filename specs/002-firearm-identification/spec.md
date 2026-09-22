@@ -151,7 +151,7 @@ A collector can group the collection by origin, and can export imported firearms
 
 - **SC-001**: A user can record an imported firearm's origin, country, importer, and original-maker marks in under 3 minutes on top of the core record.
 - **SC-002**: 100% of firearm records that carry both importer-assigned and original-maker marks display the two sets separately and labeled, so a reader can never mistake original-maker marks for the firearm's main identification.
-- **SC-003**: 100% of attempts to save two imported firearms that share original-maker marks but have different main serial numbers succeed without being blocked, and 100% of them show the FR-009 warning when make, model, and serial are all recorded.
+- **SC-003**: 100% of attempts to save two imported firearms that share original-maker marks but have different main serial numbers succeed without being blocked, and 100% of them show the FR-009 warning when original make, model, and serial number are all recorded.
 - **SC-004**: 100% of firearm records created before this feature remain fully usable with all their data intact and no user action.
 - **SC-005**: An export followed by an import into an empty collection reproduces every new field on every firearm with no loss.
 - **SC-006**: A user can find an imported firearm in a collection of at least 500 records by any one of its new details (importer name, country, origin, year of manufacture, original maker, original model, or original serial number) in a single search action.
