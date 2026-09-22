@@ -4,6 +4,7 @@ import {
   Button,
   Checkbox,
   ChoiceCards,
+  ConfirmDialog,
   DateField,
   DecimalField,
   MoneyField,
@@ -16,9 +17,52 @@ import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../l
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { TypeDrawing } from "../browse/TypeDrawing";
-import { CONDITION_OPTIONS, DISPOSITION_TYPE_OPTIONS, FIREARM_TYPE_OPTIONS } from "./types";
-import type { Condition, DispositionType, Firearm, FirearmInput } from "./types";
+import { OriginGuide } from "./OriginGuide";
+import {
+  CONDITION_OPTIONS,
+  DISPOSITION_TYPE_OPTIONS,
+  FIREARM_TYPE_OPTIONS,
+  ORIGIN_OPTIONS,
+} from "./types";
+import type { Condition, DispositionType, Firearm, FirearmInput, Origin } from "./types";
 import "./forms.css";
+
+/** specs/002-firearm-identification research.md §7: not four digits, or
+ * outside 1400 to the current local year, is the same error. */
+function yearOfManufactureError(text: string): string | undefined {
+  if (text === "") return undefined;
+  const year = Number(text);
+  const currentYear = new Date().getFullYear();
+  if (text.length !== 4 || !Number.isInteger(year) || year < 1400 || year > currentYear) {
+    return `Year of manufacture must be a four-digit year from 1400 to ${currentYear}.`;
+  }
+  return undefined;
+}
+
+/** specs/002-firearm-identification FR-010/research.md §8: what changing
+ * origin away from `from` to `to` would discard, given the form's current
+ * importer/country values — `null` when nothing is lost. */
+type OriginDiscard = "country" | "importerAndMarks";
+
+function importMarked(origin: Origin | ""): boolean {
+  return origin === "imported" || origin === "reimported";
+}
+
+function originDiscard(
+  from: Origin | "",
+  to: Origin | "",
+  form: Pick<FormState, "countryOfManufacture" | "importerName">,
+): OriginDiscard | null {
+  if (from === "imported" && to === "reimported") {
+    return form.countryOfManufacture.trim() !== "" ? "country" : null;
+  }
+  if (importMarked(from) && !importMarked(to)) {
+    const hasImporter = form.importerName.trim() !== "";
+    const hasCountry = form.countryOfManufacture.trim() !== "";
+    return hasImporter || hasCountry ? "importerAndMarks" : null;
+  }
+  return null;
+}
 
 /** A field the form can open on, for the record page's "Add" links. */
 export type FocusField = "notes" | "accessories";
@@ -61,6 +105,10 @@ interface FormState {
   dispositionRecipient: string;
   dispositionDate: string;
   dispositionPrice: string;
+  origin: Origin | "";
+  yearOfManufacture: string;
+  countryOfManufacture: string;
+  importerName: string;
 }
 
 type Field = keyof FormState;
@@ -105,6 +153,10 @@ function toFormState(firearm?: Firearm): FormState {
     dispositionRecipient: firearm?.dispositionRecipient ?? "",
     dispositionDate: firearm?.dispositionDate ?? "",
     dispositionPrice: dollarsToInput(firearm?.dispositionPrice ?? null),
+    origin: firearm?.origin ?? "",
+    yearOfManufacture: firearm?.yearOfManufacture == null ? "" : String(firearm.yearOfManufacture),
+    countryOfManufacture: firearm?.countryOfManufacture ?? "",
+    importerName: firearm?.importerName ?? "",
   };
 }
 
@@ -147,6 +199,9 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     const future = futureDateError(acquired.iso, "Acquisition date");
     if (future) errors.acquisitionDate = future;
   }
+
+  const yearError = yearOfManufactureError(form.yearOfManufacture);
+  if (yearError) errors.yearOfManufacture = yearError;
 
   if (disposed) {
     if (!form.dispositionType) errors.dispositionType = "Choose what happened to it.";
@@ -192,6 +247,7 @@ const FIELD_ORDER: Field[] = [
   "firearmTypeId",
   "caliber",
   "serialNumber",
+  "yearOfManufacture",
   "barrelLength",
   "overallLength",
   "weightPounds",
@@ -223,6 +279,15 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // Motion-free under prefers-reduced-motion: still marked, so the user can
   // see where to type, but neither animated nor smooth-scrolled.
   const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
+  const [showOriginGuide, setShowOriginGuide] = useState(false);
+  const originGuideButtonRef = useRef<HTMLButtonElement>(null);
+  // specs/002-firearm-identification FR-010: set while the discard
+  // confirmation is open, holding the origin the user picked and what it
+  // would discard.
+  const [pendingOrigin, setPendingOrigin] = useState<{
+    next: Origin | "";
+    discard: OriginDiscard;
+  } | null>(null);
 
   useEffect(() => {
     const field = focusField === "notes" ? notesRef.current : accessoriesRef.current;
@@ -248,6 +313,43 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   function update<K extends Field>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleOriginChange(next: Origin | "") {
+    const discard = originDiscard(form.origin, next, form);
+    if (discard) {
+      setPendingOrigin({ next, discard });
+    } else {
+      update("origin", next);
+    }
+  }
+
+  /** specs/002-firearm-identification contracts/ui-identification.md §3:
+   * lists what will be discarded, by name and recorded value. */
+  function discardedValuesDescription(): string {
+    const items: string[] = [];
+    if (pendingOrigin?.discard === "importerAndMarks" && form.importerName.trim() !== "") {
+      items.push(`the importer (${form.importerName.trim()})`);
+    }
+    if (
+      (pendingOrigin?.discard === "country" || pendingOrigin?.discard === "importerAndMarks") &&
+      form.countryOfManufacture.trim() !== ""
+    ) {
+      items.push(`the country of manufacture (${form.countryOfManufacture.trim()})`);
+    }
+    return `Changing the origin will discard ${items.join(" and ")}. It can't be recovered once saved.`;
+  }
+
+  function confirmOriginChange() {
+    if (!pendingOrigin) return;
+    const { next, discard } = pendingOrigin;
+    setForm((prev) => ({
+      ...prev,
+      origin: next,
+      countryOfManufacture: "",
+      importerName: discard === "importerAndMarks" ? "" : prev.importerName,
+    }));
+    setPendingOrigin(null);
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -291,6 +393,15 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       dispositionPrice: disposed ? dollars(form.dispositionPrice) : null,
       insurancePolicyId: initialValues?.insurancePolicyId ?? null,
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
+      origin: form.origin === "" ? null : form.origin,
+      yearOfManufacture: form.yearOfManufacture === "" ? null : Number(form.yearOfManufacture),
+      countryOfManufacture: blankToNull(form.countryOfManufacture),
+      importerName: blankToNull(form.importerName),
+      // specs/002-firearm-identification User Story 2 adds the fields for
+      // these; the form has nowhere to enter them yet.
+      originalMake: null,
+      originalModel: null,
+      originalSerialNumber: null,
     };
 
     setSubmitting(true);
@@ -309,337 +420,435 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   }
 
   return (
-    <form ref={formRef} className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
-      <div className="hd-dialog__body">
-        {serverError && !serverError.fieldErrors && (
-          <p className="hd-banner hd-banner--error hd-form-banner" role="alert">
-            {serverError.message}
-          </p>
-        )}
+    <>
+      <form ref={formRef} className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
+        <div className="hd-dialog__body">
+          {serverError && !serverError.fieldErrors && (
+            <p className="hd-banner hd-banner--error hd-form-banner" role="alert">
+              {serverError.message}
+            </p>
+          )}
 
-        <section className="hd-form-section" aria-labelledby="ff-identification">
-          <h3 className="hd-form-section__title" id="ff-identification">
-            Identification
-          </h3>
-          <div className="hd-form-grid hd-form-grid--2">
-            <div data-field="make">
-              <TextField
-                label="Make"
-                required
-                value={form.make}
-                onChange={(e) => update("make", e.target.value)}
-                onBlur={touch("make")}
-                error={errorFor("make")}
-                placeholder="e.g. Smith & Wesson"
-                autoFocus={!initialValues}
-              />
-            </div>
-            <div data-field="model">
-              <TextField
-                label="Model"
-                required
-                value={form.model}
-                onChange={(e) => update("model", e.target.value)}
-                onBlur={touch("model")}
-                error={errorFor("model")}
-                placeholder="e.g. Model 29"
-              />
-            </div>
-          </div>
-
-          <div data-field="nickname">
-            <TextField
-              label="Nickname"
-              value={form.nickname}
-              onChange={(e) => update("nickname", e.target.value)}
-              error={errorFor("nickname")}
-              hint="Optional. Tells apart firearms with the same make and model; each active firearm needs its own."
-              placeholder="e.g. Range gun"
-            />
-          </div>
-
-          <div data-field="firearmTypeId">
-            <ChoiceCards
-              label="Type"
-              required
-              value={form.firearmTypeId}
-              onChange={(value) => {
-                update("firearmTypeId", value);
-                touch("firearmTypeId")();
-              }}
-              error={errorFor("firearmTypeId")}
-              minCardWidth={140}
-              options={FIREARM_TYPE_OPTIONS.map((option) => ({
-                value: option.value,
-                label: option.label,
-                art: <TypeDrawing typeKey={option.key} crop />,
-              }))}
-            />
-          </div>
-
-          <div className="hd-form-grid hd-form-grid--2">
-            <div data-field="caliber">
-              <TextField
-                label="Caliber"
-                required
-                value={form.caliber}
-                onChange={(e) => update("caliber", e.target.value)}
-                onBlur={touch("caliber")}
-                error={errorFor("caliber")}
-                placeholder="e.g. .357 Magnum"
-              />
-            </div>
-            <div data-field="serialNumber" className="hd-form-stack">
-              <TextField
-                label="Serial number"
-                required={!form.noSerialAttested}
-                className="hd-serial"
-                value={form.noSerialAttested ? "" : form.serialNumber}
-                onChange={(e) => update("serialNumber", e.target.value)}
-                onBlur={touch("serialNumber")}
-                error={errorFor("serialNumber")}
-                disabled={form.noSerialAttested}
-                placeholder={form.noSerialAttested ? "None" : undefined}
-                spellCheck={false}
-              />
-              <Checkbox
-                label="This firearm has no serial number"
-                hint="Only for firearms not required to have one: made before October 22, 1968, or homemade."
-                checked={form.noSerialAttested}
-                onCheckedChange={(checked) => {
-                  update("noSerialAttested", checked);
-                  touch("serialNumber")();
-                }}
-              />
-            </div>
-          </div>
-        </section>
-
-        <fieldset className="hd-form-section hd-form-fieldset">
-          <legend className="hd-form-section__title">Physical details</legend>
-          <div className="hd-form-grid hd-form-grid--3">
-            <div data-field="barrelLength">
-              <DecimalField
-                label="Barrel length (in)"
-                value={form.barrelLength}
-                onValueChange={(text) => update("barrelLength", text)}
-                onBlur={touch("barrelLength")}
-                error={errorFor("barrelLength")}
-                placeholder="e.g. 4.25"
-              />
-            </div>
-            <div data-field="overallLength">
-              <DecimalField
-                label="Overall length (in)"
-                value={form.overallLength}
-                onValueChange={(text) => update("overallLength", text)}
-                onBlur={touch("overallLength")}
-                error={errorFor("overallLength")}
-                placeholder="e.g. 7.4"
-              />
-            </div>
-            <div className="hd-form-pair">
-              <div data-field="weightPounds">
-                <DecimalField
-                  label="Weight (lb)"
-                  value={form.weightPounds}
-                  onValueChange={(text) => update("weightPounds", text)}
-                  onBlur={touch("weightPounds")}
-                  error={errorFor("weightPounds")}
-                  placeholder="e.g. 6.5"
-                />
-              </div>
-              <div data-field="weightOunces">
-                <DecimalField
-                  label="Weight (oz)"
-                  value={form.weightOunces}
-                  onValueChange={(text) => update("weightOunces", text)}
-                  onBlur={touch("weightOunces")}
-                  error={errorFor("weightOunces")}
-                  placeholder="e.g. 8"
-                />
-              </div>
-              <p className="hd-form-pair__hint">
-                Fill in either or both. Saved to the nearest 0.1 oz.
-              </p>
-            </div>
-            <div data-field="capacity">
-              <TextField
-                label="Capacity"
-                inputMode="numeric"
-                autoComplete="off"
-                value={form.capacity}
-                onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
-                onBlur={touch("capacity")}
-                error={errorFor("capacity")}
-                hint="Rounds in the magazine, cylinder or tube."
-              />
-            </div>
-            <TextField
-              label="Finish"
-              value={form.finish}
-              onChange={(e) => update("finish", e.target.value)}
-              placeholder="e.g. Blued, Cerakote"
-              hint="Searchable."
-            />
-            <Select
-              label="Condition"
-              value={form.condition || NOT_RECORDED}
-              onValueChange={(value) =>
-                update("condition", value === NOT_RECORDED ? "" : (value as Condition))
-              }
-              options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
-            />
-          </div>
-        </fieldset>
-
-        <section className="hd-form-section" aria-labelledby="ff-value">
-          <h3 className="hd-form-section__title" id="ff-value">
-            Value
-          </h3>
-          <div className="hd-form-grid hd-form-grid--2">
-            <div data-field="estimatedValue">
-              <MoneyField
-                label="Estimated replacement value"
-                value={form.estimatedValue}
-                onValueChange={(text) => update("estimatedValue", text)}
-                onBlur={touch("estimatedValue")}
-                error={errorFor("estimatedValue")}
-                hint="What it would cost to replace today. Used to check insurance coverage."
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="hd-form-section" aria-labelledby="ff-acquisition">
-          <h3 className="hd-form-section__title" id="ff-acquisition">
-            Acquisition
-          </h3>
-          <div className="hd-form-grid hd-form-grid--3">
-            <TextField
-              label="Acquired from"
-              value={form.acquisitionSource}
-              onChange={(e) => update("acquisitionSource", e.target.value)}
-              placeholder="Seller, shop, or person"
-            />
-            <div data-field="acquisitionDate">
-              <DateField
-                label="Date acquired"
-                value={form.acquisitionDate}
-                max={todayIso()}
-                onValueChange={(text) => update("acquisitionDate", text)}
-                onBlur={touch("acquisitionDate")}
-                error={errorFor("acquisitionDate")}
-              />
-            </div>
-            <div data-field="acquisitionPrice">
-              <MoneyField
-                label="Price paid"
-                value={form.acquisitionPrice}
-                onValueChange={(text) => update("acquisitionPrice", text)}
-                onBlur={touch("acquisitionPrice")}
-                error={errorFor("acquisitionPrice")}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section
-          className="hd-form-section"
-          aria-labelledby="ff-condition"
-          data-highlight={highlight ?? undefined}
-        >
-          <h3 className="hd-form-section__title" id="ff-condition">
-            Condition and accessories
-          </h3>
-          <div className="hd-form-grid hd-form-grid--2">
-            <TextArea
-              ref={notesRef}
-              label="Notes"
-              value={form.notes}
-              onChange={(e) => update("notes", e.target.value)}
-              hint="Condition, markings, repairs — anything worth recording. All of it is searchable."
-              rows={4}
-            />
-            <TextArea
-              ref={accessoriesRef}
-              label="Accessories"
-              value={form.accessories}
-              onChange={(e) => update("accessories", e.target.value)}
-              hint="e.g. two magazines, original box, holster."
-              rows={4}
-            />
-          </div>
-        </section>
-
-        {disposed && (
-          <section className="hd-form-section" aria-labelledby="ff-disposition">
-            <h3 className="hd-form-section__title" id="ff-disposition">
-              Disposition
+          <section className="hd-form-section" aria-labelledby="ff-identification">
+            <h3 className="hd-form-section__title" id="ff-identification">
+              Identification
             </h3>
             <div className="hd-form-grid hd-form-grid--2">
-              <div data-field="dispositionType">
-                <Select
-                  label="What happened"
-                  required
-                  value={form.dispositionType || undefined}
-                  onValueChange={(value) => update("dispositionType", value as DispositionType)}
-                  options={DISPOSITION_TYPE_OPTIONS}
-                  error={errorFor("dispositionType")}
-                />
-              </div>
-              <div data-field="dispositionRecipient">
+              <div data-field="make">
                 <TextField
-                  label="Transferred to"
+                  label="Make"
                   required
-                  value={form.dispositionRecipient}
-                  onChange={(e) => update("dispositionRecipient", e.target.value)}
-                  onBlur={touch("dispositionRecipient")}
-                  error={errorFor("dispositionRecipient")}
+                  value={form.make}
+                  onChange={(e) => update("make", e.target.value)}
+                  onBlur={touch("make")}
+                  error={errorFor("make")}
+                  placeholder="e.g. Smith & Wesson"
+                  autoFocus={!initialValues}
                 />
               </div>
-              <div data-field="dispositionDate">
-                <DateField
-                  label="Date"
+              <div data-field="model">
+                <TextField
+                  label="Model"
                   required
-                  value={form.dispositionDate}
-                  max={todayIso()}
-                  onValueChange={(text) => update("dispositionDate", text)}
-                  onBlur={touch("dispositionDate")}
-                  error={errorFor("dispositionDate")}
+                  value={form.model}
+                  onChange={(e) => update("model", e.target.value)}
+                  onBlur={touch("model")}
+                  error={errorFor("model")}
+                  placeholder="e.g. Model 29"
                 />
               </div>
-              <div data-field="dispositionPrice">
-                <MoneyField
-                  label="Price received"
+            </div>
+
+            <div data-field="nickname">
+              <TextField
+                label="Nickname"
+                value={form.nickname}
+                onChange={(e) => update("nickname", e.target.value)}
+                error={errorFor("nickname")}
+                hint="Optional. Tells apart firearms with the same make and model; each active firearm needs its own."
+                placeholder="e.g. Range gun"
+              />
+            </div>
+
+            <div data-field="firearmTypeId">
+              <ChoiceCards
+                label="Type"
+                required
+                value={form.firearmTypeId}
+                onChange={(value) => {
+                  update("firearmTypeId", value);
+                  touch("firearmTypeId")();
+                }}
+                error={errorFor("firearmTypeId")}
+                minCardWidth={140}
+                options={FIREARM_TYPE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  art: <TypeDrawing typeKey={option.key} crop />,
+                }))}
+              />
+            </div>
+
+            <div className="hd-form-grid hd-form-grid--origin">
+              <div data-field="origin" className="hd-form-stack">
+                <ChoiceCards
+                  label="Origin"
+                  value={form.origin}
+                  onChange={handleOriginChange}
+                  minCardWidth={150}
+                  options={ORIGIN_OPTIONS}
+                />
+                <Button
+                  ref={originGuideButtonRef}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowOriginGuide(true)}
+                >
+                  How do I record this?
+                </Button>
+                {form.origin === "domestic" && (
+                  <p className="hd-field__hint">
+                    Made in the U.S. but stamped with an importer's name? Choose Re-imported.
+                  </p>
+                )}
+              </div>
+
+              {form.origin === "imported" && (
+                <>
+                  <div data-field="countryOfManufacture">
+                    <TextField
+                      label="Country of manufacture"
+                      value={form.countryOfManufacture}
+                      onChange={(e) => update("countryOfManufacture", e.target.value)}
+                      onBlur={touch("countryOfManufacture")}
+                      error={errorFor("countryOfManufacture")}
+                    />
+                  </div>
+                  <div data-field="importerName">
+                    <TextField
+                      label="Importer"
+                      value={form.importerName}
+                      onChange={(e) => update("importerName", e.target.value)}
+                      onBlur={touch("importerName")}
+                      error={errorFor("importerName")}
+                    />
+                  </div>
+                </>
+              )}
+              {form.origin === "reimported" && (
+                <>
+                  <p className="hd-field hd-static-line" data-field="countryOfManufactureDisplay">
+                    Country of manufacture: United States
+                  </p>
+                  <div data-field="importerName">
+                    <TextField
+                      label="Importer"
+                      value={form.importerName}
+                      onChange={(e) => update("importerName", e.target.value)}
+                      onBlur={touch("importerName")}
+                      error={errorFor("importerName")}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div data-field="yearOfManufacture">
+                <TextField
+                  label="Year of manufacture"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={form.yearOfManufacture}
+                  onChange={(e) =>
+                    update("yearOfManufacture", e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  onBlur={touch("yearOfManufacture")}
+                  error={errorFor("yearOfManufacture")}
+                  hint="A single year, e.g. 1943. Put anything uncertain in Notes."
+                  placeholder="e.g. 1943"
+                />
+              </div>
+            </div>
+
+            <div className="hd-form-grid hd-form-grid--2">
+              <div data-field="caliber">
+                <TextField
+                  label="Caliber"
                   required
-                  value={form.dispositionPrice}
-                  onValueChange={(text) => update("dispositionPrice", text)}
-                  onBlur={touch("dispositionPrice")}
-                  error={errorFor("dispositionPrice")}
+                  value={form.caliber}
+                  onChange={(e) => update("caliber", e.target.value)}
+                  onBlur={touch("caliber")}
+                  error={errorFor("caliber")}
+                  placeholder="e.g. .357 Magnum"
+                />
+              </div>
+              <div data-field="serialNumber" className="hd-form-stack">
+                <TextField
+                  label="Serial number"
+                  required={!form.noSerialAttested}
+                  className="hd-serial"
+                  value={form.noSerialAttested ? "" : form.serialNumber}
+                  onChange={(e) => update("serialNumber", e.target.value)}
+                  onBlur={touch("serialNumber")}
+                  error={errorFor("serialNumber")}
+                  disabled={form.noSerialAttested}
+                  placeholder={form.noSerialAttested ? "None" : undefined}
+                  spellCheck={false}
+                />
+                <Checkbox
+                  label="This firearm has no serial number"
+                  hint="Only for firearms not required to have one: made before October 22, 1968, or homemade."
+                  checked={form.noSerialAttested}
+                  onCheckedChange={(checked) => {
+                    update("noSerialAttested", checked);
+                    touch("serialNumber")();
+                  }}
                 />
               </div>
             </div>
           </section>
-        )}
-      </div>
 
-      <footer className="hd-dialog__footer">
-        <p className="hd-dialog__footer-note">
-          <span aria-hidden className="hd-required-mark">
-            *
-          </span>{" "}
-          Required
-        </p>
-        {onCancel && (
-          <Button variant="secondary" onClick={onCancel} disabled={submitting}>
-            Cancel
+          <fieldset className="hd-form-section hd-form-fieldset">
+            <legend className="hd-form-section__title">Physical details</legend>
+            <div className="hd-form-grid hd-form-grid--3">
+              <div data-field="barrelLength">
+                <DecimalField
+                  label="Barrel length (in)"
+                  value={form.barrelLength}
+                  onValueChange={(text) => update("barrelLength", text)}
+                  onBlur={touch("barrelLength")}
+                  error={errorFor("barrelLength")}
+                  placeholder="e.g. 4.25"
+                />
+              </div>
+              <div data-field="overallLength">
+                <DecimalField
+                  label="Overall length (in)"
+                  value={form.overallLength}
+                  onValueChange={(text) => update("overallLength", text)}
+                  onBlur={touch("overallLength")}
+                  error={errorFor("overallLength")}
+                  placeholder="e.g. 7.4"
+                />
+              </div>
+              <div className="hd-form-pair">
+                <div data-field="weightPounds">
+                  <DecimalField
+                    label="Weight (lb)"
+                    value={form.weightPounds}
+                    onValueChange={(text) => update("weightPounds", text)}
+                    onBlur={touch("weightPounds")}
+                    error={errorFor("weightPounds")}
+                    placeholder="e.g. 6.5"
+                  />
+                </div>
+                <div data-field="weightOunces">
+                  <DecimalField
+                    label="Weight (oz)"
+                    value={form.weightOunces}
+                    onValueChange={(text) => update("weightOunces", text)}
+                    onBlur={touch("weightOunces")}
+                    error={errorFor("weightOunces")}
+                    placeholder="e.g. 8"
+                  />
+                </div>
+                <p className="hd-form-pair__hint">
+                  Fill in either or both. Saved to the nearest 0.1 oz.
+                </p>
+              </div>
+              <div data-field="capacity">
+                <TextField
+                  label="Capacity"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={form.capacity}
+                  onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
+                  onBlur={touch("capacity")}
+                  error={errorFor("capacity")}
+                  hint="Rounds in the magazine, cylinder or tube."
+                />
+              </div>
+              <TextField
+                label="Finish"
+                value={form.finish}
+                onChange={(e) => update("finish", e.target.value)}
+                placeholder="e.g. Blued, Cerakote"
+                hint="Searchable."
+              />
+              <Select
+                label="Condition"
+                value={form.condition || NOT_RECORDED}
+                onValueChange={(value) =>
+                  update("condition", value === NOT_RECORDED ? "" : (value as Condition))
+                }
+                options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
+              />
+            </div>
+          </fieldset>
+
+          <section className="hd-form-section" aria-labelledby="ff-value">
+            <h3 className="hd-form-section__title" id="ff-value">
+              Value
+            </h3>
+            <div className="hd-form-grid hd-form-grid--2">
+              <div data-field="estimatedValue">
+                <MoneyField
+                  label="Estimated replacement value"
+                  value={form.estimatedValue}
+                  onValueChange={(text) => update("estimatedValue", text)}
+                  onBlur={touch("estimatedValue")}
+                  error={errorFor("estimatedValue")}
+                  hint="What it would cost to replace today. Used to check insurance coverage."
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="hd-form-section" aria-labelledby="ff-acquisition">
+            <h3 className="hd-form-section__title" id="ff-acquisition">
+              Acquisition
+            </h3>
+            <div className="hd-form-grid hd-form-grid--3">
+              <TextField
+                label="Acquired from"
+                value={form.acquisitionSource}
+                onChange={(e) => update("acquisitionSource", e.target.value)}
+                placeholder="Seller, shop, or person"
+              />
+              <div data-field="acquisitionDate">
+                <DateField
+                  label="Date acquired"
+                  value={form.acquisitionDate}
+                  max={todayIso()}
+                  onValueChange={(text) => update("acquisitionDate", text)}
+                  onBlur={touch("acquisitionDate")}
+                  error={errorFor("acquisitionDate")}
+                />
+              </div>
+              <div data-field="acquisitionPrice">
+                <MoneyField
+                  label="Price paid"
+                  value={form.acquisitionPrice}
+                  onValueChange={(text) => update("acquisitionPrice", text)}
+                  onBlur={touch("acquisitionPrice")}
+                  error={errorFor("acquisitionPrice")}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="hd-form-section"
+            aria-labelledby="ff-condition"
+            data-highlight={highlight ?? undefined}
+          >
+            <h3 className="hd-form-section__title" id="ff-condition">
+              Condition and accessories
+            </h3>
+            <div className="hd-form-grid hd-form-grid--2">
+              <TextArea
+                ref={notesRef}
+                label="Notes"
+                value={form.notes}
+                onChange={(e) => update("notes", e.target.value)}
+                hint="Condition, markings, repairs — anything worth recording. All of it is searchable."
+                rows={4}
+              />
+              <TextArea
+                ref={accessoriesRef}
+                label="Accessories"
+                value={form.accessories}
+                onChange={(e) => update("accessories", e.target.value)}
+                hint="e.g. two magazines, original box, holster."
+                rows={4}
+              />
+            </div>
+          </section>
+
+          {disposed && (
+            <section className="hd-form-section" aria-labelledby="ff-disposition">
+              <h3 className="hd-form-section__title" id="ff-disposition">
+                Disposition
+              </h3>
+              <div className="hd-form-grid hd-form-grid--2">
+                <div data-field="dispositionType">
+                  <Select
+                    label="What happened"
+                    required
+                    value={form.dispositionType || undefined}
+                    onValueChange={(value) => update("dispositionType", value as DispositionType)}
+                    options={DISPOSITION_TYPE_OPTIONS}
+                    error={errorFor("dispositionType")}
+                  />
+                </div>
+                <div data-field="dispositionRecipient">
+                  <TextField
+                    label="Transferred to"
+                    required
+                    value={form.dispositionRecipient}
+                    onChange={(e) => update("dispositionRecipient", e.target.value)}
+                    onBlur={touch("dispositionRecipient")}
+                    error={errorFor("dispositionRecipient")}
+                  />
+                </div>
+                <div data-field="dispositionDate">
+                  <DateField
+                    label="Date"
+                    required
+                    value={form.dispositionDate}
+                    max={todayIso()}
+                    onValueChange={(text) => update("dispositionDate", text)}
+                    onBlur={touch("dispositionDate")}
+                    error={errorFor("dispositionDate")}
+                  />
+                </div>
+                <div data-field="dispositionPrice">
+                  <MoneyField
+                    label="Price received"
+                    required
+                    value={form.dispositionPrice}
+                    onValueChange={(text) => update("dispositionPrice", text)}
+                    onBlur={touch("dispositionPrice")}
+                    error={errorFor("dispositionPrice")}
+                  />
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+
+        <footer className="hd-dialog__footer">
+          <p className="hd-dialog__footer-note">
+            <span aria-hidden className="hd-required-mark">
+              *
+            </span>{" "}
+            Required
+          </p>
+          {onCancel && (
+            <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+              Cancel
+            </Button>
+          )}
+          <Button type="submit" variant="primary" pending={submitting}>
+            {initialValues ? "Save changes" : "Add firearm"}
           </Button>
-        )}
-        <Button type="submit" variant="primary" pending={submitting}>
-          {initialValues ? "Save changes" : "Add firearm"}
-        </Button>
-      </footer>
-    </form>
+        </footer>
+      </form>
+
+      <OriginGuide open={showOriginGuide} onOpenChange={setShowOriginGuide} />
+
+      <ConfirmDialog
+        open={pendingOrigin !== null}
+        onOpenChange={(open) => !open && setPendingOrigin(null)}
+        title={
+          pendingOrigin?.discard === "country"
+            ? "Discard the country of manufacture?"
+            : "Discard importer and original marks?"
+        }
+        description={pendingOrigin && discardedValuesDescription()}
+        confirmLabel="Discard and change"
+        onConfirm={confirmOriginChange}
+      />
+    </>
   );
 }

@@ -164,3 +164,49 @@ describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17
     expect(screen.queryByRole("region", { name: "Physical details" })).not.toBeInTheDocument();
   });
 });
+
+// specs/002-firearm-identification contracts/ui-identification.md §5, FR-013, US1-3
+describe("FirearmRecordPage identification (US1)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows Origin, Year of manufacture, Country of manufacture and Importer when recorded", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      origin: "imported",
+      yearOfManufacture: 1943,
+      countryOfManufacture: "Belgium",
+      importerName: "Global Arms Import Co.",
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Identification" });
+    expect(within(panel).getByText("Imported")).toBeInTheDocument();
+    expect(within(panel).getByText("1943")).toBeInTheDocument();
+    expect(within(panel).getByText("Belgium")).toBeInTheDocument();
+    expect(within(panel).getByText("Global Arms Import Co.")).toBeInTheDocument();
+  });
+
+  it("shows United States as the country for a re-imported firearm", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      origin: "reimported",
+      importerName: "Century International Arms",
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Identification" });
+    expect(within(panel).getByText("United States")).toBeInTheDocument();
+  });
+
+  it("shows Origin: Not specified and no importer or country row when there is no origin", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Identification" });
+    expect(within(panel).getByText("Not specified")).toBeInTheDocument();
+    expect(within(panel).queryByText("Country of manufacture")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Importer")).not.toBeInTheDocument();
+  });
+});

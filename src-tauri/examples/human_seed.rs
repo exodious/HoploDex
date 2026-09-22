@@ -26,7 +26,9 @@ use hoplodex_lib::commands::firearms::{
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
-use hoplodex_lib::models::firearm::{Condition, DispositionType, FirearmInput, FirearmStatus};
+use hoplodex_lib::models::firearm::{
+    Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
+};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
@@ -604,6 +606,31 @@ pub fn seed(conn: &Connection, extra: usize) {
         insurance_policy_id: Some(policies.expired_rider),
         scheduled_coverage_amount: Some(700),
         ..base("Savage", "110", "S0011223", ".308 Win", RIFLE)
+    });
+
+    // -- specs/002-firearm-identification: origin, year, country, importer --
+
+    add(FirearmInput {
+        notes: text("Bring-back from a relative's WWII service; the importer's stamp is on the barrel band."),
+        estimated_value: Some(1200),
+        acquisition_source: text("Family estate"),
+        acquisition_date: text("2015-08-14"),
+        origin: Some(Origin::Reimported),
+        importer_name: text("Century International Arms"),
+        ..base("Inland", "M1 Carbine", "IN-2245567", ".30 Carbine", RIFLE)
+    });
+
+    add(FirearmInput {
+        notes: text("Purchased new from the importer; original box and paperwork kept."),
+        estimated_value: Some(850),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2022-05-02"),
+        acquisition_price: Some(799),
+        origin: Some(Origin::Imported),
+        year_of_manufacture: Some(1943),
+        country_of_manufacture: text("Belgium"),
+        importer_name: text("Global Arms Import Co."),
+        ..base("FN", "Model 1922", "FN-88431", ".32 ACP", HANDGUN)
     });
 
     // -- Disposed ------------------------------------------------------------

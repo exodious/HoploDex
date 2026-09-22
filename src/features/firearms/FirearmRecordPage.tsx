@@ -23,7 +23,7 @@ import { FirearmForm } from "./FirearmForm";
 import type { FocusField } from "./FirearmForm";
 import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
-import { conditionLabel, dispositionLabel, firearmTypeOption } from "./types";
+import { conditionLabel, dispositionLabel, firearmTypeOption, originLabel } from "./types";
 import type {
   DisposeFirearmInput,
   Firearm,
@@ -246,6 +246,24 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       <div className="hd-record__grid">
         <div className="hd-record__main">
           <PhotoGallery firearm={firearm} onChanged={handleMediaChanged} />
+
+          <section className="hd-panel" aria-labelledby="identification-title">
+            <header className="hd-panel__head">
+              <h2 className="hd-panel__title" id="identification-title">
+                Identification
+              </h2>
+            </header>
+            <dl className="hd-facts">
+              <Fact label="Origin">{originLabel(firearm.origin)}</Fact>
+              {firearm.yearOfManufacture != null && (
+                <Fact label="Year of manufacture">{firearm.yearOfManufacture}</Fact>
+              )}
+              {countryOfManufactureDisplay(firearm) && (
+                <Fact label="Country of manufacture">{countryOfManufactureDisplay(firearm)}</Fact>
+              )}
+              {firearm.importerName && <Fact label="Importer">{firearm.importerName}</Fact>}
+            </dl>
+          </section>
 
           {hasPhysicalDetails(firearm) && (
             <section className="hd-panel" aria-labelledby="physical-title">
@@ -473,6 +491,13 @@ function PlateFigure({
       {original && <img className="hd-plate__photo" src={original} alt="" />}
     </div>
   );
+}
+
+/** specs/002-firearm-identification: the country a re-imported firearm
+ * displays (and searches) is always "United States", never stored
+ * (data-model.md's "Derived display values"). */
+function countryOfManufactureDisplay(firearm: Firearm): string | null {
+  return firearm.origin === "reimported" ? "United States" : firearm.countryOfManufacture;
 }
 
 /** Whether any of FR-039's six optional details is recorded, so a record

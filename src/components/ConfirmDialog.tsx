@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Button } from "./Button";
@@ -42,6 +42,12 @@ export function ConfirmDialog({
   children,
 }: ConfirmDialogProps) {
   const [pending, setPending] = useState(false);
+  // No screen wires its opening button up as a Radix `Trigger`, so Radix's
+  // own focus-restore never fires; this captures and restores it here.
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
+  }, [open]);
 
   function handleConfirm() {
     const result = onConfirm();
@@ -65,6 +71,10 @@ export function ConfirmDialog({
         <RadixDialog.Content
           className="hd-dialog__content hd-dialog__content--sm"
           role="alertdialog"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            previouslyFocused.current?.focus();
+          }}
         >
           <header className="hd-dialog__header">
             <div>

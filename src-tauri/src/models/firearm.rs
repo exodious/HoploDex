@@ -495,7 +495,12 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
     // later than the user's local current year. `checked_measure`'s `>= min`
     // shape doesn't fit an upper bound too, so this is spelled out.
     if let Some(year) = input.year_of_manufacture {
-        let current_year = chrono::Local::now().date_naive().format("%Y").to_string().parse::<i64>().unwrap_or(9999);
+        let current_year = chrono::Local::now()
+            .date_naive()
+            .format("%Y")
+            .to_string()
+            .parse::<i64>()
+            .unwrap_or(9999);
         if year < 1400 || year > current_year {
             errors.insert(
                 "yearOfManufacture".into(),

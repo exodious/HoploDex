@@ -407,6 +407,14 @@ export interface NewFirearm {
   acquisitionDate?: string;
   /** FR-039: free text, searchable. */
   finish?: string;
+  /** specs/002-firearm-identification FR-001. */
+  origin?: "Domestic" | "Imported" | "Re-imported";
+  /** specs/002-firearm-identification FR-003. */
+  yearOfManufacture?: string;
+  /** specs/002-firearm-identification FR-002 (Imported only). */
+  countryOfManufacture?: string;
+  /** specs/002-firearm-identification FR-002 (Imported/Re-imported only). */
+  importerName?: string;
 }
 
 /** A firearm's display name as the app shows it: "Make Model", plus its
@@ -429,6 +437,11 @@ export async function fillFirearmForm(firearm: NewFirearm) {
   if (firearm.acquisitionDate) await fill("Date acquired", firearm.acquisitionDate);
   if (firearm.notes) await fill("Notes", firearm.notes);
   if (firearm.finish) await fill("Finish", firearm.finish);
+  if (firearm.origin) await choose(firearm.origin);
+  if (firearm.countryOfManufacture)
+    await fill("Country of manufacture", firearm.countryOfManufacture);
+  if (firearm.importerName) await fill("Importer", firearm.importerName);
+  if (firearm.yearOfManufacture) await fill("Year of manufacture", firearm.yearOfManufacture);
 }
 
 /** Adds a firearm through the Add firearm dialog, leaving the app on its

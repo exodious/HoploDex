@@ -140,3 +140,96 @@ fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
     ops::delete_firearm(&db.conn, created.id, true).unwrap();
     assert_eq!(search(&db.conn, "Parkerized"), 0, "a deleted firearm is not found");
 }
+
+// specs/002-firearm-identification US1-4 / FR-012: origin, year, importer
+// name and country of manufacture are searchable, and origin searches as
+// its display label.
+
+#[test]
+fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_none() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("ORI-1".into()),
+            origin: Some(Origin::Imported),
+            ..base_input()
+        },
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("ORI-2".into()),
+            origin: Some(Origin::Reimported),
+            ..base_input()
+        },
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("ORI-3".into()),
+            origin: Some(Origin::Domestic),
+            ..base_input()
+        },
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { serial_number: Some("ORI-4".into()), origin: None, ..base_input() },
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "imported"), 2, "finds imported and re-imported");
+    assert_eq!(search(&db.conn, "re-imported"), 1, "finds only re-imported");
+    assert_eq!(search(&db.conn, "domestic"), 1, "finds only domestic");
+}
+
+#[test]
+fn searching_year_importer_and_country_finds_the_firearm() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("SRCH-1".into()),
+            origin: Some(Origin::Imported),
+            year_of_manufacture: Some(1943),
+            country_of_manufacture: Some("Belgium".into()),
+            importer_name: Some("Global Arms Import Co.".into()),
+            ..base_input()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "1943"), 1, "should match year of manufacture");
+    assert_eq!(search(&db.conn, "Global Arms"), 1, "should match importer name");
+    assert_eq!(search(&db.conn, "Belgium"), 1, "should match country of manufacture");
+}
+
+#[test]
+fn searching_country_for_a_reimported_firearm_finds_united_states() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("SRCH-2".into()),
+            origin: Some(Origin::Reimported),
+            importer_name: Some("Century International Arms".into()),
+            ..base_input()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        search(&db.conn, "United States"),
+        1,
+        "a re-imported firearm's country is displayed and searched as United States"
+    );
+}

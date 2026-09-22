@@ -72,10 +72,52 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* specs/002-firearm-identification: the origin control spans the row; its
+   conditional fields (country, importer, year) sit two to a row below it. */
+.hd-form-grid--origin {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hd-form-grid--origin > [data-field="origin"] {
+  grid-column: 1 / -1;
+}
+
 .hd-form-stack {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* A read-only line shown in place of an input (e.g. "Country of
+   manufacture: United States" for a re-imported firearm). */
+.hd-static-line {
+  padding-top: var(--space-2);
+  color: var(--ink);
+}
+
+.hd-origin-guide__disclaimer {
+  font-style: italic;
+  color: var(--ink-2);
+  margin-bottom: var(--space-4);
+}
+
+.hd-origin-guide__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hd-origin-guide__example {
+  border-top: 1px solid var(--rule);
+  padding-top: var(--space-4);
+}
+
+.hd-origin-guide__example-title {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
 }
 
 .hd-form-banner {
@@ -93,7 +135,8 @@
 
 @media (max-width: 700px) {
   .hd-form-grid--2,
-  .hd-form-grid--3 {
+  .hd-form-grid--3,
+  .hd-form-grid--origin {
     grid-template-columns: minmax(0, 1fr);
   }
 }

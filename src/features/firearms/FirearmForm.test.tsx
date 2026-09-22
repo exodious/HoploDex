@@ -486,3 +486,177 @@ describe("FirearmForm focusField (FR-038, US1 Acceptance Scenario 15)", () => {
     expect(screen.getByLabelText("Notes")).not.toHaveFocus();
   });
 });
+
+// specs/002-firearm-identification contracts/ui-identification.md §1-§3
+describe("FirearmForm origin control (US1)", () => {
+  it("offers Domestic/Imported/Re-imported/Not specified with their one-line descriptions", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(
+      screen.getByRole("radio", { name: /^Domestic Made in the U\.S\.$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: /^Imported Made abroad and brought in$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", {
+        name: /^Re-imported Made in the U\.S\., exported, then brought back in$/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: /^Not specified Leave this if you're not sure\.$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts a new record on Not specified", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: /^Not specified/ })).toBeChecked();
+  });
+
+  it("selecting Imported reveals Country of manufacture and Importer, both optional", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+
+    expect(screen.getByLabelText("Country of manufacture")).not.toBeRequired();
+    expect(screen.getByLabelText("Importer")).not.toBeRequired();
+    expect(screen.queryByText("Country of manufacture: United States")).not.toBeInTheDocument();
+  });
+
+  it("selecting Re-imported reveals only Importer plus a read-only United States country line", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Re-imported/ }));
+
+    expect(screen.getByLabelText("Importer")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
+    expect(screen.getByText("Country of manufacture: United States")).toBeInTheDocument();
+  });
+
+  it("shows neither field for Domestic or Not specified", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Importer")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /^Not specified/ }));
+    expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Importer")).not.toBeInTheDocument();
+  });
+
+  it("shows the Domestic cue to consider Re-imported", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(
+      screen.queryByText(
+        "Made in the U.S. but stamped with an importer's name? Choose Re-imported.",
+      ),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    expect(
+      screen.getByText("Made in the U.S. but stamped with an importer's name? Choose Re-imported."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Year of manufacture for every origin and validates a four-digit range", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    const currentYear = new Date().getFullYear();
+    const year = screen.getByLabelText("Year of manufacture");
+    await user.type(year, "43");
+    await user.tab();
+
+    expect(
+      screen.getByText(
+        `Year of manufacture must be a four-digit year from 1400 to ${currentYear}.`,
+      ),
+    ).toBeInTheDocument();
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid year and submits it as a number", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(screen.getByLabelText("Year of manufacture"), "1943");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].yearOfManufacture).toBe(1943);
+  });
+
+  it("asks before discarding importer and country when moving away from an import-marked origin", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.type(screen.getByLabelText("Country of manufacture"), "Belgium");
+    await user.type(screen.getByLabelText("Importer"), "Global Arms Import Co.");
+
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText("Discard importer and original marks?")).toBeInTheDocument();
+    // Cancelling keeps everything, including the origin.
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("radio", { name: /^Imported/ })).toBeChecked();
+    expect(screen.getByLabelText("Country of manufacture")).toHaveValue("Belgium");
+
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    await user.click(screen.getByRole("button", { name: "Discard and change" }));
+    expect(screen.getByRole("radio", { name: /^Domestic/ })).toBeChecked();
+    expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
+  });
+
+  it("asks before discarding only the country when moving from Imported to Re-imported", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.type(screen.getByLabelText("Country of manufacture"), "Belgium");
+    await user.type(screen.getByLabelText("Importer"), "Global Arms Import Co.");
+
+    await user.click(screen.getByRole("radio", { name: /^Re-imported/ }));
+
+    expect(screen.getByText("Discard the country of manufacture?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Discard and change" }));
+
+    expect(screen.getByRole("radio", { name: /^Re-imported/ })).toBeChecked();
+    // Importer carries over.
+    expect(screen.getByLabelText("Importer")).toHaveValue("Global Arms Import Co.");
+  });
+
+  it("does not ask when nothing would be lost", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^Domestic/ })).toBeChecked();
+  });
+
+  it("opens the origin guide from the How do I record this? button", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "How do I record this?" }));
+    expect(
+      screen.getByRole("dialog", { name: "How to record where a firearm came from" }),
+    ).toBeInTheDocument();
+  });
+});
