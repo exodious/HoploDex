@@ -32,12 +32,16 @@ pub enum HistoryChoice {
 
 /// Input for `reverse_disposition`. `nickname` renames the firearm in the
 /// same step, to resolve a FR-031 clash; blank or absent keeps it.
+/// `confirmed_warnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009,
+/// specs/002-firearm-identification research.md §5).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReverseDispositionInput {
     pub history: HistoryChoice,
     #[serde(default)]
     pub nickname: Option<String>,
+    #[serde(default)]
+    pub confirmed_warnings: bool,
 }
 
 /// `get_firearm`'s output: the record plus its retained dispositions,
@@ -62,6 +66,10 @@ pub enum GroupBy {
     Type,
     Caliber,
     Make,
+    /// specs/002-firearm-identification US4-1: groups are returned in the
+    /// fixed order Domestic, Imported, Re-imported, Not specified, not
+    /// sorted alphabetically like the other keys (research.md §10).
+    Origin,
 }
 
 /// Input for the `list_firearms` command (User Story 2), per
@@ -192,30 +200,108 @@ pub mod ops {
     }
 
     /// The active firearm (other than `exclude_id`) with the same make,
-    /// model and serial number, ignoring case and surrounding whitespace.
+    /// model and serial number, ignoring case and surrounding whitespace —
+    /// unless both records carry a year of manufacture and the years differ
+    /// (specs/002-firearm-identification FR-007/FR-008, data-model.md's
+    /// "Identity uniqueness"; amends 001 FR-032).
     pub(crate) fn find_identity_clash(
         conn: &Connection,
         exclude_id: Option<i64>,
         make: &str,
         model: &str,
         serial_number: &str,
+        year_of_manufacture: Option<i64>,
     ) -> Result<Option<i64>, CommandError> {
         conn.query_row(
             "SELECT id FROM firearms
              WHERE status = 'active' AND id IS NOT :exclude
                AND lower(trim(make)) = lower(trim(:make))
                AND lower(trim(model)) = lower(trim(:model))
-               AND lower(trim(serial_number)) = lower(trim(:serial))",
+               AND lower(trim(serial_number)) = lower(trim(:serial))
+               AND NOT (
+                   :year IS NOT NULL AND year_of_manufacture IS NOT NULL
+                   AND year_of_manufacture <> :year
+               )",
             named_params! {
                 ":exclude": exclude_id,
                 ":make": make,
                 ":model": model,
                 ":serial": serial_number,
+                ":year": year_of_manufacture,
             },
             |row| row.get(0),
         )
         .optional()
         .map_err(CommandError::from_db)
+    }
+
+    /// The other active firearm (other than `exclude_id`) whose original
+    /// maker, model and serial number all match this record's, ignoring
+    /// case and surrounding whitespace. `None` when any of the three is
+    /// absent here (a partial set never warns) or there is no match
+    /// (specs/002-firearm-identification FR-009, data-model.md's
+    /// "Original-marks warning"). Served by `idx_firearms_original_serial`
+    /// (research.md §5) so it stays cheap at 10,000 records.
+    pub(crate) fn original_marks_clash(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        original_make: Option<&str>,
+        original_model: Option<&str>,
+        original_serial_number: Option<&str>,
+    ) -> Result<Option<i64>, CommandError> {
+        let (Some(make), Some(model), Some(serial)) =
+            (original_make, original_model, original_serial_number)
+        else {
+            return Ok(None);
+        };
+        conn.query_row(
+            "SELECT id FROM firearms
+             WHERE status = 'active' AND id IS NOT :exclude
+               AND original_serial_number = :serial COLLATE NOCASE
+               AND lower(trim(original_make)) = lower(trim(:make))
+               AND lower(trim(original_model)) = lower(trim(:model))",
+            named_params! {
+                ":exclude": exclude_id,
+                ":make": make,
+                ":model": model,
+                ":serial": serial,
+            },
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(CommandError::from_db)
+    }
+
+    /// FR-009's non-blocking warning: stopped with `ORIGINAL_MARKS_MATCH`
+    /// until the caller resends with `confirmed_warnings: true`. Never
+    /// checked for a record that isn't active (a disposed save never
+    /// matters here) or once confirmed. `dispose_firearm` and
+    /// `assign_firearm_coverage` pass `confirmed_warnings: true` from their
+    /// internal saves, since neither changes anything identifying
+    /// (research.md §5).
+    fn check_original_marks_warning(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        input: &FirearmInput,
+        confirmed_warnings: bool,
+    ) -> Result<(), CommandError> {
+        if confirmed_warnings || input.status != FirearmStatus::Active {
+            return Ok(());
+        }
+        if let Some(other_id) = original_marks_clash(
+            conn,
+            exclude_id,
+            input.original_make.as_deref(),
+            input.original_model.as_deref(),
+            input.original_serial_number.as_deref(),
+        )? {
+            let other = describe_firearm(conn, other_id)?;
+            return Err(CommandError::new(
+                "ORIGINAL_MARKS_MATCH",
+                format!("{other} already has these original maker's marks."),
+            ));
+        }
+        Ok(())
     }
 
     /// FR-031 and FR-032, against the other active firearms. A disposed
@@ -242,15 +328,22 @@ pub mod ops {
         }
 
         if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty()) {
-            if let Some(other_id) =
-                find_identity_clash(conn, exclude_id, &input.make, &input.model, serial)?
-            {
+            if let Some(other_id) = find_identity_clash(
+                conn,
+                exclude_id,
+                &input.make,
+                &input.model,
+                serial,
+                input.year_of_manufacture,
+            )? {
                 let other = describe_firearm(conn, other_id)?;
                 errors.insert(
                     "serialNumber".to_string(),
                     format!(
                         "{other} already has this make, model and serial number. \
-                         Change one of them, or dispose of or delete the other record."
+                         Change one of them, or dispose of or delete the other record. \
+                         Or record a year of manufacture on each firearm: two firearms with the \
+                         same marks are accepted when both have a year and the years differ."
                     ),
                 );
             }
@@ -276,10 +369,12 @@ pub mod ops {
     pub fn create_firearm(
         conn: &Connection,
         input: &FirearmInput,
+        confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input)?;
         check_uniqueness(conn, None, input)?;
+        check_original_marks_warning(conn, None, input, confirmed_warnings)?;
         conn.execute(
             "INSERT INTO firearms (
                 make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
@@ -349,10 +444,12 @@ pub mod ops {
         conn: &Connection,
         id: i64,
         input: &FirearmInput,
+        confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input)?;
         check_uniqueness(conn, Some(id), input)?;
+        check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
         let updated = conn
             .execute(
                 "UPDATE firearms SET
@@ -452,7 +549,9 @@ pub mod ops {
             ..FirearmInput::from(&current)
         };
 
-        update_firearm(conn, id, &updated_input)
+        // Leaving active status behind, so FR-009 never applies here
+        // (research.md §5); `confirmed_warnings: true` skips the check.
+        update_firearm(conn, id, &updated_input, true)
     }
 
     pub fn get_firearm_detail(conn: &Connection, id: i64) -> Result<FirearmDetail, CommandError> {
@@ -531,7 +630,7 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
         }
-        let restored = update_firearm(conn, id, &restored)?;
+        let restored = update_firearm(conn, id, &restored, input.confirmed_warnings)?;
         tx.commit().map_err(CommandError::from_db)?;
         Ok(restored)
     }
@@ -635,6 +734,10 @@ pub mod ops {
                     Some(GroupBy::Type) => firearm_type_name.clone(),
                     Some(GroupBy::Caliber) => firearm.caliber.clone(),
                     Some(GroupBy::Make) => firearm.make.clone(),
+                    Some(GroupBy::Origin) => firearm
+                        .origin
+                        .map(|o| o.label().to_string())
+                        .unwrap_or_else(|| "Not specified".to_string()),
                     None => "All".to_string(),
                 },
                 FirearmSummary {
@@ -663,7 +766,19 @@ pub mod ops {
                 None => groups.push(FirearmGroup { key, firearms: vec![summary] }),
             }
         }
-        groups.sort_by(|a, b| a.key.cmp(&b.key));
+        if input.group_by == Some(GroupBy::Origin) {
+            // specs/002-firearm-identification US4-1/research.md §10: a
+            // fixed order, not alphabetical, so "Not specified" is always
+            // last rather than sorting between "Imported" and
+            // "Re-imported".
+            const ORIGIN_ORDER: [&str; 4] =
+                ["Domestic", "Imported", "Re-imported", "Not specified"];
+            groups.sort_by_key(|g| {
+                ORIGIN_ORDER.iter().position(|o| *o == g.key).unwrap_or(ORIGIN_ORDER.len())
+            });
+        } else {
+            groups.sort_by(|a, b| a.key.cmp(&b.key));
+        }
 
         Ok(ListFirearmsOutput { groups })
     }
@@ -672,20 +787,22 @@ pub mod ops {
 #[tauri::command]
 pub async fn create_firearm(
     input: FirearmInput,
+    confirmed_warnings: Option<bool>,
     state: State<'_, DbHandle>,
 ) -> Result<Firearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::create_firearm(&conn, &input)
+    ops::create_firearm(&conn, &input, confirmed_warnings.unwrap_or(false))
 }
 
 #[tauri::command]
 pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
+    confirmed_warnings: Option<bool>,
     state: State<'_, DbHandle>,
 ) -> Result<Firearm, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
-    ops::update_firearm(&conn, id, &input)
+    ops::update_firearm(&conn, id, &input, confirmed_warnings.unwrap_or(false))
 }
 
 #[tauri::command]

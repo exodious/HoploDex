@@ -26,7 +26,7 @@ fn dispose(db: &TestDb, id: i64, recipient: &str, date: &str) {
 }
 
 fn reverse(history: HistoryChoice) -> ReverseDispositionInput {
-    ReverseDispositionInput { history, nickname: None }
+    ReverseDispositionInput { history, nickname: None, confirmed_warnings: false }
 }
 
 fn history_count(db: &TestDb, id: i64) -> i64 {
@@ -44,7 +44,7 @@ fn message(err: &CommandError) -> String {
 #[test]
 fn keeping_the_history_restores_the_firearm_and_retains_the_disposition() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1"), false).unwrap();
     dispose(&db, created.id, "Jane Doe", "2025-06-15");
 
     let restored = ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep))
@@ -69,7 +69,7 @@ fn keeping_the_history_restores_the_firearm_and_retains_the_disposition() {
 #[test]
 fn discarding_restores_the_firearm_and_stores_nothing() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1"), false).unwrap();
     dispose(&db, created.id, "Jane Doe", "2025-06-15");
 
     let restored =
@@ -84,7 +84,7 @@ fn discarding_restores_the_firearm_and_stores_nothing() {
 #[test]
 fn only_a_disposed_firearm_can_be_reversed() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1"), false).unwrap();
 
     let err = ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep))
         .expect_err("an active firearm has no disposition to reverse");
@@ -102,6 +102,7 @@ fn a_reversal_that_clashes_on_nickname_is_blocked_naming_the_record_and_changes_
     let original = ops::create_firearm(
         &db.conn,
         &FirearmInput { nickname: Some("Old Faithful".into()), ..firearm("Glock", "19", "A1") },
+        false,
     )
     .unwrap();
     dispose(&db, original.id, "Jane Doe", "2025-06-15");
@@ -109,6 +110,7 @@ fn a_reversal_that_clashes_on_nickname_is_blocked_naming_the_record_and_changes_
     ops::create_firearm(
         &db.conn,
         &FirearmInput { nickname: Some("old faithful".into()), ..firearm("Sig", "P226", "S1") },
+        false,
     )
     .unwrap();
 
@@ -129,12 +131,14 @@ fn a_reversal_can_rename_to_resolve_a_nickname_clash_in_the_same_step() {
     let original = ops::create_firearm(
         &db.conn,
         &FirearmInput { nickname: Some("Old Faithful".into()), ..firearm("Glock", "19", "A1") },
+        false,
     )
     .unwrap();
     dispose(&db, original.id, "Jane Doe", "2025-06-15");
     ops::create_firearm(
         &db.conn,
         &FirearmInput { nickname: Some("Old Faithful".into()), ..firearm("Sig", "P226", "S1") },
+        false,
     )
     .unwrap();
 
@@ -144,6 +148,7 @@ fn a_reversal_can_rename_to_resolve_a_nickname_clash_in_the_same_step() {
         &ReverseDispositionInput {
             history: HistoryChoice::Keep,
             nickname: Some("  Old Faithful II ".into()),
+            confirmed_warnings: false,
         },
     )
     .unwrap();
@@ -156,10 +161,10 @@ fn a_reversal_can_rename_to_resolve_a_nickname_clash_in_the_same_step() {
 #[test]
 fn a_reversal_that_clashes_on_make_model_serial_is_blocked_and_changes_nothing() {
     let db = TestDb::new();
-    let original = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123")).unwrap();
+    let original = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
     dispose(&db, original.id, "Jane Doe", "2025-06-15");
     // Reacquired as a new record while the old one stayed disposed.
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123")).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
 
     let err = ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Discard))
         .expect_err("two active Glock 19 ABC123 would break FR-032");
@@ -177,9 +182,9 @@ fn a_firearm_with_no_serial_number_is_restored_without_being_compared() {
         no_serial_attested: true,
         ..firearm("Colt", "1911", "")
     };
-    let original = ops::create_firearm(&db.conn, &no_serial).unwrap();
+    let original = ops::create_firearm(&db.conn, &no_serial, false).unwrap();
     dispose(&db, original.id, "Jane Doe", "2025-06-15");
-    ops::create_firearm(&db.conn, &firearm("Colt", "1911", "12345")).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Colt", "1911", "12345"), false).unwrap();
 
     let restored =
         ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Keep)).unwrap();
@@ -190,7 +195,7 @@ fn a_firearm_with_no_serial_number_is_restored_without_being_compared() {
 #[test]
 fn repeated_dispose_and_restore_accumulates_history_newest_first() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1"), false).unwrap();
 
     dispose(&db, created.id, "First Buyer", "2024-01-10");
     ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep)).unwrap();
@@ -205,7 +210,7 @@ fn repeated_dispose_and_restore_accumulates_history_newest_first() {
 #[test]
 fn retained_history_is_removed_with_the_firearm() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1"), false).unwrap();
     dispose(&db, created.id, "Jane Doe", "2025-06-15");
     ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep)).unwrap();
     assert_eq!(history_count(&db, created.id), 1);
@@ -213,6 +218,87 @@ fn retained_history_is_removed_with_the_firearm() {
     ops::delete_firearm(&db.conn, created.id, true).unwrap();
 
     assert_eq!(history_count(&db, created.id), 0, "deleting a firearm really deletes its history");
+}
+
+// specs/002-firearm-identification User Story 3: the year-of-manufacture
+// identity exception and the FR-009 warning apply to a restored firearm too
+// (FR-008, FR-009), inside the same reversal transaction.
+
+#[test]
+fn restoring_into_an_identity_clash_undistinguished_by_year_is_blocked_and_changes_nothing() {
+    // US3-4b
+    let db = TestDb::new();
+    let original = ops::create_firearm(
+        &db.conn,
+        &FirearmInput { year_of_manufacture: Some(1943), ..firearm("Colt", "1873", "SAA-1") },
+        false,
+    )
+    .unwrap();
+    dispose(&db, original.id, "Jane Doe", "2025-06-15");
+    // Reacquired with the same year, so nothing distinguishes them.
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { year_of_manufacture: Some(1943), ..firearm("Colt", "1873", "SAA-1") },
+        false,
+    )
+    .unwrap();
+
+    let err = ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Keep))
+        .expect_err("undistinguished by year, the restore must be blocked (FR-008)");
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(message(&err).to_lowercase().contains("year of manufacture"), "{}", message(&err));
+    assert_eq!(ops::get_firearm(&db.conn, original.id).unwrap().status, FirearmStatus::Disposed);
+    assert_eq!(history_count(&db, original.id), 0, "the kept-history row was rolled back too");
+}
+
+#[test]
+fn restoring_into_an_original_marks_match_warns_and_only_proceeds_when_confirmed() {
+    // US3-9
+    let db = TestDb::new();
+    let original = ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            origin: Some(hoplodex_lib::models::firearm::Origin::Imported),
+            original_make: Some("FN".into()),
+            original_model: Some("High Power".into()),
+            original_serial_number: Some("FN-1".into()),
+            ..firearm("Ridgeline Arms", "Hi-Power", "RA-1")
+        },
+        false,
+    )
+    .unwrap();
+    dispose(&db, original.id, "Jane Doe", "2025-06-15");
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            origin: Some(hoplodex_lib::models::firearm::Origin::Imported),
+            original_make: Some("FN".into()),
+            original_model: Some("High Power".into()),
+            original_serial_number: Some("FN-1".into()),
+            ..firearm("Century Arms", "Clone", "CA-1")
+        },
+        false,
+    )
+    .unwrap();
+
+    let err = ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Keep))
+        .expect_err("the restored record's original marks match an active firearm's");
+    assert_eq!(err.code, "ORIGINAL_MARKS_MATCH");
+    assert_eq!(ops::get_firearm(&db.conn, original.id).unwrap().status, FirearmStatus::Disposed);
+    assert_eq!(history_count(&db, original.id), 0, "nothing committed until confirmed");
+
+    let confirmed = ops::reverse_disposition(
+        &db.conn,
+        original.id,
+        &ReverseDispositionInput {
+            history: HistoryChoice::Keep,
+            nickname: None,
+            confirmed_warnings: true,
+        },
+    )
+    .expect("confirmed_warnings: true lets the restore proceed");
+    assert_eq!(confirmed.status, FirearmStatus::Active);
+    assert_eq!(history_count(&db, original.id), 1);
 }
 
 #[test]

@@ -296,7 +296,7 @@ pub fn seed(conn: &Connection, extra: usize) {
 
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
-        must(firearm_ops::create_firearm(conn, &input), &label).id
+        must(firearm_ops::create_firearm(conn, &input, false), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
         let input = DisposeFirearmInput {
@@ -508,7 +508,11 @@ pub fn seed(conn: &Connection, extra: usize) {
         firearm_ops::reverse_disposition(
             conn,
             p320,
-            &ReverseDispositionInput { history: HistoryChoice::Keep, nickname: None },
+            &ReverseDispositionInput {
+                history: HistoryChoice::Keep,
+                nickname: None,
+                confirmed_warnings: false,
+            },
         ),
         "reversing a disposition",
     );
@@ -517,7 +521,11 @@ pub fn seed(conn: &Connection, extra: usize) {
         firearm_ops::reverse_disposition(
             conn,
             p320,
-            &ReverseDispositionInput { history: HistoryChoice::Keep, nickname: None },
+            &ReverseDispositionInput {
+                history: HistoryChoice::Keep,
+                nickname: None,
+                confirmed_warnings: false,
+            },
         ),
         "reversing a disposition",
     );
@@ -668,6 +676,78 @@ pub fn seed(conn: &Connection, extra: usize) {
         importer_name: text("Global Arms Import Co."),
         ..base("Beretta", "92FS", "BER556213", "9mm", HANDGUN)
     });
+
+    // A domestic firearm, so every `origin` value appears in the seed
+    // (human_seed_coverage_test's CHECK-value sweep).
+    add(FirearmInput {
+        notes: text("Made in the U.S.A.; no import paperwork involved."),
+        estimated_value: Some(600),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2019-06-01"),
+        acquisition_price: Some(560),
+        origin: Some(Origin::Domestic),
+        ..base("Ruger", "GP100", "RU-100234", ".357 Magnum", HANDGUN)
+    });
+
+    // -- specs/002-firearm-identification User Story 3: identity's year
+    // exception and the original-marks warning --
+
+    // Two pre-1968 revolvers whose maker restarted serial numbering: FR-008
+    // accepts the pair because each carries a year of manufacture and the
+    // years differ (contracts/ui-identification.md §8 example 6).
+    add(FirearmInput {
+        notes: text("Maker restarted its serial range that year; see the paired 1962 example."),
+        estimated_value: Some(450),
+        acquisition_source: text("Estate sale"),
+        acquisition_date: text("2016-05-20"),
+        origin: Some(Origin::Domestic),
+        year_of_manufacture: Some(1955),
+        ..base("Smith & Wesson", "Model 10", "S-100", ".38 Special", HANDGUN)
+    });
+    add(FirearmInput {
+        notes: text("Same make, model and serial as the 1955 example; the year tells them apart."),
+        estimated_value: Some(470),
+        acquisition_source: text("Gun show"),
+        acquisition_date: text("2018-09-08"),
+        origin: Some(Origin::Domestic),
+        year_of_manufacture: Some(1962),
+        ..base("Smith & Wesson", "Model 10", "S-100", ".38 Special", HANDGUN)
+    });
+
+    // A matching original-marks pair, so the FR-009 warning is visible when
+    // editing either one: both carry the same original maker, model and
+    // serial number despite different main marks. Seeded with
+    // `confirmed_warnings: true` since the warning would otherwise block the
+    // second insert (research.md §5).
+    let original_marks_first = FirearmInput {
+        notes: text("Original-marks warning demo, firearm 1 of 2 (edit either to see it)."),
+        estimated_value: Some(700),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2021-11-02"),
+        origin: Some(Origin::Imported),
+        country_of_manufacture: text("Belgium"),
+        original_make: text("Fabrique Nationale"),
+        original_model: text("High Power"),
+        original_serial_number: text("FN-70044"),
+        ..base("Ridgeline Arms", "Imported Hi-Power A", "RA-90001", "9mm", HANDGUN)
+    };
+    must(firearm_ops::create_firearm(conn, &original_marks_first, false), "original-marks demo 1");
+    let original_marks_second = FirearmInput {
+        notes: text("Original-marks warning demo, firearm 2 of 2 (shares firearm 1's original marks)."),
+        estimated_value: Some(710),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2021-11-09"),
+        origin: Some(Origin::Imported),
+        country_of_manufacture: text("Belgium"),
+        original_make: text("Fabrique Nationale"),
+        original_model: text("High Power"),
+        original_serial_number: text("FN-70044"),
+        ..base("Ridgeline Arms", "Imported Hi-Power B", "RA-90002", "9mm", HANDGUN)
+    };
+    must(
+        firearm_ops::create_firearm(conn, &original_marks_second, true),
+        "original-marks demo 2",
+    );
 
     // -- Disposed ------------------------------------------------------------
 

@@ -131,8 +131,8 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     setDialog("edit");
   }
 
-  async function handleUpdate(input: FirearmInput) {
-    const updated = await firearmsService.updateFirearm(id, input);
+  async function handleUpdate(input: FirearmInput, confirmedWarnings?: boolean) {
+    const updated = await firearmsService.updateFirearm(id, input, confirmedWarnings);
     await afterChange(updated, `Saved changes to ${firearmName(updated)}.`);
   }
 

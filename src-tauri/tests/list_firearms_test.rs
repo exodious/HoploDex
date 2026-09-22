@@ -49,8 +49,8 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
 #[test]
 fn scenario_1_list_and_tile_views_return_the_same_data() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let list_view = ops::list_firearms(
         &db.conn,
@@ -70,9 +70,9 @@ fn scenario_1_list_and_tile_views_return_the_same_data() {
 #[test]
 fn scenario_2_group_by_type_buckets_firearms_correctly() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(
         &db.conn,
@@ -91,8 +91,8 @@ fn scenario_3_search_matches_free_form_notes_only() {
     let db = TestDb::new();
     let mut noted = firearm("Glock", "19", "9mm", 1);
     noted.notes = Some("cracked handle".into());
-    ops::create_firearm(&db.conn, &noted).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &noted, false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(
         &db.conn,
@@ -108,9 +108,9 @@ fn scenario_3_search_matches_free_form_notes_only() {
 #[test]
 fn scenario_4_search_a_shared_caliber_returns_all_matches() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(
         &db.conn,
@@ -125,8 +125,8 @@ fn scenario_4_search_a_shared_caliber_returns_all_matches() {
 #[test]
 fn scenario_5_clearing_search_and_group_shows_the_full_collection() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
 
@@ -137,7 +137,7 @@ fn scenario_5_clearing_search_and_group_shows_the_full_collection() {
 #[test]
 fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
     ops::dispose_firearm(
         &db.conn,
         created.id,
@@ -149,7 +149,7 @@ fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
         },
     )
     .unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let default_result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
     let default_all: Vec<_> = default_result.groups.iter().flat_map(|g| &g.firearms).collect();
@@ -192,12 +192,12 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     covered.serial_number = Some("AAA111".into());
     covered.insurance_policy_id = Some(policy.id);
     covered.scheduled_coverage_amount = Some(60_000);
-    ops::create_firearm(&db.conn, &covered).unwrap();
+    ops::create_firearm(&db.conn, &covered, false).unwrap();
 
     let mut twin = firearm("Glock", "19", "9mm", 1);
     twin.serial_number = None;
     twin.no_serial_attested = true;
-    ops::create_firearm(&db.conn, &twin).unwrap();
+    ops::create_firearm(&db.conn, &twin, false).unwrap();
 
     let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
     let summaries = &result.groups[0].firearms;

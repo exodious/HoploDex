@@ -110,11 +110,68 @@ CREATE UNIQUE INDEX idx_firearms_active_nickname
 
 -- FR-032: make + model + serial number is unique among active firearms (a
 -- disposed one may be reacquired as a new record; a record with no serial
--- number is never compared). Backstop for the check in the command layer,
--- which also trims surrounding whitespace.
-CREATE UNIQUE INDEX idx_firearms_active_identity
+-- number is never compared). specs/002-firearm-identification FR-007/FR-008
+-- adds a year-of-manufacture exception a UNIQUE index cannot express (a pair
+-- is allowed only when both years exist and differ, and SQLite treats NULLs
+-- as distinct, which would wrongly allow two null-year records). So this is
+-- now a plain lookup index — the triggers below are the real backstop — kept
+-- for the identity queries in the command layer, which also trim whitespace.
+CREATE INDEX idx_firearms_active_identity
     ON firearms (make COLLATE NOCASE, model COLLATE NOCASE, serial_number COLLATE NOCASE)
     WHERE status = 'active' AND serial_number IS NOT NULL;
+
+-- specs/002-firearm-identification FR-007/FR-008 (data-model.md's "Indexes
+-- and triggers"; amends 001's unique index above): the exact backstop for
+-- the identity rule, since a unique index can no longer express the year
+-- exception. Expected never to fire in normal use because the command layer
+-- (`find_identity_clash`) checks first; reaching it means a bug bypassed
+-- that layer (raw INSERT/UPDATE, e.g.), so `from_db` maps the raised ABORT
+-- to INTERNAL_ERROR.
+-- No `id <> NEW.id` here (unlike the UPDATE trigger below): a fresh INSERT's
+-- row is new to the table and `NEW.id` may still be NULL (rowid not yet
+-- assigned) at BEFORE INSERT time, when a NULL-vs-existing-id comparison
+-- would silently exclude every row from the match.
+CREATE TRIGGER firearms_active_identity_insert BEFORE INSERT ON firearms
+WHEN NEW.status = 'active' AND NEW.serial_number IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'active firearm with the same make, model and serial number exists')
+    WHERE EXISTS (
+        SELECT 1 FROM firearms
+        WHERE status = 'active'
+          AND make COLLATE NOCASE = NEW.make
+          AND model COLLATE NOCASE = NEW.model
+          AND serial_number COLLATE NOCASE = NEW.serial_number
+          AND NOT (
+              NEW.year_of_manufacture IS NOT NULL AND year_of_manufacture IS NOT NULL
+              AND year_of_manufacture <> NEW.year_of_manufacture
+          )
+    );
+END;
+
+CREATE TRIGGER firearms_active_identity_update BEFORE UPDATE ON firearms
+WHEN NEW.status = 'active' AND NEW.serial_number IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'active firearm with the same make, model and serial number exists')
+    WHERE EXISTS (
+        SELECT 1 FROM firearms
+        WHERE id <> NEW.id
+          AND status = 'active'
+          AND make COLLATE NOCASE = NEW.make
+          AND model COLLATE NOCASE = NEW.model
+          AND serial_number COLLATE NOCASE = NEW.serial_number
+          AND NOT (
+              NEW.year_of_manufacture IS NOT NULL AND year_of_manufacture IS NOT NULL
+              AND year_of_manufacture <> NEW.year_of_manufacture
+          )
+    );
+END;
+
+-- specs/002-firearm-identification FR-009 (data-model.md's "Indexes and
+-- triggers"): serves the original-marks warning lookup. Non-unique: the
+-- warning never blocks.
+CREATE INDEX idx_firearms_original_serial
+    ON firearms (original_serial_number COLLATE NOCASE)
+    WHERE status = 'active' AND original_serial_number IS NOT NULL;
 
 CREATE TABLE photos (
     id INTEGER PRIMARY KEY,

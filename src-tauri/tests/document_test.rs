@@ -52,7 +52,7 @@ const SAMPLE_PDF_BYTES: &[u8] = b"%PDF-1.4 sample receipt contents";
 #[test]
 fn scenario_4_attaches_and_reopens_a_document() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
 
     let attached = document_ops::add_document(
         &db.conn,
@@ -72,7 +72,7 @@ fn scenario_4_attaches_and_reopens_a_document() {
 #[test]
 fn deletes_a_document_only_when_confirmed() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let attached = document_ops::add_document(
         &db.conn,
         firearm.id,
@@ -93,7 +93,7 @@ fn deletes_a_document_only_when_confirmed() {
 #[test]
 fn lists_every_document_for_a_firearm() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     document_ops::add_document(&db.conn, firearm.id, SAMPLE_PDF_BYTES, "a.pdf", "application/pdf")
         .unwrap();
     document_ops::add_document(&db.conn, firearm.id, SAMPLE_PDF_BYTES, "b.pdf", "application/pdf")
@@ -109,7 +109,7 @@ fn lists_every_document_for_a_firearm() {
 #[test]
 fn writes_a_temporary_copy_under_a_safe_filename() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::TempDir::new().unwrap();
 
     let attached = document_ops::add_document(
@@ -145,7 +145,7 @@ fn writes_a_temporary_copy_under_a_safe_filename() {
 #[test]
 fn attaches_a_document_dropped_as_a_file_path() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Appraisal 2026.pdf");
     std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
@@ -160,7 +160,7 @@ fn attaches_a_document_dropped_as_a_file_path() {
 #[test]
 fn a_dropped_folder_is_not_attached() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
     let err = document_ops::add_document_from_path(&db.conn, firearm.id, dir.path())
@@ -177,7 +177,7 @@ fn a_dropped_folder_is_not_attached() {
 #[test]
 fn clearing_opened_documents_overwrites_then_removes_each_copy() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let scratch = tempfile::TempDir::new().unwrap();
     let opened = scratch.path().join("opened-documents");
 

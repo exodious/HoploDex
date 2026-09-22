@@ -29,7 +29,7 @@ fn blanket(db: &TestDb, name: &str, start: &str, end: &str) -> i64 {
 }
 
 fn schedule(db: &TestDb, make: &str, policy_id: i64, amount: i64) -> i64 {
-    let f = firearm_ops::create_firearm(&db.conn, &valued(make, 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued(make, 50_000), false).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(policy_id), Some(amount)).unwrap();
     f.id
 }
@@ -63,6 +63,7 @@ fn the_impact_lists_what_the_dialog_needs_before_anything_changes() {
     let f = firearm_ops::create_firearm(
         &db.conn,
         &FirearmInput { nickname: Some("Range gun".into()), ..valued("Colt", 50_000) },
+        false,
     )
     .unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(doomed), Some(40_000)).unwrap();
@@ -99,8 +100,8 @@ fn the_impact_says_where_unscheduled_firearms_would_land() {
 fn scenario_15_deleting_the_blanket_policy_in_force_reports_how_many_lose_its_coverage() {
     let db = TestDb::new();
     let current = blanket(&db, "Current blanket", LONG_AGO, FAR_FUTURE);
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000)).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000), false).unwrap();
     let scheduled_elsewhere = rider(&db, "Rider", FAR_FUTURE);
     schedule(&db, "Ruger", scheduled_elsewhere, 50_000);
 
@@ -118,7 +119,7 @@ fn scenario_15_deleting_the_blanket_policy_in_force_reports_how_many_lose_its_co
 fn a_blanket_policy_that_is_not_in_force_takes_no_coverage_with_it() {
     let db = TestDb::new();
     let old = blanket(&db, "Old blanket", "2000-01-01", SOON_PAST);
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
 
     let impact = insurance_ops::get_policy_deletion_impact(&db.conn, old).unwrap();
 
@@ -288,7 +289,7 @@ fn unscheduled_firearms_are_uninsured_when_no_blanket_policy_is_in_force() {
 fn deleting_the_blanket_policy_in_force_leaves_the_unscheduled_firearms_uninsured() {
     let db = TestDb::new();
     let current = blanket(&db, "Current", LONG_AGO, FAR_FUTURE);
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap().id;
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap().id;
     assert_eq!(warning(&db, f), InsuranceWarning::None);
 
     insurance_ops::delete_policy(&db.conn, current, true, None).unwrap();

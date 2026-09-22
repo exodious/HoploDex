@@ -84,6 +84,8 @@ export interface ReverseDispositionInput {
   history: HistoryChoice;
   /** Renames the firearm in the same step, to resolve a nickname clash. */
   nickname?: string;
+  /** Resends after an `ORIGINAL_MARKS_MATCH` warning (FR-009). */
+  confirmedWarnings?: boolean;
 }
 
 /** All `Firearm` fields except `id`, `createdAt`, `updatedAt`, `thumbnailPhotoId`. */

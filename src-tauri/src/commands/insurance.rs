@@ -428,7 +428,9 @@ pub mod ops {
             scheduled_coverage_amount: policy_id.and(scheduled_coverage_amount),
             ..crate::models::firearm::FirearmInput::from(&current)
         };
-        firearms::ops::update_firearm(conn, firearm_id, &input)
+        // Never touches an identifying field, so FR-009's warning never
+        // applies here (research.md §5); `confirmed_warnings: true` skips it.
+        firearms::ops::update_firearm(conn, firearm_id, &input, true)
     }
 
     pub fn get_value_summary(conn: &Connection) -> Result<ValueSummary, CommandError> {

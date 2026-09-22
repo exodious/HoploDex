@@ -55,8 +55,8 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
 
-    let f1 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock")).unwrap();
-    let f2 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig")).unwrap();
+    let f1 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
+    let f2 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false).unwrap();
     hoplodex_lib::commands::photos::ops::add_photo(
         &db.conn,
         f1.id,
@@ -100,7 +100,7 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
 fn exports_as_xlsx_when_requested() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
-    let f1 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock")).unwrap();
+    let f1 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
 
     let result = import_export_ops::export_collection(
         &db.conn,
@@ -136,6 +136,7 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
             condition: Some(Condition::LikeNew),
             ..firearm_with_photo("Glock")
         },
+        false,
     )
     .unwrap();
 
@@ -182,7 +183,7 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
 fn blank_physical_details_are_exported_as_blank_cells() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig")).unwrap();
+    let created = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false).unwrap();
     let result = import_export_ops::export_collection(
         &db.conn,
         dest.path(),

@@ -301,7 +301,8 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     let db = TestDb::new();
     let policy_id = rider(&db);
     let created =
-        firearm_ops::create_firearm(&db.conn, &support::firearm("Colt", "Python", "V1")).unwrap();
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Colt", "Python", "V1"), false)
+            .unwrap();
     hoplodex_lib::commands::insurance::ops::assign_firearm_coverage(
         &db.conn,
         created.id,
@@ -310,7 +311,8 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     )
     .unwrap();
     let plain =
-        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1")).unwrap();
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false)
+            .unwrap();
 
     let dest = TempDir::new().unwrap();
     let exported = import_export_ops::export_collection(
@@ -445,7 +447,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     let mut input = support::firearm("Glock", "19", "A1");
     input.estimated_value = Some(1250);
     input.acquisition_price = Some(1000000);
-    firearm_ops::create_firearm(&db.conn, &input).unwrap();
+    firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
     let id =
         firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap().groups[0].firearms[0].id;
 
@@ -602,7 +604,7 @@ fn an_export_re_imports_with_all_six_intact() {
     input.capacity = Some(15);
     input.finish = Some("Cerakote".into());
     input.condition = Some(Condition::NewInBox);
-    let created = firearm_ops::create_firearm(&db.conn, &input).unwrap();
+    let created = firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
 
     for format in [SpreadsheetFormat::Csv, SpreadsheetFormat::Xlsx] {
         let result = import_export_ops::export_collection(

@@ -763,3 +763,47 @@ describe("FirearmForm original maker's marks (US2)", () => {
     expect(within(group()).getByLabelText("Original maker")).toHaveValue("Fabrique Nationale");
   });
 });
+
+describe("FirearmForm original-marks warning (US3, FR-009)", () => {
+  it("opens a confirm-to-save dialog on ORIGINAL_MARKS_MATCH and resends confirmed on Save anyway", async () => {
+    const user = userEvent.setup();
+    const message =
+      "Ridgeline Arms Hi-Power (serial RA-1) already has these original maker's marks.";
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValueOnce(new CommandFailure({ code: "ORIGINAL_MARKS_MATCH", message }))
+      .mockResolvedValueOnce(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(
+      await screen.findByText("Another firearm has the same original marks"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save anyway" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(onSubmit.mock.calls[1][1]).toBe(true);
+  });
+
+  it("cancelling the warning saves nothing", async () => {
+    const user = userEvent.setup();
+    const message =
+      "Ridgeline Arms Hi-Power (serial RA-1) already has these original maker's marks.";
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValueOnce(new CommandFailure({ code: "ORIGINAL_MARKS_MATCH", message }));
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+});

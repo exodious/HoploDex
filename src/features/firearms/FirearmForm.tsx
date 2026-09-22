@@ -92,7 +92,8 @@ export interface FirearmFormProps {
   /** Opens with this field scrolled into view, focused, and its section
    * briefly highlighted (FR-038). */
   focusField?: FocusField;
-  onSubmit: (input: FirearmInput) => Promise<void>;
+  /** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009). */
+  onSubmit: (input: FirearmInput, confirmedWarnings?: boolean) => Promise<void>;
   onCancel?: () => void;
 }
 
@@ -310,6 +311,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     next: Origin | "";
     discard: OriginDiscard;
   } | null>(null);
+  // specs/002-firearm-identification FR-009: set when a save returns
+  // ORIGINAL_MARKS_MATCH, holding the input to resend if confirmed.
+  const [pendingWarning, setPendingWarning] = useState<{
+    input: FirearmInput;
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     const field = focusField === "notes" ? notesRef.current : accessoriesRef.current;
@@ -435,13 +442,24 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       originalSerialNumber: blankToNull(form.originalSerialNumber),
     };
 
+    await submitInput(input);
+  }
+
+  /** specs/002-firearm-identification FR-009, contracts/ui-identification.md
+   * §4: an `ORIGINAL_MARKS_MATCH` opens a confirm-to-save dialog instead of
+   * the usual error banner; every other failure behaves as before. */
+  async function submitInput(input: FirearmInput, confirmedWarnings?: boolean) {
     setSubmitting(true);
     setServerError(null);
     try {
-      await onSubmit(input);
+      await onSubmit(input, confirmedWarnings);
     } catch (error) {
       if (error instanceof CommandFailure) {
-        setServerError(error);
+        if (error.code === "ORIGINAL_MARKS_MATCH" && !confirmedWarnings) {
+          setPendingWarning({ input, message: error.message });
+        } else {
+          setServerError(error);
+        }
       } else {
         throw error;
       }
@@ -918,6 +936,20 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
         description={pendingOrigin && discardedValuesDescription()}
         confirmLabel="Discard and change"
         onConfirm={confirmOriginChange}
+      />
+
+      <ConfirmDialog
+        open={pendingWarning !== null}
+        onOpenChange={(open) => !open && setPendingWarning(null)}
+        title="Another firearm has the same original marks"
+        description={pendingWarning?.message}
+        confirmLabel="Save anyway"
+        destructive={false}
+        onConfirm={async () => {
+          if (!pendingWarning) return;
+          await submitInput(pendingWarning.input, true);
+          setPendingWarning(null);
+        }}
       />
     </>
   );

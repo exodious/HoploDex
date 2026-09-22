@@ -145,8 +145,8 @@ export function AppShell() {
     (f) => f.status === "active" && f.insuranceWarning !== "none",
   ).length;
 
-  async function handleCreate(input: FirearmInput) {
-    const created = await firearmsService.createFirearm(input);
+  async function handleCreate(input: FirearmInput, confirmedWarnings?: boolean) {
+    const created = await firearmsService.createFirearm(input, confirmedWarnings);
     setDialog(null);
     await refresh();
     notify(`Added ${firearmName(created)} to the collection.`);

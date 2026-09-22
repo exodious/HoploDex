@@ -46,6 +46,9 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
   // Once the nickname has clashed, the user can pick another right here.
   const [renaming, setRenaming] = useState(false);
   const [nickname, setNickname] = useState(firearm.nickname ?? "");
+  // specs/002-firearm-identification US3-9: once an ORIGINAL_MARKS_MATCH
+  // warning has been shown, the same button resends confirmed.
+  const [confirmedWarnings, setConfirmedWarnings] = useState(false);
 
   const nicknameError = failure?.fieldErrors?.nickname;
   const otherError = failure && !nicknameError ? failure.message : undefined;
@@ -55,7 +58,11 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
     setFailure(null);
     const renamed = renaming && nickname.trim() !== "";
     try {
-      await onRestore({ history, ...(renamed ? { nickname: nickname.trim() } : {}) });
+      await onRestore({
+        history,
+        ...(renamed ? { nickname: nickname.trim() } : {}),
+        ...(confirmedWarnings ? { confirmedWarnings: true } : {}),
+      });
     } catch (e) {
       const error =
         e instanceof CommandFailure
@@ -66,6 +73,7 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
             });
       setFailure(error);
       if (error.fieldErrors?.nickname) setRenaming(true);
+      if (error.code === "ORIGINAL_MARKS_MATCH") setConfirmedWarnings(true);
       throw error; // keeps the dialog open
     }
   }
@@ -76,7 +84,7 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
       onOpenChange={onOpenChange}
       title="Restore to the collection?"
       description={`${firearmName(firearm)} becomes active again, and its value and coverage count toward your totals.`}
-      confirmLabel="Restore to collection"
+      confirmLabel={confirmedWarnings ? "Restore anyway" : "Restore to collection"}
       destructive={false}
       confirmDisabled={!history}
       onConfirm={confirm}

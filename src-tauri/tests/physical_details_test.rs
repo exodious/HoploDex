@@ -35,7 +35,7 @@ fn assert_all_six(saved: &hoplodex_lib::models::firearm::Firearm) {
 
 fn field_error(input: &FirearmInput, field: &str) {
     let db = TestDb::new();
-    let err = ops::create_firearm(&db.conn, input).expect_err("should be rejected");
+    let err = ops::create_firearm(&db.conn, input, false).expect_err("should be rejected");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(
         err.field_errors.as_ref().is_some_and(|errors| errors.contains_key(field)),
@@ -47,7 +47,7 @@ fn field_error(input: &FirearmInput, field: &str) {
 #[test]
 fn all_six_round_trip_through_create_update_and_get() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &detailed("G-1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &detailed("G-1"), false).unwrap();
     assert_all_six(&created);
     assert_all_six(&ops::get_firearm(&db.conn, created.id).unwrap());
 
@@ -60,7 +60,7 @@ fn all_six_round_trip_through_create_update_and_get() {
         condition: Some(Condition::NewInBox),
         ..detailed("G-1")
     };
-    let updated = ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    let updated = ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
     assert_eq!(updated.barrel_length_hundredths, Some(400));
     assert_eq!(updated.overall_length_hundredths, Some(700));
     assert_eq!(updated.weight_tenths_oz, Some(215));
@@ -70,7 +70,7 @@ fn all_six_round_trip_through_create_update_and_get() {
     assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().condition, updated.condition);
 
     let cleared =
-        ops::update_firearm(&db.conn, created.id, &firearm("Glock", "19", "G-1")).unwrap();
+        ops::update_firearm(&db.conn, created.id, &firearm("Glock", "19", "G-1"), false).unwrap();
     assert_eq!(cleared.barrel_length_hundredths, None);
     assert_eq!(cleared.condition, None);
 }
@@ -83,7 +83,7 @@ fn all_six_null_is_accepted_for_every_firearm_type() {
             firearm_type_id: type_id,
             ..firearm("Make", "Model", &format!("SN-{type_id}"))
         };
-        let saved = ops::create_firearm(&db.conn, &input).unwrap();
+        let saved = ops::create_firearm(&db.conn, &input, false).unwrap();
         assert_eq!(saved.barrel_length_hundredths, None);
         assert_eq!(saved.overall_length_hundredths, None);
         assert_eq!(saved.weight_tenths_oz, None);
@@ -118,7 +118,7 @@ fn a_capacity_below_one_is_rejected_naming_the_field() {
     }
     let db = TestDb::new();
     let one = FirearmInput { capacity: Some(1), ..detailed("A") };
-    assert_eq!(ops::create_firearm(&db.conn, &one).unwrap().capacity, Some(1));
+    assert_eq!(ops::create_firearm(&db.conn, &one, false).unwrap().capacity, Some(1));
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn a_condition_outside_the_closed_list_is_rejected() {
 
     // And the database refuses one that got past the type.
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &detailed("C-1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &detailed("C-1"), false).unwrap();
     let raw = db.conn.execute("UPDATE firearms SET condition = 'mint' WHERE id = ?1", [created.id]);
     assert!(raw.is_err(), "the CHECK constraint should refuse an unknown grade");
 }
@@ -145,12 +145,12 @@ fn a_blank_or_whitespace_only_finish_is_stored_as_null() {
             finish: Some(blank.into()),
             ..firearm("Colt", "1911", &format!("F-{n}"))
         };
-        assert_eq!(ops::create_firearm(&db.conn, &input).unwrap().finish, None, "{blank:?}");
+        assert_eq!(ops::create_firearm(&db.conn, &input, false).unwrap().finish, None, "{blank:?}");
     }
     let padded =
         FirearmInput { finish: Some("  Parkerized  ".into()), ..firearm("Colt", "1911", "F-9") };
     assert_eq!(
-        ops::create_firearm(&db.conn, &padded).unwrap().finish.as_deref(),
+        ops::create_firearm(&db.conn, &padded, false).unwrap().finish.as_deref(),
         Some("Parkerized")
     );
 }
@@ -158,7 +158,7 @@ fn a_blank_or_whitespace_only_finish_is_stored_as_null() {
 #[test]
 fn the_values_survive_disposal_reversal_and_coverage_assignment() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &detailed("S-1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &detailed("S-1"), false).unwrap();
 
     let disposed = ops::dispose_firearm(
         &db.conn,
@@ -176,7 +176,11 @@ fn the_values_survive_disposal_reversal_and_coverage_assignment() {
     let restored = ops::reverse_disposition(
         &db.conn,
         created.id,
-        &ReverseDispositionInput { history: HistoryChoice::Keep, nickname: None },
+        &ReverseDispositionInput {
+            history: HistoryChoice::Keep,
+            nickname: None,
+            confirmed_warnings: false,
+        },
     )
     .unwrap();
     assert_all_six(&restored);

@@ -61,7 +61,7 @@ fn a_matching_make_model_serial_produces_a_conflict_not_a_silent_overwrite() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let csv = csv_file(&[csv_firearm(
         "Glock",
@@ -94,7 +94,7 @@ fn no_serial_attested_rows_are_always_inserted_as_new() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     // Same make/model as the existing record, but no_serial_attested=TRUE:
     // must never match, always inserted as new (FR-030).
@@ -119,7 +119,7 @@ fn resolving_a_conflict_as_overwrite_updates_the_existing_record() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let csv = csv_file(&[csv_firearm(
         "Glock",
@@ -193,7 +193,7 @@ fn active_count(db: &TestDb) -> usize {
 fn a_duplicate_of_a_disposed_record_is_allowed_as_a_reacquisition() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
     dispose(&db, existing.id);
 
     let import_result = import_glock(
@@ -223,7 +223,7 @@ fn a_duplicate_of_a_disposed_record_is_allowed_as_a_reacquisition() {
 fn a_duplicate_of_an_active_record_is_not_offered_and_is_refused_and_reported() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let import_result = import_glock(
         &db,
@@ -269,11 +269,11 @@ fn a_duplicate_of_an_active_record_is_not_offered_and_is_refused_and_reported() 
 fn apply_to_remaining_duplicate_skips_only_the_conflicts_it_may_not_apply_to() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
-    let active = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let active = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
     let mut second = existing_firearm();
     second.model = "26".into();
     second.serial_number = Some("XYZ789".into());
-    let disposed = firearm_ops::create_firearm(&db.conn, &second).unwrap();
+    let disposed = firearm_ops::create_firearm(&db.conn, &second, false).unwrap();
     dispose(&db, disposed.id);
 
     let import_result = import_glock(
@@ -305,11 +305,11 @@ fn a_conflict_that_would_fail_validation_on_overwrite_is_reported_not_fatal() {
     let store = ImportSessionStore::new();
     let mut first = existing_firearm();
     first.nickname = Some("Taken".into());
-    firearm_ops::create_firearm(&db.conn, &first).unwrap();
+    firearm_ops::create_firearm(&db.conn, &first, false).unwrap();
     let mut second = existing_firearm();
     second.model = "26".into();
     second.serial_number = Some("XYZ789".into());
-    let target = firearm_ops::create_firearm(&db.conn, &second).unwrap();
+    let target = firearm_ops::create_firearm(&db.conn, &second, false).unwrap();
 
     // Overwriting the second record would give it the first one's nickname.
     let import_result = import_glock(
@@ -341,7 +341,7 @@ fn a_conflict_that_would_fail_validation_on_overwrite_is_reported_not_fatal() {
 fn matching_ignores_letter_case_and_surrounding_whitespace() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let result = import_glock(&db, &store, &[csv_firearm(" glock ", "19", " abc123 ", &[])]);
 
@@ -354,9 +354,9 @@ fn matching_ignores_letter_case_and_surrounding_whitespace() {
 fn a_disposed_and_an_active_match_conflict_with_the_active_one() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
-    let old = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let old = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
     dispose(&db, old.id);
-    let current = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let current = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let result = import_glock(&db, &store, &[csv_firearm("Glock", "19", "ABC123", &[])]);
 
@@ -368,7 +368,7 @@ fn a_disposed_and_an_active_match_conflict_with_the_active_one() {
 fn a_row_with_both_a_serial_number_and_the_attestation_is_rejected() {
     let db = TestDb::new();
     let store = ImportSessionStore::new();
-    firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let result = import_glock(
         &db,
@@ -407,7 +407,7 @@ fn resolving_a_conflict_as_skip_leaves_the_original_untouched() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
 
     let csv = csv_file(&[csv_firearm(
         "Glock",
@@ -447,11 +447,11 @@ fn apply_to_remaining_resolves_conflicts_not_explicitly_listed() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    let e1 = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let e1 = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
     let mut second = existing_firearm();
     second.model = "26".into();
     second.serial_number = Some("XYZ789".into());
-    let e2 = firearm_ops::create_firearm(&db.conn, &second).unwrap();
+    let e2 = firearm_ops::create_firearm(&db.conn, &second, false).unwrap();
 
     let csv = csv_file(&[
         csv_firearm(
@@ -506,7 +506,7 @@ fn overwriting_a_conflict_updates_the_physical_details() {
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let store = ImportSessionStore::new();
-    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm()).unwrap();
+    let existing = firearm_ops::create_firearm(&db.conn, &existing_firearm(), false).unwrap();
     assert_eq!(existing.capacity, None);
 
     let path = write_csv(
@@ -540,4 +540,48 @@ fn overwriting_a_conflict_updates_the_physical_details() {
     assert_eq!(updated.barrel_length_hundredths, Some(402));
     assert_eq!(updated.capacity, Some(15));
     assert_eq!(updated.finish.as_deref(), Some("nDLC"));
+}
+
+// specs/002-firearm-identification User Story 3/4: the year-of-manufacture
+// exception in import matching (FR-008, US4-5a, research.md §4). The
+// spreadsheet's `year_of_manufacture` column is added by a later story
+// (T047), so this exercises `find_match` directly against a real database —
+// still no mocks, per the constitution.
+
+use hoplodex_lib::services::import_matching::find_match;
+
+#[test]
+fn a_row_with_identical_main_marks_and_differing_years_on_both_sides_is_not_a_match() {
+    let db = TestDb::new();
+    let existing =
+        FirearmInput { year_of_manufacture: Some(1943), ..existing_firearm_with_serial("SAA-1") };
+    firearm_ops::create_firearm(&db.conn, &existing, false).unwrap();
+
+    let found = find_match(&db.conn, "Glock", "19", Some("SAA-1"), false, Some(1944)).unwrap();
+    assert_eq!(found, None, "both have a year and they differ: not a match (US4-5a)");
+}
+
+#[test]
+fn a_row_with_identical_main_marks_and_no_year_on_either_side_still_matches() {
+    let db = TestDb::new();
+    let existing = existing_firearm_with_serial("SAA-2");
+    let created = firearm_ops::create_firearm(&db.conn, &existing, false).unwrap();
+
+    let found = find_match(&db.conn, "Glock", "19", Some("SAA-2"), false, None).unwrap();
+    assert_eq!(found, Some(created.id));
+}
+
+#[test]
+fn a_row_with_identical_main_marks_and_a_year_on_only_one_side_still_matches() {
+    let db = TestDb::new();
+    let existing =
+        FirearmInput { year_of_manufacture: Some(1943), ..existing_firearm_with_serial("SAA-3") };
+    let created = firearm_ops::create_firearm(&db.conn, &existing, false).unwrap();
+
+    let found = find_match(&db.conn, "Glock", "19", Some("SAA-3"), false, None).unwrap();
+    assert_eq!(found, Some(created.id), "a missing year on one side does not exempt the row");
+}
+
+fn existing_firearm_with_serial(serial: &str) -> FirearmInput {
+    FirearmInput { serial_number: Some(serial.into()), ..existing_firearm() }
 }

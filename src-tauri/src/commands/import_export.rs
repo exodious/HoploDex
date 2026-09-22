@@ -382,6 +382,7 @@ pub mod ops {
                         &input.model,
                         input.serial_number.as_deref(),
                         input.no_serial_attested,
+                        input.year_of_manufacture,
                     )?;
                     match existing {
                         Some(existing_firearm_id) => {
@@ -405,7 +406,7 @@ pub mod ops {
                                 new_input: input,
                             });
                         }
-                        None => match firearm_ops::create_firearm(conn, &input) {
+                        None => match firearm_ops::create_firearm(conn, &input, true) {
                             Ok(_) => imported_count += 1,
                             // Rules that need the rest of the collection to
                             // judge (nickname/identity uniqueness) fail one
@@ -476,9 +477,12 @@ pub mod ops {
                     conn,
                     conflict.existing_firearm_id,
                     &conflict.new_input,
+                    true,
                 )
                 .map(drop),
-                "duplicate" => firearm_ops::create_firearm(conn, &conflict.new_input).map(drop),
+                "duplicate" => {
+                    firearm_ops::create_firearm(conn, &conflict.new_input, true).map(drop)
+                }
                 _ => Ok(()), // "skip", or an unrecognized action, leaves the existing record untouched
             };
             match outcome {

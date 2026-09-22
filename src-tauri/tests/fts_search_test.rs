@@ -57,7 +57,7 @@ fn search(conn: &rusqlite::Connection, query: &str) -> usize {
 #[test]
 fn matches_structured_fields() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "Colt"), 1, "should match make");
     assert_eq!(search(&db.conn, "1911"), 1, "should match model");
@@ -68,7 +68,7 @@ fn matches_structured_fields() {
 #[test]
 fn matches_free_form_notes_and_accessories() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "grandfather"), 1, "should match free-form notes");
     assert_eq!(search(&db.conn, "holster"), 1, "should match accessories");
@@ -77,7 +77,7 @@ fn matches_free_form_notes_and_accessories() {
 #[test]
 fn matches_the_joined_firearm_type_name() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "Handgun"), 1, "should match firearm_type.name via the join");
 }
@@ -85,11 +85,11 @@ fn matches_the_joined_firearm_type_name() {
 #[test]
 fn stays_in_sync_after_update_and_delete() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &base_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     let mut edited = base_input();
     edited.notes = Some("re-blued and refinished".into());
-    ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
 
     assert_eq!(search(&db.conn, "grandfather"), 0, "stale note text must not still match");
     assert_eq!(search(&db.conn, "re-blued"), 1, "updated note text must match");
@@ -101,7 +101,7 @@ fn stays_in_sync_after_update_and_delete() {
 #[test]
 fn no_match_returns_an_empty_result() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "nonexistentxyz"), 0);
 }
@@ -112,7 +112,7 @@ fn no_match_returns_an_empty_result() {
 #[test]
 fn matches_a_partially_typed_last_word() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "Col"), 1, "prefix of make");
     assert_eq!(search(&db.conn, "CO19"), 1, "prefix of serial number");
@@ -128,12 +128,13 @@ fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
     let created = ops::create_firearm(
         &db.conn,
         &FirearmInput { finish: Some("Cerakote flat dark earth".into()), ..base_input() },
+        false,
     )
     .unwrap();
     assert_eq!(search(&db.conn, "Cerakote"), 1, "should match finish");
 
     let edited = FirearmInput { finish: Some("Parkerized".into()), ..base_input() };
-    ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
     assert_eq!(search(&db.conn, "Cerakote"), 0, "the old finish is no longer indexed");
     assert_eq!(search(&db.conn, "Parkerized"), 1, "the edited finish is indexed");
 
@@ -157,6 +158,7 @@ fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_non
             origin: Some(Origin::Imported),
             ..base_input()
         },
+        false,
     )
     .unwrap();
     ops::create_firearm(
@@ -166,6 +168,7 @@ fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_non
             origin: Some(Origin::Reimported),
             ..base_input()
         },
+        false,
     )
     .unwrap();
     ops::create_firearm(
@@ -175,11 +178,13 @@ fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_non
             origin: Some(Origin::Domestic),
             ..base_input()
         },
+        false,
     )
     .unwrap();
     ops::create_firearm(
         &db.conn,
         &FirearmInput { serial_number: Some("ORI-4".into()), origin: None, ..base_input() },
+        false,
     )
     .unwrap();
 
@@ -203,6 +208,7 @@ fn searching_year_importer_and_country_finds_the_firearm() {
             importer_name: Some("Global Arms Import Co.".into()),
             ..base_input()
         },
+        false,
     )
     .unwrap();
 
@@ -224,6 +230,7 @@ fn searching_country_for_a_reimported_firearm_finds_united_states() {
             importer_name: Some("Century International Arms".into()),
             ..base_input()
         },
+        false,
     )
     .unwrap();
 
@@ -252,6 +259,7 @@ fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
             original_serial_number: Some("FN-99001".into()),
             ..base_input()
         },
+        false,
     )
     .unwrap();
 

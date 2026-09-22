@@ -78,7 +78,8 @@ fn the_search_can_see_the_marker_while_it_is_stored() {
     // unless it finds the marker when it is there.
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-0")).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-0"), false).unwrap();
     document_ops::add_document(
         &db.conn,
         created.id,
@@ -103,7 +104,8 @@ fn every_connection_zeroes_deleted_content() {
 fn deleting_a_document_wipes_its_bytes_and_returns_the_space() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-1")).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-1"), false).unwrap();
     let document = document_ops::add_document(
         &db.conn,
         created.id,
@@ -123,7 +125,8 @@ fn deleting_a_document_wipes_its_bytes_and_returns_the_space() {
 fn deleting_a_photo_wipes_its_bytes_and_returns_the_space() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-2")).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-2"), false).unwrap();
     let photo = photo_ops::add_photo(&db.conn, created.id, &marker_png(), "range.png", "image/png")
         .unwrap();
     let size_before = file_size(&db.conn);
@@ -137,7 +140,8 @@ fn deleting_a_photo_wipes_its_bytes_and_returns_the_space() {
 fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-3")).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-3"), false).unwrap();
     photo_ops::add_photo(&db.conn, created.id, &marker_png(), "range.png", "image/png").unwrap();
     document_ops::add_document(
         &db.conn,
@@ -157,7 +161,8 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
 #[test]
 fn deleting_one_attachment_leaves_the_others_intact() {
     let db = TestDb::new();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-4")).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-4"), false).unwrap();
     let keep = document_ops::add_document(
         &db.conn,
         created.id,
@@ -184,7 +189,8 @@ fn deleting_one_attachment_leaves_the_others_intact() {
 #[test]
 fn an_unconfirmed_delete_changes_nothing() {
     let db = TestDb::new();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-5")).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-5"), false).unwrap();
     let document = document_ops::add_document(
         &db.conn,
         created.id,

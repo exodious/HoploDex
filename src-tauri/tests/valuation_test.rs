@@ -23,13 +23,13 @@ fn scenario_5_total_updates_immediately_after_every_mutation() {
     let initial = get_value_summary(&db.conn).unwrap();
     assert_eq!(initial.collection_total, 0);
 
-    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50000)).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50000), false).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 50000);
 
-    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30000)).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30000), false).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 80000);
 
-    firearm_ops::update_firearm(&db.conn, a.id, &valued("Glock", 60000)).unwrap();
+    firearm_ops::update_firearm(&db.conn, a.id, &valued("Glock", 60000), false).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 90000);
 
     firearm_ops::dispose_firearm(
@@ -65,11 +65,11 @@ fn scenario_6_breaks_down_into_the_blanket_policy_scheduled_firearms_and_uninsur
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
 
-    let scheduled = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let scheduled = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, scheduled.id, Some(rider.id), Some(40_000))
         .unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000)).unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Ruger", 40_000)).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Ruger", 40_000), false).unwrap();
 
     let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
 
@@ -95,8 +95,8 @@ fn scenario_6_breaks_down_into_the_blanket_policy_scheduled_firearms_and_uninsur
 #[test]
 fn with_no_blanket_policy_in_force_unscheduled_firearms_are_the_uninsured_group() {
     let db = TestDb::new();
-    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
-    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000)).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000), false).unwrap();
 
     let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
 
@@ -111,7 +111,7 @@ fn with_no_blanket_policy_in_force_unscheduled_firearms_are_the_uninsured_group(
 fn scenario_13_entering_a_blanket_policy_moves_the_firearms_out_of_uninsured_without_editing_them()
 {
     let db = TestDb::new();
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
     assert_eq!(get_value_summary_as_of(&db.conn, date(TODAY)).unwrap().uninsured.len(), 1);
 
     insurance_ops::create_policy(
@@ -133,7 +133,7 @@ fn a_policy_with_scheduled_firearms_reports_its_expiry_state() {
         &policy("Old rider", "2025-01-01", "2026-05-01", None),
     )
     .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(expired.id), Some(90_000)).unwrap();
 
     let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
@@ -152,7 +152,7 @@ fn disposed_firearms_leave_every_part_of_the_summary() {
     let rider =
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(rider.id), Some(50_000)).unwrap();
     firearm_ops::dispose_firearm(
         &db.conn,

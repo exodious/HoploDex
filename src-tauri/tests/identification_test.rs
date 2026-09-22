@@ -11,7 +11,7 @@ use support::{firearm, TestDb};
 
 fn field_error(input: &FirearmInput, field: &str) {
     let db = TestDb::new();
-    let err = ops::create_firearm(&db.conn, input).expect_err("should be rejected");
+    let err = ops::create_firearm(&db.conn, input, false).expect_err("should be rejected");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(
         err.field_errors.as_ref().is_some_and(|errors| errors.contains_key(field)),
@@ -30,7 +30,7 @@ fn origin_year_country_and_importer_round_trip_for_imported() {
         importer_name: Some("Global Arms Import Co.".into()),
         ..firearm("Browning", "Hi-Power", "IMP-1")
     };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.origin, Some(Origin::Imported));
     assert_eq!(created.year_of_manufacture, Some(1943));
     assert_eq!(created.country_of_manufacture.as_deref(), Some("Belgium"));
@@ -47,7 +47,7 @@ fn origin_year_country_and_importer_round_trip_for_imported() {
         importer_name: Some("Different Importer".into()),
         ..FirearmInput::from(&created)
     };
-    let updated = ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    let updated = ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
     assert_eq!(updated.country_of_manufacture.as_deref(), Some("Austria"));
     assert_eq!(updated.importer_name.as_deref(), Some("Different Importer"));
 }
@@ -61,7 +61,7 @@ fn origin_year_and_importer_round_trip_for_reimported_with_no_country() {
         importer_name: Some("Century International Arms".into()),
         ..firearm("Inland", "M1 Carbine", "REI-1")
     };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.origin, Some(Origin::Reimported));
     assert_eq!(created.year_of_manufacture, Some(1944));
     assert_eq!(created.importer_name.as_deref(), Some("Century International Arms"));
@@ -75,7 +75,8 @@ fn origin_year_and_importer_round_trip_for_reimported_with_no_country() {
 #[test]
 fn a_firearm_with_no_origin_shows_null_with_nothing_else_offered() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", "NO-ORIGIN-1")).unwrap();
+    let created =
+        ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", "NO-ORIGIN-1"), false).unwrap();
     assert_eq!(created.origin, None);
     assert_eq!(created.year_of_manufacture, None);
     assert_eq!(created.country_of_manufacture, None);
@@ -87,7 +88,7 @@ fn a_firearm_created_before_this_feature_still_round_trips_unchanged() {
     // US1-8: a pre-existing record has no origin data at all; get_firearm
     // must not choke on nulls in the new columns.
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Colt", "1911", "PRE-1")).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Colt", "1911", "PRE-1"), false).unwrap();
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
     assert_eq!(fetched.make, "Colt");
     assert_eq!(fetched.origin, None);
@@ -104,7 +105,7 @@ fn a_year_of_1943_saves_and_returns() {
     let db = TestDb::new();
     let input =
         FirearmInput { year_of_manufacture: Some(1943), ..firearm("Colt", "1911A1", "Y-1943") };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.year_of_manufacture, Some(1943));
 }
 
@@ -200,7 +201,7 @@ fn original_marks_round_trip_on_an_imported_firearm_distinct_from_the_main_marks
         original_serial_number: Some("FN-99001".into()),
         ..firearm("Ridgeline Arms", "Imported Hi-Power", "RA-5001")
     };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.make, "Ridgeline Arms");
     assert_eq!(created.serial_number.as_deref(), Some("RA-5001"));
     assert_eq!(created.original_make.as_deref(), Some("Fabrique Nationale"));
@@ -216,7 +217,7 @@ fn original_marks_round_trip_on_an_imported_firearm_distinct_from_the_main_marks
         original_serial_number: Some("FN-99002".into()),
         ..FirearmInput::from(&created)
     };
-    let updated = ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    let updated = ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
     assert_eq!(updated.original_serial_number.as_deref(), Some("FN-99002"));
 }
 
@@ -231,7 +232,7 @@ fn original_marks_round_trip_on_a_reimported_firearm() {
         original_serial_number: Some("IN-2245567".into()),
         ..firearm("Inland", "M1 Carbine", "IN-2245567")
     };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.original_make.as_deref(), Some("Inland"));
     assert_eq!(created.original_model.as_deref(), Some("M1 Carbine"));
     assert_eq!(created.original_serial_number.as_deref(), Some("IN-2245567"));
@@ -245,7 +246,7 @@ fn a_partial_set_of_original_marks_is_accepted_as_entered() {
         original_make: Some("Fabrique Nationale".into()),
         ..firearm("Ridgeline Arms", "Imported Hi-Power", "RA-5002")
     };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.original_make.as_deref(), Some("Fabrique Nationale"));
     assert_eq!(created.original_model, None);
     assert_eq!(created.original_serial_number, None);
@@ -256,7 +257,7 @@ fn leaving_all_three_original_marks_blank_saves_normally() {
     let db = TestDb::new();
     let input =
         FirearmInput { origin: Some(Origin::Imported), ..firearm("FN", "Model 1922", "FN-1") };
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.original_make, None);
     assert_eq!(created.original_model, None);
     assert_eq!(created.original_serial_number, None);
