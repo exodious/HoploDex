@@ -124,7 +124,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       // A decision the backend couldn't apply leaves its row open to be
       // decided again; everything else is done.
       const stillOpen = new Set(resolved.unresolved.map((u) => u.row));
-      setResult({ ...result, conflicts: result.conflicts.filter((c) => stillOpen.has(c.row)) });
+      setResult({
+        ...result,
+        conflicts: result.conflicts.filter((c) => stillOpen.has(c.row)),
+        // specs/002-firearm-identification FR-009: a resolved overwrite or
+        // duplicate can add its own original-marks warning.
+        warnings: [...result.warnings, ...resolved.warnings],
+      });
       setUnresolved(resolved.unresolved);
       setChoices({});
       await refresh();
@@ -204,6 +210,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             warn={result.rowErrors.length > 0}
           />
           {conflicts.length > 0 && <Tally value={conflicts.length} label="need a decision" warn />}
+          {result.warnings.length > 0 && <Tally value={result.warnings.length} label="warnings" />}
           {resolvedCount != null && <Tally value={resolvedCount} label="resolved" />}
         </div>
         <p className="hd-sr-only">
@@ -224,6 +231,26 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
                 <li key={rowError.row}>
                   <span className="hd-row-errors__row hd-num">Row {rowError.row}</span>
                   <span>{rowError.message}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {result.warnings.length > 0 && (
+          <section className="hd-io-section" aria-labelledby="warnings-title">
+            <h3 className="hd-io-section__title" id="warnings-title">
+              Warnings
+            </h3>
+            <p className="hd-form-note">
+              These rows imported, but share original maker's marks with a firearm already in your
+              collection.
+            </p>
+            <ul className="hd-row-errors hd-row-errors--info">
+              {result.warnings.map((warning) => (
+                <li key={`${warning.row}-${warning.message}`}>
+                  <span className="hd-row-errors__row hd-num">Row {warning.row}</span>
+                  <span>{warning.message}</span>
                 </li>
               ))}
             </ul>

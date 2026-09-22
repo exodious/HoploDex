@@ -10,7 +10,7 @@ use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
 use crate::db::DbHandle;
 use crate::models::firearm::{
-    validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus,
+    validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
 use crate::services::spreadsheet::{
     dollars_to_string, parse_scaled_decimal, parse_whole_dollars, read_spreadsheet,
@@ -56,6 +56,10 @@ pub struct ImportResult {
     pub skipped_count: usize,
     pub row_errors: Vec<RowError>,
     pub conflicts: Vec<ImportConflict>,
+    /// specs/002-firearm-identification FR-009: rows whose original marks
+    /// match another active firearm's, imported anyway (US4-6). Disjoint
+    /// from `row_errors` — a row appears here only when it did not fail.
+    pub warnings: Vec<RowError>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,6 +77,9 @@ pub struct ResolveResult {
     /// FR-032 forbids, an overwrite that fails validation). They stay open
     /// in the import session, so a different action can still be chosen.
     pub unresolved: Vec<RowError>,
+    /// specs/002-firearm-identification FR-009: as `ImportResult::warnings`,
+    /// for rows saved by an `overwrite` or `duplicate` resolution.
+    pub warnings: Vec<RowError>,
 }
 
 struct PendingConflict {
@@ -197,6 +204,13 @@ pub mod ops {
                 capacity: scaled_to_string(firearm.capacity, 0),
                 finish: firearm.finish.unwrap_or_default(),
                 condition: firearm.condition.map(|c| c.label().to_string()).unwrap_or_default(),
+                origin: firearm.origin.map(|o| o.label().to_string()).unwrap_or_default(),
+                year_of_manufacture: scaled_to_string(firearm.year_of_manufacture, 0),
+                country_of_manufacture: firearm.country_of_manufacture.unwrap_or_default(),
+                importer_name: firearm.importer_name.unwrap_or_default(),
+                original_make: firearm.original_make.unwrap_or_default(),
+                original_model: firearm.original_model.unwrap_or_default(),
+                original_serial_number: firearm.original_serial_number.unwrap_or_default(),
                 photo_filenames: photo_filenames.join(";"),
             });
 
@@ -236,6 +250,22 @@ pub mod ops {
             .into_iter()
             .find(|c| c.label().to_lowercase() == wanted || c.as_str() == wanted)
             .ok_or_else(|| format!("condition: unknown condition {value:?}"))
+    }
+
+    /// An `origin` cell: exactly `Domestic`/`Imported`/`Re-imported`, matched
+    /// ignoring letter case. Unlike `condition`, no alias is accepted —
+    /// `reimported`/`re_imported` are row errors — since the label and the
+    /// intent are the same word here (spreadsheet-format.md "Origin values",
+    /// research.md §9, FR-014/US4-3).
+    fn parse_origin(value: &str) -> Result<Origin, String> {
+        match value.trim().to_lowercase().as_str() {
+            "domestic" => Ok(Origin::Domestic),
+            "imported" => Ok(Origin::Imported),
+            "re-imported" => Ok(Origin::Reimported),
+            _ => Err(format!(
+                "origin: unknown origin {value:?}; must be Domestic, Imported or Re-imported"
+            )),
+        }
     }
 
     /// The reason shown for a failing row: every per-field message (the
@@ -335,16 +365,22 @@ pub mod ops {
                 "scheduled_coverage_amount",
                 &raw.scheduled_coverage_amount,
             )?,
-            // specs/002-firearm-identification T047 (User Story 4) will add
-            // these columns to the spreadsheet format; until then imported
-            // rows carry none of this feature's fields.
-            origin: None,
-            year_of_manufacture: None,
-            country_of_manufacture: None,
-            importer_name: None,
-            original_make: None,
-            original_model: None,
-            original_serial_number: None,
+            // specs/002-firearm-identification: origin gating (importer,
+            // country, original marks disallowed by the row's origin) is
+            // enforced below by the same `validate_firearm_input` call
+            // `condition`/`status` already go through, so no separate check
+            // is needed here (FR-014).
+            origin: raw.origin.as_deref().map(parse_origin).transpose()?,
+            year_of_manufacture: parse_scaled_decimal(
+                "year_of_manufacture",
+                &raw.year_of_manufacture,
+                0,
+            )?,
+            country_of_manufacture: raw.country_of_manufacture.clone(),
+            importer_name: raw.importer_name.clone(),
+            original_make: raw.original_make.clone(),
+            original_model: raw.original_model.clone(),
+            original_serial_number: raw.original_serial_number.clone(),
         };
 
         validate_firearm_input(&input).map_err(|e| row_message(&e))?;
@@ -370,6 +406,7 @@ pub mod ops {
         let mut row_errors = Vec::new();
         let mut conflicts = Vec::new();
         let mut pending = Vec::new();
+        let mut warnings = Vec::new();
 
         for (index, raw) in raw_rows.iter().enumerate() {
             let row_number = index + 1;
@@ -407,7 +444,12 @@ pub mod ops {
                             });
                         }
                         None => match firearm_ops::create_firearm(conn, &input, true) {
-                            Ok(_) => imported_count += 1,
+                            Ok(created) => {
+                                imported_count += 1;
+                                if let Some(message) = original_marks_warning(conn, &created)? {
+                                    warnings.push(RowError { row: row_number, message });
+                                }
+                            }
                             // Rules that need the rest of the collection to
                             // judge (nickname/identity uniqueness) fail one
                             // row, not the whole import (FR-020).
@@ -436,7 +478,30 @@ pub mod ops {
             skipped_count: 0,
             row_errors,
             conflicts,
+            warnings,
         })
+    }
+
+    /// specs/002-firearm-identification FR-009/T048: `saved`'s original
+    /// marks against the firearms active now, excluding itself. Import and
+    /// conflict resolution always save with `confirmed_warnings: true`
+    /// (never prompting), so this is how a match is still surfaced — as a
+    /// warning, never failing the row (US4-6).
+    fn original_marks_warning(
+        conn: &Connection,
+        saved: &crate::models::firearm::Firearm,
+    ) -> Result<Option<String>, CommandError> {
+        let Some(other_id) = firearm_ops::original_marks_clash(
+            conn,
+            Some(saved.id),
+            saved.original_make.as_deref(),
+            saved.original_model.as_deref(),
+            saved.original_serial_number.as_deref(),
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(firearm_ops::original_marks_warning_message(conn, other_id)?))
     }
 
     /// Applies each conflict's resolution: `overwrite` updates the existing
@@ -466,27 +531,36 @@ pub mod ops {
         let mut resolved_count = 0;
         let mut unresolved = Vec::new();
         let mut still_open = Vec::new();
+        let mut warnings = Vec::new();
         for conflict in pending {
             let action = explicit
                 .get(conflict.conflict_id.as_str())
                 .copied()
                 .or(apply_to_remaining)
                 .unwrap_or("skip");
-            let outcome = match action {
-                "overwrite" => firearm_ops::update_firearm(
+            // "skip", or an unrecognized action, leaves the existing record
+            // untouched — never saved, so it never carries a warning.
+            if action != "overwrite" && action != "duplicate" {
+                resolved_count += 1;
+                continue;
+            }
+            let outcome = if action == "overwrite" {
+                firearm_ops::update_firearm(
                     conn,
                     conflict.existing_firearm_id,
                     &conflict.new_input,
                     true,
                 )
-                .map(drop),
-                "duplicate" => {
-                    firearm_ops::create_firearm(conn, &conflict.new_input, true).map(drop)
-                }
-                _ => Ok(()), // "skip", or an unrecognized action, leaves the existing record untouched
+            } else {
+                firearm_ops::create_firearm(conn, &conflict.new_input, true)
             };
             match outcome {
-                Ok(()) => resolved_count += 1,
+                Ok(saved) => {
+                    resolved_count += 1;
+                    if let Some(message) = original_marks_warning(conn, &saved)? {
+                        warnings.push(RowError { row: conflict.row, message });
+                    }
+                }
                 Err(e) if e.code == "VALIDATION_ERROR" => {
                     unresolved.push(RowError { row: conflict.row, message: row_message(&e) });
                     still_open.push(conflict);
@@ -503,7 +577,7 @@ pub mod ops {
                 .insert(session_id.to_string(), still_open);
         }
 
-        Ok(ResolveResult { resolved_count, unresolved })
+        Ok(ResolveResult { resolved_count, unresolved, warnings })
     }
 }
 

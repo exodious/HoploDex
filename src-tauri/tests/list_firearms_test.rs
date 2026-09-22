@@ -5,7 +5,7 @@
 mod support;
 
 use hoplodex_lib::commands::firearms::{ops, GroupBy, ListFirearmsInput};
-use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus, Origin};
 use support::TestDb;
 
 fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> FirearmInput {
@@ -209,4 +209,62 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     let without_serial = summaries.iter().find(|f| f.serial_number.is_none()).unwrap();
     assert_eq!(without_serial.insurance_policy_id, None);
     assert_eq!(without_serial.scheduled_coverage_amount, None);
+}
+
+// specs/002-firearm-identification US4-1: grouping by origin, in a fixed
+// order (Domestic, Imported, Re-imported, Not specified) rather than
+// alphabetically, with only the origins actually present in the result.
+
+#[test]
+fn group_by_origin_returns_groups_in_a_fixed_order_with_only_present_origins() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Reimported), ..firearm("Inland", "M1", "9mm", 2) },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Imported), ..firearm("FN", "1922", "9mm", 1) },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Domestic), ..firearm("Colt", "1911", ".45", 1) },
+        false,
+    )
+    .unwrap();
+
+    let result = ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Origin), ..Default::default() },
+    )
+    .unwrap();
+
+    let keys: Vec<_> = result.groups.iter().map(|g| g.key.as_str()).collect();
+    assert_eq!(keys, vec!["Domestic", "Imported", "Re-imported", "Not specified"]);
+}
+
+#[test]
+fn group_by_origin_omits_origins_with_no_firearms() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Domestic), ..firearm("Colt", "1911", ".45", 1) },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
+
+    let result = ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Origin), ..Default::default() },
+    )
+    .unwrap();
+
+    let keys: Vec<_> = result.groups.iter().map(|g| g.key.as_str()).collect();
+    assert_eq!(keys, vec!["Domestic", "Not specified"]);
 }

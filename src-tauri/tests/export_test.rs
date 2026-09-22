@@ -174,6 +174,13 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
             "capacity",
             "finish",
             "condition",
+            "origin",
+            "year_of_manufacture",
+            "country_of_manufacture",
+            "importer_name",
+            "original_make",
+            "original_model",
+            "original_serial_number",
             "photo_filenames"
         ]
     );

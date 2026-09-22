@@ -295,13 +295,23 @@ pub mod ops {
             input.original_model.as_deref(),
             input.original_serial_number.as_deref(),
         )? {
-            let other = describe_firearm(conn, other_id)?;
             return Err(CommandError::new(
                 "ORIGINAL_MARKS_MATCH",
-                format!("{other} already has these original maker's marks."),
+                original_marks_warning_message(conn, other_id)?,
             ));
         }
         Ok(())
+    }
+
+    /// The FR-009 warning's message, naming the other firearm — shared by
+    /// `check_original_marks_warning` (create/update/restore) and import's
+    /// `warnings` report (T048), which never blocks the row.
+    pub(crate) fn original_marks_warning_message(
+        conn: &Connection,
+        other_id: i64,
+    ) -> Result<String, CommandError> {
+        let other = describe_firearm(conn, other_id)?;
+        Ok(format!("{other} already has these original maker's marks."))
     }
 
     /// FR-031 and FR-032, against the other active firearms. A disposed
