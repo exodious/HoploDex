@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { flushSync } from "react-dom";
 import {
   Button,
   Checkbox,
@@ -7,6 +8,7 @@ import {
   ConfirmDialog,
   DateField,
   DecimalField,
+  Disclosure,
   MoneyField,
   Select,
   TextArea,
@@ -23,6 +25,7 @@ import {
   DISPOSITION_TYPE_OPTIONS,
   FIREARM_TYPE_OPTIONS,
   ORIGIN_OPTIONS,
+  originLabel,
 } from "./types";
 import type { Condition, DispositionType, Firearm, FirearmInput, Origin } from "./types";
 import "./forms.css";
@@ -78,6 +81,50 @@ function originDiscard(
     return hasImporter || hasCountry || hasOriginalMarks ? "importerAndMarks" : null;
   }
   return null;
+}
+
+/** specs/002-firearm-identification: the fields folded into the "Origin and
+ * year of manufacture" group. Optional and unused by most records, so the
+ * group starts closed unless one of them is recorded, and opens itself when
+ * an error lands on one of them. */
+const ORIGIN_GROUP_FIELDS = [
+  "origin",
+  "yearOfManufacture",
+  "countryOfManufacture",
+  "importerName",
+  "originalMake",
+  "originalModel",
+  "originalSerialNumber",
+] as const satisfies readonly (keyof FormState)[];
+
+function hasOriginGroupValue(form: FormState): boolean {
+  return ORIGIN_GROUP_FIELDS.some((field) => form[field].trim() !== "");
+}
+
+/** What the closed group says it holds: the recorded values read back as a
+ * sentence or two, so closing it never hides one. */
+function originGroupSummary(form: FormState): string {
+  const sentences: string[] = [];
+  const country = form.countryOfManufacture.trim();
+  const importer = form.importerName.trim();
+  if (form.origin !== "") {
+    let origin = originLabel(form.origin);
+    if (form.origin === "imported" && country) origin += ` from ${country}`;
+    if (importMarked(form.origin) && importer) origin += ` by ${importer}`;
+    sentences.push(origin);
+  }
+  if (form.yearOfManufacture !== "") sentences.push(`Made in ${form.yearOfManufacture}`);
+  if (
+    importMarked(form.origin) &&
+    [form.originalMake, form.originalModel, form.originalSerialNumber].some((v) => v.trim())
+  ) {
+    sentences.push("Original maker's marks recorded");
+  }
+  if (sentences.length === 0) return "Optional: where and when it was made, and who imported it.";
+  // An importer's name often ends in "Inc." or "Co.": don't double the stop.
+  return sentences
+    .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`))
+    .join(" ");
 }
 
 /** A field the form can open on, for the record page's "Add" links. */
@@ -303,6 +350,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // see where to type, but neither animated nor smooth-scrolled.
   const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
   const [showOriginGuide, setShowOriginGuide] = useState(false);
+  const [originGroupOpen, setOriginGroupOpen] = useState(() =>
+    hasOriginGroupValue(toFormState(initialValues)),
+  );
   const originGuideButtonRef = useRef<HTMLButtonElement>(null);
   // specs/002-firearm-identification FR-010: set while the discard
   // confirmation is open, holding the origin the user picked and what it
@@ -397,6 +447,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
+      if ((ORIGIN_GROUP_FIELDS as readonly Field[]).includes(firstInvalid)) {
+        flushSync(() => setOriginGroupOpen(true));
+      }
       formRef.current
         ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea, button)`)
         ?.focus();
@@ -445,6 +498,24 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     await submitInput(input);
   }
 
+  /** A save rejected on a field inside the origin group opens it, so the
+   * error is never hidden. An identity clash on the serial number points at
+   * Year of manufacture (contracts/ui-identification.md §4): when no year is
+   * recorded, open the group and bring the year into view. */
+  function revealOriginGroupFor(error: CommandFailure) {
+    const fieldErrors = error.fieldErrors;
+    if (!fieldErrors) return;
+    const clashNeedsYear = fieldErrors.serialNumber !== undefined && form.yearOfManufacture === "";
+    if (!clashNeedsYear && !ORIGIN_GROUP_FIELDS.some((field) => fieldErrors[field])) return;
+    flushSync(() => setOriginGroupOpen(true));
+    if (clashNeedsYear) {
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      formRef.current
+        ?.querySelector('[data-field="yearOfManufacture"]')
+        ?.scrollIntoView?.({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+    }
+  }
+
   /** specs/002-firearm-identification FR-009, contracts/ui-identification.md
    * §4: an `ORIGINAL_MARKS_MATCH` opens a confirm-to-save dialog instead of
    * the usual error banner; every other failure behaves as before. */
@@ -458,7 +529,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
         if (error.code === "ORIGINAL_MARKS_MATCH" && !confirmedWarnings) {
           setPendingWarning({ input, message: error.message });
         } else {
-          setServerError(error);
+          flushSync(() => setServerError(error));
+          revealOriginGroupFor(error);
         }
       } else {
         throw error;
@@ -538,126 +610,6 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               />
             </div>
 
-            <div className="hd-form-grid hd-form-grid--origin">
-              <div data-field="origin" className="hd-form-stack">
-                <ChoiceCards
-                  label="Origin"
-                  value={form.origin}
-                  onChange={handleOriginChange}
-                  minCardWidth={150}
-                  options={ORIGIN_OPTIONS}
-                />
-                <Button
-                  ref={originGuideButtonRef}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowOriginGuide(true)}
-                >
-                  How do I record this?
-                </Button>
-                {form.origin === "domestic" && (
-                  <p className="hd-field__hint">
-                    Made in the U.S. but stamped with an importer's name? Choose Re-imported.
-                  </p>
-                )}
-              </div>
-
-              {form.origin === "imported" && (
-                <>
-                  <div data-field="countryOfManufacture">
-                    <TextField
-                      label="Country of manufacture"
-                      value={form.countryOfManufacture}
-                      onChange={(e) => update("countryOfManufacture", e.target.value)}
-                      onBlur={touch("countryOfManufacture")}
-                      error={errorFor("countryOfManufacture")}
-                    />
-                  </div>
-                  <div data-field="importerName">
-                    <TextField
-                      label="Importer"
-                      value={form.importerName}
-                      onChange={(e) => update("importerName", e.target.value)}
-                      onBlur={touch("importerName")}
-                      error={errorFor("importerName")}
-                    />
-                  </div>
-                </>
-              )}
-              {form.origin === "reimported" && (
-                <>
-                  <p className="hd-field hd-static-line" data-field="countryOfManufactureDisplay">
-                    Country of manufacture: United States
-                  </p>
-                  <div data-field="importerName">
-                    <TextField
-                      label="Importer"
-                      value={form.importerName}
-                      onChange={(e) => update("importerName", e.target.value)}
-                      onBlur={touch("importerName")}
-                      error={errorFor("importerName")}
-                    />
-                  </div>
-                </>
-              )}
-
-              <div data-field="yearOfManufacture">
-                <TextField
-                  label="Year of manufacture"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={form.yearOfManufacture}
-                  onChange={(e) =>
-                    update("yearOfManufacture", e.target.value.replace(/\D/g, "").slice(0, 4))
-                  }
-                  onBlur={touch("yearOfManufacture")}
-                  error={errorFor("yearOfManufacture")}
-                  hint="A single year, e.g. 1943. Put anything uncertain in Notes."
-                  placeholder="e.g. 1943"
-                />
-              </div>
-            </div>
-
-            {importMarked(form.origin) && (
-              <fieldset className="hd-form-section hd-form-fieldset">
-                <legend className="hd-form-section__title">Original maker's marks</legend>
-                <p className="hd-field__hint">
-                  Only if the original maker's marks differ from the make, model and serial number
-                  above, or you want both.
-                </p>
-                <div className="hd-form-grid hd-form-grid--3">
-                  <div data-field="originalMake">
-                    <TextField
-                      label="Original maker"
-                      value={form.originalMake}
-                      onChange={(e) => update("originalMake", e.target.value)}
-                      onBlur={touch("originalMake")}
-                      error={errorFor("originalMake")}
-                    />
-                  </div>
-                  <div data-field="originalModel">
-                    <TextField
-                      label="Original model"
-                      value={form.originalModel}
-                      onChange={(e) => update("originalModel", e.target.value)}
-                      onBlur={touch("originalModel")}
-                      error={errorFor("originalModel")}
-                    />
-                  </div>
-                  <div data-field="originalSerialNumber">
-                    <TextField
-                      label="Original serial number"
-                      value={form.originalSerialNumber}
-                      onChange={(e) => update("originalSerialNumber", e.target.value)}
-                      onBlur={touch("originalSerialNumber")}
-                      error={errorFor("originalSerialNumber")}
-                    />
-                  </div>
-                </div>
-              </fieldset>
-            )}
-
             <div className="hd-form-grid hd-form-grid--2">
               <div data-field="caliber">
                 <TextField
@@ -694,6 +646,136 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 />
               </div>
             </div>
+
+            <Disclosure
+              title="Origin and year of manufacture"
+              summary={originGroupOpen ? undefined : originGroupSummary(form)}
+              open={originGroupOpen}
+              onOpenChange={setOriginGroupOpen}
+            >
+              <div data-field="yearOfManufacture">
+                <TextField
+                  label="Year of manufacture"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={form.yearOfManufacture}
+                  onChange={(e) =>
+                    update("yearOfManufacture", e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  onBlur={touch("yearOfManufacture")}
+                  error={errorFor("yearOfManufacture")}
+                  fieldClassName="hd-field--year"
+                  hint="A single year, e.g. 1943. Put anything uncertain in Notes."
+                  placeholder="e.g. 1943"
+                />
+              </div>
+              <div className="hd-form-grid hd-form-grid--origin">
+                <div data-field="origin" className="hd-form-stack">
+                  <ChoiceCards
+                    label="Origin"
+                    value={form.origin}
+                    onChange={handleOriginChange}
+                    minCardWidth={150}
+                    options={ORIGIN_OPTIONS}
+                  />
+                  <Button
+                    ref={originGuideButtonRef}
+                    className="hd-origin-guide__trigger"
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowOriginGuide(true)}
+                  >
+                    How do I record this?
+                  </Button>
+                  {form.origin === "domestic" && (
+                    <p className="hd-field__hint">
+                      Made in the U.S. but stamped with an importer's name? Choose Re-imported.
+                    </p>
+                  )}
+                </div>
+
+                {form.origin === "imported" && (
+                  <>
+                    <div data-field="countryOfManufacture">
+                      <TextField
+                        label="Country of manufacture"
+                        value={form.countryOfManufacture}
+                        onChange={(e) => update("countryOfManufacture", e.target.value)}
+                        onBlur={touch("countryOfManufacture")}
+                        error={errorFor("countryOfManufacture")}
+                      />
+                    </div>
+                    <div data-field="importerName">
+                      <TextField
+                        label="Importer"
+                        value={form.importerName}
+                        onChange={(e) => update("importerName", e.target.value)}
+                        onBlur={touch("importerName")}
+                        error={errorFor("importerName")}
+                      />
+                    </div>
+                  </>
+                )}
+                {form.origin === "reimported" && (
+                  <>
+                    <p className="hd-field hd-static-line" data-field="countryOfManufactureDisplay">
+                      Country of manufacture: United States
+                    </p>
+                    <div data-field="importerName">
+                      <TextField
+                        label="Importer"
+                        value={form.importerName}
+                        onChange={(e) => update("importerName", e.target.value)}
+                        onBlur={touch("importerName")}
+                        error={errorFor("importerName")}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {importMarked(form.origin) && (
+                <div className="hd-form-subgroup">
+                  <fieldset className="hd-form-section hd-form-fieldset">
+                    <legend className="hd-form-subgroup__title">Original maker's marks</legend>
+                    <p className="hd-field__hint">
+                      Only if the original maker's marks differ from the make, model and serial
+                      number above, or you want both.
+                    </p>
+                    <div className="hd-form-grid hd-form-grid--3">
+                      <div data-field="originalMake">
+                        <TextField
+                          label="Original maker"
+                          value={form.originalMake}
+                          onChange={(e) => update("originalMake", e.target.value)}
+                          onBlur={touch("originalMake")}
+                          error={errorFor("originalMake")}
+                        />
+                      </div>
+                      <div data-field="originalModel">
+                        <TextField
+                          label="Original model"
+                          value={form.originalModel}
+                          onChange={(e) => update("originalModel", e.target.value)}
+                          onBlur={touch("originalModel")}
+                          error={errorFor("originalModel")}
+                        />
+                      </div>
+                      <div data-field="originalSerialNumber">
+                        <TextField
+                          label="Original serial number"
+                          value={form.originalSerialNumber}
+                          onChange={(e) => update("originalSerialNumber", e.target.value)}
+                          onBlur={touch("originalSerialNumber")}
+                          error={errorFor("originalSerialNumber")}
+                        />
+                      </div>
+                    </div>
+                  </fieldset>
+                </div>
+              )}
+            </Disclosure>
           </section>
 
           <fieldset className="hd-form-section hd-form-fieldset">

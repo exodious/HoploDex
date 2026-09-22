@@ -1,10 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
 import { FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { Firearm } from "./types";
+
+/** The "Origin and year of manufacture" disclosure's button. Closed, its
+ * name also carries the summary line, so match on the title alone. */
+const originGroupButton = () =>
+  screen.getByRole("button", { name: /^Origin and year of manufacture/ });
+
+/** Renders the form with the origin group open (it starts closed on a record
+ * with none of its fields recorded). */
+function renderWithOriginGroup(ui: ReactElement) {
+  const result = render(ui);
+  if (originGroupButton().getAttribute("aria-expanded") === "false") {
+    fireEvent.click(originGroupButton());
+  }
+  return result;
+}
 
 async function selectFirearmType(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("radio", { name: "Handgun" }));
@@ -490,7 +506,7 @@ describe("FirearmForm focusField (FR-038, US1 Acceptance Scenario 15)", () => {
 // specs/002-firearm-identification contracts/ui-identification.md §1-§3
 describe("FirearmForm origin control (US1)", () => {
   it("offers Domestic/Imported/Re-imported/Not specified with their one-line descriptions", () => {
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     expect(
       screen.getByRole("radio", { name: /^Domestic Made in the U\.S\.$/ }),
@@ -509,13 +525,13 @@ describe("FirearmForm origin control (US1)", () => {
   });
 
   it("starts a new record on Not specified", () => {
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
     expect(screen.getByRole("radio", { name: /^Not specified/ })).toBeChecked();
   });
 
   it("selecting Imported reveals Country of manufacture and Importer, both optional", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
 
@@ -526,7 +542,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("selecting Re-imported reveals only Importer plus a read-only United States country line", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Re-imported/ }));
 
@@ -537,7 +553,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("shows neither field for Domestic or Not specified", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
     expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
@@ -550,7 +566,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("shows the Domestic cue to consider Re-imported", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     expect(
       screen.queryByText(
@@ -567,7 +583,7 @@ describe("FirearmForm origin control (US1)", () => {
   it("shows Year of manufacture for every origin and validates a four-digit range", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={onSubmit} />);
 
     const currentYear = new Date().getFullYear();
     const year = screen.getByLabelText("Year of manufacture");
@@ -588,7 +604,7 @@ describe("FirearmForm origin control (US1)", () => {
   it("accepts a valid year and submits it as a number", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(screen.getByLabelText("Year of manufacture"), "1943");
@@ -600,7 +616,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("asks before discarding importer and country when moving away from an import-marked origin", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
     await user.type(screen.getByLabelText("Country of manufacture"), "Belgium");
@@ -623,7 +639,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("asks before discarding only the country when moving from Imported to Re-imported", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
     await user.type(screen.getByLabelText("Country of manufacture"), "Belgium");
@@ -641,7 +657,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("does not ask when nothing would be lost", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
     await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
@@ -652,7 +668,7 @@ describe("FirearmForm origin control (US1)", () => {
 
   it("opens the origin guide from the How do I record this? button", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: "How do I record this?" }));
     expect(
@@ -667,7 +683,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
 
   it("shows the fieldset for an import-marked origin, with a hint and all three fields optional", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
 
@@ -683,7 +699,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
 
   it("shows the fieldset for a re-imported origin too", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Re-imported/ }));
 
@@ -692,7 +708,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
 
   it("shows no original-marks fields for a domestic or unspecified origin", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     expect(screen.queryByRole("group", { name: "Original maker's marks" })).not.toBeInTheDocument();
 
@@ -703,7 +719,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
   it("submits a partial set with no message", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
@@ -721,7 +737,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
   it("submits all three fields, and null when left blank", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
@@ -739,7 +755,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
 
   it("discards original marks (with importer) when moving away from an import-marked origin", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
     await user.type(within(group()).getByLabelText("Original maker"), "Fabrique Nationale");
@@ -753,7 +769,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
 
   it("carries original marks over when moving between Imported and Re-imported", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /^Imported/ }));
     await user.type(within(group()).getByLabelText("Original maker"), "Fabrique Nationale");
@@ -805,5 +821,137 @@ describe("FirearmForm original-marks warning (US3, FR-009)", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The origin fields fold into one disclosure so the form stays short for the
+// many records that never use them; closing it must never hide a value or an
+// error.
+describe("FirearmForm origin group disclosure", () => {
+  const imported = {
+    id: 1,
+    make: "Glock",
+    model: "17",
+    status: "active",
+    origin: "imported",
+    yearOfManufacture: 1998,
+    countryOfManufacture: "Austria",
+    importerName: "Glock Inc.",
+    originalMake: "Glock GmbH",
+  } as Firearm;
+
+  it("starts closed on a new record, saying what it holds", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(originGroupButton()).toHaveAttribute("aria-expanded", "false");
+    expect(originGroupButton()).toHaveTextContent(
+      "Optional: where and when it was made, and who imported it.",
+    );
+    expect(screen.queryByLabelText("Year of manufacture")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /^Domestic/ })).not.toBeInTheDocument();
+  });
+
+  it("starts open on a record with any of its fields recorded", () => {
+    render(<FirearmForm initialValues={imported} onSubmit={vi.fn()} />);
+
+    expect(originGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Year of manufacture")).toHaveValue("1998");
+  });
+
+  it("reads the recorded values back when closed", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={imported} onSubmit={vi.fn()} />);
+
+    await user.click(originGroupButton());
+
+    expect(originGroupButton()).toHaveAttribute("aria-expanded", "false");
+    expect(originGroupButton()).toHaveTextContent(
+      "Imported from Austria by Glock Inc. Made in 1998. Original maker's marks recorded.",
+    );
+  });
+
+  it("still submits values recorded in a closed group", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <FirearmForm
+        initialValues={{ ...imported, caliber: "9mm", firearmTypeId: 1, serialNumber: "A1" }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(originGroupButton());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      origin: "imported",
+      yearOfManufacture: 1998,
+      importerName: "Glock Inc.",
+    });
+  });
+
+  it("opens and focuses an invalid year when a save is tried with the group closed", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(originGroupButton());
+    await user.type(screen.getByLabelText("Year of manufacture"), "1200");
+    await user.click(originGroupButton());
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(originGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Year of manufacture")).toHaveFocus();
+  });
+
+  it("opens on a server error for one of its fields", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "The firearm record has validation errors.",
+        fieldErrors: { importerName: "Importer is too long." },
+      }),
+    );
+    render(
+      <FirearmForm
+        initialValues={{ ...imported, caliber: "9mm", firearmTypeId: 1, serialNumber: "A1" }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(originGroupButton());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(originGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Importer is too long.")).toBeInTheDocument();
+  });
+
+  it("opens and brings Year of manufacture into view on an identity clash with no year", async () => {
+    const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    const message =
+      "Glock 19 (serial ABC123) already has these marks. Or record a year of manufacture on each firearm: two firearms with the same marks are accepted when both have a year and the years differ.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { serialNumber: message },
+      }),
+    );
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(originGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(Element.prototype.scrollIntoView).mock.contexts[0]).toHaveAttribute(
+      "data-field",
+      "yearOfManufacture",
+    );
   });
 });

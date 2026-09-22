@@ -55,6 +55,27 @@ export async function clickButton(text: string) {
   await browser.pause(SETTLE_MS);
 }
 
+/** Opens the firearm form's "Origin and year of manufacture" group if it is
+ * closed (it starts closed on a record with none of its fields recorded).
+ * Its button's text also carries a summary, so match on the title. */
+export async function openOriginGroup() {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        new Function(
+          `${SCOPE_JS}
+          const button = [...scope.querySelectorAll("button[aria-expanded]")].find((b) =>
+            b.textContent.trim().startsWith("Origin and year of manufacture"),
+          );
+          if (button && button.getAttribute("aria-expanded") === "false") button.click();
+          return Boolean(button);`,
+        ) as () => boolean,
+      ),
+    { timeout: 5000, timeoutMsg: 'no "Origin and year of manufacture" group' },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
 /** Whether the button with this visible text, in the innermost open dialog,
  * is disabled. (An attribute selector can't express "button with this text"
  * after a descendant combinator, so this reads it from the page.) */
@@ -437,6 +458,14 @@ export async function fillFirearmForm(firearm: NewFirearm) {
   if (firearm.acquisitionDate) await fill("Date acquired", firearm.acquisitionDate);
   if (firearm.notes) await fill("Notes", firearm.notes);
   if (firearm.finish) await fill("Finish", firearm.finish);
+  if (
+    firearm.origin ||
+    firearm.countryOfManufacture ||
+    firearm.importerName ||
+    firearm.yearOfManufacture
+  ) {
+    await openOriginGroup();
+  }
   if (firearm.origin) await choose(firearm.origin);
   if (firearm.countryOfManufacture)
     await fill("Country of manufacture", firearm.countryOfManufacture);

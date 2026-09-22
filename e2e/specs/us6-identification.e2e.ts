@@ -1,4 +1,13 @@
-import { $, addFirearm, back, browser, clickButton, expect, openFirearm } from "../support/ui";
+import {
+  $,
+  addFirearm,
+  back,
+  browser,
+  clickButton,
+  expect,
+  openFirearm,
+  openOriginGroup,
+} from "../support/ui";
 
 /**
  * End-to-end coverage of specs/002-firearm-identification's User Story 1
@@ -14,6 +23,7 @@ describe("User Story 1 - Identification (specs/002-firearm-identification)", () 
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();
 
+    await openOriginGroup();
     await clickButton("How do I record this?");
     await $('[role="dialog"]*=How to record where a firearm came from').waitForExist();
     expect(

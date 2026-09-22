@@ -543,6 +543,87 @@
   color: var(--ink-2);
 }
 
+/* ── Disclosure ──────────────────────────────────────────────────────── */
+
+/* A folded group of optional fields. Closed, it is one ruled row whose
+   summary reads back what is recorded; open, its fields sit on a sunk tray
+   so they read as supplementary to the fields above. */
+.hd-disclosure {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--sheet);
+}
+
+.hd-disclosure[data-open] {
+  background: color-mix(in srgb, var(--sheet-sunk) 55%, var(--sheet));
+}
+
+.hd-disclosure__heading {
+  margin: 0;
+  font: inherit;
+}
+
+.hd-disclosure__trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hd-disclosure__trigger:hover .hd-disclosure__title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--rule-strong);
+}
+
+.hd-disclosure__trigger:focus-visible {
+  outline: 2px solid var(--niter);
+  outline-offset: 2px;
+}
+
+.hd-disclosure__chevron {
+  flex: none;
+  margin-top: 1px;
+  color: var(--ink-2);
+  transition: transform 160ms var(--ease-out);
+}
+
+.hd-disclosure[data-open] .hd-disclosure__chevron {
+  transform: rotate(90deg);
+}
+
+.hd-disclosure__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hd-disclosure__title {
+  font-weight: 650;
+}
+
+.hd-disclosure__summary {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-disclosure__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+
 /* ── Dialogs ─────────────────────────────────────────────────────────── */
 
 .hd-dialog__overlay {

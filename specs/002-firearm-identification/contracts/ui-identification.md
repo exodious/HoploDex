@@ -7,14 +7,36 @@ and tested against one description. It is guidance-only about origin: the UI
 never blocks, rejects or second-guesses a choice of origin (FR-015), and
 never displays a conclusion about legal status (FR-006). Shared components
 only (Constitution III): `ChoiceCards`, `TextField`, `ConfirmDialog`,
-`Dialog`, `Select`, `Field`. Requirement IDs refer to [spec.md](./../spec.md).
+`Dialog`, `Select`, `Field`, `Disclosure`. Requirement IDs refer to [spec.md](./../spec.md).
 
-## 1. Firearm form — origin control (US1, FR-001, FR-015)
+## 1. Firearm form — origin group and origin control (US1, FR-001, FR-015)
 
-Placed in the **Identification** section, after Type, before Caliber /
-Serial number. A `ChoiceCards` radio group labeled **Origin** (optional, not
-marked required) with four cards, each with a visible one-line description
-(not a tooltip):
+Every field this feature adds to the form sits in the **Identification**
+section, after Caliber / Serial number, inside one `Disclosure` titled
+**Origin and year of manufacture**. The required identifying marks (make,
+model, type, caliber, serial) come first and stay together; these optional
+fields, which most records never use, fold away below them.
+
+- The group starts **closed** on a new record and on a record with none of
+  its fields recorded, and **open** on a record with any of them recorded.
+  The user can open or close it at any time; closing it keeps every value,
+  and they are saved as usual.
+- Closed, the group's button shows one line under its title. With nothing
+  recorded: "Optional: where and when it was made, and who imported it."
+  Otherwise it reads the recorded values back, for example "Imported from
+  Austria by Glock Inc. Made in 1998. Original maker's marks recorded." So
+  closing the group never hides a value.
+- Closed, its fields are not rendered, so they are never focusable. The
+  group opens itself when a save is stopped by an invalid field inside it
+  (the field is then focused, as for any other field) and when the backend
+  rejects a field inside it (§4).
+- Inside the group, in order: **Year of manufacture** (§2), the origin
+  control below, its conditional fields (§2), and the **Original maker's
+  marks** group (§2).
+
+The origin control is a `ChoiceCards` radio group labeled **Origin**
+(optional, not marked required) with four cards, each with a visible
+one-line description (not a tooltip):
 
 | Card | Description shown | Stored value |
 |---|---|---|
@@ -26,8 +48,9 @@ marked required) with four cards, each with a visible one-line description
 - A new record starts on **Not specified**; existing records show their
   stored value, and one with none shows **Not specified** with nothing else
   offered (US1-1, US1-8).
-- Beside the group is a button **How do I record this?** that opens the
-  guide (§8). It is in the tab order right after the origin cards.
+- Below the cards, aligned with their left edge, is a button **How do I
+  record this?** that opens the guide (§8). It is in the tab order right
+  after the origin cards.
 - When **Domestic** is selected, a one-line cue appears under the control:
   "Made in the U.S. but stamped with an importer's name? Choose
   Re-imported." (FR-015, US1-7). It is text, not an error, and does not
@@ -38,7 +61,7 @@ marked required) with four cards, each with a visible one-line description
 
 ## 2. Firearm form — conditional fields (US1, US2, FR-002, FR-004)
 
-Below the origin control, in the same section:
+Below the origin control, inside the origin group (§1):
 
 | Origin selected | Fields shown | Notes |
 |---|---|---|
@@ -53,9 +76,11 @@ Below the origin control, in the same section:
   number**, all optional, with a hint: "Only if the original maker's marks
   differ from the make, model and serial number above, or you want both."
   A partial set is accepted with no message (US2-6). The group is a
-  `fieldset` with that legend.
-- **Year of manufacture** is shown for every origin, in the Identification
-  section, as a numeric text input (digits only, four characters). Optional;
+  `fieldset` with that legend, set off from the fields above it by a rule
+  and titled like a field label rather than a form section.
+- **Year of manufacture** is shown for every origin, first in the origin
+  group, as a numeric text input (digits only, four characters) whose
+  control is sized for four digits rather than the column's full width. Optional;
   hint: "A single year, e.g. 1943. Put anything uncertain in Notes." When two
   records with the same make, model and serial need telling apart, the
   identity error (§4) points here.
@@ -91,8 +116,10 @@ the selection takes effect:
   existing record and ends with "Or record a year of manufacture on each
   firearm: two firearms with the same marks are accepted when both have a
   year and the years differ." The form marks Year of manufacture as the
-  place to act by scrolling to it on the first failed save if the year is
-  empty.
+  place to act: if the year is empty, it opens the origin group (§1) and
+  scrolls the year into view.
+- Any other backend `fieldErrors` on a field inside the origin group opens
+  the group, so the message is never hidden.
 - **Original-marks match (FR-009, US3-5)**: a save that returns
   `ORIGINAL_MARKS_MATCH` opens a `ConfirmDialog` (non-destructive):
   - **Title**: "Another firearm has the same original marks"

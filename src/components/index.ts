@@ -20,6 +20,8 @@ export { SegmentedControl } from "./SegmentedControl";
 export type { SegmentedControlProps, SegmentedOption } from "./SegmentedControl";
 export { ChoiceCards } from "./ChoiceCards";
 export type { ChoiceCardsProps, ChoiceCard } from "./ChoiceCards";
+export { Disclosure } from "./Disclosure";
+export type { DisclosureProps } from "./Disclosure";
 export { Dialog } from "./Dialog";
 export type { DialogProps } from "./Dialog";
 export { ConfirmDialog } from "./ConfirmDialog";

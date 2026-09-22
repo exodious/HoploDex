@@ -72,14 +72,39 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* specs/002-firearm-identification: the origin control spans the row; its
-   conditional fields (country, importer, year) sit two to a row below it. */
+/* specs/002-firearm-identification: inside the "Origin and year of
+   manufacture" disclosure, the origin control spans the row and its
+   conditional fields (country, importer) sit two to a row below it. */
 .hd-form-grid--origin {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .hd-form-grid--origin > [data-field="origin"] {
   grid-column: 1 / -1;
+}
+
+/* Pulls the guide button's text in line with the cards' left edge rather
+   than stretching it across the column. */
+.hd-origin-guide__trigger {
+  align-self: flex-start;
+  margin-left: calc(-1 * var(--space-3));
+}
+
+/* A four-digit year needs a short control; the hint keeps the full width. */
+.hd-field--year .hd-input {
+  width: 9rem;
+}
+
+/* A titled group nested in a disclosure (Original maker's marks): set off
+   by a rule, titled like a field label rather than a section. */
+.hd-form-subgroup {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+}
+
+.hd-form-fieldset > legend.hd-form-subgroup__title {
+  margin-bottom: var(--space-2);
+  font-weight: 650;
 }
 
 .hd-form-stack {
