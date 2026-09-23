@@ -58,13 +58,13 @@
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.0",
     "vite": "^6.1.0",
-    "vitest": "^3.0.5"
+    "vitest": "^5.0.1"
   },
   "overrides": {
     "serialize-javascript": "^7.0.7"
   },
   "allowScripts": {
-    "edgedriver@6.3.0": true,
+    "edgedriver@6.3.1": true,
     "esbuild@0.28.1": true,
     "esbuild@0.25.12": true,
     "geckodriver@6.1.1": true
