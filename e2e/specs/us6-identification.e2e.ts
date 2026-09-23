@@ -25,7 +25,10 @@ describe("User Story 1 - Identification (specs/002-firearm-identification)", () 
 
     await openOriginGroup();
     await clickButton("How do I record this?");
-    await $('[role="dialog"]*=How to record where a firearm came from').waitForExist();
+    // Displayed, not just present: getText() reads "" while the dialog is still
+    // fading in from opacity 0, which software rendering (no GPU, as in the
+    // development container) makes long enough to hit.
+    await $('[role="dialog"]*=How to record where a firearm came from').waitForDisplayed();
     expect(
       (await $('[role="dialog"]*=How to record where a firearm came from').getText()).replace(
         /\s+/g,
