@@ -366,3 +366,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Focused by the policy page's pinned strip; see .hd-plate__name:focus. */
+.hd-policy__name:focus {
+  outline: none;
+}

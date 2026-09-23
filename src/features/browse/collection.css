@@ -68,16 +68,7 @@
 }
 
 .hd-search__kbd {
-  display: grid;
-  place-items: center;
-  min-width: 22px;
-  height: 22px;
   margin-right: 9px;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--ink-2);
 }
 
 .hd-results-note {

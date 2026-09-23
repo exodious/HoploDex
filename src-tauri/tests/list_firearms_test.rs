@@ -164,10 +164,10 @@ fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
     assert_eq!(all_with_disposed.len(), 2);
 }
 
-/// Two firearms can share make and model (spec_TODO: "the name assigned to a
-/// firearm in the UI is a combination of the make and model") — browse rows
-/// carry the serial number so the UI can tell them apart, plus the coverage
-/// assignment so the insurance view can list each policy's firearms.
+/// Two firearms can share make and model, which is how the UI names a
+/// firearm — browse rows carry the serial number so the UI can tell them
+/// apart, plus the coverage assignment so the insurance view can list each
+/// policy's firearms.
 #[test]
 fn summaries_carry_serial_number_and_coverage_assignment() {
     let db = TestDb::new();

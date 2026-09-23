@@ -360,6 +360,99 @@ export async function back() {
   await browser.pause(300);
 }
 
+/** Presses Escape as the user would, on whatever has focus. */
+export async function pressEscape() {
+  await browser.keys(["Escape"]);
+  await browser.pause(300);
+}
+
+/** Scrolls a long record or policy page to the bottom and waits for the
+ * pinned strip that keeps its heading's controls in reach (FR-041). */
+export async function scrollToPinnedStrip() {
+  await browser.execute(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await $(".hd-runhead").waitForExist({ timeoutMsg: "the pinned strip never showed" });
+  await browser.pause(200);
+}
+
+// Runs in the page: `reachable(el)` is true when `el` is on screen below the
+// top bar and is what a click at its center would land on, so nothing covers
+// it. JS clicks (see above) would succeed on an element that fails this, so
+// tests that claim something is within reach check it here first.
+const REACHABLE_JS = `
+  const topbar = document.querySelector(".hd-topbar")?.getBoundingClientRect().bottom ?? 0;
+  const reachable = (el) => {
+    if (!el) return false;
+    const box = el.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return false;
+    if (box.top < topbar - 1 || box.bottom > window.innerHeight) return false;
+    if (box.left < 0 || box.right > window.innerWidth) return false;
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return Boolean(hit) && (hit === el || el.contains(hit));
+  };
+  const text = (el) => (reachable(el) ? el.textContent.trim() : "");
+`;
+
+/** What the pinned strip shows within reach: the back link's label and key,
+ * the record's name and stamp, and its actions (visible text, or accessible
+ * name for icon buttons). A part that is off screen, covered, or collapsed
+ * reads as "" (or is left out of `actions`). Reads text from the DOM because
+ * WebDriver's getText() drops the strip's ellipsis-truncated spans. */
+export async function pinnedStrip(): Promise<{
+  back: string;
+  backKey: string;
+  name: string;
+  stamp: string;
+  actions: string[];
+}> {
+  return browser.execute(
+    new Function(
+      `${REACHABLE_JS}
+      const strip = document.querySelector(".hd-runhead");
+      const part = (selector) => text(strip?.querySelector(selector));
+      return {
+        back: part(".hd-backlink__label"),
+        backKey: part(".hd-backlink__kbd"),
+        name: part(".hd-runhead__name"),
+        stamp: part(".hd-runhead__stamp"),
+        actions: [...(strip?.querySelectorAll(".hd-runhead__actions button") ?? [])]
+          .filter(reachable)
+          .map((b) => b.getAttribute("aria-label") ?? b.textContent.trim()),
+      };`,
+    ) as () => { back: string; backKey: string; name: string; stamp: string; actions: string[] },
+  );
+}
+
+/** The page's own back link (not the pinned strip's), as shown within reach:
+ * its label and the key it shows (FR-040). */
+export async function backLinkShown(): Promise<{ label: string; key: string }> {
+  return browser.execute(
+    new Function(
+      `${REACHABLE_JS}
+      const link = [...document.querySelectorAll(".hd-backlink")].find(
+        (l) => !l.closest(".hd-runhead"),
+      );
+      return {
+        label: text(link?.querySelector(".hd-backlink__label")),
+        key: text(link?.querySelector(".hd-backlink__kbd")),
+      };`,
+    ) as () => { label: string; key: string },
+  );
+}
+
+/** Clicks a button in the pinned strip by its visible text or accessible
+ * name. */
+export async function clickPinned(name: string) {
+  const clicked = await browser.execute((wanted: string) => {
+    const button = [...document.querySelectorAll<HTMLElement>(".hd-runhead button")].find(
+      (b) => b.textContent?.trim() === wanted || b.getAttribute("aria-label") === wanted,
+    );
+    button?.click();
+    return Boolean(button);
+  }, name);
+  if (!clicked) throw new Error(`no "${name}" button in the pinned strip`);
+  await browser.pause(SETTLE_MS);
+}
+
 /** Names ("Make Model") of every firearm currently listed. */
 export async function listedNames(): Promise<string[]> {
   return browser.execute(() =>

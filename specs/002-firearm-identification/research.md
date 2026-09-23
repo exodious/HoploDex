@@ -356,8 +356,8 @@ not express "one record has a year and the other does not".
   `update_firearm`, `reverse_disposition`, `import_collection`, the
   spreadsheet columns). 001's files are not rewritten. The last task adds a
   one-line "amended by 002" pointer at each of those anchors.
-- **Rationale**: Track A items edit 001 in place because they correct it;
-  Track B specs *extend* it and, per the planning convention in the spec's
+- **Rationale**: Corrections to 001 edit it in place; new-capability specs
+  *extend* it and, per the planning convention in the spec's
   Source Request, must list which 001 requirements and decisions they
   amend, which the spec's Relationship section does.
   Keeping deltas next to the spec that owns them means each feature's folder

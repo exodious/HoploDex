@@ -47,7 +47,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
               <Icon name="close" size={16} />
             </button>
           ) : (
-            <kbd className="hd-search__kbd" aria-hidden>
+            <kbd className="hd-kbd hd-search__kbd" aria-hidden>
               /
             </kbd>
           )}

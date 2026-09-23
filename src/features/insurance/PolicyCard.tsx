@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { Badge, Button, InsuranceWarningBadge } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
@@ -18,6 +19,7 @@ export function PolicyCard({
   onOpen,
   onEdit,
   onDelete,
+  headRef,
 }: {
   policy: InsurancePolicy;
   /** The blanket policy in force today, if any. */
@@ -29,6 +31,8 @@ export function PolicyCard({
   firearms: FirearmSummary[];
   onEdit: () => void;
   onDelete: () => void;
+  /** The card's header: the policy page pins a strip once it scrolls away. */
+  headRef?: Ref<HTMLElement>;
 }) {
   const scheduledAmounts = new Map(
     (summary?.individuallyScheduled ?? []).map((s) => [s.firearmId, s]),
@@ -38,9 +42,14 @@ export function PolicyCard({
 
   return (
     <article className="hd-policy" aria-labelledby={`policy-${policy.id}`}>
-      <header className="hd-policy__head">
+      <header className="hd-policy__head" ref={headRef}>
         <div className="hd-policy__title">
-          <h3 className="hd-policy__name" id={`policy-${policy.id}`}>
+          <h3
+            className="hd-policy__name"
+            id={`policy-${policy.id}`}
+            // On its own page, the pinned strip's "back to top" focuses it.
+            tabIndex={onOpen ? undefined : -1}
+          >
             {onOpen ? (
               <button type="button" className="hd-policy__open" onClick={onOpen}>
                 {policy.name}

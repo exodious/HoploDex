@@ -186,7 +186,7 @@ This feature is an extension of `specs/001-firearms-inventory/`. It **amends** t
 
 This feature came from the project's working list of planned features, which is not kept long term. What this spec drew on is reproduced here for the record.
 
-**Planning convention.** Items on that list that correct feature 001 ("Track A") are made by editing 001's documents in place. Items that add a new capability ("Track B") become their own spec, and each such spec must list which 001 requirements and decisions it amends or supersedes; for this feature that is the [Relationship to Feature 001](#relationship-to-feature-001) section.
+**Planning convention.** Items on that list that correct feature 001 are made by editing 001's documents in place. Items that add a new capability become their own spec, and each such spec must list which 001 requirements and decisions it amends or supersedes; for this feature that is the [Relationship to Feature 001](#relationship-to-feature-001) section.
 
 **The two requests, verbatim:**
 

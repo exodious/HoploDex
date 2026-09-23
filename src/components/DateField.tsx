@@ -23,8 +23,7 @@ export interface DateFieldProps extends Omit<
  * Date input that accepts typed dates (2024-03-14 or 3/14/2024) plus a
  * calendar popover that closes as soon as a day is picked. Replaces the
  * native `<input type="date">`, whose WebKitGTK picker stayed open after
- * choosing a date (spec_TODO) and whose segment-typing garbled pasted ISO
- * dates.
+ * choosing a date and whose segment-typing garbled pasted ISO dates.
  */
 export function DateField({ value, onValueChange, onBlur, label, max, ...props }: DateFieldProps) {
   const [open, setOpen] = useState(false);

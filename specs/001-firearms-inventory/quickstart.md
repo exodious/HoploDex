@@ -100,6 +100,16 @@ Workflow gate.
     finish and condition → the record shows "16.25 in", "2 lb 8.5 oz" and the
     rest after reopening; type `16.255` in a length → saved as 16.26 in; leave all six blank → saves and shows none; search a
     word from the finish → the firearm is found (Scenario 17).
+16. Open a firearm from the collection and press Escape → back on the
+    collection, as the "← Collection" link (which shows the Esc key) would.
+    Reopen it, open Edit and press Escape → the dialog closes and the record
+    stays; in the form, open the Condition menu and press Escape → only the
+    menu closes; with the cursor in a text field, Escape never leaves the
+    record. On a record long enough to scroll (long notes), scroll down → a
+    strip pinned under the top bar keeps the way back, the name and serial,
+    and Edit, Mark disposed (or Restore to collection) and Delete, each
+    opening the same dialog as the heading's; its name returns to the top
+    (Scenario 18; FR-040, FR-041).
 
 ### US2 — Browse, Search, and Group (P2)
 
@@ -153,6 +163,13 @@ Workflow gate.
 
 13. Enter notes on a policy and save → shown on the policy after reopening;
     clear them → none shown (Scenario 16).
+14. Open a policy from a firearm's Insurance panel and press Escape → back on
+    the firearm; follow "Review insurance" from the collection to the
+    Insurance page and press Escape → back on the collection. Dialogs, menus
+    and text fields keep Escape as on a firearm's record. On a policy long
+    enough to scroll (long notes), scroll down → the pinned strip keeps the
+    way back, the policy's name and number, Edit and Delete (Scenario 17;
+    FR-040, FR-041).
 
 ### US4 — Attach Photos and Documents (P4)
 

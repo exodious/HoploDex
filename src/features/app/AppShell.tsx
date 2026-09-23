@@ -132,6 +132,26 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Escape goes back wherever a back link shows (FR-040), unless it's closing a
+  // dialog or popover or the user is typing in a field.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented || !back) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
+      if (
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]',
+        )
+      )
+        return;
+      back.go();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [back]);
+
   const navigation = useMemo<Navigation>(
     () => ({ route, navigate, open, back, openDialog: setDialog }),
     [route, navigate, open, back],

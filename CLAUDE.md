@@ -13,6 +13,7 @@ HoploDex is a local-only firearm collection inventory app: Tauri 2 with a Rust b
 On a host with podman, run tests, lint and screenshots through `scripts/dev-container.sh` by default, not directly on the host: put the command after the wrapper, and use `bash -c '...'` to chain several.
 - **Already inside?** Check first. The container's working directory is `/workspace` and its hostname is `hoplodex-dev`. If both match, run the commands directly and don't nest the wrapper.
 - **First runs are slow** (image build, then an empty `node_modules` and `target`). Give long commands a generous timeout, or run them in the background.
+- **Waiting on a background run:** redirect its output to a log file, end it with a short summary (`echo "exit $?"` plus a `grep` for passing/failing), and wait for the completion notification. Don't write `until …; sleep` poll loops. Don't end a background command with `| tail -N` either: nothing reaches the output file until the command exits, so it looks hung.
 - Don't use the options that pass the host's identity through (`--git-config`, `--ssh-agent`, `--gh-token`, `--anthropic-api-key`) unless the user asks. Commit from the host. `--gui` is only for `tauri dev` and human testing; tests don't need it.
 - Use `--build` after a `Dockerfile` change. Never use `--reset-volumes=all` without asking, because it logs the user out of `gh` and `claude`.
 - Run tests directly on the host only if podman isn't available or the user asks.

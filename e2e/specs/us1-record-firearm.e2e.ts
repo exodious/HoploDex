@@ -1,5 +1,8 @@
 import { $, addFirearm, back, browser, clickButton, choose, expect, fill } from "../support/ui";
 import {
+  backLinkShown,
+  clickEl,
+  clickPinned,
   displayName,
   fieldValue,
   fillFirearmForm,
@@ -13,6 +16,9 @@ import {
   openPhysicalGroup,
   openFirearm,
   pasteInto,
+  pinnedStrip,
+  pressEscape,
+  scrollToPinnedStrip,
   selectOption,
   titleBlock,
   toggle,
@@ -465,5 +471,77 @@ describe("User Story 1 - Record a Firearm", () => {
     await $('[role="dialog"]').waitForExist({ reverse: true });
     await $('section[aria-labelledby="physical-title"]').waitForExist({ reverse: true });
     await back();
+  });
+
+  it("goes back with Escape, and keeps a long record's name and actions in reach (Scenario 18)", async () => {
+    // Enough notes to make the record scroll well past its plate.
+    const notes = Array.from({ length: 80 }, (_, i) => `Range note ${i + 1}.`).join("\n");
+    await addFirearm({
+      make: "E2EEsc",
+      model: "Long",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "ESC-1",
+      notes,
+    });
+    // FR-040: the back link shows its shortcut, and Escape does what it does.
+    expect(await backLinkShown()).toEqual({ label: "Collection", key: "Esc" });
+    await pressEscape();
+    await expect($("#record-name")).not.toExist();
+    await expect($(".hd-page-title")).toHaveText("Collection");
+
+    // With a dialog open, Escape closes the dialog and stays on the record.
+    await openFirearm("E2EEsc Long");
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await expect($("#record-name")).toHaveText("E2EEsc Long");
+
+    // With a menu open inside it, Escape closes only the menu.
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    await openPhysicalGroup();
+    await browser.execute(() => {
+      const label = [...document.querySelectorAll('[role="dialog"] label')].find(
+        (l) => l.textContent?.trim() === "Condition",
+      ) as HTMLLabelElement | undefined;
+      document.getElementById(label?.htmlFor ?? "")?.click();
+    });
+    await $('[role="listbox"]').waitForExist();
+    await pressEscape();
+    await $('[role="listbox"]').waitForExist({ reverse: true });
+    await expect($('[role="dialog"]')).toExist();
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await expect($("#record-name")).toHaveText("E2EEsc Long");
+
+    // FR-041: scrolled down, the strip keeps the way back, the name and the
+    // heading's actions.
+    await scrollToPinnedStrip();
+    expect(await pinnedStrip()).toEqual({
+      back: "Collection",
+      backKey: "Esc",
+      name: "E2EEsc Long",
+      stamp: "ESC-1",
+      actions: ["Edit", "Mark disposed", "Delete"],
+    });
+
+    await clickPinned("Edit");
+    await expect($('[role="dialog"]*=Edit E2EEsc Long')).toExist();
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await expect($(".hd-runhead")).toExist();
+
+    // The name returns to the top.
+    await clickEl(".hd-runhead__title");
+    await browser.waitUntil(() => browser.execute(() => window.scrollY === 0), {
+      timeoutMsg: "the page never returned to the top",
+    });
+    await $(".hd-runhead").waitForExist({ reverse: true });
+    await expect($("#record-name")).toBeFocused();
+
+    await pressEscape();
+    await expect($(".hd-page-title")).toHaveText("Collection");
   });
 });

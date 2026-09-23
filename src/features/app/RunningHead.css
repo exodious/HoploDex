@@ -1,0 +1,122 @@
+/* The continuation strip: a band of the record's sheet pinned under the top
+   bar, closed by the same heavy ink rule that divides the plate. It slides
+   out from beneath the top bar (which sits above it) when it appears. */
+.hd-runhead {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  right: 0;
+  z-index: 45;
+  background: var(--sheet);
+  border-bottom: 1.5px solid var(--ink);
+  box-shadow: var(--shadow-raised);
+  animation: hd-runhead-in 180ms var(--ease-out);
+}
+
+@keyframes hd-runhead-in {
+  from {
+    transform: translateY(-100%);
+  }
+}
+
+.hd-runhead__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: var(--page-max);
+  height: 52px;
+  margin: 0 auto;
+  padding: 0 var(--space-8);
+}
+
+.hd-runhead .hd-backlink {
+  flex: 0 1 auto;
+  max-width: 24ch;
+  min-width: 0;
+}
+
+/* A long record name as the way back shortens rather than crowding out
+   the strip's own name. */
+.hd-runhead .hd-backlink__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The name returns to the top. A hairline sets it off from the way back,
+   like the cell rules of the title block it stands in for. */
+.hd-runhead__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hd-backlink + .hd-runhead__title {
+  margin-left: var(--space-1);
+}
+
+.hd-runhead__title:hover {
+  background: var(--sheet-sunk);
+}
+
+.hd-runhead__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.005em;
+}
+
+/* The plate's roll-stamped serial, at a size that fits the strip. */
+.hd-runhead__stamp {
+  flex: none;
+  padding: 3px 8px 2px;
+  border-radius: var(--radius-sm);
+  background: var(--vellum);
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 0.12),
+    inset 0 0 0 1px var(--rule);
+  font-size: var(--text-sm);
+  letter-spacing: 0.14em;
+}
+
+.hd-runhead__up {
+  flex: none;
+  color: var(--ink-3);
+}
+
+.hd-runhead__title:hover .hd-runhead__up {
+  color: var(--ink);
+}
+
+.hd-runhead__actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+@media (max-width: 900px) {
+  .hd-runhead__inner {
+    padding: 0 var(--space-5);
+  }
+
+  .hd-runhead__stamp {
+    display: none;
+  }
+}
