@@ -2,7 +2,7 @@ import { Icon } from "../../components";
 import type { BackTarget } from "./navigation";
 
 /** "← Where you came from". The label names the page or record returned
- * to. Escape does the same wherever a back link shows (the app shell
+ * to (FR-040). Escape does the same wherever a back link shows (the app shell
  * handles it), so the link carries the key as a keycap. */
 export function BackLink({ target }: { target: BackTarget }) {
   return (

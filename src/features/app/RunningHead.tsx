@@ -23,7 +23,7 @@ export interface RunningHeadProps {
 /** A slim strip under the top bar for a long record page, the way a drawing
  * set repeats a reduced title block on every continuation sheet. Once the
  * page's heading scrolls away it keeps the way back, the record's name
- * (which returns to the top) and the record's actions within reach. */
+ * (which returns to the top) and the record's actions within reach (FR-041). */
 export function RunningHead({ anchor, headingId, title, stamp, actions }: RunningHeadProps) {
   const { back } = useNavigation();
   const shown = useScrolledPast(anchor);

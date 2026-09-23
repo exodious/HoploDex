@@ -12,7 +12,7 @@ function Harness() {
 
 describe("DateField", () => {
   it("fills the field and closes the calendar as soon as a day is picked", async () => {
-    // Regression (spec_TODO): the native WebKitGTK date picker stayed open
+    // Regression: the native WebKitGTK date picker stayed open
     // after a date was chosen.
     const user = userEvent.setup();
     render(<Harness />);

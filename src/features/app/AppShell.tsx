@@ -132,7 +132,7 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Escape goes back wherever a back link shows, unless it's closing a
+  // Escape goes back wherever a back link shows (FR-040), unless it's closing a
   // dialog or popover or the user is typing in a field.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
