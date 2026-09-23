@@ -20,8 +20,13 @@ chmod 700 "$XDG_RUNTIME_DIR"
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
   DBUS_SESSION_BUS_ADDRESS="$(dbus-daemon --session --fork --print-address=1)"
   export DBUS_SESSION_BUS_ADDRESS
+  # --login only unlocks; a daemon that sees no --start within 120 seconds
+  # exits, and the app's first keyring call (after a long cold build) would
+  # then D-Bus-activate a fresh daemon with no login collection. --start
+  # completes the session like a desktop login does.
   set -a
   eval "$(printf '\n' | gnome-keyring-daemon --login --daemonize --components=pkcs11,secrets 2>/dev/null)" || true
+  eval "$(gnome-keyring-daemon --start --components=pkcs11,secrets 2>/dev/null)" || true
   set +a
 fi
 

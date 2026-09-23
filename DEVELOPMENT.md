@@ -186,11 +186,16 @@ against your session's bus before running tests:
 ```bash
 sudo pacman -S --needed gnome-keyring   # apt install gnome-keyring on Debian/Ubuntu
 printf '\n' | gnome-keyring-daemon --login --daemonize --components=pkcs11,secrets
+gnome-keyring-daemon --start --components=pkcs11,secrets
 ```
 
 Use `--login` (not `--start --unlock` — this daemon version rejects that
 combination), which unlocks the login keyring with the blank password from
-stdin in one step, creating it on first run. Verify it registered correctly
+stdin in one step, creating it on first run. Follow it with `--start`, which
+finishes the session like a desktop login. Without it the `--login` daemon
+exits after 120 seconds, and the next keyring call D-Bus-activates a fresh
+daemon that has no login keyring, which fails with `SS error: result not
+returned from SS API`. Verify it registered correctly
 with `busctl --user list | grep org.freedesktop.secrets` before re-running
 `npm run test:e2e`.
 
