@@ -8,6 +8,17 @@
 #   scripts/dev-container.sh --gui npm run tauri dev
 #                                                 also show windows on your desktop
 #   scripts/dev-container.sh --build              (re)build the image first
+#   scripts/dev-container.sh --git-config --ssh-agent
+#                                                 commit and push from inside
+#
+# Options (before the command):
+#   --build              (re)build the image first
+#   --gui                forward your Wayland/X11 display and /dev/dri
+#   --git-config[=FILE]  mount your git config read-only (default ~/.gitconfig,
+#                        else ~/.config/git/config)
+#   --ssh-agent          forward your SSH agent socket ($SSH_AUTH_SOCK)
+#   --gh-token           pass through GH_TOKEN and/or GITHUB_TOKEN, for gh
+#   --anthropic-api-key  pass through ANTHROPIC_API_KEY, for Claude Code
 #
 # Rootless podman, as the image's non-root `dev` user. --userns=keep-id maps
 # your host user onto `dev`, so files written to the checkout stay yours.
@@ -30,10 +41,37 @@ image="${HOPLODEX_IMAGE:-hoplodex-dev}"
 
 build=0
 gui=0
+git_config=
+ssh_agent=0
+env_vars=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) build=1; shift ;;
     --gui) gui=1; shift ;;
+    --git-config)
+      git_config="$HOME/.gitconfig"
+      [[ -f "$git_config" ]] || git_config="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
+      shift
+      ;;
+    --git-config=*) git_config="${1#*=}"; shift ;;
+    --ssh-agent) ssh_agent=1; shift ;;
+    --gh-token)
+      [[ -n "${GH_TOKEN:-}" ]] && env_vars+=(GH_TOKEN)
+      [[ -n "${GITHUB_TOKEN:-}" ]] && env_vars+=(GITHUB_TOKEN)
+      if [[ -z "${GH_TOKEN:-}" && -z "${GITHUB_TOKEN:-}" ]]; then
+        echo "error: --gh-token needs GH_TOKEN or GITHUB_TOKEN set" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    --anthropic-api-key)
+      if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+        echo "error: --anthropic-api-key needs ANTHROPIC_API_KEY set" >&2
+        exit 1
+      fi
+      env_vars+=(ANTHROPIC_API_KEY)
+      shift
+      ;;
     -h | --help)
       sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'
       exit 0
@@ -73,13 +111,29 @@ fi
 
 [[ -t 0 && -t 1 ]] && args+=(-it)
 
-# Your git identity (as the system config, so the container's own ~/.gitconfig
-# stays writable), and your SSH agent for pushes.
-[[ -f "$HOME/.gitconfig" ]] && args+=(-v "$HOME/.gitconfig:/etc/gitconfig:ro")
-if [[ -n "${SSH_AUTH_SOCK:-}" && -S "$SSH_AUTH_SOCK" ]]; then
+# Your git config, only with --git-config (as the system config, so the
+# container's own ~/.gitconfig stays writable), and your SSH agent for pushes,
+# only with --ssh-agent.
+if [[ -n "$git_config" ]]; then
+  if [[ ! -f "$git_config" ]]; then
+    echo "error: --git-config: no git config at $git_config" >&2
+    exit 1
+  fi
+  args+=(-v "$(realpath "$git_config"):/etc/gitconfig:ro")
+fi
+if [[ $ssh_agent -eq 1 ]]; then
+  if [[ -z "${SSH_AUTH_SOCK:-}" || ! -S "$SSH_AUTH_SOCK" ]]; then
+    echo "error: --ssh-agent needs SSH_AUTH_SOCK set to a running agent's socket" >&2
+    exit 1
+  fi
   args+=(-v "$SSH_AUTH_SOCK:/run/host/ssh-agent.sock" -e SSH_AUTH_SOCK=/run/host/ssh-agent.sock)
 fi
-for var in TERM COLORTERM GH_TOKEN GITHUB_TOKEN ANTHROPIC_API_KEY; do
+# Tokens, only with --gh-token / --anthropic-api-key. Passed by name, so the
+# values stay off the command line.
+for var in "${env_vars[@]}"; do
+  args+=(-e "$var")
+done
+for var in TERM COLORTERM; do
   [[ -n "${!var:-}" ]] && args+=(-e "$var")
 done
 

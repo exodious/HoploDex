@@ -10,10 +10,10 @@ owns the UI.
 ### Development container (Linux, recommended)
 
 The repo's `Dockerfile` (Debian trixie) has everything below already
-installed: Rust, Node 22 with npm 11, the Tauri/WebKitGTK and SQLCipher build
-dependencies, `tauri-driver` and `WebKitWebDriver`, Xvfb, gnome-keyring, the
-GitHub CLI, Claude Code, Spec Kit's `specify`, and `python3-gi` for GTK
-drag-and-drop tests. It's built for rootless [podman](https://podman.io) and
+installed: Rust, Node 24 LTS with npm 12, the Tauri/WebKitGTK and SQLCipher
+build dependencies, `tauri-driver` and `WebKitWebDriver`, Xvfb,
+gnome-keyring, the GitHub CLI, Claude Code, Spec Kit's `specify`, and
+`python3-gi` for GTK drag-and-drop tests. It's built for rootless [podman](https://podman.io) and
 runs as a non-root `dev` user. The only thing to install on the host is
 podman.
 
@@ -22,6 +22,7 @@ scripts/dev-container.sh                      # shell in /workspace (builds the 
 scripts/dev-container.sh npm test             # or run one command and exit
 scripts/dev-container.sh --build              # rebuild the image, e.g. after pulling Dockerfile changes
 scripts/dev-container.sh --gui npm run tauri dev   # show the app's window on your desktop
+scripts/dev-container.sh --git-config --ssh-agent  # a shell you can commit and push from
 ```
 
 Every command in the sections below works unchanged inside the container.
@@ -36,11 +37,15 @@ don't collide with host builds:
   `npm ci`.
 - `/home/dev`, shared by all checkouts: shell history, the cargo crate cache,
   the keyring, and `gh` / `claude` logins. Log in once with `gh auth login` and
-  `claude`, or export `GH_TOKEN` / `ANTHROPIC_API_KEY` on the host; the wrapper
-  passes those through.
+  `claude` inside the container.
 
-The wrapper also mounts your `~/.gitconfig` (read-only) and your SSH agent
-socket so you can commit and push from inside. Tests and screenshots run
+Nothing from your host's identity is shared by default: no git config, SSH
+agent or tokens. To commit and push from inside, pass `--git-config` to mount
+your `~/.gitconfig` read-only (or `--git-config=FILE` for another one) and
+`--ssh-agent` to forward your SSH agent socket. To use tokens instead of
+logging in, export them on the host and pass `--gh-token` (`GH_TOKEN` /
+`GITHUB_TOKEN`) or `--anthropic-api-key` (`ANTHROPIC_API_KEY`). Options go
+before the command. Tests and screenshots run
 headless on Xvfb and need no display. `--gui` forwards your Wayland or X11
 socket and `/dev/dri`, for `tauri dev` and human testing. `podman volume ls |
 grep hoplodex` lists the volumes, and `podman volume rm` resets one.
@@ -60,8 +65,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Linux/macOS
 
 On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
 
-**Node.js 18+** and npm — via [nodejs.org](https://nodejs.org),
-[nvm](https://github.com/nvm-sh/nvm), or your platform's package manager.
+**Node.js 22+** (tested on 22 and 24 LTS) and **npm 11+** — via
+[nodejs.org](https://nodejs.org), [nvm](https://github.com/nvm-sh/nvm), or
+your platform's package manager.
 
 **Platform system dependencies** (required by Tauri/WebView, and by
 `rusqlite`'s bundled-SQLCipher build):

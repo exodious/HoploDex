@@ -12,8 +12,8 @@
 
 FROM docker.io/library/debian:trixie-slim
 
-ARG NODE_VERSION=22.23.2
-ARG NPM_VERSION=11
+ARG NODE_VERSION=24.21.0
+ARG NPM_VERSION=12
 ARG RUST_TOOLCHAIN=stable
 ARG TAURI_DRIVER_VERSION=2.0.6
 ARG SPEC_KIT_VERSION=v1.0.8
@@ -87,7 +87,7 @@ RUN install -d -m 0755 /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js (official build, checksum-verified) and npm 11, which writes the
+# Node.js LTS (official build, checksum-verified) and npm 12, which writes the
 # lockfile format this repo uses.
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
