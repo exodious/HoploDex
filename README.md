@@ -21,6 +21,7 @@ podman.
 scripts/dev-container.sh                      # shell in /workspace (builds the image on first use)
 scripts/dev-container.sh npm test             # or run one command and exit
 scripts/dev-container.sh --build              # rebuild the image, e.g. after pulling Dockerfile changes
+scripts/dev-container.sh --reset-volumes      # start over with empty node_modules and target volumes
 scripts/dev-container.sh --gui npm run tauri dev   # show the app's window on your desktop
 scripts/dev-container.sh --git-config --ssh-agent  # a shell you can commit and push from
 ```
@@ -48,7 +49,10 @@ logging in, export them on the host and pass `--gh-token` (`GH_TOKEN` /
 before the command. Tests and screenshots run
 headless on Xvfb and need no display. `--gui` forwards your Wayland or X11
 socket and `/dev/dri`, for `tauri dev` and human testing. `podman volume ls |
-grep hoplodex` lists the volumes, and `podman volume rm` resets one.
+grep hoplodex` lists the volumes. `--reset-volumes` deletes this checkout's
+`node_modules` and `target` volumes before starting, so they're rebuilt from
+scratch; `--reset-volumes=all` also deletes the shared home volume, which
+logs you out of `gh` and `claude`.
 `CONTAINER_ENGINE=docker` works too. Docker has no `keep-id`, though, so files
 end up owned by uid 1000, which is fine if that's your uid.
 

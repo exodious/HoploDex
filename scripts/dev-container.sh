@@ -8,11 +8,16 @@
 #   scripts/dev-container.sh --gui npm run tauri dev
 #                                                 also show windows on your desktop
 #   scripts/dev-container.sh --build              (re)build the image first
+#   scripts/dev-container.sh --reset-volumes      start from empty build volumes
 #   scripts/dev-container.sh --git-config --ssh-agent
 #                                                 commit and push from inside
 #
 # Options (before the command):
 #   --build              (re)build the image first
+#   --reset-volumes[=all]
+#                        delete this checkout's node_modules and target volumes
+#                        first; =all also deletes the shared /home/dev volume
+#                        (logins, caches, history). Bind mounts are untouched.
 #   --gui                forward your Wayland/X11 display and /dev/dri
 #   --git-config[=FILE]  mount your git config read-only (default ~/.gitconfig,
 #                        else ~/.config/git/config)
@@ -40,6 +45,7 @@ engine="${CONTAINER_ENGINE:-podman}"
 image="${HOPLODEX_IMAGE:-hoplodex-dev}"
 
 build=0
+reset_volumes=
 gui=0
 git_config=
 ssh_agent=0
@@ -47,6 +53,12 @@ env_vars=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build) build=1; shift ;;
+    --reset-volumes) reset_volumes=checkout; shift ;;
+    --reset-volumes=all) reset_volumes=all; shift ;;
+    --reset-volumes=*)
+      echo "error: --reset-volumes takes no value or =all, not '${1#*=}'" >&2
+      exit 1
+      ;;
     --gui) gui=1; shift ;;
     --git-config)
       git_config="$HOME/.gitconfig"
@@ -88,6 +100,22 @@ fi
 
 # Per-checkout volume names, so worktrees don't share build output.
 checkout="$(printf '%s' "$repo" | sha256sum | cut -c1-8)"
+home_volume=hoplodex-home
+node_modules_volume="hoplodex-$checkout-node-modules"
+target_volume="hoplodex-$checkout-target"
+
+# Deleted volumes are recreated empty by the run below. Removal fails, and so
+# does the script, if a running container still uses one.
+if [[ -n "$reset_volumes" ]]; then
+  volumes=("$node_modules_volume" "$target_volume")
+  [[ "$reset_volumes" == all ]] && volumes+=("$home_volume")
+  for volume in "${volumes[@]}"; do
+    if "$engine" volume inspect "$volume" >/dev/null 2>&1; then
+      "$engine" volume rm "$volume" >/dev/null
+      echo "removed volume $volume" >&2
+    fi
+  done
+fi
 
 args=(
   run --rm --init
@@ -95,9 +123,9 @@ args=(
   --security-opt label=disable
   --shm-size 1g
   -v "$repo:/workspace"
-  -v "hoplodex-home:/home/dev"
-  -v "hoplodex-$checkout-node-modules:/workspace/node_modules"
-  -v "hoplodex-$checkout-target:/workspace/src-tauri/target"
+  -v "$home_volume:/home/dev"
+  -v "$node_modules_volume:/workspace/node_modules"
+  -v "$target_volume:/workspace/src-tauri/target"
   -w /workspace
 )
 
