@@ -120,6 +120,10 @@ fi
 args=(
   run --rm --init
   --hostname hoplodex-dev
+  # On SELinux hosts, lets the container use the bind mounts below (the
+  # checkout, display and SSH agent sockets, /dev/dri) without relabeling them
+  # with :z/:Z, which would rewrite the checkout's labels and can break the
+  # host apps that own the sockets. A no-op without SELinux.
   --security-opt label=disable
   --shm-size 1g
   -v "$repo:/workspace"
