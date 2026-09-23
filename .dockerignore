@@ -1,0 +1,4 @@
+# Only the container/ helpers are needed to build the image; the source is
+# bind-mounted at run time (scripts/dev-container.sh).
+*
+!container/

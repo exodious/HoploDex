@@ -1,0 +1,133 @@
+import { $, back, browser, choose, clickButton, clickEl, goTo, search } from "../support/ui";
+import { shot } from "../support/screenshots";
+
+/**
+ * The standard screenshot set for pull requests that change the UI: the main
+ * screens and dialogs, in light and dark mode, against the human-testing
+ * collection (wdio.conf.ts seeds it for specs in this directory). Not part of
+ * `npm run test:e2e`; run it with `npm run screenshots`, which writes
+ * `<nn>-<screen>-<theme>.png` to e2e/screenshots-out/.
+ *
+ * Names are stable, so running it on the base branch and on the PR branch
+ * gives before/after pairs. Add a screen here when a change adds one.
+ */
+
+const RECORD = "Glock 19 Gen5"; // the seeded record with photos, documents and every detail
+
+async function chooseTheme(label: "Light" | "Dark") {
+  await browser.execute((title: string) => {
+    document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`)?.click();
+  }, label);
+  await browser.pause(300);
+}
+
+async function openRecord(name: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute((wanted: string) => {
+        const button = [...document.querySelectorAll<HTMLElement>(".hd-row__name")].find((b) =>
+          b.textContent?.trim().startsWith(wanted),
+        );
+        button?.click();
+        return Boolean(button);
+      }, name),
+    { timeout: 5000, timeoutMsg: `no firearm "${name}" in the list` },
+  );
+  await $("#record-name").waitForExist();
+  await browser.pause(300);
+}
+
+async function openDialog(button: string) {
+  await clickButton(button);
+  await $('[role="dialog"]').waitForExist();
+  await browser.pause(300);
+}
+
+/** Dismisses the open dialog the way Escape would, without saving. It must
+ * be cancelable like a real key press: the dialog cancels it, which stops the
+ * record page's own Escape handler from also going back to the list. */
+async function closeDialog() {
+  await browser.execute(() =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+  await $('[role="dialog"]').waitForExist({ reverse: true });
+  await browser.pause(200);
+}
+
+for (const theme of ["Light", "Dark"] as const) {
+  const suffix = theme.toLowerCase();
+
+  describe(`Screenshots (${suffix})`, () => {
+    before(async () => {
+      await goTo("Collection");
+      await chooseTheme(theme);
+    });
+
+    it("collection", async () => {
+      await $(".hd-row__name").waitForExist();
+      await shot(`01-collection-list-${suffix}`);
+
+      await choose("Tiles");
+      await $(".hd-tile__name").waitForExist();
+      await shot(`02-collection-tiles-${suffix}`);
+      await choose("List");
+
+      await search("12 gauge");
+      await shot(`03-collection-search-${suffix}`);
+      await search("");
+    });
+
+    it("firearm record and its dialogs", async () => {
+      await openRecord(RECORD);
+      await shot(`04-record-${suffix}`, { fullPage: true });
+
+      await openDialog("Edit");
+      await shot(`05-edit-firearm-${suffix}`, { fullPage: true });
+      await closeDialog();
+
+      await openDialog((await $("button=Change").isExisting()) ? "Change" : "Assign");
+      await shot(`06-coverage-${suffix}`);
+      await closeDialog();
+
+      await openDialog("Mark disposed");
+      await shot(`07-mark-disposed-${suffix}`);
+      await closeDialog();
+
+      await back();
+    });
+
+    it("add firearm", async () => {
+      await openDialog("Add firearm");
+      await shot(`08-add-firearm-${suffix}`, { fullPage: true });
+      await closeDialog();
+    });
+
+    it("insurance", async () => {
+      await goTo("Insurance");
+      await $(".hd-policy").waitForExist();
+      await shot(`09-insurance-${suffix}`, { fullPage: true });
+
+      await clickEl(".hd-policy__open");
+      await $(".hd-backlink").waitForExist();
+      await shot(`10-policy-${suffix}`, { fullPage: true });
+      await back();
+
+      await openDialog("Add policy");
+      await shot(`11-add-policy-${suffix}`, { fullPage: true });
+      await closeDialog();
+      await goTo("Collection");
+    });
+
+    it("import and export", async () => {
+      await openDialog("Import");
+      await shot(`12-import-${suffix}`);
+      await closeDialog();
+
+      await openDialog("Export");
+      await shot(`13-export-${suffix}`);
+      await closeDialog();
+    });
+  });
+}

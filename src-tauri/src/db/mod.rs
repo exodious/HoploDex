@@ -66,8 +66,20 @@ pub fn get_or_create_passphrase() -> Result<String, DbError> {
 /// builds (`--features mock-keyring`) use keyring-core's in-memory mock
 /// store instead — same first-run-generates-a-key behavior, just not
 /// backed by the OS.
+///
+/// The mock store lives in memory, so every launch gets a new key and can't
+/// open a database made by another process. `HOPLODEX_E2E_DB_KEY` (64 hex
+/// digits) fixes the key instead, so the E2E screenshot pass can seed a
+/// collection with `examples/human_seed.rs` and then open it in the app.
 #[cfg(feature = "mock-keyring")]
 pub fn get_or_create_passphrase() -> Result<String, DbError> {
+    if let Ok(key_hex) = std::env::var("HOPLODEX_E2E_DB_KEY") {
+        assert!(
+            key_hex.len() == 64 && key_hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "HOPLODEX_E2E_DB_KEY must be 64 hex digits"
+        );
+        return Ok(key_hex.to_ascii_lowercase());
+    }
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| {
         keyring_core::set_default_store(

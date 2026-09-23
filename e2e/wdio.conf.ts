@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { browser } from "@wdio/globals";
+import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -56,6 +58,41 @@ function isolateAppData() {
     process.env.APPDATA = data;
     process.env.LOCALAPPDATA = cache;
   }
+}
+
+/**
+ * Seeds the session's sandbox with the human-testing collection
+ * (src-tauri/examples/human_seed.rs), for the screenshot walk in
+ * e2e/screenshots/, which wants a realistic collection rather than an empty
+ * one. The mock keyring normally makes a new key on every launch, so the seed
+ * and the app are given the same fixed one through HOPLODEX_E2E_DB_KEY (read
+ * only by mock-keyring builds).
+ */
+function seedCollection() {
+  const key = crypto.randomBytes(32).toString("hex");
+  // The seed refuses to write to XDG_DATA_HOME (it takes it for the real data
+  // directory), and the sandbox is XDG_DATA_HOME now, so leave it out.
+  const env: NodeJS.ProcessEnv = { ...process.env, HOPLODEX_E2E_DB_KEY: key };
+  delete env.XDG_DATA_HOME;
+  const seeded = spawnSync(
+    "cargo",
+    [
+      "run",
+      "--release",
+      "--features",
+      "custom-protocol,mock-keyring",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--example",
+      "human_seed",
+      "--",
+      "--dir",
+      sandbox!,
+    ],
+    { cwd: repoRoot, stdio: "inherit", env },
+  );
+  if (seeded.status !== 0) throw new Error("seeding the screenshot collection failed");
+  process.env.HOPLODEX_E2E_DB_KEY = key;
 }
 
 /**
@@ -131,9 +168,10 @@ export const config: WebdriverIO.Config = {
   port: 4444,
   path: "/",
 
-  beforeSession: () => {
+  beforeSession: (_config, _capabilities, specs) => {
     killProcessesOnPorts([4444, 4445]);
     isolateAppData();
+    delete process.env.HOPLODEX_E2E_DB_KEY;
     spawnSync(
       "cargo",
       [
@@ -149,6 +187,7 @@ export const config: WebdriverIO.Config = {
       ],
       { cwd: repoRoot, stdio: "inherit" },
     );
+    if (specs.some((spec) => spec.includes("/e2e/screenshots/"))) seedCollection();
     const nativeDriver = findNativeDriver();
     const args = nativeDriver ? ["--native-driver", nativeDriver] : [];
     tauriDriver = spawn("tauri-driver", args, {
@@ -177,5 +216,9 @@ export const config: WebdriverIO.Config = {
       { timeout: 10000, timeoutMsg: "app document never reached readyState=complete" },
     );
     await browser.pause(500);
+    if (screenshotsEnabled()) {
+      await browser.setWindowSize(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
+      await browser.pause(300);
+    }
   },
 };

@@ -7,3 +7,4 @@ e2e/wdio-logs/
 package-lock.json
 *.md
 .specify/
+e2e/screenshots-out/
