@@ -8,7 +8,7 @@ owns the UI.
 
 The repo's `Dockerfile` (Debian trixie) has everything below already
 installed: Rust, Node 24 LTS with npm 12, the Tauri/WebKitGTK and SQLCipher
-build dependencies, `tauri-driver` and `WebKitWebDriver`, Xvfb,
+build dependencies, `tauri-driver` and `WebKitWebDriver`, `cargo-deny`, Xvfb,
 gnome-keyring, the GitHub CLI, Claude Code, Spec Kit's `specify`, and
 `python3-gi` for GTK drag-and-drop tests. It's built for rootless [podman](https://podman.io) and
 runs as a non-root `dev` user. The only thing to install on the host is
@@ -348,6 +348,49 @@ cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 npm run lint             # eslint, --max-warnings 0
 npm run format:check     # prettier
 ```
+
+## Dependency audit
+
+```bash
+npm run audit            # both of the below
+npm run audit:npm        # audit-ci over `npm audit`: dependencies and devDependencies
+npm run audit:cargo      # cargo-deny against the RustSec advisory database
+```
+
+Run it with the lint and test commands before every pull request. It fetches
+the advisory databases, so it needs network access. `cargo-deny` comes with the
+[development container](#development-container-linux-recommended). On a host,
+install it with `cargo install cargo-deny --locked`.
+
+What fails the audit:
+
+- **npm**: any high or critical advisory, in devDependencies too. Moderate and
+  low ones show up in `npm audit` but don't fail it.
+- **Rust**: any vulnerability advisory, whatever its severity (many RustSec
+  advisories have no CVSS score), and any unmaintained or unsound notice.
+
+Advisories are published all the time, so the audit can start failing on a
+branch that changed no dependencies. Fix that in its own commit.
+
+To fix a finding, update the dependency (`npm audit fix`, `npm update <pkg>`,
+`cargo update -p <crate>`). If a parent pins a vulnerable transitive
+dependency, try an npm `overrides` entry, and test the path that uses it.
+
+Add an exception only when there is no fix to take: no patched release, or
+a parent that won't accept it. A critical advisory needs both, no patch
+anywhere and an analysis. A high one needs a mitigation or a justification.
+Record it next to the tool's config:
+
+- **npm**: an `allowlist` entry in `audit-ci.jsonc`, scoped to the dependency
+  path you analysed (`"GHSA-…|*parent>vulnerable-pkg*"`) rather than the bare
+  advisory ID, so the same advisory arriving another way fails again.
+- **Rust**: an `ignore` entry in `src-tauri/deny.toml`, with a `reason`.
+
+Above the entry, write the advisory, why it can't be fixed yet, whether and how
+it reaches HoploDex (shipped app or dev tooling only, and whether the
+vulnerable code path is ever called), and a date to review it. Neither tool
+expires entries, so that date is what brings it back. Remove the entry once the
+fix is available.
 
 ## Continuous integration
 

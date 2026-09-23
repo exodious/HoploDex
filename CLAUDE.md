@@ -6,11 +6,11 @@ HoploDex is a local-only firearm collection inventory app: Tauri 2 with a Rust b
 
 ## Commands
 
-`DEVELOPMENT.md` is the single source for development instructions: the dev container, prerequisites, and the build, test (including single-file and single-spec runs), lint, screenshot and human-testing commands. Read the relevant section before running any of them. One thing that catches people out: run `npm run build` before `test:e2e` or `screenshots`, since the E2E build embeds whatever is in `dist/`.
+`DEVELOPMENT.md` is the single source for development instructions: the dev container, prerequisites, and the build, test (including single-file and single-spec runs), lint, dependency audit, screenshot and human-testing commands. Read the relevant section before running any of them. One thing that catches people out: run `npm run build` before `test:e2e` or `screenshots`, since the E2E build embeds whatever is in `dist/`.
 
 ## Run tests in the dev container
 
-On a host with podman, run tests, lint and screenshots through `scripts/dev-container.sh` by default, not directly on the host: put the command after the wrapper, and use `bash -c '...'` to chain several.
+On a host with podman, run tests, lint, the dependency audit and screenshots through `scripts/dev-container.sh` by default, not directly on the host: put the command after the wrapper, and use `bash -c '...'` to chain several.
 - **Already inside?** Check first. The container's working directory is `/workspace` and its hostname is `hoplodex-dev`. If both match, run the commands directly and don't nest the wrapper.
 - **First runs are slow** (image build, then an empty `node_modules` and `target`). Give long commands a generous timeout, or run them in the background.
 - **Waiting on a background run:** redirect its output to a log file, end it with a short summary (`echo "exit $?"` plus a `grep` for passing/failing), and wait for the completion notification. Don't write `until …; sleep` poll loops. Don't end a background command with `| tail -N` either: nothing reaches the output file until the command exits, so it looks hung.
