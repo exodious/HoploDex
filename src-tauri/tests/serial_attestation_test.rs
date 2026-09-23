@@ -36,6 +36,13 @@ fn base_input() -> FirearmInput {
         insurance_policy_id: None,
         nickname: None,
         scheduled_coverage_amount: None,
+        origin: None,
+        year_of_manufacture: None,
+        country_of_manufacture: None,
+        importer_name: None,
+        original_make: None,
+        original_model: None,
+        original_serial_number: None,
     }
 }
 
@@ -47,7 +54,8 @@ fn scenario_6_blank_serial_with_attestation_saves_successfully() {
     input.serial_number = None;
     input.no_serial_attested = true;
 
-    let created = ops::create_firearm(&db.conn, &input).expect("attested blank serial should save");
+    let created =
+        ops::create_firearm(&db.conn, &input, false).expect("attested blank serial should save");
     assert_eq!(created.serial_number, None);
     assert!(created.no_serial_attested);
 }
@@ -60,7 +68,7 @@ fn scenario_7_blank_serial_without_attestation_is_blocked() {
     input.serial_number = None;
     input.no_serial_attested = false;
 
-    let result = ops::create_firearm(&db.conn, &input);
+    let result = ops::create_firearm(&db.conn, &input, false);
     let err = result.expect_err("unattested blank serial must be blocked");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(
@@ -77,7 +85,7 @@ fn empty_string_serial_is_treated_the_same_as_blank() {
     input.serial_number = Some("   ".into());
     input.no_serial_attested = false;
 
-    assert!(ops::create_firearm(&db.conn, &input).is_err());
+    assert!(ops::create_firearm(&db.conn, &input, false).is_err());
 }
 
 #[test]
@@ -88,7 +96,7 @@ fn providing_a_serial_number_never_requires_attestation() {
     input.serial_number = Some("XYZ789".into());
     input.no_serial_attested = false;
 
-    let created =
-        ops::create_firearm(&db.conn, &input).expect("a provided serial should always be fine");
+    let created = ops::create_firearm(&db.conn, &input, false)
+        .expect("a provided serial should always be fine");
     assert_eq!(created.serial_number.as_deref(), Some("XYZ789"));
 }

@@ -55,6 +55,37 @@ export async function clickButton(text: string) {
   await browser.pause(SETTLE_MS);
 }
 
+/** Opens the firearm form's disclosure group with this title if it is
+ * closed (each starts closed on a record with none of its fields recorded).
+ * Its button's text also carries a summary, so match on the title. */
+async function openFormGroup(title: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        new Function(
+          `${SCOPE_JS}
+          const button = [...scope.querySelectorAll("button[aria-expanded]")].find((b) =>
+            b.textContent.trim().startsWith(${JSON.stringify(title)}),
+          );
+          if (button && button.getAttribute("aria-expanded") === "false") button.click();
+          return Boolean(button);`,
+        ) as () => boolean,
+      ),
+    { timeout: 5000, timeoutMsg: `no "${title}" group` },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
+/** Opens the "Origin and year of manufacture" group. */
+export async function openOriginGroup() {
+  await openFormGroup("Origin and year of manufacture");
+}
+
+/** Opens the "Physical details" group. */
+export async function openPhysicalGroup() {
+  await openFormGroup("Physical details");
+}
+
 /** Whether the button with this visible text, in the innermost open dialog,
  * is disabled. (An attribute selector can't express "button with this text"
  * after a descendant combinator, so this reads it from the page.) */
@@ -407,6 +438,14 @@ export interface NewFirearm {
   acquisitionDate?: string;
   /** FR-039: free text, searchable. */
   finish?: string;
+  /** specs/002-firearm-identification FR-001. */
+  origin?: "Domestic" | "Imported" | "Re-imported";
+  /** specs/002-firearm-identification FR-003. */
+  yearOfManufacture?: string;
+  /** specs/002-firearm-identification FR-002 (Imported only). */
+  countryOfManufacture?: string;
+  /** specs/002-firearm-identification FR-002 (Imported/Re-imported only). */
+  importerName?: string;
 }
 
 /** A firearm's display name as the app shows it: "Make Model", plus its
@@ -428,7 +467,23 @@ export async function fillFirearmForm(firearm: NewFirearm) {
   if (firearm.valueDollars) await fill("Estimated replacement value", firearm.valueDollars);
   if (firearm.acquisitionDate) await fill("Date acquired", firearm.acquisitionDate);
   if (firearm.notes) await fill("Notes", firearm.notes);
-  if (firearm.finish) await fill("Finish", firearm.finish);
+  if (firearm.finish) {
+    await openPhysicalGroup();
+    await fill("Finish", firearm.finish);
+  }
+  if (
+    firearm.origin ||
+    firearm.countryOfManufacture ||
+    firearm.importerName ||
+    firearm.yearOfManufacture
+  ) {
+    await openOriginGroup();
+  }
+  if (firearm.origin) await choose(firearm.origin);
+  if (firearm.countryOfManufacture)
+    await fill("Country of manufacture", firearm.countryOfManufacture);
+  if (firearm.importerName) await fill("Importer", firearm.importerName);
+  if (firearm.yearOfManufacture) await fill("Year of manufacture", firearm.yearOfManufacture);
 }
 
 /** Adds a firearm through the Add firearm dialog, leaving the app on its

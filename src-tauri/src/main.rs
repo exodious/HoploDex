@@ -71,7 +71,6 @@ fn main() {
             hoplodex_lib::commands::photos::get_photo_original,
             hoplodex_lib::commands::photos::set_thumbnail_photo,
             hoplodex_lib::commands::photos::delete_photo,
-            hoplodex_lib::commands::photos::get_generic_thumbnail,
             hoplodex_lib::commands::documents::list_documents,
             hoplodex_lib::commands::documents::add_document,
             hoplodex_lib::commands::documents::add_document_from_path,

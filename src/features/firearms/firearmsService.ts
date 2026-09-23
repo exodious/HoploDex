@@ -7,12 +7,17 @@ import type {
   ReverseDispositionInput,
 } from "./types";
 
-export function createFirearm(input: FirearmInput): Promise<Firearm> {
-  return invoke<Firearm>("create_firearm", { input });
+/** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009). */
+export function createFirearm(input: FirearmInput, confirmedWarnings?: boolean): Promise<Firearm> {
+  return invoke<Firearm>("create_firearm", { input, confirmedWarnings });
 }
 
-export function updateFirearm(id: number, input: FirearmInput): Promise<Firearm> {
-  return invoke<Firearm>("update_firearm", { id, input });
+export function updateFirearm(
+  id: number,
+  input: FirearmInput,
+  confirmedWarnings?: boolean,
+): Promise<Firearm> {
+  return invoke<Firearm>("update_firearm", { id, input, confirmedWarnings });
 }
 
 export function disposeFirearm(id: number, input: DisposeFirearmInput): Promise<Firearm> {

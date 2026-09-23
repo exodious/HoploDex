@@ -114,7 +114,7 @@ function DisposeForm({
           </p>
         )}
         <ChoiceCards
-          label="What happened?"
+          label="What happened"
           required
           value={dispositionType}
           onChange={setDispositionType}
@@ -130,7 +130,7 @@ function DisposeForm({
           hint={dispositionType ? RECIPIENT_HINTS[dispositionType] : undefined}
           error={shown(errors.recipient)}
         />
-        <div className="hd-form-grid hd-form-grid--2">
+        <div className="hd-form-grid hd-form-grid--3 hd-form-grid--short">
           <DateField
             label="Date"
             required

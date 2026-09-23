@@ -11,10 +11,11 @@ use std::time::Instant;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
+use hoplodex_lib::models::firearm::{FirearmInput, Origin};
 use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::valuation::get_value_summary;
 use rusqlite::params;
-use support::{policy, TestDb};
+use support::{firearm, policy, TestDb};
 
 const RECORD_COUNT: usize = 10_000;
 const BUDGET_MS: u128 = 500;
@@ -26,6 +27,13 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
     let finishes = ["Blued", "Parkerized", "Cerakote", "Stainless", "Nickel"];
     let conditions = ["new_in_box", "like_new", "excellent", "good", "fair", "poor"];
 
+    // specs/002-firearm-identification: every record also carries an origin
+    // and a year, and import-marked ones (half the table) carry a country
+    // (Imported only), an importer, and original marks — so the widened
+    // firearms_fts index and idx_firearms_original_serial carry the full
+    // load a real 10,000-record collection would (T052).
+    let origins = [None, Some("domestic"), Some("imported"), Some("reimported")];
+
     let tx = db.conn.unchecked_transaction().unwrap();
     {
         let mut stmt = tx
@@ -34,10 +42,12 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
                     make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
                     notes, nickname, barrel_length_hundredths, overall_length_hundredths,
                     weight_tenths_oz, capacity, finish, condition,
-                    status, created_at, updated_at
+                    status, origin, year_of_manufacture, country_of_manufacture,
+                    importer_name, original_make, original_model, original_serial_number,
+                    created_at, updated_at
                 ) VALUES (
                     ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                    'active', datetime('now'), datetime('now')
+                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, datetime('now'), datetime('now')
                 )",
             )
             .unwrap();
@@ -51,6 +61,16 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
             } else {
                 "routine notes"
             };
+            let origin = origins[i % origins.len()];
+            let import_marked = matches!(origin, Some("imported") | Some("reimported"));
+            // A fifth of import-marked rows carry the heavier importer and
+            // original-marks fields — enough to load the widened index and
+            // the FR-009 partial index realistically, without doubling the
+            // whole seed's bulk (every row already carries an origin/year).
+            let full_marks = import_marked && i % 5 == 0;
+            let country = (origin == Some("imported") && full_marks).then(|| "Belgium".to_string());
+            let importer = full_marks.then(|| "Global Arms Import Co.".to_string());
+            let original_serial = full_marks.then(|| format!("ORIG-{i}"));
             stmt.execute(params![
                 make,
                 format!("Model {i}"),
@@ -74,6 +94,13 @@ fn seed_10k_firearms(db: &TestDb) -> Vec<i64> {
                     format!("{} finish", finishes[i % finishes.len()])
                 },
                 conditions[i % conditions.len()],
+                origin,
+                1400 + (i % 600) as i64,
+                country,
+                importer,
+                importer.as_ref().map(|_| "Fabrique Nationale"),
+                importer.as_ref().map(|_| "High Power"),
+                original_serial,
             ])
             .unwrap();
         }
@@ -180,6 +207,55 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
     assert!(
         elapsed.as_millis() < BUDGET_MS,
         "list_firearms (grouped) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+
+    // specs/002-firearm-identification T052: the widened firearms_fts index
+    // (origin, year, country, importer, original marks) and the FR-009
+    // original_marks_clash lookup, checked on this test's already-seeded
+    // database rather than building another 10,000-record one.
+    let started = Instant::now();
+    let by_origin = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("imported".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    let total: usize = by_origin.groups.iter().map(|g| g.firearms.len()).sum();
+    assert!(total > 1_000, "imported and re-imported records should both match");
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (common origin search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+
+    let started = Instant::now();
+    let by_original_serial = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("ORIG-5010".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(by_original_serial.groups.iter().map(|g| g.firearms.len()).sum::<usize>(), 1);
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (original serial search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+
+    let input = FirearmInput {
+        origin: Some(Origin::Imported),
+        original_make: Some("Distinctive Maker".into()),
+        original_model: Some("Distinctive Model".into()),
+        original_serial_number: Some("PERF-NEW-ORIGINAL".into()),
+        ..firearm("Distinctive Make", "Distinctive Model", "PERF-NEW-MAIN")
+    };
+    let started = Instant::now();
+    firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "create_firearm with original marks (FR-009 lookup) took {}ms, over the {BUDGET_MS}ms budget",
         elapsed.as_millis()
     );
 }

@@ -27,7 +27,9 @@ impl SpreadsheetFormat {
 }
 
 /// Column order per contracts/spreadsheet-format.md. `photo_filenames` is
-/// export-only (ignored on import, FR-019).
+/// export-only (ignored on import, FR-019). specs/002-firearm-identification
+/// adds seven columns after `condition` and before `photo_filenames`
+/// (contracts/spreadsheet-format.md's "New columns").
 pub const COLUMNS: &[&str] = &[
     "make",
     "model",
@@ -55,6 +57,13 @@ pub const COLUMNS: &[&str] = &[
     "capacity",
     "finish",
     "condition",
+    "origin",
+    "year_of_manufacture",
+    "country_of_manufacture",
+    "importer_name",
+    "original_make",
+    "original_model",
+    "original_serial_number",
     "photo_filenames",
 ];
 
@@ -88,11 +97,22 @@ pub struct FirearmExportRow {
     pub capacity: String,
     pub finish: String,
     pub condition: String,
+    /// specs/002-firearm-identification: the origin's display label
+    /// (`Domestic`/`Imported`/`Re-imported`), or blank for not specified.
+    pub origin: String,
+    pub year_of_manufacture: String,
+    /// Always blank for a Re-imported firearm: the United States is
+    /// displayed, never stored (data-model.md).
+    pub country_of_manufacture: String,
+    pub importer_name: String,
+    pub original_make: String,
+    pub original_model: String,
+    pub original_serial_number: String,
     pub photo_filenames: String,
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 27] {
+    fn as_fields(&self) -> [&str; 34] {
         [
             &self.make,
             &self.model,
@@ -120,6 +140,13 @@ impl FirearmExportRow {
             &self.capacity,
             &self.finish,
             &self.condition,
+            &self.origin,
+            &self.year_of_manufacture,
+            &self.country_of_manufacture,
+            &self.importer_name,
+            &self.original_make,
+            &self.original_model,
+            &self.original_serial_number,
             &self.photo_filenames,
         ]
     }
@@ -157,6 +184,13 @@ pub struct RawImportRow {
     pub capacity: Option<String>,
     pub finish: Option<String>,
     pub condition: Option<String>,
+    pub origin: Option<String>,
+    pub year_of_manufacture: Option<String>,
+    pub country_of_manufacture: Option<String>,
+    pub importer_name: Option<String>,
+    pub original_make: Option<String>,
+    pub original_model: Option<String>,
+    pub original_serial_number: Option<String>,
 }
 
 fn non_blank(value: &str) -> Option<String> {
@@ -197,6 +231,13 @@ fn row_from_cells(cells: &[String]) -> RawImportRow {
         capacity: non_blank(cell(23)),
         finish: non_blank(cell(24)),
         condition: non_blank(cell(25)),
+        origin: non_blank(cell(26)),
+        year_of_manufacture: non_blank(cell(27)),
+        country_of_manufacture: non_blank(cell(28)),
+        importer_name: non_blank(cell(29)),
+        original_make: non_blank(cell(30)),
+        original_model: non_blank(cell(31)),
+        original_serial_number: non_blank(cell(32)),
     }
 }
 

@@ -28,7 +28,7 @@ fn warning_for(db: &TestDb, firearm_id: i64, today: &str) -> InsuranceWarning {
 #[test]
 fn scenario_1_and_13_with_no_blanket_policy_in_force_an_unscheduled_firearm_is_uninsured() {
     let db = TestDb::new();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
     assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::Uninsured);
 
     // A policy that has ended, or hasn't started, isn't in force.
@@ -62,7 +62,7 @@ fn scenario_11_a_new_firearm_is_covered_by_the_blanket_policy_with_no_assignment
         &policy("Blanket", "2026-01-01", "2026-12-31", Some(1_000_000)),
     )
     .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
 
     assert_eq!(f.insurance_policy_id, None, "nothing is stored per firearm for blanket coverage");
     let ctx = load_context_as_of(&db.conn, date(TODAY)).unwrap();
@@ -81,8 +81,8 @@ fn scenario_4_unscheduled_value_exceeding_the_blanket_limit_flags_every_unschedu
         &policy("Blanket", "2026-01-01", "2026-12-31", Some(80_000)),
     )
     .unwrap();
-    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
-    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000)).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000), false).unwrap();
 
     let ctx = load_context_as_of(&db.conn, date(TODAY)).unwrap();
     let blanket = ctx.blanket.as_ref().unwrap();
@@ -102,8 +102,8 @@ fn scheduling_a_firearm_takes_it_out_of_the_blanket_total() {
     let rider =
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
-    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
-    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000)).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000), false).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, b.id, Some(rider.id), Some(50_000)).unwrap();
 
     let ctx = load_context_as_of(&db.conn, date(TODAY)).unwrap();
@@ -120,8 +120,8 @@ fn disposed_firearms_do_not_count_toward_the_blanket_total() {
         &policy("Blanket", "2026-01-01", "2026-12-31", Some(80_000)),
     )
     .unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
-    let gone = firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000)).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let gone = firearm_ops::create_firearm(&db.conn, &valued("Sig", 50_000), false).unwrap();
     firearm_ops::dispose_firearm(
         &db.conn,
         gone.id,
@@ -144,7 +144,7 @@ fn scenario_2_and_3_a_scheduled_firearm_is_under_insured_until_its_amount_meets_
     let rider =
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
 
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(rider.id), Some(30_000)).unwrap();
     assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::UnderInsured);
@@ -159,7 +159,7 @@ fn scenario_8_a_firearm_scheduled_under_an_expired_policy_is_uninsured_whatever_
     let rider =
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-06-10", None))
             .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(rider.id), Some(90_000)).unwrap();
 
     assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::Uninsured);
@@ -175,7 +175,7 @@ fn a_blanket_policy_that_has_expired_leaves_unscheduled_firearms_uninsured() {
         &policy("Old", "2025-01-01", "2026-06-10", Some(1_000_000)),
     )
     .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000)).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
 
     assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::Uninsured);
 }
@@ -327,6 +327,6 @@ fn a_schedule_only_policy_is_never_suppressed_by_a_blanket_policy() {
 #[test]
 fn no_estimated_value_is_never_flagged() {
     let db = TestDb::new();
-    let f = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1")).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "A1"), false).unwrap();
     assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::None);
 }

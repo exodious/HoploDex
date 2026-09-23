@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { FirearmRecordPage } from "./FirearmRecordPage";
-import type { FirearmDetail } from "./types";
+import { ORIGIN_OPTIONS } from "./types";
+import type { FirearmDetail, Origin } from "./types";
 
 const getFirearm = vi.fn();
 
@@ -43,6 +44,13 @@ const firearm: FirearmDetail = {
   capacity: null,
   finish: null,
   condition: null,
+  origin: null,
+  yearOfManufacture: null,
+  countryOfManufacture: null,
+  importerName: null,
+  originalMake: null,
+  originalModel: null,
+  originalSerialNumber: null,
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
@@ -155,5 +163,107 @@ describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17
 
     await screen.findByText("No notes recorded.");
     expect(screen.queryByRole("region", { name: "Physical details" })).not.toBeInTheDocument();
+  });
+});
+
+// specs/002-firearm-identification contracts/ui-identification.md §5, FR-013, US1-3
+describe("FirearmRecordPage identification (US1)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows Origin, Year of manufacture, Country of manufacture and Importer when recorded", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      origin: "imported",
+      yearOfManufacture: 1943,
+      countryOfManufacture: "Belgium",
+      importerName: "Global Arms Import Co.",
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Identification" });
+    expect(within(panel).getByText("Imported")).toBeInTheDocument();
+    expect(within(panel).getByText("1943")).toBeInTheDocument();
+    expect(within(panel).getByText("Belgium")).toBeInTheDocument();
+    expect(within(panel).getByText("Global Arms Import Co.")).toBeInTheDocument();
+  });
+
+  it("shows United States as the country for a re-imported firearm", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      origin: "reimported",
+      importerName: "Century International Arms",
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Identification" });
+    expect(within(panel).getByText("United States")).toBeInTheDocument();
+  });
+
+  it("shows Origin: Not specified and no importer or country row when there is no origin", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Identification" });
+    expect(within(panel).getByText("Not specified")).toBeInTheDocument();
+    expect(within(panel).queryByText("Country of manufacture")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Importer")).not.toBeInTheDocument();
+  });
+
+  // specs/002-firearm-identification research.md §6: the origin label must
+  // agree across the SQL CASE (0002_fts5.sql), Origin::label() and
+  // ORIGIN_OPTIONS — this is the TypeScript side of that guard, checking
+  // ORIGIN_OPTIONS' labels are what the record page actually shows.
+  it.each(ORIGIN_OPTIONS.filter((o) => o.value !== "").map((o) => [o.value, o.label]))(
+    "shows %s as %s",
+    async (origin, label) => {
+      getFirearm.mockResolvedValue({ ...firearm, origin: origin as Origin });
+      renderPage();
+
+      const panel = await screen.findByRole("region", { name: "Identification" });
+      expect(within(panel).getByText(label)).toBeInTheDocument();
+    },
+  );
+});
+
+// specs/002-firearm-identification contracts/ui-identification.md §5, US2-1, US2-2
+describe("FirearmRecordPage original maker's marks (US2)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows a labeled block with the recorded maker, model and serial number", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      origin: "imported",
+      originalMake: "Fabrique Nationale",
+      originalModel: "High Power",
+      originalSerialNumber: "FN-99001",
+    });
+    renderPage();
+
+    const block = await screen.findByRole("region", { name: "Original maker's marks" });
+    expect(within(block).getByText("Fabrique Nationale")).toBeInTheDocument();
+    expect(within(block).getByText("High Power")).toBeInTheDocument();
+    expect(within(block).getByText("FN-99001")).toBeInTheDocument();
+  });
+
+  it("renders when only one of the three values is recorded", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, origin: "imported", originalMake: "Inland" });
+    renderPage();
+
+    const block = await screen.findByRole("region", { name: "Original maker's marks" });
+    expect(within(block).getByText("Inland")).toBeInTheDocument();
+  });
+
+  it("is absent when no original marks are recorded", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    await screen.findByRole("region", { name: "Identification" });
+    expect(
+      screen.queryByRole("region", { name: "Original maker's marks" }),
+    ).not.toBeInTheDocument();
   });
 });

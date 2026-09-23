@@ -47,6 +47,9 @@ export interface ImportResult {
   skippedCount: number;
   rowErrors: RowError[];
   conflicts: ImportConflict[];
+  /** specs/002-firearm-identification FR-009: rows whose original marks
+   * match another active firearm's, imported anyway (US4-6). */
+  warnings: RowError[];
 }
 
 export type ConflictAction = "skip" | "overwrite" | "duplicate";
@@ -66,4 +69,7 @@ export interface ResolveResult {
   resolvedCount: number;
   /** Conflicts the chosen action couldn't be applied to; still open. */
   unresolved: RowError[];
+  /** As `ImportResult.warnings`, for rows saved by an `overwrite` or
+   * `duplicate` resolution. */
+  warnings: RowError[];
 }

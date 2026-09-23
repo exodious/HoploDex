@@ -36,6 +36,13 @@ fn sample_input() -> FirearmInput {
         insurance_policy_id: None,
         nickname: None,
         scheduled_coverage_amount: None,
+        origin: None,
+        year_of_manufacture: None,
+        country_of_manufacture: None,
+        importer_name: None,
+        original_make: None,
+        original_model: None,
+        original_serial_number: None,
     }
 }
 
@@ -43,7 +50,8 @@ fn sample_input() -> FirearmInput {
 fn scenario_1_create_firearm_persists_all_core_fields() {
     let db = TestDb::new();
 
-    let created = ops::create_firearm(&db.conn, &sample_input()).expect("create should succeed");
+    let created =
+        ops::create_firearm(&db.conn, &sample_input(), false).expect("create should succeed");
 
     assert!(created.id > 0);
     assert_eq!(created.make, "Glock");
@@ -62,11 +70,11 @@ fn scenario_1_create_firearm_persists_all_core_fields() {
 #[test]
 fn scenario_2_editing_a_field_persists_on_reopen() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     let mut edited = sample_input();
     edited.notes = Some("scratch on left side".into());
-    let updated = ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    let updated = ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
     assert_eq!(updated.notes.as_deref(), Some("scratch on left side"));
 
     let reopened = ops::get_firearm(&db.conn, created.id).unwrap();
@@ -76,13 +84,13 @@ fn scenario_2_editing_a_field_persists_on_reopen() {
 #[test]
 fn scenario_3_acquisition_details_are_saved_and_shown() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     let mut edited = sample_input();
     edited.acquisition_source = Some("Local gun shop".into());
     edited.acquisition_date = Some("2025-03-01".into());
     edited.acquisition_price = Some(45000);
-    let updated = ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    let updated = ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
 
     assert_eq!(updated.acquisition_source.as_deref(), Some("Local gun shop"));
     assert_eq!(updated.acquisition_date.as_deref(), Some("2025-03-01"));
@@ -92,7 +100,7 @@ fn scenario_3_acquisition_details_are_saved_and_shown() {
 #[test]
 fn scenario_4_disposing_flips_status_and_retains_history() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     let disposed = ops::dispose_firearm(
         &db.conn,
@@ -119,7 +127,7 @@ fn scenario_4_disposing_flips_status_and_retains_history() {
 #[test]
 fn scenario_5_delete_requires_confirmation_then_removes_the_record() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     let unconfirmed = ops::delete_firearm(&db.conn, created.id, false);
     assert!(unconfirmed.is_err(), "delete without confirmation must be blocked");
@@ -134,7 +142,7 @@ fn scenario_5_delete_requires_confirmation_then_removes_the_record() {
 #[test]
 fn deleting_a_firearm_cascades_to_its_photos_and_documents() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     db.conn
         .execute(
@@ -194,28 +202,29 @@ fn scenario_13_a_future_acquisition_date_is_blocked_but_today_and_earlier_are_ac
 
     let mut future = sample_input();
     future.acquisition_date = Some(iso(today() + chrono::Duration::days(1)));
-    let err = ops::create_firearm(&db.conn, &future).expect_err("future date must be blocked");
+    let err =
+        ops::create_firearm(&db.conn, &future, false).expect_err("future date must be blocked");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
 
     let mut current = sample_input();
     current.acquisition_date = Some(iso(today()));
-    assert!(ops::create_firearm(&db.conn, &current).is_ok(), "today is allowed");
+    assert!(ops::create_firearm(&db.conn, &current, false).is_ok(), "today is allowed");
 
     let mut past = sample_input();
     past.serial_number = Some("PAST-1".into());
     past.acquisition_date = Some("1968-10-22".into());
-    assert!(ops::create_firearm(&db.conn, &past).is_ok());
+    assert!(ops::create_firearm(&db.conn, &past, false).is_ok());
 }
 
 #[test]
 fn scenario_13_a_future_acquisition_date_is_blocked_on_update_too() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     let mut edited = sample_input();
     edited.acquisition_date = Some(iso(today() + chrono::Duration::days(30)));
-    let err = ops::update_firearm(&db.conn, created.id, &edited).expect_err("blocked");
+    let err = ops::update_firearm(&db.conn, created.id, &edited, false).expect_err("blocked");
     assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
     assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().acquisition_date, None);
 }
@@ -223,7 +232,7 @@ fn scenario_13_a_future_acquisition_date_is_blocked_on_update_too() {
 #[test]
 fn scenario_13_a_future_disposition_date_is_blocked_on_dispose_and_update() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
     let tomorrow = iso(today() + chrono::Duration::days(1));
 
     let err = ops::dispose_firearm(&db.conn, created.id, &dispose_input(&tomorrow))
@@ -237,7 +246,7 @@ fn scenario_13_a_future_disposition_date_is_blocked_on_dispose_and_update() {
     edited.disposition_recipient = Some("Jane Doe".into());
     edited.disposition_date = Some(tomorrow);
     edited.disposition_price = Some(1);
-    let err = ops::update_firearm(&db.conn, created.id, &edited).expect_err("blocked");
+    let err = ops::update_firearm(&db.conn, created.id, &edited, false).expect_err("blocked");
     assert!(err.field_errors.as_ref().unwrap().contains_key("dispositionDate"));
 
     assert!(ops::dispose_firearm(&db.conn, created.id, &dispose_input(&iso(today()))).is_ok());
@@ -248,7 +257,7 @@ fn scenario_14_a_disposition_before_the_acquisition_date_is_blocked() {
     let db = TestDb::new();
     let mut input = sample_input();
     input.acquisition_date = Some("2025-03-01".into());
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
 
     let err = ops::dispose_firearm(&db.conn, created.id, &dispose_input("2025-02-28"))
         .expect_err("disposition before acquisition must be blocked");
@@ -264,7 +273,7 @@ fn scenario_14_a_disposition_before_the_acquisition_date_is_blocked() {
 #[test]
 fn a_disposition_date_is_not_compared_when_there_is_no_acquisition_date() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
     assert!(ops::dispose_firearm(&db.conn, created.id, &dispose_input("1990-01-01")).is_ok());
 }
 
@@ -273,7 +282,7 @@ fn a_date_that_is_not_a_real_calendar_date_is_rejected() {
     let db = TestDb::new();
     let mut input = sample_input();
     input.acquisition_date = Some("03/01/2025".into());
-    let err = ops::create_firearm(&db.conn, &input).expect_err("not YYYY-MM-DD");
+    let err = ops::create_firearm(&db.conn, &input, false).expect_err("not YYYY-MM-DD");
     assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
 }
 
@@ -290,7 +299,7 @@ fn assert_field_error(err: &hoplodex_lib::commands::CommandError, field: &str) {
 #[test]
 fn a_negative_amount_is_rejected_on_create_and_update_with_a_field_error() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     type Set = fn(&mut FirearmInput);
     let cases: [(&str, Set); 2] = [
@@ -301,9 +310,9 @@ fn a_negative_amount_is_rejected_on_create_and_update_with_a_field_error() {
         let mut bad = sample_input();
         bad.serial_number = Some(format!("NEG-{field}"));
         set(&mut bad);
-        assert_field_error(&ops::create_firearm(&db.conn, &bad).expect_err("create"), field);
+        assert_field_error(&ops::create_firearm(&db.conn, &bad, false).expect_err("create"), field);
         assert_field_error(
-            &ops::update_firearm(&db.conn, created.id, &bad).expect_err("update"),
+            &ops::update_firearm(&db.conn, created.id, &bad, false).expect_err("update"),
             field,
         );
     }
@@ -314,7 +323,7 @@ fn a_negative_amount_is_rejected_on_create_and_update_with_a_field_error() {
     bad_price.disposition_recipient = Some("Jane Doe".into());
     bad_price.disposition_date = Some("2025-01-01".into());
     bad_price.disposition_price = Some(-1);
-    let err = ops::update_firearm(&db.conn, created.id, &bad_price).expect_err("update");
+    let err = ops::update_firearm(&db.conn, created.id, &bad_price, false).expect_err("update");
     assert_field_error(&err, "dispositionPrice");
 
     assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().estimated_value, Some(50000));
@@ -323,7 +332,7 @@ fn a_negative_amount_is_rejected_on_create_and_update_with_a_field_error() {
 #[test]
 fn a_negative_disposition_price_is_rejected_by_dispose_firearm() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     let mut input = dispose_input("2025-01-01");
     input.price = -40000;
@@ -337,7 +346,7 @@ fn a_zero_amount_is_a_valid_whole_dollar_amount() {
     let db = TestDb::new();
     let mut input = sample_input();
     input.estimated_value = Some(0);
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
     assert_eq!(created.estimated_value, Some(0));
 }
 
@@ -346,7 +355,7 @@ fn an_amount_is_stored_as_the_whole_dollars_entered() {
     let db = TestDb::new();
     let mut input = sample_input();
     input.estimated_value = Some(1250);
-    let created = ops::create_firearm(&db.conn, &input).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
 
     let stored: i64 = db
         .conn
@@ -383,7 +392,7 @@ fn a_fractional_amount_is_refused_when_the_arguments_are_decoded_never_rounded()
 #[test]
 fn the_database_itself_refuses_a_negative_amount() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &sample_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &sample_input(), false).unwrap();
 
     for column in ["estimated_value", "acquisition_price", "disposition_price"] {
         let result = db

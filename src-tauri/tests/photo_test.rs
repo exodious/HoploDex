@@ -37,13 +37,20 @@ fn sample_firearm() -> FirearmInput {
         insurance_policy_id: None,
         nickname: None,
         scheduled_coverage_amount: None,
+        origin: None,
+        year_of_manufacture: None,
+        country_of_manufacture: None,
+        importer_name: None,
+        original_make: None,
+        original_model: None,
+        original_serial_number: None,
     }
 }
 
 #[test]
 fn scenario_1_first_photo_becomes_the_thumbnail() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
 
     let photo = photo_ops::add_photo(
         &db.conn,
@@ -62,7 +69,7 @@ fn scenario_1_first_photo_becomes_the_thumbnail() {
 #[test]
 fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let first =
         photo_ops::add_photo(&db.conn, firearm.id, &sample_png_bytes(), "a.png", "image/png")
             .unwrap();
@@ -81,7 +88,7 @@ fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
 #[test]
 fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let first =
         photo_ops::add_photo(&db.conn, firearm.id, &sample_png_bytes(), "a.png", "image/png")
             .unwrap();
@@ -108,7 +115,7 @@ fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic()
 #[test]
 fn delete_photo_requires_confirmation() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let photo =
         photo_ops::add_photo(&db.conn, firearm.id, &sample_png_bytes(), "a.png", "image/png")
             .unwrap();
@@ -119,7 +126,7 @@ fn delete_photo_requires_confirmation() {
 #[test]
 fn rejects_an_unsupported_mime_type() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
 
     let err = photo_ops::add_photo(
         &db.conn,
@@ -135,7 +142,7 @@ fn rejects_an_unsupported_mime_type() {
 #[test]
 fn adds_a_photo_dropped_as_a_file_path() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Range Day.PNG");
     std::fs::write(&path, sample_png_bytes()).unwrap();
@@ -152,7 +159,7 @@ fn adds_a_photo_dropped_as_a_file_path() {
 #[test]
 fn a_dropped_path_that_is_not_a_photo_is_rejected() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("receipt.pdf");
     std::fs::write(&path, b"%PDF-1.4").unwrap();
@@ -166,7 +173,7 @@ fn a_dropped_path_that_is_not_a_photo_is_rejected() {
 #[test]
 fn a_dropped_path_that_no_longer_exists_is_reported() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm()).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
     let err = photo_ops::add_photo_from_path(&db.conn, firearm.id, &dir.path().join("gone.png"))

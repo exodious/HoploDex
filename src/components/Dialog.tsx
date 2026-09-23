@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Icon } from "./Icon";
@@ -40,6 +40,13 @@ export function Dialog({
   children,
 }: DialogProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  // No screen wires its opening button up as a Radix `Trigger` (each opens
+  // from its own state instead), so Radix's own focus-restore never fires;
+  // this captures and restores it here, once, for every dialog.
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
+  }, [open]);
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -50,6 +57,10 @@ export function Dialog({
           // Radix wires aria-describedby to the Description automatically;
           // opting out explicitly when there is none silences its warning.
           {...(description ? {} : { "aria-describedby": undefined })}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            previouslyFocused.current?.focus();
+          }}
           onOpenAutoFocus={(event) => {
             // Start in the first field rather than on the header's close
             // button, which Radix would otherwise focus first — unless the

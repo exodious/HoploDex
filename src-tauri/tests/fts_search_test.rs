@@ -35,6 +35,13 @@ fn base_input() -> FirearmInput {
         insurance_policy_id: None,
         nickname: None,
         scheduled_coverage_amount: None,
+        origin: None,
+        year_of_manufacture: None,
+        country_of_manufacture: None,
+        importer_name: None,
+        original_make: None,
+        original_model: None,
+        original_serial_number: None,
     }
 }
 
@@ -50,7 +57,7 @@ fn search(conn: &rusqlite::Connection, query: &str) -> usize {
 #[test]
 fn matches_structured_fields() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "Colt"), 1, "should match make");
     assert_eq!(search(&db.conn, "1911"), 1, "should match model");
@@ -61,7 +68,7 @@ fn matches_structured_fields() {
 #[test]
 fn matches_free_form_notes_and_accessories() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "grandfather"), 1, "should match free-form notes");
     assert_eq!(search(&db.conn, "holster"), 1, "should match accessories");
@@ -70,7 +77,7 @@ fn matches_free_form_notes_and_accessories() {
 #[test]
 fn matches_the_joined_firearm_type_name() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "Handgun"), 1, "should match firearm_type.name via the join");
 }
@@ -78,11 +85,11 @@ fn matches_the_joined_firearm_type_name() {
 #[test]
 fn stays_in_sync_after_update_and_delete() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &base_input()).unwrap();
+    let created = ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     let mut edited = base_input();
     edited.notes = Some("re-blued and refinished".into());
-    ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
 
     assert_eq!(search(&db.conn, "grandfather"), 0, "stale note text must not still match");
     assert_eq!(search(&db.conn, "re-blued"), 1, "updated note text must match");
@@ -94,7 +101,7 @@ fn stays_in_sync_after_update_and_delete() {
 #[test]
 fn no_match_returns_an_empty_result() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "nonexistentxyz"), 0);
 }
@@ -105,7 +112,7 @@ fn no_match_returns_an_empty_result() {
 #[test]
 fn matches_a_partially_typed_last_word() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input()).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
 
     assert_eq!(search(&db.conn, "Col"), 1, "prefix of make");
     assert_eq!(search(&db.conn, "CO19"), 1, "prefix of serial number");
@@ -121,15 +128,241 @@ fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
     let created = ops::create_firearm(
         &db.conn,
         &FirearmInput { finish: Some("Cerakote flat dark earth".into()), ..base_input() },
+        false,
     )
     .unwrap();
     assert_eq!(search(&db.conn, "Cerakote"), 1, "should match finish");
 
     let edited = FirearmInput { finish: Some("Parkerized".into()), ..base_input() };
-    ops::update_firearm(&db.conn, created.id, &edited).unwrap();
+    ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
     assert_eq!(search(&db.conn, "Cerakote"), 0, "the old finish is no longer indexed");
     assert_eq!(search(&db.conn, "Parkerized"), 1, "the edited finish is indexed");
 
     ops::delete_firearm(&db.conn, created.id, true).unwrap();
     assert_eq!(search(&db.conn, "Parkerized"), 0, "a deleted firearm is not found");
+}
+
+// specs/002-firearm-identification US1-4 / FR-012: origin, year, importer
+// name and country of manufacture are searchable, and origin searches as
+// its display label.
+
+#[test]
+fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_none() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("ORI-1".into()),
+            origin: Some(Origin::Imported),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("ORI-2".into()),
+            origin: Some(Origin::Reimported),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("ORI-3".into()),
+            origin: Some(Origin::Domestic),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { serial_number: Some("ORI-4".into()), origin: None, ..base_input() },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "imported"), 2, "finds imported and re-imported");
+    assert_eq!(search(&db.conn, "re-imported"), 1, "finds only re-imported");
+    assert_eq!(search(&db.conn, "domestic"), 1, "finds only domestic");
+}
+
+#[test]
+fn searching_year_importer_and_country_finds_the_firearm() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("SRCH-1".into()),
+            origin: Some(Origin::Imported),
+            year_of_manufacture: Some(1943),
+            country_of_manufacture: Some("Belgium".into()),
+            importer_name: Some("Global Arms Import Co.".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "1943"), 1, "should match year of manufacture");
+    assert_eq!(search(&db.conn, "Global Arms"), 1, "should match importer name");
+    assert_eq!(search(&db.conn, "Belgium"), 1, "should match country of manufacture");
+}
+
+#[test]
+fn searching_country_for_a_reimported_firearm_finds_united_states() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("SRCH-2".into()),
+            origin: Some(Origin::Reimported),
+            importer_name: Some("Century International Arms".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(
+        search(&db.conn, "United States"),
+        1,
+        "a re-imported firearm's country is displayed and searched as United States"
+    );
+}
+
+// specs/002-firearm-identification US2-5: the original manufacturer's marks
+// are searchable too.
+
+#[test]
+fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            serial_number: Some("SRCH-3".into()),
+            origin: Some(Origin::Imported),
+            original_make: Some("Fabrique Nationale".into()),
+            original_model: Some("High Power".into()),
+            original_serial_number: Some("FN-99001".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "FN-99001"), 1, "should match the original serial number");
+    assert_eq!(search(&db.conn, "Fabrique Nationale"), 1, "should match the original maker");
+}
+
+// specs/002-firearm-identification research.md §6: the origin label exists
+// in three places (the SQL CASE in 0002_fts5.sql, Origin::label(), and
+// ORIGIN_OPTIONS in src/features/firearms/types.ts, checked by a separate
+// Vitest test). This walks every Origin variant, searching by its exact
+// `label()` text, so the SQL and Rust copies can't silently drift apart —
+// if either changed without the other, the search would stop matching.
+#[test]
+fn every_origin_is_found_by_searching_its_own_label() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    for (i, origin) in
+        [Origin::Domestic, Origin::Imported, Origin::Reimported].into_iter().enumerate()
+    {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                serial_number: Some(format!("LABEL-{i}")),
+                origin: Some(origin),
+                ..base_input()
+            },
+            false,
+        )
+        .unwrap();
+    }
+
+    for origin in [Origin::Domestic, Origin::Imported, Origin::Reimported] {
+        assert_eq!(
+            search(&db.conn, origin.label()),
+            if origin == Origin::Imported { 2 } else { 1 },
+            "searching {:?}'s own label() should find it via the SQL CASE (\"imported\" also \
+             matches \"Re-imported\")",
+            origin
+        );
+    }
+}
+
+// specs/002-firearm-identification SC-006: at collection scale, a search on
+// any of the seven new fields still finds exactly the one firearm carrying
+// it, not a false positive from the rest of the collection.
+#[test]
+fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500() {
+    use hoplodex_lib::models::firearm::Origin;
+
+    let db = TestDb::new();
+    const FILLER_COUNT: usize = 499;
+    for i in 0..FILLER_COUNT {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                make: format!("Filler Make {i}"),
+                model: format!("Filler Model {i}"),
+                serial_number: Some(format!("FILLER-{i}")),
+                ..base_input()
+            },
+            false,
+        )
+        .unwrap();
+    }
+
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            make: "Distinctive Make".into(),
+            model: "Distinctive Model".into(),
+            serial_number: Some("DISTINCTIVE-MAIN".into()),
+            origin: Some(Origin::Imported),
+            year_of_manufacture: Some(1601),
+            country_of_manufacture: Some("Ruritania".into()),
+            importer_name: Some("Uniquestar Imports LLC".into()),
+            original_make: Some("Zzyzx Arms".into()),
+            original_model: Some("Model Zeta".into()),
+            original_serial_number: Some("ZZ-999999".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    let total: usize = ops::list_firearms(&db.conn, &ListFirearmsInput::default())
+        .unwrap()
+        .groups
+        .iter()
+        .map(|g| g.firearms.len())
+        .sum();
+    assert_eq!(total, FILLER_COUNT + 1, "sanity: every record was actually saved");
+
+    for (query, what) in [
+        ("Imported", "origin"),
+        ("1601", "year of manufacture"),
+        ("Ruritania", "country of manufacture"),
+        ("Uniquestar Imports LLC", "importer name"),
+        ("Zzyzx Arms", "original maker"),
+        ("Model Zeta", "original model"),
+        ("ZZ-999999", "original serial number"),
+    ] {
+        assert_eq!(search(&db.conn, query), 1, "searching {what} ({query:?}) among 500 records");
+    }
 }

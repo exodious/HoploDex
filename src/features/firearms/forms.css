@@ -27,6 +27,14 @@
   border-top: 1px solid var(--rule);
 }
 
+/* A section that is only a disclosure (Physical details) brings its own box,
+   so it drops the rule and sits under the one before it. */
+.hd-form-section + .hd-form-section--folded {
+  margin-top: var(--space-3);
+  padding-top: 0;
+  border-top: 0;
+}
+
 /* FR-038: the section a form opened on, marked briefly so the user sees where
    to type. Under prefers-reduced-motion it is tinted but not animated. */
 .hd-form-section[data-highlight] {
@@ -72,10 +80,106 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* The rhythm short values sit on, so a date, an amount, a length or a count
+   gets the same size of box in every form: a quarter of a large dialog's
+   form (firearm, policy), a third of a standard one (dispose, coverage). A
+   name or place gets half or more. */
+.hd-form-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.hd-form-span-2 {
+  grid-column: span 2;
+}
+
+.hd-form-span-3 {
+  grid-column: span 3;
+}
+
+/* A lone field whose value is short, sized to the column it would have in
+   the grid above while its hint keeps the full width. */
+.hd-field--quarter .hd-input {
+  width: calc((100% - 3 * var(--space-4)) / 4);
+}
+
+.hd-field--third .hd-input {
+  width: calc((100% - 2 * var(--space-4)) / 3);
+}
+
+.hd-field--half .hd-input {
+  width: calc((100% - var(--space-4)) / 2);
+}
+
+/* specs/002-firearm-identification: inside the "Origin and year of
+   manufacture" disclosure, the origin control spans the row and its
+   conditional fields (country, importer) sit two to a row below it. */
+.hd-form-grid--origin {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hd-form-grid--origin > [data-field="origin"] {
+  grid-column: 1 / -1;
+}
+
+/* Pulls the guide button's text in line with the cards' left edge rather
+   than stretching it across the column. */
+.hd-origin-guide__trigger {
+  align-self: flex-start;
+  margin-left: calc(-1 * var(--space-3));
+}
+
+/* A titled group nested in a disclosure (Original maker's marks): set off
+   by a rule, titled like a field label rather than a section. */
+.hd-form-subgroup {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+}
+
+.hd-form-fieldset > legend.hd-form-subgroup__title {
+  margin-bottom: var(--space-2);
+  font-weight: 650;
+}
+
 .hd-form-stack {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* A read-only line shown in place of an input (e.g. "Country of
+   manufacture: United States" for a re-imported firearm). */
+.hd-static-line {
+  padding-top: var(--space-2);
+  color: var(--ink);
+}
+
+.hd-origin-guide__disclaimer {
+  font-style: italic;
+  color: var(--ink-2);
+  margin-bottom: var(--space-4);
+}
+
+.hd-origin-guide__heading {
+  margin-bottom: var(--space-3);
+}
+
+.hd-origin-guide__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hd-origin-guide__example {
+  border-top: 1px solid var(--rule);
+  padding-top: var(--space-4);
+}
+
+.hd-origin-guide__example-title {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
 }
 
 .hd-form-banner {
@@ -93,16 +197,41 @@
 
 @media (max-width: 700px) {
   .hd-form-grid--2,
-  .hd-form-grid--3 {
+  .hd-form-grid--3,
+  .hd-form-grid--origin {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Short values stay two to a row (`--short` marks a row of them on a
+     standard dialog's thirds): a phone-width date or amount box is still
+     wider than its value needs. */
+  .hd-form-grid--4,
+  .hd-form-grid--short {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hd-form-span-3 {
+    grid-column: span 2;
+  }
+
+  .hd-field--quarter .hd-input,
+  .hd-field--third .hd-input {
+    width: calc((100% - var(--space-4)) / 2);
+  }
+
+  .hd-field--half .hd-input {
+    width: auto;
   }
 }
 
-/* Two side-by-side inputs for one value (weight as lb and oz). */
+/* Two side-by-side inputs read as one value (weight as lb and oz) or one
+   measure (barrel and overall length), with a hint shared under both. The
+   column gap matches the grid's, so a pair in a half column lines up with
+   the quarter grid. */
 .hd-form-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  gap: var(--space-2) var(--space-4);
   align-items: start;
 }
 

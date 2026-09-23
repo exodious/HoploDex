@@ -64,6 +64,26 @@ text_enum!(Condition {
     Poor => "poor",
 });
 
+text_enum!(Origin {
+    Domestic => "domestic",
+    Imported => "imported",
+    Reimported => "reimported",
+});
+
+impl Origin {
+    /// specs/002-firearm-identification FR-001/FR-012: how the origin is
+    /// shown to the user, exported, and indexed for search. Kept in step
+    /// with the `CASE` in `0002_fts5.sql` and `ORIGIN_OPTIONS` in
+    /// `src/features/firearms/types.ts` (research.md §6).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Domestic => "Domestic",
+            Self::Imported => "Imported",
+            Self::Reimported => "Re-imported",
+        }
+    }
+}
+
 impl Condition {
     /// Every grade, best first.
     pub const ALL: [Condition; 6] =
@@ -117,6 +137,18 @@ pub struct Firearm {
     pub thumbnail_photo_id: Option<i64>,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
+    /// specs/002-firearm-identification FR-001: `None` means not specified.
+    pub origin: Option<Origin>,
+    /// specs/002-firearm-identification FR-003.
+    pub year_of_manufacture: Option<i64>,
+    /// specs/002-firearm-identification FR-002: only for `Origin::Imported`.
+    pub country_of_manufacture: Option<String>,
+    /// specs/002-firearm-identification FR-002: import-marked origins only.
+    pub importer_name: Option<String>,
+    /// specs/002-firearm-identification FR-004: import-marked origins only.
+    pub original_make: Option<String>,
+    pub original_model: Option<String>,
+    pub original_serial_number: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -152,6 +184,13 @@ impl Firearm {
             thumbnail_photo_id: row.get("thumbnail_photo_id")?,
             insurance_policy_id: row.get("insurance_policy_id")?,
             scheduled_coverage_amount: row.get("scheduled_coverage_amount")?,
+            origin: row.get("origin")?,
+            year_of_manufacture: row.get("year_of_manufacture")?,
+            country_of_manufacture: row.get("country_of_manufacture")?,
+            importer_name: row.get("importer_name")?,
+            original_make: row.get("original_make")?,
+            original_model: row.get("original_model")?,
+            original_serial_number: row.get("original_serial_number")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
         })
@@ -193,6 +232,18 @@ pub struct FirearmInput {
     pub disposition_price: Option<i64>,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
+    /// specs/002-firearm-identification FR-001: `None` means not specified.
+    pub origin: Option<Origin>,
+    /// specs/002-firearm-identification FR-003.
+    pub year_of_manufacture: Option<i64>,
+    /// specs/002-firearm-identification FR-002: only for `Origin::Imported`.
+    pub country_of_manufacture: Option<String>,
+    /// specs/002-firearm-identification FR-002: import-marked origins only.
+    pub importer_name: Option<String>,
+    /// specs/002-firearm-identification FR-004: import-marked origins only.
+    pub original_make: Option<String>,
+    pub original_model: Option<String>,
+    pub original_serial_number: Option<String>,
 }
 
 /// The record as an input that would save it unchanged — the starting point
@@ -227,6 +278,13 @@ impl From<&Firearm> for FirearmInput {
             disposition_price: firearm.disposition_price,
             insurance_policy_id: firearm.insurance_policy_id,
             scheduled_coverage_amount: firearm.scheduled_coverage_amount,
+            origin: firearm.origin,
+            year_of_manufacture: firearm.year_of_manufacture,
+            country_of_manufacture: firearm.country_of_manufacture.clone(),
+            importer_name: firearm.importer_name.clone(),
+            original_make: firearm.original_make.clone(),
+            original_model: firearm.original_model.clone(),
+            original_serial_number: firearm.original_serial_number.clone(),
         }
     }
 }
@@ -243,6 +301,11 @@ impl FirearmInput {
             nickname: trimmed(&self.nickname),
             serial_number: trimmed(&self.serial_number),
             finish: trimmed(&self.finish),
+            country_of_manufacture: trimmed(&self.country_of_manufacture),
+            importer_name: trimmed(&self.importer_name),
+            original_make: trimmed(&self.original_make),
+            original_model: trimmed(&self.original_model),
+            original_serial_number: trimmed(&self.original_serial_number),
             ..self.clone()
         }
     }
@@ -425,6 +488,60 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
                     "Disposition details can only be set once a firearm is marked disposed.".into(),
                 );
             }
+        }
+    }
+
+    // specs/002-firearm-identification FR-003: a whole four-digit year, no
+    // later than the user's local current year. `checked_measure`'s `>= min`
+    // shape doesn't fit an upper bound too, so this is spelled out.
+    if let Some(year) = input.year_of_manufacture {
+        let current_year = chrono::Local::now()
+            .date_naive()
+            .format("%Y")
+            .to_string()
+            .parse::<i64>()
+            .unwrap_or(9999);
+        if year < 1400 || year > current_year {
+            errors.insert(
+                "yearOfManufacture".into(),
+                format!(
+                    "Year of manufacture must be a four-digit year from 1400 to {current_year}."
+                ),
+            );
+        }
+    }
+
+    // specs/002-firearm-identification FR-002: the importer's name and
+    // country of manufacture only apply to import-marked origins.
+    let import_marked = matches!(input.origin, Some(Origin::Imported) | Some(Origin::Reimported));
+    if !is_blank(&input.importer_name) && !import_marked {
+        errors.insert(
+            "importerName".into(),
+            "Importer applies only to an imported or re-imported firearm.".into(),
+        );
+    }
+    if !is_blank(&input.country_of_manufacture) && !matches!(input.origin, Some(Origin::Imported)) {
+        let message = if matches!(input.origin, Some(Origin::Reimported)) {
+            "Country of manufacture applies only to imported firearms; a re-imported firearm is \
+             made in the United States."
+        } else {
+            "Country of manufacture applies only to imported firearms."
+        };
+        errors.insert("countryOfManufacture".into(), message.into());
+    }
+
+    // specs/002-firearm-identification FR-004: the original manufacturer's
+    // marks only apply to import-marked origins, same gating as importer_name.
+    for (field, label, value) in [
+        ("originalMake", "Original maker", &input.original_make),
+        ("originalModel", "Original model", &input.original_model),
+        ("originalSerialNumber", "Original serial number", &input.original_serial_number),
+    ] {
+        if !is_blank(value) && !import_marked {
+            errors.insert(
+                field.into(),
+                format!("{label} applies only to an imported or re-imported firearm."),
+            );
         }
     }
 

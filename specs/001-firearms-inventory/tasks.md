@@ -384,7 +384,7 @@ With multiple developers:
 - [X] T141 [P] Write a failing check (script or `cargo test`) that `src-tauri/tauri.conf.json` sets a restrictive CSP (`default-src 'self'`, no remote `connect-src`) and that no network-capable Tauri plugin or capability is enabled, per FR-021 / SC-008 (missing)
 - [X] T142 Replace `"csp": null` in `src-tauri/tauri.conf.json` with a strict CSP, allowing only the local image sources the app needs (`data:`, `blob:`, the asset protocol), and confirm thumbnails and photos still render, per FR-021 / SC-008 (missing) (depends on T141)
 
-## Phase 11: Insurance Policy Notes (US3, spec_TODO A9)
+## Phase 11: Insurance Policy Notes (US3, FR-027)
 
 **Purpose**: An optional free-form `notes` field on insurance policies (FR-027, US3/AC16). A small additive column with no new user story. Write the failing tests first (Constitution II). The app is unreleased, so the schema is edited in place and an existing dev database must be recreated, as with the Phase 9 changes.
 
@@ -401,7 +401,7 @@ With multiple developers:
 
 ---
 
-## Phase 12: Firearm Physical Details (US1, spec_TODO A10)
+## Phase 12: Firearm Physical Details (US1, FR-039)
 
 **Purpose**: Six optional physical-detail fields on every firearm: barrel length, overall length, weight, capacity, finish/color, condition (FR-039, US1/AC17). Plain optional fields: nothing acts on them (no legal-threshold checks, range search or grouping, which belong to a later regulated-item-types spec). Lengths and weight are stored as scaled integers (inches × 100, ounces × 10) so no float error creeps in, in line with FR-037, and cross the IPC boundary as those integers. Write the failing tests first (Constitution II). Same in-place schema edit as Phase 11, so an existing dev database must be recreated.
 
@@ -445,6 +445,8 @@ With multiple developers:
 - [X] T162 Seed the human-testing data with policy notes and all six physical details (every condition grade, a partial record, an empty one) and matching import samples, in `src-tauri/examples/human_seed.rs`; add `src-tauri/tests/human_seed_coverage_test.rs`, which runs the seed against a temporary database and fails when any column is unused, any `CHECK ... IN` value never appears, or any importable spreadsheet column is blank in every sample, so a data model change cannot ship without the seed; note the rule in README.md (depends on T161)
 - [X] T163 [US1] PR #2 review: replace the form's single "Weight (oz)" box with "Weight (lb)" and "Weight (oz)" boxes (either or both, up to three decimal places each), converting to the stored tenths of an ounce, with `parseWeight` and `weightToInputs` in `src/lib/measure.ts`, tests in `measure.test.ts`, `FirearmForm.test.tsx` and the two E2E specs; storage, IPC and the spreadsheet's `weight_oz` are unchanged, per FR-039
 - [X] T164 [US1] PR #2 review follow-up: measurements are rounded half up to the nearest storable unit everywhere instead of rejected (form: `src/lib/measure.ts` with exact BigInt arithmetic, `DecimalField` no longer takes `places` or shows a too-many-places message; import: `parse_scaled_decimal` in `src-tauri/src/services/spreadsheet.rs`); zero or a value that rounds to zero, and a fractional capacity, are still errors; amounts (FR-037) are unchanged; tests updated and the human seed's over-precise error row replaced with a non-numeric one, per FR-039
+- [X] T165 [US1] Fold the form's Physical details into a `Disclosure` on the same rules as spec 002's origin group (T057): closed on a record with none of the six recorded, open otherwise; closed, its summary reads the recorded values back ("4.49 in barrel, 8.02 in overall. 2 lb 8 oz. 17 rounds. Finish: nDLC. Condition: Excellent."); it opens itself on a client or backend error inside it. Pair the two lengths like the two weight boxes, under one hint saying how they are saved ("Saved to the nearest 0.01 in."). Size every control to its content on a quarter-width rhythm: lengths, weights, capacity, amounts and dates take a quarter; Nickname lines up with Make; Acquired from and Transferred to take the room the short fields free up. `e2e/support/ui.ts` gains `openPhysicalGroup`, per FR-039 (depends on T164)
+- [X] T166 Carry T165's sizing to every other form so a date, an amount or a count gets the same size of box app-wide: a quarter of a large dialog's form, a third of a standard one (`hd-field--third`, `hd-form-grid--short`, both two to a row on a phone). Policy form: Blanket coverage limit becomes a lone quarter-width field whose hint runs the full width (like Estimated replacement value), the two coverage dates sit on the quarter grid, and Agent name and Agent contact share a row; Mark as disposed: Date and Price received on thirds; Insurance coverage: Scheduled amount on a third. Mark as disposed's "What happened?" loses its question mark to match the form's "What happened" and every other label (depends on T165)
 
 ---
 
@@ -466,6 +468,6 @@ Task: "Write failing form/record tests in FirearmForm.test.tsx and FirearmRecord
 
 ### Implementation Strategy
 
-1. **A9 first** (T143–T148): six tasks, one column, the smallest shippable increment.
-2. **A10 backend** (T149–T153): storage, validation, search and export/import, all testable without any UI.
-3. **A10 frontend and E2E** (T154–T159), then **Polish** (T160–T161).
+1. **Policy notes first** (T143–T148): six tasks, one column, the smallest shippable increment.
+2. **Physical details backend** (T149–T153): storage, validation, search and export/import, all testable without any UI.
+3. **Physical details frontend and E2E** (T154–T159), then **Polish** (T160–T161).

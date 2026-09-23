@@ -5,7 +5,7 @@
 mod support;
 
 use hoplodex_lib::commands::firearms::{ops, GroupBy, ListFirearmsInput};
-use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus, Origin};
 use support::TestDb;
 
 fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> FirearmInput {
@@ -36,14 +36,21 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         insurance_policy_id: None,
         nickname: None,
         scheduled_coverage_amount: None,
+        origin: None,
+        year_of_manufacture: None,
+        country_of_manufacture: None,
+        importer_name: None,
+        original_make: None,
+        original_model: None,
+        original_serial_number: None,
     }
 }
 
 #[test]
 fn scenario_1_list_and_tile_views_return_the_same_data() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let list_view = ops::list_firearms(
         &db.conn,
@@ -63,9 +70,9 @@ fn scenario_1_list_and_tile_views_return_the_same_data() {
 #[test]
 fn scenario_2_group_by_type_buckets_firearms_correctly() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(
         &db.conn,
@@ -84,8 +91,8 @@ fn scenario_3_search_matches_free_form_notes_only() {
     let db = TestDb::new();
     let mut noted = firearm("Glock", "19", "9mm", 1);
     noted.notes = Some("cracked handle".into());
-    ops::create_firearm(&db.conn, &noted).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &noted, false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(
         &db.conn,
@@ -101,9 +108,9 @@ fn scenario_3_search_matches_free_form_notes_only() {
 #[test]
 fn scenario_4_search_a_shared_caliber_returns_all_matches() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Sig", "P320", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(
         &db.conn,
@@ -118,8 +125,8 @@ fn scenario_4_search_a_shared_caliber_returns_all_matches() {
 #[test]
 fn scenario_5_clearing_search_and_group_shows_the_full_collection() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
 
@@ -130,7 +137,7 @@ fn scenario_5_clearing_search_and_group_shows_the_full_collection() {
 #[test]
 fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1)).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("Glock", "19", "9mm", 1), false).unwrap();
     ops::dispose_firearm(
         &db.conn,
         created.id,
@@ -142,7 +149,7 @@ fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
         },
     )
     .unwrap();
-    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2)).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
 
     let default_result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
     let default_all: Vec<_> = default_result.groups.iter().flat_map(|g| &g.firearms).collect();
@@ -185,12 +192,12 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     covered.serial_number = Some("AAA111".into());
     covered.insurance_policy_id = Some(policy.id);
     covered.scheduled_coverage_amount = Some(60_000);
-    ops::create_firearm(&db.conn, &covered).unwrap();
+    ops::create_firearm(&db.conn, &covered, false).unwrap();
 
     let mut twin = firearm("Glock", "19", "9mm", 1);
     twin.serial_number = None;
     twin.no_serial_attested = true;
-    ops::create_firearm(&db.conn, &twin).unwrap();
+    ops::create_firearm(&db.conn, &twin, false).unwrap();
 
     let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
     let summaries = &result.groups[0].firearms;
@@ -202,4 +209,62 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     let without_serial = summaries.iter().find(|f| f.serial_number.is_none()).unwrap();
     assert_eq!(without_serial.insurance_policy_id, None);
     assert_eq!(without_serial.scheduled_coverage_amount, None);
+}
+
+// specs/002-firearm-identification US4-1: grouping by origin, in a fixed
+// order (Domestic, Imported, Re-imported, Not specified) rather than
+// alphabetically, with only the origins actually present in the result.
+
+#[test]
+fn group_by_origin_returns_groups_in_a_fixed_order_with_only_present_origins() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Reimported), ..firearm("Inland", "M1", "9mm", 2) },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Imported), ..firearm("FN", "1922", "9mm", 1) },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Domestic), ..firearm("Colt", "1911", ".45", 1) },
+        false,
+    )
+    .unwrap();
+
+    let result = ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Origin), ..Default::default() },
+    )
+    .unwrap();
+
+    let keys: Vec<_> = result.groups.iter().map(|g| g.key.as_str()).collect();
+    assert_eq!(keys, vec!["Domestic", "Imported", "Re-imported", "Not specified"]);
+}
+
+#[test]
+fn group_by_origin_omits_origins_with_no_firearms() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { origin: Some(Origin::Domestic), ..firearm("Colt", "1911", ".45", 1) },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
+
+    let result = ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Origin), ..Default::default() },
+    )
+    .unwrap();
+
+    let keys: Vec<_> = result.groups.iter().map(|g| g.key.as_str()).collect();
+    assert_eq!(keys, vec!["Domestic", "Not specified"]);
 }

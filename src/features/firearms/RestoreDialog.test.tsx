@@ -97,4 +97,48 @@ describe("RestoreDialog (FR-033)", () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.queryByLabelText("New nickname")).not.toBeInTheDocument();
   });
+
+  it("shows an identity clash naming the year exception, the same as the form", async () => {
+    // specs/002-firearm-identification FR-008
+    const user = userEvent.setup();
+    const message =
+      "Glock 19 (serial ABC123) already has this make, model and serial number. " +
+      "Or record a year of manufacture on each firearm: two firearms with the same " +
+      "marks are accepted when both have a year and the years differ.";
+    const onRestore = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { serialNumber: message },
+      }),
+    );
+    renderDialog(onRestore);
+
+    await user.click(screen.getByRole("radio", { name: /Discard/ }));
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  it("offers 'Restore anyway' on an original-marks match and resends confirmed (US3-9)", async () => {
+    const user = userEvent.setup();
+    const message =
+      "Ridgeline Arms Hi-Power (serial RA-1) already has these original maker's marks.";
+    const onRestore = vi
+      .fn()
+      .mockRejectedValueOnce(new CommandFailure({ code: "ORIGINAL_MARKS_MATCH", message }))
+      .mockResolvedValueOnce(undefined);
+    const { onOpenChange } = renderDialog(onRestore);
+
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    const restoreAnyway = await screen.findByRole("button", { name: "Restore anyway" });
+    await user.click(restoreAnyway);
+
+    expect(onRestore).toHaveBeenLastCalledWith({ history: "keep", confirmedWarnings: true });
+  });
 });

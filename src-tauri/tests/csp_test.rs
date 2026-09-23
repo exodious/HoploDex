@@ -112,8 +112,8 @@ fn the_webview_has_a_restrictive_csp() {
 
 #[test]
 fn photos_and_thumbnails_can_still_render() {
-    // Photos reach the page as data: URLs (src/lib/bytes.ts) and generic
-    // thumbnails are bundled files, so images may come from those only.
+    // Photos reach the page as data: URLs (src/lib/bytes.ts); generic
+    // per-type thumbnails are drawn inline as SVG, needing no image source.
     let config = read_json("tauri.conf.json");
     let directives = parse_csp(&config["app"]["security"]["csp"]);
 

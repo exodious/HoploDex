@@ -301,7 +301,8 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     let db = TestDb::new();
     let policy_id = rider(&db);
     let created =
-        firearm_ops::create_firearm(&db.conn, &support::firearm("Colt", "Python", "V1")).unwrap();
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Colt", "Python", "V1"), false)
+            .unwrap();
     hoplodex_lib::commands::insurance::ops::assign_firearm_coverage(
         &db.conn,
         created.id,
@@ -310,7 +311,8 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     )
     .unwrap();
     let plain =
-        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1")).unwrap();
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false)
+            .unwrap();
 
     let dest = TempDir::new().unwrap();
     let exported = import_export_ops::export_collection(
@@ -445,7 +447,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     let mut input = support::firearm("Glock", "19", "A1");
     input.estimated_value = Some(1250);
     input.acquisition_price = Some(1000000);
-    firearm_ops::create_firearm(&db.conn, &input).unwrap();
+    firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
     let id =
         firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap().groups[0].firearms[0].id;
 
@@ -602,7 +604,7 @@ fn an_export_re_imports_with_all_six_intact() {
     input.capacity = Some(15);
     input.finish = Some("Cerakote".into());
     input.condition = Some(Condition::NewInBox);
-    let created = firearm_ops::create_firearm(&db.conn, &input).unwrap();
+    let created = firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
 
     for format in [SpreadsheetFormat::Csv, SpreadsheetFormat::Xlsx] {
         let result = import_export_ops::export_collection(
@@ -635,5 +637,337 @@ fn an_export_re_imports_with_all_six_intact() {
         assert_eq!(back.capacity, Some(15));
         assert_eq!(back.finish.as_deref(), Some("Cerakote"));
         assert_eq!(back.condition, Some(Condition::NewInBox));
+    }
+}
+
+// --- specs/002-firearm-identification User Story 4: browse, export, import ---
+
+mod identification_spreadsheet {
+    use super::*;
+    use hoplodex_lib::models::firearm::Origin;
+
+    #[test]
+    fn export_writes_the_seven_new_columns_after_condition_and_before_photo_filenames() {
+        let db = TestDb::new();
+        let dest = TempDir::new().unwrap();
+        let created = firearm_ops::create_firearm(
+            &db.conn,
+            &hoplodex_lib::models::firearm::FirearmInput {
+                origin: Some(Origin::Imported),
+                year_of_manufacture: Some(1943),
+                country_of_manufacture: Some("Belgium".into()),
+                importer_name: Some("Global Arms Import Co.".into()),
+                original_make: Some("FN".into()),
+                original_model: Some("High Power".into()),
+                original_serial_number: Some("FN-1".into()),
+                ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-1")
+            },
+            false,
+        )
+        .unwrap();
+
+        let result = import_export_ops::export_collection(
+            &db.conn,
+            dest.path(),
+            "identification",
+            SpreadsheetFormat::Csv,
+            &[created.id],
+            &mut |_, _| {},
+        )
+        .unwrap();
+
+        let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
+        let headers = reader.headers().unwrap().clone();
+        let record = reader.records().next().unwrap().unwrap();
+        let cell =
+            |name: &str| record.get(headers.iter().position(|h| h == name).unwrap()).unwrap();
+
+        assert_eq!(cell("origin"), "Imported");
+        assert_eq!(cell("year_of_manufacture"), "1943");
+        assert_eq!(cell("country_of_manufacture"), "Belgium");
+        assert_eq!(cell("importer_name"), "Global Arms Import Co.");
+        assert_eq!(cell("original_make"), "FN");
+        assert_eq!(cell("original_model"), "High Power");
+        assert_eq!(cell("original_serial_number"), "FN-1");
+
+        let order: Vec<_> = headers.iter().collect();
+        let condition_at = headers.iter().position(|h| h == "condition").unwrap();
+        let photos_at = headers.iter().position(|h| h == "photo_filenames").unwrap();
+        assert_eq!(
+            &order[condition_at + 1..photos_at],
+            [
+                "origin",
+                "year_of_manufacture",
+                "country_of_manufacture",
+                "importer_name",
+                "original_make",
+                "original_model",
+                "original_serial_number",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reimported_row_always_exports_a_blank_country() {
+        let db = TestDb::new();
+        let dest = TempDir::new().unwrap();
+        let created = firearm_ops::create_firearm(
+            &db.conn,
+            &hoplodex_lib::models::firearm::FirearmInput {
+                origin: Some(Origin::Reimported),
+                ..support::firearm("Inland", "M1 Carbine", "IN-1")
+            },
+            false,
+        )
+        .unwrap();
+
+        let result = import_export_ops::export_collection(
+            &db.conn,
+            dest.path(),
+            "reimported",
+            SpreadsheetFormat::Csv,
+            &[created.id],
+            &mut |_, _| {},
+        )
+        .unwrap();
+
+        let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
+        let headers = reader.headers().unwrap().clone();
+        let record = reader.records().next().unwrap().unwrap();
+        assert_eq!(
+            record.get(headers.iter().position(|h| h == "origin").unwrap()).unwrap(),
+            "Re-imported"
+        );
+        assert_eq!(
+            record
+                .get(headers.iter().position(|h| h == "country_of_manufacture").unwrap())
+                .unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn an_export_followed_by_import_into_an_empty_collection_reproduces_every_new_field() {
+        // US4-2, SC-005
+        let db = TestDb::new();
+        let dest = TempDir::new().unwrap();
+        let domestic = firearm_ops::create_firearm(
+            &db.conn,
+            &hoplodex_lib::models::firearm::FirearmInput {
+                origin: Some(Origin::Domestic),
+                year_of_manufacture: Some(1955),
+                ..support::firearm("Colt", "1911", "C-1")
+            },
+            false,
+        )
+        .unwrap();
+        let imported = firearm_ops::create_firearm(
+            &db.conn,
+            &hoplodex_lib::models::firearm::FirearmInput {
+                origin: Some(Origin::Imported),
+                year_of_manufacture: Some(1943),
+                country_of_manufacture: Some("Belgium".into()),
+                importer_name: Some("Global Arms Import Co.".into()),
+                original_make: Some("FN".into()),
+                original_model: Some("High Power".into()),
+                original_serial_number: Some("FN-2".into()),
+                ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-2")
+            },
+            false,
+        )
+        .unwrap();
+        let unspecified = firearm_ops::create_firearm(
+            &db.conn,
+            &support::firearm("Ruger", "10/22", "RU-1"),
+            false,
+        )
+        .unwrap();
+
+        let exported = import_export_ops::export_collection(
+            &db.conn,
+            dest.path(),
+            "roundtrip",
+            SpreadsheetFormat::Csv,
+            &[domestic.id, imported.id, unspecified.id],
+            &mut |_, _| {},
+        )
+        .unwrap();
+
+        let db2 = TestDb::new();
+        let result = import_export_ops::import_collection(
+            &db2.conn,
+            &exported.spreadsheet_path,
+            SpreadsheetFormat::Csv,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap();
+        assert_eq!(result.imported_count, 3, "{:?}", result.row_errors);
+
+        let listing = firearm_ops::list_firearms(&db2.conn, &Default::default()).unwrap();
+        let all: Vec<_> = listing.groups.iter().flat_map(|g| &g.firearms).collect();
+
+        let back_domestic =
+            firearm_ops::get_firearm(&db2.conn, all.iter().find(|f| f.make == "Colt").unwrap().id)
+                .unwrap();
+        assert_eq!(back_domestic.origin, Some(Origin::Domestic));
+        assert_eq!(back_domestic.year_of_manufacture, Some(1955));
+
+        let back_imported = firearm_ops::get_firearm(
+            &db2.conn,
+            all.iter().find(|f| f.make == "Ridgeline Arms").unwrap().id,
+        )
+        .unwrap();
+        assert_eq!(back_imported.origin, Some(Origin::Imported));
+        assert_eq!(back_imported.year_of_manufacture, Some(1943));
+        assert_eq!(back_imported.country_of_manufacture.as_deref(), Some("Belgium"));
+        assert_eq!(back_imported.importer_name.as_deref(), Some("Global Arms Import Co."));
+        assert_eq!(back_imported.original_make.as_deref(), Some("FN"));
+        assert_eq!(back_imported.original_model.as_deref(), Some("High Power"));
+        assert_eq!(back_imported.original_serial_number.as_deref(), Some("FN-2"));
+
+        let back_unspecified =
+            firearm_ops::get_firearm(&db2.conn, all.iter().find(|f| f.make == "Ruger").unwrap().id)
+                .unwrap();
+        assert_eq!(back_unspecified.origin, None);
+    }
+
+    #[test]
+    fn an_origin_cell_outside_the_three_labels_is_a_row_error_naming_the_value() {
+        let db = TestDb::new();
+        let result =
+            import_into(&db, &[csv_firearm("Glock", "19", "A1", &[("origin", "Reimported")])]);
+        assert_eq!(result.imported_count, 0);
+        assert_eq!(result.row_errors.len(), 1);
+        assert!(result.row_errors[0].message.contains("Reimported"), "{:?}", result.row_errors);
+    }
+
+    #[test]
+    fn origin_is_matched_ignoring_letter_case() {
+        let db = TestDb::new();
+        let result =
+            import_into(&db, &[csv_firearm("Glock", "19", "A1", &[("origin", "DOMESTIC")])]);
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    }
+
+    #[test]
+    fn importer_and_original_marks_on_a_domestic_or_blank_origin_row_are_row_errors() {
+        for column in ["importer_name", "original_make", "original_model", "original_serial_number"]
+        {
+            let db = TestDb::new();
+            let result =
+                import_into(&db, &[csv_firearm("Glock", "19", "A1", &[(column, "Something")])]);
+            assert_eq!(result.imported_count, 0, "{column}");
+            assert_eq!(result.row_errors.len(), 1, "{column}");
+        }
+    }
+
+    #[test]
+    fn country_of_manufacture_on_a_reimported_row_is_a_row_error() {
+        let db = TestDb::new();
+        let result = import_into(
+            &db,
+            &[csv_firearm(
+                "Inland",
+                "M1 Carbine",
+                "IN-1",
+                &[("origin", "Re-imported"), ("country_of_manufacture", "Germany")],
+            )],
+        );
+        assert_eq!(result.imported_count, 0);
+        assert_eq!(result.row_errors.len(), 1);
+    }
+
+    #[test]
+    fn a_malformed_year_is_a_row_error_naming_the_column() {
+        for bad in ["circa 1943", "43", "19430", "1943.5"] {
+            let db = TestDb::new();
+            let result = import_into(
+                &db,
+                &[csv_firearm("Glock", "19", "A1", &[("year_of_manufacture", bad)])],
+            );
+            assert_eq!(result.imported_count, 0, "{bad}");
+            assert_eq!(result.row_errors.len(), 1, "{bad}");
+            assert!(
+                result.row_errors[0].message.contains("year_of_manufacture")
+                    || result.row_errors[0].message.to_lowercase().contains("year of manufacture"),
+                "{bad}: {:?}",
+                result.row_errors[0].message
+            );
+        }
+    }
+
+    #[test]
+    fn an_imported_row_with_every_new_column_blank_imports_normally() {
+        let db = TestDb::new();
+        let result =
+            import_into(&db, &[csv_firearm("FN", "1922", "FN-1", &[("origin", "Imported")])]);
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    }
+
+    #[test]
+    fn a_row_matching_main_marks_but_distinguished_by_year_is_a_new_record_with_no_conflict() {
+        // US4-5a
+        let db = TestDb::new();
+        firearm_ops::create_firearm(
+            &db.conn,
+            &hoplodex_lib::models::firearm::FirearmInput {
+                year_of_manufacture: Some(1943),
+                ..support::firearm("Colt", "1873", "SAA-1")
+            },
+            false,
+        )
+        .unwrap();
+
+        let result = import_into(
+            &db,
+            &[csv_firearm("Colt", "1873", "SAA-1", &[("year_of_manufacture", "1944")])],
+        );
+
+        assert_eq!(result.conflicts.len(), 0, "distinguished by year: no conflict prompt at all");
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+    }
+
+    #[test]
+    fn a_row_whose_original_marks_match_an_existing_firearm_still_imports_and_warns() {
+        // US4-6, FR-009
+        let db = TestDb::new();
+        firearm_ops::create_firearm(
+            &db.conn,
+            &hoplodex_lib::models::firearm::FirearmInput {
+                origin: Some(Origin::Imported),
+                original_make: Some("FN".into()),
+                original_model: Some("High Power".into()),
+                original_serial_number: Some("FN-3".into()),
+                ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-3")
+            },
+            false,
+        )
+        .unwrap();
+
+        let result = import_into(
+            &db,
+            &[csv_firearm(
+                "Century Arms",
+                "Clone",
+                "CA-3",
+                &[
+                    ("origin", "Imported"),
+                    ("original_make", "FN"),
+                    ("original_model", "High Power"),
+                    ("original_serial_number", "FN-3"),
+                ],
+            )],
+        );
+
+        assert_eq!(
+            result.imported_count, 1,
+            "the row still imports (US4-6): {:?}",
+            result.row_errors
+        );
+        assert_eq!(result.row_errors.len(), 0, "a warning is never a row error");
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(result.warnings[0].row, 1);
+        assert!(result.warnings[0].message.contains("Ridgeline Arms"), "{:?}", result.warnings);
     }
 }

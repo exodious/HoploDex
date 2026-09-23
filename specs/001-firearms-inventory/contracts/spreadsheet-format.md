@@ -42,6 +42,12 @@ sibling photos folder.
 | `condition` | no | `Firearm.condition` | one of `New in box`, `Like new`, `Excellent`, `Good`, `Fair`, `Poor`; matched case-insensitively, and `new_in_box` style values are accepted; unknown value → row error (as `firearm_type`) |
 | `photo_filenames` | no (export only; ignored on import per FR-019) | — | semicolon-delimited filenames in the sibling photos folder |
 
+_Amended by [spec 002](../../002-firearm-identification/contracts/spreadsheet-format.md):
+seven columns (`origin`, `year_of_manufacture`, `country_of_manufacture`,
+`importer_name`, `original_make`, `original_model`,
+`original_serial_number`) are inserted after `condition` and before
+`photo_filenames`._
+
 ## Amounts (FR-037)
 
 `estimated_value`, `acquisition_price`, `disposition_price` and

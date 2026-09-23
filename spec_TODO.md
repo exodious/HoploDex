@@ -1,5 +1,11 @@
 # Spec TODO — triage against `specs/001-firearms-inventory/`
 
+> **For anyone (human or AI agent) writing a spec, plan, tasks, or code from this file: this file is temporary. It will be deleted in a future commit, so nothing may depend on it.**
+>
+> - **Do not reference this file** by name (`spec_TODO.md`, `@spec_TODO.md`) or by its item labels (A1, B2, "Track B", "decision #4") in any spec artifact (`spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, `tasks.md`, `checklists/`), code, comments, tests, or commit messages. Those references will dangle once the file is gone.
+> - **Copy what the spec needs into the spec itself.** Give the new `spec.md` a `## Source Request` section with: the original request text, quoted verbatim; the rationale and any decisions recorded here; the list of 001 requirements it amends or supersedes; follow-ups handed to the plan; and what is left to other planned features. `specs/002-firearm-identification/spec.md` is the model to follow. Other artifacts (`plan.md`, `research.md`, `tasks.md`) then cite that spec section, not this file.
+> - **Refer to other planned items by what they are, not by label.** Write "a planned, not yet specified, feature for NFA and other regulated item types", not "B8". Once an item has its own spec, cite that spec (e.g. "feature 003 (classification vocabularies)").
+
 Every original item is kept verbatim (a few are split at a sentence boundary, marked *(part 1/2)*). The bracketed tag is the original one; the annotations underneath are the triage.
 
 **Three tracks**
@@ -97,6 +103,12 @@ Suggested order: B1 and B2 are independent of each other. B8 (NFA and other regu
 ### B1. `002-firearm-identification` — how a firearm is identified & marked
 
 Supersedes/amends: FR-030, FR-026 (import matching), FR-001, data-model Firearm identity columns, spreadsheet contract.
+
+- **SPECIFIED 2026-09-21 → `specs/002-firearm-identification/spec.md`** (specify and clarify done; checklist 16/16, no open markers). Next: `/speckit-plan`, then tasks. Nothing here is built.
+  - **Decided:** origin is Domestic, Imported, or Re-imported (made in the U.S., exported, brought back), optional; importer **name only** (no city/state, by choice); country of manufacture (imported only, the U.S. implied for re-imported); optional original-maker make/model/serial for import-marked origins, supplementary and never part of the identifying key; year of manufacture optional on every firearm. The regulatory scope is **record only**: the app never checks marks against an era's rules or judges legality.
+  - **Amends 001:** FR-032 (a duplicate make/model/serial is still blocked, but accepted when both records have a year of manufacture and the years differ, for any origin; year is otherwise never required), FR-026/FR-030 (import matching adds the year where both have one; original marks never match), FR-001, FR-012/FR-013 (origin groupable, every new field searchable), FR-033 (a reversal also runs the new checks), the spreadsheet contract and data model. A non-blocking warning applies when original maker, model, and serial all match another active firearm.
+  - **Plan-level follow-ups:** the unique index backing FR-032 can no longer enforce the rule alone now that the year joins it; a user-facing "how to record it" guide with worked examples (re-imported M1 Carbine, importer-adopted marks) ships with the origin control (FR-015). Research notes (ATF Ruling 2013-3, pre-1968 duplicate serial practice) are in the spec's Assumptions.
+  - **Still open, not decided:** none for B1. Picklists for country and importer names belong to **B2**; import date, licence numbers, and tax-stamp data belong to **B8**.
 
 - [feature/bug] The deduplication / validation needs some work. *(part 2 — imports)* For imported firearms, depending on when it was imported, the original manufacturer's markings might be "the" identifiers according to BATFE, or it might have an assigned-on-import serial, e.g. the importer had to mark the firearm with their name and assign a serial number. I think they may have had to assign a model as well, but that needs double checking. The BATFE has evolved their regulations over time as well.
 - [feature] import/surplus firearms may have original manufacturer's identifiers (make/model/serial, sometimes year) as well as importer info. Legally the importer info is generally how the firearm is recorded, but there should be an option to provide the original manufacturer's marks in addition to the importer's.

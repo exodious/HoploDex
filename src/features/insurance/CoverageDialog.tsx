@@ -147,6 +147,7 @@ function CoverageForm({
             value={amount}
             onValueChange={setAmount}
             error={submitted ? amountError : undefined}
+            fieldClassName="hd-field--third"
             hint={
               firearm.estimatedValue != null
                 ? `Its estimated replacement value is ${formatDollars(firearm.estimatedValue)}.`

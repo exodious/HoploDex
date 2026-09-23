@@ -3,7 +3,7 @@
 
 import type { FirearmStatus } from "../firearms/types";
 
-export type GroupBy = "type" | "caliber" | "make";
+export type GroupBy = "type" | "caliber" | "make" | "origin";
 
 export type InsuranceWarning = "none" | "uninsured" | "under_insured";
 
@@ -50,6 +50,7 @@ export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "type", label: "Type" },
   { value: "caliber", label: "Caliber" },
   { value: "make", label: "Make" },
+  { value: "origin", label: "Origin" },
 ];
 
 /** Browse controls that persist while the user moves between pages. */

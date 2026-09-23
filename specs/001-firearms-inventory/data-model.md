@@ -27,6 +27,13 @@ caliber, make").
 
 Primary record; corresponds directly to the spec's **Firearm** entity.
 
+_Amended by [spec 002](../002-firearm-identification/data-model.md): seven
+columns added (`origin`, `year_of_manufacture`, `country_of_manufacture`,
+`importer_name`, `original_make`, `original_model`,
+`original_serial_number`) — see that document's "Entity: Firearm
+(extended)". The identity-uniqueness backstop below also changes: see its
+"Indexes and triggers"._
+
 | Field | Type | Notes / validation |
 |---|---|---|
 | `id` | INTEGER PK | |
@@ -107,6 +114,11 @@ human-readable errors):
   `WHERE status = 'active' AND serial_number IS NOT NULL`.
   The app is unreleased, so no compatibility with earlier development
   databases is required; the migration may create the index directly.
+  _Amended by [spec 002](../002-firearm-identification/data-model.md):
+  a match is accepted, not blocked, when both records carry a year of
+  manufacture and the years differ (FR-007/FR-008); the backstop is now a
+  non-unique index plus `BEFORE INSERT`/`UPDATE` triggers, since a unique
+  index can't express that exception._
 - The two uniqueness checks are also re-run when a disposition is reversed
   (a disposed record returning to `active` may now clash with a record
   created in the meantime) and on every import row.
@@ -124,6 +136,10 @@ user's explicit choice of `keep` or `discard` for the current disposition:
 Both set `status = 'active'` in the same transaction, after re-running the
 nickname and make/model/serial checks (FR-031, FR-032) against currently
 active firearms; a clash aborts the whole reversal with nothing changed.
+_Amended by [spec 002](../002-firearm-identification/data-model.md): the
+make/model/serial check now allows a match distinguished by year of
+manufacture, and reversal also re-runs the FR-009 original-marks warning,
+resolved with `confirmedWarnings: true`._
 Because the `Firearm` columns always hold only the *current* disposition,
 the rule "`status = active` requires them null" is unchanged. Disposal is
 never a deletion (FR-023). Deletion is a distinct, separate action

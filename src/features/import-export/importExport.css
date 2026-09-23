@@ -154,6 +154,17 @@
   font-weight: 700;
 }
 
+/* specs/002-firearm-identification FR-009: the import warnings list is
+   informational, never an error — a niter-blue rule instead of the plain
+   neutral one, no danger/blaze coloring. */
+.hd-row-errors--info {
+  border-top-color: var(--niter);
+}
+
+.hd-row-errors--info li {
+  border-bottom-color: var(--niter-wash);
+}
+
 .hd-bulk {
   display: flex;
   align-items: center;
