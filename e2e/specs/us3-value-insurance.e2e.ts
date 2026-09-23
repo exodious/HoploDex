@@ -5,12 +5,20 @@ import {
   browser,
   choose,
   clickButton,
+  clickEl,
   expect,
   fieldValue,
   fill,
 } from "../support/ui";
 import { goTo, isButtonDisabled, openFirearm, policyCardText, selectOption } from "../support/ui";
 import { titleBlock, toggle } from "../support/ui";
+import {
+  backLinkShown,
+  clickPinned,
+  pinnedStrip,
+  pressEscape,
+  scrollToPinnedStrip,
+} from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 3's acceptance scenarios (spec.md),
@@ -404,6 +412,73 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     const cleared = await policyCardText("InsE2E Renewal");
     expect(cleared).not.toContain(notes);
     expect(cleared).not.toContain("Notes");
+  });
+
+  it("goes back with Escape from a policy and a linked Insurance page, and keeps a long policy's actions in reach (Scenario 17)", async () => {
+    // Enough notes to make the policy page scroll well past its header.
+    const notes = Array.from({ length: 80 }, (_, i) => `Rider clause ${i + 1}.`).join("\n");
+    await addPolicy({
+      name: "InsE2E Long",
+      policyNumber: "L-1",
+      startDate: isoDaysFromNow(-30),
+      endDate: isoDaysFromNow(300),
+    });
+    await editPolicy("InsE2E Long", { Notes: notes });
+
+    // Scheduled for less than it is worth, so the collection offers
+    // "Review insurance".
+    await goTo("Collection");
+    await addFirearmWithValue({
+      make: "InsE2EEsc",
+      model: "Long",
+      serial: "INS-ESC-1",
+      valueDollars: "2000",
+    });
+    await assignCoverage({ policyName: "InsE2E Long", amountDollars: "1000" });
+
+    // A policy opened from a firearm: Escape returns to the firearm.
+    const openPolicy = async () => {
+      await clickEl(".hd-facts .hd-link");
+      await $(".hd-policy").waitForExist({ timeout: 4000 });
+      await expect($(".hd-policy__name")).toHaveText("InsE2E Long");
+    };
+    await openPolicy();
+    expect(await backLinkShown()).toEqual({ label: "InsE2EEsc Long", key: "Esc" });
+    await pressEscape();
+    await expect($("#record-name")).toHaveText("InsE2EEsc Long");
+
+    // Scrolled down, the strip keeps the way back, the name, Edit and Delete.
+    await openPolicy();
+    await scrollToPinnedStrip();
+    expect(await pinnedStrip()).toEqual({
+      back: "InsE2EEsc Long",
+      backKey: "Esc",
+      name: "InsE2E Long",
+      stamp: "L-1",
+      actions: ["Edit", "Delete InsE2E Long"],
+    });
+
+    await clickPinned("Edit");
+    await expect($('[role="dialog"]*=Edit InsE2E Long')).toExist();
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await clickPinned("Delete InsE2E Long");
+    await expect($('[role="alertdialog"]*=Delete InsE2E Long?')).toExist();
+    await pressEscape();
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await expect($(".hd-policy__name")).toHaveText("InsE2E Long");
+
+    await pressEscape();
+    await expect($("#record-name")).toHaveText("InsE2EEsc Long");
+
+    // The Insurance page opened from a link: Escape returns to the collection.
+    await goTo("Collection");
+    await clickButton("Review insurance");
+    await expect($(".hd-page-title")).toHaveText("Insurance");
+    expect(await backLinkShown()).toEqual({ label: "Collection", key: "Esc" });
+    await pressEscape();
+    await expect($(".hd-page-title")).toHaveText("Collection");
   });
 });
 

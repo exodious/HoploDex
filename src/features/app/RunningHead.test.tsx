@@ -1,43 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import {
+  observedTargets,
+  scrollAnchorTo,
+  stubIntersectionObserver,
+} from "../../test/intersectionObserver";
 import { NavigationContext } from "./navigation";
 import type { Navigation } from "./navigation";
 import { RunningHead } from "./RunningHead";
-
-type Callback = (entries: Partial<IntersectionObserverEntry>[]) => void;
-let observed: { callback: Callback; target: Element | null }[] = [];
-
-class FakeIntersectionObserver {
-  private entry: { callback: Callback; target: Element | null };
-  constructor(callback: Callback) {
-    this.entry = { callback, target: null };
-    observed.push(this.entry);
-  }
-  observe(target: Element) {
-    this.entry.target = target;
-  }
-  disconnect() {
-    observed = observed.filter((o) => o !== this.entry);
-  }
-}
-
-/** Reports the anchor at `bottom` px from the top of the viewport, with the
- * top bar's lower edge at 56px. */
-function scrollAnchorTo(bottom: number) {
-  act(() => {
-    for (const { callback } of observed) {
-      callback([
-        {
-          isIntersecting: bottom > 56,
-          boundingClientRect: { bottom } as DOMRectReadOnly,
-          rootBounds: { top: 56 } as DOMRectReadOnly,
-        },
-      ]);
-    }
-  });
-}
 
 const goBack = vi.fn();
 const navigation: Navigation = {
@@ -78,9 +50,8 @@ function renderPage() {
 
 describe("RunningHead", () => {
   beforeEach(() => {
-    observed = [];
     goBack.mockReset();
-    vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+    stubIntersectionObserver();
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
   });
 
@@ -90,7 +61,7 @@ describe("RunningHead", () => {
 
   it("stays out of the way while the page's heading is in view", () => {
     renderPage();
-    expect(observed[0].target?.tagName).toBe("HEADER");
+    expect(observedTargets()[0]?.tagName).toBe("HEADER");
     scrollAnchorTo(400);
     expect(screen.queryByRole("button", { name: /back to top/ })).not.toBeInTheDocument();
   });

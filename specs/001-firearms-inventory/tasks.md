@@ -471,3 +471,14 @@ Task: "Write failing form/record tests in FirearmForm.test.tsx and FirearmRecord
 1. **Policy notes first** (T143–T148): six tasks, one column, the smallest shippable increment.
 2. **Physical details backend** (T149–T153): storage, validation, search and export/import, all testable without any UI.
 3. **Physical details frontend and E2E** (T154–T159), then **Polish** (T160–T161).
+
+---
+
+## Phase 14: Convergence
+
+**Purpose**: Remaining work found by `/speckit-converge` after FR-040/FR-041 were specified (Session 2026-09-23). The behavior is already in `AppShell.tsx`, `BackLink.tsx` and `RunningHead.tsx`; these tasks add the missing test and walkthrough coverage (Constitution II). If a new test fails, fix the code, not the test.
+
+- [X] T167 [P] Add Vitest cases to `src/features/app/AppShell.test.tsx` that Escape does not leave a firearm record while focus is in a text field (input or textarea) or while a menu or popover is open (a Radix `Select` list or the `DateField` calendar), and that the page is unchanged afterwards, per US1/AC18 / FR-040 (partial)
+- [X] T168 [P] Add page-level Vitest cases in `src/features/firearms/FirearmRecordPage.test.tsx` and a new `src/features/insurance/PolicyPage.test.tsx` that, once the heading has scrolled away (stubbed `IntersectionObserver`, as in `RunningHead.test.tsx`), the pinned strip shows the back link, the record's name and the same actions as the heading (firearm: Edit, "Mark disposed" or "Restore to collection", Delete; policy: Edit, Delete), and that each strip action opens the same dialog as its heading counterpart, per FR-041 / US1/AC18 / US3/AC17 (partial)
+- [X] T169 Extend `e2e/specs/us1-record-firearm.e2e.ts` (open a record, press Escape and land on the collection; open the edit dialog, press Escape and stay on the record; scroll to the bottom, see `.hd-runhead` with the name and actions, use its Edit, and use its name to return to the top) and `e2e/specs/us3-value-insurance.e2e.ts` (policy opened from a firearm: Escape returns to the firearm; Insurance page opened from a link: Escape returns; on a long policy page the strip keeps Edit and Delete in reach), per US1/AC18 / US3/AC17 (partial) (depends on T167, T168)
+- [X] T170 Add quickstart walkthrough steps to `specs/001-firearms-inventory/quickstart.md`: US1 step 16 (Escape returns from a record but not while a dialog, menu or text field has focus, and the pinned strip on a long record) and US3 step 14 (Escape from a policy and from a linked Insurance page, and the pinned strip on a long policy), per plan: quickstart validation / FR-040 / FR-041 (partial)

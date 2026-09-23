@@ -1,8 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
+import { NavigationContext } from "../app/navigation";
+import type { Navigation } from "../app/navigation";
+import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectionObserver";
 import { FirearmRecordPage } from "./FirearmRecordPage";
 import { ORIGIN_OPTIONS } from "./types";
 import type { FirearmDetail, Origin } from "./types";
@@ -266,4 +269,99 @@ describe("FirearmRecordPage original maker's marks (US2)", () => {
       screen.queryByRole("region", { name: "Original maker's marks" }),
     ).not.toBeInTheDocument();
   });
+});
+
+describe("FirearmRecordPage pinned strip (FR-041, US1/AC18)", () => {
+  const navigation: Navigation = {
+    route: { page: "firearm", id: 1, from: "collection" },
+    navigate: () => {},
+    open: () => {},
+    back: { label: "Collection", go: vi.fn() },
+    openDialog: () => {},
+  };
+
+  function renderWithBack() {
+    render(
+      <CollectionContext.Provider value={collection}>
+        <NavigationContext.Provider value={navigation}>
+          <FirearmRecordPage id={1} />
+        </NavigationContext.Provider>
+      </CollectionContext.Provider>,
+    );
+  }
+
+  const strip = () => document.querySelector<HTMLElement>(".hd-runhead");
+  const headingActions = () => document.querySelector<HTMLElement>(".hd-record__actions")!;
+  const stripActions = () => strip()!.querySelector<HTMLElement>(".hd-runhead__actions")!;
+  const labels = (container: HTMLElement) =>
+    within(container)
+      .getAllByRole("button")
+      .map((b) => b.textContent?.trim());
+
+  /** The title of whichever dialog is open. */
+  function openDialogTitle() {
+    const dialog = screen.queryByRole("dialog") ?? screen.queryByRole("alertdialog");
+    const titleId = dialog?.getAttribute("aria-labelledby");
+    return titleId ? document.getElementById(titleId)?.textContent : undefined;
+  }
+
+  async function scrolledPastPlate(detail: FirearmDetail = firearm) {
+    getFirearm.mockResolvedValue(detail);
+    renderWithBack();
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(strip()).toBeNull();
+    scrollAnchorTo(-400);
+    expect(strip()).not.toBeNull();
+  }
+
+  beforeEach(() => {
+    getFirearm.mockReset();
+    stubIntersectionObserver();
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the way back, the name and the heading's actions in reach", async () => {
+    await scrolledPastPlate();
+
+    const back = within(strip()!).getByRole("button", { name: /Collection/ });
+    expect(back).toHaveAttribute("aria-keyshortcuts", "Escape");
+    expect(
+      within(strip()!).getByRole("button", { name: /Colt Python.*V1.*back to top/ }),
+    ).toBeInTheDocument();
+    expect(labels(stripActions())).toEqual(["Edit", "Mark disposed", "Delete"]);
+    expect(labels(stripActions())).toEqual(labels(headingActions()));
+  });
+
+  it("offers Restore to collection, not Mark disposed, on a disposed firearm", async () => {
+    await scrolledPastPlate({ ...firearm, status: "disposed", dispositionType: "sold" });
+
+    expect(labels(stripActions())).toEqual(["Edit", "Restore to collection", "Delete"]);
+    expect(labels(stripActions())).toEqual(labels(headingActions()));
+  });
+
+  it.each([
+    ["Edit", firearm],
+    ["Mark disposed", firearm],
+    ["Restore to collection", { ...firearm, status: "disposed", dispositionType: "sold" }],
+    ["Delete", firearm],
+  ] as [string, FirearmDetail][])(
+    "the strip's %s opens the same dialog as the heading's",
+    async (action, detail) => {
+      const user = userEvent.setup();
+      await scrolledPastPlate(detail);
+
+      await user.click(within(headingActions()).getByRole("button", { name: action }));
+      const fromHeading = openDialogTitle();
+      expect(fromHeading).toBeTruthy();
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(openDialogTitle()).toBeUndefined());
+
+      await user.click(within(stripActions()).getByRole("button", { name: action }));
+      expect(openDialogTitle()).toBe(fromHeading);
+    },
+  );
 });
