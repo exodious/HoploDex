@@ -9,6 +9,7 @@ import { BackLink } from "../app/BackLink";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { FirearmName } from "../app/FirearmName";
 import { useNavigation } from "../app/navigation";
+import { RunningHead } from "../app/RunningHead";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { CoverageDialog } from "../insurance/CoverageDialog";
 import { coverageStatus, expiryLabel } from "../insurance/coverage";
@@ -54,6 +55,8 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
   // The field the edit form opens on, when reached from an "Add" link.
   const [editFocus, setEditFocus] = useState<FocusField>();
+  // The plate, which the pinned strip waits to scroll away.
+  const [plate, setPlate] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,26 +71,10 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     };
   }, [id, revision]);
 
-  // Escape returns to the list, unless it's closing a dialog or popover.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (
-        document.querySelector(
-          '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]',
-        )
-      )
-        return;
-      back?.go();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [back]);
-
   if (loadError) {
     return (
       <div className="hd-record">
-        {back && <BackLink target={back} escapes />}
+        {back && <BackLink target={back} />}
         <p className="hd-banner hd-banner--error" role="alert">
           <Icon name="alert" />
           <span className="hd-banner__text">{loadError}</span>
@@ -96,7 +83,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     );
   }
   if (!firearm) {
-    return <div className="hd-record">{back && <BackLink target={back} escapes />}</div>;
+    return <div className="hd-record">{back && <BackLink target={back} />}</div>;
   }
 
   const name = firearmName(firearm);
@@ -171,36 +158,43 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     await refresh();
   }
 
+  function actions(size: "md" | "sm") {
+    return (
+      <>
+        <Button
+          size={size}
+          icon="pencil"
+          onClick={() => {
+            setEditFocus(undefined);
+            setDialog("edit");
+          }}
+        >
+          Edit
+        </Button>
+        {disposed ? (
+          <Button size={size} icon="archive" onClick={() => setDialog("restore")}>
+            Restore to collection
+          </Button>
+        ) : (
+          <Button size={size} icon="archive" onClick={() => setDialog("dispose")}>
+            Mark disposed
+          </Button>
+        )}
+        <Button size={size} variant="ghost" icon="trash" onClick={() => setDialog("delete")}>
+          Delete
+        </Button>
+      </>
+    );
+  }
+
   return (
     <div className="hd-record">
       <div className="hd-record__bar">
-        {back && <BackLink target={back} escapes />}
-        <div className="hd-record__actions">
-          <Button
-            icon="pencil"
-            onClick={() => {
-              setEditFocus(undefined);
-              setDialog("edit");
-            }}
-          >
-            Edit
-          </Button>
-          {disposed ? (
-            <Button icon="archive" onClick={() => setDialog("restore")}>
-              Restore to collection
-            </Button>
-          ) : (
-            <Button icon="archive" onClick={() => setDialog("dispose")}>
-              Mark disposed
-            </Button>
-          )}
-          <Button variant="ghost" icon="trash" onClick={() => setDialog("delete")}>
-            Delete
-          </Button>
-        </div>
+        {back && <BackLink target={back} />}
+        <div className="hd-record__actions">{actions("md")}</div>
       </div>
 
-      <article className="hd-plate" aria-labelledby="record-name">
+      <article className="hd-plate" aria-labelledby="record-name" ref={setPlate}>
         <div className="hd-plate__top">
           <PlateFigure thumbnailPhotoId={firearm.thumbnailPhotoId} typeKey={type.key} />
           <header className="hd-plate__heading">
@@ -212,7 +206,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 </Badge>
               )}
             </p>
-            <h1 className="hd-plate__name" id="record-name">
+            <h1 className="hd-plate__name" id="record-name" tabIndex={-1}>
               <FirearmName firearm={firearm} />
             </h1>
             <p className="hd-plate__stamp">
@@ -411,6 +405,14 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
           <DocumentList firearmId={firearm.id} />
         </aside>
       </div>
+
+      <RunningHead
+        anchor={plate}
+        headingId="record-name"
+        title={name}
+        stamp={firearm.serialNumber}
+        actions={actions("sm")}
+      />
 
       <Dialog
         open={dialog === "edit"}

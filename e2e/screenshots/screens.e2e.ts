@@ -37,6 +37,17 @@ async function openRecord(name: string) {
   await browser.pause(300);
 }
 
+/** Scrolls to the bottom of a long page, so the pinned strip (the
+ * continuation of the page's heading) shows, and shoots the viewport. */
+async function shotScrolled(name: string) {
+  await browser.execute(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await $(".hd-runhead").waitForExist();
+  await browser.pause(300);
+  await shot(name);
+  await browser.execute(() => window.scrollTo(0, 0));
+  await $(".hd-runhead").waitForExist({ reverse: true });
+}
+
 async function openDialog(button: string) {
   await clickButton(button);
   await $('[role="dialog"]').waitForExist();
@@ -82,6 +93,7 @@ for (const theme of ["Light", "Dark"] as const) {
     it("firearm record and its dialogs", async () => {
       await openRecord(RECORD);
       await shot(`04-record-${suffix}`, { fullPage: true });
+      await shotScrolled(`04-record-scrolled-${suffix}`);
 
       await openDialog("Edit");
       await shot(`05-edit-firearm-${suffix}`, { fullPage: true });

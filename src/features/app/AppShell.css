@@ -18,7 +18,7 @@
   align-items: center;
   gap: var(--space-8);
   max-width: var(--page-max);
-  height: 56px;
+  height: var(--topbar-height);
   margin: 0 auto;
   padding: 0 var(--space-8);
 }
@@ -313,4 +313,16 @@
 .hd-backlink:hover {
   background: var(--sheet-sunk);
   color: var(--ink);
+}
+
+.hd-backlink__kbd {
+  min-width: 0;
+  height: 20px;
+  margin-left: 4px;
+  font-size: 0.6875rem;
+  color: var(--ink-3);
+}
+
+.hd-backlink:hover .hd-backlink__kbd {
+  color: var(--ink-2);
 }

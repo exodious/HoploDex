@@ -293,3 +293,9 @@
 .hd-past-dispositions__restored {
   display: block;
 }
+
+/* Focused by the pinned strip's "back to top", which is a pointer action:
+   the page scrolling back is the feedback. */
+.hd-plate__name:focus {
+  outline: none;
+}

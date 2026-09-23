@@ -9,6 +9,7 @@ const PATHS = {
   list: "M7 5.5h9M7 10h9M7 14.5h9M3.5 5.5h.5M3.5 10h.5M3.5 14.5h.5",
   tiles: "M3.5 3.5h5v5h-5zM11.5 3.5h5v5h-5zM3.5 11.5h5v5h-5zM11.5 11.5h5v5h-5z",
   back: "M11.5 5 6.5 10l5 5",
+  up: "M5 11.5 10 6.5l5 5",
   chevronLeft: "M12 5 7 10l5 5",
   chevronRight: "M8 5l5 5-5 5",
   pencil: "M12.5 4.5 15.5 7.5 7.5 15.5H4.5V12.5ZM10.5 6.5l3 3",

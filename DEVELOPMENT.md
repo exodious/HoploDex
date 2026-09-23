@@ -281,8 +281,9 @@ This runs `e2e/screenshots/screens.e2e.ts` through the E2E harness, under Xvfb
 at a fixed 1200×800 window. It opens the
 [human-testing collection](#human-testing), seeded into the session's
 throwaway sandbox, and walks the main screens and dialogs (collection list
-and tiles, a full record, the edit/coverage/dispose dialogs, add firearm,
-insurance, a policy, import and export) in light and dark mode, writing
+and tiles, a full record, the record scrolled so its pinned strip shows, the
+edit/coverage/dispose dialogs, add firearm, insurance, a policy, import and
+export) in light and dark mode, writing
 `<nn>-<screen>-<theme>.png`. Long pages and dialogs are captured whole. The
 names don't change between runs, so for before/after pairs, run it on the base
 branch and then on yours:

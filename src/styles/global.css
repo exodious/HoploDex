@@ -120,6 +120,23 @@ svg {
   font-variant-numeric: slashed-zero;
 }
 
+/* A key the user can press, drawn as a keycap: the "/" in the search box,
+   the "Esc" on back links. */
+.hd-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink-2);
+}
+
 .hd-link {
   color: var(--niter);
   text-decoration: underline;
