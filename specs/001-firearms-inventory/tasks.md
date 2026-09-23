@@ -384,7 +384,7 @@ With multiple developers:
 - [X] T141 [P] Write a failing check (script or `cargo test`) that `src-tauri/tauri.conf.json` sets a restrictive CSP (`default-src 'self'`, no remote `connect-src`) and that no network-capable Tauri plugin or capability is enabled, per FR-021 / SC-008 (missing)
 - [X] T142 Replace `"csp": null` in `src-tauri/tauri.conf.json` with a strict CSP, allowing only the local image sources the app needs (`data:`, `blob:`, the asset protocol), and confirm thumbnails and photos still render, per FR-021 / SC-008 (missing) (depends on T141)
 
-## Phase 11: Insurance Policy Notes (US3, spec_TODO A9)
+## Phase 11: Insurance Policy Notes (US3, FR-027)
 
 **Purpose**: An optional free-form `notes` field on insurance policies (FR-027, US3/AC16). A small additive column with no new user story. Write the failing tests first (Constitution II). The app is unreleased, so the schema is edited in place and an existing dev database must be recreated, as with the Phase 9 changes.
 
@@ -401,7 +401,7 @@ With multiple developers:
 
 ---
 
-## Phase 12: Firearm Physical Details (US1, spec_TODO A10)
+## Phase 12: Firearm Physical Details (US1, FR-039)
 
 **Purpose**: Six optional physical-detail fields on every firearm: barrel length, overall length, weight, capacity, finish/color, condition (FR-039, US1/AC17). Plain optional fields: nothing acts on them (no legal-threshold checks, range search or grouping, which belong to a later regulated-item-types spec). Lengths and weight are stored as scaled integers (inches × 100, ounces × 10) so no float error creeps in, in line with FR-037, and cross the IPC boundary as those integers. Write the failing tests first (Constitution II). Same in-place schema edit as Phase 11, so an existing dev database must be recreated.
 
@@ -468,6 +468,6 @@ Task: "Write failing form/record tests in FirearmForm.test.tsx and FirearmRecord
 
 ### Implementation Strategy
 
-1. **A9 first** (T143–T148): six tasks, one column, the smallest shippable increment.
-2. **A10 backend** (T149–T153): storage, validation, search and export/import, all testable without any UI.
-3. **A10 frontend and E2E** (T154–T159), then **Polish** (T160–T161).
+1. **Policy notes first** (T143–T148): six tasks, one column, the smallest shippable increment.
+2. **Physical details backend** (T149–T153): storage, validation, search and export/import, all testable without any UI.
+3. **Physical details frontend and E2E** (T154–T159), then **Polish** (T160–T161).

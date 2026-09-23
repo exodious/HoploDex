@@ -1,5 +1,11 @@
 # Spec TODO — triage against `specs/001-firearms-inventory/`
 
+> **For anyone (human or AI agent) writing a spec, plan, tasks, or code from this file: this file is temporary. It will be deleted in a future commit, so nothing may depend on it.**
+>
+> - **Do not reference this file** by name (`spec_TODO.md`, `@spec_TODO.md`) or by its item labels (A1, B2, "Track B", "decision #4") in any spec artifact (`spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, `tasks.md`, `checklists/`), code, comments, tests, or commit messages. Those references will dangle once the file is gone.
+> - **Copy what the spec needs into the spec itself.** Give the new `spec.md` a `## Source Request` section with: the original request text, quoted verbatim; the rationale and any decisions recorded here; the list of 001 requirements it amends or supersedes; follow-ups handed to the plan; and what is left to other planned features. `specs/002-firearm-identification/spec.md` is the model to follow. Other artifacts (`plan.md`, `research.md`, `tasks.md`) then cite that spec section, not this file.
+> - **Refer to other planned items by what they are, not by label.** Write "a planned, not yet specified, feature for NFA and other regulated item types", not "B8". Once an item has its own spec, cite that spec (e.g. "feature 003 (classification vocabularies)").
+
 Every original item is kept verbatim (a few are split at a sentence boundary, marked *(part 1/2)*). The bracketed tag is the original one; the annotations underneath are the triage.
 
 **Three tracks**

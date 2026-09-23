@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "@spec_TODO.md let's start track B" — resolved to the first Track B item, **B1** (`002-firearm-identification`): how a firearm is identified and marked. Covers the two B1 items in `spec_TODO.md`: (1) the deduplication/validation rules for imported firearms, whose identifying marks depend on when and by whom they were imported (the importer may have marked its own name and assigned its own serial number, and possibly a model), and (2) recording the original manufacturer's marks (make, model, serial, sometimes year) in addition to the importer's.
+**Input**: User description: "let's start track B", given against the project's working list of planned features, and resolved to that list's first new-spec item: how a firearm is identified and marked. The planning notes it came from are reproduced under [Source Request](#source-request) so this spec stands on its own. It covers two requests: (1) the deduplication/validation rules for imported firearms, whose identifying marks depend on when and by whom they were imported (the importer may have marked its own name and assigned its own serial number, and possibly a model), and (2) recording the original manufacturer's marks (make, model, serial, sometimes year) in addition to the importer's.
 
 ## Clarifications
 
@@ -160,13 +160,13 @@ A collector can group the collection by origin, and can export imported firearms
 
 ## Assumptions
 
-- **Regulatory scope (states the answer 001 and `spec_TODO.md` ask for):** feature 001 scopes itself to U.S. federal norms and, in this feature, that scope does not deepen. The system records identification details the owner supplies and makes no claim about what any era's rules required of a manufacturer or importer (FR-006). Importer marking requirements have changed over time; pre-1968 surplus imports often carry only the original maker's marks, later imports carry importer marks and an importer-assigned serial number, and whether an importer must also assign a model needs to be checked against the regulations. None of this changes the data captured here, because both the main model and the original model are recordable, so it does not block the spec.
+- **Regulatory scope (states the answer 001 and the source request ask for):** feature 001 scopes itself to U.S. federal norms and, in this feature, that scope does not deepen. The system records identification details the owner supplies and makes no claim about what any era's rules required of a manufacturer or importer (FR-006). Importer marking requirements have changed over time; pre-1968 surplus imports often carry only the original maker's marks, later imports carry importer marks and an importer-assigned serial number, and whether an importer must also assign a model needs to be checked against the regulations. None of this changes the data captured here, because both the main model and the original model are recordable, so it does not block the spec.
 - Origin has three values because they change what marks exist: Domestic (one set of maker marks), Imported (a foreign maker's marks, plus possibly an importer's), and Re-imported (a U.S. maker's marks, plus an importer's). Homemade or unserialized firearms are already covered by the "no serial number" attestation (feature 001 FR-029) and need no origin of their own.
 - Country of manufacture is free text and the importer is identified by name only; the importer's city and state are deliberately not recorded. A picklist of countries, suggested importer names, and consolidation of variant spellings belong to the suggestion mechanism in feature 003 (classification vocabularies), not here.
 - Year of manufacture is a single year on any firearm, not restricted to imports, because collectors record it for domestic firearms too. The lower bound of 1400 is a sanity check, not a claim about firearm history.
 - **Research on duplicates and re-imports** (for the plan; not legal advice): before the 1968 Gun Control Act serial numbers had no legal meaning, and makers commonly restarted numbering or ran separate series, so identical make + model + serial pairs exist among pre-1968 U.S. firearms; wartime contractors also sometimes overran their assigned blocks and stamped another contractor's numbers (M1 Carbines by different makers, one with an "X" added). ATF Ruling 2013-3 lets a licensed importer adopt the serial number, caliber and model already on a firearm, provided it adds its own name and city and state and does not remove or alter the original serial number; where an importer receives two firearms with the same serial number it adds letters, numbers or a hyphen to it. The ruling does not distinguish foreign-made from U.S.-made firearms brought back, and many re-imported carbines and rifles bear an importer's stamp. The application records what is stamped, never whether it was permitted.
 - Original-maker marks are offered only for imported and re-imported firearms, since a domestic firearm has only one set of maker marks and those are its main marks.
-- The system does not track the date of import, the importer's federal licence number, or any registration or tax-stamp detail. Those belong to the regulated-item-types feature (B8 in `spec_TODO.md`), not this one.
+- The system does not track the date of import, the importer's federal licence number, or any registration or tax-stamp detail. Those belong to a planned, not yet specified, feature for NFA and other regulated item types (suppressors and similar), not this one.
 - Nothing needs to be migrated for existing records: all new fields are optional and the application is unreleased (0.1.0), so an existing development database can be recreated as with earlier schema changes.
 - Physical details of a firearm (barrel length, weight, capacity, finish, condition) and cartridge/action type are covered elsewhere (feature 001 FR-039 and feature 003) and are not part of this feature.
 
@@ -181,3 +181,26 @@ This feature is an extension of `specs/001-firearms-inventory/`. It **amends** t
 - **FR-033** (reverse disposition): the reversal also runs the FR-009 warning.
 - **FR-012** and **FR-013**: origin becomes a grouping field; every new field becomes searchable.
 - **FR-018** and the spreadsheet contract, plus the data model's Firearm identity columns and search index: gain the new fields.
+
+## Source Request
+
+This feature came from the project's working list of planned features, which is not kept long term. What this spec drew on is reproduced here for the record.
+
+**Planning convention.** Items on that list that correct feature 001 ("Track A") are made by editing 001's documents in place. Items that add a new capability ("Track B") become their own spec, and each such spec must list which 001 requirements and decisions it amends or supersedes; for this feature that is the [Relationship to Feature 001](#relationship-to-feature-001) section.
+
+**The two requests, verbatim:**
+
+> [feature/bug] The deduplication / validation needs some work. For imported firearms, depending on when it was imported, the original manufacturer's markings might be "the" identifiers according to BATFE, or it might have an assigned-on-import serial, e.g. the importer had to mark the firearm with their name and assign a serial number. I think they may have had to assign a model as well, but that needs double checking. The BATFE has evolved their regulations over time as well.
+
+> [feature] import/surplus firearms may have original manufacturer's identifiers (make/model/serial, sometimes year) as well as importer info. Legally the importer info is generally how the firearm is recorded, but there should be an option to provide the original manufacturer's marks in addition to the importer's.
+
+The first request is the second half of a larger one. Its first half, the domestic rule ("For domestically made firearms after GCA 1968 took effect, the make/model/serial combination must be unique"), was handled as a correction to 001 and became 001 FR-032, so it could ship without waiting on this feature, which then generalizes it.
+
+**Why a separate spec.** These requests change what "make/model/serial" means (the main marks versus the original maker's), which changes the identifying key, the uniqueness rule, the import matcher, and the spreadsheet columns, and they need research on regulations that vary by era. 001 already scoped itself to U.S. federal norms, so this spec had to say how far the regulatory-history scope extends (see the regulatory-scope Assumption).
+
+**Follow-ups handed to the plan:**
+
+- The unique index that backs 001 FR-032 can no longer enforce the rule on its own now that the year of manufacture takes part in it (FR-007, FR-008).
+- The "how to record it" guide with worked examples (a re-imported M1 Carbine, importer-adopted marks) ships with the origin control (FR-015).
+
+**Left to other planned features:** picklists for country and importer names belong to feature 003 (classification vocabularies); import date, licence numbers, and tax-stamp data belong to the regulated-item-types feature noted in Assumptions.

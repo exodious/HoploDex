@@ -2,8 +2,8 @@
 
 The Technical Context has no open unknowns: the stack is feature 001's and
 no dependency is added. This document records the design decisions the spec
-deliberately left to the plan (the spec's "Plan-level follow-ups" in
-`spec_TODO.md` B1) and the rationale for each, so nothing is left as
+deliberately left to the plan (the "Follow-ups handed to the plan" in the
+spec's Source Request) and the rationale for each, so nothing is left as
 NEEDS CLARIFICATION going into Phase 1.
 
 The regulatory research (ATF Ruling 2013-3, pre-1968 serial practice,
@@ -357,8 +357,9 @@ not express "one record has a year and the other does not".
   spreadsheet columns). 001's files are not rewritten. The last task adds a
   one-line "amended by 002" pointer at each of those anchors.
 - **Rationale**: Track A items edit 001 in place because they correct it;
-  Track B specs *extend* it and, per `spec_TODO.md`, must "list which 001
-  FRs/decisions it amends", which the spec's Relationship section does.
+  Track B specs *extend* it and, per the planning convention in the spec's
+  Source Request, must list which 001 requirements and decisions they
+  amend, which the spec's Relationship section does.
   Keeping deltas next to the spec that owns them means each feature's folder
   stays a faithful record of what that feature decided.
 - **Alternatives considered**: Rewriting 001's data model and contracts in
