@@ -80,7 +80,8 @@ Below the origin control, inside the origin group (§1):
   and titled like a field label rather than a form section.
 - **Year of manufacture** is shown for every origin, first in the origin
   group, as a numeric text input (digits only, four characters) whose
-  control is sized for four digits rather than the column's full width. Optional;
+  control is a quarter of the form's width, like the form's other short
+  values, rather than the column's full width. Optional;
   hint: "A single year, e.g. 1943. Put anything uncertain in Notes." When two
   records with the same make, model and serial need telling apart, the
   identity error (§4) points here.
@@ -175,6 +176,13 @@ button, returning focus to the button. It is static text with worked
 examples; nothing in it depends on the collection. It states, once, at the
 top: "Record what is stamped on the firearm and what your paperwork says.
 The app does not check it against any rules." (FR-006).
+
+So the worked examples are not read as rules (an Austrian pistol, the
+make "Inland"), the dialog's description introduces them as examples: "Six
+examples, each showing what you might see on a firearm and how to record
+it. Yours may not match any of them exactly: use the closest as a guide."
+The list sits under an **Examples** heading, with each example titled one
+level below it.
 
 Each example has a title, "What you see", and "How to record it" (which
 origin, which fields go in the main make/model/serial and which in

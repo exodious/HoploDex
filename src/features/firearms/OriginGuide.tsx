@@ -59,7 +59,8 @@ const EXAMPLES: Example[] = [
 ];
 
 /** The "How do I record this?" guide (FR-015, SC-007): a shared `Dialog`
- * opened from beside the origin control. Static text with worked examples;
+ * opened from beside the origin control. Static text with worked examples,
+ * introduced as examples so no one reads Austria or Inland as a rule;
  * nothing in it depends on the collection. */
 export function OriginGuide({ open, onOpenChange }: OriginGuideProps) {
   return (
@@ -67,16 +68,18 @@ export function OriginGuide({ open, onOpenChange }: OriginGuideProps) {
       open={open}
       onOpenChange={onOpenChange}
       title="How to record where a firearm came from"
+      description="Six examples, each showing what you might see on a firearm and how to record it. Yours may not match any of them exactly: use the closest as a guide."
       size="lg"
     >
       <p className="hd-origin-guide__disclaimer">
         Record what is stamped on the firearm and what your paperwork says. The app does not check
         it against any rules.
       </p>
-      <ol className="hd-origin-guide__list">
+      <h3 className="hd-form-section__title hd-origin-guide__heading">Examples</h3>
+      <ol className="hd-origin-guide__list" aria-label="Examples">
         {EXAMPLES.map((example) => (
           <li key={example.title} className="hd-origin-guide__example">
-            <h3 className="hd-origin-guide__example-title">{example.title}</h3>
+            <h4 className="hd-origin-guide__example-title">{example.title}</h4>
             <p>
               <strong>What you see:</strong> {example.whatYouSee}
             </p>

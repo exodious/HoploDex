@@ -184,16 +184,17 @@ export function InsurancePolicyForm({
             <div data-field="insuranceCompany">
               <TextField label="Insurance company" required {...bind("insuranceCompany")} />
             </div>
-            <div data-field="blanketCoverageLimit">
-              <MoneyField
-                label="Blanket coverage limit"
-                value={form.blanketCoverageLimit}
-                onValueChange={set("blanketCoverageLimit")}
-                onBlur={touch("blanketCoverageLimit")}
-                error={errorFor("blanketCoverageLimit")}
-                hint="Makes this a blanket policy: its limit is shared by every firearm not scheduled individually while it is in force. Leave blank for a policy that only covers firearms scheduled on it."
-              />
-            </div>
+          </div>
+          <div data-field="blanketCoverageLimit">
+            <MoneyField
+              label="Blanket coverage limit"
+              value={form.blanketCoverageLimit}
+              onValueChange={set("blanketCoverageLimit")}
+              onBlur={touch("blanketCoverageLimit")}
+              error={errorFor("blanketCoverageLimit")}
+              fieldClassName="hd-field--quarter"
+              hint="Makes this a blanket policy: its limit is shared by every firearm not scheduled individually while it is in force. Leave blank for a policy that only covers firearms scheduled on it."
+            />
           </div>
         </section>
 
@@ -201,7 +202,7 @@ export function InsurancePolicyForm({
           <h3 className="hd-form-section__title" id="pf-term">
             Term
           </h3>
-          <div className="hd-form-grid hd-form-grid--2">
+          <div className="hd-form-grid hd-form-grid--4">
             <div data-field="effectiveStartDate">
               <DateField
                 label="Coverage starts"
@@ -236,6 +237,8 @@ export function InsurancePolicyForm({
               placeholder="Claims phone, email, or address"
               {...bind("companyContact")}
             />
+          </div>
+          <div className="hd-form-grid hd-form-grid--2">
             <TextField label="Agent name" {...bind("agentName")} />
             <TextField
               label="Agent contact"

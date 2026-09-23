@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
 import { choose, fillFirearmForm, listedNames, openFirearm, search } from "../support/ui";
-import { selectOption } from "../support/ui";
+import { openPhysicalGroup, selectOption } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
@@ -225,6 +225,7 @@ describe("User Story 5 - Export and Import Records", () => {
       type: "Handgun",
       serial: "PHYS-001",
     });
+    await openPhysicalGroup();
     await fill("Barrel length (in)", "5.25");
     await fill("Overall length (in)", "8.5");
     await fill("Weight (lb)", "2");
@@ -251,7 +252,7 @@ describe("User Story 5 - Export and Import Records", () => {
     const contents = fs.readFileSync(path.join(dir, exported), "utf-8");
     const [header, row] = contents.trim().split("\n");
     expect(header).toContain(
-      "barrel_length_in,overall_length_in,weight_oz,capacity,finish,condition,photo_filenames",
+      "barrel_length_in,overall_length_in,weight_oz,capacity,finish,condition",
     );
     expect(row).toContain("5.25,8.5,38.5,7,Parkerized,Like new");
 

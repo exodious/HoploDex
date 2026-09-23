@@ -22,6 +22,18 @@ function renderWithOriginGroup(ui: ReactElement) {
   return result;
 }
 
+/** The "Physical details" disclosure's button, matched on its title alone. */
+const physicalGroupButton = () => screen.getByRole("button", { name: /^Physical details/ });
+
+/** Renders the form with the physical details group open. */
+function renderWithPhysicalGroup(ui: ReactElement) {
+  const result = render(ui);
+  if (physicalGroupButton().getAttribute("aria-expanded") === "false") {
+    fireEvent.click(physicalGroupButton());
+  }
+  return result;
+}
+
 async function selectFirearmType(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("radio", { name: "Handgun" }));
 }
@@ -228,7 +240,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   }
 
   it("has a Physical details group with all six fields", () => {
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     for (const field of [barrel(), overall(), weightLb(), weightOz(), capacity(), finish()]) {
       expect(field).toBeInTheDocument();
@@ -238,7 +250,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
 
   it("offers Not recorded and the six grades, best first", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.click(within(group()).getByRole("combobox", { name: "Condition" }));
 
@@ -257,7 +269,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("submits blanks as null", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
@@ -275,7 +287,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("submits entered values as the scaled integers", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(barrel(), "16.25");
@@ -300,7 +312,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("converts pounds alone, ounces alone, or both to tenths of an ounce", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(weightLb(), "6.5");
@@ -322,7 +334,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("blocks a zero weight with a message on the box", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(weightLb(), "0");
@@ -335,7 +347,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("submits null for Not recorded after a grade was chosen", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await pickCondition(user, "Good");
@@ -346,7 +358,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   });
 
   it("prefills from the record", () => {
-    render(
+    renderWithPhysicalGroup(
       <FirearmForm
         initialValues={
           {
@@ -379,7 +391,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
 
   it("accepts only digits in capacity", async () => {
     const user = userEvent.setup();
-    render(<FirearmForm onSubmit={vi.fn()} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     await user.type(capacity(), "1a2.5");
 
@@ -389,7 +401,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("rounds extra decimal places to the stored unit instead of blocking", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(barrel(), "16.255");
@@ -405,7 +417,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   it("blocks the save for a zero length and a capacity of 0", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.type(overall(), "0");
@@ -426,7 +438,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
         fieldErrors: { weightTenthsOz: "Weight must be greater than 0." },
       }),
     );
-    render(<FirearmForm onSubmit={onSubmit} />);
+    renderWithPhysicalGroup(<FirearmForm onSubmit={onSubmit} />);
 
     await fillRequired(user);
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
@@ -953,5 +965,118 @@ describe("FirearmForm origin group disclosure", () => {
       "data-field",
       "yearOfManufacture",
     );
+  });
+});
+
+describe("FirearmForm physical details disclosure", () => {
+  const measured = {
+    id: 1,
+    make: "Glock",
+    model: "17",
+    caliber: "9mm",
+    firearmTypeId: 1,
+    serialNumber: "A1",
+    status: "active",
+    barrelLengthHundredths: 449,
+    overallLengthHundredths: 802,
+    weightTenthsOz: 400,
+    capacity: 17,
+    finish: "nDLC",
+    condition: "excellent",
+  } as Firearm;
+
+  it("starts closed on a new record, saying what it holds", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "false");
+    expect(physicalGroupButton()).toHaveTextContent(
+      "Optional: lengths, weight, capacity, finish and condition.",
+    );
+    expect(screen.queryByLabelText("Barrel length (in)")).not.toBeInTheDocument();
+  });
+
+  it("starts open on a record with any physical detail recorded", () => {
+    render(
+      <FirearmForm
+        initialValues={
+          { id: 1, make: "Colt", model: "Python", status: "active", capacity: 6 } as Firearm
+        }
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Capacity")).toHaveValue("6");
+  });
+
+  it("says how precisely lengths and weight are saved", () => {
+    renderWithPhysicalGroup(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(screen.getByText("Saved to the nearest 0.01 in.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Fill in either or both. Saved to the nearest 0.1 oz."),
+    ).toBeInTheDocument();
+  });
+
+  it("reads the recorded values back when closed", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={measured} onSubmit={vi.fn()} />);
+
+    await user.click(physicalGroupButton());
+
+    expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "false");
+    expect(physicalGroupButton()).toHaveTextContent(
+      "4.49 in barrel, 8.02 in overall. 2 lb 8 oz. 17 rounds. Finish: nDLC. Condition: Excellent.",
+    );
+  });
+
+  it("still submits values recorded in a closed group", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm initialValues={measured} onSubmit={onSubmit} />);
+
+    await user.click(physicalGroupButton());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      barrelLengthHundredths: 449,
+      weightTenthsOz: 400,
+      capacity: 17,
+      condition: "excellent",
+    });
+  });
+
+  it("opens and focuses an invalid field when a save is tried with the group closed", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(physicalGroupButton());
+    await user.type(screen.getByLabelText("Capacity"), "0");
+    await user.click(physicalGroupButton());
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Capacity")).toHaveFocus();
+  });
+
+  it("opens on a server error for one of its fields", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "The firearm record has validation errors.",
+        fieldErrors: { weightTenthsOz: "Weight must be greater than 0." },
+      }),
+    );
+    render(<FirearmForm initialValues={measured} onSubmit={onSubmit} />);
+
+    await user.click(physicalGroupButton());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Weight must be greater than 0.")).toBeInTheDocument();
   });
 });

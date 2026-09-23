@@ -10,6 +10,7 @@ import {
   isFieldDisabled,
   isFieldInView,
   listedNames,
+  openPhysicalGroup,
   openFirearm,
   pasteInto,
   selectOption,
@@ -405,6 +406,7 @@ describe("User Story 1 - Record a Firearm", () => {
       type: "Rifle",
       serial: "PHYS-1",
     });
+    await openPhysicalGroup();
     await fill("Barrel length (in)", "16.25");
     await fill("Overall length (in)", "36");
     await fill("Weight (lb)", "2");

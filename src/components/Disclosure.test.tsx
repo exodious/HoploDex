@@ -30,6 +30,7 @@ describe("Disclosure", () => {
     expect(button).toHaveAttribute("aria-expanded", "true");
     const panel = document.getElementById(button.getAttribute("aria-controls")!);
     expect(panel).toContainElement(screen.getByLabelText("Inside"));
+    expect(screen.getByRole("group", { name: "Extras" })).toBe(panel);
   });
 
   it("removes its contents when closed, so they are never focusable", async () => {

@@ -18,7 +18,8 @@ export interface DisclosureProps {
 /** A group of optional fields a form can fold away (WAI-ARIA disclosure:
  * a heading holding a button with `aria-expanded`). Controlled, so the form
  * decides when it opens: on a recorded value, or on an error inside it.
- * Closed, its fields are not rendered, so they are never focusable. */
+ * Closed, its fields are not rendered, so they are never focusable; open,
+ * they form a group named by the title. */
 export function Disclosure({
   title,
   summary,
@@ -29,6 +30,7 @@ export function Disclosure({
 }: DisclosureProps) {
   const id = useId();
   const panelId = `${id}-panel`;
+  const titleId = `${id}-title`;
   const Heading = `h${headingLevel}` as const;
   return (
     <div className="hd-disclosure" data-open={open || undefined}>
@@ -42,13 +44,15 @@ export function Disclosure({
         >
           <Icon name="chevronRight" className="hd-disclosure__chevron" />
           <span className="hd-disclosure__text">
-            <span className="hd-disclosure__title">{title}</span>
+            <span className="hd-disclosure__title" id={titleId}>
+              {title}
+            </span>
             {summary && <span className="hd-disclosure__summary">{summary}</span>}
           </span>
         </button>
       </Heading>
       {open && (
-        <div id={panelId} className="hd-disclosure__panel">
+        <div id={panelId} className="hd-disclosure__panel" role="group" aria-labelledby={titleId}>
           {children}
         </div>
       )}

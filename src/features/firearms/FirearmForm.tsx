@@ -25,6 +25,7 @@ import {
   DISPOSITION_TYPE_OPTIONS,
   FIREARM_TYPE_OPTIONS,
   ORIGIN_OPTIONS,
+  conditionLabel,
   originLabel,
 } from "./types";
 import type { Condition, DispositionType, Firearm, FirearmInput, Origin } from "./types";
@@ -122,6 +123,50 @@ function originGroupSummary(form: FormState): string {
   }
   if (sentences.length === 0) return "Optional: where and when it was made, and who imported it.";
   // An importer's name often ends in "Inc." or "Co.": don't double the stop.
+  return sentences
+    .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`))
+    .join(" ");
+}
+
+/** FR-039: the physical details, folded into their own group on the same
+ * rules as the origin group (optional, closed unless recorded, opened by an
+ * error inside it). */
+const PHYSICAL_GROUP_FIELDS = [
+  "barrelLength",
+  "overallLength",
+  "weightPounds",
+  "weightOunces",
+  "capacity",
+  "finish",
+  "condition",
+] as const satisfies readonly (keyof FormState)[];
+
+function hasPhysicalGroupValue(form: FormState): boolean {
+  return PHYSICAL_GROUP_FIELDS.some((field) => form[field].trim() !== "");
+}
+
+/** The closed physical details group's read-back, in the record page's
+ * units: "16.25 in barrel, 36 in overall. 2 lb 8.5 oz. 30 rounds." */
+function physicalGroupSummary(form: FormState): string {
+  const sentences: string[] = [];
+  const lengths = [
+    form.barrelLength && `${form.barrelLength} in barrel`,
+    form.overallLength && `${form.overallLength} in overall`,
+  ].filter(Boolean);
+  if (lengths.length > 0) sentences.push(lengths.join(", "));
+  const weight = [
+    form.weightPounds && `${form.weightPounds} lb`,
+    form.weightOunces && `${form.weightOunces} oz`,
+  ].filter(Boolean);
+  if (weight.length > 0) sentences.push(weight.join(" "));
+  if (form.capacity !== "") {
+    sentences.push(`${form.capacity} ${form.capacity === "1" ? "round" : "rounds"}`);
+  }
+  if (form.finish.trim() !== "") sentences.push(`Finish: ${form.finish.trim()}`);
+  if (form.condition !== "") sentences.push(`Condition: ${conditionLabel(form.condition)}`);
+  if (sentences.length === 0) {
+    return "Optional: lengths, weight, capacity, finish and condition.";
+  }
   return sentences
     .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`))
     .join(" ");
@@ -353,6 +398,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const [originGroupOpen, setOriginGroupOpen] = useState(() =>
     hasOriginGroupValue(toFormState(initialValues)),
   );
+  const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() =>
+    hasPhysicalGroupValue(toFormState(initialValues)),
+  );
   const originGuideButtonRef = useRef<HTMLButtonElement>(null);
   // specs/002-firearm-identification FR-010: set while the discard
   // confirmation is open, holding the origin the user picked and what it
@@ -450,6 +498,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       if ((ORIGIN_GROUP_FIELDS as readonly Field[]).includes(firstInvalid)) {
         flushSync(() => setOriginGroupOpen(true));
       }
+      if ((PHYSICAL_GROUP_FIELDS as readonly Field[]).includes(firstInvalid)) {
+        flushSync(() => setPhysicalGroupOpen(true));
+      }
       formRef.current
         ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea, button)`)
         ?.focus();
@@ -498,6 +549,16 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     await submitInput(input);
   }
 
+  /** A save rejected on a physical detail opens that group, so the error is
+   * never hidden. The backend names the scaled fields (`SERVER_FIELD`). */
+  function revealPhysicalGroupFor(error: CommandFailure) {
+    const fieldErrors = error.fieldErrors;
+    if (!fieldErrors) return;
+    if (PHYSICAL_GROUP_FIELDS.some((field) => fieldErrors[SERVER_FIELD[field] ?? field])) {
+      flushSync(() => setPhysicalGroupOpen(true));
+    }
+  }
+
   /** A save rejected on a field inside the origin group opens it, so the
    * error is never hidden. An identity clash on the serial number points at
    * Year of manufacture (contracts/ui-identification.md §4): when no year is
@@ -531,6 +592,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
         } else {
           flushSync(() => setServerError(error));
           revealOriginGroupFor(error);
+          revealPhysicalGroupFor(error);
         }
       } else {
         throw error;
@@ -586,6 +648,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 value={form.nickname}
                 onChange={(e) => update("nickname", e.target.value)}
                 error={errorFor("nickname")}
+                fieldClassName="hd-field--half"
                 hint="Optional. Tells apart firearms with the same make and model; each active firearm needs its own."
                 placeholder="e.g. Range gun"
               />
@@ -664,7 +727,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   }
                   onBlur={touch("yearOfManufacture")}
                   error={errorFor("yearOfManufacture")}
-                  fieldClassName="hd-field--year"
+                  fieldClassName="hd-field--quarter"
                   hint="A single year, e.g. 1943. Put anything uncertain in Notes."
                   placeholder="e.g. 1943"
                 />
@@ -778,99 +841,112 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             </Disclosure>
           </section>
 
-          <fieldset className="hd-form-section hd-form-fieldset">
-            <legend className="hd-form-section__title">Physical details</legend>
-            <div className="hd-form-grid hd-form-grid--3">
-              <div data-field="barrelLength">
-                <DecimalField
-                  label="Barrel length (in)"
-                  value={form.barrelLength}
-                  onValueChange={(text) => update("barrelLength", text)}
-                  onBlur={touch("barrelLength")}
-                  error={errorFor("barrelLength")}
-                  placeholder="e.g. 4.25"
-                />
+          <section className="hd-form-section hd-form-section--folded">
+            <Disclosure
+              title="Physical details"
+              headingLevel={3}
+              summary={physicalGroupOpen ? undefined : physicalGroupSummary(form)}
+              open={physicalGroupOpen}
+              onOpenChange={setPhysicalGroupOpen}
+            >
+              <div className="hd-form-grid hd-form-grid--2">
+                <div className="hd-form-pair">
+                  <div data-field="barrelLength">
+                    <DecimalField
+                      label="Barrel length (in)"
+                      value={form.barrelLength}
+                      onValueChange={(text) => update("barrelLength", text)}
+                      onBlur={touch("barrelLength")}
+                      error={errorFor("barrelLength")}
+                      placeholder="e.g. 4.25"
+                    />
+                  </div>
+                  <div data-field="overallLength">
+                    <DecimalField
+                      label="Overall length (in)"
+                      value={form.overallLength}
+                      onValueChange={(text) => update("overallLength", text)}
+                      onBlur={touch("overallLength")}
+                      error={errorFor("overallLength")}
+                      placeholder="e.g. 7.4"
+                    />
+                  </div>
+                  <p className="hd-form-pair__hint">Saved to the nearest 0.01 in.</p>
+                </div>
+                <div className="hd-form-pair">
+                  <div data-field="weightPounds">
+                    <DecimalField
+                      label="Weight (lb)"
+                      value={form.weightPounds}
+                      onValueChange={(text) => update("weightPounds", text)}
+                      onBlur={touch("weightPounds")}
+                      error={errorFor("weightPounds")}
+                      placeholder="e.g. 6.5"
+                    />
+                  </div>
+                  <div data-field="weightOunces">
+                    <DecimalField
+                      label="Weight (oz)"
+                      value={form.weightOunces}
+                      onValueChange={(text) => update("weightOunces", text)}
+                      onBlur={touch("weightOunces")}
+                      error={errorFor("weightOunces")}
+                      placeholder="e.g. 8"
+                    />
+                  </div>
+                  <p className="hd-form-pair__hint">
+                    Fill in either or both. Saved to the nearest 0.1 oz.
+                  </p>
+                </div>
               </div>
-              <div data-field="overallLength">
-                <DecimalField
-                  label="Overall length (in)"
-                  value={form.overallLength}
-                  onValueChange={(text) => update("overallLength", text)}
-                  onBlur={touch("overallLength")}
-                  error={errorFor("overallLength")}
-                  placeholder="e.g. 7.4"
-                />
-              </div>
-              <div className="hd-form-pair">
-                <div data-field="weightPounds">
-                  <DecimalField
-                    label="Weight (lb)"
-                    value={form.weightPounds}
-                    onValueChange={(text) => update("weightPounds", text)}
-                    onBlur={touch("weightPounds")}
-                    error={errorFor("weightPounds")}
-                    placeholder="e.g. 6.5"
+              <div className="hd-form-grid hd-form-grid--4">
+                <div data-field="capacity">
+                  <TextField
+                    label="Capacity"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={form.capacity}
+                    onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
+                    onBlur={touch("capacity")}
+                    error={errorFor("capacity")}
+                    hint="Rounds in the magazine, cylinder or tube."
                   />
                 </div>
-                <div data-field="weightOunces">
-                  <DecimalField
-                    label="Weight (oz)"
-                    value={form.weightOunces}
-                    onValueChange={(text) => update("weightOunces", text)}
-                    onBlur={touch("weightOunces")}
-                    error={errorFor("weightOunces")}
-                    placeholder="e.g. 8"
+                <div className="hd-form-span-2">
+                  <TextField
+                    label="Finish"
+                    value={form.finish}
+                    onChange={(e) => update("finish", e.target.value)}
+                    placeholder="e.g. Blued, Cerakote"
+                    hint="Searchable."
                   />
                 </div>
-                <p className="hd-form-pair__hint">
-                  Fill in either or both. Saved to the nearest 0.1 oz.
-                </p>
-              </div>
-              <div data-field="capacity">
-                <TextField
-                  label="Capacity"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={form.capacity}
-                  onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
-                  onBlur={touch("capacity")}
-                  error={errorFor("capacity")}
-                  hint="Rounds in the magazine, cylinder or tube."
+                <Select
+                  label="Condition"
+                  value={form.condition || NOT_RECORDED}
+                  onValueChange={(value) =>
+                    update("condition", value === NOT_RECORDED ? "" : (value as Condition))
+                  }
+                  options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
                 />
               </div>
-              <TextField
-                label="Finish"
-                value={form.finish}
-                onChange={(e) => update("finish", e.target.value)}
-                placeholder="e.g. Blued, Cerakote"
-                hint="Searchable."
-              />
-              <Select
-                label="Condition"
-                value={form.condition || NOT_RECORDED}
-                onValueChange={(value) =>
-                  update("condition", value === NOT_RECORDED ? "" : (value as Condition))
-                }
-                options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
-              />
-            </div>
-          </fieldset>
+            </Disclosure>
+          </section>
 
           <section className="hd-form-section" aria-labelledby="ff-value">
             <h3 className="hd-form-section__title" id="ff-value">
               Value
             </h3>
-            <div className="hd-form-grid hd-form-grid--2">
-              <div data-field="estimatedValue">
-                <MoneyField
-                  label="Estimated replacement value"
-                  value={form.estimatedValue}
-                  onValueChange={(text) => update("estimatedValue", text)}
-                  onBlur={touch("estimatedValue")}
-                  error={errorFor("estimatedValue")}
-                  hint="What it would cost to replace today. Used to check insurance coverage."
-                />
-              </div>
+            <div data-field="estimatedValue">
+              <MoneyField
+                label="Estimated replacement value"
+                value={form.estimatedValue}
+                onValueChange={(text) => update("estimatedValue", text)}
+                onBlur={touch("estimatedValue")}
+                error={errorFor("estimatedValue")}
+                fieldClassName="hd-field--quarter"
+                hint="What it would cost to replace today. Used to check insurance coverage."
+              />
             </div>
           </section>
 
@@ -878,13 +954,15 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             <h3 className="hd-form-section__title" id="ff-acquisition">
               Acquisition
             </h3>
-            <div className="hd-form-grid hd-form-grid--3">
-              <TextField
-                label="Acquired from"
-                value={form.acquisitionSource}
-                onChange={(e) => update("acquisitionSource", e.target.value)}
-                placeholder="Seller, shop, or person"
-              />
+            <div className="hd-form-grid hd-form-grid--4">
+              <div className="hd-form-span-2">
+                <TextField
+                  label="Acquired from"
+                  value={form.acquisitionSource}
+                  onChange={(e) => update("acquisitionSource", e.target.value)}
+                  placeholder="Seller, shop, or person"
+                />
+              </div>
               <div data-field="acquisitionDate">
                 <DateField
                   label="Date acquired"
@@ -940,7 +1018,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               <h3 className="hd-form-section__title" id="ff-disposition">
                 Disposition
               </h3>
-              <div className="hd-form-grid hd-form-grid--2">
+              <div className="hd-form-grid hd-form-grid--4">
                 <div data-field="dispositionType">
                   <Select
                     label="What happened"
@@ -951,7 +1029,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     error={errorFor("dispositionType")}
                   />
                 </div>
-                <div data-field="dispositionRecipient">
+                <div data-field="dispositionRecipient" className="hd-form-span-3">
                   <TextField
                     label="Transferred to"
                     required

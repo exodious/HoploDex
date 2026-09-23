@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OriginGuide } from "./OriginGuide";
 
@@ -27,6 +27,16 @@ describe("OriginGuide", () => {
         "Record what is stamped on the firearm and what your paperwork says. The app does not check it against any rules.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("introduces the worked examples as examples, not rules", () => {
+    render(<OriginGuide open onOpenChange={vi.fn()} />);
+
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+      "Six examples, each showing what you might see on a firearm and how to record it. Yours may not match any of them exactly: use the closest as a guide.",
+    );
+    const list = screen.getByRole("list", { name: "Examples" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(6);
   });
 
   it("renders all six required worked examples with a title, What you see, and How to record it", () => {
