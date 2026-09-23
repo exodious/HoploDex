@@ -33,7 +33,7 @@ credential store for the SQLCipher passphrase); `rust_xlsxwriter` (Excel
 export) and `calamine` (Excel import) plus `csv` (CSV export/import); an
 accessible React component library built on Radix UI primitives (e.g.
 shadcn/ui) for WCAG 2.1 AA-compliant, consistent UI; `tauri-plugin-dialog`
-and `tauri-plugin-fs` for file/folder pickers on export/import
+for file/folder pickers on export/import
 
 **Storage**: A single encrypted SQLite (SQLCipher) database file on the
 local filesystem, containing all structured data (firearms, insurance

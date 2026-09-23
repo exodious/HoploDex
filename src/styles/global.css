@@ -86,14 +86,7 @@ svg {
   border: 0;
 }
 
-/* Type roles. The display face is used only at 24px and up. */
-.hd-display {
-  font-family: var(--font-display);
-  font-weight: 700;
-  line-height: 0.95;
-  letter-spacing: 0.005em;
-}
-
+/* Type roles. */
 .hd-eyebrow {
   font-size: var(--text-xs);
   font-weight: 700;

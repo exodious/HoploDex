@@ -19,7 +19,3 @@ export interface DocumentSummary {
   mimeType: string;
   createdAt: string;
 }
-
-export interface DocumentDetail extends DocumentSummary {
-  fileBytes: number[];
-}

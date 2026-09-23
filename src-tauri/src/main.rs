@@ -36,7 +36,6 @@ fn exit_on_termination_signals(app: tauri::AppHandle) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Backstop for a crash or forced kill: decrypted document copies
@@ -74,7 +73,6 @@ fn main() {
             hoplodex_lib::commands::documents::list_documents,
             hoplodex_lib::commands::documents::add_document,
             hoplodex_lib::commands::documents::add_document_from_path,
-            hoplodex_lib::commands::documents::get_document,
             hoplodex_lib::commands::documents::open_document,
             hoplodex_lib::commands::documents::delete_document,
             hoplodex_lib::commands::import_export::export_collection,
