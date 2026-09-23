@@ -14,7 +14,7 @@ independent test from spec.md. Field/command names reference
 - `tauri-driver` installed (for E2E) and the platform's WebDriver server
   available (WebView2 driver on Windows, `WebKitWebDriver` on Linux).
 - On Linux, the development container has all of the above
-  (`scripts/dev-container.sh`; see README.md).
+  (`scripts/dev-container.sh`; see DEVELOPMENT.md).
 
 ## Setup
 

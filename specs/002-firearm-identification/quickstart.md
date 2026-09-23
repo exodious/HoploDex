@@ -11,7 +11,7 @@ Setup and prerequisites are the same as
 
 - Rust, Node.js and the Tauri prerequisites for your OS, as in 001.
   On Linux, the development container has them all
-  (`scripts/dev-container.sh`; see README.md).
+  (`scripts/dev-container.sh`; see DEVELOPMENT.md).
 - Node via nvm on `PATH`; use `npm@11` if a lockfile changes (this feature
   changes none).
 - A **fresh database**: the schema was edited in place, so an existing

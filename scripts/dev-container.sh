@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs a command (default: an interactive shell) in the HoploDex development
 # container, built from the repo's Dockerfile. See "Development container" in
-# README.md.
+# DEVELOPMENT.md.
 #
 #   scripts/dev-container.sh                      interactive shell in /workspace
 #   scripts/dev-container.sh npm run test:e2e     run one command and exit

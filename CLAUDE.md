@@ -2,64 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-HoploDex is a local-only firearm collection inventory app: Tauri 2 with a Rust backend (`src-tauri/`) that owns persistence, encryption and business logic, and a React 18 + TypeScript frontend (`src/`) that owns the UI. The README has full setup instructions (prerequisites per OS, WebKitWebDriver on Arch, gnome-keyring for headless sessions).
+HoploDex is a local-only firearm collection inventory app: Tauri 2 with a Rust backend (`src-tauri/`) that owns persistence, encryption and business logic, and a React 18 + TypeScript frontend (`src/`) that owns the UI.
 
 ## Commands
 
-```bash
-# Build
-npm run build                                          # tsc typecheck + vite build -> dist/
-cargo build --manifest-path src-tauri/Cargo.toml
-npm run tauri dev                                      # full app, hot reload
-
-# Tests
-cargo test --manifest-path src-tauri/Cargo.toml                                # all Rust tests
-cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test  # one integration-test file
-cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test <name_substring>
-npm test                                               # Vitest (jsdom)
-npx vitest run src/features/firearms/FirearmForm.test.tsx
-npm run test:e2e                                       # WebdriverIO against a release build, under Xvfb
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
-xvfb-run -a python3 e2e/scripts/quit-cleanup.py        # decrypted-document cleanup on quit (Linux)
-
-# Lint / format (CI is intentionally disabled; run these locally)
-cargo fmt --check --manifest-path src-tauri/Cargo.toml
-cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
-npm run lint                                           # eslint, --max-warnings 0
-npm run format:check
-
-# UI evidence and manual testing
-npm run build && npm run screenshots                   # real-app WebKitGTK shots -> e2e/screenshots-out/
-scripts/human-testing.sh [--reset] [--extra N]         # seeded collection in .human-testing/, then tauri dev
-```
+`DEVELOPMENT.md` is the single source for development instructions: the dev container, prerequisites, and the build, test (including single-file and single-spec runs), lint, screenshot and human-testing commands. Read the relevant section before running any of them. One thing that catches people out: run `npm run build` before `test:e2e` or `screenshots`, since the E2E build embeds whatever is in `dist/`.
 
 ## Run tests in the dev container
 
-On a host with podman, run tests, lint and screenshots through the dev container by default, not directly on the host. Put each command above after the wrapper:
-
-```bash
-scripts/dev-container.sh cargo test --manifest-path src-tauri/Cargo.toml
-scripts/dev-container.sh npm test
-scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts'
-scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
-```
-
-The container has none of the host's app data, so tests can't reach the real database (see below). It also has every E2E dependency: Xvfb, `tauri-driver`, `WebKitWebDriver` and a keyring.
+On a host with podman, run tests, lint and screenshots through `scripts/dev-container.sh` by default, not directly on the host: put the command after the wrapper, and use `bash -c '...'` to chain several.
 - **Already inside?** Check first. The container's working directory is `/workspace` and its hostname is `hoplodex-dev`. If both match, run the commands directly and don't nest the wrapper.
-- **First runs are slow.** The first call builds the image. After that, `node_modules` and `src-tauri/target` live in per-checkout volumes, separate from the host's copies, so the first `npm ci` and cargo build start from scratch. Give long commands a generous timeout, or run them in the background.
+- **First runs are slow** (image build, then an empty `node_modules` and `target`). Give long commands a generous timeout, or run them in the background.
 - Don't use the options that pass the host's identity through (`--git-config`, `--ssh-agent`, `--gh-token`, `--anthropic-api-key`) unless the user asks. Commit from the host. `--gui` is only for `tauri dev` and human testing; tests don't need it.
-- Use `--build` after a `Dockerfile` change. `--reset-volumes` rebuilds this checkout's `node_modules` and `target` from scratch. Never use `--reset-volumes=all` without asking, because it logs the user out of `gh` and `claude`.
-- Run tests directly on the host only if podman isn't available or the user asks. In that case, follow the isolation rules below.
-
-**Run `npm run build` before `test:e2e` or `screenshots`.** The E2E harness runs `cargo build --release --features custom-protocol,mock-keyring`, which embeds whatever is currently in `dist/`.
+- Use `--build` after a `Dockerfile` change. Never use `--reset-volumes=all` without asking, because it logs the user out of `gh` and `claude`.
+- Run tests directly on the host only if podman isn't available or the user asks.
 
 ## Never touch the real database
 
-The developer uses the app day to day. Their real encrypted DB is at `~/.local/share/com.hoplodex.app/hoplodex.db`, and its key is in the OS keyring. Never open, modify or delete it from a session.
-- Rust tests use `tests/support::TestDb`, a real SQLCipher DB in a temp dir.
-- `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` dirs and a stub `xdg-open`. E2E builds use the `mock-keyring` feature, which generates a fresh key per launch, so a DB left over from one spec breaks the next.
-- `scripts/human-testing.sh` and `examples/human_seed.rs` point the app at `.human-testing/` via `XDG_*_HOME` and refuse to target the real data dir.
-- Running inside `scripts/dev-container.sh` gives you isolation automatically, which is why it's the default.
+The developer uses the app day to day. Their real encrypted DB is at `~/.local/share/com.hoplodex.app/hoplodex.db`, and its key is in the OS keyring. Never open, modify or delete it from a session. Tests, E2E runs, screenshots and human testing are all isolated from it; "Test isolation" in `DEVELOPMENT.md` says how. Keep it that way when you change any of them, and don't run the app outside that tooling.
 
 ## Architecture
 

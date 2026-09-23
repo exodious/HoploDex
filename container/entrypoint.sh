@@ -6,7 +6,7 @@
 #   the Secret Service API, so the app's real (non-mock) keyring works for
 #   `tauri dev` and scripts/human-testing.sh. The keyring lives in the home
 #   volume and is unlocked with a blank password, like the headless-host setup
-#   in README.md.
+#   in DEVELOPMENT.md.
 # - first-run ownership of the named volumes, and `npm ci` into an empty
 #   node_modules volume.
 set -euo pipefail
