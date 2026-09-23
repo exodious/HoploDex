@@ -13,6 +13,8 @@ independent test from spec.md. Field/command names reference
   WebKitGTK dev packages on Linux — see Tauri's own platform prerequisites).
 - `tauri-driver` installed (for E2E) and the platform's WebDriver server
   available (WebView2 driver on Windows, `WebKitWebDriver` on Linux).
+- On Linux, the development container has all of the above
+  (`scripts/dev-container.sh`; see README.md).
 
 ## Setup
 

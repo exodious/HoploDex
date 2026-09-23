@@ -7,6 +7,49 @@ A Tauri 2.x desktop app: a Rust backend (`src-tauri/`) owns persistence,
 encryption, and business logic; a React + TypeScript frontend (`src/`)
 owns the UI.
 
+### Development container (Linux, recommended)
+
+The repo's `Dockerfile` (Debian trixie) has everything below already
+installed: Rust, Node 22 with npm 11, the Tauri/WebKitGTK and SQLCipher build
+dependencies, `tauri-driver` and `WebKitWebDriver`, Xvfb, gnome-keyring, the
+GitHub CLI, Claude Code, Spec Kit's `specify`, and `python3-gi` for GTK
+drag-and-drop tests. It's built for rootless [podman](https://podman.io) and
+runs as a non-root `dev` user. The only thing to install on the host is
+podman.
+
+```bash
+scripts/dev-container.sh                      # shell in /workspace (builds the image on first use)
+scripts/dev-container.sh npm test             # or run one command and exit
+scripts/dev-container.sh --build              # rebuild the image, e.g. after pulling Dockerfile changes
+scripts/dev-container.sh --gui npm run tauri dev   # show the app's window on your desktop
+```
+
+Every command in the sections below works unchanged inside the container.
+Your checkout is bind-mounted at `/workspace`, and `--userns=keep-id` maps
+your host user onto `dev`, so files the container writes stay owned by you.
+Some things are kept in named volumes rather than in the checkout, so they
+don't collide with host builds:
+
+- `node_modules` and `src-tauri/target`, one pair per checkout. The container
+  links against its own system libraries, so its builds can't share these
+  with the host. On first run the container fills `node_modules` with
+  `npm ci`.
+- `/home/dev`, shared by all checkouts: shell history, the cargo crate cache,
+  the keyring, and `gh` / `claude` logins. Log in once with `gh auth login` and
+  `claude`, or export `GH_TOKEN` / `ANTHROPIC_API_KEY` on the host; the wrapper
+  passes those through.
+
+The wrapper also mounts your `~/.gitconfig` (read-only) and your SSH agent
+socket so you can commit and push from inside. Tests and screenshots run
+headless on Xvfb and need no display. `--gui` forwards your Wayland or X11
+socket and `/dev/dri`, for `tauri dev` and human testing. `podman volume ls |
+grep hoplodex` lists the volumes, and `podman volume rm` resets one.
+`CONTAINER_ENGINE=docker` works too. Docker has no `keep-id`, though, so files
+end up owned by uid 1000, which is fine if that's your uid.
+
+To set up a host directly instead (or on macOS/Windows), install the
+prerequisites below.
+
 ### Prerequisites
 
 **Rust** (stable, 1.75+), via [rustup](https://rustup.rs):
@@ -176,6 +219,44 @@ runs under an isolated `xvfb` virtual display (via `xvfb-run`), so it never
 touches your real desktop, and it self-heals after an interrupted prior
 run (killing anything left over on its ports before starting).
 
+### Screenshots
+
+For pull requests that change the UI, take screenshots of the real app
+(WebKitGTK, the engine users get), not of a browser:
+
+```bash
+npm run build
+npm run screenshots                            # -> e2e/screenshots-out/ (git-ignored)
+npm run screenshots -- --screenshots=/tmp/pr   # somewhere else
+```
+
+This runs `e2e/screenshots/screens.e2e.ts` through the E2E harness, under Xvfb
+at a fixed 1200×800 window. It opens the
+[human-testing collection](#human-testing), seeded into the session's
+throwaway sandbox, and walks the main screens and dialogs (collection list
+and tiles, a full record, the edit/coverage/dispose dialogs, add firearm,
+insurance, a policy, import and export) in light and dark mode, writing
+`<nn>-<screen>-<theme>.png`. Long pages and dialogs are captured whole. The
+names don't change between runs, so for before/after pairs, run it on the base
+branch and then on yours:
+
+```bash
+git switch develop && npm run build && npm run screenshots -- --screenshots=/tmp/before
+git switch my-branch && npm run build && npm run screenshots -- --screenshots=/tmp/after
+```
+
+When a change adds a screen, add it to the walk. For a one-off shot inside
+any other spec, call `shot("name")` from `e2e/support/screenshots.ts`. It
+saves only when the run was started with `--screenshots`, so a normal
+`test:e2e` is unaffected:
+
+```bash
+npm run test:e2e -- --screenshots --spec e2e/specs/us1-record-firearm.e2e.ts
+```
+
+The seed and the app share a database key via `HOPLODEX_E2E_DB_KEY`, which
+only `mock-keyring` (E2E) builds read.
+
 ### Human testing
 
 To poke at the app by hand (look and feel, workflows) against a realistic
@@ -203,6 +284,13 @@ database and fails if any column is empty in every row, if a `CHECK ... IN`
 value never appears, or if no import sample fills a spreadsheet column. Fix a
 failure by seeding a record that uses the new field (and adding it to the
 import samples), not by loosening the test.
+
+In the [development container](#development-container-linux-recommended),
+run it as `scripts/dev-container.sh --gui scripts/human-testing.sh`. The
+container keeps the data in `~/human-testing` in its home volume (via
+`HUMAN_TESTING_DIR`), not in the checkout's `.human-testing/`. That's because
+it is encrypted with the container's own keyring, which a host-seeded copy's
+key isn't in, and the reverse is true too.
 
 ### Linting & formatting
 
