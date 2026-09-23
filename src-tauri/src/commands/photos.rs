@@ -260,23 +260,3 @@ pub async fn delete_photo(
     let conn = state.0.lock().expect("db mutex poisoned");
     ops::delete_photo(&conn, photo_id, confirmed)
 }
-
-/// Reads a bundled generic-thumbnail PNG asset (FR-009, research.md §10)
-/// for a firearm with no photos — the actual filesystem/AppHandle IO the
-/// pure `services::thumbnails::resolve` decision defers to.
-#[tauri::command]
-pub async fn get_generic_thumbnail(
-    key: String,
-    app: tauri::AppHandle,
-) -> Result<Vec<u8>, CommandError> {
-    use tauri::path::BaseDirectory;
-    use tauri::Manager;
-
-    let relative_path = crate::services::thumbnails::generic_thumbnail_resource_path(&key);
-    let path = app
-        .path()
-        .resolve(&relative_path, BaseDirectory::Resource)
-        .map_err(|_| CommandError::not_found("No generic thumbnail was found for that type."))?;
-    std::fs::read(path)
-        .map_err(|_| CommandError::not_found("No generic thumbnail was found for that type."))
-}
