@@ -1,6 +1,6 @@
 import { invoke } from "../../services/tauriClient";
 import type { Firearm } from "../firearms/types";
-import type { DocumentDetail, DocumentSummary, PhotoSummary } from "./types";
+import type { DocumentSummary, PhotoSummary } from "./types";
 
 export function listPhotos(firearmId: number): Promise<PhotoSummary[]> {
   return invoke<PhotoSummary[]>("list_photos", { firearmId });
@@ -58,10 +58,6 @@ export function addDocument(
 /** Attaches a document from a file on disk — what a drop onto the window delivers. */
 export function addDocumentFromPath(firearmId: number, path: string): Promise<DocumentSummary> {
   return invoke<DocumentSummary>("add_document_from_path", { firearmId, path });
-}
-
-export function getDocument(id: number): Promise<DocumentDetail> {
-  return invoke<DocumentDetail>("get_document", { id });
 }
 
 /** Opens the document in the OS default app for its file type (FR-010). */

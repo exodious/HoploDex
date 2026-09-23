@@ -7,7 +7,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
 use crate::db::DbHandle;
-use crate::models::document_attachment::{DocumentAttachment, DocumentDetail, DocumentSummary};
+use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
 use crate::services::attachments::read_attachment_file;
 use crate::services::secure_delete::secure_delete_dir;
 
@@ -211,15 +211,6 @@ pub async fn add_document_from_path(
 ) -> Result<DocumentSummary, CommandError> {
     let conn = state.0.lock().expect("db mutex poisoned");
     ops::add_document_from_path(&conn, firearm_id, Path::new(&path)).map(Into::into)
-}
-
-#[tauri::command]
-pub async fn get_document(
-    id: i64,
-    state: State<'_, DbHandle>,
-) -> Result<DocumentDetail, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_document(&conn, id).map(Into::into)
 }
 
 #[tauri::command]

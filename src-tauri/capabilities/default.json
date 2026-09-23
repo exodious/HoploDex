@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Capabilities for the main HoploDex window",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "fs:default"]
+  "permissions": ["core:default", "dialog:default"]
 }

@@ -256,9 +256,9 @@ importer and original marks._
 
 - **Input**: `firearmId: number`.
 - **Output**: `PhotoSummary[]` / `DocumentSummary[]` — omit `originalBytes`/
-  `fileBytes` (only fetched on demand via `get_document`, or never at all
-  for photos, which only ever need their pre-generated `thumbnailBytes` in
-  the UI) to keep these list payloads small. Not in the original contract
+  `fileBytes` (a document's bytes are read back only by `open_document`,
+  and never at all for photos, which only ever need their pre-generated
+  `thumbnailBytes` in the UI) to keep these list payloads small. Not in the original contract
   list, but necessary plumbing for `PhotoGallery`/`DocumentList` display.
 
 ### `add_photo`
@@ -311,10 +311,11 @@ importer and original marks._
   `thumbnail_photo_id` falls back to the next-oldest remaining photo, or
   `null` (generic thumbnail) if none remain.
 
-### `add_document` / `delete_document` / `get_document`
+### `add_document` / `delete_document`
 
-- Analogous to photo commands, without thumbnail generation.
-  `get_document` returns the full `file_bytes`.
+- Analogous to photo commands, without thumbnail generation. The stored
+  `file_bytes` never cross the IPC boundary; `open_document` is the only
+  way to reopen a document.
 
 ### `open_document`
 

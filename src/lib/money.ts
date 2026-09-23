@@ -21,7 +21,7 @@ export function dollarsToInput(amount: number | null): string {
 
 export type ParsedDollars = { ok: true; dollars: number | null } | { ok: false; error: string };
 
-export const WHOLE_DOLLARS_MESSAGE = "Enter whole dollars only, like 1250, with no cents.";
+const WHOLE_DOLLARS_MESSAGE = "Enter whole dollars only, like 1250, with no cents.";
 
 /** Parses user-entered dollars. A "$", thousands commas and spaces are
  * dropped; blank means "no value". A fractional part, a sign, or anything
