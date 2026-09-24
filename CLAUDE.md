@@ -6,7 +6,7 @@ HoploDex is a local-only firearm collection inventory app: Tauri 2 with a Rust b
 
 ## Commands
 
-`DEVELOPMENT.md` is the single source for development instructions: the dev container, prerequisites, and the build, test (including single-file and single-spec runs), lint, dependency audit, screenshot and human-testing commands. Read the relevant section before running any of them. One thing that catches people out: run `npm run build` before `test:e2e` or `screenshots`, since the E2E build embeds whatever is in `dist/`.
+`DEVELOPMENT.md` is the single source for development instructions: the dev container, prerequisites, and the build, test (including single-file and single-spec runs), lint, dependency and license audit, screenshot and human-testing commands. Read the relevant section before running any of them. One thing that catches people out: run `npm run build` before `test:e2e` or `screenshots`, since the E2E build embeds whatever is in `dist/`.
 
 ## Run tests in the dev container
 

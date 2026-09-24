@@ -1,8 +1,13 @@
-# Rust dependency audit: `npm run audit:cargo` (cargo deny check advisories,
-# against the RustSec advisory database). See "Dependency audit" in
-# DEVELOPMENT.md for the policy and for how to add an exception.
+# Rust dependency audit, two checks:
+# - `npm run audit:cargo` (cargo deny check advisories, against the RustSec
+#   advisory database). See "Dependency audit" in DEVELOPMENT.md for the
+#   policy and for how to add an exception.
+# - `npm run audit:licenses` (cargo deny check licenses, alongside the npm
+#   check). See "License audit" in DEVELOPMENT.md.
 #
-# Only the advisories check is used. Any vulnerability advisory fails the
+# The bans and sources checks aren't used.
+#
+# Advisories: any vulnerability advisory fails the
 # audit, whatever its severity: many RustSec advisories carry no CVSS score, so
 # an unscored one is treated as high. Unmaintained and unsound notices fail it
 # too, so each gets a decision here rather than going unnoticed.
@@ -31,3 +36,38 @@ ignore = [
     { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: unmaintained, via urlpattern in tauri-utils" },
     { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: unmaintained, via urlpattern in tauri-utils" },
 ]
+
+# License audit. HoploDex is released under GPL-3.0-only, so every crate
+# linked into it needs a license expression satisfiable from this list of
+# GPLv3-compatible licenses. Keep the list in step with ALLOWED in
+# scripts/check-npm-licenses.mjs. Before adding a license, check it against
+# the FSF's list of GPL-compatible licenses
+# (https://www.gnu.org/licenses/license-list.html). Apache-2.0 is fine for
+# GPLv3 (not GPLv2). MPL-2.0 is fine unless a file carries the Exhibit B
+# "Incompatible With Secondary Licenses" notice, which cargo-deny can't see:
+# grep a new MPL-2.0 crate's sources for it.
+[licenses]
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "ISC",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0-only",
+    "LGPL-3.0-or-later",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+# The list is the compatibility policy, not an inventory of what's in use.
+unused-allowed-license = "allow"
+confidence-threshold = 0.93
