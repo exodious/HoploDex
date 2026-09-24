@@ -352,9 +352,10 @@ npm run format:check     # prettier
 ## Dependency audit
 
 ```bash
-npm run audit            # both of the below
+npm run audit            # all three of the below
 npm run audit:npm        # audit-ci over `npm audit`: dependencies and devDependencies
 npm run audit:cargo      # cargo-deny against the RustSec advisory database
+npm run audit:licenses   # the license audit, see below
 ```
 
 Run it with the lint and test commands before every pull request. It fetches
@@ -391,6 +392,64 @@ it reaches HoploDex (shipped app or dev tooling only, and whether the
 vulnerable code path is ever called), and a date to review it. Neither tool
 expires entries, so that date is what brings it back. Remove the entry once the
 fix is available.
+
+## License audit
+
+HoploDex is released under GPL-3.0-only (`LICENSE`), so everything shipped
+with it must be under a GPLv3-compatible license. `npm run audit:licenses`
+checks the dependency trees, and `npm run audit` includes it. It works offline
+once the Cargo registry is fetched. Run it again whenever you add or update a
+dependency, and before every release.
+
+- **npm**: `scripts/check-npm-licenses.mjs` reads `package-lock.json` and
+  checks every package that isn't dev-only, since Vite bundles those into the
+  app. devDependencies aren't distributed, so their licenses don't matter
+  for the release. `node scripts/check-npm-licenses.mjs --all` lists them too,
+  without failing on them.
+- **Rust**: `cargo deny check licenses`, under `[licenses]` in
+  `src-tauri/deny.toml`. It covers every crate for every target platform and
+  feature, build and proc-macro crates included.
+
+Both use the same allow list of GPLv3-compatible SPDX licenses (`ALLOWED` in
+the script, `allow` in `deny.toml`). Keep the two in step. Before adding a
+license, check it against the FSF's
+[list of GPL-compatible licenses](https://www.gnu.org/licenses/license-list.html).
+A license that's only acceptable for particular packages goes in the script's
+`EXCEPTIONS` (npm) or a `[[licenses.exceptions]]` entry (Rust), with the
+reason. Today there is one: OFL-1.1, for the `@fontsource` fonts only. The
+tools can't check some things, so check these by hand when they change and
+before a release:
+
+- **MPL-2.0 crates**: a file carrying MPL's Exhibit B notice ("Incompatible
+  With Secondary Licenses") can't be combined with GPL code. When a new
+  MPL-2.0 crate turns up (`cargo deny --manifest-path src-tauri/Cargo.toml list -l license`),
+  grep its sources in `~/.cargo/registry/src/` for that phrase, leaving out
+  the `LICENSE` file, which quotes it.
+- **C code built inside a crate**: `libsqlite3-sys` compiles SQLCipher
+  (BSD-3-Clause, `sqlcipher/LICENSE` in the crate) and SQLite (public domain),
+  but the crate declares only its own MIT license.
+- **SQLCipher's crypto library** (`bundled-sqlcipher`): on Linux it links the
+  system's OpenSSL `libcrypto`, on macOS CommonCrypto, and on Windows the
+  OpenSSL found through `OPENSSL_DIR`, whose DLL ships with the app. OpenSSL
+  3.x is Apache-2.0, which is compatible. 1.1.x and older use the
+  OpenSSL/SSLeay license, which isn't, so build releases against OpenSSL 3.
+  Switching to `bundled-sqlcipher-vendored-openssl` would pull in
+  `openssl-src`, and the Rust check would cover it.
+- **System libraries**: WebKitGTK, GTK and their stack on Linux (LGPL),
+  WebView2 on Windows and WKWebView on macOS are system components. A bundle
+  that ships LGPL libraries inside it (an AppImage, for example) must also
+  make their source available.
+- **Assets that aren't packages**: the type drawings
+  (`src/features/browse/typeDrawings.ts`), the icon set
+  (`src/components/Icon.tsx`) and `src-tauri/icons/` are the project's own
+  work, under the project license. Record the source and license of any
+  third-party artwork, font or data file before adding it.
+
+Compatible doesn't mean there's nothing to do. MIT, BSD, Apache-2.0, ISC and
+OFL all require their copyright and license notices to ship with the app. The
+minified bundle and the stripped release binary don't carry them, so a release
+needs a third-party notices file. `cargo about` can generate one for the Rust
+side.
 
 ## Continuous integration
 
