@@ -16,6 +16,7 @@ ARG NODE_VERSION=24.21.0
 ARG NPM_VERSION=12
 ARG RUST_TOOLCHAIN=stable
 ARG TAURI_DRIVER_VERSION=2.0.6
+ARG CARGO_DENY_VERSION=0.20.2
 ARG SPEC_KIT_VERSION=v1.0.8
 ARG USERNAME=dev
 ARG USER_UID=1000
@@ -125,9 +126,9 @@ RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
     && install -d -o "${USERNAME}" -g "${USERNAME}" /opt/rust /workspace
 
 # Rust, owned by the dev user so `rustup` works from inside the container.
-# CARGO_HOME points at $HOME/.cargo at run time (the crate cache persists in
-# the home volume); /opt/rust/cargo/bin keeps the rustup proxies and
-# tauri-driver.
+# CARGO_HOME points at $HOME/.cargo at run time (the crate cache and the
+# RustSec advisory database persist in the home volume); /opt/rust/cargo/bin
+# keeps the rustup proxies, tauri-driver and cargo-deny.
 USER ${USERNAME}
 ENV RUSTUP_HOME=/opt/rust/rustup \
     PATH=/opt/rust/cargo/bin:/usr/local/bin:/usr/bin:/bin
@@ -137,6 +138,7 @@ RUN set -eux; \
         | sh -s -- -y --no-modify-path --profile minimal \
             --default-toolchain "${RUST_TOOLCHAIN}" --component rustfmt,clippy; \
     cargo install tauri-driver --version "${TAURI_DRIVER_VERSION}" --locked; \
+    cargo install cargo-deny --version "${CARGO_DENY_VERSION}" --locked; \
     rm -rf /opt/rust/cargo/registry /opt/rust/cargo/git
 ENV CARGO_HOME=/home/${USERNAME}/.cargo \
     PATH=/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.local/bin:/opt/rust/cargo/bin:/usr/local/bin:/usr/bin:/bin \

@@ -1,0 +1,33 @@
+# Rust dependency audit: `npm run audit:cargo` (cargo deny check advisories,
+# against the RustSec advisory database). See "Dependency audit" in
+# DEVELOPMENT.md for the policy and for how to add an exception.
+#
+# Only the advisories check is used. Any vulnerability advisory fails the
+# audit, whatever its severity: many RustSec advisories carry no CVSS score, so
+# an unscored one is treated as high. Unmaintained and unsound notices fail it
+# too, so each gets a decision here rather than going unnoticed.
+#
+# Every ignore entry needs a `reason`. For a vulnerability, write the analysis
+# in a comment above the entry: why it can't be fixed yet, how it does or
+# doesn't reach HoploDex, and a date to look at it again.
+
+[graph]
+# Include the mock-keyring (E2E) and custom-protocol builds.
+all-features = true
+
+[advisories]
+unmaintained = "all"
+ignore = [
+    # Compile-time proc macro pulled in by the gtk-rs 0.18 macros
+    # (glib-macros, gtk3-macros) under Tauri's Linux backend; it isn't in the
+    # built binary. Goes when Tauri moves off gtk-rs 0.18.
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: unmaintained, compile-time only, via gtk-rs 0.18 in Tauri" },
+    # The unic-* crates come in through urlpattern in tauri-utils (Tauri's
+    # URL pattern matching for capabilities). Unmaintained, no known
+    # vulnerability. Goes when tauri-utils replaces urlpattern 0.3.
+    { id = "RUSTSEC-2025-0075", reason = "unic-char-range: unmaintained, via urlpattern in tauri-utils" },
+    { id = "RUSTSEC-2025-0080", reason = "unic-common: unmaintained, via urlpattern in tauri-utils" },
+    { id = "RUSTSEC-2025-0081", reason = "unic-char-property: unmaintained, via urlpattern in tauri-utils" },
+    { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: unmaintained, via urlpattern in tauri-utils" },
+    { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: unmaintained, via urlpattern in tauri-utils" },
+]

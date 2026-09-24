@@ -1,0 +1,35 @@
+// npm dependency audit: `npm run audit:npm`. See "Dependency audit" in
+// DEVELOPMENT.md for the policy and for how to add an exception.
+//
+// Fails on high and critical advisories, in dependencies and
+// devDependencies alike. Every allowlist entry needs a comment block above it
+// with the advisory, why it can't be fixed yet, how it does or doesn't reach
+// HoploDex, and a date to look at it again. Scope entries to the analysed
+// dependency path (`GHSA-…|path`) rather than the bare advisory ID, so the
+// same advisory arriving by another route fails the audit again.
+{
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  "high": true,
+  "report-type": "summary",
+  "allowlist": [
+    // extract-zip: symlink path traversal and arbitrary file writes when
+    // unpacking a crafted zip (GHSA-7pqw-9j4j-h8q3, GHSA-jmr9-qjv8-65gv).
+    //
+    // No fix: every extract-zip release is affected. @puppeteer/browsers 3.x
+    // replaced it, but @wdio/utils 9.32.0 (the latest WebdriverIO) still
+    // requires @puppeteer/browsers ^2.
+    //
+    // Not reachable. Dev-only (E2E tooling); nothing ships in the app.
+    // @puppeteer/browsers only unzips a Chrome or Firefox download, which
+    // WebdriverIO fetches when it has to start a browser itself.
+    // e2e/wdio.conf.ts sets hostname and port, so @wdio/utils'
+    // startWebDriver() sees a remote driver (tauri-driver) and returns before
+    // it loads the module that imports @puppeteer/browsers, and the
+    // browserName is "wry", not chrome or firefox.
+    //
+    // Review by 2026-12-31, or sooner if WebdriverIO moves to
+    // @puppeteer/browsers 3.
+    "GHSA-7pqw-9j4j-h8q3|*@wdio/utils>@puppeteer/browsers>extract-zip*",
+    "GHSA-jmr9-qjv8-65gv|*@wdio/utils>@puppeteer/browsers>extract-zip*",
+  ],
+}
