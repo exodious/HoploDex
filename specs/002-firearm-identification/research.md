@@ -26,8 +26,8 @@ what the owner states and never checks it against any era's rules.
   database may be recreated, as with earlier schema changes.
 - **Alternatives considered**: An `importers` table with a foreign key
   (rejected: importer names are stored as entered and consolidating
-  spellings is feature 003's suggestion mechanism, so a table would be
-  built ahead of its requirement); a separate `original_marks` table
+  spellings is the planned classification-vocabularies feature's suggestion
+  mechanism, so a table would be built ahead of its requirement); a separate `original_marks` table
   (rejected: one row per firearm at most, no independent lifecycle, and it
   would make the FTS trigger and export joins heavier for no gain); a new
   numbered migration (rejected: the repo's convention for unreleased-schema

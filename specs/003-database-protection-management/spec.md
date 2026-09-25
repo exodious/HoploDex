@@ -1,0 +1,305 @@
+# Feature Specification: Database Protection, Portability & Management
+
+**Feature Branch**: `003-database-protection-management`
+
+**Created**: 2026-09-25
+
+**Status**: Draft
+
+**Input**: User description: a request to specify two items from the project's working list of planned features together, as feature 003. The two items are taken together because one builds on the other: (1) protecting each database with the user's own passphrase so that the database file alone, plus that passphrase, opens on any computer, with saving the passphrase in the operating system's keyring as an optional convenience; and (2) letting the user keep more than one database, choose where each is stored, and have automatic backups of it. The planning notes these came from are reproduced under [Source Request](#source-request) so this spec stands on its own.
+
+## Clarifications
+
+### Session 2026-09-25
+
+- Q: The constitution requires "any network sync or backup feature" to be opt-in and off by default, while the request asks for local backups the user can opt out of. May local backups be on by default? → A: Yes. Backups are on by default and can be turned off per database; where they go, how many are kept and that they hold the whole collection are disclosed before the first backup is made. The constitution's rule is read as covering backups that leave the device (network sync or cloud backup); its wording should be clarified to say so.
+- Q: When are backups made, and how many are kept? → A: When a database is closed (closed, switched away from, or the application quit normally), if it was changed since its most recent backup, but no more than once per calendar day per database. Changes that could not be backed up (a backup was already made that day, the application ended abnormally, or the backup was skipped or failed) remain waiting and are backed up at the next close that is allowed to make one. Five are kept by default; the number is adjustable. Backing up at open was rejected: after a passphrase change every byte of the file differs, so the state at open cannot be reliably compared with earlier sessions, whereas the application knows at close whether the session changed anything.
+- Q: Where do backups go by default? → A: A backups folder next to the database file, so backups travel with it; the location can be changed per database.
+- Q: Where does the application record that a database has changes waiting for a backup, and when it was last backed up? → A: Inside the database itself, so the record travels with the file. A user may keep the database on network or cloud storage and use it from more than one computer (not at the same time); whichever computer closes it next reads and updates the record and makes the backup when one is due.
+- Q: Should a database's backup settings (on or off, how many to keep, where they go) travel inside the database or stay on each computer? → A: Inside the database, so every computer that opens it backs it up the same way to the same place and none undoes another's retention. A custom backup location that cannot be found on another computer is reported there as unavailable (FR-027).
+- Q: When a database on shared or cloud storage appears to be still open on another computer, what should the application do? → A: Block. The database records inside itself which computer has it open and since when, and clears that on a normal close. Opening it while another computer's open marker is set is refused, naming that computer and the time; the marker can be cleared only by that computer (on its next open or close) or by an explicit "take over" on this one, after a confirmation explaining that the other computer may still have it open, or that its latest changes may not have synced yet, and that taking over then can lose changes. This works the same on local, network and cloud-synced storage, where the operating system cannot tell whether another computer has the file open.
+- Q: The open marker and backup record are stored in the database and change on every open and close; do those make the database due for a backup? → A: No. Only changes the user makes count (records, photographs, documents, policies, collection settings, backup settings, and the passphrase). Housekeeping the application keeps in the database on its own (the open marker, the backup record, and dismissed one-time notes) never does, so opening and closing without changing anything never triggers a backup.
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - Protect My Collection With My Own Passphrase (Priority: P1)
+
+A collector who shares a computer account, or simply wants control of their own secret, creates their collection's database by choosing a passphrase. From then on the collection opens only after that passphrase is entered. The application tells them plainly, when they create it, that a forgotten passphrase cannot be recovered and that their data would be lost, and recommends turning on whole-disk encryption as well.
+
+**Why this priority**: It replaces the current unlock model, in which a random key is created and held in the operating system's keyring and the collection opens silently for anyone who can use that account. Every other story in this feature depends on the database being protected by something the user holds rather than something the machine holds.
+
+**Independent Test**: Start the application with no database, create one with a passphrase, add a firearm, quit, relaunch, and confirm the collection is shown only after the correct passphrase is entered, that an incorrect one is refused with the FR-006 message, and that no key or passphrase was stored anywhere on the machine.
+
+**Acceptance Scenarios**:
+
+1. **Given** the application has no database to open, **When** the user starts it, **Then** they are offered to create a new database or open an existing one, and nothing from any collection is shown.
+2. **Given** the user is creating a database, **When** they enter a passphrase shorter than the minimum (FR-003), or a confirmation that does not match, **Then** creation is blocked with a message on that field; **and When** they enter an acceptable passphrase, **Then** a strength hint is shown as they type, and no rule on character classes is applied.
+3. **Given** the user has entered an acceptable passphrase, **When** they go to finish creating the database, **Then** they are told that a forgotten passphrase cannot be recovered by anyone and must confirm they have stored it somewhere safe before the database is created.
+4. **Given** a database was just created, **When** it opens for the first time, **Then** a one-time, dismissible note recommends whole-disk encryption (BitLocker, FileVault, LUKS or equivalent) and does not appear again once dismissed.
+5. **Given** a protected database, **When** the user launches the application, **Then** they are asked for the passphrase before any collection data is shown, unless they opted in to saving it (User Story 5).
+6. **Given** the passphrase prompt, **When** the user enters an incorrect passphrase, **Then** they are told the passphrase is incorrect or the file is not a HoploDex database (or is damaged), may try again without restarting, and nothing in the file is changed.
+
+---
+
+### User Story 2 - Keep Several Databases, Anywhere, and Take Them to Another Computer (Priority: P2)
+
+A collector keeps more than one collection (for example their own and one they manage for a relative), chooses the folder each is stored in, switches between them, and can copy a database file to another computer, open it there with the same passphrase, and find all their data.
+
+**Why this priority**: Choosing a location and opening a database from anywhere is what makes the passphrase protection useful beyond one machine. It builds on User Story 1 because each database carries its own passphrase.
+
+**Independent Test**: Create two databases with different passphrases in two different folders, add distinct firearms to each, switch between them, then copy one file to another machine (or another user account with a fresh installation), open it with its passphrase, and confirm every record, photograph and document is present.
+
+**Acceptance Scenarios**:
+
+1. **Given** the user is creating a database, **When** they choose a folder and a file name, **Then** the database is created there; a default location is suggested and may be accepted as is.
+2. **Given** a database file anywhere the user can reach, **When** they choose to open an existing database and select it, **Then** they are asked for its passphrase and, when it is correct, that collection is shown.
+3. **Given** the user has opened several databases on this computer, **When** they open the database chooser, **Then** the recently used databases are listed with their names and locations, most recent first; **and When** a listed file no longer exists at that location, **Then** it is shown as unavailable, and the user may remove it from the list or locate it.
+4. **Given** a database is open, **When** the user switches to another database or closes the current one, **Then** the current collection is closed completely, no data from it stays on screen, the decrypted copies of its documents are deleted (FR-022), and the chooser is shown.
+5. **Given** the user removes a database from the recent list, **When** that is done, **Then** only the list entry (and any passphrase saved for it on this computer, User Story 5) is removed, and the database file itself is untouched.
+6. **Given** a database created on one supported operating system, **When** its file is copied to a computer with a different supported operating system and opened there with its passphrase, **Then** every record, photograph, document and setting stored in the database is present and unchanged, with nothing else copied or configured.
+7. **Given** a database that was last opened by a newer version of the application whose data layout this version does not understand, **When** the user opens it, **Then** it is refused with a message saying a newer version of HoploDex is needed, and the file is not modified.
+8. **Given** a database that is already open in another running copy of the application on this computer, **When** the user tries to open it, **Then** it is refused with a message that it is in use, and neither copy is affected.
+9. **Given** a database on network or cloud storage that is marked as open on another computer (FR-032), **When** the user opens it here with the correct passphrase, **Then** opening is refused with a message naming the other computer and when it opened the database, saying it may still be open there, may not have been closed properly, or its latest changes may not have synced yet; the user may go back, or choose "take over".
+10. **Given** that refusal, **When** the user chooses "take over" and confirms, after being told that changes can be lost if the other computer still has the database open or its changes have not synced, **Then** the database opens here and is marked as open on this computer.
+11. **Given** this computer's own open marker was left behind by a crash or power loss, **When** the database is next opened on this computer and no other copy of the application here has it open, **Then** it opens without a warning.
+
+---
+
+### User Story 3 - Automatic Backups and Restoring From One (Priority: P3)
+
+A collector whose database file becomes damaged, or who wants to go back to an earlier state, restores it from an automatic backup. Backups are made without the user having to think about it, older ones are cleared away automatically, a progress indicator appears if a backup takes more than a moment, and the user can turn backups off.
+
+**Why this priority**: Guards against the loss of a whole collection, but the application is usable and safe without it, and it depends on the database file being self-contained (User Stories 1 and 2).
+
+**Independent Test**: With backups on, make changes to a database across sessions on several days (the date can be simulated), and confirm that a dated backup appears at the backup location when the database is closed after changes, that a second session with changes on the same day does not add one but its changes are backed up at the next day's close, that a session with no changes does not add one, that no more than the retention limit are kept, and that restoring an earlier backup brings back exactly that earlier state; then turn backups off and confirm none are made.
+
+**Acceptance Scenarios**:
+
+1. **Given** backups are on for a database and no backup of it has been made today, **When** the user closes it, switches to another database, or quits the application after changing it, **Then** a backup is made (FR-025), named with the database's name and the date and time it was made; **and When** the session made no changes and none are waiting from earlier sessions, **Then** no backup is made, even though opening and closing it updated its open marker and backup record.
+1a. **Given** a backup of the database was already made today, **When** the user closes it after further changes, **Then** no backup is made, and those changes are backed up at the first close on a later day, even if that later session changes nothing.
+1b. **Given** the application ended abnormally (crash, forced termination, power loss, or operating-system shutdown) after changes were made, **When** the database is next closed normally on a day allowed to make a backup, **Then** those changes are backed up.
+2. **Given** a backup is expected to take longer than one second (judged from the database's size), **When** it runs as the database closes, **Then** a progress indicator is shown, the database is not closed (and the application does not quit) until the backup finishes, and the user may choose to skip it, in which case the changes stay waiting for the next close.
+3. **Given** the number of backups of a database would exceed its retention limit, **When** a new backup completes successfully, **Then** the oldest backups beyond the limit are removed, using secure deletion where the operating system supports it; no backup is removed before the new one is complete.
+4. **Given** backups are on, **When** the user views a database's backup settings, **Then** they see where backups are stored, how many are kept, that each backup opens only with the passphrase that was current when it was made, and that records deleted from the collection remain in existing backups until those backups are removed; and they can change the location and the number kept, delete all backups of the database, or turn backups off.
+5. **Given** the user chooses to restore a backup, **When** they pick one from the database's list of backups and confirm, **Then** the current state is first saved as a backup of its own, the database is replaced with the backup's content, and the user is told the restored database now uses the passphrase that was current when the backup was made.
+6. **Given** a database cannot be opened because it is damaged, **When** backups of it exist at its backup location, **Then** the message offers to restore one of them.
+7. **Given** a backup is running, **When** the application is forced to end, the computer loses power, or the disk fills up, **Then** the database itself is unaffected, no partial file is left that could be mistaken for a complete backup, and a failure is reported the next time the application is used.
+8. **Given** the user turns backups off for a database, **When** they later change and close it, **Then** no backup is made, and existing backups are kept until the user deletes them.
+9. **Given** the user changed a database's passphrase during a session, **When** the database is next closed on a day allowed to make a backup, **Then** a backup is made under the new passphrase, since the change counts as a change to the database.
+
+---
+
+### User Story 4 - Change My Passphrase Safely (Priority: P4)
+
+A collector who suspects their passphrase is known to someone else, or just wants a stronger one, changes it. The change cannot leave them with a broken or half-converted database, even if the computer loses power part way through, and the old copy protected by the old passphrase is removed afterwards without further questions.
+
+**Why this priority**: Important for anyone whose passphrase is compromised, but rare; the feature is useful without it.
+
+**Independent Test**: Change a database's passphrase, confirm it then opens only with the new passphrase and has identical content, that the previous file is gone, and that interrupting the change part way leaves the database opening with the old passphrase and its content intact.
+
+**Acceptance Scenarios**:
+
+1. **Given** an open database, **When** the user chooses to change its passphrase, **Then** they must enter the current passphrase and the new one twice, and the new one must meet the same rules as at creation (FR-003).
+2. **Given** a valid change request, **When** there is not enough free disk space for a second copy of the database, **Then** the change is refused before it starts, with a message saying how much space is needed.
+3. **Given** a valid change request with enough space, **When** the change runs, **Then** a progress indicator is shown, a new copy of the database is made under the new passphrase and verified, and only then does it replace the original.
+4. **Given** the replacement succeeded, **When** it is complete, **Then** the previous file is removed with secure deletion where the operating system supports it, with no extra prompt, and a short notice says the change is done, that secure deletion is best effort (details in the user guide), and that existing backups and copies still open with the old passphrase.
+5. **Given** the previous file cannot be removed, **When** the change otherwise succeeded, **Then** the user is told that the old file remains, where it is, and that it opens with the old passphrase.
+6. **Given** the change is interrupted or fails at any point before the replacement, **When** the user next opens the database, **Then** it opens with the old passphrase with all its content, and any partial new copy has been removed.
+7. **Given** the passphrase was saved in the keyring for this database (User Story 5), **When** the change succeeds, **Then** the saved passphrase is updated to the new one.
+
+---
+
+### User Story 5 - Optionally Let This Computer Remember My Passphrase (Priority: P5)
+
+A collector who is the only user of their computer account, and who accepts the trade-off, lets the application save a database's passphrase in the operating system's keyring so that the database opens without a prompt on that computer. They can undo this at any time.
+
+**Why this priority**: A convenience that restores the silent unlock some users had before; the default must be off, so the feature is complete without it.
+
+**Independent Test**: Opt in for one database, relaunch and confirm it opens without a prompt while another database still asks; choose "forget saved passphrase" and confirm the prompt returns and the keyring entry is gone.
+
+**Acceptance Scenarios**:
+
+1. **Given** the passphrase prompt or a database's settings, **When** the user looks for the option to remember the passphrase, **Then** it is off by default, and turning it on first shows that anyone who can use this computer account (or who can use the keyring while it is unlocked) will be able to open the database without the passphrase, which defeats the passphrase on a shared account; the user must confirm.
+2. **Given** the user has opted in for a database, **When** they next open that database on this computer, **Then** it opens without asking for the passphrase; other databases, and the same database on other computers, still ask.
+3. **Given** a saved passphrase, **When** the user chooses "forget saved passphrase", **Then** it is removed from the keyring and the next open asks for the passphrase.
+4. **Given** the computer has no usable keyring service, **When** the user looks for the option, **Then** it is shown as unavailable with a short explanation, and everything else works as normal.
+5. **Given** a saved passphrase that no longer opens the database (for example, it was changed on another computer or an older backup was restored), **When** the database is opened, **Then** the user is asked for the passphrase, and on success the saved copy is updated.
+
+---
+
+### Edge Cases
+
+- What if the user forgets the passphrase? The data cannot be recovered by the application or anyone else; this is by design and the user was told at creation (FR-004). A spreadsheet export made earlier (feature 001 FR-018) is the only other copy, and it is unencrypted.
+- What if a wrong passphrase is entered many times? There is no attempt limit or lockout; each attempt simply fails. An offline attacker with a copy of the file is not limited by the application at all, which is why passphrase strength is what protects the data (FR-003).
+- What if the database is stored on a removable or network drive that disappears while open? Saving fails with a clear message, nothing already saved is lost, and the database can be reopened once the drive returns.
+- What if the database is stored in a cloud-synced folder? The file is encrypted, so the sync service holds only ciphertext, but copies may be kept by that service; the user guide says so, and secure deletion (FR-015) cannot reach those copies.
+- What if a backup is restored after the passphrase was changed? The restored database uses the older passphrase; the user is told at restore (User Story 3, scenario 5), and a saved passphrase is refreshed on the next successful open (User Story 5, scenario 5).
+- What if the user opens a backup file directly with "open existing database"? It is a complete database and opens like any other; changes made there are not part of the original database.
+- What if the backup location is the same disk as the database? That protects against file damage but not against disk failure or theft; the backup settings say so and the location may be changed at any time.
+- What if the backup location is unavailable (drive unplugged, folder deleted, no permission)? The database still closes; the backup is skipped, the user is told, with a way to change the location, and the changes stay waiting for the next close.
+- What if the user's database is very large (many photographs)? Backups, passphrase changes and restores take longer and each needs free space about equal to the database size; all three show progress, and none starts without enough space.
+- What if two databases are given the same file name in different folders? Each is identified by its location, so they are listed separately with their folders shown.
+- What if a database from before this feature exists on the machine? It was protected by a key held in the keyring, not a passphrase, and is not converted (see Assumptions).
+- What if the operating system is shutting down or ends the application? No backup is started, since it may not have time to finish; the changes stay waiting and are backed up at the next normal close.
+- What if the user changes a database every day? At most one backup is made per day, so with the default of five kept, backups cover roughly the last five days on which the database was changed and closed.
+- What if the other computer crashed, or was switched off, with the database open? Its open marker stays set, so opening elsewhere is refused (FR-032) until that computer opens and closes it again, or the user takes over here.
+- What if the user takes over while the other computer really does still have the database open? The other computer stops saving to it, and tells its user, as soon as it can see the take-over (FR-032). On cloud-synced storage it may not see it until its copy syncs, and the sync service may then keep one version or make a conflicted copy; that is the risk the take-over confirmation describes.
+- What if the database is on network or cloud storage and used from more than one computer, one at a time? Its backup record travels inside it (FR-025), so changes left waiting on one computer are backed up by the next computer that closes it, and the once-a-day limit holds across computers. The backup settings travel too (FR-024), so every computer uses the same location and retention; backups next to the database are on the same storage and are shared.
+- What if the passphrase is changed and a backup was already made that day? Until the next backup, every existing backup opens only with the old passphrase; the completion notice for the change says so (FR-016).
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+#### Passphrase protection
+
+- **FR-001**: Every database MUST be protected by a passphrase the user chooses when creating it. There MUST be no way to create or use a database without one, and no key that could open a database may be stored by the application anywhere unless the user opts in under FR-017.
+- **FR-002**: A database's protection MUST be derived from its passphrase alone, so that the database file plus the passphrase are everything needed to open it (FR-011).
+- **FR-003**: A new passphrase MUST be at least 12 characters long and MUST be entered twice to confirm it. The system MUST show a strength hint as the passphrase is typed and MUST encourage long passphrases (such as several words), but MUST NOT impose character-class rules (required digits, symbols or letter case).
+- **FR-004**: Before a database is created, the system MUST tell the user that a forgotten passphrase cannot be recovered by the application or anyone else, and MUST require them to confirm they have stored it somewhere safe.
+- **FR-005**: Opening a database MUST require its passphrase, unless the passphrase was saved under FR-017, before any collection data is read or shown.
+- **FR-006**: When a passphrase does not open a database, the system MUST say that the passphrase is incorrect or the file is not a HoploDex database (or is damaged), since the two cannot be told apart, MUST allow another attempt without restarting, and MUST NOT modify the file.
+- **FR-007**: The passphrase MUST never be logged, written to disk (except in the keyring under FR-017), included in an error report, or transmitted, and MUST be kept in memory only as long as needed to open or re-protect the database.
+- **FR-008**: When a database is created, the system MUST show a one-time, dismissible note recommending whole-disk encryption (BitLocker on Windows, FileVault on macOS, LUKS or an equivalent on Linux) as a complement to the passphrase. The system MUST NOT try to detect or require disk encryption, and MUST NOT show the note again once dismissed.
+
+#### Databases, locations and portability
+
+- **FR-009**: The user MUST be able to create a new database in a folder and under a file name of their choosing. The system MUST suggest a default location that the user may accept.
+- **FR-010**: The user MUST be able to open an existing database from any location they can access, and MUST be able to switch to another database or close the current one without quitting the application. Exactly one database is open at a time. Closing a database MUST return the application to a state in which no collection data is shown or held and the database chooser is displayed.
+- **FR-011**: A database file created on any supported operating system MUST open on every other supported operating system, given its passphrase, with all its records, photographs, documents and database-stored settings, and with no dependency on anything stored on the computer that created it. The protection settings that make this possible MUST be fixed by the application, not left to platform or build defaults.
+- **FR-012**: The system MUST keep, on each computer, a list of recently used databases (name and location, most recent first), shown in the database chooser. An entry whose file cannot be found MUST be shown as unavailable and MUST be removable or re-locatable. Removing an entry MUST NOT delete the database file.
+- **FR-013**: Settings that belong to one computer MUST be kept on that computer and outside the database: the recent-databases list, whether a passphrase is saved in the keyring (FR-017). The collection data, its own settings, its backup settings (FR-024, FR-025, FR-026), its backup record (FR-025) and its open marker (FR-032) travel with the database file.
+- **FR-014**: The system MUST refuse to open a database whose data layout is newer than the running application understands, with a message that a newer version of HoploDex is needed, and MUST NOT modify such a file. The system MUST also refuse to open a database that is already open in another running copy of the application on the same computer, with a message that it is in use. Databases open on other computers are handled by FR-032.
+
+- **FR-032**: Every database MUST record, inside itself, which computer has it open (identified by a name the user recognizes, such as the computer's name) and since when, set when the database is opened and cleared when it is closed normally. When a database is opened and its marker names a different computer, the system MUST refuse to open it, naming that computer and the time and explaining the possible reasons (still open there, not closed properly, or latest changes not yet synced). The refusal MUST offer "take over", which, after the application's standard destructive-action confirmation stating that changes can be lost if the other computer still has the database open or its changes have not synced, opens the database and marks it as open on this computer. A marker left by this computer is cleared at its next open when no other copy of the application here has the database open (FR-014). Before saving changes and at close, the system MUST check the marker and, if another computer has taken the database over, MUST stop saving to it, tell the user, and close it. Setting or clearing the marker is housekeeping, not a change (FR-025), and a backup MUST NOT carry a marker, so that a restored or directly opened backup is not reported as open elsewhere.
+
+#### Changing the passphrase
+
+- **FR-015**: The user MUST be able to change an open database's passphrase by entering the current passphrase and a new one meeting FR-003. The change MUST be done by making a new copy of the database protected by the new passphrase, verifying that the copy opens with the new passphrase and that its content is complete and consistent with the original, and only then replacing the original with it in a single step. Until that step the original MUST remain untouched, so that a failure or interruption at any point leaves the database opening with the old passphrase and all its content; any partial copy MUST be removed.
+- **FR-016**: Before a passphrase change starts, the system MUST check that there is free space for a second copy of the database and refuse with a message stating the space needed if not. During the change it MUST show progress. After a successful replacement the previous file MUST be deleted without a further prompt, using secure deletion where the operating system supports it (best effort: overwrite, flush, remove, and ask the storage to discard the freed space where available). If it cannot be removed, the change still succeeds and the user MUST be told the old file remains, where it is, and that it opens with the old passphrase. The completion notice MUST say, briefly, that secure deletion is best effort and that existing backups and copies still open with the passphrase current when they were made; the full explanation belongs in the user guide (FR-030).
+
+#### Saving the passphrase on this computer (optional)
+
+- **FR-017**: The user MAY choose, per database and per computer, to save that database's passphrase in the operating system's keyring so the database opens without a prompt on that computer. This MUST be off by default. Turning it on MUST first show that anyone who can use this computer account, or the keyring while it is unlocked, can then open the database without knowing the passphrase, and MUST require confirmation. Only the passphrase may be saved there, never any other key.
+- **FR-018**: The user MUST be able to forget a saved passphrase at any time, which removes it from the keyring. When the passphrase is changed on this computer the saved copy MUST be updated. When a saved passphrase no longer opens its database, the system MUST ask for the passphrase and, on success, update the saved copy. Removing a database from the recent list (FR-012) MUST also remove any passphrase saved for it.
+- **FR-019**: When no keyring service is available, the option MUST be shown as unavailable with a short explanation, and the application MUST otherwise work normally.
+
+#### Locked state
+
+- **FR-020**: The application MUST have a state with no database open (the database chooser), reachable at launch, after closing a database (FR-010), and on switching databases, in which no collection data is displayed or held in memory. This state is the one a future automatic lock will return to.
+- **FR-021**: When the application starts, it MUST show the database chooser with the most recently used database selected and, unless its passphrase is saved (FR-017), a passphrase prompt for it; if there are no known databases, it MUST offer to create one or open an existing one.
+- **FR-022**: Closing or switching a database MUST delete any temporary decrypted copies of that database's documents, in the same way and with the same secure deletion as on exit (feature 001 FR-035).
+
+#### Backups
+
+- **FR-023**: The system MUST provide automatic backups of each database. A backup MUST be a complete copy of the database as it stood at a single moment, protected by the passphrase current at that moment (no separate protection and no plaintext), named with the database's name and the date and time it was made, and openable like any database.
+- **FR-024**: Backups MUST be on by default for each database, with the backup location, the number kept, and the fact that backups contain the whole collection disclosed before the first backup is made, and the user MUST be able to turn them off per database at any time. The disclosure MUST be made when the database is created. A database's backup settings (on or off, the number kept, and the location) MUST be stored inside the database, so they apply on every computer that opens it. The application itself never sends backups anywhere; they are written only to the folder the backup settings name (FR-026), which is why they may be on by default.
+- **FR-025**: A backup MUST be made when a database is closed normally (closed, switched away from, or the application quit by the user) if the database has changes not yet in a backup (defined below), unless a backup of that database was already made that calendar day (judged against the user's local date). Only changes to the collection count: adding, editing or deleting records, photographs, documents or policies, changing collection settings, changing the backup settings (FR-024), and changing the passphrase. Housekeeping the application stores in the database on its own does not count, so opening and closing a database without the user changing anything never makes it due for a backup: this covers the open marker (FR-032), the backup record, and whether one-time notes have been dismissed (FR-008). Changes not yet backed up, whether because of the once-a-day limit, an abnormal end of the application, an operating-system shutdown, or a skipped or failed backup, MUST be remembered across sessions and backed up at the next normal close allowed to make a backup. Whether changes are waiting, and the date and time of the most recent backup, MUST be recorded inside the database (its backup record), so that they are correct whichever computer next opens and closes it; the once-a-day limit is judged from that record. Changes MUST be recorded as waiting as soon as the first one of a session is saved, so that a crash cannot lose that fact. No backup is made when there are no such changes. The number kept per database MUST default to 5 and MUST be changeable by the user; when a new backup completes, the oldest beyond that number MUST be deleted, using secure deletion where the operating system supports it. No backup may be deleted before the new one is complete.
+- **FR-026**: Backups MUST be stored by default in a folder named for backups next to the database file, and the user MUST be able to choose a different location per database.
+- **FR-027**: When a backup is expected, from the database's size, to take longer than one second, the system MUST show a progress indicator, and the database MUST NOT close (nor the application quit) until the backup finishes, unless the user chooses to skip it, which leaves the changes waiting (FR-025). No backup is started when the operating system is shutting down or ends the application. An interrupted or failed backup MUST NOT leave a file that could be mistaken for a complete backup, MUST NOT affect the database, and MUST be reported to the user. A backup location that is unavailable or out of space MUST be reported, with a way to change the location, and MUST NOT prevent the database from closing or the application from quitting; the changes stay waiting.
+- **FR-028**: The user MUST be able to restore a database from any of its backups listed at its backup location. Before replacing the database, the system MUST save the current state as a backup (so a restore can itself be undone); this backup is made regardless of the once-a-day limit, and the backup being restored from MUST NOT be removed by rotation as a result. The system MUST replace the database in the same copy-then-replace way as FR-015, and MUST tell the user that the restored database uses the passphrase that was current when the backup was made. When a database cannot be opened because it is damaged and backups of it exist, the message MUST offer to restore one.
+- **FR-029**: A database's backup settings MUST show where backups are stored, how many are kept, that each backup opens only with the passphrase current when it was made, that records deleted from the collection remain in existing backups until those backups are removed, and that a backup on the same disk as the database does not protect against losing that disk. The user MUST be able to delete all of a database's backups from there, with the application's standard destructive-action confirmation and secure deletion where supported.
+
+#### Documentation and wording
+
+- **FR-030**: The user guide MUST explain, and the dialogs MUST summarize in a sentence or two: that secure deletion is best effort and cannot be guaranteed on SSDs, journaling or copy-on-write filesystems, filesystem snapshots, or cloud-synced folders; that a securely deleted old copy was still protected by its old passphrase, so the risk exists only if that passphrase is known to someone else; that backups and copies made earlier, elsewhere, are untouched and open with the passphrase current when they were made; that passphrase strength is what protects a copied database file; and why whole-disk encryption is recommended alongside the passphrase.
+- **FR-031**: Wording that describes the spreadsheet export as a backup (feature 001 SC-005 and the export dialog) MUST make clear that it is an unencrypted data export, distinct from the encrypted automatic backups of this feature.
+
+### Key Entities
+
+- **Database**: one self-contained, passphrase-protected file holding a whole collection (records, photographs, documents and collection settings). Identified to the user by its name and location. Opens anywhere with its passphrase alone. Carries its own backup record (whether it has changes not yet in a backup, and when its most recent backup was made), its backup settings, and an open marker (which computer has it open, and since when).
+- **Passphrase**: the secret the user chooses for one database. Never stored by the application except, if the user opts in, in this computer's keyring for that database only.
+- **Recent-database entry** *(machine-local)*: a database's name and location on this computer, when it was last opened, and whether its passphrase is saved in the keyring. Not part of the database. These are the only per-computer settings this feature adds.
+- **Backup settings** *(stored in the database)*: whether backups are on, the backup location, and how many to keep. The same on every computer that opens the database.
+- **Backup**: a complete copy of a database at one moment, named with the database's name and the date and time, protected by the passphrase current then. Removed by rotation, by the user, or never.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: A database created on any one supported operating system opens on each of the others with its passphrase alone, with 100% of its records, photographs and documents present and identical, and with nothing else copied or configured.
+- **SC-002**: With no passphrase saved in the keyring, no collection data can be read from a database without its passphrase, and nothing stored on the computer (settings, keyring, temporary files) is enough to open it.
+- **SC-003**: Opening a database after the passphrase is entered takes under 2 seconds for a collection of 10,000 firearms.
+- **SC-004**: In 100% of tested interruptions of a passphrase change, a backup and a restore (at the start, midway, and at the point of replacement), the database afterwards opens with the passphrase it had before and with all its content.
+- **SC-005**: Every backup, passphrase change or restore expected to take longer than one second shows a progress indicator within 100 milliseconds of starting.
+- **SC-006**: A user who has never seen the feature can create a protected database in a chosen folder, and later switch to a second database, each in under 2 minutes without help.
+- **SC-007**: After any number of sessions with changes, the number of backups of a database never exceeds its retention limit, no more than one backup is made per database per day (apart from the one made before a restore), every change is in a backup after the first normal close on a later day, and a restore reproduces exactly the content the chosen backup was made from.
+- **SC-008**: With the keyring option on, a database opens with no prompt on that computer; after "forget saved passphrase", 100% of subsequent opens prompt, and no passphrase remains in the keyring.
+- **SC-009**: In 100% of tested cases where a database is marked as open on another computer, it cannot be opened without an explicit, confirmed take-over, and a computer whose database was taken over saves nothing further to it once it can see the take-over.
+
+## Assumptions
+
+- **Scope: personal, non-commercial.** One passphrase per database; no multiple user accounts, no per-person unlock, and no recovery key in this feature. Anyone else who needs access is a trusted person who shares the passphrase. Commercial use (dealers, several operators, audit trails) is out of scope. This keeps feature 001's "single-user, personal application" Assumption and amends only its "no accounts, login" wording, since there is now a passphrase prompt.
+- **Security trade-off, stated plainly.** A random key held in the keyring cannot be guessed offline; a passphrase-derived one can be, by anyone holding a copy of the file. Because the file is now meant to be copied (to other computers, to backups), the passphrase's strength is what protects it. That is why FR-003 sets a minimum length and shows strength, and why the key-derivation work factor should be set high (opening costs a fraction of a second, see the measurements in the Source Request).
+- **The minimum length of 12 characters** follows current guidance that length matters more than composition; a longer minimum was not chosen, because the strength hint and the guide encourage long passphrases without blocking reasonable ones.
+- **There is no attempt limit** on passphrase entry, because an offline copy of the file cannot be limited by the application.
+- **Existing databases are not converted.** Databases created before this feature are protected by a random key held in the keyring, not a passphrase. The application is unreleased (0.1.0) and development databases are already recreated when the data layout changes, so no conversion is provided; a user who wants to keep a development collection can export it to a spreadsheet and import it into a new database.
+- **One database open at a time.** Opening a second database closes the first. Side-by-side databases are not requested.
+- **Deleting a database** is done by the user in their file manager; the application only removes it from its list (FR-012). Deleting database files from inside the application is not requested.
+- **Automatic lock** (a "lock now" command and locking after a period of inactivity) is left to a later feature; FR-020 provides the state it will return to.
+- **Backups are local and on by default.** They go to a folder the user can see and choose, next to the database unless changed; there is no network or cloud backup. That is why they may be on by default despite the constitution's opt-in rule for backup features, which is read as covering backups that leave the device (see Clarifications). A backup folder that happens to be synced by another program is the user's choice, and the guide covers the implications (FR-030).
+- **Backups keep deleted records.** Removing a firearm removes it from the database (constitution V) but not from backups made before; the user is told (FR-029) and can delete all backups, and rotation removes old ones with secure deletion. Purging a record from every backup was not chosen because it would mean rewriting every backup on each delete.
+- **Supported operating systems** are those of feature 001 (Windows, macOS, Linux; feature 001 FR-022).
+
+## Relationship to Feature 001
+
+This feature extends `specs/001-firearms-inventory/`. It **supersedes**:
+
+- **research.md §5** (key management): a random key generated at first run, held in the OS keyring, with silent unlock. Replaced by a user-chosen passphrase from which the database's protection is derived (FR-001, FR-002), with the keyring holding only the passphrase, only on opt-in (FR-017). The alternative §5 rejected, a user-supplied password, is what this feature adopts.
+- **quickstart.md's first-run flow** ("generates a random encryption key, stores it via keyring… in the OS app-data directory"): first run now offers to create or open a database, with a passphrase and a chosen location (FR-009, FR-021).
+
+It **amends**:
+
+- **FR-021** (local storage): data still stays on the user's device, but the database may be stored in any location the user chooses, several databases may exist, and encrypted backups are written to a local location of the user's choice (FR-009 to FR-012, FR-023 to FR-029).
+- **FR-035** (decrypted document copies): also deleted when a database is closed or switched, not only at exit (FR-022).
+- **SC-005**: the spreadsheet export is a data export, not the corruption backup (FR-031).
+- **Assumptions**: "no accounts, login" no longer holds, since each database has a passphrase; it remains single-user and personal.
+- **plan.md**: the Constitution Check rows V (keyring holds a random key) and Security & Data Handling (the DB lives in the OS app-data directory), and the Project Structure note for the keyring-and-encryption integration test.
+- **FR-022 / SC-008**: gain a concrete portability check (SC-001 here).
+
+## Source Request
+
+This feature came from the project's working list of planned features, which is not kept long term. What this spec drew on is reproduced here for the record.
+
+**Planning convention.** Items on that list that correct feature 001 are made by editing 001's documents in place. Items that add a new capability become their own spec, and each such spec must list which 001 requirements and decisions it amends or supersedes; for this feature that is the [Relationship to Feature 001](#relationship-to-feature-001) section. The two items were combined into one feature at the user's request; the working list had recommended specifying the passphrase and portability item first, because it defines the unlock model and file format the multiple-database and backup item builds on, and that ordering is kept here as the story priorities.
+
+**The requests, verbatim:**
+
+> [feature] Users are going to want to be able to select their own password. The application might be used on a shared PC account etc.
+
+> (added from discussion) the user must be able to take their database to another computer, run the app there, and have all their data. That cannot work while the actual key lives in a system keyring. So: the user provides a passphrase; the database's protection derives from it (or it protects the key), and everything needed to open the database travels with it. Storing the passphrase in the OS keyring is an **optional, opt-in convenience** for users who accept the security implications.
+
+> [feature] Users might have more than one database - need a way to choose the database including the location where it is stored
+
+> [feature] there needs to be a way to have backups of the database in case of accidental corruption, but the database could get to be large depending on how many picture and attachment BLOBs are stored. So unsure if it should make a copy for every session or not? I'm thinking about a sort of log rotation system or where the database file is copied and has a datestamp appended to the name or as a file extension suffix. If the backup is going to take more than some set amount of (very short) time - estimate based on size? - then the user needs a visual indication that this is happening. The user also needs to be able to opt out of this feature.
+
+**Decisions already recorded before this spec (2026-09-20), carried into the requirements above:**
+
+- *Portability guarantee:* database file + passphrase opens on any supported OS, with no dependency on machine-local secret storage, verified by a cross-platform test (create on one OS, open on another).
+- *No key in the keyring by default.* The keyring may hold the passphrase only, only on opt-in, per database. Opting in discloses that anyone who can use that OS account (or the unlocked keyring) can open the database. Default off; "forget saved passphrase"; update or clear on passphrase change; shown as unavailable with an explanation when no keyring service exists.
+- *Passphrase is mandatory* for every database, because the constitution requires encryption at rest; never logged; held in memory only as long as needed.
+- *Personal, non-commercial scope:* one passphrase per database, no multi-user unlock, no recovery key in the first release.
+- *Changing the passphrase is copy-then-swap:* re-encrypt into a new file, verify it (opens with the new passphrase, integrity check, row counts match), then atomically replace. The original is untouched until then. Needs free space about equal to the database size and progress indication. After a verified swap the old file is deleted by default, with no extra prompt, by best-effort secure deletion (overwrite, flush, unlink, plus a TRIM/discard hint where available), reusing the secure-delete service built for feature 001 FR-035. If it cannot be removed the operation still succeeds and the user is told where the old file is and that it opens with the old passphrase.
+- *Security disclosure, "within reason":* short text in dialogs, detail in the user guide (FR-030).
+- *Recommend whole-disk encryption* in the user guide and a one-time, dismissible note at database creation (constitution III, no repeated nagging). No detection or enforcement; detection is not reliable across platforms.
+- *Mechanism: the passphrase is the database key directly, in a single self-contained file.* The database engine already in use (SQLCipher) stores its random key-derivation salt in the file and derives the key from the passphrase, so one file + passphrase = data, with no custom cryptography, matching the constitution's "platform-standard encryption". A passphrase-wrapped random key was set aside: it cannot live inside a file that is encrypted from its first byte, so it would need a second file that must never be separated from the database (or a custom container), plus custom key-wrapping code; its benefits (instant passphrase change, several unlock methods, a recovery key) are not needed now and can be added later. Also set aside for the same reason: a zip container (a database must be extracted to a working file to be used, with the costs and crash-recovery problems that brings), a database folder holding two files, and a custom single-file container. With the chosen approach an old passphrase stops working for the new file after a change, whereas with key-wrapping an old passphrase plus an old key file would open it indefinitely.
+- *Consequences:* require a minimum length and show a strength hint, no composition rules; state that a forgotten passphrase means unrecoverable data and ask the user to confirm they have stored it (the unencrypted spreadsheet export is the only other copy, with its own disclosure); pin the cipher settings explicitly so every platform and build reads and writes the same format; refuse, with a clear message, to open a database whose schema is newer than the app; a wrong passphrase is indistinguishable from a damaged or foreign file, so the message covers both; no meaningful offline attempt limit; machine-local settings (recent-databases list, keyring opt-in flags, backup opt-out) stay outside the database. (The backup settings were later moved into the database so that a database used from several computers is backed up consistently; see Clarifications.)
+- *Backups:* with a passphrase-derived key a backup is simply a copy of the database file and opens anywhere with the passphrase. Backups keep the passphrase that was current when they were made, so after a change older backups need the old one; the UI says so. Each database has its own passphrase and its own optional keyring entry; the recent-databases list is machine-local. Backup destination and retention are user-visible privacy questions (constitution V, "what leaves the device"). The progress indicator falls under constitution IV. The spreadsheet export that feature 001 SC-005 calls a "backup" is a data export, not a corruption backup.
+- *Automatic lock deferred:* "lock now" and lock-after-idle move to a later feature; this feature must leave room for a state the app can return to (FR-020).
+
+**Measured cost of re-encrypting (2026-09-20)**, recorded so the trade-off is concrete. Benchmark with the same bundled SQLCipher as the app, 2 GiB of incompressible 4 MB blobs (photo-like), on a Ryzen 9 5900X with AES-NI and a RAM-backed temporary directory (essentially no disk I/O, a best case): in-place re-keying 15 s (140 MiB/s); exporting to a new file 9 s (229 MiB/s); opening a database including key derivation 0.09 s. SQLCipher is single-threaded, so more cores do not help. Extrapolated (not measured) to a modest five-year-old laptop at about half the single-thread speed: copy-then-swap of about 1 GiB ≈ 10 s, 5 GiB ≈ 50 s, 20 GiB ≈ 3 min on an SSD, and roughly 2.5–4× longer on a hard disk.
+
+**Follow-ups handed to the plan:**
+
+- Exporting to a new file is one blocking call with no progress callback, so the progress indicators (FR-016, FR-027) need a chunked copy or a size-based estimate.
+- Key derivation at open is cheap enough (0.09 s measured) that the iteration count can be raised well above the default; pin it together with the other cipher settings (FR-011).
+- The data-directory override that already isolates tests from the real database is also the mechanism for choosing a database location; build it once. Tests use a fixed test passphrase and never the keyring unless testing FR-017.
+- The integration test for keyring + encryption, and the first-run documentation, must be rewritten for the passphrase model.
+- The cross-platform open test (SC-001) belongs in a multi-OS test run, which the project does not run yet.
+- The constitution's rule that "any network sync or backup feature MUST be opt-in, off by default" should be clarified (a PATCH amendment) to say it covers backups that leave the device, since this feature's local backups are on by default (FR-024).
+- Backups are made at close, so closing and quitting must wait for them (FR-027); the operating system's shutdown and termination signals, already handled for feature 001 FR-035, must not start one.
+- The default backup location ("next to the database") must be stored in a form that resolves on every computer, not as one computer's absolute path; a custom location is stored as chosen and may be unavailable elsewhere (FR-027).
+- The open marker (FR-032) needs a stable way to identify a computer, shown to the user by a recognizable name; how it is derived, and how "no other copy of the application here has it open" is detected, are for the plan. A backup must be taken without the marker, or with it cleared in the copy.
+- The backup record lives in the database (FR-025) and is written when the first change of a session is saved, not only at close, so it survives a crash. Housekeeping writes (the open marker, the backup record, dismissed notes) must be kept apart from collection changes so that they never make a database due for a backup (FR-025).
+
+**Left to other planned features:** automatic lock ("lock now" and lock-after-idle) belongs to a planned, not yet specified, feature; in-app document preview and a consent step before opening a document externally belong to a planned, not yet specified, document-viewing feature, which covers the decrypted-copy exposure on a shared account that a passphrase does not; a general undo or change history, which interacts with backup size, is also planned separately.
