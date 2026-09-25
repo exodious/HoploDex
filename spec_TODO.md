@@ -4,7 +4,7 @@
 >
 > - **Do not reference this file** by name (`spec_TODO.md`, `@spec_TODO.md`) or by its item labels (A1, B2, "Track B", "decision #4") in any spec artifact (`spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`, `tasks.md`, `checklists/`), code, comments, tests, or commit messages. Those references will dangle once the file is gone.
 > - **Copy what the spec needs into the spec itself.** Give the new `spec.md` a `## Source Request` section with: the original request text, quoted verbatim; the rationale and any decisions recorded here; the list of 001 requirements it amends or supersedes; follow-ups handed to the plan; and what is left to other planned features. `specs/002-firearm-identification/spec.md` is the model to follow. Other artifacts (`plan.md`, `research.md`, `tasks.md`) then cite that spec section, not this file.
-> - **Refer to other planned items by what they are, not by label.** Write "a planned, not yet specified, feature for NFA and other regulated item types", not "B8". Once an item has its own spec, cite that spec (e.g. "feature 003 (classification vocabularies)").
+> - **Refer to other planned items by what they are, not by label.** Write "a planned, not yet specified, feature for NFA and other regulated item types", not "B8". Once an item has its own spec, cite that spec (e.g. "feature 003 (database protection and management)").
 
 Every original item is kept verbatim (a few are split at a sentence boundary, marked *(part 1/2)*). The bracketed tag is the original one; the annotations underneath are the triage.
 
@@ -18,9 +18,11 @@ Every original item is kept verbatim (a few are split at a sentence boundary, ma
 
 ---
 
-## Already implemented (removed from this file 2026-09-23)
+## Already implemented or being specified (removed from this file)
 
-Everything that has shipped was taken out of this file; the specs record it. Track A items A1–A4 and A6–A10 are in `specs/001-firearms-inventory/` (FR-003/004, FR-031 to FR-039), and B1 is `specs/002-firearm-identification/`. Both features' `tasks.md` are fully checked off. The remaining items keep their original labels, so the gaps in numbering are expected.
+Everything that has shipped was taken out of this file on 2026-09-23; the specs record it. Track A items A1–A4 and A6–A10 are in `specs/001-firearms-inventory/` (FR-003/004, FR-031 to FR-039), and B1 is `specs/002-firearm-identification/`. Both features' `tasks.md` are fully checked off. The remaining items keep their original labels, so the gaps in numbering are expected.
+
+B4 (multiple databases, location, backups) and B5 (passphrase, portability, optional keyring) were removed 2026-09-25: they are being specified together as `specs/003-database-protection-management/`, whose `## Source Request` section carries everything this file recorded for them.
 
 ---
 
@@ -37,9 +39,11 @@ Everything that has shipped was taken out of this file; the specs record it. Tra
 
 ## Track B — New specs (proposed)
 
-Suggested order: B2 first. B8 (NFA and other regulated item types) should follow B2, since it extends the type→action mapping. **B5 (passphrase, portability) before B4 (multiple databases, backups)**, since B5 defines the unlock model and file format B4 builds on; B3 (document viewing) can fold into B5's threat model or stand alone; B6 comes last.
+**Feature numbers are assigned when an item is specified, not here.** The items below carry a `TBD-` placeholder instead of a number. When one is specified, `/speckit-specify` gives it the next free number (one above the highest in `specs/`), so the number follows the order in which specs are actually written.
 
-### B2. `003-classification-vocabularies` — cartridges, action types, and suggestion picklists
+Suggested order: B2 first. B8 (NFA and other regulated item types) should follow B2, since it extends the type→action mapping. B3 (document viewing) stands alone and can go at any point; B6 comes last.
+
+### B2. `TBD-classification-vocabularies` — cartridges, action types, and suggestion picklists
 
 Supersedes/amends: spec Assumptions ("caliber is a structured field… user-entered"), FR-001 (adds cartridge and optional action type), FR-012 (grouping by caliber; adds action type), data-model `caliber TEXT` (plus new cartridge column, `ActionType` and type→action tables), spreadsheet `caliber` column (plus `cartridge`, `action_type`), `FirearmSummary`, FTS index.
 
@@ -71,70 +75,21 @@ Supersedes/amends: spec Assumptions ("caliber is a structured field… user-ente
     - **UI:** show catalog entries and the user's own entries in one narrowing list, but visually distinguish the source (e.g. a "built-in" marker or grouping) so the catalog can act as the formatting hint. Matching should be forgiving of leading dots and separators ("30" or ".30" finds ".30-30" and ".30 Carbine") and use the abbreviation/initialism modes above.
     - **Precedent, not a conflict:** `FirearmType` *is* seeded into the DB (migration 0003) because it is a real lookup table with an FK from `firearms`. Cartridge is deliberately different: no FK, free-text on the record.
 
-### B3. `004-document-viewing` (or fold into B5) — in-app preview & external-open consent
+### B3. `TBD-document-viewing` — in-app preview & external-open consent
 
 - [feature/bug] Ideally it would be previewable within the program rather than opening an external viewer - but the user should be able to say what it is they want / open externally has an extra step and notify the users of the potential consequences. *(part 2 of the open_document item)*
   - **Why new:** a new user-facing behavior (preview component, a preference, a consent step) beyond FR-010's "reopen from the record". PDF/image preview in a webview has its own security review (malicious PDFs, CSP). The bug half (deleting decrypted copies at exit) shipped as FR-035.
 
-### B4. `005-database-management` — multiple databases, location, backups
-
-Supersedes/amends: FR-021 (storage location), plan (single DB in OS app-data dir). Builds on B5 (unlock model).
-
-- [feature] Users might have more than one database - need a way to choose the database including the location where it is stored
-- [feature] there needs to be a way to have backups of the database in case of accidental corruption, but the database could get to be large depending on how many picture and attachment BLOBs are stored. So unsure if it should make a copy for every session or not? I'm thinking about a sort of log rotation system or where the database file is copied and has a datestamp appended to the name or as a file extension suffix. If the backup is going to take more than some set amount of (very short) time - estimate based on size? - then the user needs a visual indication that this is happening. The user also needs to be able to opt out of this feature.
-  - **Dependencies:** (1) *Resolved by B5:* with a passphrase-derived key (B5) a backup is just a copy of the database file and opens anywhere with the passphrase. Note backups keep whatever passphrase was current when they were made, so after a passphrase change older backups still need the old one; say so in the UI. (2) Each database has its own passphrase and its own optional keyring entry; the recent-databases list is machine-local. (3) Backups are still encrypted, but destination and retention are user-visible privacy questions (constitution V "what leaves the device"). (4) The progress indicator falls under constitution IV. (5) Relationship to the existing spreadsheet export, which SC-005 already calls a "backup": that is a data export, not a corruption backup. (6) Do B5 first: it changes the file/unlock model that this spec builds on.
-
-### B5. `006-database-protection-portability` — passphrase, portability, optional keyring (do this before B4)
-
-Supersedes: research §5 (random key generated at first run and held in the OS keyring, with silent unlock), and the alternative it rejected ("user-supplied master password… out of scope here"). Amends: plan.md Constitution Check row V (keyring), `encryption_test.rs` (keyring + SQLCipher), the spec Assumption "no accounts, login", quickstart first-run flow. Left out of 001 on purpose: 001 should not claim portability until this ships.
-
-- [feature] Users are going to want to be able to select their own password. The application might be used on a shared PC account etc.
-- **Added 2026-09-20 (new requirement, from discussion):** the user must be able to take their database to another computer, run the app there, and have all their data. That cannot work while the actual key lives in a system keyring. So: the user provides a passphrase; the database's protection derives from it (or it protects the key), and everything needed to open the database travels with it. Storing the passphrase in the OS keyring is an **optional, opt-in convenience** for users who accept the security implications.
-
-**Decided**
-- **Portability guarantee** (new requirement): database file(s) + passphrase opens on any supported OS/machine, with no dependency on machine-local secret storage. Verified by a cross-platform test (create on one OS, open on another), which the CI matrix in C2 can run.
-- **No key in the keyring by default.** The keyring may hold *the passphrase* only, only when the user opts in, and per database.
-- **Opt-in must disclose the implication:** anyone who can use that OS account (or with the keyring unlocked) can open the database, which defeats the passphrase on a shared PC account. Default off. Provide "forget saved passphrase". Update or clear the stored copy when the passphrase changes. If no keyring service is available (some Linux setups), the option is shown as unavailable with an explanation.
-- **Passphrase is mandatory** for every database: constitution "Security & Data Handling" requires encryption at rest, so there is no "no passphrase" mode. Never logged; held in memory only as long as needed.
-- **Scope: personal, non-commercial.** One passphrase per database. No multi-user unlock and no recovery key in the first release; anyone else with access is a close confidant who shares the passphrase. Commercial use (dealers, several operators, audit trails) has its own set of concerns and is out of scope. This matches 001's existing "single-user, personal application" Assumption; B5 amends only its "no accounts, login" part.
-- **Changing the passphrase is copy-then-swap.** Re-encrypt into a new file under the new passphrase, verify it (opens with the new passphrase, integrity check, row counts match), then atomically replace. The original is untouched until then, so a failure or interruption leaves the working database intact; that is the built-in backup. Needs free space about equal to the database size and a progress indication. **Decided 2026-09-20:** after a verified swap the old file is **deleted by default, with no extra prompt**, so the whole operation is as transparent to the user as possible. Deletion uses **secure deletion where the OS supports it** (best effort: overwrite, flush, then unlink, plus a TRIM/discard hint where available). If the old file cannot be removed, the operation still succeeds, but the user is told the old file remains, where it is, and that it is readable with the old passphrase.
-- **Security disclosure (dialogs and documentation, "within reason").** Keep the in-dialog text short and put the detail in the user docs. It should say: (1) secure deletion is best effort and cannot be guaranteed on SSDs, journaling or copy-on-write filesystems, filesystem snapshots, or cloud-synced folders; (2) the deleted old copy was still encrypted under the old passphrase, so the risk exists only if that passphrase was compromised; (3) backups and copies made earlier, elsewhere, are not touched and still open with the passphrase current when they were made.
-- **Recommend whole-disk encryption in addition to the passphrase.** It is the strongest complement: BitLocker (Windows), FileVault (macOS), LUKS or equivalent (Linux). It protects what the app cannot control: freed blocks that secure deletion missed, decrypted temporary copies from `open_document` (deleted on exit per FR-035; see B3), swap and hibernation files, and stolen-device scenarios. State this in the user docs and in a one-time, dismissible note at first run or database creation (consistent with constitution III, no repeated nagging). The app does not try to detect or enforce disk encryption; detection isn't reliable across platforms.
-- **Shared helper:** reuse the existing best-effort secure-delete service (`src-tauri/src/services/secure_delete.rs`, built for FR-035's decrypted document copies) for the old database file.
-
-**Decided 2026-09-20 — mechanism: the passphrase is the SQLCipher key directly (single self-contained file).**
-- SQLCipher stores its random KDF salt in the first bytes of the database file and derives the key from the passphrase (PBKDF2-HMAC-SHA512, high iteration count in SQLCipher 4 defaults; verify against the bundled version). The file is therefore **self-contained: one file + passphrase = data.** No custom crypto and nothing to lose besides the file. This matches the constitution's "platform-standard encryption".
-- **Why not "passphrase encrypts a random key, stored in or alongside the database":** SQLCipher encrypts the file from byte 0, so a wrapped key cannot live *inside* the database (you'd need the key to read it). It would have to be a **sidecar file** (two files that must stay together; losing the sidecar loses everything) or a custom container format. What it buys: changing the passphrase is instant (re-wrap only), multiple unlock methods, an optional recovery key. What it costs: a second artifact, custom key-wrapping code to design and audit, more ways to fail. Those benefits are not required now and can be added later if wanted.
-- **Cost of this approach (accepted):** changing the passphrase re-encrypts the whole file (`PRAGMA rekey` or export to a new file), proportional to size (photo BLOBs), so it needs progress indication (constitution IV) and should be done copy-then-swap so an interruption can't destroy the database.
-- **Measured cost of re-encrypting (2026-09-20), so the trade-off isn't abstract.** Benchmark: rusqlite with the same bundled SQLCipher as the app, 2 GiB of incompressible 4 MB blobs (photo-like), on a Ryzen 9 5900X with AES-NI and `/tmp` on tmpfs (so essentially no disk I/O, i.e. a best case). Results: in-place `PRAGMA rekey` **15 s (140 MiB/s)**; `sqlcipher_export` to a new file **9 s (229 MiB/s)**; opening a database including key derivation **0.09 s**. SQLCipher is single-threaded, so core count doesn't help. Extrapolation to a modest ~5-year-old laptop assumes roughly half the single-thread speed (an estimate, not measured): copy-then-swap about 1 GiB ≈ 10 s, 5 GiB ≈ 50 s, 20 GiB ≈ 3 min on an SSD; roughly 2.5-4x longer on a hard disk. Practical notes: copy-then-swap needs free disk space about equal to the database size for the duration; `sqlcipher_export` is one blocking call with no progress callback, so a progress bar needs a chunked copy or a size-based estimate; the per-open key-derivation cost is small enough that the iteration count could be raised substantially.
-- **Considered and set aside (2026-09-20), kept for reference: making a two-file variant one unit.** Moot now that a single file was chosen; revisit only if a recovery key or multi-person unlock is ever wanted.
-  - *Zip container:* SQLite/SQLCipher needs a seekable, in-place-writable file (plus journal/WAL), so a database inside a zip, even a zero-compression one, must be **extracted to a working file to be used**, then repacked. Costs: copy time and double disk use on a photo-heavy database, ZIP64 for entries over 4 GiB, and two sources of truth, so a crash or power loss mid-session leaves changes in the working copy and not the archive (needs recovery logic). The extracted database is still encrypted, so extraction alone is not a plaintext leak.
-  - *Better ways to keep the pair together:* (a) a **database folder** (e.g. `Name.hoplodex/` holding the database and the key file) that is copied as one item, with no extraction; (b) a zip only as a **transport bundle** ("Export portable bundle" and open-from-bundle), not the working format; (c) a custom single-file container via a SQLite VFS (SQLite's tree has an optional "append" VFS extension; not in standard builds, would need compiling, registering and verifying against SQLCipher), which is the riskiest.
-  - *Security nuance of key-wrapping:* changing the passphrase re-wraps the same data key, so an old passphrase plus an old copy of the key file still opens the database forever, unless the data key is rotated (a full re-encrypt again). The direct-passphrase approach re-encrypts on change, so the old passphrase stops working for the new file (old backups keep it).
-  - *Stakes are low either way:* the app is unreleased, so switching approaches later costs a spec, not user data.
-
-**Consequences to carry into the spec**
-- **Security trade-off, stated plainly:** a random 256-bit keyring key could not be brute-forced offline; a passphrase-derived key can. Because the file is now portable (and copyable, e.g. in a backup), **passphrase strength determines security.** Require a minimum length, show a strength hint, encourage long passphrases; raising the KDF iteration count is cheap. No composition rules.
-- **No recovery by design:** a forgotten passphrase means unrecoverable data. Say so at creation, ideally asking the user to confirm they've stored it. (The unencrypted spreadsheet export is the only escape hatch and carries its own disclosure, constitution V.)
-- **Pin cipher settings explicitly** (page size, KDF iterations, HMAC/KDF algorithm, i.e. SQLCipher compatibility mode) so every platform and build writes and reads the same format.
-- **Forward-compat guard:** an older app opening a database with a newer schema must refuse with a clear message rather than modify it. The `schema_migrations` table already records applied migrations. Full backward-migration policy is moot (app unreleased).
-- **Wrong passphrase looks like corruption** to SQLCipher ("file is not a database"). The UI can only say "incorrect passphrase, or not a HoploDex database". No meaningful offline attempt limiting.
-- **First run changes:** creating a database now includes choosing a passphrase, and every launch (or opening a database) prompts for it unless the user opted into the keyring. Replaces the "silent unlock" of research §5.
-- **Machine-local settings stay outside the database:** recent-databases list, keyring opt-in flags, backup opt-out. Only the data travels.
-- **Deferred (2026-09-20): auto-lock.** A "lock now" command and lock-after-idle are moved out of B5 into a future, as-yet-undefined feature. B5 still has to leave room for it (an unlock/lock state the app can return to).
-- **Related threat surface:** decrypted temp copies from `open_document` are exposed on a shared account regardless of passphrase until they are deleted at exit (FR-035); B3 covers the preview/consent side.
-
-### B6. `007-undo-history` — general change history / undo
+### B6. `TBD-undo-history` — general change history / undo
 
 - [feature] need an undo system, or otherwise some way to roll back changes. *(general system; the un-dispose example shipped as `reverse_disposition`, FR-033)*
-  - **Tension with 001:** constitution V and the data-model require deletes to be real (no soft-delete). An undo/audit log that retains prior values, or deleted records, contradicts that unless scoped (for example: undo covers edits and dispositions only; delete stays permanent, or is undoable only within a short session window with an explicit purge). Decide that first. Do this after B4, since a history table grows the DB and interacts with backup size.
+  - **Tension with 001:** constitution V and the data-model require deletes to be real (no soft-delete). An undo/audit log that retains prior values, or deleted records, contradicts that unless scoped (for example: undo covers edits and dispositions only; delete stays permanent, or is undoable only within a short session window with an explicit purge). Decide that first. Do this after feature 003 (database protection and management), since a history table grows the DB and interacts with backup size.
 
 ---
 
 ### B7. (as-yet-undefined) storage locations and per-location policies
 
 - **Added 2026-09-20 (from the implicit-blanket-coverage discussion, FR-036):** designate firearm storage locations, and attach locations to insurance policies. 001 now assumes all firearms are kept in one place, which is why at most one blanket policy can be in force (FR-036). This feature would revisit that (one in force *per location*) and would be the natural home for excluding a firearm from blanket coverage. Not specified yet.
-- **Also deferred (from B5):** auto-lock ("lock now" and lock-after-idle).
 
 ### B8. (as-yet-undefined) NFA and other regulated item types — suppressors and similar
 
@@ -158,7 +113,7 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
 ### C1. Test isolation — constitution amendment still to do
 
 - [dev] Running tests should use a database (and any other similar files) isolated from the actual system one. The developers use this app too and don't want their databases overwritten or modified by the test
-  - **Isolation is implemented** (throwaway `XDG_*` directories and the mock keyring for E2E, screenshots and human testing; see "Test isolation" in `DEVELOPMENT.md`). **Remaining:** amend the constitution's Testing Standards with "tests MUST NOT read or write the user's real database or keyring entry" (`/speckit-constitution`). After B5 the keyring is opt-in and tests use a fixed test passphrase. The data-dir override is also the mechanism B4 needs for choosing a DB location, so build it once.
+  - **Isolation is implemented** (throwaway `XDG_*` directories and the mock keyring for E2E, screenshots and human testing; see "Test isolation" in `DEVELOPMENT.md`). **Remaining:** amend the constitution's Testing Standards with "tests MUST NOT read or write the user's real database or keyring entry" (`/speckit-constitution`). After feature 003 (database protection and management) the keyring is opt-in and tests use a fixed test passphrase. The data-dir override is also the mechanism feature 003 needs for choosing a DB location, so build it once.
 
 ### C2. CI / release engineering
 
@@ -184,7 +139,7 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
 ### C6. Database migration strategy (post-1.0)
 
 - [infrastructure] After the first release, any non-backwards-compatible changes to the data model will require a database migration path for existing user databases, and a major version bump (semver) to signal the breaking change.
-  - **Scope:** moot until 1.0 ships and production databases exist. The current `schema_migrations` table tracks applied migrations, and the forward-compat guard in B5 (schema version check at open) provides the groundwork. Post-release, establish a versioning policy: define what constitutes a breaking vs. compatible schema change, how migrations are authored and tested, and the UI flow when a user's database is on an older schema than the app (prompt to back up, show migration summary, apply, or defer to next major version). Until then, dev and early-access databases are recreated as specs change; no migration burden. Document the eventual policy in the constitution once 1.0 nears.
+  - **Scope:** moot until 1.0 ships and production databases exist. The current `schema_migrations` table tracks applied migrations, and the forward-compat guard in feature 003 (FR-014, schema version check at open) provides the groundwork. Post-release, establish a versioning policy: define what constitutes a breaking vs. compatible schema change, how migrations are authored and tested, and the UI flow when a user's database is on an older schema than the app (prompt to back up, show migration summary, apply, or defer to next major version). Until then, dev and early-access databases are recreated as specs change; no migration burden. Document the eventual policy in the constitution once 1.0 nears.
 
 ### C7. Dependency vulnerability policy — constitution amendment still to do
 
