@@ -24,7 +24,9 @@ The developer uses the app day to day. Their real encrypted DB is at `~/.local/s
 
 ## Commit and push
 
-When the user says "commit and push", commit every change git doesn't ignore: modified, deleted and untracked files, including changes made before the session started or outside it, not only your own. Review `git status` and `git diff` first. Stop and ask if something looks like it shouldn't be committed, such as secrets, credentials, large binaries or stray scratch files.
+Commit and push automatically whenever you finish implementing something the user directed, without waiting for them to separately say "commit and push". Commit every change git doesn't ignore: modified, deleted and untracked files, including changes made before the session started or outside it, not only your own. Review `git status` and `git diff` first. Stop and ask if something looks like it shouldn't be committed, such as secrets, credentials, large binaries or stray scratch files.
+
+Never push to `main`. If the current branch is `main`, create a new branch first (name it for the work) before committing and pushing.
 
 ## Architecture
 
