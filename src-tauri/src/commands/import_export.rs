@@ -8,6 +8,7 @@ use tauri::{Emitter, State};
 
 use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
+use crate::models::database::OperationKind;
 use crate::models::firearm::{
     validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
@@ -126,18 +127,72 @@ pub mod ops {
         firearm_ids: &[i64],
         on_progress: &mut dyn FnMut(usize, usize),
     ) -> Result<ExportResult, CommandError> {
+        let never = || false;
+        export_collection_stoppable(
+            conn,
+            destination_folder,
+            base_name,
+            format,
+            firearm_ids,
+            on_progress,
+            &never,
+        )
+    }
+
+    /// [`export_collection`], checking `is_cancelled` between rows. A
+    /// stopped export removes the photos folder it made, and never gets to
+    /// the spreadsheet, which is written last; it fails with
+    /// `OPERATION_STOPPED` (FR-037).
+    pub fn export_collection_stoppable(
+        conn: &Connection,
+        destination_folder: &Path,
+        base_name: &str,
+        format: SpreadsheetFormat,
+        firearm_ids: &[i64],
+        on_progress: &mut dyn FnMut(usize, usize),
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<ExportResult, CommandError> {
         let photos_folder_path = destination_folder.join(format!("{base_name}_photos"));
-        std::fs::create_dir_all(&photos_folder_path).map_err(|e| {
-            CommandError::new("INTERNAL_ERROR", format!("Could not create the photos folder: {e}"))
-        })?;
         let spreadsheet_path =
             destination_folder.join(format!("{base_name}.{}", format.extension()));
+        // Only what this export made is removed if it stops.
+        let made_folder = !photos_folder_path.exists();
+        let exported = export_rows(
+            conn,
+            &photos_folder_path,
+            &spreadsheet_path,
+            format,
+            firearm_ids,
+            on_progress,
+            is_cancelled,
+        );
+        if exported.as_ref().is_err_and(|err| err.code == "OPERATION_STOPPED") && made_folder {
+            let _ = std::fs::remove_dir_all(&photos_folder_path);
+        }
+        exported
+    }
+
+    fn export_rows(
+        conn: &Connection,
+        photos_folder_path: &Path,
+        spreadsheet_path: &Path,
+        format: SpreadsheetFormat,
+        firearm_ids: &[i64],
+        on_progress: &mut dyn FnMut(usize, usize),
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<ExportResult, CommandError> {
+        std::fs::create_dir_all(photos_folder_path).map_err(|e| {
+            CommandError::new("INTERNAL_ERROR", format!("Could not create the photos folder: {e}"))
+        })?;
 
         let total = firearm_ids.len();
         let mut rows = Vec::with_capacity(total);
         let mut exported_photo_count = 0usize;
 
         for (index, &firearm_id) in firearm_ids.iter().enumerate() {
+            if is_cancelled() {
+                return Err(CommandError::operation_stopped(OperationKind::Export, None, None));
+            }
             let firearm = firearm_ops::get_firearm(conn, firearm_id)?;
             let firearm_type_name: String = conn
                 .query_row(
@@ -217,11 +272,14 @@ pub mod ops {
             on_progress(index + 1, total);
         }
 
-        write_spreadsheet(&spreadsheet_path, format, &rows)?;
+        if is_cancelled() {
+            return Err(CommandError::operation_stopped(OperationKind::Export, None, None));
+        }
+        write_spreadsheet(spreadsheet_path, format, &rows)?;
 
         Ok(ExportResult {
-            spreadsheet_path,
-            photos_folder_path,
+            spreadsheet_path: spreadsheet_path.to_owned(),
+            photos_folder_path: photos_folder_path.to_owned(),
             exported_firearm_count: firearm_ids.len(),
             exported_photo_count,
         })
@@ -398,6 +456,23 @@ pub mod ops {
         store: &ImportSessionStore,
         on_progress: &mut dyn FnMut(usize, usize),
     ) -> Result<ImportResult, CommandError> {
+        let never = || false;
+        import_collection_stoppable(conn, file_path, format, store, on_progress, &never, &|_| {})
+    }
+
+    /// [`import_collection`], checking `is_cancelled` between rows and
+    /// reporting each imported row to `record_imported`. Each row is saved
+    /// on its own, so a stop keeps every row imported before it, and fails
+    /// with `OPERATION_STOPPED` and their number (FR-037).
+    pub fn import_collection_stoppable(
+        conn: &Connection,
+        file_path: &Path,
+        format: SpreadsheetFormat,
+        store: &ImportSessionStore,
+        on_progress: &mut dyn FnMut(usize, usize),
+        is_cancelled: &dyn Fn() -> bool,
+        record_imported: &dyn Fn(u64),
+    ) -> Result<ImportResult, CommandError> {
         let raw_rows = read_spreadsheet(file_path, format)?;
         let total = raw_rows.len();
         let session_id = format!("import-{}", chrono::Utc::now().timestamp_micros());
@@ -409,6 +484,13 @@ pub mod ops {
         let mut warnings = Vec::new();
 
         for (index, raw) in raw_rows.iter().enumerate() {
+            if is_cancelled() {
+                return Err(CommandError::operation_stopped(
+                    OperationKind::Import,
+                    Some(imported_count as u64),
+                    None,
+                ));
+            }
             let row_number = index + 1;
             match parse_row(conn, raw) {
                 Err(message) => row_errors.push(RowError { row: row_number, message }),
@@ -446,6 +528,7 @@ pub mod ops {
                         None => match firearm_ops::create_firearm(conn, &input, true) {
                             Ok(created) => {
                                 imported_count += 1;
+                                record_imported(imported_count as u64);
                                 if let Some(message) = original_marks_warning(conn, &created)? {
                                     warnings.push(RowError { row: row_number, message });
                                 }
@@ -615,6 +698,8 @@ pub async fn export_collection(
     app: tauri::AppHandle,
     session: State<'_, Session>,
 ) -> Result<ExportResult, CommandError> {
+    // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+    let operation = session.operations().begin(OperationKind::Export, None)?;
     session.read(|conn| {
         let format = parse_format(&input.format)?;
         let firearm_ids = if input.scope == "filtered" {
@@ -626,7 +711,7 @@ pub async fn export_collection(
         };
 
         let base_name = format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-        ops::export_collection(
+        ops::export_collection_stoppable(
             conn,
             Path::new(&input.destination_folder),
             &base_name,
@@ -636,6 +721,7 @@ pub async fn export_collection(
                 let _ =
                     app.emit("export_collection:progress", ProgressPayload { processed, total });
             },
+            &|| operation.is_cancelled(),
         )
     })
 }
@@ -654,9 +740,11 @@ pub async fn import_collection(
     session: State<'_, Session>,
     session_store: State<'_, ImportSessionStore>,
 ) -> Result<ImportResult, CommandError> {
+    // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+    let operation = session.operations().begin(OperationKind::Import, None)?;
     session.write(|conn| {
         let format = parse_format(&input.format)?;
-        ops::import_collection(
+        ops::import_collection_stoppable(
             conn,
             Path::new(&input.file_path),
             format,
@@ -665,6 +753,8 @@ pub async fn import_collection(
                 let _ =
                     app.emit("import_collection:progress", ProgressPayload { processed, total });
             },
+            &|| operation.is_cancelled(),
+            &|imported| operation.record_done(imported),
         )
     })
 }

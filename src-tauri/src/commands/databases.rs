@@ -11,7 +11,8 @@ use tauri::{AppHandle, Manager, State};
 use crate::commands::CommandError;
 use crate::models::database::{
     BackupLocationInput, BackupSettingsInput, ChooserState, CloseOutcome, CloseReason,
-    CollectionSettings, DatabaseStatus, NoteKind, PassphraseSaved, RecentDatabase, RecentRemoved,
+    CollectionSettings, DatabaseStatus, Draft, IdlePauseReason, LockSettingsInput, NoteKind,
+    PassphraseSaved, PendingAction, PendingResolved, RecentDatabase, RecentRemoved,
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
@@ -28,16 +29,18 @@ pub mod ops {
     use crate::commands::CommandError;
     use crate::db;
     use crate::models::database::{
-        validate_backup_settings_input, validate_create_database_input, BackupLocation,
-        BackupLocationKind, BackupSettings, BackupSettingsInput, ChooserState, CloseOutcome,
-        CloseReason, CollectionSettings, DatabaseNotes, DatabaseStatus, LockSettings, NoteKind,
-        OperationKind, PassphraseSaved, RecentDatabase, RecentRemoved, SuggestedLocation,
+        validate_backup_settings_input, validate_create_database_input,
+        validate_lock_settings_input, BackupLocation, BackupLocationKind, BackupSettings,
+        BackupSettingsInput, ChooserState, CloseOutcome, CloseReason, CollectionSettings,
+        DatabaseNotes, DatabaseStatus, Draft, IdlePauseReason, LockSettings, LockSettingsInput,
+        NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
+        RecentRemoved, SuggestedLocation,
     };
     use crate::services::backups;
     use crate::services::machine_settings::{MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
-    use crate::session::lifecycle;
     use crate::session::operations::Operations;
+    use crate::session::{lifecycle, pending};
     use crate::session::{OpenDatabase, Session};
 
     /// The name the create dialog suggests (research.md §19).
@@ -69,7 +72,8 @@ pub mod ops {
     /// The chooser's state (FR-012, FR-020, FR-021). The selected row is the
     /// database just closed or locked (FR-033), or else the most recent.
     /// Whether passphrases can be saved here is probed the first time it is
-    /// asked (FR-019). The screen-lock flag stays off until User Story 6.
+    /// asked (FR-019); whether the screen lock is reported, when the
+    /// system-events listener started (FR-038).
     pub fn chooser_state(
         session: &Session,
         machine: &MachineSettings,
@@ -86,7 +90,7 @@ pub mod ops {
             selected_path,
             recent,
             keyring_available: machine.keyring().is_available(),
-            screen_lock_supported: false,
+            screen_lock_supported: crate::platform::screen_lock_supported(),
             suggested: SuggestedLocation {
                 folder: suggested_folder(documents, home).to_string_lossy().into_owned(),
                 name: SUGGESTED_NAME.to_owned(),
@@ -371,7 +375,7 @@ pub mod ops {
             passphrase_saved,
             keyring_available: machine.keyring().is_available(),
             settings: collection_settings(&open.conn, &open.path)?,
-            pending_changes: None,
+            pending_changes: pending::summary(&open.conn)?,
             notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },
         })
     }
@@ -421,7 +425,7 @@ pub mod ops {
     /// session. Dismissing is housekeeping, not a change to back up.
     pub fn dismiss_note(session: &Session, note: NoteKind) -> Result<(), CommandError> {
         match note {
-            NoteKind::DiskEncryption => session.write(|conn| {
+            NoteKind::DiskEncryption => session.write_housekeeping(|conn| {
                 conn.execute("UPDATE app_state SET disk_encryption_note_dismissed = 1", [])
                     .map(|_| ())
                     .map_err(CommandError::from_db)
@@ -466,6 +470,74 @@ pub mod ops {
         if operations.running_kind() == Some(OperationKind::Backup) {
             operations.stop_running();
         }
+    }
+
+    /// Saves the lock settings (FR-034, FR-038), a change to the collection
+    /// (FR-025). They take effect at once: the idle time starts again.
+    pub fn update_lock_settings(
+        session: &Session,
+        input: &LockSettingsInput,
+    ) -> Result<CollectionSettings, CommandError> {
+        validate_lock_settings_input(input)?;
+        session.write(|conn| {
+            conn.execute(
+                "UPDATE collection_settings
+                 SET idle_lock_enabled = ?1, idle_lock_minutes = ?2, lock_on_screen_lock = ?3",
+                rusqlite::params![input.idle_enabled, input.idle_minutes, input.on_screen_lock],
+            )
+            .map(|_| ())
+            .map_err(CommandError::from_db)
+        })?;
+        let settings = LockSettings {
+            idle_enabled: input.idle_enabled,
+            idle_minutes: input.idle_minutes,
+            on_screen_lock: input.on_screen_lock,
+        };
+        session.inspect_mut(|open| {
+            open.lock_settings = settings.clone();
+            Ok(())
+        })?;
+        session.idle().start(settings, session.clock().now());
+        session.inspect(|open| collection_settings(&open.conn, &open.path))
+    }
+
+    /// "Lock now" (FR-033, FR-035): `draft`, the form's unsaved input, is
+    /// kept as pending changes, then the database closes as a lock. No
+    /// confirmation.
+    pub fn lock_database(
+        session: &Session,
+        machine: &MachineSettings,
+        draft: Option<Draft>,
+    ) -> Result<CloseOutcome, CommandError> {
+        lifecycle::lock(session, machine, CloseReason::LockedByUser, draft)
+    }
+
+    /// Mirrors the open form's unsaved input into memory, for a lock the
+    /// backend starts on its own (research.md §16). `None` clears it.
+    pub fn stage_pending_changes(
+        session: &Session,
+        draft: Option<Draft>,
+    ) -> Result<(), CommandError> {
+        pending::stage(session, draft)
+    }
+
+    /// Resumes or discards the pending changes (FR-039).
+    pub fn resolve_pending_changes(
+        session: &Session,
+        action: PendingAction,
+    ) -> Result<PendingResolved, CommandError> {
+        Ok(PendingResolved { draft: pending::resolve(session, action)? })
+    }
+
+    /// Input to the application's windows restarts the idle time (FR-035).
+    pub fn note_activity(session: &Session) {
+        session.idle().note_activity(session.clock().now());
+    }
+
+    /// A native file or folder dialog opened or closed: the idle clock
+    /// pauses while it is open (research.md §15).
+    pub fn set_idle_paused(session: &Session, reason: IdlePauseReason, paused: bool) {
+        session.idle().set_paused(reason, paused, session.clock().now());
     }
 }
 
@@ -628,5 +700,59 @@ pub async fn update_backup_settings(
 #[tauri::command]
 pub async fn skip_backup(session: State<'_, Session>) -> Result<(), CommandError> {
     ops::skip_backup(session.operations());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_lock_settings(
+    idle_enabled: bool,
+    idle_minutes: i64,
+    on_screen_lock: bool,
+    session: State<'_, Session>,
+) -> Result<CollectionSettings, CommandError> {
+    ops::update_lock_settings(
+        &session,
+        &LockSettingsInput { idle_enabled, idle_minutes, on_screen_lock },
+    )
+}
+
+#[tauri::command]
+pub async fn lock_database(
+    draft: Option<Draft>,
+    session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
+) -> Result<CloseOutcome, CommandError> {
+    ops::lock_database(&session, &machine, draft)
+}
+
+#[tauri::command]
+pub async fn stage_pending_changes(
+    draft: Option<Draft>,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    ops::stage_pending_changes(&session, draft)
+}
+
+#[tauri::command]
+pub async fn resolve_pending_changes(
+    action: PendingAction,
+    session: State<'_, Session>,
+) -> Result<PendingResolved, CommandError> {
+    ops::resolve_pending_changes(&session, action)
+}
+
+#[tauri::command]
+pub async fn note_activity(session: State<'_, Session>) -> Result<(), CommandError> {
+    ops::note_activity(&session);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_idle_paused(
+    reason: IdlePauseReason,
+    paused: bool,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    ops::set_idle_paused(&session, reason, paused);
     Ok(())
 }

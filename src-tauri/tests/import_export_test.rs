@@ -971,3 +971,100 @@ mod identification_spreadsheet {
         assert!(result.warnings[0].message.contains("Ridgeline Arms"), "{:?}", result.warnings);
     }
 }
+
+// --- Stopped by a sleep (FR-037, research.md §13) ----------------------------
+
+#[test]
+fn a_stopped_import_keeps_the_rows_imported_before_it() {
+    let db = TestDb::new();
+    let dir = TempDir::new().unwrap();
+    let store = ImportSessionStore::new();
+    let rows: Vec<String> =
+        (1..=5).map(|n| csv_firearm("Colt", "Python", &format!("P{n}"), &[])).collect();
+    let path = write_csv(&dir, &csv_file(&rows));
+    let cancelled = std::cell::Cell::new(false);
+    let recorded = std::cell::Cell::new(0);
+
+    let stopped = import_export_ops::import_collection_stoppable(
+        &db.conn,
+        &path,
+        SpreadsheetFormat::Csv,
+        &store,
+        // Asked to stop once three rows are done.
+        &mut |done, _| cancelled.set(done == 3),
+        &|| cancelled.get(),
+        &|imported| recorded.set(imported),
+    )
+    .unwrap_err();
+
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    let details = stopped.details.as_deref().unwrap();
+    assert_eq!(details["operation"], "import");
+    assert_eq!(details["importedCount"], 3);
+    assert_eq!(recorded.get(), 3);
+    let serials: Vec<String> = db
+        .conn
+        .prepare("SELECT serial_number FROM firearms ORDER BY serial_number")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(serials, ["P1", "P2", "P3"], "each imported row is kept whole");
+}
+
+#[test]
+fn a_stopped_export_removes_its_partial_output() {
+    let db = TestDb::new();
+    let dest = TempDir::new().unwrap();
+    let ids: Vec<i64> = ["A1", "A2", "A3"]
+        .iter()
+        .map(|serial| {
+            firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", serial), false)
+                .unwrap()
+                .id
+        })
+        .collect();
+    let cancelled = std::cell::Cell::new(false);
+
+    let stopped = import_export_ops::export_collection_stoppable(
+        &db.conn,
+        dest.path(),
+        "stopped",
+        SpreadsheetFormat::Csv,
+        &ids,
+        &mut |done, _| cancelled.set(done == 2),
+        &|| cancelled.get(),
+    )
+    .unwrap_err();
+
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    assert_eq!(stopped.details.as_deref().unwrap()["operation"], "export");
+    assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0, "nothing is left behind");
+}
+
+#[test]
+fn a_stopped_export_leaves_a_photos_folder_it_did_not_make() {
+    let db = TestDb::new();
+    let dest = TempDir::new().unwrap();
+    let existing = dest.path().join("stopped_photos");
+    std::fs::create_dir(&existing).unwrap();
+    std::fs::write(existing.join("mine.jpg"), b"not HoploDex's").unwrap();
+    let id = firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false)
+        .unwrap()
+        .id;
+
+    let stopped = import_export_ops::export_collection_stoppable(
+        &db.conn,
+        dest.path(),
+        "stopped",
+        SpreadsheetFormat::Csv,
+        &[id],
+        &mut |_, _| {},
+        &|| true,
+    )
+    .unwrap_err();
+
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    assert!(existing.join("mine.jpg").exists());
+}

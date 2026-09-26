@@ -71,8 +71,13 @@ zbus = "5.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSDistributedNotificationCenter",
+    "NSNotification",
+    "NSString",
+] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWorkspace"] }
 
 [target.'cfg(windows)'.dependencies]
 # File identity for the take-over check (research.md §6). Unix uses `stat`
@@ -81,6 +86,8 @@ same-file = "1.0.6"
 windows-sys = { version = "0.61", features = [
     # FSCTL_SET_ZERO_DATA after a secure delete (research.md §12).
     "Win32_Foundation",
+    # The hidden window that receives power and session messages.
+    "Win32_Graphics_Gdi",
     "Win32_System_IO",
     "Win32_System_Ioctl",
     "Win32_System_Power",

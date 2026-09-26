@@ -5,8 +5,9 @@
 //! interrupt handle. The registry also pauses the idle clock (research.md
 //! §15).
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::Duration;
 
 use rusqlite::InterruptHandle;
 
@@ -17,12 +18,38 @@ struct Running {
     kind: OperationKind,
     cancel: AtomicBool,
     interrupt: Option<InterruptHandle>,
+    /// How far it got: rows imported, backups deleted.
+    done: AtomicU64,
 }
 
-/// Tauri state: the registry.
+/// Kept in the session.
 #[derive(Default)]
 pub struct Operations {
     running: Mutex<Option<Arc<Running>>>,
+    /// Signalled whenever an operation ends.
+    ended: Condvar,
+}
+
+/// An operation asked to stop, as the stopper sees it (FR-037): what it
+/// was and, once it has ended, how far it got.
+#[derive(Clone)]
+pub struct StoppedOperation(Arc<Running>);
+
+impl StoppedOperation {
+    pub fn kind(&self) -> OperationKind {
+        self.0.kind
+    }
+
+    /// What it recorded with [`OperationGuard::record_done`].
+    pub fn done(&self) -> u64 {
+        self.0.done.load(Ordering::SeqCst)
+    }
+}
+
+impl std::fmt::Debug for StoppedOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoppedOperation").field("kind", &self.0.kind).finish()
+    }
 }
 
 /// Registration of a running operation, removed when dropped.
@@ -47,6 +74,12 @@ impl OperationGuard<'_> {
     pub fn is_cancelled(&self) -> bool {
         self.running.cancel.load(Ordering::SeqCst)
     }
+
+    /// Records how far it has got (rows imported, backups deleted), for the
+    /// notice when a sleep stops it.
+    pub fn record_done(&self, done: u64) {
+        self.running.done.store(done, Ordering::SeqCst);
+    }
 }
 
 impl Drop for OperationGuard<'_> {
@@ -55,6 +88,7 @@ impl Drop for OperationGuard<'_> {
         if running.as_ref().is_some_and(|current| Arc::ptr_eq(current, &self.running)) {
             *running = None;
         }
+        self.operations.ended.notify_all();
     }
 }
 
@@ -75,7 +109,12 @@ impl Operations {
         if let Some(current) = running.as_ref() {
             return Err(CommandError::operation_in_progress(current.kind));
         }
-        let registered = Arc::new(Running { kind, cancel: AtomicBool::new(false), interrupt });
+        let registered = Arc::new(Running {
+            kind,
+            cancel: AtomicBool::new(false),
+            interrupt,
+            done: AtomicU64::new(0),
+        });
         *running = Some(Arc::clone(&registered));
         Ok(OperationGuard { operations: self, running: registered })
     }
@@ -97,12 +136,30 @@ impl Operations {
     /// Asks the running operation to stop, interrupting its statement, and
     /// returns what it was (FR-037).
     pub fn stop_running(&self) -> Option<OperationKind> {
+        self.stop().map(|stopped| stopped.kind())
+    }
+
+    /// Like [`stop_running`](Self::stop_running), keeping hold of the
+    /// operation to learn how far it got once it has ended.
+    pub fn stop(&self) -> Option<StoppedOperation> {
         let running = self.lock();
         let running = running.as_ref()?;
         running.cancel.store(true, Ordering::SeqCst);
         if let Some(interrupt) = &running.interrupt {
             interrupt.interrupt();
         }
-        Some(running.kind)
+        Some(StoppedOperation(Arc::clone(running)))
+    }
+
+    /// Waits up to `timeout` for `stopped` to end. Returns whether it has.
+    pub fn wait_ended(&self, stopped: &StoppedOperation, timeout: Duration) -> bool {
+        let running = self.lock();
+        let (_running, waited) = self
+            .ended
+            .wait_timeout_while(running, timeout, |running| {
+                running.as_ref().is_some_and(|current| Arc::ptr_eq(current, &stopped.0))
+            })
+            .expect("operations mutex poisoned");
+        !waited.timed_out()
     }
 }

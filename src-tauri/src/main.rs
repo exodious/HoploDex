@@ -1,26 +1,43 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::Duration;
 
 use hoplodex_lib::commands::documents::{clear_opened_documents_cache, OPENED_DOCUMENTS_DIR};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db;
+use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::session::Session;
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use hoplodex_lib::session::{lifecycle, Session};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 /// What the frontend is sent when the user closes the window or quits: it
 /// asks about unsaved changes, then calls `quit_application` (research.md
 /// §17).
 const QUIT_REQUESTED: &str = "app:quit-requested";
 
+/// The OS is shutting down or ending the application, so its exit request
+/// is let through rather than asked about (research.md §17).
+static OS_ENDING: AtomicBool = AtomicBool::new(false);
+
+/// The OS ends the application (FR-039): the open database closes at once,
+/// keeping unsaved input as pending changes before the key is cleared and
+/// decrypted document copies are deleted, with no backup; then it exits.
+fn end_for_the_os(app: &AppHandle) {
+    OS_ENDING.store(true, Ordering::SeqCst);
+    lifecycle::will_shut_down(&app.state::<Session>(), &app.state::<MachineSettings>());
+    app.exit(0);
+}
+
 /// A session shutdown (SIGTERM, SIGHUP) or Ctrl+C asks the app to exit. Left
 /// alone the process would just die, skipping the exit handler below, so route
-/// them through the normal exit path: decrypted document copies must not
-/// outlive the session even when the OS ends it (FR-035).
+/// them through the OS-ending path: pending changes are kept, and decrypted
+/// document copies must not outlive the session (FR-035, FR-039).
 #[cfg(unix)]
 fn exit_on_termination_signals(app: tauri::AppHandle) {
     use tokio::signal::unix::{signal, SignalKind};
@@ -38,8 +55,47 @@ fn exit_on_termination_signals(app: tauri::AppHandle) {
             _ = hangup.recv() => {}
             _ = interrupt.recv() => {}
         }
-        app.exit(0);
+        // The close waits on other threads, so it runs off the runtime.
+        tauri::async_runtime::spawn_blocking(move || end_for_the_os(&app));
     });
+}
+
+/// Hands the OS's notices to the session (research.md §14).
+fn handle_system_events(app: AppHandle, events: mpsc::Receiver<SystemEvent>) {
+    let spawned = thread::Builder::new().name("system-events".into()).spawn(move || {
+        for event in events {
+            let session = app.state::<Session>();
+            let machine = app.state::<MachineSettings>();
+            match event {
+                // The OS waits for `ack` to be dropped, once the lock is done.
+                SystemEvent::WillSleep { ack } => {
+                    lifecycle::will_sleep(&session, &machine);
+                    drop(ack);
+                }
+                SystemEvent::Woke => lifecycle::finish_on_wake(&session, &machine),
+                SystemEvent::ScreenLocked => lifecycle::screen_locked(&session, &machine),
+                SystemEvent::ScreenUnlocked => {}
+                SystemEvent::WillShutDown { ack } => {
+                    end_for_the_os(&app);
+                    drop(ack);
+                }
+            }
+        }
+    });
+    if let Err(err) = spawned {
+        log::error!("could not start handling system events: {err}");
+    }
+}
+
+/// The idle lock's 1 s tick (research.md §15).
+fn tick_idle_clock(app: AppHandle) {
+    let spawned = thread::Builder::new().name("idle-clock".into()).spawn(move || loop {
+        thread::sleep(Duration::from_secs(1));
+        lifecycle::idle_tick(&app.state::<Session>(), &app.state::<MachineSettings>());
+    });
+    if let Err(err) = spawned {
+        log::error!("could not start the idle clock: {err}");
+    }
 }
 
 fn main() {
@@ -65,6 +121,12 @@ fn main() {
             backups::sweep_unfinished(&machine);
             app.manage(machine);
             app.manage(ImportSessionStore::new());
+            // Sleep, wake, screen lock and shutdown (FR-037, FR-038), and
+            // the idle lock (FR-034).
+            let (sender, events) = mpsc::channel();
+            platform::spawn_listener(sender);
+            handle_system_events(app.handle().clone(), events);
+            tick_idle_clock(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -89,6 +151,12 @@ fn main() {
             hoplodex_lib::commands::databases::dismiss_note,
             hoplodex_lib::commands::databases::update_backup_settings,
             hoplodex_lib::commands::databases::skip_backup,
+            hoplodex_lib::commands::databases::update_lock_settings,
+            hoplodex_lib::commands::databases::lock_database,
+            hoplodex_lib::commands::databases::stage_pending_changes,
+            hoplodex_lib::commands::databases::resolve_pending_changes,
+            hoplodex_lib::commands::databases::note_activity,
+            hoplodex_lib::commands::databases::set_idle_paused,
             hoplodex_lib::commands::databases::save_passphrase,
             hoplodex_lib::commands::databases::forget_saved_passphrase,
             hoplodex_lib::commands::backups::list_backups,
@@ -131,7 +199,10 @@ fn main() {
             // An exit without a code is the user quitting (the application
             // menu, the last window): a request, like closing the window.
             // `quit_application` and the termination signals exit with one.
-            RunEvent::ExitRequested { code: None, api, .. } => {
+            // One the OS asks for as it shuts down is let through.
+            RunEvent::ExitRequested { code: None, api, .. }
+                if !OS_ENDING.load(Ordering::SeqCst) =>
+            {
                 api.prevent_exit();
                 if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
                     log::warn!("could not emit {QUIT_REQUESTED}: {err}");

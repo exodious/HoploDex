@@ -525,7 +525,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Tests for User Story 6 (mandatory per constitution)
 
-- [ ] T113 [P] [US6] Write `src-tauri/tests/pending_changes_test.rs` (FR-039, research §16), covering:
+- [X] T113 [P] [US6] Write `src-tauri/tests/pending_changes_test.rs` (FR-039, research §16), covering:
   - `stage_pending_changes` keeps the draft in memory only (no row written) and refuses a `values` of more than 1 MiB serialized, or an invalid `kind`/`mode` pair, with `VALIDATION_ERROR`
   - a lock writes the staged draft to `pending_changes` before the connection closes, and leaves `changes_waiting` unchanged; at sleep and shutdown (`close_immediate`) the same write also clears the marker, and with no draft staged the marker is still cleared, with no `pending_changes` row written
   - the next open reports `pendingChanges` (`resumable = false` when the target firearm or policy no longer exists)
@@ -534,7 +534,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - a backup made after a lock carries no pending changes
   - pending changes that cannot be written (read-only folder) still lock and push `pendingChangesLost`
   - a write refused by a take-over during the finish-on-wake is lost and reported (spec edge case)
-- [ ] T114 [P] [US6] Write `src-tauri/tests/lock_test.rs` (FR-033–FR-038, SC-010). Lock now:
+- [X] T114 [P] [US6] Write `src-tauri/tests/lock_test.rs` (FR-033–FR-038, SC-010). Lock now:
   - `lock_database { draft }` saves the draft as pending, then runs the normal close with reason `lockedByUser` (a due backup made, marker cleared, document copies gone), and `selectedPath` is the locked database
   
   Idle clock (injected wall and monotonic clocks):
@@ -571,7 +571,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - the staged draft is saved before document copies are deleted, and no backup is made
   - `system:clear-passphrase-fields` is emitted on sleep and screen lock whether or not a database is open
   - `validate_lock_settings_input` enforces `idle_lock_minutes` "1–240"
-- [ ] T115 [P] [US6] Extend `src-tauri/tests/import_export_test.rs`: with the cancel flag set after N rows, `import_collection` stops after the row in progress, keeps each imported row complete and returns `OPERATION_STOPPED { operation: "import", importedCount: N }`; a stopped `export_collection` removes its partial file and returns `OPERATION_STOPPED { operation: "export" }`
+- [X] T115 [P] [US6] Extend `src-tauri/tests/import_export_test.rs`: with the cancel flag set after N rows, `import_collection` stops after the row in progress, keeps each imported row complete and returns `OPERATION_STOPPED { operation: "import", importedCount: N }`; a stopped `export_collection` removes its partial file and returns `OPERATION_STOPPED { operation: "export" }`
 - [ ] T116 [P] [US6] Write `src/features/session/useIdleActivity.test.ts` (research §15), covering:
   - `keydown`, `pointerdown`, `pointermove`, `wheel` and `touchstart` call `note_activity` at most once per second, on the leading and trailing edge
   - `withIdlePaused(fn)` sends `set_idle_paused { paused: true }` before and `false` after, even when `fn` throws
@@ -599,7 +599,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Implementation for User Story 6
 
-- [ ] T121 [US6] Create `src-tauri/src/session/pending.rs` (FR-039, research §16):
+- [X] T121 [US6] Create `src-tauri/src/session/pending.rs` (FR-039, research §16):
   - `validate_draft`: "`values_json` ≤ 1 MiB; `kind`/`mode` pair valid", with `coverage` only when `kind = 'firearm'` and `target_id` NULL only for `add`
   - `stage(session, Option<Draft>)`, in memory only
   - `write_pending(conn, draft, clear_marker: bool)`, in one transaction
@@ -607,8 +607,8 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `resolve(conn, action)`
   
   Set `OpenDatabase.pending_unresolved` at open when a row exists. Make `Session::write` and `Session::read`, for collection commands only, refuse with `PENDING_CHANGES_UNRESOLVED` while it is set, leaving `get_database_status`, `resolve_pending_changes` and the lifecycle commands allowed. Report `pendingChanges` in `DatabaseStatus`
-- [ ] T122 [US6] Create `src-tauri/src/session/idle.rs` (research §15). `IdleClock { last_input_wall, paused_by: set<operation | nativeDialog> }` runs on an injectable wall clock. `note_activity()`, `set_paused(reason, bool)` (resuming restarts from zero), and `tick(now, settings) -> bool` (lock when `now − last_input ≥ idle_lock_minutes`, idle lock on, not paused, and `Operations::is_running()` false). A 1 s tick thread spawned by `main.rs` calls the idle lock through the lifecycle
-- [ ] T123 [US6] Add the lock procedures to `src-tauri/src/session/lifecycle.rs` (FR-033, FR-037, FR-038, FR-039; data-model.md "Closing(immediate)"; depends on T121, T122):
+- [X] T122 [US6] Create `src-tauri/src/session/idle.rs` (research §15). `IdleClock { last_input_wall, paused_by: set<operation | nativeDialog> }` runs on an injectable wall clock. `note_activity()`, `set_paused(reason, bool)` (resuming restarts from zero), and `tick(now, settings) -> bool` (lock when `now − last_input ≥ idle_lock_minutes`, idle lock on, not paused, and `Operations::is_running()` false). A 1 s tick thread spawned by `main.rs` calls the idle lock through the lifecycle
+- [X] T123 [US6] Add the lock procedures to `src-tauri/src/session/lifecycle.rs` (FR-033, FR-037, FR-038, FR-039; data-model.md "Closing(immediate)"; depends on T121, T122):
   - `lock(reason: lockedByUser | idle | screenLocked, draft)`: write the draft (or the staged one) as pending changes, then `close_normal(reason)`
   - `close_immediate(reason: sleep | shutdown)`, strictly in this order:
     1. `Operations::stop_running()` and emit `session:closed { reason, databasePath, stoppedOperation }`
@@ -622,9 +622,9 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `finish_on_wake()`: completes any unfinished steps, 1–3 before anything else
   
   The `Session` mutex is taken only after stopping the operation, so a running copy releases it
-- [ ] T124 [US6] Add cancellation to `src-tauri/src/commands/import_export.rs` (research §13). `import_collection` and `export_collection` register in `Operations` (so the idle clock pauses) and check `is_cancelled()` between rows. An import keeps the rows already committed and returns `OPERATION_STOPPED { operation: "import", importedCount }`. An export removes its partial output file and returns `OPERATION_STOPPED { operation: "export" }`
-- [ ] T125 [P] [US6] Create `src-tauri/src/platform/mod.rs` (declare `pub mod platform;` in `src-tauri/src/lib.rs`) per research §14. `SystemEvent { WillSleep { ack }, Woke, ScreenLocked, ScreenUnlocked, WillShutDown { ack } }`, where `ack` is a drop guard. `spawn_listener(sender)` picks the OS backend, and `screen_lock_supported()` reports availability. The wake watchdog is a 1 s tick comparing wall and monotonic time: a jump of more than 5 s is treated as `Woke` after an unseen sleep
-- [ ] T126 [P] [US6] Create `src-tauri/src/platform/linux.rs` using `zbus` (research §14):
+- [X] T124 [US6] Add cancellation to `src-tauri/src/commands/import_export.rs` (research §13). `import_collection` and `export_collection` register in `Operations` (so the idle clock pauses) and check `is_cancelled()` between rows. An import keeps the rows already committed and returns `OPERATION_STOPPED { operation: "import", importedCount }`. An export removes its partial output file and returns `OPERATION_STOPPED { operation: "export" }`
+- [X] T125 [P] [US6] Create `src-tauri/src/platform/mod.rs` (declare `pub mod platform;` in `src-tauri/src/lib.rs`) per research §14. `SystemEvent { WillSleep { ack }, Woke, ScreenLocked, ScreenUnlocked, WillShutDown { ack } }`, where `ack` is a drop guard. `spawn_listener(sender)` picks the OS backend, and `screen_lock_supported()` reports availability. The wake watchdog is a 1 s tick comparing wall and monotonic time: a jump of more than 5 s is treated as `Woke` after an unseen sleep
+- [X] T126 [P] [US6] Create `src-tauri/src/platform/linux.rs` using `zbus` (research §14):
   - logind `PrepareForSleep`, holding a `delay` inhibitor for `sleep` that is released when the lock finishes and re-taken on wake
   - `PrepareForShutdown`, with a `shutdown` delay inhibitor
   - the session object's `Lock` signal and `LockedHint`
@@ -644,14 +644,14 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `WM_QUERYENDSESSION`/`WM_ENDSESSION`, with `ShutdownBlockReasonCreate` while pending changes are saved
   
   The container compiles only Linux code, so build and lint this file on Windows (`cargo clippy --all-targets`) before calling the task done; T144 runs the full gates there
-- [ ] T129 [US6] Wire the system events in `src-tauri/src/main.rs` (depends on T123, T125–T128):
+- [X] T129 [US6] Wire the system events in `src-tauri/src/main.rs` (depends on T123, T125–T128):
   - spawn the listener and the idle tick, and manage `IdleClock`
   - on `WillSleep` and `ScreenLocked`, always emit `system:clear-passphrase-fields`
   - `WillSleep` with the idle lock on, or while a close is under way whatever the setting → `close_immediate(sleep)`, then drop `ack`
   - `ScreenLocked` with `lock_on_screen_lock` → `lock(screenLocked)`
   - `Woke` → `finish_on_wake()`
   - `WillShutDown`, the unix SIGTERM/SIGHUP/SIGINT handler (replacing the direct `app.exit(0)` in `exit_on_termination_signals`) and the OS-initiated exit request → `close_immediate(shutdown)`, then exit. Pending changes are saved before document copies are deleted
-- [ ] T130 [US6] Add the lock commands to `src-tauri/src/commands/databases.rs` and register them in `src-tauri/src/main.rs` (depends on T123, T129):
+- [X] T130 [US6] Add the lock commands to `src-tauri/src/commands/databases.rs` and register them in `src-tauri/src/main.rs` (depends on T123, T129):
   - `lock_database { draft } → CloseOutcome`
   - `stage_pending_changes { draft }`
   - `resolve_pending_changes { action } → { draft }`

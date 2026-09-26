@@ -125,7 +125,7 @@ pub mod ops {
     fn hold_still_ours(
         session: &Session,
     ) -> Result<MutexGuard<'_, Option<OpenDatabase>>, CommandError> {
-        let mut slot = session.hold();
+        let mut slot = session.hold()?;
         let open = slot.as_mut().ok_or_else(CommandError::database_closed)?;
         if open.storage_lost {
             return Err(CommandError::database_unavailable(&open.path));
@@ -350,6 +350,7 @@ pub mod ops {
         if let Err(err) = file_swap::replace(&path) {
             // The original is unchanged, but closed, and the backend never
             // holds its passphrase (FR-007): the user opens it again.
+            session.forget_open();
             session.set_last_closed(&path);
             events.emit(
                 "session:closed",
@@ -364,6 +365,8 @@ pub mod ops {
         // A saved passphrase now opens it only if it is the backup's.
         refresh_saved(machine, &path, &reopened.database_id, passphrase);
         let restored = status(&reopened, machine);
+        // The backup's lock settings come with it.
+        session.reinstalled(&reopened);
         *slot = Some(reopened);
         restored
     }
@@ -539,6 +542,7 @@ pub mod ops {
                 reopened.notes = notes;
                 reopened.staged_draft = staged_draft;
                 let database_id = reopened.database_id.clone();
+                session.reinstalled(&reopened);
                 *slot = Some(reopened);
                 database_id
             }
@@ -546,6 +550,7 @@ pub mod ops {
                 // Closed, and the backend keeps no passphrase (FR-007): the
                 // user opens it again.
                 log::error!("could not reopen {} after changing its passphrase", path.display());
+                session.forget_open();
                 session.set_last_closed(&path);
                 events.emit(
                     "session:closed",
@@ -743,7 +748,10 @@ pub mod ops {
                 WipeControl { progress: None, cancel: Some(&|| operation.is_cancelled()) },
             );
             match wiped {
-                Ok(Wiped::Deleted | Wiped::Stopped) => deleted += 1,
+                Ok(Wiped::Deleted | Wiped::Stopped) => {
+                    deleted += 1;
+                    operation.record_done(deleted);
+                }
                 Err(err) => {
                     log::warn!("could not delete the backup {}: {err}", backup.path);
                     failed_paths.push(backup.path.clone());

@@ -91,8 +91,10 @@ impl Default for TestDb {
 }
 
 /// Called with each event as it is recorded, to act at a given point of an
-/// operation (stop a backup midway, look at the files).
-type EventHook = Box<dyn Fn(&str, &serde_json::Value) + Send + Sync>;
+/// operation (stop a backup midway, look at the files). It is called
+/// without holding the recorder, so it may wait for another thread that
+/// records events too.
+type EventHook = Arc<dyn Fn(&str, &serde_json::Value) + Send + Sync>;
 
 /// Records the session's events in order, in place of the Tauri app, with
 /// each notice kept for the chooser recorded as a `"notice"` event.
@@ -106,11 +108,12 @@ impl TestEvents {
     /// Calls `hook` with every later event, before it is recorded.
     #[allow(dead_code)]
     pub fn on_event(&self, hook: impl Fn(&str, &serde_json::Value) + Send + Sync + 'static) {
-        *self.hook.lock().unwrap() = Some(Box::new(hook));
+        *self.hook.lock().unwrap() = Some(Arc::new(hook));
     }
 
     fn record(&self, event: &str, payload: serde_json::Value) {
-        if let Some(hook) = &*self.hook.lock().unwrap() {
+        let hook = self.hook.lock().unwrap().clone();
+        if let Some(hook) = hook {
             hook(event, &payload);
         }
         self.recorded.lock().unwrap().push((event.to_owned(), payload));

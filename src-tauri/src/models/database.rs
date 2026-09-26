@@ -82,6 +82,18 @@ text_enum!(BackupLocationKind {
     Custom => "custom",
 });
 
+// What the pending-changes prompt chose (FR-039).
+text_enum!(PendingAction {
+    Resume => "resume",
+    Discard => "discard",
+});
+
+// Why the idle clock is paused from the frontend (research.md §15). Running
+// operations pause it from the backend's own registry.
+text_enum!(IdlePauseReason {
+    NativeDialog => "nativeDialog",
+});
+
 /// A recent-list entry as the chooser shows it (FR-012).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,9 +129,14 @@ pub struct PassphraseSaved {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ChooserNotice {
+    /// A lock (FR-033); the chooser shows nothing for an ordinary close.
     Closed {
         reason: CloseReason,
         database_path: String,
+        /// The idle duration, for an idle lock's "after <n> minutes without
+        /// use".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        idle_minutes: Option<i64>,
     },
     OperationStopped {
         database_path: String,
@@ -301,6 +318,24 @@ pub enum BackupLocationInput {
     },
 }
 
+/// `update_lock_settings`'s input (FR-034, FR-038).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockSettingsInput {
+    pub idle_enabled: bool,
+    pub idle_minutes: i64,
+    pub on_screen_lock: bool,
+}
+
+/// `resolve_pending_changes`'s answer: the draft to resume, or none after a
+/// discard.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingResolved {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Draft>,
+}
+
 /// `update_backup_settings`'s input (FR-024, FR-026).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -463,4 +498,19 @@ pub fn validate_backup_settings_input(input: &BackupSettingsInput) -> Result<Str
         return Err(CommandError::validation("Check the backup settings.", errors));
     }
     Ok(location)
+}
+
+/// The longest idle duration, in minutes (data-model.md).
+const MAX_IDLE_MINUTES: i64 = 240;
+
+/// Checks the lock settings (data-model.md "Validation rules"):
+/// `idle_lock_minutes` 1–240, whether or not the idle lock is on.
+pub fn validate_lock_settings_input(input: &LockSettingsInput) -> Result<(), CommandError> {
+    if (1..=MAX_IDLE_MINUTES).contains(&input.idle_minutes) {
+        return Ok(());
+    }
+    Err(CommandError::validation(
+        "Check the lock settings.",
+        [("idleMinutes".to_owned(), "Choose between 1 and 240 minutes.".to_owned())].into(),
+    ))
 }
