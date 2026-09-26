@@ -101,7 +101,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `verify_passphrase(path, &Passphrase, scratch_dir) -> Result<bool, DbError>`, the page-1 probe of research §1a: copy the first 4096 bytes to a temp file in `scratch_dir`, open it with the candidate and the pinned settings, read `PRAGMA schema_version`. `SQLITE_NOTADB` means wrong. Delete the probe file whatever the result. The main file is never written
   - `OpenError` enum: `NotFound`, `Unreadable`, `InUse`, `PassphraseIncorrect`, `NewerVersion`, `OpenElsewhere { machine_name, since }`, `Damaged`
   - Rewrite the module's unit tests (`opens_migrates_and_reopens_a_real_temp_database`, `wrong_key_on_reopen_fails`) for `create_database`/`open_database`
-- [ ] T018 Extend `src-tauri/src/commands/error.rs` (depends on T017). `CommandError` gains `details: Option<serde_json::Value>`, skipped when `None`. Add a constructor for each code in contracts/tauri-commands.md: `DATABASE_CLOSED`, `PENDING_CHANGES_UNRESOLVED`, `DATABASE_TAKEN_OVER`, `DATABASE_DAMAGED { backupsAvailable }`, `PASSPHRASE_INCORRECT { savedPassphraseFailed?, backupsAvailable? }`, `DATABASE_NOT_FOUND { path }`, `DATABASE_UNREADABLE { path }`, `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_OPEN_ELSEWHERE { machineName, since }`, `DATABASE_EXISTS { path }`, `INSUFFICIENT_SPACE { bytesNeeded, bytesAvailable, path }`, `BACKUP_LOCATION_UNAVAILABLE { path, reason }`, `KEYRING_UNAVAILABLE`, `OPERATION_STOPPED { operation, importedCount? }`, `OPERATION_IN_PROGRESS { operation }`, `REPLACE_FAILED { path }`, `DATABASE_UNAVAILABLE { path }`. Use the summary messages from contracts/tauri-commands.md "Error codes added by this feature". `from_db` maps `SQLITE_CORRUPT` to `DATABASE_DAMAGED`. Add `From<OpenError>`. No message or detail may contain a passphrase
+- [ ] T018 Extend `src-tauri/src/commands/error.rs` (depends on T017). `CommandError` gains `details: Option<serde_json::Value>`, skipped when `None`. Add a constructor for each code in contracts/tauri-commands.md: `DATABASE_CLOSED`, `PENDING_CHANGES_UNRESOLVED`, `DATABASE_TAKEN_OVER`, `DATABASE_DAMAGED { backupsAvailable }`, `PASSPHRASE_INCORRECT { savedPassphraseFailed?, backupsAvailable? }`, `DATABASE_NOT_FOUND { path }`, `DATABASE_UNREADABLE { path }`, `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_OPEN_ELSEWHERE { machineName, since }`, `DATABASE_EXISTS { path }`, `INSUFFICIENT_SPACE { bytesNeeded, bytesAvailable, path }`, `BACKUP_LOCATION_UNAVAILABLE { path, reason }`, `KEYRING_UNAVAILABLE`, `OPERATION_STOPPED { operation, importedCount?, deletedCount? }`, `OPERATION_IN_PROGRESS { operation }`, `REPLACE_FAILED { path }`, `DATABASE_UNAVAILABLE { path }`. Use the summary messages from contracts/tauri-commands.md "Error codes added by this feature". `from_db` maps `SQLITE_CORRUPT` to `DATABASE_DAMAGED`. Add `From<OpenError>`. No message or detail may contain a passphrase
 - [ ] T019 [P] Create `src-tauri/src/services/machine_settings.rs` (research §6, §11; data-model.md "Machine-local: machine.json"). `MachineSettings` is loaded from a config directory passed in, never resolved inside the service, and holds the exact JSON shape (`version: 1`, `machineId`, `recentDatabases[]` with `path`, `name`, `lastOpenedAt`, `databaseId`, `backupFolder`, `passphraseSaved`; `unfinishedBackup`; `notices[]`). The `machineId` is random 32 hex, made on first run. Writes are atomic (temp file, flush, rename). A corrupt or unreadable file is renamed to `machine.json.bad` and a new one started. Methods: `touch_recent` (add or refresh, most recent first), `recent`, `push_notice`, `take_notices`, `set_unfinished_backup`/`clear_unfinished_backup`. `MachineIdentity { id, display_name }`, where `display_name` is `gethostname` with a trailing `.local` removed on macOS. It holds paths and names only, never collection data or secrets
 - [ ] T020 Create `src-tauri/src/session/mod.rs` (declare `pub mod session;` in `src-tauri/src/lib.rs`) per research §13 and data-model.md "In memory: the session" (depends on T017, T018). `Session(Mutex<Option<OpenDatabase>>)`, where `OpenDatabase` holds `conn`, `path`, `name`, `database_id`, `interrupt: InterruptHandle`, `staged_draft: Option<Draft>` and `pending_unresolved: bool`. `read(|conn| …)` and `write(|conn| …)` both fail with `DATABASE_CLOSED` when nothing is open. `write` gains the take-over and unreachable-storage checks in T061, and both `read` and `write` gain the pending-changes check in T121. Add `is_open()`, `take()` (removes the open database for a close) and `install(OpenDatabase)`
 - [ ] T021 [P] Create `src-tauri/src/session/operations.rs` (research §13; data-model.md "Operations registry"). `Operations` allows at most one running long operation `{ kind: OperationKind, cancel: AtomicBool, interrupt: Option<InterruptHandle> }`. `begin(kind)` returns an RAII guard that unregisters on drop, or `OPERATION_IN_PROGRESS { operation }`. It also offers `is_cancelled()` for chunk and row loops, `stop_running() -> Option<OperationKind>` (sets the flag and calls `interrupt()`), and `is_running()` for the idle clock
@@ -230,7 +230,8 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - recent rows in order, with the folder tooltip
   - an unavailable row dimmed with "Not found at this location", **Locate…** and **Remove from list**
   - every row's overflow **Remove from list** with "The database file is not deleted."
-  - the open-failure texts for `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_NOT_FOUND` and `DATABASE_OPEN_ELSEWHERE` (machine name in bold and the local date/time), with **Go back** and **Take over…**
+  - **Open another database file…** (with `@tauri-apps/plugin-dialog`'s `open` mocked) calls it filtered to `*.hoplodex` with "All files", makes the chosen file the selected row with its focused "Passphrase for <name>" field, and opening it calls `open_database` with that path; a cancelled picker changes nothing (US2-2)
+  - the open-failure texts for `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_NOT_FOUND`, `DATABASE_UNREADABLE` and `DATABASE_OPEN_ELSEWHERE` (machine name in bold and the local date/time), with **Go back** and **Take over…**
   - **Take over…** opens the destructive confirm "Take over <name>?", and confirming resends with `takeOver: true`, with the row in its opening busy state until it returns
   - the `takenOver` notice text (contracts/ui-databases.md §1)
 - [ ] T056 [P] [US2] Write `src/features/databases/DatabaseMenu.test.tsx`: the top-bar button shows the database name with `aria-haspopup="menu"`, and **Switch database…** and **Close database** go through the unsaved-changes check and then `close_database` (contracts/ui-databases.md §4)
@@ -266,13 +267,13 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 - [ ] T069 [US2] Complete `src/features/databases/DatabaseChooser.tsx` and `RecentDatabaseRow.tsx` for US2 (contracts/ui-databases.md §1):
   - unavailable rows with **Locate…** (native file picker) and **Remove from list**
   - the overflow **Remove from list** with its note
-  - the open-failure table rows for `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_NOT_FOUND` and `DATABASE_OPEN_ELSEWHERE`
+  - the open-failure table rows for `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_NOT_FOUND`, `DATABASE_UNREADABLE` and `DATABASE_OPEN_ELSEWHERE`
   - the `closed` and `takenOver` notices
   - create `src/features/databases/TakeOverConfirm.tsx` (destructive `ConfirmDialog`, confirm label "Take over", description as in §1); the resent open shows the row's busy state
   - `DATABASE_UNAVAILABLE` from any save shows §1's "can't reach" text in the saving form's error slot, keeping the input, and does not close the session
   
   Add `close_database`, `quit_application`, `remove_recent_database` and `locate_database` wrappers to the services (depends on T067)
-- [ ] T070 [US2] Add the screen `17-open-elsewhere` (the seeded "Shared collection") to `e2e/screenshots/screens.e2e.ts`, and re-run the E2E spec `us7-databases.e2e.ts` (depends on T069)
+- [ ] T070 [US2] Add the screens `17-open-elsewhere` (the seeded "Shared collection") and `25-unsaved-changes` (the save / discard / cancel prompt over an edited firearm form, contracts/ui-databases.md §6) to `e2e/screenshots/screens.e2e.ts`, and re-run the E2E spec `us7-databases.e2e.ts` (depends on T069)
 
 **Checkpoint**: User Stories 1 and 2 work: several databases, switching, the recent list, the unsaved-changes question, and refusals with take-over.
 
@@ -307,6 +308,16 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - a close with `storage_lost` set makes no backup, writes nothing, returns `failed` with `failureReason: "databaseUnreachable"` and pushes a `backupFailed` notice with that reason (research §6)
   - a leftover `unfinishedBackup` at the next launch removes the partial file and pushes the "did not finish" notice (US3-7)
   - the first `backup:progress` event arrives within 100 ms, with `showNow` from the 50 MiB/s estimate (SC-005)
+  
+  Interruption points (SC-004), each through `Operations::stop_running` or a dropped connection: at the start (before the first chunk), midway through the copy, and at `finalize` (after the stamp, before the rename). After each, the database opens with its passphrase and all its content, with `changes_waiting` still 1, no file that `list` would return has been added, no `.partial` is left once the next launch's sweep has run, and the next allowed close makes the backup
+  
+  Deleting all backups (FR-029, US3-4), against real backup files made by earlier closes:
+  - `delete_all_backups { confirmed: false }` gives `CONFIRMATION_REQUIRED` and deletes nothing
+  - confirmed, it deletes every backup `list` returns for this database, each removed through `secure_delete` (its progress callback reports each overwrite), returns `deletedCount` equal to their number with `failedPaths` empty, and emits `backups_delete:progress` per file
+  - in a shared custom folder, another database's backups and unrelated files are untouched
+  - a backup that cannot be deleted (read-only file) is listed in `failedPaths` and the rest are still deleted
+  - the database itself is byte-identical before and after, and `changes_waiting` and `last_backup_at` are unchanged (deleting backups is not a change, FR-025)
+  - the next due close makes a new backup as usual
 - [ ] T072 [P] [US3] Write `src-tauri/tests/file_swap_test.rs` (research §4), covering:
   - the hard-link path replaces the file and leaves `.<file>.old` for secure deletion
   - the fallback (hard links disabled through a test hook) recovers at the next open from each gap: the original missing with `.new` present completes the swap; only `.old` present renames it back
@@ -346,6 +357,8 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - progress phase labels, and the dialog cannot be dismissed while it runs
   - `PASSPHRASE_INCORRECT` for the backup lands on the field
   - the refusals `INSUFFICIENT_SPACE` and `BACKUP_LOCATION_UNAVAILABLE` (with **Change backup location…**), and the cancelled-restore text when the "before restoring" backup fails, each keep the dialog open and say "Nothing has been changed."
+  
+  Also extend `src/features/databases/DatabaseChooser.test.tsx` (US3 cases, US3-6, FR-028): `DATABASE_DAMAGED` shows "<name> is damaged and can't be opened." with **Restore from a backup…** when `backupsAvailable` and without it otherwise; `PASSPHRASE_INCORRECT` with `backupsAvailable` also offers it; choosing it opens `RestoreBackupDialog` in damaged-database mode with the row's `databasePath`
 - [ ] T078 [P] [US3] Extend `src/features/import-export/ExportDialog.test.tsx` for the FR-031 wording: "Exports the collection to a spreadsheet. The file is **not encrypted**: anyone who can open it can read it. For encrypted backups of the whole database, see Database settings." (contracts/ui-databases.md §12)
 - [ ] T079 [P] [US3] Write `e2e/specs/us8-backups.e2e.ts`: change a firearm and close; a `HoploDex backups` folder appears next to the file with one backup; change and close again: still one; restore that backup with its passphrase; a "before restoring" backup appears and the change is gone
 
@@ -384,7 +397,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 - [ ] T088 [US3] Create `src-tauri/src/commands/backups.rs` (declare it in `src-tauri/src/commands/mod.rs`) with thin commands over `pub mod ops` (depends on T083–T086):
   - `list_backups { databasePath? }` → `{ folder, available, backups }` (from the recent entry's cached folder and id when nothing is open)
   - `restore_backup` 🔑, following research §8 steps 1–6. Before anything is written, check the backup location (`BACKUP_LOCATION_UNAVAILABLE`) and the free space for the restored copy and the "before restoring" backup, summed when on one volume (`INSUFFICIENT_SPACE`); a damaged database needs only the first. Then copy to `.<file>.new` with `restore:progress` phases `copying`, `checking`, `savingCurrent`, `replacing`; open with the backup's passphrase; verify with `cipher_integrity_check`, `integrity_check` and the migration check; stamp (`changes_waiting = 0`, stamp cleared, identity kept); make the "before restoring" backup ignoring the once-a-day limit and whether backups are on, with the restored-from file protected from rotation, and abandon the restore (removing its `.partial` and `.new`) if it fails or is stopped; close; `file_swap::replace`; reopen with the backup's passphrase and set `notes.restoredWithPassphraseOf`. For a damaged database, rename it to `<name> damaged <YYYY-MM-DD HHMMSS>.hoplodex` and set `notes.damagedFileKeptAt`
-  - `delete_all_backups { confirmed }`, with `CONFIRMATION_REQUIRED` when false and `backups_delete:progress`
+  - `delete_all_backups { confirmed }`, with `CONFIRMATION_REQUIRED` when false and `backups_delete:progress`. It deletes only the files `backups::list` returns for this database, each with `secure_delete`, and collects the ones that fail in `failedPaths`. It checks `is_cancelled()` between files and passes the cancel check into `secure_delete`; when stopped it returns `OPERATION_STOPPED { operation: "deleteBackups", deletedCount }`, and the file whose overwrite was under way is removed without finishing it (FR-037)
   
   Each long command registers in `Operations`. `open_database` failures `DATABASE_DAMAGED` and `PASSPHRASE_INCORRECT` set `backupsAvailable` from the listing
 - [ ] T089 [US3] Register `update_backup_settings`, `skip_backup`, `list_backups`, `restore_backup` and `delete_all_backups` in `src-tauri/src/main.rs` (depends on T087, T088)
@@ -509,7 +522,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 - [ ] T113 [P] [US6] Write `src-tauri/tests/pending_changes_test.rs` (FR-039, research §16), covering:
   - `stage_pending_changes` keeps the draft in memory only (no row written) and refuses a `values` of more than 1 MiB serialized, or an invalid `kind`/`mode` pair, with `VALIDATION_ERROR`
-  - a lock writes the staged draft to `pending_changes` before the connection closes, and leaves `changes_waiting` unchanged; at sleep and shutdown (`close_immediate`) the same write also clears the marker
+  - a lock writes the staged draft to `pending_changes` before the connection closes, and leaves `changes_waiting` unchanged; at sleep and shutdown (`close_immediate`) the same write also clears the marker, and with no draft staged the marker is still cleared, with no `pending_changes` row written
   - the next open reports `pendingChanges` (`resumable = false` when the target firearm or policy no longer exists)
   - collection commands give `PENDING_CHANGES_UNRESOLVED` until `resolve_pending_changes`
   - `resume` returns the exact draft and removes the row; `discard` removes it
@@ -522,7 +535,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   Idle clock (injected wall and monotonic clocks):
   - it locks between 10:00 and 10:01 after the last `note_activity`
   - activity restarts it
-  - a registered operation or `set_idle_paused { nativeDialog }` pauses it, and resuming starts from zero
+  - a registered operation (a deletion of all backups included) or `set_idle_paused { nativeDialog }` pauses it, and resuming starts from zero
   - a wall-clock jump longer than the duration locks at the next tick
   - the idle lock off never locks
   - `update_lock_settings` restarts the clock
@@ -536,7 +549,9 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - a passphrase change is interrupted and the old file opens with the old passphrase
   - a backup or restore is abandoned and the original is unchanged
   - an export's partial file is removed
+  - a deletion of all backups stops between files: the backups already deleted are gone, the rest are still listed, none is left half overwritten (the file in progress is removed), and it reports `OPERATION_STOPPED { operation: "deleteBackups", deletedCount }`
   - an `operationStopped` notice is pushed
+  - the open marker is cleared once the lock finishes, with and without a staged draft
   
   Sleep with the idle lock off does not lock a database that is open and not closing.
   
@@ -555,6 +570,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 - [ ] T116 [P] [US6] Write `src/features/session/useIdleActivity.test.ts` (research §15), covering:
   - `keydown`, `pointerdown`, `pointermove`, `wheel` and `touchstart` call `note_activity` at most once per second, on the leading and trailing edge
   - `withIdlePaused(fn)` sends `set_idle_paused { paused: true }` before and `false` after, even when `fn` throws
+  - `pauseIdleForFileInput(input)` sends `paused: true` on the input's `click`, and `false` on its `change`, on its `cancel`, or, when neither fires, on the window's next `focus`; it sends `false` only once per `click`, and removes its listeners on unmount
 - [ ] T117 [P] [US6] Write `src/features/session/usePendingDraft.test.tsx` (research §16), covering:
   - edits stage a draft with `{ formVersion, kind, mode, targetId, label, values }`, debounced to 250 ms and flushed at once on blur
   - a clean or saved form stages `null`
@@ -568,7 +584,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `src/components/PassphraseField.test.tsx`: `system:clear-passphrase-fields` resets every mounted field (FR-007)
   - `src/features/databases/DatabaseMenu.test.tsx`: **Lock now** in the menu, the lock icon button (`aria-label` "Lock now") and Ctrl/⌘+L from any focus, including inside a dialog, call `lock_database` with the current draft and no confirmation (FR-035)
   - `src/features/databases/DatabaseSettingsDialog.test.tsx`, Locking section: **Lock after a period without use**, and the minutes `Select` (1, 2, 5, 10, 15, 30, 60, 120, 240; `hd-field--third`) enabled only when checked, with the help "Also locks when the computer goes to sleep. Turning this off stops both."; **Lock when the computer's screen locks**, disabled with "Not available: this computer doesn't tell applications when the screen locks." when unsupported; the lock statement; the FR-036 sentence when the passphrase is saved
-  - `src/features/databases/DatabaseChooser.test.tsx`: the notices "HoploDex locked <name>." (with " after <n> minutes without use" for idle), the stopped-operation text (the import variant with the row count), and "Unsaved changes could not be kept when <name> locked."; after a lock, focus is on the passphrase field, or on **Open** when the passphrase is saved
+  - `src/features/databases/DatabaseChooser.test.tsx`: the notices "HoploDex locked <name>." (with " after <n> minutes without use" for idle), the stopped-operation text (the import variant with the row count, and the deletion-of-backups variant with the number deleted), and "Unsaved changes could not be kept when <name> locked."; after a lock, focus is on the passphrase field, or on **Open** when the passphrase is saved
 - [ ] T120 [P] [US6] Write `e2e/specs/us9-locking.e2e.ts`, covering:
   - Ctrl+L while editing a firearm locks, with no collection DOM left
   - the chooser shows the database selected with the locked notice
@@ -591,10 +607,10 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `lock(reason: lockedByUser | idle | screenLocked, draft)`: write the draft (or the staged one) as pending changes, then `close_normal(reason)`
   - `close_immediate(reason: sleep | shutdown)`, strictly in this order:
     1. `Operations::stop_running()` and emit `session:closed { reason, databasePath, stoppedOperation }`
-    2. write the staged draft as pending, clearing the marker in the same write; on failure push `pendingChangesLost`
+    2. write the staged draft as pending, clearing the marker in the same write (with no draft staged, clear the marker alone); on failure push `pendingChangesLost`
     3. drop the connection
     4. delete decrypted document copies
-    5. remove the stopped operation's partial files (`.partial`, `.new`, the export file)
+    5. remove the stopped operation's partial files (`.partial`, `.new`, the export file, or the backup whose secure overwrite was under way)
     
     It never makes a backup, and pushes `operationStopped`
   - `close_immediate` also takes over a close already under way, whatever its reason and the idle-lock setting: it stops the running backup and continues from its step 2 (research §14)
@@ -639,7 +655,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `update_lock_settings`, with `validate_lock_settings_input` in `src-tauri/src/models/database.rs`: `idle_lock_minutes` "1–240". A collection change; it restarts the idle clock
   - `get_chooser_state` reports `screenLockSupported` from `platform::screen_lock_supported()`
 - [ ] T131 [US6] Make `PassphraseField` listen for `system:clear-passphrase-fields` and reset, whether or not a database is open (FR-007). File: `src/components/PassphraseField.tsx`
-- [ ] T132 [P] [US6] Create `src/features/session/useIdleActivity.ts`, with the throttled window listeners → `note_activity`, and `withIdlePaused(fn)`. Mount it in `SessionProvider` while a database is open. Wrap every native dialog call in `withIdlePaused`: `src/features/import-export/ImportDialog.tsx`, `ExportDialog.tsx`, `src/features/databases/CreateDatabaseDialog.tsx` (Choose…), `DatabaseChooser.tsx` (Open another…, Locate…), `DatabaseSettingsDialog.tsx` (Change…), and the photo and document pickers in `src/features/media/`
+- [ ] T132 [P] [US6] Create `src/features/session/useIdleActivity.ts`, with the throttled window listeners → `note_activity`, and `withIdlePaused(fn)`. Mount it in `SessionProvider` while a database is open. Wrap every `@tauri-apps/plugin-dialog` call in `withIdlePaused`: `src/features/import-export/ImportDialog.tsx`, `ExportDialog.tsx`, `src/features/databases/CreateDatabaseDialog.tsx` (Choose…), `DatabaseChooser.tsx` (Open another…, Locate…) and `DatabaseSettingsDialog.tsx` (Change…). The photo and document pickers are `<input type="file">` elements with no promise to wrap, so add `pauseIdleForFileInput(input)` to the same hook (research §15) and attach it to the inputs in `src/features/media/PhotoGallery.tsx` and `src/features/media/DocumentList.tsx`
 - [ ] T133 [US6] Add draft staging to `src/features/session/usePendingDraft.ts` (research §16). Registered forms stage `{ formVersion, kind, mode, targetId, label, values }` via `stage_pending_changes`, debounced to 250 ms, flushed on blur, and `null` when clean. Expose `currentDraft()` for `lock_database`. Make `FirearmForm.tsx`, `DisposeDialog.tsx`, `RestoreDialog.tsx`, `InsurancePolicyForm.tsx` and `CoverageDialog.tsx` accept a resumed draft as their initial unsaved state, each with a `FORM_VERSION` constant (depends on T066)
 - [ ] T134 [US6] Create `src/features/session/PendingChangesDialog.tsx` per contracts/ui-databases.md §13. `SessionProvider` shows it after any open whose status reports `pendingChanges`, before the collection can be used. **Resume editing** navigates to the record or policy and opens its form with the draft (via `src/features/app/navigation.ts`). **Discard changes** asks for destructive confirmation first (depends on T133)
 - [ ] T135 [US6] Add locking to the database UI (contracts/ui-databases.md §1, §4, §7, §14):
@@ -693,7 +709,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   
   Fix every failure (depends on all earlier tasks)
 - [ ] T144 On macOS and on Windows, outside the container, run `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets`, `cargo fmt --manifest-path src-tauri/Cargo.toml --check`, `cargo test --manifest-path src-tauri/Cargo.toml` and the `mock-keyring` keyring test. This is the only place `platform/macos.rs`, `platform/windows.rs` and the other `cfg(target_os = "macos")`/`cfg(windows)` code are compiled and linted (constitution I), and `portability_test` opening the Linux-made fixture there is SC-001's cross-platform check (research §20). Fix every failure and record the results for the PR (quickstart.md platform checks)
-- [ ] T145 Run `npm run screenshots` and collect the before (main) and after images for the new screens 14–24 and the changed top bar and export dialog, for the PR's UI evidence (contracts/ui-databases.md §15)
+- [ ] T145 Run `npm run screenshots` and collect the before (main) and after images for the new screens 14–25 and the changed top bar and export dialog, for the PR's UI evidence (contracts/ui-databases.md §15)
 - [ ] T146 Walk through quickstart.md's six walkthroughs with `scripts/human-testing.sh` (by hand, against scratch data), timing walkthrough 1's create and a switch to a second database against SC-006's 2 minutes, and do the per-OS platform checks table on each available OS. Record the results for the PR description
 - [ ] T147 Draft the PR description: the before/after screenshots, the platform-check results (including T144's Rust gates on macOS and Windows), the security and data-handling note (the attack surface listed in spec.md's Assumptions and how each constraint is met: no passphrase held between commands, pinned cipher settings, refused opens never write, copy-verify-replace, secure deletion, local-only backups, keyring opt-in, test isolation), and the performance note (SC-003 open time and SC-005 progress latency as measured by T138)
 

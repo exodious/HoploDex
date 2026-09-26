@@ -622,7 +622,10 @@ changes (FR-039: "before the collection can be used").
 cancel flag (`AtomicBool`) and, for `sqlcipher_export`, the interrupt handle.
 Import and export check the flag between rows, as the spec's follow-up asks.
 Import already commits row by row, so a stop keeps every row already
-imported. Raw copies and overwrites check it between chunks. The registry is
+imported. Raw copies and overwrites check it between chunks. Deleting all
+backups checks it between files and passes it to each file's overwrite; a
+file whose overwrite is stopped part way is removed without finishing, so
+nothing half overwritten is left to look like a backup. The registry is
 also what pauses the idle clock (§15).
 
 ---
@@ -706,8 +709,13 @@ and trailing edge, so the last input is always reported within 1 s. The
 backend keeps the time of the last input on the **wall clock**, and a 1 s tick
 locks when `now − last_input ≥ duration`, which is within SC-010's 10:00–10:05
 window. The clock is **paused** while any long-running operation is
-registered (§13) and while a native file or folder dialog is open (the
-frontend wraps `@tauri-apps/plugin-dialog` calls in `withIdlePaused`). On
+registered (§13) and while a native file or folder dialog is open. The
+frontend wraps `@tauri-apps/plugin-dialog` calls in `withIdlePaused`. The
+photo and document pickers are `<input type="file">` elements, which open the
+system chooser with no promise to wrap and send the page no input while it is
+open, so `pauseIdleForFileInput(input)` pauses on the input's `click` and
+resumes on its `change` or `cancel` event, or on the window's next `focus` as
+a fallback where `cancel` is not fired. On
 resume, the idle time starts again from zero (spec edge case: "the idle time
 starts once it finishes").
 
@@ -728,8 +736,8 @@ because the spec counts only input to the application's own windows.
 
 ## §16 Pending changes: the frontend mirrors the draft to the backend
 
-**Decision**: while a firearm record (add, edit, dispose, restore) or an
-insurance policy (including coverage) form has unsaved input, the frontend
+**Decision**: while a firearm record (add, edit, dispose, restore, or its
+insurance coverage) or an insurance policy (add, edit) form has unsaved input, the frontend
 **stages** a draft in backend memory with `stage_pending_changes`, debounced
 to 250 ms after the last edit and flushed at once on blur. A clean form sends
 `null`. The draft lives only in `OpenDatabase`, in memory, until a lock or an

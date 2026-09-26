@@ -216,7 +216,8 @@ The backend never holds a passphrase between commands (FR-007, research §1).
       │                                                          │
       │   Closing(immediate): sleep (idle lock on) · OS shutdown │
       │   stop operation → emit session:closed → save draft as   │
-      │   pending (+ clear marker in the same write) → close     │
+      │   pending (+ clear marker in the same write; the marker  │
+      │   alone when no draft is staged) → close                 │
       │   conn → delete document copies → remove partial files   │
       ├─────────────────────────────────────────────────────────┘
       │

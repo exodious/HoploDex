@@ -41,7 +41,8 @@ database**, and may additionally fail with:
 
 `import_collection` and `export_collection` may also fail with
 `OPERATION_STOPPED` (`details.operation`, plus `details.importedCount` for an
-import) when the computer went to sleep mid-run (FR-037). The session is
+import) when the computer went to sleep mid-run (FR-037). `delete_all_backups`
+may fail the same way, with `details.deletedCount`. The session is
 already closed by then, so the chooser shows the notice.
 
 ---
@@ -61,7 +62,7 @@ already closed by then, so the chooser shows the notice.
 | `INSUFFICIENT_SPACE` | `{ bytesNeeded, bytesAvailable, path }` | FR-016 |
 | `BACKUP_LOCATION_UNAVAILABLE` | `{ path, reason: "missing" \| "notWritable" \| "insufficientSpace" }` | FR-027 |
 | `KEYRING_UNAVAILABLE` | — | FR-019 |
-| `OPERATION_STOPPED` | `{ operation, importedCount? }` | FR-037 |
+| `OPERATION_STOPPED` | `{ operation, importedCount?, deletedCount? }` | FR-037 |
 | `OPERATION_IN_PROGRESS` | `{ operation }` | another long-running operation is already running |
 | `DATABASE_UNAVAILABLE` | `{ path }` | "HoploDex can't reach <path>. Nothing already saved was lost. Close the database and open it again once the drive or network is back." (FR-032) |
 | `REPLACE_FAILED` | `{ path }` | the final rename was refused (for example the file was held by another program); the original is unchanged |
@@ -82,7 +83,7 @@ type RecentDatabase = {
 
 type ChooserNotice =
   | { kind: "closed"; reason: CloseReason; databasePath: string }
-  | { kind: "operationStopped"; databasePath: string; operation: OperationKind; importedCount?: number }
+  | { kind: "operationStopped"; databasePath: string; operation: OperationKind; importedCount?: number; deletedCount?: number }
   | { kind: "pendingChangesLost"; databasePath: string }
   | { kind: "backupFailed"; databasePath: string; reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable" }
   | { kind: "takenOver"; databasePath: string };
@@ -262,7 +263,13 @@ sleep stops it (FR-037).
 
 ### `delete_all_backups`
 - **Input**: `{ confirmed: boolean }` → **Output**: `{ deletedCount: number; failedPaths: string[] }`
-- **Errors**: `CONFIRMATION_REQUIRED` when `confirmed` is false (FR-029)
+- **Errors**: `CONFIRMATION_REQUIRED` when `confirmed` is false (FR-029);
+  `OPERATION_STOPPED { operation: "deleteBackups", deletedCount }` when the
+  computer went to sleep mid-run (FR-037)
+- Deletes only this database's backups (the `<id8>` listing of research §7,
+  never another database's files in a shared custom folder), each by secure
+  deletion (research §12). It stops between files; a file whose overwrite
+  was under way when stopped is removed without finishing it
 - **Progress**: `backups_delete:progress` `{ processed; total }` (files)
 
 ---

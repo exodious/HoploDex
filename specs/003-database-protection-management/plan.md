@@ -137,7 +137,7 @@ keyring entry must never be read, changed or deleted (CLAUDE.md).
 **Scale/Scope**: Six user stories (P1–P6), 39 functional requirements, 10
 success criteria. 23 new IPC commands, 8 events and 18 error codes. 3
 new tables, 21 triggers, 1 machine-local file, per-OS listeners on 3
-platforms. About 12 new frontend components and hooks, 3 new E2E specs, 11
+platforms. About 12 new frontend components and hooks, 3 new E2E specs, 12
 new screenshot screens.
 
 No NEEDS CLARIFICATION remain: each open technical question is resolved in
@@ -319,7 +319,7 @@ e2e/
 ├── specs/us8-backups.e2e.ts        # NEW: backup on close, restore
 ├── specs/us9-locking.e2e.ts        # NEW: lock now, pending changes resume and discard
 ├── specs/us1…us6                   # start by unlocking the seeded/created database
-└── screenshots/screens.e2e.ts      # + screens 14–24 (contracts/ui-databases.md §15)
+└── screenshots/screens.e2e.ts      # + screens 14–25 (contracts/ui-databases.md §15)
 
 scripts/human-testing.sh            # new data layout (.human-testing/HoploDex/*.hoplodex), prints passphrase
 DEVELOPMENT.md                      # Test isolation: passphrase model, no DB key env, seed sandbox;

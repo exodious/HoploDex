@@ -51,7 +51,10 @@ collection data, top-bar tabs or counts are shown.
     passphrase change | a restore | an import | an export> was running, so it
     was stopped. <name> is as it was before it started." For an import:
     "<n> rows were imported before it stopped. You can import the file
-    again; rows already imported will be found as matches."
+    again; rows already imported will be found as matches." For a deletion
+    of all backups: "The computer went to sleep while the backups of <name>
+    were being deleted, so it was stopped. <n> were deleted; the rest are
+    still there. You can delete them from <name>'s backup settings."
   - pending changes lost: "Unsaved changes could not be kept when <name>
     locked."
   - backup failed: "<name> was not backed up: <the backup location is not
@@ -107,6 +110,7 @@ collection data, top-bar tabs or counts are shown.
 | `DATABASE_NEWER_VERSION` | "<name> was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed." | — |
 | `DATABASE_DAMAGED` | "<name> is damaged and can't be opened." | **Restore from a backup…** when `backupsAvailable` |
 | `DATABASE_NOT_FOUND` | "<name> is no longer at this location." | **Locate…**, **Remove from list** |
+| `DATABASE_UNREADABLE` | "HoploDex can't read <name>: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed." | the row stays selected so **Open** can be tried again |
 | `DATABASE_OPEN_ELSEWHERE` | "<name> is marked as open on **<machineName>** since <local date and time>. It may still be open there, may not have been closed properly, or its latest changes may not have synced to this computer yet." | **Go back**, **Take over…** |
 
 **Take over…** opens a destructive `ConfirmDialog` (US2-10, FR-032):
@@ -363,6 +367,8 @@ only **Discard changes** is offered.
 New stable names, each in light and dark: `14-chooser`, `15-chooser-first-run`,
 `16-create-database`, `17-open-elsewhere`, `18-closing-backup`,
 `19-database-settings`, `20-change-passphrase`, `21-restore-backup`,
-`22-pending-changes`, `23-database-guide`, `24-disk-encryption-note`. Existing
+`22-pending-changes`, `23-database-guide`, `24-disk-encryption-note`,
+`25-unsaved-changes` (the save / discard / cancel prompt of §6, which adds a
+third action to the shared `ConfirmDialog`). Existing
 screens are unchanged apart from the database menu in the top bar and the
 export wording.
