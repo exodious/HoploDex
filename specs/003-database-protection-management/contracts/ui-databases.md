@@ -1,0 +1,334 @@
+# Contract: Databases, Locking and Backups UI
+
+The application's external interface is its screens. This contract fixes
+what the user sees and can do for this feature. Shared components only
+(constitution III): `Dialog`, `ConfirmDialog`, `TextField`, `Field`,
+`Checkbox`, `Select`, `ProgressBar`, `Button`, `Toast`, `Disclosure`.
+Requirement IDs refer to [spec.md](../spec.md). Wording in quotes is the
+intended text. Small copy edits during implementation are fine, but the
+facts each text states are required.
+
+## 0. New and changed shared components
+
+- **`PassphraseField`** (new, `src/components/`): a password input used
+  wherever a passphrase is typed (open, create, change, restore, save to
+  keyring: eight fields in five dialogs), so it goes in the shared set. Rules (FR-007):
+  - `type="password"`, with a "Show" toggle button (`aria-pressed`);
+    `autocomplete="current-password"` or `"new-password"`;
+    `spellcheck="false"`, `autocapitalize="off"`.
+  - **Uncontrolled**: the value is read from the input's ref on submit, and
+    the input is reset right after. It is never put in React state, context or
+    any store.
+  - It resets when `system:clear-passphrase-fields` arrives, whether or not
+    a database is open.
+  - With `strength` set, it shows the **strength hint** below: a five-step
+    meter with a text label ("Very weak" … "Very strong"), zxcvbn's
+    suggestion, and "Longer is stronger: several unrelated words make a good
+    passphrase." The hint never blocks (FR-003). The zxcvbn module is loaded
+    lazily (research §18).
+  - Errors use the standard field-error slot. The minimum-length message is
+    "Use at least 12 characters." The confirmation message is "The
+    passphrases don't match."
+- **`ConfirmDialog`** gains an optional third action (`alternativeLabel`,
+  `onAlternative`) for the save / discard / cancel question (§6). No screen
+  builds its own three-button prompt.
+- **`Menu`** (new, `src/components/`, on `@radix-ui/react-dropdown-menu`):
+  the database menu (§4). It gives the menu roles and arrow-key navigation
+  (WCAG 2.1 AA) that a popover of buttons does not.
+
+## 1. Database chooser (FR-020, FR-021, FR-012, US2-3)
+
+A full-window screen that replaces the app shell whenever no database is
+open: at launch, after close, switch or lock, and after a take-over. No
+collection data, top-bar tabs or counts are shown.
+
+- **Header**: the HoploDex brand. The theme toggle stays available.
+- **Notices** (from `get_chooser_state` and `session:closed`), above the list,
+  one line each, dismissible:
+  - locked: "HoploDex locked <name>." (for `lockedByUser`, `idle`, `sleep`,
+    `screenLocked`). Idle adds " after <n> minutes without use".
+  - stopped operation: "The computer went to sleep while <a backup | the
+    passphrase change | a restore | an import | an export> was running, so it
+    was stopped. <name> is as it was before it started." For an import:
+    "<n> rows were imported before it stopped. You can import the file
+    again; rows already imported will be found as matches."
+  - pending changes lost: "Unsaved changes could not be kept when <name>
+    locked."
+  - backup failed: "<name> was not backed up: <the backup location is not
+    available | there is not enough space there | the backup was
+    interrupted>. Its changes will be backed up at the next close." with a
+    **Change backup location…** action, which opens the database's backup
+    settings (§7) right after the next successful open.
+  - taken over: "<name> was taken over on another computer, so HoploDex
+    stopped saving to it here and closed it."
+- **Recent databases** list, most recent first. Each row shows the name
+  (large), the folder (secondary text, middle-truncated with the full path in
+  a tooltip and the accessible name), and "Opens without a passphrase on this
+  computer" when the passphrase is saved. The selected row is the most recent
+  at launch, or the database just closed or locked (FR-033).
+  - **Unavailable** rows (file missing) are dimmed with "Not found at this
+    location" and offer **Locate…** (file picker) and **Remove from list**.
+  - Every row offers **Remove from list** in its overflow, with the note "The
+    database file is not deleted." (FR-012, US2-5).
+- **Selected row, passphrase not saved**: an inline form opens in the row, a
+  `PassphraseField` labelled "Passphrase for <name>", focused, with **Open**
+  (primary). Below it, a `Checkbox` **Remember on this computer** (off),
+  shown as disabled with "Not available: this computer has no keyring
+  service." when the keyring is unavailable (FR-019). Ticking it opens the
+  FR-017 confirmation (§8) first, and the box stays unticked unless the user
+  confirms.
+- **Selected row, passphrase saved**: **Open** (primary), no prompt. After a
+  lock the selected row shows the same (US6-8).
+- Page actions: **Create a new database…** (§2) and **Open another database
+  file…** (a native open dialog filtered to `*.hoplodex`, with an "All files"
+  choice). The chosen file becomes the selected row and asks for its
+  passphrase.
+- **No databases known** (first run): the list is replaced by a short
+  welcome: "HoploDex keeps your collection in an encrypted database file
+  that only your passphrase opens." with the two page actions as large
+  buttons.
+
+### Open failures (inline, in the selected row)
+
+| Code | Text | Actions |
+|---|---|---|
+| `PASSPHRASE_INCORRECT` | "That passphrase didn't open <name>. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged." | the field stays for another try (FR-006); **Restore from a backup…** when `backupsAvailable` |
+| — with `savedPassphraseFailed` | "The saved passphrase no longer opens <name>. Enter its passphrase; the saved copy will be updated." | prompt shown |
+| `DATABASE_IN_USE` | "<name> is open in another copy of HoploDex, on this computer or another one. Close it there first." | — |
+| `DATABASE_NEWER_VERSION` | "<name> was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed." | — |
+| `DATABASE_DAMAGED` | "<name> is damaged and can't be opened." | **Restore from a backup…** when `backupsAvailable` |
+| `DATABASE_NOT_FOUND` | "<name> is no longer at this location." | **Locate…**, **Remove from list** |
+| `DATABASE_OPEN_ELSEWHERE` | "<name> is marked as open on **<machineName>** since <local date and time>. It may still be open there, may not have been closed properly, or its latest changes may not have synced to this computer yet." | **Go back**, **Take over…** |
+
+**Take over…** opens a destructive `ConfirmDialog` (US2-10, FR-032):
+title "Take over <name>?"; description "Only do this if <machineName> no
+longer has <name> open, or if it crashed. If it still has it open, or its
+latest changes haven't synced here yet, those changes can be lost."; confirm
+label "Take over". Confirming resends the open with `takeOver: true`.
+
+## 2. Create a new database (FR-003, FR-004, FR-008, FR-009, FR-024)
+
+A `Dialog` (`size="lg"`), titled "Create a database". Fields, in the usual
+`hd-form-grid` layout:
+
+1. **Name**: `TextField`, default "My collection" (from `suggested.name`).
+   Help: "This is also the file name."
+2. **Folder**: a `TextField` holding the path (typed or pasted) plus a
+   **Choose…** button (native folder picker). The default is
+   `suggested.folder`. Help shows the resulting path: "Saved as
+   <folder>/<name>.hoplodex".
+3. **Passphrase**: `PassphraseField` with `strength`.
+4. **Confirm passphrase**: `PassphraseField`.
+5. **Backups** (read-only disclosure, FR-024), a short panel: "Backups are on.
+   When you close <name> after changing it, HoploDex saves a copy in
+   <folder>/HoploDex backups, at most once a day, keeping the latest 5.
+   Each backup holds the whole collection and opens with the passphrase you
+   had when it was made. You can change this in the database settings."
+6. **Acknowledgement** (FR-004): a required `Checkbox`: "I have stored this
+   passphrase somewhere safe. If it is forgotten, nobody, including HoploDex,
+   can open this database or recover the collection." The create button is
+   enabled only once it is ticked.
+
+Footer: **Cancel**, **Create database** (primary). On success the new
+database opens (the app shell appears), and the **disk-encryption note**
+(§10) is shown once.
+
+## 3. Unlocking after a lock (FR-033, US6-1, US6-2, US6-8)
+
+Nothing special: the chooser (§1) with the locked database selected, its
+passphrase field focused (or **Open** focused when the passphrase is saved),
+and the "locked" notice. The whole collection tree was unmounted, so nothing
+from it is in the DOM.
+
+## 4. The database menu (top bar)
+
+At the left of `hd-topbar__tools`: a button showing the database name with
+a chevron (`aria-haspopup="menu"`), opening a `Menu`:
+
+- **Lock now** (shortcut Ctrl+L / ⌘L, available from anywhere, including
+  inside dialogs)
+- **Switch database…**: a normal close (the unsaved-changes question if
+  needed, §6), then the chooser
+- **Close database**
+- separator
+- **Database settings…** (§7)
+- **Change passphrase…** (§8)
+- **Restore from a backup…** (§9)
+- separator
+- **About databases and security**: opens the guide (§11)
+
+Beside it, a lock icon button, "Lock now" (`aria-label`), for the one-click
+lock. Neither needs confirmation (FR-035).
+
+## 5. Closing screen (FR-027, SC-005)
+
+On `session:closing` the app shell is replaced by a centred panel:
+"Closing <name>…". When `backup:progress.showNow` is true, or the close is
+still running 1 s after it started, it shows "Backing up <name>…" with a
+determinate `ProgressBar` (bytes; `aria-valuenow`), and a **Skip this
+backup** button (secondary) with the note "Its changes will be backed up
+next time." The quit or switch waits for it (FR-027). The panel appears
+within 100 ms of the close starting.
+
+## 6. Unsaved changes when closing, switching or quitting (FR-010, US2-4a)
+
+When the user closes, switches or quits (including the window's close
+button) while a firearm or policy form has unsaved input, a `ConfirmDialog`
+with a third action appears. Title: "Save changes to <label>?". Buttons:
+**Save changes** (primary), **Discard changes** (alternative; destructive
+style), **Cancel**. Saving runs the form's own submit. If it fails validation
+the dialog closes and the form shows its errors, and nothing closes. A lock
+never shows this (FR-033).
+
+## 7. Database settings (FR-024, FR-026, FR-029, FR-034, FR-036, FR-038, FR-017)
+
+A `Dialog` (`size="lg"`) titled "<name> settings", with three sections in
+this order, each a titled fieldset. Settings apply with **Save** in the
+footer, like every other form.
+
+**Backups**
+- `Checkbox` **Make automatic backups**
+- **Keep the latest**: a number field (`hd-field--quarter`), with "backups"
+  after it
+- **Location**: shows the resolved path and "(next to the database)" for
+  the default, plus **Change…** (folder picker) and **Use the default**. An
+  unavailable custom location shows "Not available on this computer" (FR-027).
+- Statements (FR-029), as a short list:
+  - "Each backup is a complete copy of the collection."
+  - "A backup opens only with the passphrase you had when it was made."
+  - "Firearms you delete stay in earlier backups until those backups are
+    removed."
+  - "Backups on the same disk as the database don't protect against losing
+    that disk."
+- Actions: **Restore from a backup…** (§9) and **Delete all backups…**
+  (destructive `ConfirmDialog`, "Delete all <n> backups of <name>? They are
+  deleted securely where this computer supports it. This can't be undone.")
+
+**Locking**
+- `Checkbox` **Lock after a period without use**. When checked, **after**
+  a `Select` of 1, 2, 5, 10, 15, 30, 60, 120 or 240 minutes (`hd-field--third`)
+  is enabled. Help: "Also locks when the computer goes to sleep. Turning
+  this off stops both." (FR-034, FR-037)
+- `Checkbox` **Lock when the computer's screen locks** (off by default).
+  Where unsupported, it is disabled with "Not available: this computer
+  doesn't tell applications when the screen locks." (FR-038)
+- Statement: "Locking closes <name>: its data is cleared from memory,
+  opened document copies are deleted, a backup is made if one is due, and
+  it's released for other computers."
+- When the passphrase is saved on this computer (FR-036): "Because the
+  passphrase is saved on this computer, anyone using this computer account
+  can reopen <name> after it locks."
+
+**This computer**
+- **Remember the passphrase on this computer**: shows the current state.
+  Turning it on asks for the passphrase (`PassphraseField`) after the FR-017
+  confirmation (§8). **Forget saved passphrase** removes it.
+- Unavailable-keyring text as in §1.
+
+## 8. Passphrase dialogs
+
+**Remember-passphrase confirmation** (FR-017, US5-1): a `ConfirmDialog`
+(not destructive styling, confirm label "Remember passphrase"): "Anyone
+who can use this computer account, or its keyring while it's unlocked,
+will be able to open <name> without knowing the passphrase. On a shared
+account this defeats the passphrase. Locking will no longer need the
+passphrase on this computer, though it still clears the collection from
+memory, deletes opened document copies, and releases the database for
+other computers."
+
+**Change passphrase** (FR-015, FR-016, US4): a `Dialog` with **Current
+passphrase**, **New passphrase** (with strength) and **Confirm new
+passphrase**, then the footer **Change passphrase**. While it runs, the body
+is replaced by a `ProgressBar` with its phase label ("Making a copy with the
+new passphrase…", "Checking the new copy…", "Replacing the database…") and
+the dialog cannot be dismissed. On completion the body says: "The passphrase
+of <name> has been changed. The previous file was deleted securely, as far as
+this computer allows (see About databases and security). Backups and copies
+made before now still open with the old passphrase." When the old file
+remains: "The previous file could not be deleted. It is at <path>, and it
+opens with the old passphrase." `INSUFFICIENT_SPACE`: "Changing the
+passphrase needs <size> free on the database's drive; <available> is free."
+
+## 9. Restore from a backup (FR-028, US3-5, US3-6)
+
+A `Dialog` (`size="lg"`):
+1. **Choose a backup**: a radio list of `list_backups` entries, newest first
+   ("25 September 2026, 14:30 — 212 MB"). An empty or unavailable folder
+   says so, and names the folder.
+2. **Passphrase for this backup**: a `PassphraseField`, with the note "Enter
+   the passphrase <name> had on <date>. After restoring, <name> will open
+   with that passphrase."
+3. Statement: "The current <name> is backed up first, so you can undo this
+   by restoring that backup." For a damaged database: "The damaged file
+   will be kept next to it, renamed."
+4. Footer: **Restore** (a destructive `ConfirmDialog` step: "Replace <name>
+   with the backup from <date>?").
+
+While it runs: progress as in §8 ("Copying the backup…", "Checking the
+backup…", "Backing up the current database…", "Replacing the database…").
+Afterwards <name> is open, and a notice says it now opens with the
+passphrase from <date> (US3-5).
+
+## 10. Notes shown once in the collection
+
+Both are dismissible banners at the top of the collection page, in the
+existing notice style:
+- **Disk encryption** (FR-008), after creation until dismissed: "Your
+  collection is encrypted with your passphrase. For extra protection, also
+  turn on your computer's disk encryption: BitLocker on Windows, FileVault on
+  macOS, or LUKS on Linux." Link: **Why?** (guide §11).
+- **Backup opened directly** (research §9): "This is a backup of <backupOfName>
+  made on <date>. Changes here aren't part of <backupOfName>. It's still in the
+  backup folder, where it may be removed when older backups are cleared: move
+  the file elsewhere to keep it."
+
+## 11. Guide: "About databases and security" (FR-030)
+
+A `Dialog` with headed sections, in the style of feature 002's origin guide:
+passphrases (why length matters; there is no recovery; a copied file is
+protected only by the passphrase); saving the passphrase on this computer;
+locking; backups (where they go, what they hold, the passphrase they open
+with, deleted records staying in older backups, same-disk risk, cloud-synced
+folders keeping their own copies); secure deletion (best effort: SSDs,
+journaling and copy-on-write filesystems, snapshots and cloud folders can
+keep old data; an old copy is still protected by its old passphrase);
+using a database from more than one computer (one at a time, the open marker,
+take-over); and whole-disk encryption. It is reachable from the database menu,
+the disk-encryption note, and "see About databases and security" links in
+the change-passphrase and backup texts.
+
+## 12. Export dialog wording (FR-031)
+
+The export dialog's description and any "backup" wording become: "Exports
+the collection to a spreadsheet. The file is **not encrypted**: anyone who
+can open it can read it. For encrypted backups of the whole database,
+see Database settings." The feature 001 SC-005 wording is amended to match.
+
+## 13. Pending changes at open (FR-039, US6-6)
+
+After an open that reports `pendingChanges`, and before the collection can
+be used, a non-dismissable `Dialog`: "Unsaved changes to <label>". Body:
+"<name> locked on <date, time> while you were editing <label>. Your changes
+were kept." Buttons: **Resume editing** (primary): navigates to the record
+or policy and opens its form with the draft as unsaved input. **Discard
+changes**: a destructive `ConfirmDialog`. When `resumable` is false, the body
+adds "<label> no longer exists, so these changes can only be discarded." and
+only **Discard changes** is offered.
+
+## 14. Accessibility and focus
+
+- The chooser, closing screen and pending-changes dialog set focus on their
+  primary control, and announce their message through an `aria-live="polite"`
+  region.
+- The lock notice and all errors are text, never colour alone.
+- Ctrl/⌘+L works from any focus. When a lock replaces the view, focus moves
+  to the chooser's passphrase field (or its **Open** button).
+
+## 15. Screenshot walk additions (`e2e/screenshots/screens.e2e.ts`)
+
+New stable names, each in light and dark: `14-chooser`, `15-chooser-first-run`,
+`16-create-database`, `17-open-elsewhere`, `18-closing-backup`,
+`19-database-settings`, `20-change-passphrase`, `21-restore-backup`,
+`22-pending-changes`, `23-database-guide`, `24-disk-encryption-note`. Existing
+screens are unchanged apart from the database menu in the top bar and the
+export wording.
