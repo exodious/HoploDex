@@ -43,19 +43,24 @@ impl Passphrase {
 /// no NUL, which cannot pass through SQLite's C string API. Checking an
 /// existing passphrase never applies these: whatever opens the file is right.
 pub fn validate_new_passphrase(passphrase: &Passphrase) -> Result<(), CommandError> {
-    let text = passphrase.as_str();
-    let problem = if text.contains('\0') {
-        Some("A passphrase can't contain a NUL character.")
-    } else if text.chars().count() < MIN_PASSPHRASE_CHARS {
-        Some("Use at least 12 characters.")
-    } else {
-        None
-    };
-    match problem {
+    match new_passphrase_problem(passphrase) {
         None => Ok(()),
         Some(message) => Err(CommandError::validation(
             "Check the passphrase.",
             HashMap::from([("passphrase".to_owned(), message.to_owned())]),
         )),
+    }
+}
+
+/// What is wrong with a passphrase being set, as its field error, or `None`
+/// when it follows the rules of [`validate_new_passphrase`].
+pub fn new_passphrase_problem(passphrase: &Passphrase) -> Option<&'static str> {
+    let text = passphrase.as_str();
+    if text.contains('\0') {
+        Some("A passphrase can't contain a NUL character.")
+    } else if text.chars().count() < MIN_PASSPHRASE_CHARS {
+        Some("Use at least 12 characters.")
+    } else {
+        None
     }
 }

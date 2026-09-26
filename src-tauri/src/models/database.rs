@@ -3,7 +3,18 @@
 //! `src/features/databases/types.ts`. Each user story adds its own
 //! `validate_*_input` here.
 
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
+
+use crate::commands::CommandError;
+use crate::services::passphrase::{new_passphrase_problem, Passphrase};
+
+/// A database file's extension, for databases and backups alike (research.md
+/// §19).
+pub const DATABASE_EXTENSION: &str = "hoplodex";
 
 text_enum!(CloseReason {
     Closed => "closed",
@@ -57,6 +68,13 @@ text_enum!(BackupFailureReason {
     Interrupted => "interrupted",
     Io => "io",
     DatabaseUnreachable => "databaseUnreachable",
+});
+
+// A note shown once in the collection (contracts/ui-databases.md §10).
+text_enum!(NoteKind {
+    DiskEncryption => "diskEncryption",
+    OpenedBackup => "openedBackup",
+    Restored => "restored",
 });
 
 text_enum!(BackupLocationKind {
@@ -225,4 +243,115 @@ pub struct BackupInfo {
     pub file_name: String,
     pub made_at: String,
     pub size_bytes: u64,
+}
+
+/// Where the create dialog suggests putting a new database (FR-009,
+/// research.md §19).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedLocation {
+    pub folder: String,
+    pub name: String,
+}
+
+/// Everything the chooser shows before a database is open.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChooserState {
+    /// Most recent first.
+    pub recent: Vec<RecentDatabase>,
+    /// The row selected when the chooser appears (FR-021, FR-033).
+    pub selected_path: Option<String>,
+    /// FR-019.
+    pub keyring_available: bool,
+    /// FR-038: whether this desktop reports a screen lock.
+    pub screen_lock_supported: bool,
+    pub suggested: SuggestedLocation,
+    /// Shown once, then gone.
+    pub notices: Vec<ChooserNotice>,
+}
+
+/// The most characters a database name may have.
+const MAX_NAME_CHARS: usize = 120;
+/// The most bytes a database name may take. File names are limited to 255
+/// bytes, and the longest one made from a database name, a backup being
+/// written (`<name> YYYY-MM-DD HHMMSS <id8>.hoplodex.partial`, research.md
+/// §7), adds 44, so a name of 120 accented or non-Latin characters could
+/// otherwise make files that can't be created.
+const MAX_NAME_BYTES: usize = 200;
+/// Characters a file name can't hold on at least one supported OS.
+const FORBIDDEN_NAME_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
+fn name_problem(name: &str) -> Option<&'static str> {
+    if name.is_empty() {
+        Some("Enter a name.")
+    } else if name.chars().count() > MAX_NAME_CHARS {
+        Some("Use at most 120 characters.")
+    } else if name.len() > MAX_NAME_BYTES {
+        Some("Use a shorter name.")
+    } else if name.chars().any(|c| FORBIDDEN_NAME_CHARS.contains(&c) || c.is_control()) {
+        Some("A name can't contain < > : \" / \\ | ? * or control characters.")
+    } else if name == "." || name == ".." {
+        Some("Choose a different name.")
+    } else if name.ends_with(' ') || name.ends_with('.') {
+        Some("A name can't end with a space or a dot.")
+    } else {
+        None
+    }
+}
+
+/// A folder may not exist yet: the suggested `<Documents>/HoploDex` usually
+/// doesn't on first run, and creating the database makes it. One that exists
+/// must be a folder HoploDex can write to.
+fn folder_problem(folder: &Path) -> Option<&'static str> {
+    if folder.as_os_str().is_empty() {
+        return Some("Enter a folder.");
+    }
+    if !folder.is_absolute() {
+        return Some("Enter the full path of a folder.");
+    }
+    match fs::metadata(folder) {
+        Ok(meta) if !meta.is_dir() => Some("This isn't a folder."),
+        Ok(meta) if meta.permissions().readonly() => Some("HoploDex can't write to this folder."),
+        _ => None,
+    }
+}
+
+/// Checks the create dialog's input (data-model.md "Validation rules") and
+/// returns the file to create, `<folder>/<name>.hoplodex`. Every field's
+/// problem is reported at once; `DATABASE_EXISTS` only once the fields are
+/// right.
+pub fn validate_create_database_input(
+    folder: &str,
+    name: &str,
+    passphrase: &Passphrase,
+    acknowledged_unrecoverable: bool,
+) -> Result<PathBuf, CommandError> {
+    let folder = Path::new(folder);
+    let mut errors = HashMap::new();
+    if let Some(problem) = name_problem(name) {
+        errors.insert("name".to_owned(), problem.to_owned());
+    }
+    if let Some(problem) = folder_problem(folder) {
+        errors.insert("folder".to_owned(), problem.to_owned());
+    }
+    if let Some(problem) = new_passphrase_problem(passphrase) {
+        errors.insert("passphrase".to_owned(), problem.to_owned());
+    }
+    // FR-004: there is no recovery, and the user has said they know it.
+    if !acknowledged_unrecoverable {
+        errors.insert(
+            "acknowledgedUnrecoverable".to_owned(),
+            "Confirm that you have stored the passphrase somewhere safe.".to_owned(),
+        );
+    }
+    if !errors.is_empty() {
+        return Err(CommandError::validation("Check the new database's details.", errors));
+    }
+    let target = folder.join(format!("{name}.{DATABASE_EXTENSION}"));
+    // `symlink_metadata`, so even a dangling link at the path counts as taken.
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err(CommandError::database_exists(&target));
+    }
+    Ok(target)
 }

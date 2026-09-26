@@ -88,6 +88,17 @@ impl Session {
         change(&open.conn)
     }
 
+    /// Runs `look` against the open database itself, for the session's own
+    /// commands (its status, its notes), which describe the database rather
+    /// than read the collection.
+    pub fn inspect<T>(
+        &self,
+        look: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let open = self.lock();
+        look(open.as_ref().ok_or_else(CommandError::database_closed)?)
+    }
+
     pub fn is_open(&self) -> bool {
         self.lock().is_some()
     }

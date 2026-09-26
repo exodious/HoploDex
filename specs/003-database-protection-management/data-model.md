@@ -259,8 +259,8 @@ backup (FR-027, FR-037).
 | Input | Rule | Error |
 |---|---|---|
 | New passphrase | NFC-normalized; ≥ 12 Unicode scalar values; no NUL; equals confirmation (checked in the frontend; the backend checks length and NUL again) | `VALIDATION_ERROR`, `fieldErrors.passphrase` |
-| Database name | 1–120 chars; no path separator or character invalid on any supported OS (`<>:"/\|?*`, control characters); not `.`/`..`; not ending in a space or dot | `VALIDATION_ERROR`, `fieldErrors.name` |
-| Database folder | absolute, exists, writable | `VALIDATION_ERROR`, `fieldErrors.folder` |
+| Database name | 1–120 chars and at most 200 bytes of UTF-8 (the longest file made from it, a `.partial` backup, adds 44 bytes to a 255-byte file-name limit); no path separator or character invalid on any supported OS (`<>:"/\|?*`, control characters); not `.`/`..`; not ending in a space or dot | `VALIDATION_ERROR`, `fieldErrors.name` |
+| Database folder | absolute; a writable folder, or a path that does not exist yet, which create makes (the suggested `<Documents>/HoploDex` usually does not exist on first run, US1, FR-009) | `VALIDATION_ERROR`, `fieldErrors.folder` |
 | Create target | `<folder>/<name>.hoplodex` must not exist | `DATABASE_EXISTS` |
 | `backup_keep_count` | 1–100 | `VALIDATION_ERROR` |
 | `backup_location` | `default`, or an absolute path; a path that does not exist is accepted, so a location on another computer's drive can be kept, but is reported on save as currently unavailable | `VALIDATION_ERROR` |

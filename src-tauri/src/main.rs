@@ -54,6 +54,11 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            hoplodex_lib::commands::databases::get_chooser_state,
+            hoplodex_lib::commands::databases::create_database,
+            hoplodex_lib::commands::databases::open_database,
+            hoplodex_lib::commands::databases::get_database_status,
+            hoplodex_lib::commands::databases::dismiss_note,
             hoplodex_lib::commands::firearms::create_firearm,
             hoplodex_lib::commands::firearms::update_firearm,
             hoplodex_lib::commands::firearms::dispose_firearm,

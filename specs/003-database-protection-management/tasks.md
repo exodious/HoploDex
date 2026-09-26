@@ -133,7 +133,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T030 [P] [US1] Extend `src-tauri/tests/passphrase_protection_test.rs` with the command cases, through `commands::databases::ops`:
+- [X] T030 [P] [US1] Extend `src-tauri/tests/passphrase_protection_test.rs` with the command cases, through `commands::databases::ops`:
   - create a database, add a firearm through `ops`, close, and reopen with `TEST_PASSPHRASE`: the firearm is there
   - a wrong passphrase gives `PASSPHRASE_INCORRECT`, and the file is byte-identical before and after
   - a short passphrase is refused with `fieldErrors.passphrase`, and `acknowledgedUnrecoverable: false` with `fieldErrors.acknowledgedUnrecoverable` (FR-004)
@@ -149,8 +149,8 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Implementation for User Story 1
 
-- [ ] T036 [US1] Add `validate_create_database_input` to `src-tauri/src/models/database.rs` with data-model.md's rules verbatim. Database name: "1–120 chars; no path separator or character invalid on any supported OS (`<>:"/\|?*`, control characters); not `.`/`..`; not ending in a space or dot" (`fieldErrors.name`). Database folder: "absolute, exists, writable" (`fieldErrors.folder`). Create target: "`<folder>/<name>.hoplodex` must not exist" (`DATABASE_EXISTS`). Also check `acknowledgedUnrecoverable` is true (`fieldErrors.acknowledgedUnrecoverable`), and run `validate_new_passphrase` for `fieldErrors.passphrase`
-- [ ] T037 [US1] Create `src-tauri/src/commands/databases.rs` (declare it in `src-tauri/src/commands/mod.rs`), with thin commands over a `pub mod ops` that takes explicit paths and `&MachineSettings` so tests call it directly:
+- [X] T036 [US1] Add `validate_create_database_input` to `src-tauri/src/models/database.rs` with data-model.md's rules verbatim. Database name: "1–120 chars and at most 200 bytes of UTF-8; no path separator or character invalid on any supported OS (`<>:"/\|?*`, control characters); not `.`/`..`; not ending in a space or dot" (`fieldErrors.name`). Database folder: "absolute; a writable folder, or a path that does not exist yet, which create makes" (`fieldErrors.folder`). Create target: "`<folder>/<name>.hoplodex` must not exist" (`DATABASE_EXISTS`). Also check `acknowledgedUnrecoverable` is true (`fieldErrors.acknowledgedUnrecoverable`), and run `validate_new_passphrase` for `fieldErrors.passphrase`
+- [X] T037 [US1] Create `src-tauri/src/commands/databases.rs` (declare it in `src-tauri/src/commands/mod.rs`), with thin commands over a `pub mod ops` that takes explicit paths and `&MachineSettings` so tests call it directly:
   - `get_chooser_state` → `{ recent, selectedPath, keyringAvailable, screenLockSupported, suggested, notices }`. `keyringAvailable` and `screenLockSupported` are `false` until T108 and T130. `suggested` is `{ folder: <Documents>/HoploDex, name: "My collection" }` from `app.path().document_dir()` (which honours `user-dirs.dirs`), with `$HOME/Documents` as the fallback and never the app data directory (research §19)
   - `create_database` 🔑
   - `open_database` 🔑 with a typed `passphrase` (the saved-passphrase and `takeOver` inputs come in US5 and US2)
@@ -158,7 +158,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `dismiss_note` (`diskEncryption` sets `app_state.disk_encryption_note_dismissed`, a housekeeping write)
   
   Every passphrase argument goes into `Passphrase::from_input` at once and is dropped when the command returns (FR-007, contracts/tauri-commands.md). Depends on T036
-- [ ] T038 [US1] Register `get_chooser_state`, `create_database`, `open_database`, `get_database_status` and `dismiss_note` in `generate_handler!` in `src-tauri/src/main.rs` (depends on T037)
+- [X] T038 [US1] Register `get_chooser_state`, `create_database`, `open_database`, `get_database_status` and `dismiss_note` in `generate_handler!` in `src-tauri/src/main.rs` (depends on T037)
 - [ ] T039 [P] [US1] Create `src/components/StrengthHint.tsx`: on first render it dynamically `import()`s `@zxcvbn-ts/core`, `@zxcvbn-ts/language-common` and `@zxcvbn-ts/language-en`, then shows the five-step meter with the label ("Very weak" … "Very strong"), zxcvbn's suggestion and "Longer is stronger: several unrelated words make a good passphrase." (research §18). No keystroke crosses IPC
 - [ ] T040 [US1] Create `src/components/PassphraseField.tsx`, uncontrolled per contracts/ui-databases.md §0: `forwardRef` exposing `read(): string` and `reset()`; `type="password"` with a Show toggle (`aria-pressed`); an `autocomplete` prop (`current-password`/`new-password`); `spellcheck="false"`, `autocapitalize="off"`; an optional `strength` flag that renders `StrengthHint` from the input's own `onInput` without keeping the value in state; the standard field-error slot. Export both components from `src/components/index.ts` (depends on T039)
 - [ ] T041 [P] [US1] Create `src/features/session/sessionService.ts` and `src/features/databases/databasesService.ts`, with typed `invoke` wrappers (one per command) for `get_chooser_state`, `create_database`, `open_database`, `get_database_status` and `dismiss_note`, returning T014's types. Later stories add their commands to these files

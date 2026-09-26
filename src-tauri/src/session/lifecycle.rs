@@ -2,11 +2,13 @@
 //! transitions"). The commands in `commands::databases` are thin wrappers
 //! over these, and the tests call them directly.
 
+use std::io;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use serde_json::json;
 
+use crate::commands::databases::ops::folder_error;
 use crate::commands::documents::ops::clear_opened_documents;
 use crate::commands::CommandError;
 use crate::db;
@@ -32,7 +34,14 @@ pub fn create(
     path: &Path,
     passphrase: &Passphrase,
 ) -> Result<(), CommandError> {
-    let conn = db::create_database(path, passphrase, &machine.identity())?;
+    let conn =
+        db::create_database(path, passphrase, &machine.identity()).map_err(|err| match err {
+            // The folder passed its checks but refused the file itself.
+            db::DbError::Io(err) if err.kind() == io::ErrorKind::PermissionDenied => {
+                folder_error(path.parent().unwrap_or(path), &err)
+            }
+            other => other.into(),
+        })?;
     install(session, machine, conn, path)
 }
 
