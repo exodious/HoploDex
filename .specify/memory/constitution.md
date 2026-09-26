@@ -1,25 +1,39 @@
 <!--
 Sync Impact Report
-Version change: [TEMPLATE] → 1.0.0 (initial ratification)
-Modified principles: N/A (first fill of template placeholders)
-Added sections:
-  - I. Code Quality
-  - II. Testing Standards (NON-NEGOTIABLE)
-  - III. User Experience Consistency
-  - IV. Performance Requirements
-  - V. User Privacy
-  - Security & Data Handling Constraints (Section 2)
-  - Development Workflow & Quality Gates (Section 3)
-  - Governance
-Removed sections: none (placeholders only)
+Version change: 1.0.0 → 1.1.0
+Bump rationale: MINOR. Two materially expanded sections (a dependency
+vulnerability policy and two new quality gates); the backup clarification on
+its own would be a PATCH.
+Modified principles: none
+Modified sections:
+  - Security & Data Handling Constraints: the opt-in rule for "any network sync
+    or backup feature" clarified to cover only data that leaves the device, so
+    local backups may be on by default (needed by feature 003, FR-024); a
+    dependency vulnerability policy added (critical, high, unscored and
+    unmaintained/unsound advisories; scoped, dated exceptions; dev-only
+    dependencies held to the same bar)
+  - Development Workflow & Quality Gates: "the dependency audit passes" added to
+    the pull request gates; a whole-codebase AI-assisted security review added
+    as a release gate, which may use Anthropic or another AI vendor and sends
+    source code, never collection data, to it
+Added sections: none
+Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md: ✅ no change needed (Constitution Check gate is generic and reads from this file)
-  - .specify/templates/spec-template.md: ✅ no change needed (no principle-specific mandatory sections introduced)
-  - .specify/templates/tasks-template.md: ✅ updated — "Tests" note changed from optional-by-default to reflect NON-NEGOTIABLE Testing Standards principle
-  - .specify/templates/checklist-template.md: ✅ no change needed (generic checklist generator, no hardcoded principle references)
-  - .claude/skills/speckit-*/SKILL.md: ✅ reviewed, no outdated agent-specific (CLAUDE-only) references found
-  - README.md: ⚠ pending — currently only a title/tagline; consider linking to constitution when project docs expand (not required for this amendment)
-Follow-up TODOs: none
+  - .specify/templates/plan-template.md: ✅ no change needed (Constitution Check
+    is generic and reads from this file)
+  - .specify/templates/spec-template.md: ✅ no change needed
+  - .specify/templates/tasks-template.md: ✅ no change needed
+  - .specify/templates/checklist-template.md: ✅ no change needed
+  - DEVELOPMENT.md "Dependency audit": ✅ already describes the enforced policy
+  - CLAUDE.md "Spec Kit workflow" gate list: ⚠ pending, add the dependency audit
+    and the release security review
+Follow-up TODOs:
+  - No written release process exists yet for the release security review to
+    live in; add one (a release checklist) with the release engineering work.
+  - The release security review has no tooling yet (a project skill that
+    reviews the whole codebase and writes the dated report).
+  - Feature 003's spec, plan and research describe the backup rule as needing
+    clarification; update them to cite constitution 1.1.0 once this merges.
 -->
 
 # HoploDex Constitution
@@ -105,23 +119,55 @@ here are not merely inconvenient but potentially harmful.
 
 Sensitive fields (serial numbers, storage locations, valuations) MUST be
 encrypted at rest using platform-standard encryption; encryption keys MUST
-never be logged or transmitted in plaintext. Any network sync or backup
-feature MUST be opt-in, off by default, and clearly disclosed before first
-use. Third-party SDKs and dependencies MUST be reviewed for data-collection
-behavior before adoption — a dependency that phones home collection data by
-default is disqualifying. Access to the local data store MUST NOT be exposed
-to other applications without explicit user-granted permission.
+never be logged or transmitted in plaintext. Any feature that syncs or backs
+up data over a network or to a cloud service MUST be opt-in, off by default,
+and clearly disclosed before first use. This rule covers data that leaves the
+device: a backup the application writes only to local storage, in a location
+the user can see and choose, is not a network backup and MAY be on by default.
+A local folder that another program syncs elsewhere is the user's choice, not
+a network feature of the application. Third-party SDKs and dependencies MUST
+be reviewed for data-collection behavior before adoption — a dependency that
+phones home collection data by default is disqualifying. Access to the local
+data store MUST NOT be exposed to other applications without explicit
+user-granted permission.
+
+Dependencies, development-only ones included, MUST be kept free of known
+vulnerabilities, as checked by the dependency audit:
+
+- A dependency with a known critical advisory MUST NOT be used unless no
+  patched release exists anywhere and an analysis of whether and how the
+  vulnerability affects HoploDex is recorded with the exception.
+- A dependency with a known high advisory MUST NOT be used without a recorded
+  mitigation or justification.
+- A vulnerability advisory with no severity score counts as high. Notices that
+  a Rust crate is unmaintained or unsound also block, and are cleared the same
+  way as a high advisory.
+- Every exception MUST be scoped to the dependency path that was analysed, so
+  the same advisory arriving by another path fails again, and MUST carry a
+  date for review. It MUST be removed once a fix can be taken.
 
 ## Development Workflow & Quality Gates
 
-Every pull request MUST pass automated linting, the full test suite, and at
-least one peer review before merge. Pull requests that touch UI MUST include
-before/after evidence (screenshot or recording) demonstrating adherence to the
-shared design system. Pull requests that touch data-handling or persistence
+Every pull request MUST pass automated linting, the full test suite, the
+dependency audit, and at least one peer review before merge. Pull requests
+that touch UI MUST include before/after evidence (screenshot or recording)
+demonstrating adherence to the shared design system. Pull requests that touch data-handling or persistence
 code MUST call out, in the description, how the change satisfies the Security
 & Data Handling Constraints above. Performance-sensitive changes (queries,
 list rendering, import/export) MUST include a note on expected impact against
 the budgets in Principle IV.
+
+Before every release, an AI-assisted security review of the whole codebase,
+not only a diff, MUST be run against the application's attack surface: the
+commands exposed to the frontend, the Tauri capabilities and content security
+policy, filesystem path handling, spreadsheet import parsing and export
+(including formula injection), handling of the database key and passphrase,
+secure deletion, and decrypted document copies. Its dated report MUST be
+committed to the repository, and every critical or high finding MUST be fixed,
+or justified in the report, before the release. The review MAY use Anthropic
+or another AI vendor. It sends source code, never collection data, to that
+vendor, which is consistent with Principle V. A diff-scoped security review of
+individual pull requests is optional.
 
 ## Governance
 
@@ -140,4 +186,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-07-20
+**Version**: 1.1.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-09-26
