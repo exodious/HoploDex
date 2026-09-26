@@ -22,6 +22,8 @@ Every original item is kept verbatim (a few are split at a sentence boundary, ma
 
 Everything that has shipped was taken out of this file; the specs record it. Track A items A1–A4 and A6–A10 are in `specs/001-firearms-inventory/` (FR-003/004, FR-031 to FR-039), and B1 is `specs/002-firearm-identification/`. Both features' `tasks.md` are fully checked off. The remaining items keep their original labels, so the gaps in numbering are expected.
 
+C1 (test isolation) was removed 2026-09-26: the isolation is described in "Test isolation" in `DEVELOPMENT.md`, and constitution 1.2.0 requires it in Testing Standards. The same amendment added C3's license policy and gates (the "Licensing" section), so C3 below keeps only its remaining work.
+
 ---
 
 ## Track A — Revisions / clarifications to 001
@@ -155,21 +157,16 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
 
 ## Track C — Not spec work
 
-### C1. Test isolation — constitution amendment still to do
-
-- [dev] Running tests should use a database (and any other similar files) isolated from the actual system one. The developers use this app too and don't want their databases overwritten or modified by the test
-  - **Isolation is implemented** (throwaway `XDG_*` directories and the mock keyring for E2E, screenshots and human testing; see "Test isolation" in `DEVELOPMENT.md`). **Remaining:** amend the constitution's Testing Standards with "tests MUST NOT read or write the user's real database or keyring entry" (`/speckit-constitution`). After B5 the keyring is opt-in and tests use a fixed test passphrase. The data-dir override is also the mechanism B4 needs for choosing a DB location, so build it once.
-
 ### C2. CI / release engineering
 
 - [feature] github test/format check/lint/build/release workflow *(release/packaging portion; test/lint/build portion is A5)*
   - Cross-platform matrix (Windows/macOS/Linux) also delivers A5's "other platforms" item. Signing/installer/updater decisions are new; if they become large, run them through spec kit as an infrastructure spec, otherwise plain issues.
 
-### C3. License compatibility (plus a constitution/plan amendment)
+### C3. License compatibility — research record and release work still to do
 
 - [question] the application is intended to be GPL v3; do any of the libraries/runtimes used have licenses that cause a conflict?
-  - **Audit done, tooling is implemented:** `npm run audit:licenses` (a lockfile check for shipped npm packages, `cargo deny check licenses` for Rust), with the policy and the manual checks (SQLCipher/OpenSSL linkage, MPL Exhibit B, system libraries, assets) in "License audit" in `DEVELOPMENT.md`. Result: no incompatible license among shipped dependencies; OFL-1.1 fonts are allowed as separate font files. **Remaining:** record the result in research.md; amend the constitution ("dependency licenses MUST be GPLv3-compatible", with the license audit as a gate); build releases against OpenSSL 3.x (Windows ships the libcrypto DLL); ship third-party license notices with each release (see C9); add the license check to the CI audit job in C2.
-  - Research task, not a feature. 001's dependency review (constitution "Security & Data Handling") checked for telemetry, not license. Audit the Rust and npm dependency trees (e.g. `cargo-deny` / `license-checker`), and add a CI license gate in C2. The first thing to check: the `bundled-sqlcipher` build links OpenSSL/libcrypto, and the OpenSSL license version matters for GPLv3 compatibility. Also check the bundled assets (line-art drawings, fonts). Then record the result in research.md and add "dependency licenses MUST be GPLv3-compatible" to the constitution.
+  - **Audit done, tooling is implemented:** `npm run audit:licenses` (a lockfile check for shipped npm packages, `cargo deny check licenses` for Rust), with the policy and the manual checks (SQLCipher/OpenSSL linkage, MPL Exhibit B, system libraries, assets) in "License audit" in `DEVELOPMENT.md`. Result: no incompatible license among shipped dependencies; OFL-1.1 fonts are allowed as separate font files. **The policy and gates are in the constitution** (1.2.0, "Licensing" and the audit and release gates). **Remaining:** record the result in research.md; build releases against OpenSSL 3.x (Windows ships the libcrypto DLL); ship third-party license notices with each release (see C9); add the license check to the CI audit job in C2.
+  - Research task, not a feature. 001's dependency review (constitution "Security & Data Handling") checked for telemetry, not license. Audit the Rust and npm dependency trees (e.g. `cargo-deny` / `license-checker`), and add a CI license gate in C2. The first thing to check: the `bundled-sqlcipher` build links OpenSSL/libcrypto, and the OpenSSL license version matters for GPLv3 compatibility. Also check the bundled assets (line-art drawings, fonts). Then record the result in research.md.
 
 ### C4. Branding
 
