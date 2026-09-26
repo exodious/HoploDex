@@ -48,6 +48,13 @@ impl CommandError {
         Self { field_errors: Some(field_errors), ..Self::new("VALIDATION_ERROR", message) }
     }
 
+    /// Puts the error on a form field as well, e.g. a wrong passphrase on
+    /// the field it was typed in.
+    pub fn on_field(mut self, field: &str, message: impl Into<String>) -> Self {
+        self.field_errors.get_or_insert_with(HashMap::new).insert(field.to_owned(), message.into());
+        self
+    }
+
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new("NOT_FOUND", message)
     }

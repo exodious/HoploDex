@@ -207,11 +207,17 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
     });
 
-    it("database settings and restore", async () => {
+    it("database settings, passphrase change and restore", async () => {
       await chooseMenuItem("button.hd-db-menu", "Database settings…");
       await $('[role="dialog"]').waitForExist();
       await browser.pause(300);
       await shot(`19-database-settings-${suffix}`, { fullPage: true });
+      await closeDialog();
+
+      await chooseMenuItem("button.hd-db-menu", "Change passphrase…");
+      await $('[role="dialog"] input[autocomplete="current-password"]').waitForExist();
+      await browser.pause(300);
+      await shot(`20-change-passphrase-${suffix}`);
       await closeDialog();
 
       await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");

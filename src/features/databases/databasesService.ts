@@ -8,6 +8,8 @@ import type {
   CountProgress,
   CreateDatabaseInput,
   DatabaseStatus,
+  PassphraseChanged,
+  PassphraseChangeProgress,
   RecentDatabase,
   RestoreProgress,
 } from "./types";
@@ -78,6 +80,15 @@ export function restoreBackup(
   });
 }
 
+/** Changes the open database's passphrase by copy, verify and replace
+ * (FR-015, FR-016). */
+export function changePassphrase(
+  currentPassphrase: string,
+  newPassphrase: string,
+): Promise<PassphraseChanged> {
+  return invoke<PassphraseChanged>("change_passphrase", { currentPassphrase, newPassphrase });
+}
+
 /** Securely deletes every backup of the open database (FR-029). */
 export function deleteAllBackups(confirmed: boolean): Promise<BackupsDeleted> {
   return invoke<BackupsDeleted>("delete_all_backups", { confirmed });
@@ -89,4 +100,10 @@ export function onRestoreProgress(handler: (progress: RestoreProgress) => void):
 
 export function onBackupsDeleteProgress(handler: (progress: CountProgress) => void): () => void {
   return listen<CountProgress>("backups_delete:progress", handler);
+}
+
+export function onPassphraseChangeProgress(
+  handler: (progress: PassphraseChangeProgress) => void,
+): () => void {
+  return listen<PassphraseChangeProgress>("passphrase_change:progress", handler);
 }

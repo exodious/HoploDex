@@ -146,6 +146,35 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     ).toBeInTheDocument();
   });
 
+  it("lists its items in the contract's order", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Switch database…",
+      "Close database",
+      "Database settings…",
+      "Change passphrase…",
+      "Restore from a backup…",
+    ]);
+  });
+
+  it("opens the passphrase change (§8)", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Change passphrase…" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Change the passphrase of Main collection",
+    });
+    expect(within(dialog).getByLabelText("Current passphrase")).toBeInTheDocument();
+  });
+
   it("opens the restore dialog (§9)", async () => {
     const user = userEvent.setup();
     renderMenu();

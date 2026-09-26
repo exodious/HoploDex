@@ -1,22 +1,27 @@
-//! Listing, restoring and deleting a database's backups
-//! (specs/003-database-protection-management contracts/tauri-commands.md
-//! "long-running operations"; FR-028, FR-029; research.md §8). The commands
-//! are thin; the logic is in [`ops`], which the tests call directly. The
-//! backup passphrase becomes a [`Passphrase`] at once and is wiped when the
-//! command returns (FR-007).
+//! Listing, restoring and deleting a database's backups, and changing its
+//! passphrase (specs/003-database-protection-management
+//! contracts/tauri-commands.md "long-running operations"; FR-015, FR-016,
+//! FR-028, FR-029; research.md §3, §4, §8). The commands are thin; the logic
+//! is in [`ops`], which the tests call directly. Each passphrase becomes a
+//! [`Passphrase`] at once and is wiped when the command returns (FR-007).
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::commands::CommandError;
-use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus};
+use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
 
 pub mod ops {
+    use std::collections::{BTreeMap, HashMap};
     use std::fs::{self, File};
     use std::io;
     use std::path::{Path, PathBuf};
+    use std::sync::mpsc::{self, RecvTimeoutError};
+    use std::sync::MutexGuard;
+    use std::thread;
+    use std::time::Duration;
 
     use rusqlite::{Connection, OpenFlags};
     use serde_json::json;
@@ -25,18 +30,18 @@ pub mod ops {
     use crate::commands::CommandError;
     use crate::db::{self, cipher, raw_file::RawFile, OpenError};
     use crate::models::database::{
-        BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind,
+        BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind, PassphraseChanged,
     };
     use crate::services::backups::{self, BackupFailure, BackupJob, CopyError};
     use crate::services::disk_space;
     use crate::services::file_swap;
     use crate::services::machine_settings::MachineSettings;
-    use crate::services::passphrase::Passphrase;
+    use crate::services::passphrase::{new_passphrase_problem, Passphrase};
     use crate::services::secure_delete::{self, WipeControl, Wiped};
     use crate::session::fingerprint::FingerprintCheck;
     use crate::session::lifecycle;
     use crate::session::operations::OperationGuard;
-    use crate::session::{database_name, Session, SessionEvents};
+    use crate::session::{database_name, OpenDatabase, Session, SessionEvents};
 
     /// Where a database's backups are and what is there (FR-028): the open
     /// database's, or, for one that doesn't open, the folder and id this
@@ -110,6 +115,33 @@ pub mod ops {
 
     fn stopped() -> CommandError {
         CommandError::operation_stopped(OperationKind::Restore, None, None)
+    }
+
+    /// Holds the session for an operation that replaces the open database's
+    /// file, once that file is known to still be this session's (research.md
+    /// §6), as before any write. A file another computer has taken over is
+    /// closed as a take-over.
+    fn hold_still_ours(
+        session: &Session,
+    ) -> Result<MutexGuard<'_, Option<OpenDatabase>>, CommandError> {
+        let mut slot = session.hold();
+        let open = slot.as_mut().ok_or_else(CommandError::database_closed)?;
+        if open.storage_lost {
+            return Err(CommandError::database_unavailable(&open.path));
+        }
+        match open.fingerprint.check(&open.path) {
+            FingerprintCheck::Same => Ok(slot),
+            FingerprintCheck::Replaced => {
+                let open = slot.take().expect("checked above");
+                drop(slot);
+                lifecycle::close_taken_over(session, open);
+                Err(CommandError::database_taken_over())
+            }
+            FingerprintCheck::Unreachable => {
+                open.storage_lost = true;
+                Err(CommandError::database_unavailable(&open.path))
+            }
+        }
     }
 
     /// Replaces a database with one of its backups (FR-028, research.md §8),
@@ -247,25 +279,8 @@ pub mod ops {
     ) -> Result<DatabaseStatus, CommandError> {
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
-        let mut slot = session.hold();
-        let open = slot.as_mut().ok_or_else(CommandError::database_closed)?;
-        // The file must still be this session's (research.md §6).
-        if open.storage_lost {
-            return Err(CommandError::database_unavailable(&open.path));
-        }
-        match open.fingerprint.check(&open.path) {
-            FingerprintCheck::Same => {}
-            FingerprintCheck::Replaced => {
-                let open = slot.take().expect("checked above");
-                drop(slot);
-                lifecycle::close_taken_over(session, open);
-                return Err(CommandError::database_taken_over());
-            }
-            FingerprintCheck::Unreachable => {
-                open.storage_lost = true;
-                return Err(CommandError::database_unavailable(&open.path));
-            }
-        }
+        let mut slot = hold_still_ours(session)?;
+        let open = slot.as_mut().expect("held open");
         let settings = backup_settings(&open.conn, &open.path)?;
         let path = open.path.clone();
         let database_folder = path.parent().unwrap_or(Path::new("")).to_owned();
@@ -409,6 +424,283 @@ pub mod ops {
         crate::commands::databases::ops::database_status(session, machine)
     }
 
+    /// Reports a passphrase change's progress (contracts/tauri-commands.md).
+    fn change_progress(events: &dyn SessionEvents, phase: &str, processed: u64, total: u64) {
+        events.emit(
+            "passphrase_change:progress",
+            json!({ "phase": phase, "processed": processed, "total": total }),
+        );
+    }
+
+    fn change_stopped() -> CommandError {
+        CommandError::operation_stopped(OperationKind::PassphraseChange, None, None)
+    }
+
+    fn change_io_failure(path: &Path, err: &io::Error) -> CommandError {
+        log::error!("passphrase change: {}: {err}", path.display());
+        CommandError::new("INTERNAL_ERROR", "The copy with the new passphrase couldn't be made.")
+    }
+
+    /// How often the copy's size is reported while `sqlcipher_export` runs,
+    /// which has no progress callback of its own (research.md §3).
+    const EXPORT_POLL_EVERY: Duration = Duration::from_millis(100);
+
+    /// Changes the open database's passphrase (FR-015, FR-016; research.md
+    /// §3, §4): a copy keyed with `new` is made beside it, proved sound and
+    /// complete, and only then put in its place in one step, and the
+    /// previous file is securely deleted. Until that step the database is
+    /// untouched, so a failure or a stop leaves it opening with `current`
+    /// and all its content, and the copy is removed. Either passphrase is
+    /// held for this operation only (FR-007). `scratch_dir` takes the
+    /// page-1 probe that checks `current` (research.md §1a).
+    pub fn change_passphrase(
+        session: &Session,
+        machine: &MachineSettings,
+        scratch_dir: &Path,
+        current: &Passphrase,
+        new: &Passphrase,
+    ) -> Result<PassphraseChanged, CommandError> {
+        // 1. The new passphrase follows the rules for setting one (FR-003).
+        if let Some(problem) = new_passphrase_problem(new) {
+            return Err(CommandError::validation(
+                "Check the new passphrase.",
+                HashMap::from([("newPassphrase".to_owned(), problem.to_owned())]),
+            ));
+        }
+        let mut slot = hold_still_ours(session)?;
+        let open = slot.as_mut().expect("held open");
+        // The copy would leave pending changes behind (FR-039).
+        if open.pending_unresolved {
+            return Err(CommandError::pending_changes_unresolved());
+        }
+
+        // 2. The current passphrase, against the file's first page.
+        match db::verify_passphrase(&open.conn, current, scratch_dir) {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(CommandError::passphrase_incorrect(None, None)
+                    .on_field("currentPassphrase", "That isn't the current passphrase."))
+            }
+            Err(err) => {
+                log::error!("could not check the current passphrase: {err}");
+                return Err(CommandError::new(
+                    "INTERNAL_ERROR",
+                    "The current passphrase couldn't be checked.",
+                ));
+            }
+        }
+
+        // 3. Room for a second copy beside the database (FR-016).
+        let path = open.path.clone();
+        let len = RawFile::of(&open.conn)
+            .and_then(|file| file.size())
+            .map_err(|err| change_io_failure(&path, &err))?;
+        disk_space::check_room_for_copy(len, path.parent().unwrap_or(Path::new("")))?;
+
+        // 4. From here a sleep stops it, interrupting the export.
+        let operation = session
+            .operations()
+            .begin(OperationKind::PassphraseChange, Some(open.conn.get_interrupt_handle()))?;
+        let events = session.events();
+
+        // 5–7. The copy, stamped and proved sound.
+        let new_copy = file_swap::new_path(&path);
+        let prepared = rekeyed_copy(&open.conn, &operation, events, &new_copy, new)
+            .and_then(|()| check_rekeyed_copy(&open.conn, &operation, events, &new_copy, new));
+        if let Err(err) = prepared {
+            remove_copy(&new_copy);
+            return Err(err);
+        }
+
+        // 8. Close and replace. What the session knows about the database
+        // outlives its connection.
+        change_progress(events, "replacing", 0, 0);
+        if operation.is_cancelled() {
+            remove_copy(&new_copy);
+            return Err(change_stopped());
+        }
+        let notes = std::mem::take(&mut open.notes);
+        let staged_draft = open.staged_draft.take();
+        drop(slot.take());
+        let replaced = file_swap::replace(&path);
+
+        // 9. Reopen with the passphrase the file now has: the new one, or,
+        // when the replacement was refused, the current one.
+        let reopen_with = if replaced.is_ok() { new } else { current };
+        let reopened = db::open_database(&path, reopen_with, &machine.identity(), false)
+            .map_err(CommandError::from)
+            .and_then(|conn| lifecycle::prepare(machine, conn, &path));
+        match reopened {
+            Ok(mut reopened) => {
+                reopened.notes = notes;
+                reopened.staged_draft = staged_draft;
+                *slot = Some(reopened);
+            }
+            Err(err) => {
+                // Closed, and the backend keeps no passphrase (FR-007): the
+                // user opens it again.
+                log::error!("could not reopen {} after changing its passphrase", path.display());
+                session.set_last_closed(&path);
+                events.emit(
+                    "session:closed",
+                    json!({ "reason": CloseReason::Closed, "databasePath": path.to_string_lossy() }),
+                );
+                return Err(replaced.err().unwrap_or(err));
+            }
+        }
+        let replaced = replaced?;
+        Ok(PassphraseChanged {
+            old_file_removed: replaced.old_removed,
+            old_file_path: (!replaced.old_removed)
+                .then(|| replaced.old_path.to_string_lossy().into_owned()),
+            // The keyring holds no passphrase to update yet (FR-018).
+            passphrase_saved: false,
+        })
+    }
+
+    /// Makes `.<file>.new`, keyed with `new`, by `sqlcipher_export` into an
+    /// attachment (research.md §3), reporting its size as it grows, and
+    /// stamps it: no open marker, no pending changes, and a change waiting
+    /// to be backed up, since backups made before now keep the old
+    /// passphrase (FR-025, research.md §5).
+    fn rekeyed_copy(
+        conn: &Connection,
+        operation: &OperationGuard,
+        events: &dyn SessionEvents,
+        new_copy: &Path,
+        new: &Passphrase,
+    ) -> Result<(), CommandError> {
+        let total: i64 = conn
+            .query_row(
+                "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        let total = u64::try_from(total).unwrap_or(0);
+        // The session's connection can't create files, only attach one that
+        // exists.
+        File::create(new_copy).map_err(|err| change_io_failure(new_copy, &err))?;
+        let Some(copy_path) = new_copy.to_str() else {
+            return Err(change_io_failure(
+                new_copy,
+                &io::Error::new(io::ErrorKind::InvalidInput, "the path is not UTF-8"),
+            ));
+        };
+        conn.execute("ATTACH DATABASE ?1 AS rekey KEY ?2", [copy_path, new.as_str()])
+            .map_err(CommandError::from_db)?;
+
+        change_progress(events, "copying", 0, total);
+        let copied = cipher::apply_cipher_settings(conn, "rekey")
+            .and_then(|()| export_reporting_size(conn, events, new_copy, total))
+            .and_then(|()| {
+                conn.execute_batch(
+                    "BEGIN;
+                     UPDATE rekey.app_state
+                     SET open_machine_id = NULL, open_machine_name = NULL, open_since = NULL,
+                         changes_waiting = 1;
+                     DELETE FROM rekey.pending_changes;
+                     COMMIT;",
+                )
+            });
+        if !conn.is_autocommit() {
+            let _ = conn.execute_batch("ROLLBACK");
+        }
+        let detached = conn.execute("DETACH DATABASE rekey", []).map(|_| ());
+        match copied.and(detached) {
+            Ok(()) if !operation.is_cancelled() => {
+                change_progress(events, "copying", total, total);
+                Ok(())
+            }
+            Ok(()) => Err(change_stopped()),
+            Err(_) if operation.is_cancelled() => Err(change_stopped()),
+            Err(err) => Err(CommandError::from_db(err)),
+        }
+    }
+
+    /// `SELECT sqlcipher_export('rekey')`, with a thread reporting the size
+    /// of the copy every [`EXPORT_POLL_EVERY`] against `total`: the copy
+    /// only grows, so the bar is honest, if uneven.
+    fn export_reporting_size(
+        conn: &Connection,
+        events: &dyn SessionEvents,
+        new_copy: &Path,
+        total: u64,
+    ) -> rusqlite::Result<()> {
+        let (finished, wait) = mpsc::channel::<()>();
+        thread::scope(|scope| {
+            scope.spawn(move || {
+                while let Err(RecvTimeoutError::Timeout) = wait.recv_timeout(EXPORT_POLL_EVERY) {
+                    let written = fs::metadata(new_copy).map_or(0, |meta| meta.len());
+                    change_progress(events, "copying", written.min(total), total);
+                }
+            });
+            let exported = conn.query_row("SELECT sqlcipher_export('rekey')", [], |_| Ok(()));
+            drop(finished);
+            exported
+        })
+    }
+
+    /// Opens the copy on its own with the new passphrase and proves it sound
+    /// (research.md §4) and complete: every table has as many rows as the
+    /// database it was copied from, which is idle meanwhile.
+    fn check_rekeyed_copy(
+        conn: &Connection,
+        operation: &OperationGuard,
+        events: &dyn SessionEvents,
+        new_copy: &Path,
+        new: &Passphrase,
+    ) -> Result<(), CommandError> {
+        change_progress(events, "checking", 0, 0);
+        let not_sound = || {
+            CommandError::new(
+                "INTERNAL_ERROR",
+                "The copy with the new passphrase didn't pass its checks, so the passphrase was \
+                 not changed.",
+            )
+        };
+        let copy = db::check_copy(new_copy, new).map_err(|err| {
+            log::error!("the copy with the new passphrase failed its checks: {err}");
+            not_sound()
+        })?;
+        let expected = table_row_counts(conn).map_err(CommandError::from_db)?;
+        let found = table_row_counts(&copy).map_err(CommandError::from_db)?;
+        drop(copy);
+        if found != expected {
+            log::error!("the copy with the new passphrase has other row counts: {found:?}");
+            return Err(not_sound());
+        }
+        if operation.is_cancelled() {
+            return Err(change_stopped());
+        }
+        Ok(())
+    }
+
+    /// The row count of every table in the main database, the search
+    /// index's shadow tables included. The index itself is left out:
+    /// counting an external-content FTS5 table reads its content table.
+    fn table_row_counts(conn: &Connection) -> rusqlite::Result<BTreeMap<String, i64>> {
+        let tables: Vec<String> = conn
+            .prepare(
+                "SELECT name FROM pragma_table_list
+                 WHERE schema = 'main' AND type IN ('table', 'shadow')",
+            )?
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        tables
+            .into_iter()
+            .map(|table| {
+                let quoted = table.replace('"', "\"\"");
+                let count = conn.query_row(
+                    &format!("SELECT count(*) FROM main.\"{quoted}\""),
+                    [],
+                    |row| row.get(0),
+                )?;
+                Ok((table, count))
+            })
+            .collect()
+    }
+
     /// Deletes every backup of the open database (FR-029, US3-4): only the
     /// files its listing names, never another database's in a shared
     /// folder, each by secure deletion. One that can't be deleted is left
@@ -500,4 +792,30 @@ pub async fn delete_all_backups(
     session: State<'_, Session>,
 ) -> Result<BackupsDeleted, CommandError> {
     ops::delete_all_backups(&session, confirmed)
+}
+
+/// Where the page-1 probe of a passphrase check goes (research.md §1a).
+const PROBE_DIR: &str = "passphrase-probes";
+
+#[tauri::command]
+pub async fn change_passphrase(
+    current_passphrase: String,
+    new_passphrase: String,
+    app: AppHandle,
+    session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
+) -> Result<PassphraseChanged, CommandError> {
+    let current_passphrase = Passphrase::from_input(current_passphrase);
+    let new_passphrase = Passphrase::from_input(new_passphrase);
+    let scratch = app.path().app_cache_dir().map_err(|err| {
+        log::error!("no cache directory for the passphrase check: {err}");
+        CommandError::new("INTERNAL_ERROR", "The current passphrase couldn't be checked.")
+    })?;
+    ops::change_passphrase(
+        &session,
+        &machine,
+        &scratch.join(PROBE_DIR),
+        &current_passphrase,
+        &new_passphrase,
+    )
 }

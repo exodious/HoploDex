@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Icon, Menu, MenuItem, MenuSeparator } from "../../components";
 import { useSession } from "../session/sessionStore";
+import { ChangePassphraseDialog } from "./ChangePassphraseDialog";
 import { DatabaseSettingsDialog } from "./DatabaseSettingsDialog";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import "./databases.css";
@@ -8,10 +9,11 @@ import "./databases.css";
 /** The open database's menu, at the left of the top bar's tools
  * (contracts/ui-databases.md §4). Switching and closing are normal closes,
  * which ask first about a form with unsaved input (§6). It also holds the
- * database's settings (§7) and the restore dialog (§9). */
+ * database's settings (§7), the passphrase change (§8) and the restore
+ * dialog (§9). */
 export function DatabaseMenu() {
   const session = useSession();
-  const [dialog, setDialog] = useState<"settings" | "restore" | null>(null);
+  const [dialog, setDialog] = useState<"settings" | "passphrase" | "restore" | null>(null);
   const { settingsRequested, clearSettingsRequest } = session;
 
   // Asked for from a failed-backup notice before this database was opened.
@@ -41,6 +43,7 @@ export function DatabaseMenu() {
         <MenuItem onSelect={() => void session.closeDatabase("closed")}>Close database</MenuItem>
         <MenuSeparator />
         <MenuItem onSelect={() => setDialog("settings")}>Database settings…</MenuItem>
+        <MenuItem onSelect={() => setDialog("passphrase")}>Change passphrase…</MenuItem>
         <MenuItem onSelect={() => setDialog("restore")}>Restore from a backup…</MenuItem>
       </Menu>
       <DatabaseSettingsDialog
@@ -50,6 +53,13 @@ export function DatabaseMenu() {
         onSaved={() => void session.refreshStatus()}
         onRestore={() => setDialog("restore")}
       />
+      {dialog === "passphrase" && (
+        <ChangePassphraseDialog
+          open
+          onOpenChange={(open) => setDialog(open ? "passphrase" : null)}
+          name={status.name}
+        />
+      )}
       {dialog === "restore" && (
         <RestoreBackupDialog
           open

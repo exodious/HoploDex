@@ -88,6 +88,7 @@ fn main() {
             hoplodex_lib::commands::backups::list_backups,
             hoplodex_lib::commands::backups::restore_backup,
             hoplodex_lib::commands::backups::delete_all_backups,
+            hoplodex_lib::commands::backups::change_passphrase,
             hoplodex_lib::commands::firearms::create_firearm,
             hoplodex_lib::commands::firearms::update_firearm,
             hoplodex_lib::commands::firearms::dispose_firearm,

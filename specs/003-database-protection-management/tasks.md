@@ -426,7 +426,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Tests for User Story 4 (mandatory per constitution)
 
-- [ ] T097 [P] [US4] Write `src-tauri/tests/passphrase_change_test.rs` (FR-015, FR-016, SC-004), covering:
+- [X] T097 [P] [US4] Write `src-tauri/tests/passphrase_change_test.rs` (FR-015, FR-016, SC-004), covering:
   - after a change the database opens with the new passphrase and refuses the old one
   - row counts for every table and the photo and document blobs are identical
   - `.old` and `.new` are gone and `oldFileRemoved = true`
@@ -438,7 +438,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - an old file that cannot be securely deleted gives `oldFileRemoved = false` with `oldFilePath`
   - `passphrase_change:progress` reports `copying` with growing `processed`, then `checking` and `replacing`
   - the session is open again afterwards and the fingerprint is refreshed (writes succeed)
-- [ ] T098 [P] [US4] Write `src/features/databases/ChangePassphraseDialog.test.tsx` (contracts/ui-databases.md §8), covering:
+- [X] T098 [P] [US4] Write `src/features/databases/ChangePassphraseDialog.test.tsx` (contracts/ui-databases.md §8), covering:
   - the fields **Current passphrase**, **New passphrase** (with strength) and **Confirm new passphrase**
   - the frontend length and match checks
   - while running, the body is replaced by a `ProgressBar` with "Making a copy with the new passphrase…", "Checking the new copy…" and "Replacing the database…", and the dialog cannot be dismissed
@@ -448,7 +448,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Implementation for User Story 4
 
-- [ ] T099 [US4] Implement `ops::change_passphrase` in `src-tauri/src/commands/backups.rs` (research §3, §4; FR-015, FR-016):
+- [X] T099 [US4] Implement `ops::change_passphrase` in `src-tauri/src/commands/backups.rs` (research §3, §4; FR-015, FR-016):
   1. Validate the new passphrase
   2. `db::verify_passphrase` for the current one, using the app cache directory as scratch
   3. `disk_space::check_room_for_copy`
@@ -460,9 +460,9 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   9. Reopen with the new passphrase, held for this operation only
   
   Any failure removes `.new` and leaves the original untouched. Return `{ oldFileRemoved, oldFilePath?, passphraseSaved }`. The keyring update is added in T109
-- [ ] T100 [US4] Add the `change_passphrase` 🔑 command to `src-tauri/src/commands/backups.rs` and register it in `src-tauri/src/main.rs` (depends on T099)
-- [ ] T101 [US4] Create `src/features/databases/ChangePassphraseDialog.tsx` per contracts/ui-databases.md §8, with three `PassphraseField`s read once on submit and then reset, progress from `passphrase_change:progress`, and the completion and failure texts. Add **Change passphrase…** to `DatabaseMenu.tsx` and the wrapper to `databasesService.ts` (depends on T100)
-- [ ] T102 [US4] Add the screen `20-change-passphrase` to `e2e/screenshots/screens.e2e.ts` (depends on T101)
+- [X] T100 [US4] Add the `change_passphrase` 🔑 command to `src-tauri/src/commands/backups.rs` and register it in `src-tauri/src/main.rs` (depends on T099)
+- [X] T101 [US4] Create `src/features/databases/ChangePassphraseDialog.tsx` per contracts/ui-databases.md §8, with three `PassphraseField`s read once on submit and then reset, progress from `passphrase_change:progress`, and the completion and failure texts. Add **Change passphrase…** to `DatabaseMenu.tsx` and the wrapper to `databasesService.ts` (depends on T100)
+- [X] T102 [US4] Add the screen `20-change-passphrase` to `e2e/screenshots/screens.e2e.ts` (depends on T101)
 
 **Checkpoint**: User Stories 1–4 work. The passphrase can be changed safely.
 

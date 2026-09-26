@@ -188,6 +188,24 @@ export interface RestoreProgress {
 }
 
 /** `backups_delete:progress`: files deleted so far. */
+/** `passphrase_change:progress`: bytes while copying; `checking` and
+ * `replacing` are indeterminate, with `total: 0`. */
+export interface PassphraseChangeProgress {
+  phase: "copying" | "checking" | "replacing";
+  processed: number;
+  total: number;
+}
+
+/** `change_passphrase`'s answer (FR-016, FR-018). */
+export interface PassphraseChanged {
+  /** The previous file was securely deleted. */
+  oldFileRemoved: boolean;
+  /** Where the previous file still is, when it couldn't be deleted. */
+  oldFilePath?: string;
+  /** The passphrase saved in this computer's keyring was updated. */
+  passphraseSaved: boolean;
+}
+
 export interface CountProgress {
   processed: number;
   total: number;

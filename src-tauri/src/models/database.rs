@@ -263,6 +263,21 @@ pub struct BackupsDeleted {
     pub failed_paths: Vec<String>,
 }
 
+/// `change_passphrase`'s answer (FR-016, FR-018, US4-5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PassphraseChanged {
+    /// The previous file was securely deleted.
+    pub old_file_removed: bool,
+    /// Where the previous file still is, opening with the old passphrase,
+    /// when it couldn't be deleted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_file_path: Option<String>,
+    /// The passphrase saved in this computer's keyring was updated to the
+    /// new one.
+    pub passphrase_saved: bool,
+}
+
 /// Where backups go, as the settings dialog sends it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
