@@ -258,13 +258,20 @@ OS keyring. None of the tooling here opens it:
   directory, created by `db::create_database` with a fixed test passphrase
   and the production cipher settings. Tests never mock the database, and
   take every path (database, config directory) as a parameter.
+  `MachineSettings::load` starts with the keyring off, so they never reach the
+  OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
+  with `--features mock-keyring`, against keyring-core's in-memory store:
+  `cargo test --manifest-path src-tauri/Cargo.toml --features mock-keyring --test keyring_test`.
 - `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories, a
   `user-dirs.dirs` whose documents folder (the suggested place for a new
   database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at
   a first run and creates its database by typing a location in the sandbox
   (`createDatabase()` in `e2e/support/ui.ts`). E2E builds use the
   `mock-keyring` feature, an in-memory keyring for saved passphrases, since a
-  headless session can't unlock a real one.
+  headless session can't unlock a real one. The harness keeps it in
+  `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
+  passphrase survives a relaunch, and launches any `*-no-keyring.e2e.ts` spec
+  with `HOPLODEX_E2E_KEYRING=unavailable`, a computer without a keyring.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
   app at `.human-testing/` via `XDG_*_HOME`. The seed writes only into a
   directory that is new, empty or holds the `.hoplodex-sandbox` marker it

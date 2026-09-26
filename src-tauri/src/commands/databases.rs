@@ -11,11 +11,12 @@ use tauri::{AppHandle, Manager, State};
 use crate::commands::CommandError;
 use crate::models::database::{
     BackupLocationInput, BackupSettingsInput, ChooserState, CloseOutcome, CloseReason,
-    CollectionSettings, DatabaseStatus, NoteKind, RecentDatabase, RecentRemoved,
+    CollectionSettings, DatabaseStatus, NoteKind, PassphraseSaved, RecentDatabase, RecentRemoved,
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
+use ops::Unlock;
 
 pub mod ops {
     use std::fs;
@@ -25,11 +26,12 @@ pub mod ops {
     use rusqlite::Connection;
 
     use crate::commands::CommandError;
+    use crate::db;
     use crate::models::database::{
         validate_backup_settings_input, validate_create_database_input, BackupLocation,
         BackupLocationKind, BackupSettings, BackupSettingsInput, ChooserState, CloseOutcome,
         CloseReason, CollectionSettings, DatabaseNotes, DatabaseStatus, LockSettings, NoteKind,
-        OperationKind, RecentDatabase, RecentRemoved, SuggestedLocation,
+        OperationKind, PassphraseSaved, RecentDatabase, RecentRemoved, SuggestedLocation,
     };
     use crate::services::backups;
     use crate::services::machine_settings::{MachineSettings, RecentEntry};
@@ -65,8 +67,9 @@ pub mod ops {
     }
 
     /// The chooser's state (FR-012, FR-020, FR-021). The selected row is the
-    /// database just closed or locked (FR-033), or else the most recent. The
-    /// keyring and screen-lock flags stay off until those stories land.
+    /// database just closed or locked (FR-033), or else the most recent.
+    /// Whether passphrases can be saved here is probed the first time it is
+    /// asked (FR-019). The screen-lock flag stays off until User Story 6.
     pub fn chooser_state(
         session: &Session,
         machine: &MachineSettings,
@@ -82,7 +85,7 @@ pub mod ops {
         ChooserState {
             selected_path,
             recent,
-            keyring_available: false,
+            keyring_available: machine.keyring().is_available(),
             screen_lock_supported: false,
             suggested: SuggestedLocation {
                 folder: suggested_folder(documents, home).to_string_lossy().into_owned(),
@@ -124,31 +127,109 @@ pub mod ops {
         )
     }
 
-    /// Opens the database at `path` with a typed passphrase (FR-005, FR-006),
-    /// closing any other open database first as a switch. A refused open
-    /// changes neither the file nor the session. `take_over` opens a
-    /// database marked open on another computer (FR-032); the UI sends it
-    /// only after its confirmation. A database that is damaged, or that the
-    /// passphrase didn't open (the two can't be told apart at page 1), says
-    /// whether it has backups to restore from (FR-028, US3-6).
+    /// What opens a database.
+    pub enum Unlock<'a> {
+        /// A passphrase the user typed. `remember` saves it in this
+        /// computer's keyring once it has opened the database; the UI sends
+        /// it only after the FR-017 confirmation.
+        Typed { passphrase: &'a Passphrase, remember: bool },
+        /// The passphrase saved in this computer's keyring (FR-017).
+        Saved,
+    }
+
+    impl<'a> Unlock<'a> {
+        /// A typed passphrase, not to be remembered.
+        pub fn typed(passphrase: &'a Passphrase) -> Self {
+            Self::Typed { passphrase, remember: false }
+        }
+    }
+
+    /// Opens the database at `path` (FR-005, FR-006), closing any other open
+    /// database first as a switch. A refused open changes neither the file
+    /// nor the session. `take_over` opens a database marked open on another
+    /// computer (FR-032); the UI sends it only after its confirmation. A
+    /// database that is damaged, or that the passphrase didn't open (the two
+    /// can't be told apart at page 1), says whether it has backups to
+    /// restore from (FR-028, US3-6).
+    ///
+    /// The saved passphrase is found through the recent entry's cached
+    /// database id, since the file can't be read without it. When it no
+    /// longer opens the database the refusal says so (US5-5), and the next
+    /// typed passphrase that does replaces it (FR-018).
     pub fn open_database(
         session: &Session,
         machine: &MachineSettings,
         path: &str,
-        passphrase: &Passphrase,
+        unlock: Unlock<'_>,
         take_over: bool,
     ) -> Result<DatabaseStatus, CommandError> {
         let path = Path::new(path);
+        let loaded;
+        let (passphrase, saved) = match unlock {
+            Unlock::Typed { passphrase, .. } => (passphrase, false),
+            Unlock::Saved => {
+                loaded = machine
+                    .recent_entry(path)
+                    .and_then(|entry| entry.database_id)
+                    .and_then(|id| machine.keyring().load(&id));
+                match &loaded {
+                    Some(passphrase) => (passphrase, true),
+                    None => return Err(CommandError::passphrase_incorrect(Some(true), None)),
+                }
+            }
+        };
         match lifecycle::open(session, machine, path, passphrase, take_over) {
-            Ok(()) => database_status(session, machine),
+            Ok(()) => {
+                if let Unlock::Typed { passphrase, remember } = unlock {
+                    let entry = machine.recent_entry(path);
+                    let was_saved = entry.as_ref().is_some_and(|entry| entry.passphrase_saved);
+                    if let Some(id) = entry.and_then(|entry| entry.database_id) {
+                        if remember || was_saved {
+                            save_for(machine, path, &id, passphrase);
+                        }
+                    }
+                }
+                database_status(session, machine)
+            }
             Err(err) if err.code == "DATABASE_DAMAGED" => {
                 Err(CommandError::database_damaged(has_backups(machine, path)))
             }
-            Err(err) if err.code == "PASSPHRASE_INCORRECT" && has_backups(machine, path) => {
-                Err(CommandError::passphrase_incorrect(None, Some(true)))
+            Err(err) if err.code == "PASSPHRASE_INCORRECT" => {
+                Err(CommandError::passphrase_incorrect(
+                    saved.then_some(true),
+                    has_backups(machine, path).then_some(true),
+                ))
             }
             Err(err) => Err(err),
         }
+    }
+
+    /// Saves `passphrase` in the keyring for the database `database_id`,
+    /// listed at `path`, and records whether that worked. A failure is
+    /// logged, not reported: the database is open either way.
+    pub(crate) fn save_for(
+        machine: &MachineSettings,
+        path: &Path,
+        database_id: &str,
+        passphrase: &Passphrase,
+    ) -> bool {
+        let saved = machine.keyring().save(database_id, passphrase).is_ok();
+        machine.set_passphrase_saved(path, saved);
+        saved
+    }
+
+    /// Replaces the passphrase saved for the database at `path`, if one is,
+    /// with `passphrase`, the one it opens with now: after a passphrase
+    /// change (FR-018) or a restore (research.md §8). Returns whether one is
+    /// saved afterwards.
+    pub(crate) fn refresh_saved(
+        machine: &MachineSettings,
+        path: &Path,
+        database_id: &str,
+        passphrase: &Passphrase,
+    ) -> bool {
+        let was_saved = machine.recent_entry(path).is_some_and(|entry| entry.passphrase_saved);
+        was_saved && save_for(machine, path, database_id, passphrase)
     }
 
     /// Whether this computer knows of backups of the database at `path`,
@@ -180,11 +261,77 @@ pub mod ops {
         lifecycle::close_normal(session, machine, reason)
     }
 
-    /// Takes `path` off this computer's recent list. The database file is
-    /// never touched (FR-012, US2-5).
+    /// Takes `path` off this computer's recent list, and forgets its saved
+    /// passphrase (FR-018). The database file is never touched (FR-012,
+    /// US2-5).
     pub fn remove_recent_database(machine: &MachineSettings, path: &str) -> RecentRemoved {
-        machine.remove_recent(Path::new(path));
+        let removed = machine.remove_recent(Path::new(path));
+        if let Some(entry) = removed.filter(|entry| entry.passphrase_saved) {
+            if let Some(id) = entry.database_id {
+                // Logged by the keyring; the entry is off the list either way.
+                if machine.keyring().forget(&id).is_ok() {
+                    machine.clear_passphrase_saved(&id);
+                }
+            }
+        }
         RecentRemoved { removed: true }
+    }
+
+    /// Saves the open database's passphrase in this computer's keyring
+    /// (FR-017), once it is proved to be the one the file opens with,
+    /// against its first page (research.md §1a). The UI sends it only after
+    /// the FR-017 confirmation. `scratch_dir` takes the page-1 probe.
+    pub fn save_passphrase(
+        session: &Session,
+        machine: &MachineSettings,
+        scratch_dir: &Path,
+        passphrase: &Passphrase,
+    ) -> Result<PassphraseSaved, CommandError> {
+        if !machine.keyring().is_available() {
+            return Err(CommandError::keyring_unavailable());
+        }
+        let (path, database_id) = session.inspect(|open| {
+            match db::verify_passphrase(&open.conn, passphrase, scratch_dir) {
+                Ok(true) => Ok((open.path.clone(), open.database_id.clone())),
+                Ok(false) => Err(CommandError::passphrase_incorrect(None, None).on_field(
+                    "passphrase",
+                    format!("That isn't the passphrase of {}.", open.name),
+                )),
+                Err(err) => {
+                    log::error!("could not check the passphrase to save: {err}");
+                    Err(CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked."))
+                }
+            }
+        })?;
+        machine.keyring().save(&database_id, passphrase)?;
+        machine.set_passphrase_saved(&path, true);
+        Ok(PassphraseSaved { passphrase_saved: true })
+    }
+
+    /// Deletes the passphrase saved for the database at `path`, or for the
+    /// open one (FR-018). `KEYRING_UNAVAILABLE`, with nothing changed, when
+    /// the keyring can't be reached to delete it.
+    pub fn forget_saved_passphrase(
+        session: &Session,
+        machine: &MachineSettings,
+        path: Option<&str>,
+    ) -> Result<PassphraseSaved, CommandError> {
+        let (path, database_id) = match path {
+            Some(path) => {
+                let path = PathBuf::from(path);
+                let id = machine.recent_entry(&path).and_then(|entry| entry.database_id);
+                (path, id)
+            }
+            None => {
+                session.inspect(|open| Ok((open.path.clone(), Some(open.database_id.clone()))))?
+            }
+        };
+        if let Some(id) = database_id {
+            machine.keyring().forget(&id)?;
+            machine.clear_passphrase_saved(&id);
+        }
+        machine.set_passphrase_saved(&path, false);
+        Ok(PassphraseSaved { passphrase_saved: false })
     }
 
     /// Points an unavailable recent entry at where the user found its file
@@ -222,6 +369,7 @@ pub mod ops {
             path: open.path.to_string_lossy().into_owned(),
             name: open.name.clone(),
             passphrase_saved,
+            keyring_available: machine.keyring().is_available(),
             settings: collection_settings(&open.conn, &open.path)?,
             pending_changes: None,
             notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },
@@ -357,16 +505,31 @@ pub async fn create_database(
     )
 }
 
+/// Exactly one of `passphrase` and `use_saved_passphrase: true` is given.
 #[tauri::command]
 pub async fn open_database(
     path: String,
-    passphrase: String,
+    passphrase: Option<String>,
+    use_saved_passphrase: Option<bool>,
+    remember_passphrase: Option<bool>,
     take_over: Option<bool>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<DatabaseStatus, CommandError> {
-    let passphrase = Passphrase::from_input(passphrase);
-    ops::open_database(&session, &machine, &path, &passphrase, take_over.unwrap_or(false))
+    let passphrase = passphrase.map(Passphrase::from_input);
+    let unlock = match (&passphrase, use_saved_passphrase.unwrap_or(false)) {
+        (Some(passphrase), false) => {
+            Unlock::Typed { passphrase, remember: remember_passphrase.unwrap_or(false) }
+        }
+        (None, true) => Unlock::Saved,
+        _ => {
+            return Err(CommandError::validation(
+                "Give a passphrase, or use the saved one.",
+                [("passphrase".to_owned(), "Enter the passphrase.".to_owned())].into(),
+            ))
+        }
+    };
+    ops::open_database(&session, &machine, &path, unlock, take_over.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -410,6 +573,33 @@ pub async fn locate_database(
     machine: State<'_, MachineSettings>,
 ) -> Result<RecentDatabase, CommandError> {
     ops::locate_database(&machine, &path, &new_path)
+}
+
+/// Where the page-1 probe of a passphrase check goes (research.md §1a).
+pub(crate) const PROBE_DIR: &str = "passphrase-probes";
+
+#[tauri::command]
+pub async fn save_passphrase(
+    passphrase: String,
+    app: AppHandle,
+    session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
+) -> Result<PassphraseSaved, CommandError> {
+    let passphrase = Passphrase::from_input(passphrase);
+    let scratch = app.path().app_cache_dir().map_err(|err| {
+        log::error!("no cache directory for the passphrase check: {err}");
+        CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked.")
+    })?;
+    ops::save_passphrase(&session, &machine, &scratch.join(PROBE_DIR), &passphrase)
+}
+
+#[tauri::command]
+pub async fn forget_saved_passphrase(
+    path: Option<String>,
+    session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
+) -> Result<PassphraseSaved, CommandError> {
+    ops::forget_saved_passphrase(&session, &machine, path.as_deref())
 }
 
 #[tauri::command]

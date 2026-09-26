@@ -31,6 +31,7 @@ function status(
     path: `${FOLDER}/Main collection.hoplodex`,
     name: "Main collection",
     passphraseSaved: false,
+    keyringAvailable: false,
     settings: settings(location),
     pendingChanges: null,
     notes: {
@@ -56,6 +57,7 @@ function renderSettings(current: DatabaseStatus = status()) {
     onOpenChange: vi.fn(),
     onSaved: vi.fn(),
     onRestore: vi.fn(),
+    onPassphraseSavedChange: vi.fn(),
   };
   render(<DatabaseSettingsDialog open status={current} {...props} />);
   return props;
@@ -187,5 +189,139 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
       /Keep between 1 and 100 backups\./,
     );
     expect(props.onOpenChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, §8)", () => {
+  const FACTS =
+    "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open Main collection without knowing the passphrase.";
+
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
+    vi.mocked(databasesService.savePassphrase).mockReset();
+    vi.mocked(databasesService.forgetSavedPassphrase).mockReset();
+  });
+
+  function thisComputer() {
+    return screen.getByRole("group", { name: "This computer" });
+  }
+
+  it("says the passphrase isn't remembered, and offers to remember it", () => {
+    renderSettings({ ...status(), keyringAvailable: true });
+
+    expect(
+      within(thisComputer()).getByText(
+        "Not remembered: Main collection asks for its passphrase each time it opens.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(thisComputer()).getByRole("button", {
+        name: "Remember the passphrase on this computer…",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("remembers it after the FR-017 confirmation, with the passphrase typed there", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
+    const props = renderSettings({ ...status(), keyringAvailable: true });
+
+    await user.click(
+      within(thisComputer()).getByRole("button", {
+        name: "Remember the passphrase on this computer…",
+      }),
+    );
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Remember the passphrase of Main collection?",
+    });
+    expect(confirm).toHaveTextContent(FACTS);
+    expect(confirm).toHaveTextContent(
+      "Locking will no longer need the passphrase on this computer, though it still clears the collection from memory, deletes opened document copies, and releases the database for other computers.",
+    );
+    const field = within(confirm).getByLabelText("Passphrase for Main collection");
+    await user.type(field, "correct horse battery staple");
+    // A choice, not a destructive action.
+    const remember = within(confirm).getByRole("button", { name: "Remember passphrase" });
+    expect(remember).not.toHaveClass("hd-button--danger");
+    await user.click(remember);
+
+    expect(databasesService.savePassphrase).toHaveBeenCalledWith("correct horse battery staple");
+    await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the confirmation open with the error when the passphrase is wrong", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.savePassphrase).mockRejectedValue(
+      new CommandFailure({
+        code: "PASSPHRASE_INCORRECT",
+        message: "The passphrase is incorrect.",
+        fieldErrors: { passphrase: "That isn't the passphrase of Main collection." },
+      }),
+    );
+    const props = renderSettings({ ...status(), keyringAvailable: true });
+
+    await user.click(
+      within(thisComputer()).getByRole("button", {
+        name: "Remember the passphrase on this computer…",
+      }),
+    );
+    const confirm = await screen.findByRole("alertdialog");
+    const field = within(confirm).getByLabelText("Passphrase for Main collection");
+    await user.type(field, "a guess");
+    await user.click(within(confirm).getByRole("button", { name: "Remember passphrase" }));
+
+    expect(
+      await within(confirm).findByText("That isn't the passphrase of Main collection."),
+    ).toBeInTheDocument();
+    expect(field).toHaveValue("");
+    expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
+  });
+
+  it("saves nothing when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    renderSettings({ ...status(), keyringAvailable: true });
+
+    await user.click(
+      within(thisComputer()).getByRole("button", {
+        name: "Remember the passphrase on this computer…",
+      }),
+    );
+    const confirm = await screen.findByRole("alertdialog");
+    await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+  });
+
+  it("shows a saved passphrase and forgets it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.forgetSavedPassphrase).mockResolvedValue({
+      passphraseSaved: false,
+    });
+    const props = renderSettings({ ...status(), passphraseSaved: true, keyringAvailable: true });
+
+    expect(
+      within(thisComputer()).getByText(
+        "The passphrase is remembered on this computer: Main collection opens without asking for it.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(
+      within(thisComputer()).getByRole("button", { name: "Forget saved passphrase" }),
+    );
+
+    expect(databasesService.forgetSavedPassphrase).toHaveBeenCalledWith();
+    await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
+  });
+
+  it("says when this computer has no keyring (FR-019)", () => {
+    renderSettings({ ...status(), keyringAvailable: false });
+
+    expect(
+      within(thisComputer()).getByText("Not available: this computer has no keyring service."),
+    ).toBeInTheDocument();
+    expect(within(thisComputer()).queryByRole("button")).not.toBeInTheDocument();
   });
 });

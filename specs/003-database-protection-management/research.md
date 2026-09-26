@@ -581,7 +581,13 @@ or overwrites that entry**. No code path names it.
 with keyring-core's in-memory store. `HOPLODEX_E2E_DB_KEY` goes away, since
 there is no random key to share any more. A new variable,
 `HOPLODEX_E2E_KEYRING=unavailable`, read only by `mock-keyring` builds, makes
-the probe report "unavailable" so FR-019 can be tested end to end.
+the probe report "unavailable" so FR-019 can be tested end to end. The
+in-memory store forgets everything when the app exits, so E2E runs also set
+`HOPLODEX_E2E_KEYRING_FILE` to a file in the sandbox that the store is loaded
+from at launch and written back to after each save or forget, which lets a
+remembered passphrase survive a relaunch. Tests that don't concern the
+keyring never reach it at all: `MachineSettings::load` starts with the
+keyring off, and only the app (and `keyring_test`) give it a real one.
 
 ---
 

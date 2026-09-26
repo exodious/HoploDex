@@ -4,6 +4,7 @@ pub mod disk_space;
 pub mod file_swap;
 pub mod import_matching;
 pub mod insurance_status;
+pub mod keyring;
 pub mod machine_settings;
 pub mod passphrase;
 pub mod secure_delete;

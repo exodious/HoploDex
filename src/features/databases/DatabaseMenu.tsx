@@ -52,6 +52,7 @@ export function DatabaseMenu() {
         status={status}
         onSaved={() => void session.refreshStatus()}
         onRestore={() => setDialog("restore")}
+        onPassphraseSavedChange={() => void session.refreshStatus()}
       />
       {dialog === "passphrase" && (
         <ChangePassphraseDialog

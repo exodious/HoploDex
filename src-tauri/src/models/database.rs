@@ -104,6 +104,14 @@ pub struct RecentRemoved {
     pub removed: bool,
 }
 
+/// `save_passphrase`'s and `forget_saved_passphrase`'s answer (FR-017,
+/// FR-018).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PassphraseSaved {
+    pub passphrase_saved: bool,
+}
+
 /// Something to tell the user in the chooser, once (data-model.md
 /// "Machine-local"). Kept in `machine.json` until shown.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -222,7 +230,11 @@ pub struct DatabaseNotes {
 pub struct DatabaseStatus {
     pub path: String,
     pub name: String,
+    /// FR-017, on this computer.
     pub passphrase_saved: bool,
+    /// Passphrases can be saved on this computer (FR-019), for the
+    /// settings' "This computer" section.
+    pub keyring_available: bool,
     pub settings: CollectionSettings,
     pub pending_changes: Option<PendingSummary>,
     pub notes: DatabaseNotes,

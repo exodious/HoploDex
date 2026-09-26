@@ -33,6 +33,8 @@ function openFailureText(name: string, error: unknown): string {
   if (!(error instanceof CommandFailure)) return `HoploDex couldn't open ${name}.`;
   switch (error.code) {
     case "PASSPHRASE_INCORRECT":
+      if (savedPassphraseFailed(error))
+        return `The saved passphrase no longer opens ${name}. Enter its passphrase; the saved copy will be updated.`;
       return `That passphrase didn't open ${name}. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.`;
     case "DATABASE_IN_USE":
       return `${name} is open in another copy of HoploDex, on this computer or another one. Close it there first.`;
@@ -54,6 +56,15 @@ const BACKUP_FAILURE: Record<Extract<ChooserNotice, { kind: "backupFailed" }>["r
   io: "the backup was interrupted",
   databaseUnreachable: "its file could not be reached",
 };
+
+/** The passphrase saved on this computer didn't open the database (US5-5). */
+function savedPassphraseFailed(error: unknown): boolean {
+  return (
+    error instanceof CommandFailure &&
+    error.code === "PASSPHRASE_INCORRECT" &&
+    error.details?.savedPassphraseFailed === true
+  );
+}
 
 /** Whether a failed open offers restoring from a backup: the database is
  * damaged, or the passphrase didn't open it (at page 1 the two look the
@@ -117,6 +128,8 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   const [creating, setCreating] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [takeOver, setTakeOver] = useState<{ row: ChooserRow; machineName: string } | null>(null);
+  /** Rows whose saved passphrase no longer opens them, which ask for it. */
+  const [savedFailed, setSavedFailed] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let current = true;
@@ -147,11 +160,9 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   }, [selectPath]);
 
   const rows = useMemo<ChooserRow[]>(() => {
-    const known: ChooserRow[] = (state?.recent ?? []).map(({ path, name, available }) => ({
-      path,
-      name,
-      available,
-    }));
+    const known: ChooserRow[] = (state?.recent ?? []).map(
+      ({ path, name, available, passphraseSaved }) => ({ path, name, available, passphraseSaved }),
+    );
     return [...picked.filter((row) => !known.some((k) => k.path === row.path)), ...known];
   }, [picked, state]);
 
@@ -160,15 +171,26 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     setFailure(null);
   }
 
-  async function openRow(row: ChooserRow, passphrase: string, takingOver = false) {
+  /** Opens `row` with the typed passphrase, or the saved one when it is
+   * `null`. */
+  async function openRow(
+    row: ChooserRow,
+    passphrase: string | null,
+    options: { remember?: boolean; takingOver?: boolean } = {},
+  ) {
     setOpening(row.path);
     setFailure(null);
     setAnnouncement(`Opening ${row.name}…`);
     try {
       // On success the session replaces this screen with the collection.
-      if (takingOver) await session.openDatabase(row.path, passphrase, { takeOver: true });
+      if (options.takingOver) await session.openDatabase(row.path, passphrase, { takeOver: true });
+      else if (options.remember)
+        await session.openDatabase(row.path, passphrase, { rememberPassphrase: true });
       else await session.openDatabase(row.path, passphrase);
     } catch (error) {
+      if (savedPassphraseFailed(error)) {
+        setSavedFailed((current) => new Set(current).add(row.path));
+      }
       if (error instanceof CommandFailure && error.code === "DATABASE_NOT_FOUND") {
         markUnavailable(row.path);
         setFailure({ path: row.path, kind: "notFound" });
@@ -244,7 +266,14 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     } else {
       setPicked((current) =>
         current.map((r) =>
-          r.path === row.path ? { path: chosen, name: databaseNameOf(chosen), available: true } : r,
+          r.path === row.path
+            ? {
+                path: chosen,
+                name: databaseNameOf(chosen),
+                available: true,
+                passphraseSaved: false,
+              }
+            : r,
         ),
       );
     }
@@ -261,7 +290,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     if (typeof chosen !== "string") return;
     if (!rows.some((row) => row.path === chosen)) {
       setPicked((current) => [
-        { path: chosen, name: databaseNameOf(chosen), available: true },
+        { path: chosen, name: databaseNameOf(chosen), available: true, passphraseSaved: false },
         ...current,
       ]);
     }
@@ -269,7 +298,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   }
 
   function confirmTakeOver(passphrase: string) {
-    if (takeOver) void openRow(takeOver.row, passphrase, true);
+    if (takeOver) void openRow(takeOver.row, passphrase, { takingOver: true });
   }
 
   const firstRun = state !== null && rows.length === 0;
@@ -355,8 +384,10 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                           : undefined
                       }
                       elsewhere={failed?.kind === "elsewhere" ? failed.elsewhere : undefined}
+                      savedFailed={savedFailed.has(row.path)}
+                      keyringAvailable={state.keyringAvailable}
                       onSelect={() => select(row.path)}
-                      onOpen={(passphrase) => void openRow(row, passphrase)}
+                      onOpen={(passphrase, remember) => void openRow(row, passphrase, { remember })}
                       onRemove={() => void removeRow(row)}
                       onLocate={() => void locateRow(row)}
                       onGoBack={() => setFailure(null)}

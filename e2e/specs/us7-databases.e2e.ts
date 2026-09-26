@@ -134,23 +134,29 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
   });
 });
 
+const club = {
+  folder: `${scratchDocuments()}/Club`,
+  name: "Club",
+  passphrase: "club armory passphrase",
+};
+const home = {
+  folder: `${scratchDocuments()}/Home`,
+  name: "Home",
+  passphrase: "home safe passphrase",
+};
+
+async function showsFirearm(make: string): Promise<boolean> {
+  await goTo("Collection");
+  return (await listedNames()).some((name) => name.includes(make));
+}
+
+/** The selected chooser row asks for a passphrase, rather than opening with
+ * the saved one. */
+async function asksForPassphrase(): Promise<boolean> {
+  return $(".hd-db-row--selected input").isExisting();
+}
+
 describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
-  const club = {
-    folder: `${scratchDocuments()}/Club`,
-    name: "Club",
-    passphrase: "club armory passphrase",
-  };
-  const home = {
-    folder: `${scratchDocuments()}/Home`,
-    name: "Home",
-    passphrase: "home safe passphrase",
-  };
-
-  async function showsFirearm(make: string): Promise<boolean> {
-    await goTo("Collection");
-    return (await listedNames()).some((name) => name.includes(make));
-  }
-
   it("keeps two databases with their own passphrases in two folders", async () => {
     await switchDatabase();
     await createDatabase(club);
@@ -249,5 +255,62 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
     await unlock(club.passphrase);
     expect(await showsFirearm("Unsaved make")).toBe(false);
     expect(await showsFirearm("ClubGun")).toBe(true);
+  });
+});
+
+describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphrase", () => {
+  const SAVED_NOTE = "Opens without a passphrase on this computer";
+
+  it("remembers a passphrase at open, after the confirmation (FR-017)", async () => {
+    await switchDatabase();
+    await selectChooserRow("Home");
+    expect(await asksForPassphrase()).toBe(true);
+
+    await toggle("Remember on this computer");
+    const confirm = '[role="alertdialog"]';
+    await $(confirm).waitForExist();
+    await expect($(confirm)).toHaveText(
+      expect.stringContaining("will be able to open Home without knowing the passphrase"),
+    );
+    await clickButton("Remember passphrase");
+    await $(confirm).waitForExist({ reverse: true });
+
+    await unlock(home.passphrase);
+    expect(await showsFirearm("HomeGun")).toBe(true);
+  });
+
+  it("opens it with Open alone after a relaunch, while another database still asks", async () => {
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Home");
+    await expect($(".hd-db-row--selected .hd-db-row__saved")).toHaveText(SAVED_NOTE);
+    expect(await asksForPassphrase()).toBe(false);
+
+    await selectChooserRow("Club");
+    expect(await asksForPassphrase()).toBe(true);
+
+    await selectChooserRow("Home");
+    await clickButton("Open");
+    await waitForCollection();
+    expect(await showsFirearm("HomeGun")).toBe(true);
+  });
+
+  it("forgets it from the database settings, and the prompt returns (FR-018)", async () => {
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    await expect($("fieldset*=This computer")).toHaveText(
+      expect.stringContaining("The passphrase is remembered on this computer"),
+    );
+    await clickButton("Forget saved passphrase");
+    await expect($("fieldset*=This computer")).toHaveText(
+      expect.stringContaining("Not remembered: Home asks for its passphrase each time it opens."),
+    );
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Home");
+    expect(await asksForPassphrase()).toBe(true);
+    expect(await $(".hd-db-row__saved").isExisting()).toBe(false);
+    await unlock(home.passphrase);
   });
 });

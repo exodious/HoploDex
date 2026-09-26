@@ -254,10 +254,14 @@ footer, like every other form.
   passphrase is saved on this computer, anyone using this computer account
   can reopen <name> after it locks."
 
-**This computer**
-- **Remember the passphrase on this computer**: shows the current state.
-  Turning it on asks for the passphrase (`PassphraseField`) after the FR-017
-  confirmation (§8). **Forget saved passphrase** removes it.
+**This computer** (acts at once, not with **Save**)
+- Shows the current state: "The passphrase is remembered on this computer:
+  <name> opens without asking for it." with **Forget saved passphrase**, or
+  "Not remembered: <name> asks for its passphrase each time it opens." with
+  **Remember the passphrase on this computer…**, which opens the FR-017
+  confirmation (§8) with a `PassphraseField` "Passphrase for <name>" in it.
+  A passphrase that doesn't open the database keeps the confirmation open
+  with the error on the field.
 - Unavailable-keyring text as in §1.
 
 ## 8. Passphrase dialogs

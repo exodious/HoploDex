@@ -229,8 +229,8 @@ fn remove_drops_only_the_entry_and_never_the_file() {
     settings.touch_recent(&a, "A", &"a".repeat(32), Path::new("/b"));
     settings.touch_recent(&b, "B", &"b".repeat(32), Path::new("/b"));
 
-    assert!(settings.remove_recent(&a));
-    assert!(!settings.remove_recent(&a), "already gone");
+    assert!(settings.remove_recent(&a).is_some());
+    assert!(settings.remove_recent(&a).is_none(), "already gone");
 
     assert_eq!(names(&MachineSettings::load(config.path()).unwrap()), ["B"]);
     assert_eq!(fs::read(&a).unwrap(), b"database A");

@@ -476,7 +476,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Tests for User Story 5 (mandatory per constitution)
 
-- [ ] T103 [P] [US5] Write `src-tauri/tests/keyring_test.rs`, run with `--features mock-keyring` (FR-017–FR-019, SC-008), covering:
+- [X] T103 [P] [US5] Write `src-tauri/tests/keyring_test.rs`, run with `--features mock-keyring` (FR-017–FR-019, SC-008), covering:
   - saving with a checked passphrase creates service `com.hoplodex.app`, user `passphrase:<database_id>`, with the NFC passphrase
   - `open_database { useSavedPassphrase: true }` opens without a typed passphrase, while another database has no entry
   - `rememberPassphrase` on a typed open writes the entry
@@ -488,19 +488,19 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `save_passphrase` with a wrong passphrase gives `PASSPHRASE_INCORRECT` through the page-1 probe
   - `HOPLODEX_E2E_KEYRING=unavailable` makes the probe report unavailable and `save_passphrase` give `KEYRING_UNAVAILABLE`, while everything else works
   - a pre-seeded mock `sqlcipher-key` entry is never read, changed or deleted by any of the above (research §10)
-- [ ] T104 [P] [US5] Extend `src/features/databases/DatabaseChooser.test.tsx` (US5 cases, contracts/ui-databases.md §1, §8), covering:
+- [X] T104 [P] [US5] Extend `src/features/databases/DatabaseChooser.test.tsx` (US5 cases, contracts/ui-databases.md §1, §8), covering:
   - **Remember on this computer** is off by default
   - ticking it opens the FR-017 confirmation (confirm label "Remember passphrase"), and the box stays unticked unless confirmed
   - a saved row shows "Opens without a passphrase on this computer" and only **Open**
   - `savedPassphraseFailed` shows "The saved passphrase no longer opens <name>. Enter its passphrase; the saved copy will be updated." with the prompt
   - with `keyringAvailable: false` the box is disabled with "Not available: this computer has no keyring service."
-- [ ] T105 [P] [US5] Extend `src/features/databases/DatabaseSettingsDialog.test.tsx` (This computer section): the saved state is shown; turning it on shows the confirmation and then a `PassphraseField`; **Forget saved passphrase** calls `forget_saved_passphrase`; the unavailable text is shown
-- [ ] T106 [P] [US5] Add the US5 flows to `e2e/specs/us7-databases.e2e.ts` (the E2E build uses `mock-keyring`): remember on open, relaunch, and the database opens with **Open** alone; the second database still asks; forget in settings, relaunch, and the prompt returns. Add a variant launched with `HOPLODEX_E2E_KEYRING=unavailable` in which the option is disabled
+- [X] T105 [P] [US5] Extend `src/features/databases/DatabaseSettingsDialog.test.tsx` (This computer section): the saved state is shown; turning it on shows the confirmation and then a `PassphraseField`; **Forget saved passphrase** calls `forget_saved_passphrase`; the unavailable text is shown
+- [X] T106 [P] [US5] Add the US5 flows to `e2e/specs/us7-databases.e2e.ts` (the E2E build uses `mock-keyring`): remember on open, relaunch, and the database opens with **Open** alone; the second database still asks; forget in settings, relaunch, and the prompt returns. Add a variant launched with `HOPLODEX_E2E_KEYRING=unavailable` in which the option is disabled
 
 ### Implementation for User Story 5
 
-- [ ] T107 [US5] Create `src-tauri/src/services/keyring.rs` (research §10; data-model.md "Keyring: saved passphrase"). It offers `save(database_id, &Passphrase)`, `load(database_id) -> Option<Passphrase>`, `forget(database_id)`, and `probe()`, which reads a known-absent entry: `NoEntry` means available; `PlatformFailure`/`NoStorageAccess` means unavailable, logged without the raw reason reaching the UI, and the result is cached for the session. It uses service `com.hoplodex.app` and user `passphrase:<database_id>` only. Under `mock-keyring`, `HOPLODEX_E2E_KEYRING=unavailable` forces unavailable. It never names `sqlcipher-key`
-- [ ] T108 [US5] Extend `src-tauri/src/commands/databases.rs` (depends on T107):
+- [X] T107 [US5] Create `src-tauri/src/services/keyring.rs` (research §10; data-model.md "Keyring: saved passphrase"). It offers `save(database_id, &Passphrase)`, `load(database_id) -> Option<Passphrase>`, `forget(database_id)`, and `probe()`, which reads a known-absent entry: `NoEntry` means available; `PlatformFailure`/`NoStorageAccess` means unavailable, logged without the raw reason reaching the UI, and the result is cached for the session. It uses service `com.hoplodex.app` and user `passphrase:<database_id>` only. Under `mock-keyring`, `HOPLODEX_E2E_KEYRING=unavailable` forces unavailable. It never names `sqlcipher-key`
+- [X] T108 [US5] Extend `src-tauri/src/commands/databases.rs` (depends on T107):
   - `open_database` accepts `useSavedPassphrase` (loads from the keyring through the recent entry's cached `databaseId`; a failure gives `savedPassphraseFailed`) and `rememberPassphrase`
   - a typed success writes or refreshes the entry and sets `passphraseSaved` in `machine.json`
   - `get_chooser_state` reports `keyringAvailable` from `probe()`
@@ -508,10 +508,10 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `remove_recent_database` also forgets the saved passphrase (FR-018)
   
   Register the two new commands in `src-tauri/src/main.rs`
-- [ ] T109 [US5] Hook the keyring into `ops::change_passphrase` (update the saved copy to the new passphrase, US4-7) and `ops::restore_backup` (set it to the backup's passphrase, research §8) in `src-tauri/src/commands/backups.rs`, returning `passphraseSaved` (depends on T107)
-- [ ] T110 [P] [US5] Create the FR-017 confirmation `src/features/databases/RememberPassphraseConfirm.tsx`, a non-destructive `ConfirmDialog` with confirm label "Remember passphrase" and the exact facts in contracts/ui-databases.md §8
-- [ ] T111 [US5] Add the saved-passphrase flow to the chooser in `src/features/databases/DatabaseChooser.tsx` and `RecentDatabaseRow.tsx` (contracts/ui-databases.md §1): the **Remember on this computer** checkbox, the confirmation, the saved row with **Open** only (focused), the stale-passphrase text, and the unavailable state. Add the `save_passphrase` and `forget_saved_passphrase` wrappers (depends on T108, T110)
-- [ ] T112 [US5] Add the "This computer" section to `src/features/databases/DatabaseSettingsDialog.tsx`: the current state, turning it on (confirmation, then a `PassphraseField` → `save_passphrase`), **Forget saved passphrase**, and the unavailable text (contracts/ui-databases.md §7) (depends on T110)
+- [X] T109 [US5] Hook the keyring into `ops::change_passphrase` (update the saved copy to the new passphrase, US4-7) and `ops::restore_backup` (set it to the backup's passphrase, research §8) in `src-tauri/src/commands/backups.rs`, returning `passphraseSaved` (depends on T107)
+- [X] T110 [P] [US5] Create the FR-017 confirmation `src/features/databases/RememberPassphraseConfirm.tsx`, a non-destructive `ConfirmDialog` with confirm label "Remember passphrase" and the exact facts in contracts/ui-databases.md §8
+- [X] T111 [US5] Add the saved-passphrase flow to the chooser in `src/features/databases/DatabaseChooser.tsx` and `RecentDatabaseRow.tsx` (contracts/ui-databases.md §1): the **Remember on this computer** checkbox, the confirmation, the saved row with **Open** only (focused), the stale-passphrase text, and the unavailable state. Add the `save_passphrase` and `forget_saved_passphrase` wrappers (depends on T108, T110)
+- [X] T112 [US5] Add the "This computer" section to `src/features/databases/DatabaseSettingsDialog.tsx`: the current state, turning it on (confirmation, then a `PassphraseField` → `save_passphrase`), **Forget saved passphrase**, and the unavailable text (contracts/ui-databases.md §7) (depends on T110)
 
 **Checkpoint**: User Stories 1–5 work. A passphrase can be remembered on this computer and forgotten again.
 

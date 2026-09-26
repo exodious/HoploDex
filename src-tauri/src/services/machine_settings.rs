@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{now_utc, random_hex};
 use crate::models::database::ChooserNotice;
+use crate::services::keyring::Keyring;
 
 const FILE_NAME: &str = "machine.json";
 const VERSION: u32 = 1;
@@ -89,9 +90,16 @@ impl MachineFile {
 /// The loaded `machine.json`, kept as Tauri state. Every change is written
 /// straight back, atomically. A write that fails is logged and not
 /// reported: losing the recent list must never stop a database opening.
+///
+/// It also holds this computer's [`Keyring`], where the passphrases its
+/// `passphraseSaved` flags stand for are kept (FR-017). A loaded one has the
+/// keyring [`off`](Keyring::off), so tests and tools never reach the OS
+/// keyring; the app gives it the real one with
+/// [`with_keyring`](Self::with_keyring).
 pub struct MachineSettings {
     path: PathBuf,
     file: Mutex<MachineFile>,
+    keyring: Keyring,
 }
 
 impl MachineSettings {
@@ -110,7 +118,7 @@ impl MachineSettings {
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 let fresh = MachineFile::fresh()?;
                 write_atomically(&path, &fresh)?;
-                return Ok(Self { path, file: Mutex::new(fresh) });
+                return Ok(Self { path, file: Mutex::new(fresh), keyring: Keyring::off() });
             }
             Err(_) => None,
         };
@@ -124,7 +132,16 @@ impl MachineSettings {
                 fresh
             }
         };
-        Ok(Self { path, file: Mutex::new(file) })
+        Ok(Self { path, file: Mutex::new(file), keyring: Keyring::off() })
+    }
+
+    /// The same settings with `keyring` as this computer's keyring.
+    pub fn with_keyring(self, keyring: Keyring) -> Self {
+        Self { keyring, ..self }
+    }
+
+    pub fn keyring(&self) -> &Keyring {
+        &self.keyring
     }
 
     fn lock(&self) -> MutexGuard<'_, MachineFile> {
@@ -178,16 +195,44 @@ impl MachineSettings {
         });
     }
 
-    /// Removes `path` from the recent list, and says whether it was there.
-    /// The database file is never touched (FR-012).
-    pub fn remove_recent(&self, path: &Path) -> bool {
-        let mut removed = false;
+    /// The recent entry for `path`, if there is one.
+    pub fn recent_entry(&self, path: &Path) -> Option<RecentEntry> {
+        self.lock().recent_databases.iter().find(|entry| entry.path == path).cloned()
+    }
+
+    /// Removes `path` from the recent list, returning the entry that was
+    /// there. The database file is never touched (FR-012).
+    pub fn remove_recent(&self, path: &Path) -> Option<RecentEntry> {
+        let mut removed = None;
         self.update(|file| {
-            let before = file.recent_databases.len();
-            file.recent_databases.retain(|entry| entry.path != path);
-            removed = file.recent_databases.len() != before;
+            if let Some(index) = file.recent_databases.iter().position(|entry| entry.path == path) {
+                removed = Some(file.recent_databases.remove(index));
+            }
         });
         removed
+    }
+
+    /// Records whether a passphrase is saved for the database at `path`
+    /// (FR-017). Nothing happens when `path` isn't in the list.
+    pub fn set_passphrase_saved(&self, path: &Path, saved: bool) {
+        self.update(|file| {
+            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
+                entry.passphrase_saved = saved;
+            }
+        });
+    }
+
+    /// Records that nothing is saved any more for the database
+    /// `database_id`, under every path it is listed at: its keyring entry
+    /// is shared by them all.
+    pub fn clear_passphrase_saved(&self, database_id: &str) {
+        self.update(|file| {
+            for entry in &mut file.recent_databases {
+                if entry.database_id.as_deref() == Some(database_id) {
+                    entry.passphrase_saved = false;
+                }
+            }
+        });
     }
 
     /// Points the recent entry for `path` at `new_path`, where the user found

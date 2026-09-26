@@ -673,3 +673,122 @@ describe("DatabaseChooser (User Story 3)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("DatabaseChooser (User Story 5)", () => {
+  const saved: RecentDatabase = { ...main, passphraseSaved: true };
+
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset();
+  });
+
+  it("offers remembering the passphrase, off by default", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ keyringAvailable: true }),
+    );
+    renderChooser();
+
+    const remember = await screen.findByRole("checkbox", { name: "Remember on this computer" });
+    expect(remember).not.toBeChecked();
+    expect(remember).toBeEnabled();
+  });
+
+  it("remembers only once the FR-017 confirmation is accepted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ keyringAvailable: true }),
+    );
+    const session = renderChooser();
+
+    const remember = await screen.findByRole("checkbox", { name: "Remember on this computer" });
+    await user.click(remember);
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Remember the passphrase of Main collection?",
+    });
+    expect(confirm).toHaveTextContent(
+      "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open Main collection without knowing the passphrase. On a shared account this defeats the passphrase.",
+    );
+    // Not ticked while it asks, nor after a cancel.
+    expect(remember).not.toBeChecked();
+    await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(remember).not.toBeChecked();
+
+    await user.click(remember);
+    await user.click(await screen.findByRole("button", { name: "Remember passphrase" }));
+    expect(remember).toBeChecked();
+
+    await user.type(
+      screen.getByLabelText("Passphrase for Main collection"),
+      "correct horse battery staple{Enter}",
+    );
+    expect(session.openDatabase).toHaveBeenCalledWith(main.path, "correct horse battery staple", {
+      rememberPassphrase: true,
+    });
+  });
+
+  it("opens a database whose passphrase is saved with Open alone", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [saved, shared], keyringAvailable: true }),
+    );
+    const session = renderChooser();
+
+    const open = await screen.findByRole("button", { name: "Open" });
+    await waitFor(() => expect(open).toHaveFocus());
+    const rows = within(screen.getByRole("list", { name: "Recent databases" })).getAllByRole(
+      "listitem",
+    );
+    expect(rows[0]).toHaveTextContent("Opens without a passphrase on this computer");
+    expect(rows[1]).not.toHaveTextContent("Opens without a passphrase on this computer");
+    expect(screen.queryByLabelText("Passphrase for Main collection")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Remember on this computer" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(open);
+    expect(session.openDatabase).toHaveBeenCalledWith(saved.path, null);
+  });
+
+  it("asks for the passphrase when the saved one no longer opens it (US5-5)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [saved, shared], keyringAvailable: true }),
+    );
+    const session = renderChooser({
+      openDatabase: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new CommandFailure({
+            code: "PASSPHRASE_INCORRECT",
+            message: "The passphrase is incorrect.",
+            details: { savedPassphraseFailed: true },
+          }),
+        )
+        .mockResolvedValue(undefined),
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Open" }));
+
+    const field = await screen.findByLabelText("Passphrase for Main collection");
+    expect(field).toHaveAccessibleDescription(
+      expect.stringContaining(
+        "The saved passphrase no longer opens Main collection. Enter its passphrase; the saved copy will be updated.",
+      ),
+    );
+    await waitFor(() => expect(field).toHaveFocus());
+    await user.type(field, "the new passphrase here{Enter}");
+    expect(session.openDatabase).toHaveBeenLastCalledWith(saved.path, "the new passphrase here");
+  });
+
+  it("disables remembering on a computer with no keyring (FR-019)", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ keyringAvailable: false }),
+    );
+    renderChooser();
+
+    const remember = await screen.findByRole("checkbox", { name: "Remember on this computer" });
+    expect(remember).toBeDisabled();
+    expect(
+      screen.getByText("Not available: this computer has no keyring service."),
+    ).toBeInTheDocument();
+  });
+});

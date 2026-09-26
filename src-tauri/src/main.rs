@@ -7,6 +7,7 @@ use hoplodex_lib::commands::documents::{clear_opened_documents_cache, OPENED_DOC
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db;
 use hoplodex_lib::services::backups;
+use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::Session;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
@@ -56,7 +57,10 @@ fn main() {
             // its passphrase (specs/003-database-protection-management).
             let opened_documents = app.path().app_cache_dir()?.join(OPENED_DOCUMENTS_DIR);
             app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents)));
-            let machine = MachineSettings::load(&app.path().app_config_dir()?)?;
+            // Saved passphrases (FR-017); the keyring itself is first asked
+            // about when the chooser needs to know whether it is there.
+            let machine = MachineSettings::load(&app.path().app_config_dir()?)?
+                .with_keyring(Keyring::system());
             // A backup a crash or forced quit cut short (research.md §7).
             backups::sweep_unfinished(&machine);
             app.manage(machine);
@@ -85,6 +89,8 @@ fn main() {
             hoplodex_lib::commands::databases::dismiss_note,
             hoplodex_lib::commands::databases::update_backup_settings,
             hoplodex_lib::commands::databases::skip_backup,
+            hoplodex_lib::commands::databases::save_passphrase,
+            hoplodex_lib::commands::databases::forget_saved_passphrase,
             hoplodex_lib::commands::backups::list_backups,
             hoplodex_lib::commands::backups::restore_backup,
             hoplodex_lib::commands::backups::delete_all_backups,

@@ -49,6 +49,9 @@ function isolateAppData() {
     return dir;
   });
   process.env.HOPLODEX_E2E_DOCUMENTS = documents;
+  // The E2E build's in-memory keyring is kept here between launches, so a
+  // remembered passphrase outlives a relaunch (research.md §10).
+  process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(sandbox, "keyring.json");
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;
@@ -206,6 +209,12 @@ export const config: WebdriverIO.Config = {
       { cwd: repoRoot, stdio: "inherit" },
     );
     if (specs.some((spec) => spec.endsWith("/e2e/screenshots/screens.e2e.ts"))) seedCollection();
+    // A computer with no keyring service (FR-019).
+    if (specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts"))) {
+      process.env.HOPLODEX_E2E_KEYRING = "unavailable";
+    } else {
+      delete process.env.HOPLODEX_E2E_KEYRING;
+    }
     const nativeDriver = findNativeDriver();
     const args = nativeDriver ? ["--native-driver", nativeDriver] : [];
     tauriDriver = spawn("tauri-driver", args, {

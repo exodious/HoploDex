@@ -10,9 +10,10 @@ import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases
 export interface SessionState {
   /** The open database, or `null` while the chooser shows. */
   status: DatabaseStatus | null;
-  /** Opens the database at `path`; rejects with the command's
-   * `CommandFailure` and leaves the chooser showing. */
-  openDatabase: (path: string, passphrase: string, options?: OpenOptions) => Promise<void>;
+  /** Opens the database at `path` with the typed passphrase, or with the
+   * one saved on this computer when `passphrase` is `null`; rejects with the
+   * command's `CommandFailure` and leaves the chooser showing. */
+  openDatabase: (path: string, passphrase: string | null, options?: OpenOptions) => Promise<void>;
   /** Creates a database and opens it. */
   createDatabase: (input: CreateDatabaseInput) => Promise<void>;
   /** Closes the open database, or switches away from it, asking first about

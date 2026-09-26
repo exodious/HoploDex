@@ -7,6 +7,7 @@
 
 use tauri::{AppHandle, Manager, State};
 
+use crate::commands::databases::PROBE_DIR;
 use crate::commands::CommandError;
 use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged};
 use crate::services::machine_settings::MachineSettings;
@@ -26,7 +27,7 @@ pub mod ops {
     use rusqlite::{Connection, OpenFlags};
     use serde_json::json;
 
-    use crate::commands::databases::ops::status;
+    use crate::commands::databases::ops::{refresh_saved, status};
     use crate::commands::CommandError;
     use crate::db::{self, cipher, raw_file::RawFile, OpenError};
     use crate::models::database::{
@@ -360,6 +361,8 @@ pub mod ops {
         let conn = db::open_database(&path, passphrase, &machine.identity(), false)?;
         let mut reopened = lifecycle::prepare(machine, conn, &path)?;
         reopened.notes.restored_with_passphrase_of = made_at;
+        // A saved passphrase now opens it only if it is the backup's.
+        refresh_saved(machine, &path, &reopened.database_id, passphrase);
         let restored = status(&reopened, machine);
         *slot = Some(reopened);
         restored
@@ -420,6 +423,7 @@ pub mod ops {
         restored.notes.restored_with_passphrase_of = made_at;
         restored.notes.damaged_file_kept_at =
             set_aside.then(|| kept.to_string_lossy().into_owned());
+        refresh_saved(machine, path, &restored.database_id, passphrase);
         session.install(restored);
         crate::commands::databases::ops::database_status(session, machine)
     }
@@ -530,11 +534,13 @@ pub mod ops {
         let reopened = db::open_database(&path, reopen_with, &machine.identity(), false)
             .map_err(CommandError::from)
             .and_then(|conn| lifecycle::prepare(machine, conn, &path));
-        match reopened {
+        let database_id = match reopened {
             Ok(mut reopened) => {
                 reopened.notes = notes;
                 reopened.staged_draft = staged_draft;
+                let database_id = reopened.database_id.clone();
                 *slot = Some(reopened);
+                database_id
             }
             Err(err) => {
                 // Closed, and the backend keeps no passphrase (FR-007): the
@@ -547,14 +553,14 @@ pub mod ops {
                 );
                 return Err(replaced.err().unwrap_or(err));
             }
-        }
+        };
         let replaced = replaced?;
         Ok(PassphraseChanged {
             old_file_removed: replaced.old_removed,
             old_file_path: (!replaced.old_removed)
                 .then(|| replaced.old_path.to_string_lossy().into_owned()),
-            // The keyring holds no passphrase to update yet (FR-018).
-            passphrase_saved: false,
+            // A saved passphrase follows the change (FR-018, US4-7).
+            passphrase_saved: refresh_saved(machine, &path, &database_id, new),
         })
     }
 
@@ -793,9 +799,6 @@ pub async fn delete_all_backups(
 ) -> Result<BackupsDeleted, CommandError> {
     ops::delete_all_backups(&session, confirmed)
 }
-
-/// Where the page-1 probe of a passphrase check goes (research.md §1a).
-const PROBE_DIR: &str = "passphrase-probes";
 
 #[tauri::command]
 pub async fn change_passphrase(

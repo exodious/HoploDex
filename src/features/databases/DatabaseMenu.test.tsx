@@ -18,6 +18,7 @@ const status = {
   path: PATH,
   name: "Main collection",
   passphraseSaved: false,
+  keyringAvailable: false,
   settings: {
     backups: {
       enabled: true,

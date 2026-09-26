@@ -1,15 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Button, Icon, Menu, MenuItem, PassphraseField } from "../../components";
+import { Button, Checkbox, Icon, Menu, MenuItem, PassphraseField } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { formatDateTime } from "../../lib/dates";
 import { folderOf, middleTruncate } from "./paths";
+import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 
 export interface ChooserRow {
   path: string;
   name: string;
   /** The file is at `path` (FR-012). */
   available: boolean;
+  /** Its passphrase is saved on this computer (FR-017). */
+  passphraseSaved: boolean;
 }
 
 /** Another computer's open marker, from `DATABASE_OPEN_ELSEWHERE`. */
@@ -32,11 +35,17 @@ export interface RecentDatabaseRowProps {
   unavailableNote?: string;
   /** The last open found the database open on another computer. */
   elsewhere?: OpenElsewhere;
+  /** The saved passphrase no longer opens it, so it is asked for (US5-5). */
+  savedFailed?: boolean;
+  /** Passphrases can be saved on this computer (FR-019). */
+  keyringAvailable: boolean;
   /** Restoring from a backup is offered below the error: the database is
    * damaged, or the passphrase didn't open it, and it has backups (US3-6). */
   onRestore?: () => void;
   onSelect: () => void;
-  onOpen: (passphrase: string) => void;
+  /** Opens with the typed passphrase, remembered on this computer when
+   * `remember` is set, or with the saved one when `passphrase` is `null`. */
+  onOpen: (passphrase: string | null, remember: boolean) => void;
   onRemove: () => void;
   onLocate: () => void;
   onGoBack: () => void;
@@ -44,8 +53,8 @@ export interface RecentDatabaseRowProps {
 }
 
 /** One database in the chooser: its name and folder and, when selected, its
- * passphrase and **Open**, or what stopped it opening
- * (contracts/ui-databases.md §1). */
+ * passphrase and **Open** (only **Open** when the passphrase is saved), or
+ * what stopped it opening (contracts/ui-databases.md §1). */
 export function RecentDatabaseRow({
   entry,
   selected,
@@ -54,6 +63,8 @@ export function RecentDatabaseRow({
   error,
   unavailableNote,
   elsewhere,
+  savedFailed = false,
+  keyringAvailable,
   onSelect,
   onOpen,
   onRemove,
@@ -64,13 +75,24 @@ export function RecentDatabaseRow({
 }: RecentDatabaseRowProps) {
   const folder = folderOf(entry.path);
   const field = useRef<PassphraseFieldHandle>(null);
+  const openButton = useRef<HTMLButtonElement>(null);
+  /** Opens with the saved passphrase, with no prompt. */
+  const usesSaved = entry.passphraseSaved && !savedFailed;
+  const [remember, setRemember] = useState(false);
+  const [confirmingRemember, setConfirmingRemember] = useState(false);
 
-  // Back to the field for another try once a failed open returns.
+  // Back to the field, or to Open, for another try once a failed open
+  // returns.
   const wasOpening = useRef(opening);
   useEffect(() => {
-    if (wasOpening.current && !opening) field.current?.focus();
+    if (wasOpening.current && !opening) (field.current ?? openButton.current)?.focus();
     wasOpening.current = opening;
   }, [opening]);
+
+  // Remembering is asked for each time a row is selected.
+  useEffect(() => {
+    if (!selected) setRemember(false);
+  }, [selected]);
 
   const overflow = (
     <Menu
@@ -124,7 +146,7 @@ export function RecentDatabaseRow({
             disabled={disabled}
             onClick={onSelect}
           >
-            <Identity name={entry.name} folder={folder} />
+            <Identity name={entry.name} folder={folder} saved={entry.passphraseSaved} />
           </button>
           {overflow}
         </div>
@@ -134,16 +156,20 @@ export function RecentDatabaseRow({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (usesSaved) {
+      onOpen(null, false);
+      return;
+    }
     const passphrase = field.current?.read() ?? "";
     field.current?.reset();
-    onOpen(passphrase);
+    onOpen(passphrase, remember);
   }
 
   return (
     <li className="hd-db-row hd-db-row--selected" aria-current="true">
       <div className="hd-db-row__head">
         <div className="hd-db-row__summary">
-          <Identity name={entry.name} folder={folder} />
+          <Identity name={entry.name} folder={folder} saved={usesSaved} />
         </div>
         {overflow}
       </div>
@@ -165,20 +191,64 @@ export function RecentDatabaseRow({
         </div>
       ) : (
         <>
-          <form className="hd-db-row__unlock" onSubmit={handleSubmit} noValidate>
-            <PassphraseField
-              ref={field}
-              label={`Passphrase for ${entry.name}`}
-              autoComplete="current-password"
-              autoFocus
-              disabled={opening}
-              error={error}
-              fieldClassName="hd-db-row__passphrase"
-            />
-            <Button type="submit" variant="primary" pending={opening}>
+          <form
+            className={
+              usesSaved ? "hd-db-row__unlock hd-db-row__unlock--saved" : "hd-db-row__unlock"
+            }
+            onSubmit={handleSubmit}
+            noValidate
+          >
+            {!usesSaved && (
+              <PassphraseField
+                ref={field}
+                label={`Passphrase for ${entry.name}`}
+                autoComplete="current-password"
+                autoFocus
+                disabled={opening}
+                error={error}
+                fieldClassName="hd-db-row__passphrase"
+              />
+            )}
+            <Button
+              ref={openButton}
+              type="submit"
+              variant="primary"
+              pending={opening}
+              autoFocus={usesSaved}
+            >
               {opening ? "Opening…" : "Open"}
             </Button>
           </form>
+          {usesSaved && error && (
+            <p className="hd-field__error hd-db-row__saved-error" role="alert">
+              {error}
+            </p>
+          )}
+          {/* A saved passphrase that failed is replaced by the next one that
+              works, so there is nothing to ask. */}
+          {!entry.passphraseSaved && (
+            <div className="hd-db-row__remember">
+              <Checkbox
+                label="Remember on this computer"
+                checked={remember}
+                disabled={opening || !keyringAvailable}
+                hint={
+                  keyringAvailable
+                    ? undefined
+                    : "Not available: this computer has no keyring service."
+                }
+                onCheckedChange={(checked) =>
+                  checked ? setConfirmingRemember(true) : setRemember(false)
+                }
+              />
+              <RememberPassphraseConfirm
+                open={confirmingRemember}
+                name={entry.name}
+                onClose={() => setConfirmingRemember(false)}
+                onConfirm={() => setRemember(true)}
+              />
+            </div>
+          )}
           {onRestore && !opening && (
             <div className="hd-db-row__actions hd-db-row__restore">
               <Button size="sm" icon="archive" onClick={onRestore}>
@@ -192,7 +262,15 @@ export function RecentDatabaseRow({
   );
 }
 
-function Identity({ name, folder }: { name: string; folder: string }) {
+function Identity({
+  name,
+  folder,
+  saved = false,
+}: {
+  name: string;
+  folder: string;
+  saved?: boolean;
+}) {
   return (
     <>
       <Icon name="archive" className="hd-db-row__icon" />
@@ -201,6 +279,9 @@ function Identity({ name, folder }: { name: string; folder: string }) {
         <span className="hd-db-row__folder" title={folder}>
           {middleTruncate(folder)}
         </span>
+        {saved && (
+          <span className="hd-db-row__saved">Opens without a passphrase on this computer</span>
+        )}
       </span>
     </>
   );

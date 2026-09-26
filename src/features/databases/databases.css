@@ -150,6 +150,22 @@
   margin-top: calc(var(--text-sm) * 1.5 + var(--space-2));
 }
 
+/* The passphrase is saved on this computer: Open alone, no field above it. */
+.hd-db-row__unlock--saved > .hd-button {
+  margin-top: 0;
+}
+
+.hd-db-row__saved {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-db-row__saved-error,
+.hd-db-row__remember {
+  margin-top: calc(-1 * var(--space-2));
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
 /* ── The backups disclosure in the create dialog ─────────────────────── */
 
 .hd-privacy-note__title {
@@ -189,6 +205,11 @@
   .hd-db-row__unlock {
     flex-direction: column;
     align-items: stretch;
+    padding-left: var(--space-4);
+  }
+
+  .hd-db-row__saved-error,
+  .hd-db-row__remember {
     padding-left: var(--space-4);
   }
 
@@ -375,6 +396,14 @@
 .hd-settings-actions {
   display: grid;
   gap: var(--space-2);
+}
+
+/* Whether this computer remembers the passphrase (§7 "This computer"). */
+.hd-settings-state {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
 }
 
 /* Restore from a backup (contracts/ui-databases.md §9). */

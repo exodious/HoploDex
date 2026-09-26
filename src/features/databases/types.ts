@@ -82,7 +82,10 @@ export interface Draft {
 export interface DatabaseStatus {
   path: string;
   name: string;
+  /** FR-017, on this computer. */
   passphraseSaved: boolean;
+  /** Passphrases can be saved on this computer (FR-019). */
+  keyringAvailable: boolean;
   settings: CollectionSettings;
   pendingChanges: PendingSummary | null;
   notes: {
@@ -203,6 +206,11 @@ export interface PassphraseChanged {
   /** Where the previous file still is, when it couldn't be deleted. */
   oldFilePath?: string;
   /** The passphrase saved in this computer's keyring was updated. */
+  passphraseSaved: boolean;
+}
+
+/** `save_passphrase`'s and `forget_saved_passphrase`'s answer. */
+export interface PassphraseSaved {
   passphraseSaved: boolean;
 }
 

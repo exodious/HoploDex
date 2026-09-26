@@ -125,6 +125,7 @@ type DatabaseStatus = {
   path: string;
   name: string;
   passphraseSaved: boolean;
+  keyringAvailable: boolean;    // FR-019, for the settings' "This computer" section
   settings: CollectionSettings;
   pendingChanges: PendingSummary | null;
   notes: {
@@ -163,6 +164,7 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 - **Input**: `{ path: string; passphrase?: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`. Exactly one of `passphrase` or `useSavedPassphrase: true` is given.
 - **Output**: `DatabaseStatus`
 - **Errors**: `DATABASE_NOT_FOUND`, `DATABASE_UNREADABLE`, `DATABASE_IN_USE`, `PASSPHRASE_INCORRECT` (with `savedPassphraseFailed` when the saved one was used, US5-5), `DATABASE_NEWER_VERSION`, `DATABASE_OPEN_ELSEWHERE` (unless `takeOver: true`), `DATABASE_DAMAGED`
+- `useSavedPassphrase` finds the saved passphrase through the recent entry's cached `databaseId`; when there is none, or it no longer opens the file, the open fails with `PASSPHRASE_INCORRECT { savedPassphraseFailed: true }`. `rememberPassphrase` on a computer without a keyring still opens the database, with `passphraseSaved: false`.
 - Any other database that is open is closed first, as a `switched` close. The frontend calls `close_database` itself first, so it can ask about unsaved changes. On success with a typed passphrase: the recent entry is added or refreshed, and the keyring entry is written when `rememberPassphrase` is set, or refreshed when it was saved but failed (FR-018). Nothing is written to the file on any failure (FR-006, FR-014).
 
 ### `remove_recent_database`
@@ -230,11 +232,13 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 
 ### `save_passphrase` 🔑
 - **Input**: `{ passphrase: string }` → **Output**: `{ passphraseSaved: true }`
-- **Errors**: `PASSPHRASE_INCORRECT` (checked with the page-1 probe, research §1a), `KEYRING_UNAVAILABLE`
+- **Errors**: `PASSPHRASE_INCORRECT` (checked with the page-1 probe, research §1a; `fieldErrors.passphrase`), `KEYRING_UNAVAILABLE`
 - The UI sends it only after the FR-017 confirmation.
 
 ### `forget_saved_passphrase`
 - **Input**: `{ path?: string }` (defaults to the open database) → **Output**: `{ passphraseSaved: false }`
+- **Errors**: `KEYRING_UNAVAILABLE` (the keyring can't be reached to delete it; nothing is changed)
+- The keyring entry is per database id, so every recent entry for that database stops being marked saved.
 
 ---
 

@@ -10,6 +10,7 @@ import type {
   DatabaseStatus,
   PassphraseChanged,
   PassphraseChangeProgress,
+  PassphraseSaved,
   RecentDatabase,
   RestoreProgress,
 } from "./types";
@@ -27,19 +28,25 @@ export function createDatabase(input: CreateDatabaseInput): Promise<DatabaseStat
 }
 
 export interface OpenOptions {
+  /** Save the typed passphrase in this computer's keyring once it opens the
+   * database (FR-017), sent only after the confirmation. */
+  rememberPassphrase?: boolean;
   /** Open a database marked open on another computer (FR-032), sent only
    * after the take-over confirmation. */
   takeOver?: boolean;
 }
 
+/** Opens the database at `path` with the typed passphrase, or, with `null`,
+ * the one saved on this computer. */
 export function openDatabase(
   path: string,
-  passphrase: string,
+  passphrase: string | null,
   options: OpenOptions = {},
 ): Promise<DatabaseStatus> {
   return invoke<DatabaseStatus>("open_database", {
     path,
-    passphrase,
+    ...(passphrase === null ? { useSavedPassphrase: true } : { passphrase }),
+    ...(options.rememberPassphrase ? { rememberPassphrase: true } : {}),
     ...(options.takeOver ? { takeOver: true } : {}),
   });
 }
@@ -53,6 +60,19 @@ export function removeRecentDatabase(path: string): Promise<{ removed: true }> {
 /** Points an unavailable recent entry at where its file now is (FR-012). */
 export function locateDatabase(path: string, newPath: string): Promise<RecentDatabase> {
   return invoke<RecentDatabase>("locate_database", { path, newPath });
+}
+
+/** Saves the open database's passphrase in this computer's keyring, once
+ * the backend has checked it opens the database (FR-017). Sent only after
+ * the confirmation. */
+export function savePassphrase(passphrase: string): Promise<PassphraseSaved> {
+  return invoke<PassphraseSaved>("save_passphrase", { passphrase });
+}
+
+/** Deletes the passphrase saved for the database at `path`, or for the open
+ * one (FR-018). */
+export function forgetSavedPassphrase(path?: string): Promise<PassphraseSaved> {
+  return invoke<PassphraseSaved>("forget_saved_passphrase", path ? { path } : {});
 }
 
 /** Saves the open database's backup settings (FR-024, FR-026). */

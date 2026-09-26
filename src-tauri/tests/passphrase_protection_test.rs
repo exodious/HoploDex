@@ -317,7 +317,7 @@ mod through_commands {
             &world.session,
             &world.machine,
             &world.path("Main").to_string_lossy(),
-            &passphrase(),
+            ops::Unlock::typed(&passphrase()),
             false,
         )
         .unwrap();
@@ -348,7 +348,7 @@ mod through_commands {
             &world.session,
             &world.machine,
             &world.path("Main").to_string_lossy(),
-            &Passphrase::from_input("not the passphrase at all".into()),
+            ops::Unlock::typed(&Passphrase::from_input("not the passphrase at all".into())),
             false,
         )
         .unwrap_err();
@@ -390,7 +390,7 @@ mod through_commands {
             &world.session,
             &world.machine,
             &path.to_string_lossy(),
-            &passphrase(),
+            ops::Unlock::typed(&passphrase()),
             false,
         )
         .unwrap_err();
@@ -426,7 +426,7 @@ mod through_commands {
             &world.session,
             &world.machine,
             &world.path("Main").to_string_lossy(),
-            &passphrase(),
+            ops::Unlock::typed(&passphrase()),
             false,
         )
         .unwrap();
@@ -615,7 +615,7 @@ mod through_commands {
             &world.session,
             &world.machine,
             &world.path("Main").to_string_lossy(),
-            &passphrase(),
+            ops::Unlock::typed(&passphrase()),
             false,
         )
         .unwrap();

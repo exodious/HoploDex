@@ -1,10 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import { Button, Checkbox, ConfirmDialog, Dialog, ProgressBar, TextField } from "../../components";
+import {
+  Button,
+  Checkbox,
+  ConfirmDialog,
+  Dialog,
+  PassphraseField,
+  ProgressBar,
+  TextField,
+} from "../../components";
+import type { PassphraseFieldHandle } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import * as databasesService from "./databasesService";
 import { folderOf, joinPath } from "./paths";
+import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 import type {
   BackupLocationInput,
   CollectionSettings,
@@ -30,18 +40,22 @@ export interface DatabaseSettingsDialogProps {
   onSaved: (settings: CollectionSettings) => void;
   /** "Restore from a backup…" was chosen. */
   onRestore: () => void;
+  /** The passphrase was saved on this computer, or forgotten. */
+  onPassphraseSavedChange: () => void;
 }
 
 /** The open database's settings (contracts/ui-databases.md §7): its
  * backups, where they go and how many are kept (FR-024, FR-026), what they
- * are (FR-029), restoring from one, and deleting them all. They apply with
- * Save, like every other form. */
+ * are (FR-029), restoring from one, and deleting them all, which apply with
+ * Save, like every other form; and whether this computer remembers its
+ * passphrase (FR-017), which changes at once. */
 export function DatabaseSettingsDialog({
   open,
   onOpenChange,
   status,
   onSaved,
   onRestore,
+  onPassphraseSavedChange,
 }: DatabaseSettingsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={`${status.name} settings`} bare>
@@ -54,6 +68,7 @@ export function DatabaseSettingsDialog({
         }}
         onCancel={() => onOpenChange(false)}
         onRestore={onRestore}
+        onPassphraseSavedChange={onPassphraseSavedChange}
       />
     </Dialog>
   );
@@ -74,11 +89,13 @@ function SettingsForm({
   onSaved,
   onCancel,
   onRestore,
+  onPassphraseSavedChange,
 }: {
   status: DatabaseStatus;
   onSaved: (settings: CollectionSettings) => void;
   onCancel: () => void;
   onRestore: () => void;
+  onPassphraseSavedChange: () => void;
 }) {
   const saved = status.settings.backups;
   const defaultFolder = joinPath(folderOf(status.path), "HoploDex backups");
@@ -208,6 +225,7 @@ function SettingsForm({
           </ul>
           <BackupActions name={status.name} disabled={saving} onRestore={onRestore} />
         </fieldset>
+        <ThisComputer status={status} disabled={saving} onChange={onPassphraseSavedChange} />
       </div>
       <footer className="hd-dialog__footer">
         <Button variant="secondary" onClick={onCancel} disabled={saving}>
@@ -303,5 +321,134 @@ function BackupActions({
         {progress && <ProgressBar value={progress} label="Deleting backups" unit="backups" />}
       </ConfirmDialog>
     </div>
+  );
+}
+
+/** Said wherever passphrases can't be saved (FR-019). */
+const KEYRING_UNAVAILABLE = "Not available: this computer has no keyring service.";
+
+/** Whether this computer remembers the passphrase, and changing that
+ * (FR-017, FR-018, FR-019; contracts/ui-databases.md §7). Remembering asks
+ * for the passphrase with the FR-017 confirmation; the backend checks it
+ * opens the database before saving it. */
+function ThisComputer({
+  status,
+  disabled,
+  onChange,
+}: {
+  status: DatabaseStatus;
+  disabled: boolean;
+  onChange: () => void;
+}) {
+  const field = useRef<PassphraseFieldHandle>(null);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [forgetting, setForgetting] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function remember() {
+    const passphrase = field.current?.read() ?? "";
+    field.current?.reset();
+    if (passphrase === "") {
+      setError("Enter the passphrase to remember it.");
+      // Keeps the confirmation open.
+      throw new Error("no passphrase");
+    }
+    try {
+      await databasesService.savePassphrase(passphrase);
+    } catch (e) {
+      if (e instanceof CommandFailure && e.code === "PASSPHRASE_INCORRECT")
+        setError(e.fieldErrors?.passphrase ?? `That isn't the passphrase of ${status.name}.`);
+      else if (e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE")
+        setError(KEYRING_UNAVAILABLE);
+      else setError("The passphrase couldn't be saved.");
+      throw e;
+    }
+    onChange();
+  }
+
+  async function forget() {
+    setProblem(null);
+    setForgetting(true);
+    try {
+      await databasesService.forgetSavedPassphrase();
+      onChange();
+    } catch (e) {
+      setProblem(
+        e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE"
+          ? "The saved passphrase couldn't be forgotten: this computer's keyring isn't available."
+          : "The saved passphrase couldn't be forgotten.",
+      );
+    } finally {
+      setForgetting(false);
+    }
+  }
+
+  let body;
+  if (status.passphraseSaved) {
+    body = (
+      <>
+        <p className="hd-settings-state">
+          The passphrase is remembered on this computer: {status.name} opens without asking for it.
+        </p>
+        <div className="hd-settings-actions__buttons">
+          <Button size="sm" pending={forgetting} disabled={disabled} onClick={() => void forget()}>
+            Forget saved passphrase
+          </Button>
+        </div>
+      </>
+    );
+  } else if (!status.keyringAvailable) {
+    body = <p className="hd-field__hint">{KEYRING_UNAVAILABLE}</p>;
+  } else {
+    body = (
+      <>
+        <p className="hd-settings-state">
+          Not remembered: {status.name} asks for its passphrase each time it opens.
+        </p>
+        <div className="hd-settings-actions__buttons">
+          <Button
+            size="sm"
+            disabled={disabled}
+            onClick={() => {
+              setError(undefined);
+              setAsking(true);
+            }}
+          >
+            Remember the passphrase on this computer…
+          </Button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <fieldset className="hd-form-section hd-form-fieldset">
+      <legend className="hd-form-subgroup__title">This computer</legend>
+      {body}
+      {problem && (
+        <p className="hd-field__error" role="alert">
+          {problem}
+        </p>
+      )}
+      <RememberPassphraseConfirm
+        open={asking}
+        name={status.name}
+        onClose={() => {
+          setAsking(false);
+          setError(undefined);
+        }}
+        onConfirm={remember}
+      >
+        <PassphraseField
+          ref={field}
+          label={`Passphrase for ${status.name}`}
+          autoComplete="current-password"
+          autoFocus
+          error={error}
+          onInput={() => setError(undefined)}
+        />
+      </RememberPassphraseConfirm>
+    </fieldset>
   );
 }

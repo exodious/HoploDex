@@ -395,7 +395,7 @@ fn a_damaged_database_says_whether_backups_are_available() {
         &world.session,
         &world.machine,
         &world.path().to_string_lossy(),
-        &passphrase(),
+        databases::Unlock::typed(&passphrase()),
         false,
     )
     .unwrap_err();
@@ -406,7 +406,7 @@ fn a_damaged_database_says_whether_backups_are_available() {
         &world.session,
         &world.machine,
         &world.path().to_string_lossy(),
-        &Passphrase::from_input("not the passphrase at all".into()),
+        databases::Unlock::typed(&Passphrase::from_input("not the passphrase at all".into())),
         false,
     )
     .unwrap_err();
