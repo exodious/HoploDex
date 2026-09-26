@@ -60,8 +60,10 @@ collection data, top-bar tabs or counts are shown.
   - backup failed: "<name> was not backed up: <the backup location is not
     available | there is not enough space there | the backup was
     interrupted | its file could not be reached>. Its changes will be backed up at the next close." with a
-    **Change backup location…** action, which opens the database's backup
-    settings (§7) right after the next successful open.
+    **Change backup location…** action (for an unavailable or full
+    location), which opens the database's backup settings (§7) right after
+    the next successful open; once chosen, the notice reads "Its backup
+    settings will open when you open <name>."
   - taken over: "<name> was taken over on another computer, so HoploDex
     stopped saving to it here and closed it."
 - **Recent databases** list, most recent first. Each row shows the name
@@ -287,7 +289,9 @@ passphrase needs <size> free on the database's drive; <available> is free."
 A `Dialog` (`size="lg"`):
 1. **Choose a backup**: a radio list of `list_backups` entries, newest first
    ("25 September 2026, 14:30 — 212 MB"). An empty or unavailable folder
-   says so, and names the folder.
+   says so, and names the folder: "There are no backups of <name> in
+   <folder>." / "The backup folder <folder> isn't available on this
+   computer."
 2. **Passphrase for this backup**: a `PassphraseField`, with the note "Enter
    the passphrase <name> had on <date>. After restoring, <name> will open
    with that passphrase."
@@ -309,10 +313,13 @@ the footer, with the dialog left open:
   current <name> couldn't be backed up, so the restore was cancelled.
   Nothing has been changed."
 
+A wrong passphrase for the backup is shown on its field: "That passphrase
+didn't open the backup from <date>."
+
 While it runs: progress as in §8 ("Copying the backup…", "Checking the
-backup…", "Backing up the current database…", "Replacing the database…").
-Afterwards <name> is open, and a notice says it now opens with the
-passphrase from <date> (US3-5).
+backup…", "Backing up the current database…", "Replacing the database…"),
+and the dialog has no close button and ignores Escape. Afterwards <name> is
+open, and a notice says it now opens with the passphrase from <date> (US3-5).
 
 ## 10. Notes shown once in the collection
 
@@ -322,6 +329,9 @@ existing notice style:
   collection is encrypted with your passphrase. For extra protection, also
   turn on your computer's disk encryption: BitLocker on Windows, FileVault on
   macOS, or LUKS on Linux." Link: **Why?** (guide §11).
+- **Restored** (FR-028), once after a restore: "<name> was restored from a
+  backup and now opens with the passphrase it had on <date>." For a damaged
+  database it adds "The damaged file was kept as <path>."
 - **Backup opened directly** (research §9): "This is a backup of <backupOfName>
   made on <date>. Changes here aren't part of <backupOfName>. It's still in the
   backup folder, where it may be removed when older backups are cleared: move

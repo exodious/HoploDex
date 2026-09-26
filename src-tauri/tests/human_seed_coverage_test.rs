@@ -6,9 +6,11 @@
 //! and fails when any column is empty in every row of both seeded databases,
 //! still at its default in every row, or never holds one of the values a
 //! `CHECK ... IN` allows, and when an import sample leaves a spreadsheet
-//! column blank. Both databases count together: the single-row tables
-//! (`collection_settings`, `app_state`, `pending_changes`) can hold only one
-//! value per database.
+//! column blank. Both databases, and the newest seeded backup, count
+//! together: the single-row tables (`collection_settings`, `app_state`,
+//! `pending_changes`) can hold only one value per database, and the backup
+//! stamp (`app_state.backup_made_at`, `backup_of_name`) is only ever set in
+//! a backup.
 //!
 //! When it fails, seed a record that uses the new field in
 //! `examples/human_seed.rs` (and add it to the import samples there). Only
@@ -121,7 +123,14 @@ fn the_seed_uses_every_column_of_every_table() {
         )
         .unwrap()
     };
-    let conns = [open(&paths.main), open(&paths.shared)];
+    let mut seeded_backups: Vec<_> = std::fs::read_dir(&paths.main_backups)
+        .expect("the seed makes backups of the main database")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "hoplodex"))
+        .collect();
+    seeded_backups.sort();
+    assert_eq!(seeded_backups.len(), 2, "yesterday's and today's backups");
+    let conns = [open(&paths.main), open(&paths.shared), open(seeded_backups.last().unwrap())];
 
     let mut unseeded = Vec::new();
     for (table, sql) in user_tables(&conns[0]) {

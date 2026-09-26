@@ -1,5 +1,6 @@
 import { $, back, browser, choose, clickButton, clickEl, fill, goTo, search } from "../support/ui";
 import {
+  chooseMenuItem,
   requestQuit,
   selectChooserRow,
   submitPassphrase,
@@ -52,6 +53,24 @@ async function shotScrolled(name: string) {
 async function openDialog(button: string) {
   await clickButton(button);
   await $('[role="dialog"]').waitForExist();
+  await browser.pause(300);
+}
+
+/** Sends `event` to the page as if the backend had, for a state the
+ * seeded collection doesn't reach on its own. */
+async function emitFromBackend(event: string, payload: unknown) {
+  await browser.execute(
+    (name: string, data: unknown) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      void internals.invoke("plugin:event|emit", { event: name, payload: data });
+    },
+    event,
+    payload,
+  );
   await browser.pause(300);
 }
 
@@ -186,6 +205,44 @@ for (const theme of ["Light", "Dark"] as const) {
       await openDialog("Export");
       await shot(`13-export-${suffix}`);
       await closeDialog();
+    });
+
+    it("database settings and restore", async () => {
+      await chooseMenuItem("button.hd-db-menu", "Database settings…");
+      await $('[role="dialog"]').waitForExist();
+      await browser.pause(300);
+      await shot(`19-database-settings-${suffix}`, { fullPage: true });
+      await closeDialog();
+
+      await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+      await $('[role="dialog"] input[type="radio"]').waitForExist();
+      await browser.pause(300);
+      await shot(`21-restore-backup-${suffix}`, { fullPage: true });
+      await closeDialog();
+    });
+
+    it("closing with a backup", async () => {
+      // The seeded collection was backed up today, so a real close makes no
+      // backup: the closing screen is shown with the events a long one sends.
+      await emitFromBackend("session:closing", { reason: "closed" });
+      await emitFromBackend("backup:progress", {
+        processed: 96_000_000,
+        total: 212_000_000,
+        showNow: true,
+      });
+      await $('[role="progressbar"]').waitForExist();
+      await shot(`18-closing-backup-${suffix}`);
+      // Then a real close, and back to the collection for the next walk.
+      await browser.execute(() => {
+        const internals = (
+          window as unknown as {
+            __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+          }
+        ).__TAURI_INTERNALS__;
+        void internals.invoke("close_database", { reason: "closed" });
+      });
+      await waitForChooser();
+      await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     });
   });
 }

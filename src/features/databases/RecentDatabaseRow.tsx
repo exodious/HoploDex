@@ -32,6 +32,9 @@ export interface RecentDatabaseRowProps {
   unavailableNote?: string;
   /** The last open found the database open on another computer. */
   elsewhere?: OpenElsewhere;
+  /** Restoring from a backup is offered below the error: the database is
+   * damaged, or the passphrase didn't open it, and it has backups (US3-6). */
+  onRestore?: () => void;
   onSelect: () => void;
   onOpen: (passphrase: string) => void;
   onRemove: () => void;
@@ -57,6 +60,7 @@ export function RecentDatabaseRow({
   onLocate,
   onGoBack,
   onTakeOver,
+  onRestore,
 }: RecentDatabaseRowProps) {
   const folder = folderOf(entry.path);
   const field = useRef<PassphraseFieldHandle>(null);
@@ -160,20 +164,29 @@ export function RecentDatabaseRow({
           </div>
         </div>
       ) : (
-        <form className="hd-db-row__unlock" onSubmit={handleSubmit} noValidate>
-          <PassphraseField
-            ref={field}
-            label={`Passphrase for ${entry.name}`}
-            autoComplete="current-password"
-            autoFocus
-            disabled={opening}
-            error={error}
-            fieldClassName="hd-db-row__passphrase"
-          />
-          <Button type="submit" variant="primary" pending={opening}>
-            {opening ? "Opening…" : "Open"}
-          </Button>
-        </form>
+        <>
+          <form className="hd-db-row__unlock" onSubmit={handleSubmit} noValidate>
+            <PassphraseField
+              ref={field}
+              label={`Passphrase for ${entry.name}`}
+              autoComplete="current-password"
+              autoFocus
+              disabled={opening}
+              error={error}
+              fieldClassName="hd-db-row__passphrase"
+            />
+            <Button type="submit" variant="primary" pending={opening}>
+              {opening ? "Opening…" : "Open"}
+            </Button>
+          </form>
+          {onRestore && !opening && (
+            <div className="hd-db-row__actions hd-db-row__restore">
+              <Button size="sm" icon="archive" onClick={onRestore}>
+                Restore from a backup…
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </li>
   );

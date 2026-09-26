@@ -6,8 +6,8 @@ use std::sync::Arc;
 use hoplodex_lib::commands::documents::{clear_opened_documents_cache, OPENED_DOCUMENTS_DIR};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db;
+use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::session::operations::Operations;
 use hoplodex_lib::session::Session;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
@@ -56,8 +56,10 @@ fn main() {
             // its passphrase (specs/003-database-protection-management).
             let opened_documents = app.path().app_cache_dir()?.join(OPENED_DOCUMENTS_DIR);
             app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents)));
-            app.manage(Operations::default());
-            app.manage(MachineSettings::load(&app.path().app_config_dir()?)?);
+            let machine = MachineSettings::load(&app.path().app_config_dir()?)?;
+            // A backup a crash or forced quit cut short (research.md §7).
+            backups::sweep_unfinished(&machine);
+            app.manage(machine);
             app.manage(ImportSessionStore::new());
             Ok(())
         })
@@ -81,6 +83,11 @@ fn main() {
             hoplodex_lib::commands::databases::locate_database,
             hoplodex_lib::commands::databases::get_database_status,
             hoplodex_lib::commands::databases::dismiss_note,
+            hoplodex_lib::commands::databases::update_backup_settings,
+            hoplodex_lib::commands::databases::skip_backup,
+            hoplodex_lib::commands::backups::list_backups,
+            hoplodex_lib::commands::backups::restore_backup,
+            hoplodex_lib::commands::backups::delete_all_backups,
             hoplodex_lib::commands::firearms::create_firearm,
             hoplodex_lib::commands::firearms::update_firearm,
             hoplodex_lib::commands::firearms::dispose_firearm,

@@ -59,6 +59,11 @@ fs4 = "1.1.0"
 # passphrases from memory (research.md §1).
 zeroize = "1.9"
 
+# Promoted from transitive, at the version already in Cargo.lock: asking the
+# storage to discard a securely deleted file's blocks (research.md §12).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.189"
+
 # Sleep, wake, screen-lock and shutdown notices (research.md §14). Each is
 # already in the tree for its platform; only the features are switched on.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -74,6 +79,10 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"
 # directly: opening a handle there would drop SQLite's locks when closed.
 same-file = "1.0.6"
 windows-sys = { version = "0.61", features = [
+    # FSCTL_SET_ZERO_DATA after a secure delete (research.md §12).
+    "Win32_Foundation",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
     "Win32_System_Power",
     "Win32_System_RemoteDesktop",
     "Win32_System_Shutdown",

@@ -191,6 +191,20 @@ impl CommandError {
         .with_details(Some(json!({ "operation": operation })))
     }
 
+    /// FR-028: the "before restoring" backup of the current database could
+    /// not be made, so the restore went no further.
+    pub fn restore_cancelled() -> Self {
+        Self::new(
+            "RESTORE_CANCELLED",
+            "The current database couldn't be backed up, so the restore was cancelled. Nothing \
+             has been changed.",
+        )
+    }
+
+    pub fn confirmation_required(message: impl Into<String>) -> Self {
+        Self::new("CONFIRMATION_REQUIRED", message)
+    }
+
     pub fn replace_failed(path: &Path) -> Self {
         Self::new(
             "REPLACE_FAILED",

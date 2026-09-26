@@ -203,7 +203,7 @@ pub struct OpenedBackupNote {
     pub made_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseNotes {
     /// FR-008, until dismissed.
@@ -241,6 +241,46 @@ impl CloseOutcome {
     pub fn backup(backup: BackupOutcome) -> Self {
         Self { backup, failure_reason: None }
     }
+}
+
+/// `list_backups`'s answer: a database's backup folder and what is in it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupList {
+    pub folder: String,
+    /// The folder exists on this computer.
+    pub available: bool,
+    /// Newest first.
+    pub backups: Vec<BackupInfo>,
+}
+
+/// `delete_all_backups`'s answer (FR-029).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupsDeleted {
+    pub deleted_count: u64,
+    /// The backups that could not be deleted, left in place.
+    pub failed_paths: Vec<String>,
+}
+
+/// Where backups go, as the settings dialog sends it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum BackupLocationInput {
+    /// A "HoploDex backups" folder next to the database.
+    Default,
+    Custom {
+        path: String,
+    },
+}
+
+/// `update_backup_settings`'s input (FR-024, FR-026).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupSettingsInput {
+    pub enabled: bool,
+    pub keep_count: i64,
+    pub location: BackupLocationInput,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -361,4 +401,39 @@ pub fn validate_create_database_input(
         return Err(CommandError::database_exists(&target));
     }
     Ok(target)
+}
+
+/// The most backups a database may keep (data-model.md).
+const MAX_KEEP_COUNT: i64 = 100;
+
+/// Checks the backup settings (data-model.md "Validation rules") and
+/// returns the location as `collection_settings.backup_location` stores
+/// it: `default`, or the absolute path. A path that does not exist is
+/// accepted, so a location on another computer's drive can be kept; the
+/// settings then report it unavailable here.
+pub fn validate_backup_settings_input(input: &BackupSettingsInput) -> Result<String, CommandError> {
+    let mut errors = HashMap::new();
+    if !(1..=MAX_KEEP_COUNT).contains(&input.keep_count) {
+        errors.insert("keepCount".to_owned(), "Keep between 1 and 100 backups.".to_owned());
+    }
+    let location = match &input.location {
+        BackupLocationInput::Default => "default".to_owned(),
+        BackupLocationInput::Custom { path } => {
+            if path.trim().is_empty() {
+                errors.insert("location".to_owned(), "Choose a folder.".to_owned());
+            } else if !Path::new(path).is_absolute() {
+                errors.insert("location".to_owned(), "Enter the full path of a folder.".to_owned());
+            } else if path.chars().any(char::is_control) {
+                errors.insert(
+                    "location".to_owned(),
+                    "A folder can't contain control characters.".to_owned(),
+                );
+            }
+            path.clone()
+        }
+    };
+    if !errors.is_empty() {
+        return Err(CommandError::validation("Check the backup settings.", errors));
+    }
+    Ok(location)
 }

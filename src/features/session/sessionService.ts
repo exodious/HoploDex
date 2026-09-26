@@ -1,5 +1,11 @@
 import { invoke, listen } from "../../services/tauriClient";
-import type { CloseOutcome, CloseReason, DatabaseStatus, NoteKind } from "../databases/types";
+import type {
+  BackupProgress,
+  CloseOutcome,
+  CloseReason,
+  DatabaseStatus,
+  NoteKind,
+} from "../databases/types";
 
 // Typed wrappers for the open session's own commands and events (specs/003
 // contracts/tauri-commands.md "Commands: the open session", "Events").
@@ -19,6 +25,12 @@ export function closeDatabase(reason: "closed" | "switched"): Promise<CloseOutco
   return invoke<CloseOutcome>("close_database", { reason });
 }
 
+/** Stops the backup the current close is making (FR-027). Its changes stay
+ * waiting for the next close. */
+export function skipBackup(): Promise<void> {
+  return invoke<void>("skip_backup");
+}
+
 /** Closes the open database, if any, and exits. Never resolves normally. */
 export function quitApplication(): Promise<void> {
   return invoke<void>("quit_application");
@@ -29,6 +41,17 @@ export interface SessionClosed {
   reason: CloseReason;
   databasePath: string;
   outcome?: CloseOutcome;
+}
+
+/** A normal close has started: show the closing screen, as a backup may
+ * follow. */
+export function onSessionClosing(handler: (closing: { reason: CloseReason }) => void): () => void {
+  return listen<{ reason: CloseReason }>("session:closing", handler);
+}
+
+/** The backup a close is making, in bytes. */
+export function onBackupProgress(handler: (progress: BackupProgress) => void): () => void {
+  return listen<BackupProgress>("backup:progress", handler);
 }
 
 /** The database closed, for whatever reason: drop all collection state. */

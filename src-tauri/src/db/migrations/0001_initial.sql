@@ -250,6 +250,10 @@ CREATE TABLE app_state (
     last_backup_at TEXT,
     -- FR-008: the disk-encryption note was dismissed.
     disk_encryption_note_dismissed INTEGER NOT NULL DEFAULT 0 CHECK (disk_encryption_note_dismissed IN (0, 1)),
+    -- The backup stamp (research.md §9): UTC ISO-8601; set only in backup copies.
+    backup_made_at TEXT,
+    -- The database name, for the "backup opened directly" note; set only in backup copies.
+    backup_of_name TEXT,
     CHECK (
         (open_machine_id IS NULL) = (open_machine_name IS NULL)
         AND (open_machine_id IS NULL) = (open_since IS NULL)

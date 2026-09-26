@@ -26,7 +26,13 @@ export function ExportDialog({ open, onOpenChange, browse }: ExportDialogProps) 
       open={open}
       onOpenChange={onOpenChange}
       title="Export collection"
-      description="Saves a spreadsheet with every recorded field, plus a folder of the original photos."
+      description={
+        <>
+          Exports the collection to a spreadsheet. The file is <strong>not encrypted</strong>:
+          anyone who can open it can read it. For encrypted backups of the whole database, see
+          Database settings.
+        </>
+      }
       bare
     >
       <ExportForm browse={browse} onClose={() => onOpenChange(false)} />

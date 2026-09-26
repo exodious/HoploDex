@@ -46,6 +46,10 @@ function renderChooser(session: Partial<SessionState> = {}, selectPath?: string)
     closeDatabase: vi.fn().mockResolvedValue(undefined),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     dismissNote: vi.fn().mockResolvedValue(undefined),
+    restoreBackup: vi.fn().mockResolvedValue(undefined),
+    settingsRequested: false,
+    requestSettings: vi.fn(),
+    clearSettingsRequest: vi.fn(),
     ...session,
   };
   render(
@@ -556,5 +560,116 @@ describe("DatabaseChooser (User Story 2)", () => {
 
     await screen.findByLabelText("Passphrase for Main collection");
     expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+  });
+});
+
+describe("DatabaseChooser (User Story 3)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
+    vi.mocked(databasesService.listBackups).mockReset().mockResolvedValue({
+      folder: "/home/sam/Documents/HoploDex/HoploDex backups",
+      available: true,
+      backups: [],
+    });
+    vi.mocked(databasesService.onRestoreProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
+  });
+
+  async function openFailing(failure: CommandFailure) {
+    const user = userEvent.setup();
+    renderChooser({ openDatabase: vi.fn().mockRejectedValue(failure) });
+    await user.type(await screen.findByLabelText("Passphrase for Main collection"), "a guess");
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    return user;
+  }
+
+  it("offers restoring a damaged database when it has backups (US3-6)", async () => {
+    const user = await openFailing(
+      new CommandFailure({
+        code: "DATABASE_DAMAGED",
+        message: "This database is damaged and can't be opened.",
+        details: { backupsAvailable: true },
+      }),
+    );
+
+    expect(
+      await screen.findByText("Main collection is damaged and can't be opened."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restore from a backup…" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Restore Main collection from a backup" }),
+    ).toBeInTheDocument();
+    expect(databasesService.listBackups).toHaveBeenCalledWith(main.path);
+  });
+
+  it("offers no restore for a damaged database without backups", async () => {
+    await openFailing(
+      new CommandFailure({
+        code: "DATABASE_DAMAGED",
+        message: "This database is damaged and can't be opened.",
+        details: { backupsAvailable: false },
+      }),
+    );
+
+    expect(
+      await screen.findByText("Main collection is damaged and can't be opened."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Restore from a backup…" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers restoring when the passphrase didn't open a database that has backups", async () => {
+    await openFailing(
+      new CommandFailure({
+        code: "PASSPHRASE_INCORRECT",
+        message: "The passphrase is incorrect.",
+        details: { backupsAvailable: true },
+      }),
+    );
+
+    expect(
+      await screen.findByText(/That passphrase didn't open Main collection\./),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore from a backup…" })).toBeInTheDocument();
+  });
+
+  it("opens the backup settings after the next open from a failed-backup notice", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({
+        notices: [{ kind: "backupFailed", databasePath: main.path, reason: "locationUnavailable" }],
+      }),
+    );
+    const session = renderChooser();
+
+    expect(
+      await screen.findByText(
+        "Main collection was not backed up: the backup location is not available. Its changes will be backed up at the next close.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change backup location…" }));
+
+    expect(session.requestSettings).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText("Its backup settings will open when you open Main collection."),
+    ).toBeInTheDocument();
+  });
+
+  it("says when the last backup did not finish", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({
+        notices: [{ kind: "backupFailed", databasePath: main.path, reason: "interrupted" }],
+      }),
+    );
+    renderChooser();
+
+    expect(
+      await screen.findByText(
+        "Main collection was not backed up: the backup was interrupted. Its changes will be backed up at the next close.",
+      ),
+    ).toBeInTheDocument();
   });
 });

@@ -256,6 +256,12 @@
   gap: var(--space-2);
 }
 
+/* Offered under a damaged database's error (US3-6), aligned with the field. */
+.hd-db-row__restore {
+  margin-top: calc(-1 * var(--space-2));
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
 /* ── Notices above the list ──────────────────────────────────────────── */
 
 .hd-chooser__notices {
@@ -280,4 +286,109 @@
   .hd-db-row__detail {
     padding-left: var(--space-4);
   }
+}
+
+/* The closing screen (contracts/ui-databases.md §5). */
+.hd-closing__main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-10) var(--space-8);
+}
+
+.hd-closing__panel {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  text-align: center;
+}
+
+.hd-closing__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--display-sm);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.hd-closing__backup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: start;
+}
+
+.hd-closing__backup > p {
+  margin: 0;
+}
+
+.hd-closing__skip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.hd-closing__note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+/* Database settings (contracts/ui-databases.md §7). */
+.hd-settings-location {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.hd-settings-location__note {
+  color: var(--ink-2);
+}
+
+.hd-settings-location__warning {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.hd-settings-location__actions,
+.hd-settings-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hd-settings-statements {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.hd-settings-actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Restore from a backup (contracts/ui-databases.md §9). */
+.hd-restore__statement {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.hd-restore__refusal {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.hd-restore__refusal > p {
+  margin: 0;
 }

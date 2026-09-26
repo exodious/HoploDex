@@ -5,9 +5,10 @@
 //! databases.
 
 pub mod cipher;
+pub mod raw_file;
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -67,7 +68,7 @@ pub enum OpenError {
 
 impl OpenError {
     /// Sorts an SQLite error met while opening into the outcomes above.
-    fn classify(err: rusqlite::Error) -> Self {
+    pub(crate) fn classify(err: rusqlite::Error) -> Self {
         match err.sqlite_error_code() {
             Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => Self::InUse,
             Some(ErrorCode::NotADatabase) => Self::PassphraseIncorrect,
@@ -225,6 +226,50 @@ pub fn open_database(
     Ok(conn)
 }
 
+/// Opens a copy that is to replace a database (a restore's, a passphrase
+/// change's) with the passphrase it should have, and proves it sound
+/// before anything is replaced (research.md §4): every page's HMAC
+/// (`cipher_integrity_check`), SQLite's own `integrity_check`, a HoploDex
+/// database, and no migration this build doesn't know. Returns the
+/// connection so the caller can stamp the copy. Nothing else knows about
+/// the copy, so it is not locked exclusively.
+pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(OpenError::classify)?;
+    (|| {
+        conn.pragma_update(None, "key", passphrase.as_str())?;
+        cipher::apply_cipher_settings(&conn, "main")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.pragma_update(None, "secure_delete", "ON")
+    })()
+    .map_err(OpenError::classify)?;
+    conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get::<_, i64>(0))
+        .map_err(OpenError::classify)?;
+
+    // It returns a row for each page that fails, and none when all pass.
+    let cipher_failed = conn
+        .prepare("PRAGMA cipher_integrity_check")
+        .and_then(|mut stmt| stmt.query([])?.next().map(|row| row.is_some()))
+        .map_err(OpenError::classify)?;
+    let integrity: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(OpenError::classify)?;
+    if cipher_failed || integrity != "ok" {
+        log::error!("the copy {} failed its checks: {integrity}", path.display());
+        return Err(OpenError::Damaged);
+    }
+    if !is_hoplodex_database(&conn).map_err(OpenError::classify)? {
+        return Err(OpenError::PassphraseIncorrect);
+    }
+    if has_unknown_migration(&conn).map_err(OpenError::classify)? {
+        return Err(OpenError::NewerVersion);
+    }
+    Ok(conn)
+}
+
 /// Whether `schema_migrations` names a migration this build doesn't have.
 fn has_unknown_migration(conn: &Connection) -> rusqlite::Result<bool> {
     let mut stmt = conn.prepare("SELECT name FROM schema_migrations")?;
@@ -253,26 +298,32 @@ fn is_hoplodex_database(conn: &Connection) -> rusqlite::Result<bool> {
     conn.query_row("SELECT EXISTS (SELECT 1 FROM app_state WHERE id = 1)", [], |row| row.get(0))
 }
 
-/// Checks `candidate` against the database at `path` while that database
-/// may be open (and locked) elsewhere in this process (research.md §1a):
-/// the file's first page, ciphertext only, is copied into `scratch_dir` and
-/// opened with the candidate, and page 1's HMAC check decides. The probe is
-/// deleted whatever the result, and the database file is only ever read.
+/// Checks `candidate` against the database open on `conn`, whose file is
+/// locked against any second connection (research.md §1a): the file's first
+/// page, ciphertext only, is copied into `scratch_dir` and opened with the
+/// candidate, and page 1's HMAC check decides. The probe is deleted whatever
+/// the result. The page is read through the connection's own file handle
+/// ([`raw_file`]), so the database keeps its lock, and is never written.
 pub fn verify_passphrase(
-    path: &Path,
+    conn: &Connection,
     candidate: &Passphrase,
     scratch_dir: &Path,
 ) -> Result<bool, DbError> {
     fs::create_dir_all(scratch_dir)?;
     let probe = scratch_dir.join(format!("probe-{}.hoplodex", random_hex(8)?));
-    let result = probe_first_page(path, &probe, candidate);
+    let result = probe_first_page(conn, &probe, candidate);
     let _ = fs::remove_file(&probe);
     result
 }
 
-fn probe_first_page(path: &Path, probe: &Path, candidate: &Passphrase) -> Result<bool, DbError> {
-    let mut first_page = Vec::with_capacity(PAGE_SIZE);
-    File::open(path)?.take(PAGE_SIZE as u64).read_to_end(&mut first_page)?;
+fn probe_first_page(
+    conn: &Connection,
+    probe: &Path,
+    candidate: &Passphrase,
+) -> Result<bool, DbError> {
+    let file = raw_file::RawFile::of(conn)?;
+    let mut first_page = vec![0u8; PAGE_SIZE.min(file.size()? as usize)];
+    file.read_exact_at(&mut first_page, 0)?;
     OpenOptions::new().write(true).create_new(true).open(probe)?.write_all(&first_page)?;
 
     let conn = Connection::open(probe)?;

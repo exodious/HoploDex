@@ -106,8 +106,9 @@ settings (FR-017) both need the **current** passphrase checked while the
 database is open. The backend does not hold it (§1), and the open connection's
 exclusive lock (§2) stops a second connection from opening the file.
 
-**Decision**: `db::verify_passphrase(path, candidate)` copies the file's
-first page (4096 bytes of ciphertext: the salt plus page 1) into a temporary
+**Decision**: `db::verify_passphrase(conn, candidate)` copies the file's
+first page, read through the open connection's own file handle (§3,
+"Reading the open file"), (4096 bytes of ciphertext: the salt plus page 1) into a temporary
 file in the app cache directory, opens that with the candidate and the pinned
 settings, and reads a value that lives only on page 1 (`PRAGMA
 schema_version`). SQLCipher checks page 1's HMAC before anything else, so the
@@ -196,7 +197,9 @@ running under another account).
   is stamped (open marker cleared, pending changes removed, backup stamp set;
   §5, §9). Then it is `DETACH`ed, flushed to disk and renamed to its final
   name.
-- **Passphrase change**: `ATTACH DATABASE ?tmp AS rekey KEY ?newPassphrase`,
+- **Passphrase change**: `ATTACH DATABASE ?tmp AS rekey KEY ?newPassphrase`
+  (the file is created empty first: the session's connection is opened
+  without `SQLITE_OPEN_CREATE`, so it can only attach a file that exists),
   `apply_cipher_settings(conn, "rekey")`, `SELECT sqlcipher_export('rekey')`,
   stamp the copy's housekeeping, `DETACH`, then verify (§4) and replace (§4).
 - **Restore**: a chunked byte copy of the chosen backup to a temporary file
@@ -222,6 +225,26 @@ running under another account).
   passphrase change is stopped at sleep (§14).
 - Throughput: 200 MiB exported in 1.05 s (about 190 MiB/s) on the development
   machine, in line with the spec's measurement.
+
+**Reading the open file** (decided 2026-09-26, after a cross-process test
+showed the problem): on Linux and macOS, closing any file descriptor on a
+file drops every POSIX lock the process holds on it, SQLite's exclusive lock
+included. A `std::fs` read of the open database (the page-1 probe of §1a, a
+backup's raw copy) therefore released it: once the reader closed, another
+copy of HoploDex could open a database that was in use (§2). SQLite's unix
+VFS never closes a descriptor of its own while the file is locked, so every
+read of an open database goes through **the descriptor SQLite already
+holds**: `db::raw_file::RawFile` takes the main file's `sqlite3_file` with
+`SQLITE_FCNTL_FILE_POINTER` and calls its `xFileSize` and `xRead`. SQLCipher
+encrypts above the VFS, so the bytes read are the ciphertext on disk. It
+costs nothing extra, and on Windows it also avoids the lock bytes that a
+second handle cannot read. `tests/lock_held_test.rs` re-runs its own binary
+as a second process and checks the database is still "in use" after each
+such read. Files that are not open (a backup being restored from, the
+`.old` and `.new` copies of §4) are read with `std::fs` as usual. Rejected:
+opening a second SQLite connection just to read (it cannot read past the
+first connection's exclusive lock), and a second descriptor kept open for
+the whole session (it only moves the problem to the close).
 
 **Why a raw copy for backups rather than `sqlcipher_export`**: the database
 is quiet while a backup runs, because the backup runs at close, holding the

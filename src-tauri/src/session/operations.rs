@@ -84,6 +84,11 @@ impl Operations {
         self.lock().is_some()
     }
 
+    /// What is running, if anything.
+    pub fn running_kind(&self) -> Option<OperationKind> {
+        self.lock().as_ref().map(|running| running.kind)
+    }
+
     /// Whether the running operation, if any, was asked to stop.
     pub fn is_cancelled(&self) -> bool {
         self.lock().as_ref().is_some_and(|running| running.cancel.load(Ordering::SeqCst))

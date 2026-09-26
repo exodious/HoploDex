@@ -138,7 +138,7 @@ impl Setup {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
     }
 
     fn chooser(&self) -> ChooserState {
@@ -216,9 +216,10 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
     fs::create_dir_all(copy.parent().unwrap()).unwrap();
     fs::write(&copy, b"decrypted").unwrap();
 
-    let outcome = lifecycle::close_normal(&setup.session, CloseReason::Closed).unwrap();
+    let outcome =
+        lifecycle::close_normal(&setup.session, &setup.machine, CloseReason::Closed).unwrap();
 
-    assert_eq!(outcome.backup, BackupOutcome::NotAttempted);
+    assert_eq!(outcome.backup, BackupOutcome::NotDue);
     assert!(!setup.session.is_open());
     assert!(!copy.exists(), "decrypted document copies are deleted at close (FR-022)");
     let path = setup.db_path("Mine");
@@ -231,7 +232,7 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
                 json!({
                     "reason": "closed",
                     "databasePath": path.to_string_lossy(),
-                    "outcome": { "backup": "notAttempted" }
+                    "outcome": { "backup": "notDue" }
                 })
             ),
         ]
@@ -247,7 +248,7 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
 fn closing_with_nothing_open_is_refused() {
     let setup = Setup::new();
 
-    let result = lifecycle::close_normal(&setup.session, CloseReason::Closed);
+    let result = lifecycle::close_normal(&setup.session, &setup.machine, CloseReason::Closed);
 
     assert_eq!(result.unwrap_err().code, "DATABASE_CLOSED");
     assert!(setup.events.recorded().is_empty());
@@ -321,7 +322,7 @@ fn opening_a_second_database_closes_the_first_as_a_switch() {
                 json!({
                     "reason": "switched",
                     "databasePath": setup.path_text("Second"),
-                    "outcome": { "backup": "notAttempted" }
+                    "outcome": { "backup": "notDue" }
                 })
             ),
         ]
@@ -339,12 +340,14 @@ fn close_database_accepts_only_closed_and_switched() {
     let setup = Setup::new();
     setup.create("Mine");
 
-    let refused = ops::close_database(&setup.session, CloseReason::Idle).unwrap_err();
+    let refused =
+        ops::close_database(&setup.session, &setup.machine, CloseReason::Idle).unwrap_err();
     assert_eq!(refused.code, "VALIDATION_ERROR");
     assert!(setup.session.is_open());
 
-    let outcome = ops::close_database(&setup.session, CloseReason::Switched).unwrap();
-    assert_eq!(outcome.backup, BackupOutcome::NotAttempted);
+    let outcome =
+        ops::close_database(&setup.session, &setup.machine, CloseReason::Switched).unwrap();
+    assert_eq!(outcome.backup, BackupOutcome::NotDue);
     assert!(!setup.session.is_open());
     let (event, payload) = setup.events.recorded().pop().unwrap();
     assert_eq!(event, "session:closed");

@@ -10,8 +10,8 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::CommandError;
 use crate::models::database::{
-    ChooserState, CloseOutcome, CloseReason, DatabaseStatus, NoteKind, RecentDatabase,
-    RecentRemoved,
+    BackupLocationInput, BackupSettingsInput, ChooserState, CloseOutcome, CloseReason,
+    CollectionSettings, DatabaseStatus, NoteKind, RecentDatabase, RecentRemoved,
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
@@ -26,13 +26,16 @@ pub mod ops {
 
     use crate::commands::CommandError;
     use crate::models::database::{
-        validate_create_database_input, BackupLocation, BackupLocationKind, BackupSettings,
-        ChooserState, CloseOutcome, CloseReason, CollectionSettings, DatabaseNotes, DatabaseStatus,
-        LockSettings, NoteKind, RecentDatabase, RecentRemoved, SuggestedLocation,
+        validate_backup_settings_input, validate_create_database_input, BackupLocation,
+        BackupLocationKind, BackupSettings, BackupSettingsInput, ChooserState, CloseOutcome,
+        CloseReason, CollectionSettings, DatabaseNotes, DatabaseStatus, LockSettings, NoteKind,
+        OperationKind, RecentDatabase, RecentRemoved, SuggestedLocation,
     };
+    use crate::services::backups;
     use crate::services::machine_settings::{MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
-    use crate::session::lifecycle::{self, backup_folder};
+    use crate::session::lifecycle;
+    use crate::session::operations::Operations;
     use crate::session::{OpenDatabase, Session};
 
     /// The name the create dialog suggests (research.md §19).
@@ -125,7 +128,9 @@ pub mod ops {
     /// closing any other open database first as a switch. A refused open
     /// changes neither the file nor the session. `take_over` opens a
     /// database marked open on another computer (FR-032); the UI sends it
-    /// only after its confirmation.
+    /// only after its confirmation. A database that is damaged, or that the
+    /// passphrase didn't open (the two can't be told apart at page 1), says
+    /// whether it has backups to restore from (FR-028, US3-6).
     pub fn open_database(
         session: &Session,
         machine: &MachineSettings,
@@ -133,14 +138,37 @@ pub mod ops {
         passphrase: &Passphrase,
         take_over: bool,
     ) -> Result<DatabaseStatus, CommandError> {
-        lifecycle::open(session, machine, Path::new(path), passphrase, take_over)?;
-        database_status(session, machine)
+        let path = Path::new(path);
+        match lifecycle::open(session, machine, path, passphrase, take_over) {
+            Ok(()) => database_status(session, machine),
+            Err(err) if err.code == "DATABASE_DAMAGED" => {
+                Err(CommandError::database_damaged(has_backups(machine, path)))
+            }
+            Err(err) if err.code == "PASSPHRASE_INCORRECT" && has_backups(machine, path) => {
+                Err(CommandError::passphrase_incorrect(None, Some(true)))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Whether this computer knows of backups of the database at `path`,
+    /// from its recent entry's cached folder and id, since the file itself
+    /// may not open.
+    fn has_backups(machine: &MachineSettings, path: &Path) -> bool {
+        machine
+            .recent()
+            .into_iter()
+            .find(|entry| entry.path == path)
+            .and_then(|entry| Some((entry.backup_folder?, entry.database_id?)))
+            .and_then(|(folder, id)| backups::list(&folder, &id).ok())
+            .is_some_and(|listed| !listed.is_empty())
     }
 
     /// Closes the open database or switches away from it (FR-010). The
     /// frontend has already dealt with unsaved changes.
     pub fn close_database(
         session: &Session,
+        machine: &MachineSettings,
         reason: CloseReason,
     ) -> Result<CloseOutcome, CommandError> {
         if !matches!(reason, CloseReason::Closed | CloseReason::Switched) {
@@ -149,7 +177,7 @@ pub mod ops {
                 [("reason".to_owned(), "Use closed or switched.".to_owned())].into(),
             ));
         }
-        lifecycle::close_normal(session, reason)
+        lifecycle::close_normal(session, machine, reason)
     }
 
     /// Takes `path` off this computer's recent list. The database file is
@@ -180,7 +208,7 @@ pub mod ops {
         session.inspect(|open| status(open, machine))
     }
 
-    fn status(
+    pub(crate) fn status(
         open: &OpenDatabase,
         machine: &MachineSettings,
     ) -> Result<DatabaseStatus, CommandError> {
@@ -196,12 +224,7 @@ pub mod ops {
             passphrase_saved,
             settings: collection_settings(&open.conn, &open.path)?,
             pending_changes: None,
-            notes: DatabaseNotes {
-                disk_encryption: !note_dismissed,
-                opened_backup: None,
-                restored_with_passphrase_of: None,
-                damaged_file_kept_at: None,
-            },
+            notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },
         })
     }
 
@@ -218,7 +241,7 @@ pub mod ops {
             [],
             |row| {
                 let location: String = row.get(2)?;
-                let folder = backup_folder(database_path, &location);
+                let folder = backups::resolve_folder(database_path, &location);
                 let (kind, available) = if location == "default" {
                     // Made at the first backup, beside the database.
                     (BackupLocationKind::Default, folder.is_dir() || database_path.exists())
@@ -255,8 +278,45 @@ pub mod ops {
                     .map(|_| ())
                     .map_err(CommandError::from_db)
             }),
-            // Session-only notes, shown once from the open's own status.
-            NoteKind::OpenedBackup | NoteKind::Restored => Ok(()),
+            // Session-only notes, shown until dismissed in this session.
+            NoteKind::OpenedBackup => session.inspect_mut(|open| {
+                open.notes.opened_backup = None;
+                Ok(())
+            }),
+            NoteKind::Restored => session.inspect_mut(|open| {
+                open.notes.restored_with_passphrase_of = None;
+                open.notes.damaged_file_kept_at = None;
+                Ok(())
+            }),
+        }
+    }
+
+    /// Saves the backup settings (FR-024, FR-026), a change to the
+    /// collection (FR-025). Lowering the number kept deletes nothing now:
+    /// the next backup rotates.
+    pub fn update_backup_settings(
+        session: &Session,
+        input: &BackupSettingsInput,
+    ) -> Result<CollectionSettings, CommandError> {
+        let location = validate_backup_settings_input(input)?;
+        session.write(|conn| {
+            conn.execute(
+                "UPDATE collection_settings
+                 SET backups_enabled = ?1, backup_keep_count = ?2, backup_location = ?3",
+                rusqlite::params![input.enabled, input.keep_count, location],
+            )
+            .map(|_| ())
+            .map_err(CommandError::from_db)
+        })?;
+        session.inspect(|open| collection_settings(&open.conn, &open.path))
+    }
+
+    /// Stops the backup the current close is making (FR-027). Its partial
+    /// file is removed and the changes stay waiting. Anything else running
+    /// is left alone.
+    pub fn skip_backup(operations: &Operations) {
+        if operations.running_kind() == Some(OperationKind::Backup) {
+            operations.stop_running();
         }
     }
 }
@@ -313,8 +373,9 @@ pub async fn open_database(
 pub async fn close_database(
     reason: CloseReason,
     session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
 ) -> Result<CloseOutcome, CommandError> {
-    ops::close_database(&session, reason)
+    ops::close_database(&session, &machine, reason)
 }
 
 /// Closes the open database, if any, as a quit, then exits (research.md
@@ -323,10 +384,11 @@ pub async fn close_database(
 pub async fn quit_application(
     app: AppHandle,
     session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
 ) -> Result<(), CommandError> {
     if session.is_open() {
         // It can only fail when nothing is open any more.
-        crate::session::lifecycle::close_normal(&session, CloseReason::Quit).ok();
+        crate::session::lifecycle::close_normal(&session, &machine, CloseReason::Quit).ok();
     }
     // An exit with a code is ours, and `main` lets it through.
     app.exit(0);
@@ -361,4 +423,20 @@ pub async fn get_database_status(
 #[tauri::command]
 pub async fn dismiss_note(note: NoteKind, session: State<'_, Session>) -> Result<(), CommandError> {
     ops::dismiss_note(&session, note)
+}
+
+#[tauri::command]
+pub async fn update_backup_settings(
+    enabled: bool,
+    keep_count: i64,
+    location: BackupLocationInput,
+    session: State<'_, Session>,
+) -> Result<CollectionSettings, CommandError> {
+    ops::update_backup_settings(&session, &BackupSettingsInput { enabled, keep_count, location })
+}
+
+#[tauri::command]
+pub async fn skip_backup(session: State<'_, Session>) -> Result<(), CommandError> {
+    ops::skip_backup(session.operations());
+    Ok(())
 }

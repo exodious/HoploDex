@@ -105,7 +105,7 @@ journal may exist next to it only while a write is in progress.
 | Folder | `backup_location = 'default'` → `<database folder>/HoploDex backups/`; otherwise the absolute path stored |
 | Name | `<database name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex` (local time of the computer that made it; `<id8>` = first 8 hex digits of `database_id`) |
 | In progress | `<final name>.partial`, renamed on completion; never listed |
-| Content | a byte copy of the database made while it is idle, then stamped: open marker cleared, `pending_changes` emptied, `backup_made_at` and `backup_of_name` set. Protected by the passphrase current at that moment (FR-023) |
+| Content | a byte copy of the database made while it is idle, read through the open connection's own file handle (research.md §3), then stamped: open marker cleared, `pending_changes` emptied, `changes_waiting = 0` (its content is a backup), `backup_made_at` and `backup_of_name` set. Protected by the passphrase current at that moment (FR-023) |
 | Listed as this database's | name matches the pattern and carries this database's `<id8>` |
 | Rotation | after a successful backup, the oldest beyond `backup_keep_count` are securely deleted (FR-025), except the backup a restore is using (FR-028) |
 

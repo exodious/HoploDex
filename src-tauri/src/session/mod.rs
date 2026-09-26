@@ -4,6 +4,7 @@
 //! [`Session::write`], which refuse when nothing is open. There is still one
 //! connection and no pool.
 
+pub mod clock;
 pub mod fingerprint;
 pub mod lifecycle;
 pub mod operations;
@@ -14,9 +15,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, InterruptHandle};
 
 use crate::commands::CommandError;
-use crate::models::database::{ChooserNotice, Draft};
+use crate::models::database::{ChooserNotice, DatabaseNotes, Draft};
 use crate::services::machine_settings::MachineSettings;
+use clock::{Clock, SystemClock};
 use fingerprint::{FileFingerprint, FingerprintCheck};
+use operations::Operations;
 
 /// An open database: its connection, holding the file's exclusive lock and
 /// (inside SQLCipher) the derived key, and what the session knows about it.
@@ -42,6 +45,9 @@ pub struct OpenDatabase {
     /// refused with `DATABASE_UNAVAILABLE`, whatever the fingerprint says
     /// once it is back, and the close writes nothing (research.md §6).
     pub storage_lost: bool,
+    /// The notes this open reports once: a backup opened directly, a
+    /// restore. `disk_encryption` is not used here: it is kept in the file.
+    pub notes: DatabaseNotes,
 }
 
 impl OpenDatabase {
@@ -67,6 +73,7 @@ impl OpenDatabase {
             pending_unresolved,
             fingerprint,
             storage_lost: false,
+            notes: DatabaseNotes::default(),
         })
     }
 }
@@ -87,6 +94,9 @@ pub struct Session {
     /// The database most recently closed in this run, which the chooser
     /// selects (FR-033).
     last_closed: Mutex<Option<PathBuf>>,
+    /// The long-running operation, if any (research.md §13).
+    operations: Arc<Operations>,
+    clock: Arc<dyn Clock>,
 }
 
 impl Default for Session {
@@ -98,11 +108,44 @@ impl Default for Session {
 
 impl Session {
     pub fn new(events: Arc<dyn SessionEvents>, opened_documents_dir: Option<PathBuf>) -> Self {
-        Self { open: Mutex::new(None), events, opened_documents_dir, last_closed: Mutex::new(None) }
+        Self {
+            open: Mutex::new(None),
+            events,
+            opened_documents_dir,
+            last_closed: Mutex::new(None),
+            operations: Arc::default(),
+            clock: Arc::new(SystemClock),
+        }
+    }
+
+    /// The same session on another clock, for the tests.
+    pub fn with_clock(self, clock: Arc<dyn Clock>) -> Self {
+        Self { clock, ..self }
+    }
+
+    pub fn operations(&self) -> &Operations {
+        &self.operations
+    }
+
+    /// The registry itself, for whatever stops operations from another
+    /// thread (a skip, a sleep).
+    pub fn operations_handle(&self) -> Arc<Operations> {
+        Arc::clone(&self.operations)
+    }
+
+    pub fn clock(&self) -> &dyn Clock {
+        &*self.clock
     }
 
     fn lock(&self) -> MutexGuard<'_, Option<OpenDatabase>> {
         self.open.lock().expect("session mutex poisoned")
+    }
+
+    /// Holds the session for a whole operation that closes and reopens the
+    /// database in between (a restore), so no command runs against it
+    /// half-way.
+    pub(crate) fn hold(&self) -> MutexGuard<'_, Option<OpenDatabase>> {
+        self.lock()
     }
 
     pub fn events(&self) -> &dyn SessionEvents {
@@ -181,6 +224,16 @@ impl Session {
         look(open.as_ref().ok_or_else(CommandError::database_closed)?)
     }
 
+    /// Like [`inspect`](Self::inspect), for what the session itself keeps
+    /// about the open database (its notes), never the file.
+    pub fn inspect_mut<T>(
+        &self,
+        change: impl FnOnce(&mut OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let mut open = self.lock();
+        change(open.as_mut().ok_or_else(CommandError::database_closed)?)
+    }
+
     pub fn is_open(&self) -> bool {
         self.lock().is_some()
     }
@@ -201,12 +254,12 @@ impl Session {
         self.last_closed.lock().expect("session mutex poisoned").clone()
     }
 
-    fn set_last_closed(&self, path: &Path) {
+    pub(crate) fn set_last_closed(&self, path: &Path) {
         *self.last_closed.lock().expect("session mutex poisoned") = Some(path.to_owned());
     }
 
     /// Deletes this session's decrypted document copies (FR-022).
-    fn clear_opened_documents(&self) {
+    pub(crate) fn clear_opened_documents(&self) {
         let Some(dir) = &self.opened_documents_dir else { return };
         for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
             log::warn!("could not delete opened-document copy {}", leftover.display());

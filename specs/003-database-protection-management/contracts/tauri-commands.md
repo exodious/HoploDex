@@ -66,6 +66,7 @@ already closed by then, so the chooser shows the notice.
 | `OPERATION_IN_PROGRESS` | `{ operation }` | another long-running operation is already running |
 | `DATABASE_UNAVAILABLE` | `{ path }` | "HoploDex can't reach <path>. Nothing already saved was lost. Close the database and open it again once the drive or network is back." (FR-032) |
 | `REPLACE_FAILED` | `{ path }` | the final rename was refused (for example the file was held by another program); the original is unchanged |
+| `RESTORE_CANCELLED` | — | "The current database couldn't be backed up, so the restore was cancelled. Nothing has been changed." (FR-028: the "before restoring" backup failed) |
 | `CONFIRMATION_REQUIRED` | — | existing code, reused for delete-all-backups and take-over |
 
 ---
@@ -207,7 +208,7 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 - "Lock now" (FR-033, FR-035). No confirmation. The draft, if any, becomes pending changes, and then the same normal close runs with `reason: "lockedByUser"`. The idle and screen-lock locks run the same procedure from the backend, using the staged draft.
 
 ### `skip_backup`
-- **Input**: none → **Output**: `null`. Stops the backup the current close is making (FR-027). The changes stay waiting.
+- **Input**: none → **Output**: `null`. Stops the backup the current close is making (FR-027). The changes stay waiting. Anything else running is left alone.
 
 ### `quit_application`
 - **Input**: none → **Output**: never returns normally (the process exits)
@@ -219,7 +220,7 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 
 ### `update_backup_settings`
 - **Input**: `{ enabled: boolean; keepCount: number; location: { kind: "default" } | { kind: "custom"; path: string } }`
-- **Output**: `CollectionSettings` · **Errors**: `VALIDATION_ERROR`
+- **Output**: `CollectionSettings` · **Errors**: `VALIDATION_ERROR` (`fieldErrors.keepCount`, `fieldErrors.location`)
 - A collection change (FR-025). Lowering `keepCount` does not delete anything straight away; the next successful backup rotates.
 
 ### `update_lock_settings`
@@ -252,12 +253,13 @@ sleep stops it (FR-037).
 
 ### `list_backups`
 - **Input**: `{ databasePath?: string }` (defaults to the open database; given for a damaged database that cannot be opened, research §8)
-- **Output**: `{ folder: string; available: boolean; backups: BackupInfo[] }` (newest first)
+- **Output**: `{ folder: string; available: boolean; backups: BackupInfo[] }` (newest first). `BackupInfo.madeAt` is the local time in the backup's name, without a zone (`2026-09-25T14:30:05`)
+- **Errors**: `NOT_FOUND` when `databasePath` is not in this computer's recent list, which is where its backup folder and id are cached
 
 ### `restore_backup` 🔑
 - **Input**: `{ backupPath: string; backupPassphrase: string; databasePath?: string }` (`databasePath` only when restoring a damaged database with nothing open)
 - **Output**: `DatabaseStatus` (the restored database is open), with `notes.restoredWithPassphraseOf` set
-- **Errors**: `PASSPHRASE_INCORRECT` (for the backup), `DATABASE_DAMAGED` (the backup itself fails verification), `BACKUP_LOCATION_UNAVAILABLE` (checked before anything is written; not for a damaged database), `INSUFFICIENT_SPACE` (checked before anything is written: room for the restored copy in the database's folder and for the "before restoring" backup in the backup folder), `REPLACE_FAILED`, `OPERATION_STOPPED`
+- **Errors**: `PASSPHRASE_INCORRECT` (for the backup, checked on its first page before anything is copied), `DATABASE_DAMAGED` (the backup itself fails verification), `BACKUP_LOCATION_UNAVAILABLE` (checked before anything is written; not for a damaged database), `INSUFFICIENT_SPACE` (checked before anything is written: room for the restored copy in the database's folder and for the "before restoring" backup in the backup folder), `RESTORE_CANCELLED` (the "before restoring" backup failed), `NOT_FOUND` (the backup is gone), `REPLACE_FAILED` (the database is then closed, since the backend holds no passphrase for it: `session:closed` is emitted and the user opens it again), `OPERATION_STOPPED`
 - **Progress**: `restore:progress` `{ phase: "copying" | "checking" | "savingCurrent" | "replacing"; processed; total }`
 - Steps in research §8. `savingCurrent` is the "before restoring" backup, made whatever the once-a-day limit says and even when automatic backups are off (FR-028); if it fails or is stopped, the restore is abandoned and the database is unchanged. A damaged database is renamed aside, not deleted, and its new path is returned in `notes.damagedFileKeptAt`.
 

@@ -173,6 +173,13 @@
   font-weight: 650;
 }
 
+/* Fixed text after the value, such as a unit ("backups"). */
+.hd-input__suffix {
+  padding-right: var(--space-3);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
 .hd-input__control {
   flex: 1;
   min-width: 0;

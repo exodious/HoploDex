@@ -1651,6 +1651,7 @@ dependencies = [
  "image",
  "keyring",
  "keyring-core",
+ "libc",
  "log",
  "objc2",
  "objc2-app-kit",

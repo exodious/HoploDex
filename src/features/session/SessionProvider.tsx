@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { CommandFailure } from "../../services/tauriClient";
+import { ClosingScreen } from "./ClosingScreen";
 import { DatabaseChooser } from "../databases/DatabaseChooser";
 import * as databasesService from "../databases/databasesService";
 import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
@@ -17,7 +18,9 @@ type Phase =
   | { kind: "chooser"; selectedPath: string | null }
   /** `opens` counts every open, so reopening the same file still mounts a
    * fresh collection tree. */
-  | { kind: "open"; status: DatabaseStatus; opens: number };
+  | { kind: "open"; status: DatabaseStatus; opens: number }
+  /** A normal close is running (a backup may be under way). */
+  | { kind: "closing"; name: string; opens: number };
 
 /** The save / discard / cancel question, and what happens once it is
  * answered with anything but cancel. */
@@ -36,6 +39,7 @@ interface Question {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [question, setQuestion] = useState<Question | null>(null);
+  const [settingsRequested, setSettingsRequested] = useState(false);
   const openPath = useRef<string | null>(null);
   openPath.current = phase.kind === "open" ? phase.status.path : null;
 
@@ -48,7 +52,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setPhase((current) => ({
       kind: "open",
       status,
-      opens: current.kind === "open" ? current.opens + 1 : 1,
+      opens: current.kind === "open" || current.kind === "closing" ? current.opens + 1 : 1,
     }));
   }, []);
 
@@ -63,6 +67,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       current = false;
     };
   }, [opened, toChooser]);
+
+  // A normal close replaces the collection with the closing screen, which
+  // shows the backup the close may make (FR-027).
+  useEffect(
+    () =>
+      sessionService.onSessionClosing(() =>
+        setPhase((current) =>
+          current.kind === "open"
+            ? { kind: "closing", name: current.status.name, opens: current.opens }
+            : current,
+        ),
+      ),
+    [],
+  );
 
   // However the database closed (a close here, a take-over noticed by the
   // backend), everything from it goes, and the chooser selects it.
@@ -118,6 +136,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [opened],
   );
 
+  const restoreBackup = useCallback(
+    async (backupPath: string, passphrase: string, databasePath?: string) => {
+      // The restored database is new to the collection views: they remount.
+      opened(await databasesService.restoreBackup(backupPath, passphrase, databasePath));
+    },
+    [opened],
+  );
+
+  const requestSettings = useCallback(() => setSettingsRequested(true), []);
+  const clearSettingsRequest = useCallback(() => setSettingsRequested(false), []);
+
   const refreshStatus = useCallback(async () => {
     const status = await sessionService.getDatabaseStatus();
     setPhase((current) => (current.kind === "open" ? { ...current, status } : current));
@@ -143,8 +172,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       closeDatabase,
       refreshStatus,
       dismissNote,
+      restoreBackup,
+      settingsRequested,
+      requestSettings,
+      clearSettingsRequest,
     }),
-    [phase, openDatabase, createDatabase, closeDatabase, refreshStatus, dismissNote],
+    [
+      phase,
+      openDatabase,
+      createDatabase,
+      closeDatabase,
+      refreshStatus,
+      dismissNote,
+      restoreBackup,
+      settingsRequested,
+      requestSettings,
+      clearSettingsRequest,
+    ],
   );
 
   return (
@@ -153,6 +197,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       {phase.kind === "open" && (
         <Fragment key={`${phase.status.path}#${phase.opens}`}>{children}</Fragment>
       )}
+      {phase.kind === "closing" && <ClosingScreen name={phase.name} />}
       <UnsavedChangesPrompt
         label={question?.label ?? null}
         onSave={async () => {

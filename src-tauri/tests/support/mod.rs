@@ -8,6 +8,7 @@ use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::session::clock::Clock;
 use hoplodex_lib::session::{Session, SessionEvents};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -89,32 +90,86 @@ impl Default for TestDb {
     }
 }
 
+/// Called with each event as it is recorded, to act at a given point of an
+/// operation (stop a backup midway, look at the files).
+type EventHook = Box<dyn Fn(&str, &serde_json::Value) + Send + Sync>;
+
 /// Records the session's events in order, in place of the Tauri app, with
 /// each notice kept for the chooser recorded as a `"notice"` event.
 #[derive(Default)]
-pub struct TestEvents(Mutex<Vec<(String, serde_json::Value)>>);
+pub struct TestEvents {
+    recorded: Mutex<Vec<(String, serde_json::Value)>>,
+    hook: Mutex<Option<EventHook>>,
+}
 
 impl TestEvents {
+    /// Calls `hook` with every later event, before it is recorded.
+    #[allow(dead_code)]
+    pub fn on_event(&self, hook: impl Fn(&str, &serde_json::Value) + Send + Sync + 'static) {
+        *self.hook.lock().unwrap() = Some(Box::new(hook));
+    }
+
+    fn record(&self, event: &str, payload: serde_json::Value) {
+        if let Some(hook) = &*self.hook.lock().unwrap() {
+            hook(event, &payload);
+        }
+        self.recorded.lock().unwrap().push((event.to_owned(), payload));
+    }
+
+    /// The payloads of the recorded `event`s, in order.
+    #[allow(dead_code)]
+    pub fn payloads(&self, event: &str) -> Vec<serde_json::Value> {
+        self.recorded().into_iter().filter(|(name, _)| name == event).map(|(_, p)| p).collect()
+    }
+
     #[allow(dead_code)]
     pub fn recorded(&self) -> Vec<(String, serde_json::Value)> {
-        self.0.lock().unwrap().clone()
+        self.recorded.lock().unwrap().clone()
     }
 
     /// The events recorded so far, which are then forgotten.
     #[allow(dead_code)]
     pub fn take(&self) -> Vec<(String, serde_json::Value)> {
-        std::mem::take(&mut *self.0.lock().unwrap())
+        std::mem::take(&mut *self.recorded.lock().unwrap())
     }
 }
 
 impl SessionEvents for TestEvents {
     fn emit(&self, event: &str, payload: serde_json::Value) {
-        self.0.lock().unwrap().push((event.to_owned(), payload));
+        self.record(event, payload);
     }
 
     fn notice(&self, notice: ChooserNotice) {
-        let payload = serde_json::to_value(notice).unwrap();
-        self.0.lock().unwrap().push(("notice".to_owned(), payload));
+        self.record("notice", serde_json::to_value(notice).unwrap());
+    }
+}
+
+/// A clock the test sets and moves, with its own time zone, in place of the
+/// computer's.
+pub struct ManualClock(Mutex<chrono::DateTime<chrono::FixedOffset>>);
+
+impl ManualClock {
+    /// Starts at `rfc3339`, whose offset is the clock's time zone.
+    #[allow(dead_code)]
+    pub fn at(rfc3339: &str) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(chrono::DateTime::parse_from_rfc3339(rfc3339).unwrap())))
+    }
+
+    #[allow(dead_code)]
+    pub fn set(&self, rfc3339: &str) {
+        *self.0.lock().unwrap() = chrono::DateTime::parse_from_rfc3339(rfc3339).unwrap();
+    }
+
+    #[allow(dead_code)]
+    pub fn advance(&self, by: chrono::Duration) {
+        let mut now = self.0.lock().unwrap();
+        *now += by;
+    }
+}
+
+impl Clock for ManualClock {
+    fn now(&self) -> chrono::DateTime<chrono::FixedOffset> {
+        *self.0.lock().unwrap()
     }
 }
 
@@ -125,6 +180,29 @@ pub fn test_session(opened_documents: &Path) -> (Session, Arc<TestEvents>) {
     let events = Arc::new(TestEvents::default());
     let session = Session::new(events.clone(), Some(opened_documents.to_owned()));
     (session, events)
+}
+
+/// [`test_session`] on `clock`.
+#[allow(dead_code)]
+pub fn test_session_at(
+    opened_documents: &Path,
+    clock: Arc<ManualClock>,
+) -> (Session, Arc<TestEvents>) {
+    let events = Arc::new(TestEvents::default());
+    let session = Session::new(events.clone(), Some(opened_documents.to_owned())).with_clock(clock);
+    (session, events)
+}
+
+/// Opens the database at `path` with [`TEST_PASSPHRASE`] only to look at
+/// it: keyed and configured like the app's connections, but nothing is
+/// written, not even the open marker.
+#[allow(dead_code)]
+pub fn peek(path: &Path) -> Connection {
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .expect("could not open the file");
+    conn.pragma_update(None, "key", TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    conn
 }
 
 /// A tiny (20x20, solid red) but genuinely valid PNG, so

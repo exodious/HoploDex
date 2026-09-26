@@ -200,10 +200,8 @@ fn verify_passphrase_checks_a_candidate_without_touching_the_open_file() {
     // The database stays open (and exclusively locked) throughout.
     let before = fs::read(db.path()).unwrap();
 
-    assert!(db::verify_passphrase(&db.path(), &passphrase(), scratch.path()).unwrap());
-    assert!(
-        !db::verify_passphrase(&db.path(), &phrase("definitely not it"), scratch.path()).unwrap()
-    );
+    assert!(db::verify_passphrase(&db.conn, &passphrase(), scratch.path()).unwrap());
+    assert!(!db::verify_passphrase(&db.conn, &phrase("definitely not it"), scratch.path()).unwrap());
 
     assert_eq!(fs::read(db.path()).unwrap(), before, "the main file must never be written");
     assert_eq!(
@@ -278,7 +276,7 @@ mod through_commands {
         }
 
         fn close(&self) {
-            lifecycle::close_normal(&self.session, CloseReason::Closed).unwrap();
+            lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
         }
 
         fn path(&self, name: &str) -> std::path::PathBuf {

@@ -12,7 +12,8 @@
 //! them under `<dir>/config/com.hoplodex.app/` (the app finds it through
 //! `XDG_CONFIG_HOME=<dir>/config`):
 //! - "Main collection": the full collection, with non-default backup and lock
-//!   settings, backed up and closed cleanly;
+//!   settings, backed up (two backups, yesterday's and today's, in
+//!   `<dir>/Backups`) and closed cleanly;
 //! - "Shared collection": a few firearms, changes waiting for a backup,
 //!   pending changes from a locked edit, and left open by another computer
 //!   ("Workshop PC"), so the take-over prompt shows.
@@ -40,10 +41,10 @@ use hoplodex_lib::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::backups::{self, resolve_folder as backup_folder, BackupJob};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
-use hoplodex_lib::session::lifecycle::backup_folder;
 use rusqlite::Connection;
 
 #[path = "support/sandbox.rs"]
@@ -256,12 +257,34 @@ pub fn seed_sandbox(dir: &Path, extra: usize) -> SandboxPaths {
         ),
         "the main database's settings",
     );
+    // Two backups, as two days' closes would have made them, so the restore
+    // dialog has a choice and a seeded backup carries the backup stamp.
+    let now = Local::now().fixed_offset();
+    for made_at in [now - Duration::days(1), now] {
+        must(
+            backups::make_backup(
+                &machine,
+                BackupJob {
+                    conn: &main,
+                    database_path: &paths.main,
+                    name: MAIN_NAME,
+                    database_id: &database_id(&main),
+                    folder: &paths.main_backups,
+                    make_folder: true,
+                    now: made_at,
+                    cancel: &|| false,
+                    progress: &mut |_, _| {},
+                },
+            ),
+            "a backup of the main database",
+        );
+    }
     must(
         main.execute(
             "UPDATE app_state SET disk_encryption_note_dismissed = 1, changes_waiting = 0,
                     last_backup_at = ?1, open_machine_id = NULL, open_machine_name = NULL,
                     open_since = NULL",
-            [db::now_utc()],
+            [backups::utc_text(&now)],
         ),
         "the main database's backup record",
     );

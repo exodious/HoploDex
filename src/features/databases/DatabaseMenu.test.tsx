@@ -78,6 +78,17 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
       .mockReset()
       .mockResolvedValue({ backup: "notAttempted" });
     vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    vi.mocked(databasesService.listBackups).mockReset().mockResolvedValue({
+      folder: "/home/sam/Documents/HoploDex/HoploDex backups",
+      available: true,
+      backups: [],
+    });
+    vi.mocked(databasesService.onRestoreProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(databasesService.onBackupsDeleteProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
   });
 
   it("shows the open database's name on a menu button", async () => {
@@ -121,5 +132,30 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     expect(sessionService.closeDatabase).not.toHaveBeenCalled();
     await user.click(within(prompt).getByRole("button", { name: "Discard changes" }));
     await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed"));
+  });
+
+  it("opens the database settings (§7)", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Main collection settings" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the restore dialog (§9)", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Restore from a backup…" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Restore Main collection from a backup" }),
+    ).toBeInTheDocument();
+    expect(databasesService.listBackups).toHaveBeenCalledWith(undefined);
   });
 });

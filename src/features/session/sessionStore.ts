@@ -20,6 +20,15 @@ export interface SessionState {
   closeDatabase: (reason: "closed" | "switched") => Promise<void>;
   refreshStatus: () => Promise<void>;
   dismissNote: (note: NoteKind) => Promise<void>;
+  /** Restores the open database, or the damaged one at `databasePath`, from
+   * a backup; the restored database is then open (FR-028). Rejects with the
+   * command's `CommandFailure`. */
+  restoreBackup: (backupPath: string, passphrase: string, databasePath?: string) => Promise<void>;
+  /** The backup settings should open once a database is open: asked for from
+   * a failed-backup notice in the chooser (contracts/ui-databases.md §1). */
+  settingsRequested: boolean;
+  requestSettings: () => void;
+  clearSettingsRequest: () => void;
 }
 
 export const SessionContext = createContext<SessionState | null>(null);

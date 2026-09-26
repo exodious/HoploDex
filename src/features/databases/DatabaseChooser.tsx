@@ -9,6 +9,7 @@ import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
 import * as databasesService from "./databasesService";
 import { databaseNameOf } from "./paths";
 import { RecentDatabaseRow } from "./RecentDatabaseRow";
+import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import type { ChooserRow, OpenElsewhere } from "./RecentDatabaseRow";
 import { TakeOverConfirm } from "./TakeOverConfirm";
 import type { ChooserNotice, ChooserState } from "./types";
@@ -54,6 +55,17 @@ const BACKUP_FAILURE: Record<Extract<ChooserNotice, { kind: "backupFailed" }>["r
   databaseUnreachable: "its file could not be reached",
 };
 
+/** Whether a failed open offers restoring from a backup: the database is
+ * damaged, or the passphrase didn't open it (at page 1 the two look the
+ * same), and this computer knows of backups of it (FR-028, US3-6). */
+function offersRestore(error: unknown): boolean {
+  return (
+    error instanceof CommandFailure &&
+    (error.code === "DATABASE_DAMAGED" || error.code === "PASSPHRASE_INCORRECT") &&
+    error.details?.backupsAvailable === true
+  );
+}
+
 /** A notice's sentence (contracts/ui-databases.md §1 "Notices"), or `null`
  * for one with nothing to say, such as an ordinary close. */
 function noticeText(notice: ChooserNotice): string | null {
@@ -76,7 +88,7 @@ function noticeText(notice: ChooserNotice): string | null {
 
 /** Why the last open of a row failed. */
 type Failure =
-  | { path: string; kind: "message"; message: string }
+  | { path: string; kind: "message"; message: string; restore: boolean }
   | { path: string; kind: "notFound" }
   | { path: string; kind: "elsewhere"; elsewhere: OpenElsewhere };
 
@@ -98,7 +110,10 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [notices, setNotices] = useState<{ id: number; text: string }[]>([]);
+  const [notices, setNotices] = useState<
+    { id: number; text: string; name: string; changeLocation: boolean }[]
+  >([]);
+  const [restoring, setRestoring] = useState<ChooserRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [takeOver, setTakeOver] = useState<{ row: ChooserRow; machineName: string } | null>(null);
@@ -114,7 +129,13 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
         setNotices(
           loaded.notices.flatMap((notice, id) => {
             const text = noticeText(notice);
-            return text ? [{ id, text }] : [];
+            // A backup location that let it down can be changed once the
+            // database is open again.
+            const changeLocation =
+              notice.kind === "backupFailed" &&
+              (notice.reason === "locationUnavailable" || notice.reason === "insufficientSpace");
+            const name = databaseNameOf(notice.databasePath);
+            return text ? [{ id, text, name, changeLocation }] : [];
           }),
         );
       },
@@ -162,7 +183,12 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
           },
         });
       } else {
-        setFailure({ path: row.path, kind: "message", message: openFailureText(row.name, error) });
+        setFailure({
+          path: row.path,
+          kind: "message",
+          message: openFailureText(row.name, error),
+          restore: offersRestore(error),
+        });
       }
     } finally {
       setOpening(null);
@@ -273,6 +299,27 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
           {notices.map((notice) => (
             <div key={notice.id} className="hd-banner hd-db-note hd-chooser__notice">
               <p>{notice.text}</p>
+              {notice.changeLocation && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    session.requestSettings();
+                    setNotices((current) =>
+                      current.map((n) =>
+                        n.id === notice.id
+                          ? {
+                              ...n,
+                              text: `Its backup settings will open when you open ${n.name}.`,
+                              changeLocation: false,
+                            }
+                          : n,
+                      ),
+                    );
+                  }}
+                >
+                  Change backup location…
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -317,6 +364,11 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                         failed?.kind === "elsewhere" &&
                         setTakeOver({ row, machineName: failed.elsewhere.machineName })
                       }
+                      onRestore={
+                        failed?.kind === "message" && failed.restore
+                          ? () => setRestoring(row)
+                          : undefined
+                      }
                     />
                   );
                 })}
@@ -352,6 +404,14 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
               suggested={state.suggested}
               onCreate={session.createDatabase}
             />
+            {restoring && (
+              <RestoreBackupDialog
+                open
+                onOpenChange={(open) => !open && setRestoring(null)}
+                name={restoring.name}
+                databasePath={restoring.path}
+              />
+            )}
             <TakeOverConfirm
               target={takeOver && { name: takeOver.row.name, machineName: takeOver.machineName }}
               onCancel={() => setTakeOver(null)}

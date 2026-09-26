@@ -143,3 +143,52 @@ export interface CreateDatabaseInput {
 
 /** A note shown once in the collection (contracts/ui-databases.md §10). */
 export type NoteKind = "diskEncryption" | "openedBackup" | "restored";
+
+/** `list_backups`: a database's backup folder and what is in it (FR-028). */
+export interface BackupList {
+  folder: string;
+  /** The folder exists on this computer. */
+  available: boolean;
+  /** Newest first. */
+  backups: BackupInfo[];
+}
+
+/** `delete_all_backups`'s answer (FR-029). */
+export interface BackupsDeleted {
+  deletedCount: number;
+  /** Backups that could not be deleted, left in place. */
+  failedPaths: string[];
+}
+
+/** Where backups go, as `update_backup_settings` takes it. */
+export type BackupLocationInput = { kind: "default" } | { kind: "custom"; path: string };
+
+/** `update_backup_settings`'s input (FR-024, FR-026). */
+export interface BackupSettingsInput {
+  enabled: boolean;
+  /** 1–100. */
+  keepCount: number;
+  location: BackupLocationInput;
+}
+
+/** `backup:progress`: bytes copied by the backup a close is making. */
+export interface BackupProgress {
+  processed: number;
+  total: number;
+  /** The copy is expected to take over a second: show the bar at once. */
+  showNow: boolean;
+}
+
+/** `restore:progress` (contracts/tauri-commands.md). `checking` and
+ * `replacing` are indeterminate, with `total: 0`. */
+export interface RestoreProgress {
+  phase: "copying" | "checking" | "savingCurrent" | "replacing";
+  processed: number;
+  total: number;
+}
+
+/** `backups_delete:progress`: files deleted so far. */
+export interface CountProgress {
+  processed: number;
+  total: number;
+}

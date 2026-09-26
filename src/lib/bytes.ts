@@ -15,3 +15,19 @@ export function bytesToDataUrl(bytes: number[], mimeType: string): string {
   }
   return `data:${mimeType};base64,${btoa(binary)}`;
 }
+
+const SIZE_UNITS = ["bytes", "KB", "MB", "GB", "TB"];
+
+/** A file size as people read one ("212 MB", "1.4 GB"), in the decimal
+ * units file managers show. */
+export function formatBytes(bytes: number, locale?: string): string {
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < SIZE_UNITS.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  const digits = unit > 0 && value < 10 ? 1 : 0;
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value);
+  return `${number} ${SIZE_UNITS[unit]}`;
+}

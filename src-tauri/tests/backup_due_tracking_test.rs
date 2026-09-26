@@ -130,9 +130,9 @@ fn creating_opening_and_closing_without_changes_leaves_nothing_waiting() {
     let path = dir.path().join("Quiet.hoplodex");
 
     lifecycle::create(&session, &machine, &path, &passphrase()).unwrap();
-    lifecycle::close_normal(&session, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(&session, &machine, CloseReason::Closed).unwrap();
     lifecycle::open(&session, &machine, &path, &passphrase(), false).unwrap();
-    lifecycle::close_normal(&session, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(&session, &machine, CloseReason::Closed).unwrap();
 
     let conn = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
     assert!(!changes_waiting(&conn));

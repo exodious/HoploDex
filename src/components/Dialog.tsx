@@ -23,6 +23,9 @@ export interface DialogProps {
    * `.hd-dialog__footer` (inside a `.hd-dialog__form`), keeping the submit
    * button inside the <form> so Enter submits and pending state is local. */
   bare?: boolean;
+  /** `false` while something runs that must not be interrupted: no close
+   * button, and Escape or a click outside do nothing. */
+  dismissible?: boolean;
   children: ReactNode;
 }
 
@@ -37,6 +40,7 @@ export function Dialog({
   footer,
   size = "md",
   bare = false,
+  dismissible = true,
   children,
 }: DialogProps) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -48,7 +52,10 @@ export function Dialog({
     if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
   }, [open]);
   return (
-    <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
+    <RadixDialog.Root
+      open={open}
+      onOpenChange={(next) => (dismissible || next) && onOpenChange(next)}
+    >
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="hd-dialog__overlay" />
         <RadixDialog.Content
@@ -91,9 +98,11 @@ export function Dialog({
                 </RadixDialog.Description>
               )}
             </div>
-            <RadixDialog.Close className="hd-dialog__close" aria-label="Close">
-              <Icon name="close" />
-            </RadixDialog.Close>
+            {dismissible && (
+              <RadixDialog.Close className="hd-dialog__close" aria-label="Close">
+                <Icon name="close" />
+              </RadixDialog.Close>
+            )}
           </header>
           {bare ? children : <div className="hd-dialog__body">{children}</div>}
           {footer && <footer className="hd-dialog__footer">{footer}</footer>}

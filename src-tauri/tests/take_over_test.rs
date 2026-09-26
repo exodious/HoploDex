@@ -239,7 +239,8 @@ fn a_close_after_a_take_over_writes_nothing() {
     let ours_before = fs::read(&ours).unwrap();
     let theirs_before = fs::read(world.path()).unwrap();
 
-    let outcome = lifecycle::close_normal(&world.session, CloseReason::Closed).unwrap();
+    let outcome =
+        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::NotAttempted);
     assert!(!world.session.is_open());
@@ -283,7 +284,8 @@ fn storage_that_goes_away_is_not_a_take_over() {
     assert_unavailable(world.add_firearm("A3"), &world.path());
 
     let before = fs::read(world.path()).unwrap();
-    let outcome = lifecycle::close_normal(&world.session, CloseReason::Closed).unwrap();
+    let outcome =
+        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::Failed);
     assert_eq!(outcome.failure_reason, Some(BackupFailureReason::DatabaseUnreachable));
