@@ -86,7 +86,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     expect(within(backups).getByRole("checkbox", { name: "Make automatic backups" })).toBeChecked();
     const keep = within(backups).getByLabelText("Keep the latest");
     expect(keep).toHaveValue("5");
-    expect(keep.closest(".hd-field")).toHaveClass("hd-field--quarter");
+    expect(keep.closest(".hd-field")).toHaveClass("hd-field--third");
     expect(within(backups).getByText(DEFAULT_BACKUPS)).toBeInTheDocument();
     expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
     expect(within(backups).getByRole("button", { name: "Change…" })).toBeInTheDocument();

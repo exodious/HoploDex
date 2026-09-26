@@ -217,13 +217,13 @@ never shows this (FR-033).
 
 ## 7. Database settings (FR-024, FR-026, FR-029, FR-034, FR-036, FR-038, FR-017)
 
-A `Dialog` (`size="lg"`) titled "<name> settings", with three sections in
+A standard `Dialog` titled "<name> settings", with three sections in
 this order, each a titled fieldset. Settings apply with **Save** in the
 footer, like every other form.
 
 **Backups**
 - `Checkbox` **Make automatic backups**
-- **Keep the latest**: a number field (`hd-field--quarter`), with "backups"
+- **Keep the latest**: a number field (`hd-field--third`), with "backups"
   after it
 - **Location**: shows the resolved path and "(next to the database)" for
   the default, plus **Change…** (folder picker) and **Use the default**. An

@@ -44,13 +44,7 @@ export function DatabaseSettingsDialog({
   onRestore,
 }: DatabaseSettingsDialogProps) {
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={`${status.name} settings`}
-      size="lg"
-      bare
-    >
+    <Dialog open={open} onOpenChange={onOpenChange} title={`${status.name} settings`} bare>
       {/* Mounted only while open, so every opening starts from what is saved. */}
       <SettingsForm
         status={status}
@@ -175,7 +169,7 @@ function SettingsForm({
               setErrors((current) => ({ ...current, keepCount: undefined }));
             }}
             error={errors.keepCount}
-            fieldClassName="hd-field--quarter"
+            fieldClassName="hd-field--third"
             trailing={<span className="hd-input__suffix">backups</span>}
           />
           <div className="hd-field">
