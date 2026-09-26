@@ -108,4 +108,8 @@ Check on each available OS, and record the results in the PR description:
   three new E2E specs pass one at a time.
 - `npm run screenshots` produces the new screens in contracts/ui-databases.md
   §15 for the PR's before/after evidence.
-- The constitution PATCH amendment (research §21) is merged first or with it.
+- The dependency audit passes with no new exception for the dependencies
+  this feature adds or promotes (constitution 1.1.0).
+- The pull request carries the security and data-handling note. The release
+  security review is not a merge gate for this feature; it runs at the first
+  release (spec Assumptions).

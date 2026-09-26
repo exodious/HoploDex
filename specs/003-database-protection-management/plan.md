@@ -70,7 +70,8 @@ identity), `objc2`/`objc2-foundation`/`objc2-app-kit` (macOS),
 `@zxcvbn-ts/language-en` (strength hint, lazy-loaded, §18),
 `@radix-ui/react-dropdown-menu` (database menu). All are MIT or
 MIT/Apache-2.0, have no network access and no telemetry, and must pass
-`npm run audit` including `audit:licenses`.
+`npm run audit` including `audit:licenses`, which enforces the
+constitution's dependency vulnerability policy (1.1.0).
 
 **Storage**: One SQLCipher file per database, `<name>.hoplodex`, anywhere
 the user chooses (default suggestion `<Documents>/HoploDex/`). New tables
@@ -141,9 +142,11 @@ No NEEDS CLARIFICATION remain: each open technical question is resolved in
 | III. UX Consistency | One component set; one confirmation pattern; WCAG 2.1 AA | Take-over, delete all backups, restore and discarding pending changes use the destructive `ConfirmDialog`. Save / discard / cancel extends `ConfirmDialog` with a third action instead of a one-off prompt. The settings dialog uses the existing `hd-form-grid`/`hd-field--quarter`/`--third` classes. All progress uses `ProgressBar`. Menu roles and focus rules are in [contracts/ui-databases.md](./contracts/ui-databases.md) §0 and §14. New screens join the screenshot walk (§15) |
 | IV. Performance | 100 ms feedback / 1 s completion; no UI-thread blocking; progress on long work | All new commands are async, and long ones emit progress. The closing screen appears within 100 ms. The 1 s rule for backups is SC-005's. Open time is budgeted and measured (SC-003). Import and export gain a per-row cancel check (an atomic load). `performance_test.rs` gains open and progress timing |
 | V. User Privacy | Local only; encryption at rest; clear disclosure of what goes where; real deletion | Nothing leaves the device. Backups are encrypted copies in a folder the user sees and chooses, disclosed at creation and in settings (FR-024, FR-029). Deleted records remaining in older backups is disclosed, with delete-all and secure rotation. The keyring holds only a passphrase, only on opt-in. `machine.json` holds paths and names only |
-| Security & Data Handling | Platform-standard encryption; keys never logged or sent; network sync or backup opt-in and off by default; vetted dependencies | SQLCipher with pinned standard settings, and no custom cryptography (§1, §1a). Passphrases are zeroized and never logged, and SQLCipher's log is silenced in release. **Local backups are on by default**, which the spec's clarification reads as allowed because they never leave the device. The constitution's wording must be clarified by a PATCH amendment first (see Complexity Tracking). Dependencies are reviewed above |
+| Security & Data Handling | Platform-standard encryption; keys never logged or sent; sync or backup that leaves the device opt-in and off by default, while a local backup in a location the user sees and chooses may be on by default; vetted dependencies; no known critical or high advisory, unscored advisory, or unmaintained/unsound notice without a scoped, dated exception | SQLCipher with pinned standard settings, and no custom cryptography (§1, §1a). Passphrases are zeroized and never logged, and SQLCipher's log is silenced in release. **Local backups are on by default**, which constitution 1.1.0 allows because they are written only to a folder the user sees and chooses and never leave the device (FR-024, FR-026). Dependencies are reviewed for data collection above, and every new or promoted crate and npm package must pass the dependency audit with no new exception |
+| Workflow & Quality Gates | Lint, tests, dependency audit and review on every PR; UI evidence; security note for persistence changes; performance note; whole-codebase AI security review before every release | The PR carries before/after screenshots (contracts/ui-databases.md §15), a security and data-handling note, and a performance note (SC-003, SC-005). `npm run audit` runs with lint and tests. This feature is not a release, so it does not run the release security review; the spec's Assumptions list the attack surface it adds for the first release review to cover |
 
-**Result**: PASS with one recorded deviation, pending the PATCH amendment
+**Result**: PASS against constitution 1.1.0. The one deviation recorded
+against 1.0.0 (local backups on by default) was resolved by that amendment
 (Complexity Tracking). Phase 0 may proceed.
 
 ## Project Structure
@@ -302,7 +305,6 @@ e2e/
 
 scripts/human-testing.sh            # new data layout (.human-testing/HoploDex/*.hoplodex), prints passphrase
 DEVELOPMENT.md                      # Test isolation: passphrase model, no DB key env; human-testing notes
-.specify/memory/constitution.md     # PATCH amendment (research §21), via /speckit-constitution
 ```
 
 **Structure Decision**: No new project or package. It is the existing
@@ -318,7 +320,7 @@ numbering from 002's `us6`.
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
-| Local backups on by default, while the constitution's Security & Data Handling section says "any network sync or backup feature MUST be opt-in, off by default" | The user's request and the spec's first clarification: backups protect against corruption only if they exist before the corruption, and they never leave the device | Off by default would leave most users without a backup when it matters. Resolution: a PATCH amendment clarifying that the rule covers backups that leave the device (research §21), made with `/speckit-constitution` before this feature merges. Until then this row records the deviation |
+| None under constitution 1.1.0. Recorded against 1.0.0: local backups on by default, while its Security & Data Handling section said "any network sync or backup feature MUST be opt-in, off by default" | The user's request and the spec's first clarification: backups protect against corruption only if they exist before the corruption, and they never leave the device | Off by default would leave most users without a backup when it matters. Resolved by constitution 1.1.0 (2026-09-26), which limits the rule to data that leaves the device (research §21) |
 
 Additions that are not violations but are justified here, since
 constitution I asks for it: per-OS system-event code (required by FR-037 and
@@ -350,7 +352,12 @@ new Rust crates and four npm packages (Technical Context).
   passphrase between commands, which the salt-sharing finding makes possible;
   decrypted data never touches disk (the page-1 probe copies ciphertext
   only); the developer's pre-feature database and keyring entry are
-  untouched by design. The on-by-default local backup remains the one
-  recorded deviation, pending the PATCH amendment. PASS with that recorded.
+  untouched by design. The on-by-default local backup is allowed by
+  constitution 1.1.0, and the new and promoted dependencies are held to its
+  vulnerability policy through the dependency audit. PASS.
+- **Quality gates**: the PR gates, including the dependency audit, are listed
+  in quickstart.md's "Done when". The release security review is left to the
+  first release, with this feature's attack surface listed in the spec's
+  Assumptions. PASS.
 
-**Result**: PASS, with one recorded deviation that has a scheduled resolution.
+**Result**: PASS against constitution 1.1.0, with no recorded deviation.

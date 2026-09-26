@@ -22,6 +22,10 @@ On a host with podman, run tests, lint, the dependency audit and screenshots thr
 
 The developer uses the app day to day. Their real encrypted DB is at `~/.local/share/com.hoplodex.app/hoplodex.db`, and its key is in the OS keyring. Never open, modify or delete it from a session. Tests, E2E runs, screenshots and human testing are all isolated from it; "Test isolation" in `DEVELOPMENT.md` says how. Keep it that way when you change any of them, and don't run the app outside that tooling.
 
+## Commit and push
+
+When the user says "commit and push", commit every change git doesn't ignore: modified, deleted and untracked files, including changes made before the session started or outside it, not only your own. Review `git status` and `git diff` first. Stop and ask if something looks like it shouldn't be committed, such as secrets, credentials, large binaries or stray scratch files.
+
 ## Architecture
 
 **IPC boundary.** The frontend reaches the backend only through `invoke()` in `src/services/tauriClient.ts`. It turns a backend rejection into a typed `CommandFailure { code, message, fieldErrors }`, which mirrors `CommandError` in `src-tauri/src/commands/error.rs`. That is the only error shape a command returns. Codes are stable strings (`VALIDATION_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`, domain codes such as `ORIGINAL_MARKS_MATCH`). Raw DB errors are logged and never forwarded (`CommandError::from_db`). Some warnings can be overridden: the command fails with a warning code, and the UI resends it with `confirmedWarnings: true`.
@@ -47,6 +51,6 @@ The developer uses the app day to day. Their real encrypted DB is at `~/.local/s
 
 ## Spec Kit workflow
 
-Features are specified under `specs/NNN-name/` (`spec.md`, `plan.md`, `data-model.md`, `contracts/tauri-commands.md`, `contracts/spreadsheet-format.md`, `tasks.md`), driven by the `/speckit-*` skills. `.specify/feature.json` names the active feature. Code comments cite requirement IDs (`FR-033`, `research.md §5`). Keep those references accurate, and update the contracts when a command's shape changes. The constitution in `.specify/memory/constitution.md` overrides other guidance. Its gates: lint and tests pass, UI PRs carry before/after screenshots, persistence PRs describe how they meet the security/data-handling constraints, and performance-sensitive PRs note their impact against the budgets (search ≤500ms and actions ≤1s at 10,000 items).
+Features are specified under `specs/NNN-name/` (`spec.md`, `plan.md`, `data-model.md`, `contracts/tauri-commands.md`, `contracts/spreadsheet-format.md`, `tasks.md`), driven by the `/speckit-*` skills. `.specify/feature.json` names the active feature. Code comments cite requirement IDs (`FR-033`, `research.md §5`). Keep those references accurate, and update the contracts when a command's shape changes. The constitution in `.specify/memory/constitution.md` overrides other guidance. Its gates: lint, tests and the dependency audit pass, UI PRs carry before/after screenshots, persistence PRs describe how they meet the security/data-handling constraints, and performance-sensitive PRs note their impact against the budgets (search ≤500ms and actions ≤1s at 10,000 items). Before every release, a whole-codebase AI-assisted security review runs and its dated report is committed.
 
 `spec_TODO.md` is temporary. Never reference it (or its item labels like "A1" or "Track B") from specs, code, comments, tests or commit messages. Copy what's needed into the spec's `## Source Request` section instead.

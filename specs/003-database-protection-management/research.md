@@ -801,14 +801,25 @@ consulted to open it.
 
 ## §21 Constitution: the local-backup amendment
 
-The constitution's Security & Data Handling section says "any network sync or
+The constitution's Security & Data Handling section said "any network sync or
 backup feature MUST be opt-in, off by default". The spec's first
-clarification reads this as covering backups that **leave the device**,
-and asks for the wording to say so. That is a PATCH amendment
-(clarification, no change of principle), to be made with
-`/speckit-constitution` **before this feature merges**. It appears in the
-plan's Complexity Tracking as the one recorded deviation until then. The
-same amendment can carry the testing rule recorded in the working list: tests
-must not read or write the user's real database or keyring entry. That rule is
-already implemented (DEVELOPMENT.md, "Test isolation"), and this feature's
-move from a keyring key to user-chosen locations is exactly what it guards.
+clarification read this as covering backups that **leave the device**, and
+asked for the wording to say so. This was planned as a PATCH amendment
+before this feature merges, and was recorded in the plan's Complexity
+Tracking as a deviation until then.
+
+**Resolved by constitution 1.1.0 (2026-09-26).** The rule now covers features
+that sync or back up data over a network or to a cloud service. A backup the
+application writes only to local storage, in a location the user can see and
+choose, may be on by default, and a local folder that another program syncs
+elsewhere is the user's choice. The amendment was MINOR rather than PATCH,
+because it also added a dependency vulnerability policy, the dependency audit
+as a pull-request gate, and a whole-codebase AI-assisted security review as a
+release gate. This feature's dependencies are held to the first two (plan,
+Technical Context), and the release review is left to the first release
+(spec, Clarifications 2026-09-26).
+
+The testing rule that was to go into the same amendment (tests must not read
+or write the user's real database or keyring entry) was not added to the
+constitution. It stays in DEVELOPMENT.md, "Test isolation", and CLAUDE.md,
+which already enforce it, and this feature keeps to it (research §10).
