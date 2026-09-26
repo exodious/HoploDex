@@ -416,9 +416,30 @@ license, check it against the FSF's
 [list of GPL-compatible licenses](https://www.gnu.org/licenses/license-list.html).
 A license that's only acceptable for particular packages goes in the script's
 `EXCEPTIONS` (npm) or a `[[licenses.exceptions]]` entry (Rust), with the
-reason. Today there is one: OFL-1.1, for the `@fontsource` fonts only. The
-tools can't check some things, so check these by hand when they change and
+reason. Today there is one: OFL-1.1, for the `@fontsource` fonts only.
+
+The passphrase strength hint's English dictionary is a second exception, which
+the tools can't see because the package declares MIT. `@zxcvbn-ts/language-en`
+4.1.1 bundles `commonWords.json`, which its `THIRD_PARTY_LICENSES.md` and
+`NOTICE.md` say is derived from the OpenSubtitles 2024 dataset (via OPUS,
+Helsinki-NLP) under ODC-BY, a data license whose only condition is
+attribution. It's accepted for that package only: the list is data the
+strength estimate looks words up in, not code combined with the program. The
+release's third-party notices must carry the attribution, including the
+package's `NOTICE.md`, which asks to be kept on redistribution: "commonWords.json
+contains data derived from OpenSubtitles 2024 (https://opus.nlpl.eu/),
+provided by Helsinki-NLP / OPUS, under the Open Data Commons Attribution
+License (ODC-BY)."
+
+The tools can't check some things, so check these by hand when they change and
 before a release:
+
+- **The strength hint's other word lists**: `wikipedia.json`,
+  `firstnames.json`, `lastnames.json` and `wordSequences.json` in
+  `@zxcvbn-ts/language-en` 4.1.1, and `passwords.json`, `diceware.json` and
+  `adjacencyGraphs.json` in `@zxcvbn-ts/language-common` 4.1.3, state no
+  source. Find out where each comes from and under what license before the
+  first release.
 
 - **MPL-2.0 crates**: a file carrying MPL's Exhibit B notice ("Incompatible
   With Secondary Licenses") can't be combined with GPL code. When a new

@@ -49,6 +49,35 @@ chrono = "0.4"
 getrandom = { version = "0.3", features = ["std"] }
 log = "0.4"
 image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
+# Passphrase NFC normalization (research.md §1).
+unicode-normalization = "0.1.25"
+# The open marker's machine name (research.md §6).
+gethostname = "1.1.0"
+# Free space before a copy (research.md §4).
+fs4 = "1.1.0"
+# Promoted from transitive, at the versions already in Cargo.lock: wiping
+# passphrases from memory (research.md §1) and file identity for the
+# take-over check (research.md §6).
+zeroize = "1.9"
+same-file = "1.0.6"
+
+# Sleep, wake, screen-lock and shutdown notices (research.md §14). Each is
+# already in the tree for its platform; only the features are switched on.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_System_Power",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Shutdown",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 tempfile = "3"
