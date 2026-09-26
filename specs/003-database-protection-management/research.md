@@ -739,7 +739,7 @@ document copies, then exit (FR-039 ordering).
 ## §18 Passphrase strength hint
 
 **Decision**: `@zxcvbn-ts/core` with `@zxcvbn-ts/language-common` and
-`@zxcvbn-ts/language-en` (all MIT, no network access, no telemetry),
+`@zxcvbn-ts/language-en` (all declared MIT, no network access, no telemetry),
 **loaded lazily** the first time a new-passphrase field is shown, so the
 dictionaries (a few hundred KB) do not slow the application's start. The
 hint shows a five-step meter and zxcvbn's own suggestions, with the sentence
@@ -752,6 +752,25 @@ keystrokes cross IPC.
 (rejected: it rates `passwordpassword` highly and pushes users towards the
 composition rules FR-003 forbids); the Rust `zxcvbn` crate (rejected: every
 keystroke of the passphrase would cross IPC).
+
+**Licenses of the dictionaries** (constitution 1.2.0, Licensing). The
+packages declare MIT, which is all the license audit sees, but the
+dictionaries are bundled data files, so their sources are recorded here.
+`@zxcvbn-ts/language-en` 4.1.1 ships `commonWords.json`, which its
+`THIRD_PARTY_LICENSES.md` says is generated from the OpenSubtitles 2024
+dataset (via OPUS, Helsinki-NLP) under **ODC-BY**, a data license whose only
+condition is attribution when redistributed. It is accepted as an exception
+scoped to `@zxcvbn-ts/language-en`: the list is data the strength estimate
+looks words up in, not code combined with the program, and the attribution
+is met by the release's third-party notices. The package's other lists
+(`wikipedia.json`, `firstnames.json`, `lastnames.json`,
+`wordSequences.json`) and `@zxcvbn-ts/language-common` 4.1.3's
+`passwords.json`, `diceware.json` and `adjacencyGraphs.json` state no
+source; they are checked by hand before the first release. The exception and
+the attribution are recorded in "License audit" in DEVELOPMENT.md, next to
+the OFL-1.1 one, since `scripts/check-npm-licenses.mjs` reads only the
+declared license and cannot express it. Dropping the English dictionary was
+rejected: the hint would no longer notice ordinary English words.
 
 ---
 
@@ -799,7 +818,7 @@ consulted to open it.
 
 ---
 
-## §21 Constitution: the local-backup amendment
+## §21 Constitution: the local-backup, test-isolation and licensing amendments
 
 The constitution's Security & Data Handling section said "any network sync or
 backup feature MUST be opt-in, off by default". The spec's first
@@ -819,7 +838,38 @@ release gate. This feature's dependencies are held to the first two (plan,
 Technical Context), and the release review is left to the first release
 (spec, Clarifications 2026-09-26).
 
-The testing rule that was to go into the same amendment (tests must not read
-or write the user's real database or keyring entry) was not added to the
-constitution. It stays in DEVELOPMENT.md, "Test isolation", and CLAUDE.md,
-which already enforce it, and this feature keeps to it (research §10).
+**Constitution 1.2.0 (2026-09-26)** added the testing rule that was left out
+of 1.1.0, and a Licensing section.
+
+- **Test isolation** (Testing Standards): tests and any tooling that runs the
+  application must not read, write or delete the user's real database, the
+  key or passphrase stored for it, or other real application data; they use
+  throwaway locations and test passphrases, and seeding tools must refuse the
+  real data directory. With this feature real data is no longer one file in
+  the app-data directory, so the rule covers every database the user keeps,
+  their backups, `machine.json` with its recent list, the suggested
+  `<Documents>/HoploDex/` folder, and the `passphrase:<database_id>` keyring
+  entries, as well as the pre-feature database and its `sqlcipher-key` entry
+  (§10). Integration tests take every path as a parameter and create it in a
+  temp directory, never resolving the real config or documents directory;
+  keyring tests use the `mock-keyring` store; E2E and screenshot runs keep
+  their scratch `XDG_*` directories and `user-dirs.dirs` (§19).
+- **The human-testing seed** can no longer refuse one known directory,
+  because the real databases may be anywhere. It uses an allow list instead
+  (spec, Clarifications 2026-09-26): it writes only into a directory that is
+  new or holds a `.hoplodex-sandbox` marker file the seed created there, and
+  refuses any target that is, or lies inside, the real data, config or
+  documents directory, resolved from the environment the seed was started
+  with. It writes no keyring entry. The check lives in
+  `examples/support/sandbox.rs`, included by `human_seed.rs` and by
+  `tests/seed_sandbox_test.rs` through `#[path]`, so it is tested without
+  shipping in the application. A blocklist of known real folders was
+  rejected: it could not name a folder the user chose, and building one from
+  the real `machine.json` would mean reading real application data.
+- **Licensing**: every dependency this feature adds or promotes passes the
+  license audit. All the new and promoted crates and npm packages declare
+  MIT, Apache-2.0 or both (`gethostname` is Apache-2.0 only). The one bundled
+  data file needing more than that is the ODC-BY word list (§18), accepted as
+  a scoped exception. The third-party notices every release must carry are
+  left to the first release, like the security review (spec, Clarifications
+  2026-09-26); the ODC-BY attribution is recorded for them.

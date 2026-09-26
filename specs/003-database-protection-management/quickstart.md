@@ -17,9 +17,11 @@ The design reasons are in [research.md](./research.md).
   `zbus`, `same-file` and the platform crates direct dependencies (research
   §1, §4, §6, §14, §18). `npm run audit` must pass afterwards, including the
   license audit.
-- **Never the real database.** The app no longer opens anything by itself:
-  it shows the chooser. Test runs use scratch `XDG_*` directories (E2E,
-  screenshots, human testing) or temp directories (`cargo test`). The
+- **Never real application data** (constitution 1.2.0). The app no longer
+  opens anything by itself: it shows the chooser. Test runs use scratch
+  `XDG_*` directories (E2E, screenshots, human testing) or temp directories
+  (`cargo test`), and the mock keyring; nothing touches the developer's own
+  databases, backups, `machine.json` or saved passphrases. The
   developer's pre-feature database at `~/.local/share/com.hoplodex.app/hoplodex.db`
   and its `sqlcipher-key` keyring entry are left alone. No code reads them
   now, and nothing may delete them (research §10).
@@ -57,6 +59,7 @@ cipher settings (research §20).
 | Housekeeping vs changes | Every collection table has the three triggers; opening and closing without changes never sets `changes_waiting` | `tests/backup_due_tracking_test.rs` |
 | Performance | Open at 10,000 firearms ≤ 2 s including key derivation (SC-003); the backup progress event within 100 ms of starting (SC-005); `session.write`'s fingerprint check adds no measurable cost to the existing budgets | `tests/performance_test.rs` |
 | Seed in step | New tables and backup-only columns are seeded | `tests/human_seed_coverage_test.rs` |
+| Seed sandbox (constitution 1.2.0) | The seed writes into a new directory or one holding its sandbox marker; refuses a non-empty directory without the marker, and any target that is or lies inside the data, config or documents directory resolved from its environment; writes no keyring entry | `tests/seed_sandbox_test.rs` |
 
 ## Walkthroughs (by hand, against scratch data)
 
@@ -108,8 +111,14 @@ Check on each available OS, and record the results in the PR description:
   three new E2E specs pass one at a time.
 - `npm run screenshots` produces the new screens in contracts/ui-databases.md
   §15 for the PR's before/after evidence.
-- The dependency audit passes with no new exception for the dependencies
-  this feature adds or promotes (constitution 1.1.0).
+- The dependency audit passes, vulnerabilities and licenses, for the
+  dependencies this feature adds or promotes (constitution 1.1.0 and 1.2.0).
+  The only new license exception is ODC-BY for `@zxcvbn-ts/language-en`'s
+  word list, recorded with its attribution in DEVELOPMENT.md's "License
+  audit" (research §18).
+- No test, E2E run, screenshot run or seed touched real application data
+  (constitution 1.2.0, research §21).
 - The pull request carries the security and data-handling note. The release
-  security review is not a merge gate for this feature; it runs at the first
-  release (spec Assumptions).
+  security review, the manual license checks and the third-party notices are
+  not merge gates for this feature; they come with the first release (spec
+  Assumptions).

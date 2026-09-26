@@ -68,10 +68,13 @@ identity), `objc2`/`objc2-foundation`/`objc2-app-kit` (macOS),
 `windows-sys` 0.61 with power, session and window features (Windows).
 **New npm**: `@zxcvbn-ts/core`, `@zxcvbn-ts/language-common`,
 `@zxcvbn-ts/language-en` (strength hint, lazy-loaded, §18),
-`@radix-ui/react-dropdown-menu` (database menu). All are MIT or
-MIT/Apache-2.0, have no network access and no telemetry, and must pass
-`npm run audit` including `audit:licenses`, which enforces the
-constitution's dependency vulnerability policy (1.1.0).
+`@radix-ui/react-dropdown-menu` (database menu). All declare MIT,
+Apache-2.0 or both (`gethostname` is Apache-2.0 only), have no network
+access and no telemetry, and must pass `npm run audit`, which enforces the
+constitution's dependency vulnerability policy (1.1.0) and, through
+`audit:licenses`, its Licensing section (1.2.0). The English strength-hint
+dictionary bundles an ODC-BY word list, accepted as a scoped exception with
+its attribution recorded for the release notices (research §18).
 
 **Storage**: One SQLCipher file per database, `<name>.hoplodex`, anywhere
 the user chooses (default suggestion `<Documents>/HoploDex/`). New tables
@@ -88,7 +91,8 @@ entries `passphrase:<database_id>`. Formats:
 
 **Testing**: `cargo test` integration tests calling `ops`/`session` functions
 against real temp SQLCipher files, created with the production cipher
-settings and a fixed test passphrase (no mocks, research §20), including
+settings and a fixed test passphrase (no mocks, research §20), in temp
+directories and never the real config or documents directory, including
 simulated dates, interrupted copies and a committed portability fixture.
 The keyring tests run under `--features mock-keyring`. Vitest + RTL for every
 new dialog, the chooser, the session provider and the hooks. WebdriverIO E2E
@@ -97,6 +101,9 @@ scratch `XDG_*` directories, with a scratch `user-dirs.dirs` so even the
 suggested location stays inside the sandbox (§19). Manual per-OS checks for
 the sleep, screen-lock and shutdown notices, which cannot be driven in the
 container ([quickstart.md](./quickstart.md#platform-checks-manual-each-os-before-merge)).
+No test or tool reads, writes or deletes real application data
+(constitution 1.2.0, research §21); the human-testing seed writes only into
+a sandbox it created.
 
 **Target Platform**: Desktop: Windows 10+, macOS 12+, Linux (GNOME and KDE
 fully; other desktops get sleep through logind, and screen lock where logind
@@ -138,15 +145,16 @@ No NEEDS CLARIFICATION remain: each open technical question is resolved in
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
 | I. Code Quality | Lint and static analysis; review; small single-purpose modules; complexity justified by a current requirement | New concerns each get one module: `db::cipher` (pinned settings), `session` (open database, read/write guards, lock procedure, idle clock, operations), `platform::system_events` (per-OS notices behind one enum), `services::{backups, file_swap, keyring, machine_settings, passphrase}`. Existing `ops` signatures are unchanged. Every new dependency answers a named requirement (Technical Context); three are new downloads, the rest are already in the lockfile. `PassphraseField` and `Menu` join the shared components because the passphrase field is used in five dialogs, which clears the "third occurrence" bar. `clippy`, `rustfmt`, `eslint` and `prettier` run locally; CI stays disabled by the owner's choice (a documented deviation) |
-| II. Testing (NON-NEGOTIABLE) | Tests first; real persistence; a test per acceptance scenario; regression tests | Every scenario maps to a test in [quickstart.md](./quickstart.md), against real SQLCipher files with the production format. The spike's findings (copy shares salt, export skips triggers, interrupt works, BUSY before NOTADB, page-1 probe) become permanent tests, so a SQLCipher upgrade that changes them fails loudly. A guard test forces change-tracking triggers onto any future table. The only paths not automated are the OS sleep, screen-lock and shutdown notices themselves; their handlers are tested by calling the same entry points, and the notices are checked by hand per OS |
+| II. Testing (NON-NEGOTIABLE) | Tests first; real persistence; a test per acceptance scenario; regression tests | Every scenario maps to a test in [quickstart.md](./quickstart.md), against real SQLCipher files with the production format. The spike's findings (copy shares salt, export skips triggers, interrupt works, BUSY before NOTADB, page-1 probe) become permanent tests, so a SQLCipher upgrade that changes them fails loudly. A guard test forces change-tracking triggers onto any future table. The only paths not automated are the OS sleep, screen-lock and shutdown notices themselves; their handlers are tested by calling the same entry points, and the notices are checked by hand per OS. **Isolation (1.2.0)**: no test or tool touches real application data, which now means every user-chosen database, its backups, `machine.json`, the suggested documents folder and the saved-passphrase keyring entries as well as the pre-feature database and key. Tests use temp paths passed in, a fixed test passphrase and the mock keyring; the human-testing seed writes only into a sandbox it created and refuses the real data, config and documents directories, tested by `seed_sandbox_test.rs` (research §21) |
 | III. UX Consistency | One component set; one confirmation pattern; WCAG 2.1 AA | Take-over, delete all backups, restore and discarding pending changes use the destructive `ConfirmDialog`. Save / discard / cancel extends `ConfirmDialog` with a third action instead of a one-off prompt. The settings dialog uses the existing `hd-form-grid`/`hd-field--quarter`/`--third` classes. All progress uses `ProgressBar`. Menu roles and focus rules are in [contracts/ui-databases.md](./contracts/ui-databases.md) §0 and §14. New screens join the screenshot walk (§15) |
 | IV. Performance | 100 ms feedback / 1 s completion; no UI-thread blocking; progress on long work | All new commands are async, and long ones emit progress. The closing screen appears within 100 ms. The 1 s rule for backups is SC-005's. Open time is budgeted and measured (SC-003). Import and export gain a per-row cancel check (an atomic load). `performance_test.rs` gains open and progress timing |
 | V. User Privacy | Local only; encryption at rest; clear disclosure of what goes where; real deletion | Nothing leaves the device. Backups are encrypted copies in a folder the user sees and chooses, disclosed at creation and in settings (FR-024, FR-029). Deleted records remaining in older backups is disclosed, with delete-all and secure rotation. The keyring holds only a passphrase, only on opt-in. `machine.json` holds paths and names only |
-| Security & Data Handling | Platform-standard encryption; keys never logged or sent; sync or backup that leaves the device opt-in and off by default, while a local backup in a location the user sees and chooses may be on by default; vetted dependencies; no known critical or high advisory, unscored advisory, or unmaintained/unsound notice without a scoped, dated exception | SQLCipher with pinned standard settings, and no custom cryptography (§1, §1a). Passphrases are zeroized and never logged, and SQLCipher's log is silenced in release. **Local backups are on by default**, which constitution 1.1.0 allows because they are written only to a folder the user sees and chooses and never leave the device (FR-024, FR-026). Dependencies are reviewed for data collection above, and every new or promoted crate and npm package must pass the dependency audit with no new exception |
-| Workflow & Quality Gates | Lint, tests, dependency audit and review on every PR; UI evidence; security note for persistence changes; performance note; whole-codebase AI security review before every release | The PR carries before/after screenshots (contracts/ui-databases.md §15), a security and data-handling note, and a performance note (SC-003, SC-005). `npm run audit` runs with lint and tests. This feature is not a release, so it does not run the release security review; the spec's Assumptions list the attack surface it adds for the first release review to cover |
+| Security & Data Handling | Platform-standard encryption; keys never logged or sent; sync or backup that leaves the device opt-in and off by default, while a local backup in a location the user sees and chooses may be on by default; vetted dependencies; no known critical or high advisory, unscored advisory, or unmaintained/unsound notice without a scoped, dated exception | SQLCipher with pinned standard settings, and no custom cryptography (§1, §1a). Passphrases are zeroized and never logged, and SQLCipher's log is silenced in release. **Local backups are on by default**, which constitution 1.1.0 allows because they are written only to a folder the user sees and chooses and never leave the device (FR-024, FR-026). Dependencies are reviewed for data collection above, and every new or promoted crate and npm package must pass the dependency audit with no new advisory exception |
+| Licensing | GPL-3.0-only; everything shipped under a GPLv3-compatible license; sources and licenses of bundled data files recorded; license exceptions scoped to packages with the reason; notices shipped with every release | Every new and promoted crate and npm package declares MIT, Apache-2.0 or both, checked by `audit:licenses`. The strength-hint dictionaries are bundled data: their sources are recorded, and the ODC-BY word list in `@zxcvbn-ts/language-en` is an exception scoped to that package, recorded in DEVELOPMENT.md's "License audit" (research §18). No change to the crypto library SQLCipher links, and no new artwork or fonts |
+| Workflow & Quality Gates | Lint, tests, dependency audit (vulnerabilities and licenses) and review on every PR; UI evidence; security note for persistence changes; performance note; before every release, the whole-codebase AI security review, the manual license checks and the third-party notices | The PR carries before/after screenshots (contracts/ui-databases.md §15), a security and data-handling note, and a performance note (SC-003, SC-005). `npm run audit` runs with lint and tests. This feature is not a release, so it runs neither release gate: the spec's Assumptions list the attack surface it adds for the first release review, and the ODC-BY attribution and the dictionaries without a stated source are recorded for the release's notices and manual license checks |
 
-**Result**: PASS against constitution 1.1.0. The one deviation recorded
-against 1.0.0 (local backups on by default) was resolved by that amendment
+**Result**: PASS against constitution 1.2.0. The one deviation recorded
+against 1.0.0 (local backups on by default) was resolved by 1.1.0
 (Complexity Tracking). Phase 0 may proceed.
 
 ## Project Structure
@@ -232,7 +240,9 @@ src-tauri/
 │   ├── human_seed.rs               # creates the databases via db::create_database with a printed
 │   │                               #  passphrase; seeds non-default settings, a pending change, two
 │   │                               #  backups, and a second database marked open on another computer;
-│   │                               #  writes machine.json's recent list into the scratch config dir
+│   │                               #  writes machine.json's recent list into the scratch config dir;
+│   │                               #  refuses any target outside its sandbox (research §21)
+│   ├── support/sandbox.rs          # NEW: sandbox marker check, shared with the test via #[path]
 │   └── portable_fixture.rs         # NEW: regenerates tests/fixtures/portable-v1.hoplodex
 └── tests/
     ├── support/mod.rs              # TestDb via db::create_database + TEST_PASSPHRASE; helpers to
@@ -254,6 +264,7 @@ src-tauri/
     ├── import_export_test.rs       # + stop between rows keeps imported rows
     ├── performance_test.rs         # + open ≤ 2 s at 10,000; progress within 100 ms
     ├── human_seed_coverage_test.rs # + new tables; backup-only columns checked in a seeded backup
+    ├── seed_sandbox_test.rs        # NEW (constitution 1.2.0: seed refuses targets outside its sandbox)
     └── (every other test file)     # unchanged logic; TestDb now passphrase-keyed
 
 src/
@@ -304,7 +315,8 @@ e2e/
 └── screenshots/screens.e2e.ts      # + screens 14–24 (contracts/ui-databases.md §15)
 
 scripts/human-testing.sh            # new data layout (.human-testing/HoploDex/*.hoplodex), prints passphrase
-DEVELOPMENT.md                      # Test isolation: passphrase model, no DB key env; human-testing notes
+DEVELOPMENT.md                      # Test isolation: passphrase model, no DB key env, seed sandbox;
+                                    #  human-testing notes; License audit: ODC-BY exception (research §18)
 ```
 
 **Structure Decision**: No new project or package. It is the existing
@@ -320,7 +332,7 @@ numbering from 002's `us6`.
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
-| None under constitution 1.1.0. Recorded against 1.0.0: local backups on by default, while its Security & Data Handling section said "any network sync or backup feature MUST be opt-in, off by default" | The user's request and the spec's first clarification: backups protect against corruption only if they exist before the corruption, and they never leave the device | Off by default would leave most users without a backup when it matters. Resolved by constitution 1.1.0 (2026-09-26), which limits the rule to data that leaves the device (research §21) |
+| None under constitution 1.2.0. Recorded against 1.0.0: local backups on by default, while its Security & Data Handling section said "any network sync or backup feature MUST be opt-in, off by default" | The user's request and the spec's first clarification: backups protect against corruption only if they exist before the corruption, and they never leave the device | Off by default would leave most users without a backup when it matters. Resolved by constitution 1.1.0 (2026-09-26), which limits the rule to data that leaves the device (research §21) |
 
 Additions that are not violations but are justified here, since
 constitution I asks for it: per-OS system-event code (required by FR-037 and
@@ -340,7 +352,10 @@ new Rust crates and four npm packages (Technical Context).
 - **Testing**: every acceptance scenario maps to a named test file in
   quickstart.md; interruption points (SC-004) are enumerated per operation;
   the portability fixture pins the format. The per-OS notices are the one
-  manual area, with a checklist the PR must fill in. Still PASS.
+  manual area, with a checklist the PR must fill in. Isolation from real
+  application data, which this feature spreads beyond one directory, is kept
+  by passing every path in and by the seed's sandbox check (1.2.0). Still
+  PASS.
 - **UX Consistency**: all prompts reuse `ConfirmDialog` (one extended with a
   third action and pushed back into the shared set). The guide follows 002's
   guide pattern. Texts that state security facts are fixed in the UI
@@ -355,9 +370,14 @@ new Rust crates and four npm packages (Technical Context).
   untouched by design. The on-by-default local backup is allowed by
   constitution 1.1.0, and the new and promoted dependencies are held to its
   vulnerability policy through the dependency audit. PASS.
-- **Quality gates**: the PR gates, including the dependency audit, are listed
-  in quickstart.md's "Done when". The release security review is left to the
-  first release, with this feature's attack surface listed in the spec's
-  Assumptions. PASS.
+- **Licensing**: all new and promoted dependencies declare GPLv3-compatible
+  licenses; the dictionaries' sources are recorded, with ODC-BY as a scoped
+  exception (research §18). PASS.
+- **Quality gates**: the PR gates, including the dependency and license
+  audit, are listed in quickstart.md's "Done when". The release gates (the
+  security review, the manual license checks and the third-party notices)
+  are left to the first release, with this feature's attack surface and
+  notice requirements recorded in the spec's Assumptions and research §18.
+  PASS.
 
-**Result**: PASS against constitution 1.1.0, with no recorded deviation.
+**Result**: PASS against constitution 1.2.0, with no recorded deviation.
