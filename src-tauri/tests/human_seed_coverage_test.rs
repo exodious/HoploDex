@@ -17,6 +17,7 @@
 use std::collections::BTreeSet;
 
 use hoplodex_lib::db;
+use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
@@ -110,7 +111,15 @@ fn the_seed_uses_every_column_of_every_table() {
     let dir = TempDir::new().unwrap();
     let paths = human_seed::seed_sandbox(dir.path(), 0);
     let open = |path| {
-        db::open_database(path, &Passphrase::from_input(human_seed::PASSPHRASE.into())).unwrap()
+        // "Shared collection" is marked open on another computer.
+        let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+        db::open_database(
+            path,
+            &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+            &machine,
+            true,
+        )
+        .unwrap()
     };
     let conns = [open(&paths.main), open(&paths.shared)];
 

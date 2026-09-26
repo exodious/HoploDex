@@ -4,16 +4,19 @@
 //! [`Session::write`], which refuse when nothing is open. There is still one
 //! connection and no pool.
 
+pub mod fingerprint;
 pub mod lifecycle;
 pub mod operations;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::{Connection, InterruptHandle};
 
 use crate::commands::CommandError;
-use crate::models::database::Draft;
+use crate::models::database::{ChooserNotice, Draft};
+use crate::services::machine_settings::MachineSettings;
+use fingerprint::{FileFingerprint, FingerprintCheck};
 
 /// An open database: its connection, holding the file's exclusive lock and
 /// (inside SQLCipher) the derived key, and what the session knows about it.
@@ -32,15 +35,27 @@ pub struct OpenDatabase {
     /// The database holds pending changes not yet resumed or discarded
     /// (FR-039).
     pub pending_unresolved: bool,
+    /// The file as this session last left it, to notice a take-over
+    /// (research.md §6).
+    pub fingerprint: FileFingerprint,
+    /// The file stopped being reachable while open. Every later write is
+    /// refused with `DATABASE_UNAVAILABLE`, whatever the fingerprint says
+    /// once it is back, and the close writes nothing (research.md §6).
+    pub storage_lost: bool,
 }
 
 impl OpenDatabase {
-    /// Wraps a connection from `db::create_database` or `db::open_database`.
-    pub fn new(conn: Connection, path: &Path) -> rusqlite::Result<Self> {
-        let database_id: String =
-            conn.query_row("SELECT database_id FROM app_state", [], |row| row.get(0))?;
-        let pending_unresolved: bool =
-            conn.query_row("SELECT EXISTS (SELECT 1 FROM pending_changes)", [], |row| row.get(0))?;
+    /// Wraps a connection from `db::create_database` or `db::open_database`,
+    /// taking the file's fingerprint as the open left it.
+    pub fn new(conn: Connection, path: &Path) -> Result<Self, CommandError> {
+        let database_id: String = conn
+            .query_row("SELECT database_id FROM app_state", [], |row| row.get(0))
+            .map_err(CommandError::from_db)?;
+        let pending_unresolved: bool = conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM pending_changes)", [], |row| row.get(0))
+            .map_err(CommandError::from_db)?;
+        let fingerprint =
+            FileFingerprint::capture(path).map_err(|_| CommandError::database_unavailable(path))?;
         let interrupt = conn.get_interrupt_handle();
         Ok(Self {
             conn,
@@ -50,6 +65,8 @@ impl OpenDatabase {
             interrupt,
             staged_draft: None,
             pending_unresolved,
+            fingerprint,
+            storage_lost: false,
         })
     }
 }
@@ -59,13 +76,37 @@ pub fn database_name(path: &Path) -> String {
     path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// Tauri state: the open database, or none.
-#[derive(Default)]
-pub struct Session(Mutex<Option<OpenDatabase>>);
+/// Tauri state: the open database, or none, and where the session reports
+/// what happens to it.
+pub struct Session {
+    open: Mutex<Option<OpenDatabase>>,
+    events: Arc<dyn SessionEvents>,
+    /// Where `open_document` puts decrypted copies, deleted at every close
+    /// (FR-022). `None` where nothing makes them.
+    opened_documents_dir: Option<PathBuf>,
+    /// The database most recently closed in this run, which the chooser
+    /// selects (FR-033).
+    last_closed: Mutex<Option<PathBuf>>,
+}
+
+impl Default for Session {
+    /// A session that reports to no one, for tests of its guards.
+    fn default() -> Self {
+        Self::new(Arc::new(NoEvents), None)
+    }
+}
 
 impl Session {
+    pub fn new(events: Arc<dyn SessionEvents>, opened_documents_dir: Option<PathBuf>) -> Self {
+        Self { open: Mutex::new(None), events, opened_documents_dir, last_closed: Mutex::new(None) }
+    }
+
     fn lock(&self) -> MutexGuard<'_, Option<OpenDatabase>> {
-        self.0.lock().expect("session mutex poisoned")
+        self.open.lock().expect("session mutex poisoned")
+    }
+
+    pub fn events(&self) -> &dyn SessionEvents {
+        &*self.events
     }
 
     /// Runs a query against the open database.
@@ -73,19 +114,60 @@ impl Session {
         &self,
         query: impl FnOnce(&Connection) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
-        let open = self.lock();
-        let open = open.as_ref().ok_or_else(CommandError::database_closed)?;
-        query(&open.conn)
+        let mut open = self.lock();
+        let open = open.as_mut().ok_or_else(CommandError::database_closed)?;
+        let result = query(&open.conn);
+        storage_lost_if_unreachable(open, result)
     }
 
-    /// Runs anything that changes the open database.
+    /// Runs anything that changes the open database, after checking that
+    /// the file at its path is still the one this session last wrote
+    /// (FR-032, research.md §6):
+    /// - replaced, or changed by someone else: another computer has taken
+    ///   the database over. Nothing is written, and the session closes
+    ///   without writing anything more (`DATABASE_TAKEN_OVER`).
+    /// - unreachable: its drive or network share has gone. Nothing is
+    ///   written, and the session stays open but refuses every later write
+    ///   (`DATABASE_UNAVAILABLE`), since a remounted drive can come back
+    ///   looking replaced.
+    ///
+    /// The fingerprint is refreshed afterwards, so this session's own writes
+    /// never look like someone else's.
     pub fn write<T>(
         &self,
         change: impl FnOnce(&Connection) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
-        let open = self.lock();
-        let open = open.as_ref().ok_or_else(CommandError::database_closed)?;
-        change(&open.conn)
+        let mut guard = self.lock();
+        let open = guard.as_mut().ok_or_else(CommandError::database_closed)?;
+        if open.storage_lost {
+            return Err(CommandError::database_unavailable(&open.path));
+        }
+        match open.fingerprint.check(&open.path) {
+            FingerprintCheck::Same => {}
+            FingerprintCheck::Replaced => {
+                let open = guard.take().expect("checked above");
+                drop(guard);
+                lifecycle::close_taken_over(self, open);
+                return Err(CommandError::database_taken_over());
+            }
+            FingerprintCheck::Unreachable => {
+                log::warn!("{} can no longer be reached", open.path.display());
+                open.storage_lost = true;
+                return Err(CommandError::database_unavailable(&open.path));
+            }
+        }
+        let result = change(&open.conn);
+        let result = storage_lost_if_unreachable(open, result);
+        if !open.storage_lost {
+            match FileFingerprint::capture(&open.path) {
+                Ok(fingerprint) => open.fingerprint = fingerprint,
+                Err(err) => {
+                    log::warn!("{} can no longer be reached: {err}", open.path.display());
+                    open.storage_lost = true;
+                }
+            }
+        }
+        result
     }
 
     /// Runs `look` against the open database itself, for the session's own
@@ -113,12 +195,47 @@ impl Session {
     pub fn take(&self) -> Option<OpenDatabase> {
         self.lock().take()
     }
+
+    /// The database most recently closed in this run, if any.
+    pub fn last_closed(&self) -> Option<PathBuf> {
+        self.last_closed.lock().expect("session mutex poisoned").clone()
+    }
+
+    fn set_last_closed(&self, path: &Path) {
+        *self.last_closed.lock().expect("session mutex poisoned") = Some(path.to_owned());
+    }
+
+    /// Deletes this session's decrypted document copies (FR-022).
+    fn clear_opened_documents(&self) {
+        let Some(dir) = &self.opened_documents_dir else { return };
+        for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
+            log::warn!("could not delete opened-document copy {}", leftover.display());
+        }
+    }
 }
 
-/// Where the session's lifecycle events go: the frontend in the app, a
-/// recorder in the tests.
-pub trait SessionEvents {
+/// SQLite reports an I/O error, or can't reopen a file, when the drive
+/// under an open database has gone (`CommandError::from_db` gives these
+/// `DATABASE_UNAVAILABLE`): the same as finding it unreachable beforehand.
+fn storage_lost_if_unreachable<T>(
+    open: &mut OpenDatabase,
+    result: Result<T, CommandError>,
+) -> Result<T, CommandError> {
+    match result {
+        Err(err) if err.code == CommandError::DATABASE_UNAVAILABLE => {
+            open.storage_lost = true;
+            Err(CommandError::database_unavailable(&open.path))
+        }
+        other => other,
+    }
+}
+
+/// Where the session reports what happens to it: the frontend and
+/// `machine.json` in the app, a recorder in the tests.
+pub trait SessionEvents: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value);
+    /// Keeps a notice for the chooser to show next.
+    fn notice(&self, notice: ChooserNotice);
 }
 
 impl<R: tauri::Runtime> SessionEvents for tauri::AppHandle<R> {
@@ -127,4 +244,19 @@ impl<R: tauri::Runtime> SessionEvents for tauri::AppHandle<R> {
             log::warn!("could not emit {event}: {err}");
         }
     }
+
+    fn notice(&self, notice: ChooserNotice) {
+        use tauri::Manager;
+        match self.try_state::<MachineSettings>() {
+            Some(machine) => machine.push_notice(notice),
+            None => log::warn!("no machine settings to keep a notice in"),
+        }
+    }
+}
+
+struct NoEvents;
+
+impl SessionEvents for NoEvents {
+    fn emit(&self, _event: &str, _payload: serde_json::Value) {}
+    fn notice(&self, _notice: ChooserNotice) {}
 }

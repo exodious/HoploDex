@@ -64,7 +64,7 @@ mock), `tauri-plugin-dialog`, `chrono`, `getrandom`, Radix. **New Rust**:
 `unicode-normalization` (NFC, research §1), `gethostname` (open marker name,
 §6), `fs4` (free space, §4). **Promoted from transitive to direct** (already
 in `Cargo.lock`): `zeroize`, `zbus` (Linux notices), `same-file` (file
-identity), `objc2`/`objc2-foundation`/`objc2-app-kit` (macOS),
+identity, Windows only; research §6), `objc2`/`objc2-foundation`/`objc2-app-kit` (macOS),
 `windows-sys` 0.61 with power, session and window features (Windows).
 **New npm**: `@zxcvbn-ts/core`, `@zxcvbn-ts/language-common`,
 `@zxcvbn-ts/language-en` (strength hint, lazy-loaded, §18),

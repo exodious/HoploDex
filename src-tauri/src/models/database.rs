@@ -97,6 +97,13 @@ pub struct RecentDatabase {
     pub passphrase_saved: bool,
 }
 
+/// `remove_recent_database`'s answer.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentRemoved {
+    pub removed: bool,
+}
+
 /// Something to tell the user in the chooser, once (data-model.md
 /// "Machine-local"). Kept in `machine.json` until shown.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

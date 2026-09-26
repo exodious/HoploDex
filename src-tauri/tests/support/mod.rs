@@ -1,13 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use hoplodex_lib::db;
+use hoplodex_lib::models::database::ChooserNotice;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
-use hoplodex_lib::session::SessionEvents;
+use hoplodex_lib::session::{Session, SessionEvents};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -70,7 +71,7 @@ impl TestDb {
     #[allow(dead_code)]
     pub fn reopen(&mut self) {
         drop(std::mem::replace(&mut self.conn, Connection::open_in_memory().unwrap()));
-        self.conn = db::open_database(&self.path(), &passphrase())
+        self.conn = db::open_database(&self.path(), &passphrase(), &test_machine(), false)
             .expect("failed to reopen the test database");
     }
 
@@ -88,7 +89,8 @@ impl Default for TestDb {
     }
 }
 
-/// Records the session's events in order, in place of the Tauri app.
+/// Records the session's events in order, in place of the Tauri app, with
+/// each notice kept for the chooser recorded as a `"notice"` event.
 #[derive(Default)]
 pub struct TestEvents(Mutex<Vec<(String, serde_json::Value)>>);
 
@@ -97,12 +99,32 @@ impl TestEvents {
     pub fn recorded(&self) -> Vec<(String, serde_json::Value)> {
         self.0.lock().unwrap().clone()
     }
+
+    /// The events recorded so far, which are then forgotten.
+    #[allow(dead_code)]
+    pub fn take(&self) -> Vec<(String, serde_json::Value)> {
+        std::mem::take(&mut *self.0.lock().unwrap())
+    }
 }
 
 impl SessionEvents for TestEvents {
     fn emit(&self, event: &str, payload: serde_json::Value) {
         self.0.lock().unwrap().push((event.to_owned(), payload));
     }
+
+    fn notice(&self, notice: ChooserNotice) {
+        let payload = serde_json::to_value(notice).unwrap();
+        self.0.lock().unwrap().push(("notice".to_owned(), payload));
+    }
+}
+
+/// An empty session reporting to a [`TestEvents`], with decrypted document
+/// copies in `opened_documents`.
+#[allow(dead_code)]
+pub fn test_session(opened_documents: &Path) -> (Session, Arc<TestEvents>) {
+    let events = Arc::new(TestEvents::default());
+    let session = Session::new(events.clone(), Some(opened_documents.to_owned()));
+    (session, events)
 }
 
 /// A tiny (20x20, solid red) but genuinely valid PNG, so

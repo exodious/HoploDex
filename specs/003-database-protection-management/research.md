@@ -374,6 +374,10 @@ can only be another computer. The session then refuses the write
 (`DATABASE_TAKEN_OVER`), stops, tells the user, and closes without writing
 anything more (no backup, no marker clear). This needs no key and no second
 connection. The check is a `stat`, about 10 µs, so it costs nothing measurable.
+On Unix the identity comes from `stat` alone and the check never opens the
+file: closing any descriptor on a file drops every POSIX lock the process
+holds on it, SQLite's exclusive lock included. `same-file` is therefore used
+on Windows only, where locks belong to the handle that took them.
 
 Where the path is on a live network share and the other computer took over
 after a crash here, SQLite's shared lock refuses its writes, or ours, instead.

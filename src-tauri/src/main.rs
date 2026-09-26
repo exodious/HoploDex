@@ -1,13 +1,20 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use hoplodex_lib::commands::documents::clear_opened_documents_cache;
+use std::sync::Arc;
+
+use hoplodex_lib::commands::documents::{clear_opened_documents_cache, OPENED_DOCUMENTS_DIR};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::operations::Operations;
 use hoplodex_lib::session::Session;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+
+/// What the frontend is sent when the user closes the window or quits: it
+/// asks about unsaved changes, then calls `quit_application` (research.md
+/// §17).
+const QUIT_REQUESTED: &str = "app:quit-requested";
 
 /// A session shutdown (SIGTERM, SIGHUP) or Ctrl+C asks the app to exit. Left
 /// alone the process would just die, skipping the exit handler below, so route
@@ -47,16 +54,31 @@ fn main() {
             db::cipher::silence_cipher_log();
             // No database is open at startup: the user chooses one and gives
             // its passphrase (specs/003-database-protection-management).
-            app.manage(Session::default());
+            let opened_documents = app.path().app_cache_dir()?.join(OPENED_DOCUMENTS_DIR);
+            app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents)));
             app.manage(Operations::default());
             app.manage(MachineSettings::load(&app.path().app_config_dir()?)?);
             app.manage(ImportSessionStore::new());
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // Closing the window is a request: unsaved changes are asked
+            // about first, and the database is closed normally.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(err) = window.app_handle().emit(QUIT_REQUESTED, ()) {
+                    log::warn!("could not emit {QUIT_REQUESTED}: {err}");
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             hoplodex_lib::commands::databases::get_chooser_state,
             hoplodex_lib::commands::databases::create_database,
             hoplodex_lib::commands::databases::open_database,
+            hoplodex_lib::commands::databases::close_database,
+            hoplodex_lib::commands::databases::quit_application,
+            hoplodex_lib::commands::databases::remove_recent_database,
+            hoplodex_lib::commands::databases::locate_database,
             hoplodex_lib::commands::databases::get_database_status,
             hoplodex_lib::commands::databases::dismiss_note,
             hoplodex_lib::commands::firearms::create_firearm,
@@ -91,11 +113,19 @@ fn main() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run(|app, event| match event {
+            // An exit without a code is the user quitting (the application
+            // menu, the last window): a request, like closing the window.
+            // `quit_application` and the termination signals exit with one.
+            RunEvent::ExitRequested { code: None, api, .. } => {
+                api.prevent_exit();
+                if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
+                    log::warn!("could not emit {QUIT_REQUESTED}: {err}");
+                }
+            }
             // Decrypted copies of opened documents live only as long as the
             // session (FR-035); the startup sweep covers abnormal exits.
-            if let RunEvent::Exit = event {
-                clear_opened_documents_cache(app);
-            }
+            RunEvent::Exit => clear_opened_documents_cache(app),
+            _ => {}
         });
 }

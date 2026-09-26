@@ -7,9 +7,9 @@ mod support;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::CloseReason;
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::session::{lifecycle, Session};
+use hoplodex_lib::session::lifecycle;
 use rusqlite::Connection;
-use support::{passphrase, TestDb, TestEvents, TEST_PASSPHRASE};
+use support::{passphrase, test_machine, test_session, TestDb, TEST_PASSPHRASE};
 use tempfile::TempDir;
 
 /// Tables that are not collection data and must never make a backup due.
@@ -126,17 +126,15 @@ fn creating_opening_and_closing_without_changes_leaves_nothing_waiting() {
     let dir = TempDir::new().unwrap();
     let config = TempDir::new().unwrap();
     let machine = MachineSettings::load(config.path()).unwrap();
-    let session = Session::default();
-    let events = TestEvents::default();
+    let (session, _events) = test_session(&dir.path().join("opened-documents"));
     let path = dir.path().join("Quiet.hoplodex");
-    let documents = dir.path().join("opened-documents");
 
     lifecycle::create(&session, &machine, &path, &passphrase()).unwrap();
-    lifecycle::close_normal(&session, &events, &documents, CloseReason::Closed).unwrap();
-    lifecycle::open(&session, &machine, &path, &passphrase()).unwrap();
-    lifecycle::close_normal(&session, &events, &documents, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(&session, CloseReason::Closed).unwrap();
+    lifecycle::open(&session, &machine, &path, &passphrase(), false).unwrap();
+    lifecycle::close_normal(&session, CloseReason::Closed).unwrap();
 
-    let conn = db::open_database(&path, &passphrase()).unwrap();
+    let conn = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
     assert!(!changes_waiting(&conn));
 }
 
@@ -163,7 +161,7 @@ fn sqlcipher_export_into_an_attached_copy_does_not_fire_the_triggers() {
     db.conn.execute("DETACH DATABASE copy", []).unwrap();
 
     assert!(!changes_waiting(&db.conn));
-    let copied = db::open_database(&copy, &passphrase()).unwrap();
+    let copied = db::open_database(&copy, &passphrase(), &test_machine(), false).unwrap();
     assert!(!changes_waiting(&copied), "the export must not fire the copy's triggers");
     let firearms: i64 =
         copied.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0)).unwrap();

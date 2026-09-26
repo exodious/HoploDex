@@ -178,6 +178,39 @@ impl MachineSettings {
         });
     }
 
+    /// Removes `path` from the recent list, and says whether it was there.
+    /// The database file is never touched (FR-012).
+    pub fn remove_recent(&self, path: &Path) -> bool {
+        let mut removed = false;
+        self.update(|file| {
+            let before = file.recent_databases.len();
+            file.recent_databases.retain(|entry| entry.path != path);
+            removed = file.recent_databases.len() != before;
+        });
+        removed
+    }
+
+    /// Points the recent entry for `path` at `new_path`, where the user found
+    /// the file, keeping everything else about it (FR-012). An entry already
+    /// at `new_path` is merged away, since entries are identified by path.
+    /// `None` when `path` isn't in the list.
+    pub fn locate_recent(&self, path: &Path, new_path: &Path) -> Option<RecentEntry> {
+        let mut located = None;
+        self.update(|file| {
+            let Some(index) = file.recent_databases.iter().position(|entry| entry.path == path)
+            else {
+                return;
+            };
+            let mut entry = file.recent_databases.remove(index);
+            entry.path = new_path.to_owned();
+            file.recent_databases.retain(|other| other.path != new_path);
+            let index = index.min(file.recent_databases.len());
+            file.recent_databases.insert(index, entry.clone());
+            located = Some(entry);
+        });
+        located
+    }
+
     /// Keeps `notice` until the chooser next shows its notices.
     pub fn push_notice(&self, notice: ChooserNotice) {
         self.update(|file| file.notices.push(notice));

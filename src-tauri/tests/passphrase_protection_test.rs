@@ -51,7 +51,8 @@ fn a_wrong_passphrase_is_refused_and_the_file_is_untouched() {
     drop(conn);
     let before = fs::read(&path).unwrap();
 
-    let result = db::open_database(&path, &phrase("not the right passphrase"));
+    let result =
+        db::open_database(&path, &phrase("not the right passphrase"), &test_machine(), false);
 
     assert!(matches!(result, Err(OpenError::PassphraseIncorrect)), "{result:?}");
     assert_eq!(fs::read(&path).unwrap(), before, "a refused open must not write the file");
@@ -87,7 +88,7 @@ fn composed_and_decomposed_forms_of_a_passphrase_open_the_same_file() {
 
     drop(db::create_database(&path, &phrase(composed), &test_machine()).unwrap());
 
-    assert!(db::open_database(&path, &phrase(decomposed)).is_ok());
+    assert!(db::open_database(&path, &phrase(decomposed), &test_machine(), false).is_ok());
 }
 
 #[test]
@@ -172,7 +173,7 @@ fn a_foreign_sqlcipher_file_is_reported_like_a_wrong_passphrase() {
     foreign_database(&path);
     let before = fs::read(&path).unwrap();
 
-    let result = db::open_database(&path, &passphrase());
+    let result = db::open_database(&path, &passphrase(), &test_machine(), false);
 
     assert!(matches!(result, Err(OpenError::PassphraseIncorrect)), "{result:?}");
     assert_eq!(fs::read(&path).unwrap(), before);
@@ -187,7 +188,7 @@ fn a_plain_sqlite_file_is_reported_like_a_wrong_passphrase() {
         conn.execute_batch("CREATE TABLE t (x); INSERT INTO t VALUES (1);").unwrap();
     }
 
-    let result = db::open_database(&path, &passphrase());
+    let result = db::open_database(&path, &passphrase(), &test_machine(), false);
 
     assert!(matches!(result, Err(OpenError::PassphraseIncorrect)), "{result:?}");
 }
@@ -220,6 +221,7 @@ mod through_commands {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
+    use std::sync::Arc;
 
     use hoplodex_lib::commands::databases::ops;
     use hoplodex_lib::commands::firearms::ops as firearms;
@@ -231,7 +233,7 @@ mod through_commands {
     use hoplodex_lib::session::Session;
     use tempfile::TempDir;
 
-    use crate::support::{self, passphrase, TestEvents, TEST_PASSPHRASE};
+    use crate::support::{self, passphrase, test_session, TestEvents, TEST_PASSPHRASE};
 
     /// A throwaway world: a folder for databases, a config directory for
     /// `machine.json`, and an empty session.
@@ -240,20 +242,22 @@ mod through_commands {
         _config: TempDir,
         machine: MachineSettings,
         session: Session,
-        events: TestEvents,
-        opened_documents: TempDir,
+        _events: Arc<TestEvents>,
+        _opened_documents: TempDir,
     }
 
     impl World {
         fn new() -> Self {
             let config = TempDir::new().unwrap();
+            let opened_documents = TempDir::new().unwrap();
+            let (session, events) = test_session(opened_documents.path());
             Self {
                 folder: TempDir::new().unwrap(),
                 machine: MachineSettings::load(config.path()).unwrap(),
                 _config: config,
-                session: Session::default(),
-                events: TestEvents::default(),
-                opened_documents: TempDir::new().unwrap(),
+                session,
+                _events: events,
+                _opened_documents: opened_documents,
             }
         }
 
@@ -274,13 +278,7 @@ mod through_commands {
         }
 
         fn close(&self) {
-            lifecycle::close_normal(
-                &self.session,
-                &self.events,
-                self.opened_documents.path(),
-                CloseReason::Closed,
-            )
-            .unwrap();
+            lifecycle::close_normal(&self.session, CloseReason::Closed).unwrap();
         }
 
         fn path(&self, name: &str) -> std::path::PathBuf {
@@ -322,6 +320,7 @@ mod through_commands {
             &world.machine,
             &world.path("Main").to_string_lossy(),
             &passphrase(),
+            false,
         )
         .unwrap();
         assert_eq!(status.name, "Main");
@@ -352,6 +351,7 @@ mod through_commands {
             &world.machine,
             &world.path("Main").to_string_lossy(),
             &Passphrase::from_input("not the passphrase at all".into()),
+            false,
         )
         .unwrap_err();
 
@@ -393,6 +393,7 @@ mod through_commands {
             &world.machine,
             &path.to_string_lossy(),
             &passphrase(),
+            false,
         )
         .unwrap_err();
 
@@ -428,6 +429,7 @@ mod through_commands {
             &world.machine,
             &world.path("Main").to_string_lossy(),
             &passphrase(),
+            false,
         )
         .unwrap();
         assert!(!status.notes.disk_encryption, "the note stays dismissed (FR-008)");
@@ -570,7 +572,8 @@ mod through_commands {
         let world = World::new();
         let documents = world.folder.path().join("Documents");
 
-        let state = ops::chooser_state(&world.machine, Some(documents.clone()), None);
+        let state =
+            ops::chooser_state(&world.session, &world.machine, Some(documents.clone()), None);
         assert!(state.recent.is_empty());
         assert_eq!(state.selected_path, None);
         assert_eq!(state.suggested.folder, documents.join("HoploDex").to_string_lossy());
@@ -583,7 +586,7 @@ mod through_commands {
         world.create("Second").unwrap();
         world.close();
 
-        let state = ops::chooser_state(&world.machine, Some(documents), None);
+        let state = ops::chooser_state(&world.session, &world.machine, Some(documents), None);
         let names: Vec<&str> = state.recent.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Second", "First"], "most recent first");
         assert!(state.recent.iter().all(|r| r.available));
@@ -615,6 +618,7 @@ mod through_commands {
             &world.machine,
             &world.path("Main").to_string_lossy(),
             &passphrase(),
+            false,
         )
         .unwrap();
 

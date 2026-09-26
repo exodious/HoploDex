@@ -9,7 +9,10 @@
 use tauri::{AppHandle, Manager, State};
 
 use crate::commands::CommandError;
-use crate::models::database::{ChooserState, DatabaseStatus, NoteKind};
+use crate::models::database::{
+    ChooserState, CloseOutcome, CloseReason, DatabaseStatus, NoteKind, RecentDatabase,
+    RecentRemoved,
+};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
@@ -24,10 +27,10 @@ pub mod ops {
     use crate::commands::CommandError;
     use crate::models::database::{
         validate_create_database_input, BackupLocation, BackupLocationKind, BackupSettings,
-        ChooserState, CollectionSettings, DatabaseNotes, DatabaseStatus, LockSettings, NoteKind,
-        RecentDatabase, SuggestedLocation,
+        ChooserState, CloseOutcome, CloseReason, CollectionSettings, DatabaseNotes, DatabaseStatus,
+        LockSettings, NoteKind, RecentDatabase, RecentRemoved, SuggestedLocation,
     };
-    use crate::services::machine_settings::MachineSettings;
+    use crate::services::machine_settings::{MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
     use crate::session::lifecycle::{self, backup_folder};
     use crate::session::{OpenDatabase, Session};
@@ -46,26 +49,35 @@ pub mod ops {
             .unwrap_or_default()
     }
 
-    /// The chooser's state (FR-012, FR-020, FR-021). The keyring and
-    /// screen-lock flags stay off until those stories land.
+    /// A recent-list entry as the chooser shows it: unavailable when its
+    /// file isn't at its path (FR-012).
+    fn recent_database(entry: RecentEntry) -> RecentDatabase {
+        RecentDatabase {
+            available: entry.path.is_file(),
+            path: entry.path.to_string_lossy().into_owned(),
+            name: entry.name,
+            last_opened_at: entry.last_opened_at,
+            passphrase_saved: entry.passphrase_saved,
+        }
+    }
+
+    /// The chooser's state (FR-012, FR-020, FR-021). The selected row is the
+    /// database just closed or locked (FR-033), or else the most recent. The
+    /// keyring and screen-lock flags stay off until those stories land.
     pub fn chooser_state(
+        session: &Session,
         machine: &MachineSettings,
         documents: Option<PathBuf>,
         home: Option<PathBuf>,
     ) -> ChooserState {
-        let recent: Vec<RecentDatabase> = machine
-            .recent()
-            .into_iter()
-            .map(|entry| RecentDatabase {
-                available: entry.path.is_file(),
-                path: entry.path.to_string_lossy().into_owned(),
-                name: entry.name,
-                last_opened_at: entry.last_opened_at,
-                passphrase_saved: entry.passphrase_saved,
-            })
-            .collect();
+        let recent: Vec<RecentDatabase> =
+            machine.recent().into_iter().map(recent_database).collect();
+        let last_closed = session.last_closed().map(|path| path.to_string_lossy().into_owned());
+        let selected_path = last_closed
+            .filter(|closed| recent.iter().any(|entry| &entry.path == closed))
+            .or_else(|| recent.first().map(|entry| entry.path.clone()));
         ChooserState {
-            selected_path: recent.first().map(|entry| entry.path.clone()),
+            selected_path,
             recent,
             keyring_available: false,
             screen_lock_supported: false,
@@ -109,16 +121,55 @@ pub mod ops {
         )
     }
 
-    /// Opens the database at `path` with a typed passphrase (FR-005, FR-006).
-    /// A refused open changes neither the file nor the session.
+    /// Opens the database at `path` with a typed passphrase (FR-005, FR-006),
+    /// closing any other open database first as a switch. A refused open
+    /// changes neither the file nor the session. `take_over` opens a
+    /// database marked open on another computer (FR-032); the UI sends it
+    /// only after its confirmation.
     pub fn open_database(
         session: &Session,
         machine: &MachineSettings,
         path: &str,
         passphrase: &Passphrase,
+        take_over: bool,
     ) -> Result<DatabaseStatus, CommandError> {
-        lifecycle::open(session, machine, Path::new(path), passphrase)?;
+        lifecycle::open(session, machine, Path::new(path), passphrase, take_over)?;
         database_status(session, machine)
+    }
+
+    /// Closes the open database or switches away from it (FR-010). The
+    /// frontend has already dealt with unsaved changes.
+    pub fn close_database(
+        session: &Session,
+        reason: CloseReason,
+    ) -> Result<CloseOutcome, CommandError> {
+        if !matches!(reason, CloseReason::Closed | CloseReason::Switched) {
+            return Err(CommandError::validation(
+                "A database can only be closed or switched from here.",
+                [("reason".to_owned(), "Use closed or switched.".to_owned())].into(),
+            ));
+        }
+        lifecycle::close_normal(session, reason)
+    }
+
+    /// Takes `path` off this computer's recent list. The database file is
+    /// never touched (FR-012, US2-5).
+    pub fn remove_recent_database(machine: &MachineSettings, path: &str) -> RecentRemoved {
+        machine.remove_recent(Path::new(path));
+        RecentRemoved { removed: true }
+    }
+
+    /// Points an unavailable recent entry at where the user found its file
+    /// (FR-012), keeping everything else about it.
+    pub fn locate_database(
+        machine: &MachineSettings,
+        path: &str,
+        new_path: &str,
+    ) -> Result<RecentDatabase, CommandError> {
+        machine
+            .locate_recent(Path::new(path), Path::new(new_path))
+            .map(recent_database)
+            .ok_or_else(|| CommandError::not_found("That database isn't in the recent list."))
     }
 
     /// The open database as the frontend needs it.
@@ -213,11 +264,17 @@ pub mod ops {
 #[tauri::command]
 pub async fn get_chooser_state(
     app: AppHandle,
+    session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<ChooserState, CommandError> {
     // `document_dir` honours `user-dirs.dirs`, so a sandboxed run suggests a
     // sandboxed folder (research.md §19).
-    Ok(ops::chooser_state(&machine, app.path().document_dir().ok(), app.path().home_dir().ok()))
+    Ok(ops::chooser_state(
+        &session,
+        &machine,
+        app.path().document_dir().ok(),
+        app.path().home_dir().ok(),
+    ))
 }
 
 #[tauri::command]
@@ -244,11 +301,53 @@ pub async fn create_database(
 pub async fn open_database(
     path: String,
     passphrase: String,
+    take_over: Option<bool>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<DatabaseStatus, CommandError> {
     let passphrase = Passphrase::from_input(passphrase);
-    ops::open_database(&session, &machine, &path, &passphrase)
+    ops::open_database(&session, &machine, &path, &passphrase, take_over.unwrap_or(false))
+}
+
+#[tauri::command]
+pub async fn close_database(
+    reason: CloseReason,
+    session: State<'_, Session>,
+) -> Result<CloseOutcome, CommandError> {
+    ops::close_database(&session, reason)
+}
+
+/// Closes the open database, if any, as a quit, then exits (research.md
+/// §17). The frontend has already dealt with unsaved changes.
+#[tauri::command]
+pub async fn quit_application(
+    app: AppHandle,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    if session.is_open() {
+        // It can only fail when nothing is open any more.
+        crate::session::lifecycle::close_normal(&session, CloseReason::Quit).ok();
+    }
+    // An exit with a code is ours, and `main` lets it through.
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_recent_database(
+    path: String,
+    machine: State<'_, MachineSettings>,
+) -> Result<RecentRemoved, CommandError> {
+    Ok(ops::remove_recent_database(&machine, &path))
+}
+
+#[tauri::command]
+pub async fn locate_database(
+    path: String,
+    new_path: String,
+    machine: State<'_, MachineSettings>,
+) -> Result<RecentDatabase, CommandError> {
+    ops::locate_database(&machine, &path, &new_path)
 }
 
 #[tauri::command]

@@ -31,6 +31,10 @@ fn path_details(path: &Path) -> Option<Value> {
 }
 
 impl CommandError {
+    /// The code of [`CommandError::database_unavailable`], which the session
+    /// also looks for in what a command's closure returns.
+    pub const DATABASE_UNAVAILABLE: &'static str = "DATABASE_UNAVAILABLE";
+
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self { code: code.into(), message: message.into(), field_errors: None, details: None }
     }
@@ -198,7 +202,7 @@ impl CommandError {
     /// FR-032: the file's storage can't be reached.
     pub fn database_unavailable(path: &Path) -> Self {
         Self::new(
-            "DATABASE_UNAVAILABLE",
+            Self::DATABASE_UNAVAILABLE,
             format!(
                 "HoploDex can't reach {}. Nothing already saved was lost. Close the database and \
                  open it again once the drive or network is back.",
@@ -212,17 +216,21 @@ impl CommandError {
     /// use with `.map_err(CommandError::from_db)` at call sites — internal
     /// error detail is logged, never forwarded to the frontend. Corruption
     /// found by any command is reported as a damaged database (research.md
-    /// §2).
+    /// §2), and an I/O error as a file that can't be reached, whose path the
+    /// session adds (research.md §6).
     pub fn from_db(err: rusqlite::Error) -> Self {
         log::error!("db error: {err}");
         match err {
             rusqlite::Error::QueryReturnedNoRows => {
                 Self::not_found("The requested record was not found.")
             }
-            _ if err.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseCorrupt) => {
-                Self::database_damaged(false)
-            }
-            _ => Self::new("INTERNAL_ERROR", "An unexpected error occurred."),
+            _ => match err.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::DatabaseCorrupt) => Self::database_damaged(false),
+                Some(rusqlite::ErrorCode::SystemIoFailure | rusqlite::ErrorCode::CannotOpen) => {
+                    Self::new(Self::DATABASE_UNAVAILABLE, "HoploDex can't reach the database file.")
+                }
+                _ => Self::new("INTERNAL_ERROR", "An unexpected error occurred."),
+            },
         }
     }
 }

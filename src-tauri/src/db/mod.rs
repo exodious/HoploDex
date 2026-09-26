@@ -152,11 +152,18 @@ fn initialize(
     Ok(conn)
 }
 
-/// Opens the database at `path` with `passphrase`, in research.md §2's
-/// order. Nothing is written until every check has passed, so a refused
-/// open never changes the file (FR-006, FR-014). The returned connection
-/// holds the file's exclusive lock until it is dropped.
-pub fn open_database(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
+/// Opens the database at `path` with `passphrase` on `machine`, in
+/// research.md §2's order. Nothing is written until every check has passed,
+/// so a refused open never changes the file (FR-006, FR-014). A database
+/// marked open on another computer is refused unless `take_over` is set
+/// (FR-032). The returned connection holds the file's exclusive lock until
+/// it is dropped.
+pub fn open_database(
+    path: &Path,
+    passphrase: &Passphrase,
+    machine: &MachineIdentity,
+    take_over: bool,
+) -> Result<Connection, OpenError> {
     // Before SQLite: a missing or inaccessible file.
     match OpenOptions::new().read(true).write(true).open(path) {
         Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => {}
@@ -182,13 +189,53 @@ pub fn open_database(path: &Path, passphrase: &Passphrase) -> Result<Connection,
     if !is_hoplodex_database(&conn).map_err(OpenError::classify)? {
         return Err(OpenError::PassphraseIncorrect);
     }
+    // Step 3, read-only: a migration this build doesn't know means a newer
+    // version of HoploDex has changed the data layout.
+    if has_unknown_migration(&conn).map_err(OpenError::classify)? {
+        return Err(OpenError::NewerVersion);
+    }
+    // Step 4, read-only: open on another computer. This computer's own
+    // marker is one a crash left behind, since the exclusive lock has
+    // already shown no other copy here has the file open.
+    let (marker_id, marker_name, marker_since): (Option<String>, Option<String>, Option<String>) =
+        conn.query_row(
+            "SELECT open_machine_id, open_machine_name, open_since FROM app_state",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(OpenError::classify)?;
+    if let Some(marker_id) = marker_id {
+        if marker_id != machine.id && !take_over {
+            return Err(OpenError::OpenElsewhere {
+                machine_name: marker_name.unwrap_or_default(),
+                since: marker_since.unwrap_or_default(),
+            });
+        }
+    }
 
-    // Step 5: the housekeeping writes.
+    // Step 5: the housekeeping writes. Setting the marker also takes the
+    // write lock, which exclusive locking mode then keeps, so any other
+    // connection to the file is refused as "in use" from here on.
     apply_migrations(&conn).map_err(OpenError::classify)?;
-    // Take the write lock now, and (in exclusive locking mode) keep it, so
-    // any other connection to the file is refused as "in use" from here on.
-    conn.execute_batch("BEGIN EXCLUSIVE; COMMIT;").map_err(OpenError::classify)?;
+    conn.execute(
+        "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
+        rusqlite::params![machine.id, machine.display_name, now_utc()],
+    )
+    .map_err(OpenError::classify)?;
     Ok(conn)
+}
+
+/// Whether `schema_migrations` names a migration this build doesn't have.
+fn has_unknown_migration(conn: &Connection) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare("SELECT name FROM schema_migrations")?;
+    let names = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    for name in names {
+        let name = name?;
+        if !MIGRATIONS.iter().any(|(known, _)| *known == name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// A HoploDex database has its migrations table and its `app_state` row.
@@ -314,7 +361,7 @@ mod tests {
 
         // Reopening must succeed and must not re-apply (and thus fail to
         // re-insert unique-constrained) migrations.
-        let conn2 = open_database(&db_path, &passphrase(PASSPHRASE)).unwrap();
+        let conn2 = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false).unwrap();
         let type_count2: i64 =
             conn2.query_row("SELECT count(*) FROM firearm_types", [], |r| r.get(0)).unwrap();
         assert_eq!(type_count2, 4);
@@ -326,7 +373,7 @@ mod tests {
         let db_path = dir.path().join("test.hoplodex");
         drop(create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap());
 
-        let result = open_database(&db_path, &passphrase("another passphrase"));
+        let result = open_database(&db_path, &passphrase("another passphrase"), &machine(), false);
         assert!(matches!(result, Err(OpenError::PassphraseIncorrect)), "{result:?}");
     }
 }

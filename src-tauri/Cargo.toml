@@ -55,11 +55,9 @@ unicode-normalization = "0.1.25"
 gethostname = "1.1.0"
 # Free space before a copy (research.md §4).
 fs4 = "1.1.0"
-# Promoted from transitive, at the versions already in Cargo.lock: wiping
-# passphrases from memory (research.md §1) and file identity for the
-# take-over check (research.md §6).
+# Promoted from transitive, at the version already in Cargo.lock: wiping
+# passphrases from memory (research.md §1).
 zeroize = "1.9"
-same-file = "1.0.6"
 
 # Sleep, wake, screen-lock and shutdown notices (research.md §14). Each is
 # already in the tree for its platform; only the features are switched on.
@@ -72,6 +70,9 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
+# File identity for the take-over check (research.md §6). Unix uses `stat`
+# directly: opening a handle there would drop SQLite's locks when closed.
+same-file = "1.0.6"
 windows-sys = { version = "0.61", features = [
     "Win32_System_Power",
     "Win32_System_RemoteDesktop",
