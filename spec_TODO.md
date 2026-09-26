@@ -24,6 +24,8 @@ Everything that has shipped was taken out of this file on 2026-09-23; the specs 
 
 B4 (multiple databases, location, backups) and B5 (passphrase, portability, optional keyring) were removed 2026-09-25: they are being specified together as `specs/003-database-protection-management/`, whose `## Source Request` section carries everything this file recorded for them.
 
+C7 (dependency vulnerability policy) was removed 2026-09-26: the policy and the "dependency audit passes" gate are in constitution 1.1.0, and the tooling is described in "Dependency audit" in `DEVELOPMENT.md`. The same amendment made C8's AI security review a release gate, so C8 below keeps only its remaining work.
+
 ---
 
 ## Track A — Revisions / clarifications to 001
@@ -118,7 +120,7 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
 ### C2. CI / release engineering
 
 - [feature] github test/format check/lint/build/release workflow *(release/packaging portion; test/lint/build portion is A5)*
-  - Cross-platform matrix (Windows/macOS/Linux) also delivers A5's "other platforms" item. Signing/installer/updater decisions are new; if they become large, run them through spec kit as an infrastructure spec, otherwise plain issues.
+  - Cross-platform matrix (Windows/macOS/Linux) also delivers A5's "other platforms" item. Add a CI job for the dependency audit (`npm run audit`, now a constitution gate for every PR) and the license check (`npm run audit:licenses`, C3). Signing/installer/updater decisions are new; if they become large, run them through spec kit as an infrastructure spec, otherwise plain issues.
 
 ### C3. License compatibility (plus a constitution/plan amendment)
 
@@ -141,17 +143,12 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
 - [infrastructure] After the first release, any non-backwards-compatible changes to the data model will require a database migration path for existing user databases, and a major version bump (semver) to signal the breaking change.
   - **Scope:** moot until 1.0 ships and production databases exist. The current `schema_migrations` table tracks applied migrations, and the forward-compat guard in feature 003 (FR-014, schema version check at open) provides the groundwork. Post-release, establish a versioning policy: define what constitutes a breaking vs. compatible schema change, how migrations are authored and tested, and the UI flow when a user's database is on an older schema than the app (prompt to back up, show migration summary, apply, or defer to next major version). Until then, dev and early-access databases are recreated as specs change; no migration burden. Document the eventual policy in the constitution once 1.0 nears.
 
-### C7. Dependency vulnerability policy — constitution amendment still to do
-
-- [security] I'd like to enforce a rule that no dependencies with known critical CVEs are allowed, and no high severity without mitigation or justification. Exceptions for critical CVEs with no available patches yet, but with an analysis done of how those issues affect this application if at all. These checks would ideally be performed on every PR.
-  - **Tooling is implemented:** `npm run audit` (audit-ci for npm, cargo-deny for Rust), with exceptions recorded in `audit-ci.jsonc` and `src-tauri/deny.toml`; see "Dependency audit" in `DEVELOPMENT.md`. **Remaining:** amend the constitution (`/speckit-constitution`, MINOR bump). Add the policy to "Security & Data Handling Constraints": no critical advisories unless no patch exists anywhere and an analysis is recorded; no high advisories without a mitigation or justification; an unscored RustSec vulnerability counts as high; exceptions are scoped to the analysed dependency path and carry a review date. Add "the dependency audit passes" to the gates in "Development Workflow & Quality Gates", next to lint and tests. Decide whether dev-only dependencies keep the full bar (they do today) or get a lighter justification, and whether unmaintained/unsound RustSec notices should keep blocking (they do today).
-  - The same cargo-deny install can run `cargo deny check licenses` for C3. A CI audit job belongs with C2.
-
-### C8. AI security review before each release
+### C8. AI security review before each release — tooling and release process still to do
 
 - [security] I'd also like to require an AI security review before every release (not necessarily every PR, depending on how long such checks take).
-  - **Proposed shape:** a project skill (e.g. `.claude/skills/release-security-review/`) that reviews the whole codebase, not just a diff, against HoploDex's attack surface: the IPC commands in `generate_handler!`, Tauri capabilities and CSP, path handling in the `add_*_from_path` commands, spreadsheet import parsing and formula injection on export, SQLCipher key handling, secure delete, and decrypted document copies (FR-035). It writes a dated report (e.g. `security-reviews/vX.Y.Z.md`); every high finding is fixed or justified before release. The built-in `/security-review` (diff-scoped, a few minutes) stays optional per PR.
-  - **Also needs:** a written release process for the gate to live in (a `RELEASING.md` checklist, overlapping C2), and a constitution amendment making the review a release gate. It can go in with C7. Note in the constitution that the review sends source code (never collection data) to Anthropic, which is consistent with Principle V.
+  - **The release gate is in the constitution** (1.1.0, "Development Workflow & Quality Gates"), including the attack surface to cover and the committed dated report. **Remaining:** the tooling and a release process to hold the gate.
+  - **Proposed shape:** a project skill (e.g. `.claude/skills/release-security-review/`) that reviews the whole codebase, not just a diff, against the attack surface the constitution lists, mapped to the code: the IPC commands in `generate_handler!`, Tauri capabilities and CSP, path handling in the `add_*_from_path` commands, spreadsheet import parsing and formula injection on export, SQLCipher key and passphrase handling, secure delete, and decrypted document copies (FR-035). It writes a dated report (e.g. `security-reviews/vX.Y.Z.md`). The built-in `/security-review` (diff-scoped, a few minutes) stays optional per PR.
+  - **Also needs:** a written release process for the gate to live in (a `RELEASING.md` checklist, overlapping C2).
 
 ### C9. Third-party license notices in the app
 
