@@ -1,22 +1,23 @@
 <!--
 Sync Impact Report
-Version change: 1.0.0 → 1.1.0
-Bump rationale: MINOR. Two materially expanded sections (a dependency
-vulnerability policy and two new quality gates); the backup clarification on
-its own would be a PATCH.
-Modified principles: none
+Version change: 1.1.0 → 1.2.0
+Bump rationale: MINOR. A new section (Licensing) and a materially expanded
+principle (test isolation added to Testing Standards).
+Modified principles:
+  - II. Testing Standards: tests and any tooling that runs the application
+    MUST NOT read, write or delete the user's real database, its stored key
+    or passphrase, or other real application data; they use throwaway
+    locations and test keys
 Modified sections:
-  - Security & Data Handling Constraints: the opt-in rule for "any network sync
-    or backup feature" clarified to cover only data that leaves the device, so
-    local backups may be on by default (needed by feature 003, FR-024); a
-    dependency vulnerability policy added (critical, high, unscored and
-    unmaintained/unsound advisories; scoped, dated exceptions; dev-only
-    dependencies held to the same bar)
-  - Development Workflow & Quality Gates: "the dependency audit passes" added to
-    the pull request gates; a whole-codebase AI-assisted security review added
-    as a release gate, which may use Anthropic or another AI vendor and sends
-    source code, never collection data, to it
-Added sections: none
+  - Development Workflow & Quality Gates: the pull request dependency audit
+    gate now names its license check; licensing added to the release gates
+    (manual license checks and third-party notices)
+Added sections:
+  - Licensing: HoploDex is GPL-3.0-only; every dependency, library and asset
+    shipped with it MUST be under a GPLv3-compatible license; scoped
+    exceptions for licenses acceptable only for particular packages;
+    development-only dependencies that are not distributed are exempt;
+    releases MUST carry the required copyright and license notices
 Removed sections: none
 Templates requiring updates:
   - .specify/templates/plan-template.md: ✅ no change needed (Constitution Check
@@ -24,16 +25,16 @@ Templates requiring updates:
   - .specify/templates/spec-template.md: ✅ no change needed
   - .specify/templates/tasks-template.md: ✅ no change needed
   - .specify/templates/checklist-template.md: ✅ no change needed
-  - DEVELOPMENT.md "Dependency audit": ✅ already describes the enforced policy
-  - CLAUDE.md "Spec Kit workflow" gate list: ⚠ pending, add the dependency audit
-    and the release security review
+  - DEVELOPMENT.md "Test isolation" and "License audit": ✅ already describe
+    the enforced isolation and the license audit (`npm run audit` includes it)
+  - CLAUDE.md "Spec Kit workflow" gate list: ⚠ pending, add the dependency and
+    license audit and the release gates
 Follow-up TODOs:
-  - No written release process exists yet for the release security review to
-    live in; add one (a release checklist) with the release engineering work.
-  - The release security review has no tooling yet (a project skill that
-    reviews the whole codebase and writes the dated report).
-  - Feature 003's spec, plan and research describe the backup rule as needing
-    clarification; update them to cite constitution 1.1.0 once this merges.
+  - Releases do not yet ship third-party license notices; a generated notices
+    file and an About / Licenses screen are planned before the first release.
+  - The license audit result is not yet recorded in research.md.
+  - No written release process exists yet for the release gates to live in.
+  - The release security review (1.1.0) still has no tooling.
 -->
 
 # HoploDex Constitution
@@ -66,9 +67,18 @@ that exercise real persistence, not mocks. Any bug fix MUST include a
 regression test that fails without the fix. The full automated test suite MUST
 pass before any merge to the main branch.
 
+Tests, and any other tooling that runs the application (end-to-end runs,
+screenshots, human-testing data), MUST NOT read, write, or delete the user's
+real database, the key or passphrase stored for it, or any other real
+application data. They MUST use throwaway locations created for the run and
+test keys or passphrases, and tooling that seeds data MUST refuse to target
+the real data directory.
+
 **Rationale**: This app is the system of record for a user's firearm
 collection, often tied to legal, insurance, and safety obligations; undetected
-regressions have real-world consequences beyond typical inconvenience.
+regressions have real-world consequences beyond typical inconvenience. The
+developers use the app for their own collections, so a test that touches real
+data can destroy the very records the app exists to protect.
 
 ### III. User Experience Consistency
 
@@ -146,16 +156,31 @@ vulnerabilities, as checked by the dependency audit:
   the same advisory arriving by another path fails again, and MUST carry a
   date for review. It MUST be removed once a fix can be taken.
 
+## Licensing
+
+HoploDex is released under GPL-3.0-only. Every dependency, library, and asset
+shipped with the application MUST be under a GPLv3-compatible license, as
+checked by the license audit. This covers what the audit tools cannot see:
+C code compiled inside a dependency, the crypto library the database links or
+ships with, and bundled artwork, fonts, and data files, whose source and
+license MUST be recorded before they are added. Development-only dependencies
+that are not distributed are exempt. A license acceptable only for particular
+packages (for example, a font license for fonts shipped as separate files)
+MUST be recorded as an exception scoped to those packages, with the reason.
+Every release MUST carry the copyright and license notices that its
+dependencies' licenses require.
+
 ## Development Workflow & Quality Gates
 
 Every pull request MUST pass automated linting, the full test suite, the
-dependency audit, and at least one peer review before merge. Pull requests
-that touch UI MUST include before/after evidence (screenshot or recording)
-demonstrating adherence to the shared design system. Pull requests that touch data-handling or persistence
-code MUST call out, in the description, how the change satisfies the Security
-& Data Handling Constraints above. Performance-sensitive changes (queries,
-list rendering, import/export) MUST include a note on expected impact against
-the budgets in Principle IV.
+dependency audit (vulnerabilities and licenses), and at least one peer review
+before merge. Pull requests that touch UI MUST include before/after evidence
+(screenshot or recording) demonstrating adherence to the shared design system.
+Pull requests that touch data-handling or persistence code MUST call out, in
+the description, how the change satisfies the Security & Data Handling
+Constraints above. Performance-sensitive changes (queries, list rendering,
+import/export) MUST include a note on expected impact against the budgets in
+Principle IV.
 
 Before every release, an AI-assisted security review of the whole codebase,
 not only a diff, MUST be run against the application's attack surface: the
@@ -167,7 +192,9 @@ committed to the repository, and every critical or high finding MUST be fixed,
 or justified in the report, before the release. The review MAY use Anthropic
 or another AI vendor. It sends source code, never collection data, to that
 vendor, which is consistent with Principle V. A diff-scoped security review of
-individual pull requests is optional.
+individual pull requests is optional. Before every release, the license
+checks the tools cannot make MUST also be done by hand, and the release MUST
+include its third-party license notices.
 
 ## Governance
 
@@ -186,4 +213,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.1.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-09-26
+**Version**: 1.2.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-09-26
