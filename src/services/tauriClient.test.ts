@@ -19,7 +19,9 @@ describe("invoke", () => {
       details: { machineName: "Workshop PC", since: "2026-09-26T10:00:00Z" },
     });
 
-    const failure = await invoke("open_database", { path: "/x.hoplodex" }).catch((e) => e);
+    const failure = (await invoke("open_database", { path: "/x.hoplodex" }).catch(
+      (e: unknown) => e,
+    )) as CommandFailure;
 
     expect(failure).toBeInstanceOf(CommandFailure);
     expect(failure.code).toBe("DATABASE_OPEN_ELSEWHERE");
@@ -34,7 +36,7 @@ describe("invoke", () => {
       fieldErrors: { name: "Enter a name." },
     });
 
-    const failure = await invoke("create_database").catch((e) => e);
+    const failure = (await invoke("create_database").catch((e: unknown) => e)) as CommandFailure;
 
     expect(failure).toBeInstanceOf(CommandFailure);
     expect(failure.fieldErrors).toEqual({ name: "Enter a name." });

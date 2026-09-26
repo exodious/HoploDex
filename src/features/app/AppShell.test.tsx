@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import type { FirearmSummary } from "../browse/types";
 import type { FirearmDetail } from "../firearms/types";
 import type { InsurancePolicy } from "../insurance/types";
+import { SessionContext } from "../session/sessionStore";
+import type { SessionState } from "../session/sessionStore";
 import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
@@ -137,11 +139,18 @@ const collection: CollectionState = {
   refresh: async () => {},
 };
 
+// An open database whose notes were all dismissed.
+const session = {
+  status: { notes: { diskEncryption: false } },
+} as unknown as SessionState;
+
 function renderShell() {
   render(
-    <CollectionContext.Provider value={collection}>
-      <AppShell />
-    </CollectionContext.Provider>,
+    <SessionContext.Provider value={session}>
+      <CollectionContext.Provider value={collection}>
+        <AppShell />
+      </CollectionContext.Provider>
+    </SessionContext.Provider>,
   );
 }
 

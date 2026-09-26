@@ -985,3 +985,118 @@
     transform: translateY(8px);
   }
 }
+
+/* ── A text button inside a field (Choose…, Show) ─────────────────────── */
+
+.hd-input__text-action {
+  height: 30px;
+  margin-right: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--sheet);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.hd-input__text-action:focus-visible {
+  outline-offset: -2px;
+}
+
+.hd-input__text-action:hover:not(:disabled) {
+  background: var(--sheet-sunk);
+}
+
+/* ── A note on where data goes (export, backups) ───────────────────────── */
+
+.hd-privacy-note {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sheet-sunk);
+  font-size: var(--text-sm);
+}
+
+.hd-privacy-note__path {
+  overflow-wrap: anywhere;
+}
+
+.hd-privacy-note > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--blaze-ink);
+}
+
+.hd-input__text-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.hd-input__text-action[aria-pressed="true"] {
+  border-color: var(--niter);
+  background: var(--niter-wash);
+  color: var(--niter);
+}
+
+/* ── Passphrase strength (FR-003) ─────────────────────────────────────── */
+
+.hd-passphrase {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.hd-strength {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.hd-strength__estimate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hd-strength__meter {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  flex: 1;
+  max-width: 220px;
+}
+
+.hd-strength__step {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sheet-sunk);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+/* Weak steps in blaze, strong in olive drab: the label says it in words
+   too, so the color is never the only cue. */
+.hd-strength__meter[data-score="0"] .hd-strength__step[data-filled],
+.hd-strength__meter[data-score="1"] .hd-strength__step[data-filled] {
+  background: var(--blaze);
+  box-shadow: none;
+}
+
+.hd-strength__meter[data-score="2"] .hd-strength__step[data-filled] {
+  background: var(--ink-3);
+  box-shadow: none;
+}
+
+.hd-strength__meter[data-score="3"] .hd-strength__step[data-filled],
+.hd-strength__meter[data-score="4"] .hd-strength__step[data-filled] {
+  background: var(--od);
+  box-shadow: none;
+}
+
+.hd-strength__label {
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--ink-2);
+}

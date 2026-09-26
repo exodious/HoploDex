@@ -15,12 +15,7 @@ export type CloseReason =
   | "takenOver";
 
 export type OperationKind =
-  | "backup"
-  | "passphraseChange"
-  | "restore"
-  | "import"
-  | "export"
-  | "deleteBackups";
+  "backup" | "passphraseChange" | "restore" | "import" | "export" | "deleteBackups";
 
 export interface RecentDatabase {
   path: string;
@@ -47,7 +42,8 @@ export type ChooserNotice =
   | {
       kind: "backupFailed";
       databasePath: string;
-      reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable";
+      reason:
+        "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable";
     }
   | { kind: "takenOver"; databasePath: string };
 
@@ -112,3 +108,38 @@ export interface BackupInfo {
   madeAt: string;
   sizeBytes: number;
 }
+
+/** Where the create dialog suggests putting a new database (FR-009). */
+export interface SuggestedLocation {
+  folder: string;
+  name: string;
+}
+
+/** `get_chooser_state`: everything the chooser shows before a database is
+ * open. */
+export interface ChooserState {
+  /** Most recent first. */
+  recent: RecentDatabase[];
+  /** The row selected when the chooser appears (FR-021, FR-033). */
+  selectedPath: string | null;
+  /** FR-019. */
+  keyringAvailable: boolean;
+  /** FR-038. */
+  screenLockSupported: boolean;
+  suggested: SuggestedLocation;
+  /** Shown once, then gone. */
+  notices: ChooserNotice[];
+}
+
+/** `create_database`'s input. */
+export interface CreateDatabaseInput {
+  folder: string;
+  name: string;
+  passphrase: string;
+  /** FR-004: the user has stored the passphrase and knows it can't be
+   * recovered. */
+  acknowledgedUnrecoverable: boolean;
+}
+
+/** A note shown once in the collection (contracts/ui-databases.md §10). */
+export type NoteKind = "diskEncryption" | "openedBackup" | "restored";

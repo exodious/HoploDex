@@ -1,0 +1,196 @@
+/* The database chooser and the database notes (contracts/ui-databases.md
+   §1, §10). The top bar and brand come from AppShell.css. */
+
+.hd-chooser {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.hd-brand--static {
+  cursor: default;
+}
+
+.hd-chooser__main {
+  flex: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-10) var(--space-8) var(--space-14);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hd-chooser__title {
+  font-family: var(--font-display);
+  font-size: var(--display-md);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+.hd-chooser__welcome {
+  max-width: 52ch;
+  font-size: var(--text-lg);
+  color: var(--ink-2);
+}
+
+.hd-chooser__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-chooser__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hd-chooser__actions--large {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 360px;
+}
+
+.hd-chooser__action--large {
+  justify-content: flex-start;
+  height: 52px;
+  padding: 0 var(--space-5);
+  font-size: var(--text-lg);
+}
+
+/* ── A database in the list ──────────────────────────────────────────── */
+
+.hd-db-row {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--sheet);
+}
+
+.hd-db-row--selected {
+  border-color: var(--niter);
+  box-shadow:
+    0 0 0 1px var(--niter),
+    var(--shadow-raised);
+}
+
+.hd-db-row__select,
+.hd-db-row__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+}
+
+.hd-db-row__select {
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hd-db-row__select:hover:not(:disabled) {
+  background: var(--sheet-sunk);
+}
+
+.hd-db-row__select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.hd-db-row__icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.hd-db-row--selected .hd-db-row__icon {
+  color: var(--niter);
+}
+
+.hd-db-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hd-db-row__name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.hd-db-row__folder {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.hd-db-row__unlock {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
+.hd-db-row__passphrase {
+  flex: 1;
+}
+
+/* Line the button up with the input, below the field's label. */
+.hd-db-row__unlock > .hd-button {
+  margin-top: calc(var(--text-sm) * 1.5 + var(--space-2));
+}
+
+/* ── The backups disclosure in the create dialog ─────────────────────── */
+
+.hd-privacy-note__title {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+/* ── Notes shown once in the collection ──────────────────────────────── */
+
+.hd-db-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.hd-db-note {
+  border-color: color-mix(in srgb, var(--niter) 35%, transparent);
+  background: var(--niter-wash);
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.hd-db-note > svg {
+  color: var(--niter);
+}
+
+@media (max-width: 900px) {
+  .hd-chooser__main {
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
+  }
+
+  .hd-db-row__unlock {
+    flex-direction: column;
+    align-items: stretch;
+    padding-left: var(--space-4);
+  }
+
+  .hd-db-row__unlock > .hd-button {
+    margin-top: 0;
+  }
+}

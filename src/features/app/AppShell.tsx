@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, useToast } from "../../components";
 import { CollectionPage } from "../browse/CollectionPage";
+import { DatabaseNotes } from "../databases/DatabaseNotes";
 import type { BrowseState } from "../browse/types";
 import { FirearmForm } from "../firearms/FirearmForm";
 import { FirearmRecordPage } from "../firearms/FirearmRecordPage";
@@ -10,6 +11,7 @@ import { ExportDialog } from "../import-export/ExportDialog";
 import { ImportDialog } from "../import-export/ImportDialog";
 import { InsurancePage } from "../insurance/InsurancePage";
 import { PolicyPage } from "../insurance/PolicyPage";
+import { BrandMark } from "./BrandMark";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
@@ -232,7 +234,10 @@ export function AppShell() {
 
         <main className="hd-main">
           {route.page === "collection" && (
-            <CollectionPage browse={browse} onBrowseChange={setBrowse} />
+            <>
+              <DatabaseNotes />
+              <CollectionPage browse={browse} onBrowseChange={setBrowse} />
+            </>
           )}
           {route.page === "insurance" && <InsurancePage />}
           {route.page === "policy" && <PolicyPage key={route.id} id={route.id} />}
@@ -261,17 +266,5 @@ export function AppShell() {
         />
       </div>
     </NavigationContext.Provider>
-  );
-}
-
-/** A hoplon — the round shield the name comes from — crossed by the same
- * dash-dot axis as the type drawings. */
-function BrandMark() {
-  return (
-    <svg className="hd-brand__mark" viewBox="0 0 28 28" aria-hidden focusable={false}>
-      <circle cx="14" cy="14" r="11.5" />
-      <circle cx="14" cy="14" r="7" />
-      <path d="M1 14h26" className="hd-brand__axis" />
-    </svg>
   );
 }

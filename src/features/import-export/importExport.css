@@ -4,45 +4,6 @@
   gap: var(--space-5);
 }
 
-.hd-input__text-action {
-  height: 30px;
-  margin-right: 4px;
-  padding: 0 10px;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius-sm);
-  background: var(--sheet);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.hd-input__text-action:focus-visible {
-  outline-offset: -2px;
-}
-
-.hd-input__text-action:hover {
-  background: var(--sheet-sunk);
-}
-
-.hd-privacy-note {
-  display: flex;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--sheet-sunk);
-  font-size: var(--text-sm);
-}
-
-.hd-privacy-note__path {
-  overflow-wrap: anywhere;
-}
-
-.hd-privacy-note > svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--blaze-ink);
-}
-
 .hd-outcome {
   display: flex;
   align-items: center;
