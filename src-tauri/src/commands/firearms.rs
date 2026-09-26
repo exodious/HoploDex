@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
-use crate::db::DbHandle;
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
     validate_firearm_input, DispositionType, Firearm, FirearmInput, FirearmStatus,
 };
+use crate::session::Session;
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
 /// Equivalent to calling `update_firearm` with `status: "disposed"` and
@@ -798,10 +798,9 @@ pub mod ops {
 pub async fn create_firearm(
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::create_firearm(&conn, &input, confirmed_warnings.unwrap_or(false))
+    session.write(|conn| ops::create_firearm(conn, &input, confirmed_warnings.unwrap_or(false)))
 }
 
 #[tauri::command]
@@ -809,56 +808,50 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::update_firearm(&conn, id, &input, confirmed_warnings.unwrap_or(false))
+    session.write(|conn| ops::update_firearm(conn, id, &input, confirmed_warnings.unwrap_or(false)))
 }
 
 #[tauri::command]
 pub async fn dispose_firearm(
     id: i64,
     input: DisposeFirearmInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::dispose_firearm(&conn, id, &input)
+    session.write(|conn| ops::dispose_firearm(conn, id, &input))
 }
 
 #[tauri::command]
 pub async fn reverse_disposition(
     id: i64,
     input: ReverseDispositionInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::reverse_disposition(&conn, id, &input)
+    session.write(|conn| ops::reverse_disposition(conn, id, &input))
 }
 
 #[tauri::command]
 pub async fn delete_firearm(
     id: i64,
     confirmed: bool,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DeleteResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::delete_firearm(&conn, id, confirmed)
+    session.write(|conn| ops::delete_firearm(conn, id, confirmed))
 }
 
 #[tauri::command]
 pub async fn get_firearm(
     id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<FirearmDetail, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_firearm_detail(&conn, id)
+    session.read(|conn| ops::get_firearm_detail(conn, id))
 }
 
 #[tauri::command]
 pub async fn list_firearms(
     input: ListFirearmsInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<ListFirearmsOutput, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::list_firearms(&conn, &input)
+    session.read(|conn| ops::list_firearms(conn, &input))
 }

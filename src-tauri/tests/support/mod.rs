@@ -1,33 +1,107 @@
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
 use hoplodex_lib::db;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::machine_settings::MachineIdentity;
+use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::session::SessionEvents;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+/// The fixed passphrase of every test database (research.md §20).
+#[allow(dead_code)]
+pub const TEST_PASSPHRASE: &str = "correct horse battery staple";
+
+/// [`TEST_PASSPHRASE`] as the backend holds it.
+#[allow(dead_code)]
+pub fn passphrase() -> Passphrase {
+    Passphrase::from_input(TEST_PASSPHRASE.to_owned())
+}
+
+/// The computer the tests run "on", as the open marker records it.
+#[allow(dead_code)]
+pub fn test_machine() -> MachineIdentity {
+    MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() }
+}
+
+/// Another computer, for open-marker and take-over cases.
+#[allow(dead_code)]
+pub fn other_machine() -> MachineIdentity {
+    MachineIdentity { id: "2".repeat(32), display_name: "Workshop PC".into() }
+}
+
 /// A real, migrated, encrypted SQLCipher database in a temp directory —
 /// never a mock connection, per the constitution's Testing Standards
-/// principle. `_dir` is held only to keep the temp directory alive for the
-/// lifetime of the returned handle.
+/// principle. It is made by the real `db::create_database` with
+/// [`TEST_PASSPHRASE`] and the production cipher settings, so every test
+/// exercises the real file format. The temp directory lives as long as the
+/// handle.
 pub struct TestDb {
     pub conn: Connection,
-    _dir: TempDir,
+    dir: TempDir,
 }
 
 impl TestDb {
     pub fn new() -> Self {
         let dir = TempDir::new().expect("failed to create temp dir for test DB");
-        let db_path = dir.path().join("test.db");
-        let key_hex = db::generate_key_hex().expect("failed to generate test DB key");
         let conn =
-            db::open_encrypted(&db_path, &key_hex).expect("failed to open encrypted test DB");
-        Self { conn, _dir: dir }
+            db::create_database(&dir.path().join("test.hoplodex"), &passphrase(), &test_machine())
+                .expect("failed to create the test database");
+        Self { conn, dir }
+    }
+
+    /// The database file.
+    #[allow(dead_code)]
+    pub fn path(&self) -> PathBuf {
+        self.dir.path().join("test.hoplodex")
+    }
+
+    /// The temp directory holding the database, for files a test makes
+    /// beside it.
+    #[allow(dead_code)]
+    pub fn dir(&self) -> &Path {
+        self.dir.path()
+    }
+
+    /// Closes the connection and opens the file again, as the app would.
+    #[allow(dead_code)]
+    pub fn reopen(&mut self) {
+        drop(std::mem::replace(&mut self.conn, Connection::open_in_memory().unwrap()));
+        self.conn = db::open_database(&self.path(), &passphrase())
+            .expect("failed to reopen the test database");
+    }
+
+    /// The connection and the directory that must outlive it, for tests
+    /// that hand the connection on (to a session, a thread) or close it.
+    #[allow(dead_code)]
+    pub fn into_parts(self) -> (Connection, TempDir) {
+        (self.conn, self.dir)
     }
 }
 
 impl Default for TestDb {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Records the session's events in order, in place of the Tauri app.
+#[derive(Default)]
+pub struct TestEvents(Mutex<Vec<(String, serde_json::Value)>>);
+
+impl TestEvents {
+    #[allow(dead_code)]
+    pub fn recorded(&self) -> Vec<(String, serde_json::Value)> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl SessionEvents for TestEvents {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        self.0.lock().unwrap().push((event.to_owned(), payload));
     }
 }
 

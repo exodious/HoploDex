@@ -1,11 +1,12 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
-
 use hoplodex_lib::commands::documents::clear_opened_documents_cache;
 use hoplodex_lib::commands::import_export::ImportSessionStore;
-use hoplodex_lib::db::{self, DbHandle};
+use hoplodex_lib::db;
+use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::session::operations::Operations;
+use hoplodex_lib::session::Session;
 use tauri::{Manager, RunEvent};
 
 /// A session shutdown (SIGTERM, SIGHUP) or Ctrl+C asks the app to exit. Left
@@ -43,8 +44,12 @@ fn main() {
             clear_opened_documents_cache(app.handle());
             #[cfg(unix)]
             exit_on_termination_signals(app.handle().clone());
-            let conn = db::init_app_db(app.handle())?;
-            app.manage(DbHandle(Mutex::new(conn)));
+            db::cipher::silence_cipher_log();
+            // No database is open at startup: the user chooses one and gives
+            // its passphrase (specs/003-database-protection-management).
+            app.manage(Session::default());
+            app.manage(Operations::default());
+            app.manage(MachineSettings::load(&app.path().app_config_dir()?)?);
             app.manage(ImportSessionStore::new());
             Ok(())
         })

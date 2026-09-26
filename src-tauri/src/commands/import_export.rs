@@ -8,7 +8,6 @@ use tauri::{Emitter, State};
 
 use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
-use crate::db::DbHandle;
 use crate::models::firearm::{
     validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
@@ -16,6 +15,7 @@ use crate::services::spreadsheet::{
     dollars_to_string, parse_scaled_decimal, parse_whole_dollars, read_spreadsheet,
     scaled_to_string, write_spreadsheet, FirearmExportRow, RawImportRow, SpreadsheetFormat,
 };
+use crate::session::Session;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,7 +92,7 @@ struct PendingConflict {
 /// Holds each in-progress import's matched-but-unresolved rows between the
 /// initial `import_collection` call and the follow-up
 /// `resolve_import_conflicts` call — Tauri-managed state (`app.manage`),
-/// analogous to `DbHandle`.
+/// analogous to `Session`.
 #[derive(Default)]
 pub struct ImportSessionStore {
     pending: Mutex<HashMap<String, Vec<PendingConflict>>>,
@@ -613,29 +613,31 @@ struct ProgressPayload {
 pub async fn export_collection(
     input: ExportCollectionInput,
     app: tauri::AppHandle,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<ExportResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    let format = parse_format(&input.format)?;
-    let firearm_ids = if input.scope == "filtered" {
-        let filter = input.filter.unwrap_or_default();
-        let listing = firearm_ops::list_firearms(&conn, &filter)?;
-        listing.groups.into_iter().flat_map(|g| g.firearms).map(|f| f.id).collect()
-    } else {
-        ops::all_firearm_ids(&conn)?
-    };
+    session.read(|conn| {
+        let format = parse_format(&input.format)?;
+        let firearm_ids = if input.scope == "filtered" {
+            let filter = input.filter.unwrap_or_default();
+            let listing = firearm_ops::list_firearms(conn, &filter)?;
+            listing.groups.into_iter().flat_map(|g| g.firearms).map(|f| f.id).collect()
+        } else {
+            ops::all_firearm_ids(conn)?
+        };
 
-    let base_name = format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-    ops::export_collection(
-        &conn,
-        Path::new(&input.destination_folder),
-        &base_name,
-        format,
-        &firearm_ids,
-        &mut |processed, total| {
-            let _ = app.emit("export_collection:progress", ProgressPayload { processed, total });
-        },
-    )
+        let base_name = format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+        ops::export_collection(
+            conn,
+            Path::new(&input.destination_folder),
+            &base_name,
+            format,
+            &firearm_ids,
+            &mut |processed, total| {
+                let _ =
+                    app.emit("export_collection:progress", ProgressPayload { processed, total });
+            },
+        )
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -649,20 +651,22 @@ pub struct ImportCollectionInput {
 pub async fn import_collection(
     input: ImportCollectionInput,
     app: tauri::AppHandle,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
     session_store: State<'_, ImportSessionStore>,
 ) -> Result<ImportResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    let format = parse_format(&input.format)?;
-    ops::import_collection(
-        &conn,
-        Path::new(&input.file_path),
-        format,
-        &session_store,
-        &mut |processed, total| {
-            let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
-        },
-    )
+    session.write(|conn| {
+        let format = parse_format(&input.format)?;
+        ops::import_collection(
+            conn,
+            Path::new(&input.file_path),
+            format,
+            &session_store,
+            &mut |processed, total| {
+                let _ =
+                    app.emit("import_collection:progress", ProgressPayload { processed, total });
+            },
+        )
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -676,15 +680,16 @@ pub struct ResolveImportConflictsInput {
 #[tauri::command]
 pub async fn resolve_import_conflicts(
     input: ResolveImportConflictsInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
     session_store: State<'_, ImportSessionStore>,
 ) -> Result<ResolveResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::resolve_import_conflicts(
-        &conn,
-        &session_store,
-        &input.import_session_id,
-        &input.resolutions,
-        input.apply_to_remaining.as_deref(),
-    )
+    session.write(|conn| {
+        ops::resolve_import_conflicts(
+            conn,
+            &session_store,
+            &input.import_session_id,
+            &input.resolutions,
+            input.apply_to_remaining.as_deref(),
+        )
+    })
 }

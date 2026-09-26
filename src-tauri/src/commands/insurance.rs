@@ -4,13 +4,13 @@ use tauri::State;
 
 use crate::commands::firearms;
 use crate::commands::CommandError;
-use crate::db::DbHandle;
 use crate::models::firearm::Firearm;
 use crate::models::insurance_policy::{
     validate_insurance_policy_input, InsurancePolicy, InsurancePolicyInput,
 };
 use crate::services::insurance_status::{load_context, PolicyStatus};
 use crate::services::valuation::{self, ValueSummary};
+use crate::session::Session;
 
 /// Input for `assign_firearm_coverage`, per contracts/tauri-commands.md.
 #[derive(Debug, Clone, Deserialize)]
@@ -440,40 +440,40 @@ pub mod ops {
 
 #[tauri::command]
 pub async fn list_insurance_policies(
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Vec<InsurancePolicyView>, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::list_policy_views(&conn)
+    session.read(ops::list_policy_views)
 }
 
 #[tauri::command]
 pub async fn create_insurance_policy(
     input: InsurancePolicyInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<InsurancePolicyView, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    let policy = ops::create_policy(&conn, &input)?;
-    ops::policy_view(&conn, policy)
+    session.write(|conn| {
+        let policy = ops::create_policy(conn, &input)?;
+        ops::policy_view(conn, policy)
+    })
 }
 
 #[tauri::command]
 pub async fn update_insurance_policy(
     id: i64,
     input: InsurancePolicyInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<InsurancePolicyView, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    let policy = ops::update_policy(&conn, id, &input)?;
-    ops::policy_view(&conn, policy)
+    session.write(|conn| {
+        let policy = ops::update_policy(conn, id, &input)?;
+        ops::policy_view(conn, policy)
+    })
 }
 
 #[tauri::command]
 pub async fn get_policy_deletion_impact(
     id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<PolicyDeletionImpact, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_policy_deletion_impact(&conn, id)
+    session.read(|conn| ops::get_policy_deletion_impact(conn, id))
 }
 
 #[tauri::command]
@@ -481,29 +481,28 @@ pub async fn delete_insurance_policy(
     id: i64,
     confirmed: bool,
     scheduled_firearms: Option<ScheduledFirearmsAction>,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DeletePolicyResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::delete_policy(&conn, id, confirmed, scheduled_firearms.as_ref())
+    session.write(|conn| ops::delete_policy(conn, id, confirmed, scheduled_firearms.as_ref()))
 }
 
 #[tauri::command]
 pub async fn assign_firearm_coverage(
     firearm_id: i64,
     input: AssignCoverageInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::assign_firearm_coverage(
-        &conn,
-        firearm_id,
-        input.policy_id,
-        input.scheduled_coverage_amount,
-    )
+    session.write(|conn| {
+        ops::assign_firearm_coverage(
+            conn,
+            firearm_id,
+            input.policy_id,
+            input.scheduled_coverage_amount,
+        )
+    })
 }
 
 #[tauri::command]
-pub async fn get_value_summary(state: State<'_, DbHandle>) -> Result<ValueSummary, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_value_summary(&conn)
+pub async fn get_value_summary(session: State<'_, Session>) -> Result<ValueSummary, CommandError> {
+    session.read(ops::get_value_summary)
 }

@@ -6,10 +6,10 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
-use crate::db::DbHandle;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
 use crate::services::attachments::read_attachment_file;
 use crate::services::secure_delete::secure_delete_dir;
+use crate::session::Session;
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -161,12 +161,9 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
 pub async fn open_document(
     id: i64,
     app: AppHandle,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<(), CommandError> {
-    let document = {
-        let conn = state.0.lock().expect("db mutex poisoned");
-        ops::get_document(&conn, id)?
-    };
+    let document = session.read(|conn| ops::get_document(conn, id))?;
     let dir = app
         .path()
         .app_cache_dir()
@@ -182,10 +179,11 @@ pub async fn open_document(
 #[tauri::command]
 pub async fn list_documents(
     firearm_id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Vec<DocumentSummary>, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    Ok(ops::list_documents(&conn, firearm_id)?.into_iter().map(DocumentSummary::from).collect())
+    session.read(|conn| {
+        Ok(ops::list_documents(conn, firearm_id)?.into_iter().map(DocumentSummary::from).collect())
+    })
 }
 
 #[tauri::command]
@@ -194,11 +192,12 @@ pub async fn add_document(
     file_bytes: Vec<u8>,
     original_filename: String,
     mime_type: String,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DocumentSummary, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::add_document(&conn, firearm_id, &file_bytes, &original_filename, &mime_type)
-        .map(Into::into)
+    session.write(|conn| {
+        ops::add_document(conn, firearm_id, &file_bytes, &original_filename, &mime_type)
+            .map(Into::into)
+    })
 }
 
 /// Attaches a document from a file on disk: what a drop onto the window
@@ -207,18 +206,18 @@ pub async fn add_document(
 pub async fn add_document_from_path(
     firearm_id: i64,
     path: String,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DocumentSummary, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::add_document_from_path(&conn, firearm_id, Path::new(&path)).map(Into::into)
+    session.write(|conn| {
+        ops::add_document_from_path(conn, firearm_id, Path::new(&path)).map(Into::into)
+    })
 }
 
 #[tauri::command]
 pub async fn delete_document(
     id: i64,
     confirmed: bool,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DeleteResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::delete_document(&conn, id, confirmed)
+    session.write(|conn| ops::delete_document(conn, id, confirmed))
 }

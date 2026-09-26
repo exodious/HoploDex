@@ -1,130 +1,246 @@
-use std::path::Path;
-use std::sync::Mutex;
+//! Database files: creating, opening and checking a passphrase against the
+//! passphrase-keyed SQLCipher format (specs/003-database-protection-management
+//! research.md §1, §1a, §2; contracts/database-file.md). Every function takes
+//! its path from the caller: nothing here knows where a user keeps their
+//! databases.
 
-use rusqlite::Connection;
+pub mod cipher;
 
-const KEYRING_SERVICE: &str = "com.hoplodex.app";
-const KEYRING_USER: &str = "sqlcipher-key";
-const DB_FILE_NAME: &str = "hoplodex.db";
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use rusqlite::{Connection, ErrorCode, OpenFlags};
+
+use crate::services::machine_settings::MachineIdentity;
+use crate::services::passphrase::Passphrase;
 
 /// Versioned SQL migrations, applied in order. Names are stored in
-/// `schema_migrations` so a given database is never migrated twice.
+/// `schema_migrations`, which is also the database's data-layout version
+/// (contracts/database-file.md).
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_initial", include_str!("migrations/0001_initial.sql")),
     ("0002_fts5", include_str!("migrations/0002_fts5.sql")),
     ("0003_seed_firearm_types", include_str!("migrations/0003_seed_firearm_types.sql")),
 ];
 
+/// The cipher page size, which is also the size of the page-1 probe
+/// (research.md §1a).
+const PAGE_SIZE: usize = 4096;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
     #[error("database error: {0}")]
     Sqlite(#[from] rusqlite::Error),
-    #[error("keyring error: {0}")]
-    Keyring(#[from] keyring::Error),
     #[error("filesystem error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("could not resolve app data directory: {0}")]
-    Path(#[from] tauri::Error),
-    #[error("could not generate encryption key: {0}")]
+    Io(#[from] io::Error),
+    #[error("could not generate a random value: {0}")]
     Random(#[from] getrandom::Error),
+    #[error("a file already exists at {}", .0.display())]
+    Exists(PathBuf),
 }
 
-/// Shared, mutex-guarded connection managed as Tauri state. A single-user
-/// desktop app has no need for a connection pool (Principle I: no
-/// speculative abstraction).
-pub struct DbHandle(pub Mutex<Connection>);
-
-/// Generates a random 256-bit key and renders it as lowercase hex, suitable
-/// for SQLCipher's raw-key `PRAGMA key = "x'<hex>'"` form (skips the
-/// PBKDF2 passphrase derivation, appropriate for a machine-generated key
-/// rather than a user-memorized password).
-pub fn generate_key_hex() -> Result<String, DbError> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes)?;
-    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+/// Why a database did not open (research.md §2). Each maps to one command
+/// error code. None of them is reported after anything was written.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenError {
+    #[error("no file at {}", path.display())]
+    NotFound { path: PathBuf },
+    #[error("cannot read or write {}", path.display())]
+    Unreadable { path: PathBuf },
+    #[error("the database is in use by another connection")]
+    InUse,
+    /// Also a file that is not a HoploDex database: FR-006 does not tell the
+    /// two apart.
+    #[error("wrong passphrase, or not a HoploDex database")]
+    PassphraseIncorrect,
+    #[error("the database was last used by a newer version")]
+    NewerVersion,
+    #[error("the database is open on {machine_name} since {since}")]
+    OpenElsewhere { machine_name: String, since: String },
+    #[error("the database is damaged")]
+    Damaged,
+    #[error("database error: {0}")]
+    Internal(rusqlite::Error),
 }
 
-/// Reads the SQLCipher passphrase from the OS-native credential store,
-/// generating and persisting one on first run (research.md §5).
-#[cfg(not(feature = "mock-keyring"))]
-pub fn get_or_create_passphrase() -> Result<String, DbError> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
-    match entry.get_password() {
-        Ok(existing) => Ok(existing),
-        Err(keyring::Error::NoEntry) => {
-            let key_hex = generate_key_hex()?;
-            entry.set_password(&key_hex)?;
-            Ok(key_hex)
+impl OpenError {
+    /// Sorts an SQLite error met while opening into the outcomes above.
+    fn classify(err: rusqlite::Error) -> Self {
+        match err.sqlite_error_code() {
+            Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => Self::InUse,
+            Some(ErrorCode::NotADatabase) => Self::PassphraseIncorrect,
+            Some(ErrorCode::DatabaseCorrupt) => Self::Damaged,
+            _ => Self::Internal(err),
         }
-        Err(other) => Err(other.into()),
     }
 }
 
-/// E2E-only variant of [`get_or_create_passphrase`]. Headless/CI
-/// environments have no way to unlock the real platform credential store
-/// (a Secret Service passphrase prompt has no one to answer it), so E2E
-/// builds (`--features mock-keyring`) use keyring-core's in-memory mock
-/// store instead — same first-run-generates-a-key behavior, just not
-/// backed by the OS.
-///
-/// The mock store lives in memory, so every launch gets a new key and can't
-/// open a database made by another process. `HOPLODEX_E2E_DB_KEY` (64 hex
-/// digits) fixes the key instead, so the E2E screenshot pass can seed a
-/// collection with `examples/human_seed.rs` and then open it in the app.
-#[cfg(feature = "mock-keyring")]
-pub fn get_or_create_passphrase() -> Result<String, DbError> {
-    if let Ok(key_hex) = std::env::var("HOPLODEX_E2E_DB_KEY") {
-        assert!(
-            key_hex.len() == 64 && key_hex.chars().all(|c| c.is_ascii_hexdigit()),
-            "HOPLODEX_E2E_DB_KEY must be 64 hex digits"
-        );
-        return Ok(key_hex.to_ascii_lowercase());
-    }
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        keyring_core::set_default_store(
-            keyring_core::mock::Store::new().expect("mock keyring store"),
-        );
-    });
-    let entry = keyring_core::Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
-    match entry.get_password() {
-        Ok(existing) => Ok(existing),
-        Err(keyring::Error::NoEntry) => {
-            let key_hex = generate_key_hex()?;
-            entry.set_password(&key_hex)?;
-            Ok(key_hex)
-        }
-        Err(other) => Err(other.into()),
-    }
+/// `2 * bytes` random lowercase hex digits.
+pub fn random_hex(bytes: usize) -> Result<String, getrandom::Error> {
+    let mut buffer = vec![0u8; bytes];
+    getrandom::fill(&mut buffer)?;
+    Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Opens (creating if absent) a SQLCipher database at `path`, unlocks it
-/// with the given raw hex key, enables foreign-key enforcement, and applies
-/// any pending migrations. Used directly by integration tests against a
-/// real temporary database (no mocks, per the constitution) as well as by
-/// [`init_app_db`] in the running app.
-pub fn open_encrypted(path: &Path, key_hex: &str) -> Result<Connection, DbError> {
-    debug_assert!(
-        key_hex.len() == 64 && key_hex.chars().all(|c| c.is_ascii_hexdigit()),
-        "key must be 32 raw bytes as lowercase hex, to safely inline into the PRAGMA below"
-    );
-    let conn = Connection::open(path)?;
-    // SQLCipher's raw-key form requires the double-quoted `x'<hex>'` blob
-    // syntax exactly as written here; rusqlite's `pragma_update` would
-    // single-quote-escape a string value instead, which SQLCipher does not
-    // recognize as raw-key syntax. Safe to inline directly: key_hex is
-    // always our own generated/validated hex, never external input.
-    conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))?;
-    // Confirms the key is correct: SQLCipher only surfaces a bad key as an
-    // error on the first real read against the database.
+/// The current time as the database and `machine.json` store it: UTC
+/// ISO-8601 to the second.
+pub fn now_utc() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// Keys a fresh connection and sets everything each connection needs,
+/// before its first read: the pinned cipher settings (FR-011), foreign keys,
+/// secure deletion (constitution V), and exclusive locking, so a second
+/// copy of HoploDex is told "in use" rather than "wrong passphrase"
+/// (research.md §2). A busy file is reported at once rather than waited on.
+fn configure(conn: &Connection, passphrase: &Passphrase) -> rusqlite::Result<()> {
+    conn.pragma_update(None, "key", passphrase.as_str())?;
+    cipher::apply_cipher_settings(conn, "main")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))?;
-    // Constitution V: deleted content is overwritten with zeros where it
-    // lay, not just unlinked. Stated here rather than left to the SQLCipher
-    // build's compile-time default, so it holds for every connection.
     conn.pragma_update(None, "secure_delete", "ON")?;
+    conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
+    conn.busy_timeout(Duration::ZERO)
+}
+
+/// Creates a new database at `path`, which must not exist yet, and returns
+/// its open connection holding the file lock. The database has the default
+/// settings, a new random identity, nothing waiting to be backed up, and
+/// the open marker set to `machine` (FR-032).
+pub fn create_database(
+    path: &Path,
+    passphrase: &Passphrase,
+    machine: &MachineIdentity,
+) -> Result<Connection, DbError> {
+    // Claiming the path first means an existing file is never opened, let
+    // alone written.
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(_) => {}
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+            return Err(DbError::Exists(path.to_owned()))
+        }
+        Err(err) => return Err(err.into()),
+    }
+    let created = initialize(path, passphrase, machine);
+    if created.is_err() {
+        // The file is ours and half made: remove it rather than leave a
+        // database that can never open.
+        let _ = fs::remove_file(path);
+    }
+    created
+}
+
+fn initialize(
+    path: &Path,
+    passphrase: &Passphrase,
+    machine: &MachineIdentity,
+) -> Result<Connection, DbError> {
+    let conn = Connection::open(path)?;
+    configure(&conn, passphrase)?;
     apply_migrations(&conn)?;
+    // The settings row goes in before `app_state` exists, so its
+    // change-tracking trigger finds no backup record to mark: creating a
+    // database is not a change to back up (FR-025).
+    conn.execute("INSERT INTO collection_settings (id) VALUES (1)", [])?;
+    conn.execute(
+        "INSERT INTO app_state (id, database_id, created_at, open_machine_id, open_machine_name,
+                                open_since, changes_waiting)
+         VALUES (1, ?1, ?2, ?3, ?4, ?2, 0)",
+        rusqlite::params![random_hex(16)?, now_utc(), machine.id, machine.display_name],
+    )?;
     Ok(conn)
+}
+
+/// Opens the database at `path` with `passphrase`, in research.md §2's
+/// order. Nothing is written until every check has passed, so a refused
+/// open never changes the file (FR-006, FR-014). The returned connection
+/// holds the file's exclusive lock until it is dropped.
+pub fn open_database(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
+    // Before SQLite: a missing or inaccessible file.
+    match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => {}
+        Ok(_) => return Err(OpenError::Unreadable { path: path.to_owned() }),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            return Err(OpenError::NotFound { path: path.to_owned() })
+        }
+        Err(_) => return Err(OpenError::Unreadable { path: path.to_owned() }),
+    }
+    // Without CREATE, so a file removed in the meantime is not recreated.
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(OpenError::classify)?;
+
+    // Step 1: key, cipher settings and locking mode.
+    configure(&conn, passphrase).map_err(OpenError::classify)?;
+    // Step 2: the first read. Another copy's lock gives BUSY before the
+    // passphrase is even checked; a wrong passphrase gives NOTADB.
+    conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get::<_, i64>(0))
+        .map_err(OpenError::classify)?;
+    if !is_hoplodex_database(&conn).map_err(OpenError::classify)? {
+        return Err(OpenError::PassphraseIncorrect);
+    }
+
+    // Step 5: the housekeeping writes.
+    apply_migrations(&conn).map_err(OpenError::classify)?;
+    // Take the write lock now, and (in exclusive locking mode) keep it, so
+    // any other connection to the file is refused as "in use" from here on.
+    conn.execute_batch("BEGIN EXCLUSIVE; COMMIT;").map_err(OpenError::classify)?;
+    Ok(conn)
+}
+
+/// A HoploDex database has its migrations table and its `app_state` row.
+/// Any other SQLCipher file that the passphrase happens to open is not one.
+fn is_hoplodex_database(conn: &Connection) -> rusqlite::Result<bool> {
+    let tables: i64 = conn.query_row(
+        "SELECT count(*) FROM sqlite_schema
+         WHERE type = 'table' AND name IN ('schema_migrations', 'app_state')",
+        [],
+        |row| row.get(0),
+    )?;
+    if tables < 2 {
+        return Ok(false);
+    }
+    conn.query_row("SELECT EXISTS (SELECT 1 FROM app_state WHERE id = 1)", [], |row| row.get(0))
+}
+
+/// Checks `candidate` against the database at `path` while that database
+/// may be open (and locked) elsewhere in this process (research.md §1a):
+/// the file's first page, ciphertext only, is copied into `scratch_dir` and
+/// opened with the candidate, and page 1's HMAC check decides. The probe is
+/// deleted whatever the result, and the database file is only ever read.
+pub fn verify_passphrase(
+    path: &Path,
+    candidate: &Passphrase,
+    scratch_dir: &Path,
+) -> Result<bool, DbError> {
+    fs::create_dir_all(scratch_dir)?;
+    let probe = scratch_dir.join(format!("probe-{}.hoplodex", random_hex(8)?));
+    let result = probe_first_page(path, &probe, candidate);
+    let _ = fs::remove_file(&probe);
+    result
+}
+
+fn probe_first_page(path: &Path, probe: &Path, candidate: &Passphrase) -> Result<bool, DbError> {
+    let mut first_page = Vec::with_capacity(PAGE_SIZE);
+    File::open(path)?.take(PAGE_SIZE as u64).read_to_end(&mut first_page)?;
+    OpenOptions::new().write(true).create_new(true).open(probe)?.write_all(&first_page)?;
+
+    let conn = Connection::open(probe)?;
+    conn.pragma_update(None, "key", candidate.as_str())?;
+    cipher::apply_cipher_settings(&conn, "main")?;
+    match conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)) {
+        Ok(_) => Ok(true),
+        Err(err) => match err.sqlite_error_code() {
+            Some(ErrorCode::NotADatabase) => Ok(false),
+            // Page 1 decrypted and authenticated; SQLite then notices the
+            // rest of the file is missing. That is the probe working.
+            Some(ErrorCode::DatabaseCorrupt) => Ok(true),
+            _ => Err(err.into()),
+        },
+    }
 }
 
 /// Gives the space a delete freed back to the filesystem by rebuilding the
@@ -141,7 +257,7 @@ pub fn reclaim_freed_space(conn: &Connection) {
     }
 }
 
-fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
+fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             name TEXT PRIMARY KEY,
@@ -171,50 +287,46 @@ fn apply_migrations(conn: &Connection) -> Result<(), DbError> {
     Ok(())
 }
 
-/// Resolves the OS app-data directory, gets/creates the encryption key via
-/// the OS keyring, and opens the app's single encrypted database file.
-pub fn init_app_db(app: &tauri::AppHandle) -> Result<Connection, DbError> {
-    use tauri::Manager;
-
-    let data_dir = app.path().app_data_dir()?;
-    std::fs::create_dir_all(&data_dir)?;
-    let db_path = data_dir.join(DB_FILE_NAME);
-    let key_hex = get_or_create_passphrase()?;
-    open_encrypted(&db_path, &key_hex)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn opens_migrates_and_reopens_a_real_temp_database() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let key_hex = generate_key_hex().unwrap();
+    const PASSPHRASE: &str = "unit test passphrase";
 
-        let conn = open_encrypted(&db_path, &key_hex).unwrap();
+    fn machine() -> MachineIdentity {
+        MachineIdentity { id: "0".repeat(32), display_name: "Unit test".into() }
+    }
+
+    fn passphrase(text: &str) -> Passphrase {
+        Passphrase::from_input(text.into())
+    }
+
+    #[test]
+    fn creates_migrates_and_reopens_a_real_temp_database() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("test.hoplodex");
+
+        let conn = create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap();
         let type_count: i64 =
             conn.query_row("SELECT count(*) FROM firearm_types", [], |r| r.get(0)).unwrap();
         assert_eq!(type_count, 4, "seed migration should insert 4 firearm types");
         drop(conn);
 
-        // Reopening with the same key must succeed and must not re-apply
-        // (and thus fail to re-insert unique-constrained) migrations.
-        let conn2 = open_encrypted(&db_path, &key_hex).unwrap();
+        // Reopening must succeed and must not re-apply (and thus fail to
+        // re-insert unique-constrained) migrations.
+        let conn2 = open_database(&db_path, &passphrase(PASSPHRASE)).unwrap();
         let type_count2: i64 =
             conn2.query_row("SELECT count(*) FROM firearm_types", [], |r| r.get(0)).unwrap();
         assert_eq!(type_count2, 4);
     }
 
     #[test]
-    fn wrong_key_on_reopen_fails() {
+    fn wrong_passphrase_on_reopen_fails() {
         let dir = tempfile::TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let key_hex = generate_key_hex().unwrap();
-        open_encrypted(&db_path, &key_hex).unwrap();
+        let db_path = dir.path().join("test.hoplodex");
+        drop(create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap());
 
-        let wrong_key = generate_key_hex().unwrap();
-        assert!(open_encrypted(&db_path, &wrong_key).is_err());
+        let result = open_database(&db_path, &passphrase("another passphrase"));
+        assert!(matches!(result, Err(OpenError::PassphraseIncorrect)), "{result:?}");
     }
 }

@@ -211,3 +211,134 @@ CREATE TABLE disposition_history (
 );
 
 CREATE INDEX idx_disposition_history_firearm ON disposition_history (firearm_id);
+
+-- specs/003-database-protection-management (data-model.md "Inside the
+-- database"). The backup and lock settings travel with the database and are
+-- collection data: changing them makes a backup due (FR-024, FR-025,
+-- FR-034, FR-038). Exactly one row, created with the database.
+CREATE TABLE collection_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    backups_enabled INTEGER NOT NULL DEFAULT 1 CHECK (backups_enabled IN (0, 1)),
+    backup_keep_count INTEGER NOT NULL DEFAULT 5 CHECK (backup_keep_count BETWEEN 1 AND 100),
+    -- 'default' (a "HoploDex backups" folder next to the database, resolved
+    -- on each computer) or an absolute path (research.md §7).
+    backup_location TEXT NOT NULL DEFAULT 'default',
+    -- Also decides whether sleep locks the database (FR-037).
+    idle_lock_enabled INTEGER NOT NULL DEFAULT 1 CHECK (idle_lock_enabled IN (0, 1)),
+    idle_lock_minutes INTEGER NOT NULL DEFAULT 10 CHECK (idle_lock_minutes BETWEEN 1 AND 240),
+    lock_on_screen_lock INTEGER NOT NULL DEFAULT 0 CHECK (lock_on_screen_lock IN (0, 1))
+);
+
+-- Housekeeping the application writes on its own at create, open, close,
+-- backup and restore. It never makes a backup due, so it has no
+-- change-tracking triggers (research.md §5). Exactly one row.
+CREATE TABLE app_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- 32 lowercase hex digits, random at creation: names backups and the
+    -- saved-passphrase keyring entry (research.md §7, §10).
+    database_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    -- The open marker (FR-032, research.md §6): which machine has the
+    -- database open, its name as shown to the user (at most 255
+    -- characters), and since when. Set or cleared as a whole.
+    open_machine_id TEXT,
+    open_machine_name TEXT,
+    open_since TEXT,
+    -- The backup record (FR-025): collection changes not yet in a backup,
+    -- and when the latest backup was made (UTC).
+    changes_waiting INTEGER NOT NULL DEFAULT 0 CHECK (changes_waiting IN (0, 1)),
+    last_backup_at TEXT,
+    -- FR-008: the disk-encryption note was dismissed.
+    disk_encryption_note_dismissed INTEGER NOT NULL DEFAULT 0 CHECK (disk_encryption_note_dismissed IN (0, 1)),
+    CHECK (
+        (open_machine_id IS NULL) = (open_machine_name IS NULL)
+        AND (open_machine_id IS NULL) = (open_since IS NULL)
+    )
+);
+
+-- A form's unsaved input, kept when the database was locked mid-edit
+-- (FR-039, research.md §16). At most one row, since one form is open at a
+-- time. Housekeeping: never in a backup, and no change-tracking triggers.
+CREATE TABLE pending_changes (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    kind TEXT NOT NULL CHECK (kind IN ('firearm', 'policy')),
+    mode TEXT NOT NULL CHECK (mode IN ('add', 'edit', 'dispose', 'restore', 'coverage')),
+    -- The record being edited; NULL only when adding. Not a foreign key: the
+    -- record may have been deleted on another computer, and then the draft
+    -- can only be discarded.
+    target_id INTEGER,
+    -- e.g. "Glock 19 — edit"; at most 200 characters.
+    label TEXT NOT NULL,
+    form_version INTEGER NOT NULL,
+    values_json TEXT NOT NULL CHECK (length(values_json) <= 1048576),
+    saved_at TEXT NOT NULL,
+    CHECK (mode <> 'coverage' OR kind = 'firearm'),
+    CHECK (target_id IS NOT NULL OR mode = 'add')
+);
+
+-- FR-025, research.md §5: every change to collection data records that a
+-- backup is due, in the same transaction as the change, so a crash cannot
+-- lose the fact. `backup_due_tracking_test.rs` fails if a new table has
+-- neither these triggers nor a place on its housekeeping list.
+CREATE TRIGGER firearms_marks_backup_due_after_insert AFTER INSERT ON firearms
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearms_marks_backup_due_after_update AFTER UPDATE ON firearms
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearms_marks_backup_due_after_delete AFTER DELETE ON firearms
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER photos_marks_backup_due_after_insert AFTER INSERT ON photos
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER photos_marks_backup_due_after_update AFTER UPDATE ON photos
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER photos_marks_backup_due_after_delete AFTER DELETE ON photos
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER document_attachments_marks_backup_due_after_insert AFTER INSERT ON document_attachments
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER document_attachments_marks_backup_due_after_update AFTER UPDATE ON document_attachments
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER document_attachments_marks_backup_due_after_delete AFTER DELETE ON document_attachments
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER disposition_history_marks_backup_due_after_insert AFTER INSERT ON disposition_history
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER disposition_history_marks_backup_due_after_update AFTER UPDATE ON disposition_history
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER disposition_history_marks_backup_due_after_delete AFTER DELETE ON disposition_history
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER insurance_policies_marks_backup_due_after_insert AFTER INSERT ON insurance_policies
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER insurance_policies_marks_backup_due_after_update AFTER UPDATE ON insurance_policies
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER insurance_policies_marks_backup_due_after_delete AFTER DELETE ON insurance_policies
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearm_types_marks_backup_due_after_insert AFTER INSERT ON firearm_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearm_types_marks_backup_due_after_update AFTER UPDATE ON firearm_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearm_types_marks_backup_due_after_delete AFTER DELETE ON firearm_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER collection_settings_marks_backup_due_after_insert AFTER INSERT ON collection_settings
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER collection_settings_marks_backup_due_after_update AFTER UPDATE ON collection_settings
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER collection_settings_marks_backup_due_after_delete AFTER DELETE ON collection_settings
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;

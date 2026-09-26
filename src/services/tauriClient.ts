@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 /**
@@ -9,18 +10,23 @@ export interface CommandError {
   code: string;
   message: string;
   fieldErrors?: Record<string, string>;
+  /** Structured data for specific codes, e.g. `{ path }` for
+   * `DATABASE_NOT_FOUND` (specs/003 contracts/tauri-commands.md). */
+  details?: Record<string, unknown>;
 }
 
 /** Thrown by {@link invoke} when a command rejects with a `CommandError`. */
 export class CommandFailure extends Error {
   readonly code: string;
   readonly fieldErrors?: Record<string, string>;
+  readonly details?: Record<string, unknown>;
 
   constructor(err: CommandError) {
     super(err.message);
     this.name = "CommandFailure";
     this.code = err.code;
     this.fieldErrors = err.fieldErrors;
+    this.details = err.details;
   }
 }
 
@@ -50,6 +56,25 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
     }
     throw error;
   }
+}
+
+/**
+ * Subscribes to a backend event (`session:closed`, `backup:progress`, …)
+ * with a typed payload; returns the function that unsubscribes. Safe to call
+ * from an effect: stopping before the subscription is ready still
+ * unsubscribes once it is.
+ */
+export function listen<T>(event: string, handler: (payload: T) => void): () => void {
+  let unlisten: (() => void) | undefined;
+  let stopped = false;
+  void tauriListen<T>(event, ({ payload }) => handler(payload)).then((stop) => {
+    if (stopped) stop();
+    else unlisten = stop;
+  });
+  return () => {
+    stopped = true;
+    unlisten?.();
+  };
 }
 
 /** Files being dragged onto the window from the desktop. Dropped files are

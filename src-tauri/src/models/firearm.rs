@@ -1,46 +1,9 @@
 use std::collections::HashMap;
 
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
-
-macro_rules! text_enum {
-    ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        pub enum $name {
-            $($variant),+
-        }
-
-        impl $name {
-            pub fn as_str(&self) -> &'static str {
-                match self {
-                    $(Self::$variant => $text),+
-                }
-            }
-        }
-
-        impl ToSql for $name {
-            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::from(self.as_str()))
-            }
-        }
-
-        impl FromSql for $name {
-            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-                let text = value.as_str()?;
-                match text {
-                    $($text => Ok(Self::$variant)),+,
-                    other => Err(FromSqlError::Other(
-                        format!("unrecognized {} value: {other}", stringify!($name)).into(),
-                    )),
-                }
-            }
-        }
-    };
-}
 
 text_enum!(FirearmStatus {
     Active => "active",

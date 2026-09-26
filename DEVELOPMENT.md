@@ -255,14 +255,18 @@ Your real collection lives in an encrypted database at
 OS keyring. None of the tooling here opens it:
 
 - Rust tests use `tests/support::TestDb`, a real SQLCipher database in a temp
-  directory. Tests never mock the database.
+  directory, created by `db::create_database` with a fixed test passphrase
+  and the production cipher settings. Tests never mock the database, and
+  take every path (database, config directory) as a parameter.
 - `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories and a
   stub `xdg-open`. E2E builds use the `mock-keyring` feature, which generates
   a fresh key per launch, so a database left over from one spec would break
   the next.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
-  app at `.human-testing/` via `XDG_*_HOME` and refuse to target the real data
-  directory.
+  app at `.human-testing/` via `XDG_*_HOME`. The seed writes only into a
+  directory that is new, empty or holds the `.hoplodex-sandbox` marker it
+  left there, refuses anything inside the real data, config or documents
+  directory, and never touches the keyring.
 - The [development container](#development-container-linux-recommended) has
   none of the host's app data at all.
 
@@ -320,25 +324,30 @@ The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own
 command layer, so it covers photos, documents, dispositions and every
 insurance state: healthy, under-insured, uninsured (expired policy), and a
 policy expiring soon. Policy dates are relative to the day it is seeded. The
-data lives in `.human-testing/` (git-ignored), along with three spreadsheets
-in `import-samples/` (clean, conflicting and invalid rows) to try File >
-Import with. The app is pointed at it through `XDG_*_HOME`, so your real
-collection is never opened. Linux only.
+data lives in `.human-testing/` (git-ignored): two databases in `HoploDex/`,
+"Main collection" (the full collection) and "Shared collection" (left open
+by "Workshop PC", with pending changes), both opened with the passphrase the
+script prints; the `machine.json` listing them; and three spreadsheets in
+`import-samples/` (clean, conflicting and invalid rows) to try File > Import
+with. The app is pointed at it through `XDG_*_HOME` and a `user-dirs.dirs`
+whose documents folder is the sandbox, so your real collections are never
+opened. Linux only. A `.human-testing/` made before the passphrase model has
+no sandbox marker, and the seed refuses it: delete it and run the script
+again.
 
 **Changing the data model?** Update the seed in the same change. The seed
 compiles when a new field is simply left out, so
-`src-tauri/tests/human_seed_coverage_test.rs` runs it against a temporary
-database and fails if any column is empty in every row, if a `CHECK ... IN`
-value never appears, or if no import sample fills a spreadsheet column. Fix a
+`src-tauri/tests/human_seed_coverage_test.rs` runs it into a temporary
+sandbox and fails if any column is empty in every row of both databases, if a
+`CHECK ... IN` value never appears in either, or if no import sample fills a
+spreadsheet column. Fix a
 failure by seeding a record that uses the new field (and adding it to the
 import samples), not by loosening the test.
 
 In the [development container](#development-container-linux-recommended),
 run it as `scripts/dev-container.sh --gui scripts/human-testing.sh`. The
 container keeps the data in `~/human-testing` in its home volume (via
-`HUMAN_TESTING_DIR`), not in the checkout's `.human-testing/`. That's because
-it is encrypted with the container's own keyring, which a host-seeded copy's
-key isn't in, and the reverse is true too.
+`HUMAN_TESTING_DIR`), not in the checkout's `.human-testing/`.
 
 ## Linting & formatting
 
