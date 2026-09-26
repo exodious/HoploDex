@@ -34,12 +34,19 @@ or an attached schema. No code path opens a database without it (FR-011).
 **Work factor**: the spike measured opening an existing database with the
 correct passphrase at **86 ms for 256,000 iterations and 336 ms for
 1,000,000** (container on the development machine). A modest older laptop at
-about half the single-thread speed would take about 0.7 s. That is within
-SC-003 (open in under 2 s at 10,000 firearms), and it is also the cost of each
-wrong attempt, which is the point: it multiplies an offline guesser's cost
-fourfold over the default. Going higher was rejected because passphrase
-change and restore each derive the key twice more (open the copy, verify it),
-and those budgets are already dominated by file size.
+about half the single-thread speed would take about 0.7 s. That fits
+SC-003, which holds opening to constitution IV's budget for interactive
+actions (feedback within 100 ms, done within 1 s at 10,000 firearms): the
+rest of the open (schema check, migrations check, marker write) reads and
+writes a few pages and does not grow with the collection. It is also the
+cost of each wrong attempt, which is the point: it multiplies an offline
+guesser's cost fourfold over the default. Going higher was rejected because
+it would leave too little of the 1 s budget on slower hardware, and because
+passphrase change and restore each derive the key twice more (open the copy,
+verify it), and those budgets are already dominated by file size. The open
+is measured in `performance_test.rs`; the frontend shows the busy state at
+once, since key derivation alone is over 100 ms
+(contracts/ui-databases.md §1).
 
 **Passphrase normalization**: the passphrase is normalized to Unicode NFC
 before it is used as a key, and after that, only its length is checked:
@@ -372,6 +379,28 @@ Where the path is on a live network share and the other computer took over
 after a crash here, SQLite's shared lock refuses its writes, or ours, instead.
 Either way nothing is written from both sides.
 
+**Storage that can't be reached is not a take-over** (spec Edge Cases, FR-032).
+A removable drive that is unplugged, or a network share that drops, makes the
+path vanish or its `stat` fail. Comparing fingerprints would then report a
+take-over, which is the wrong message and the wrong advice. So the check
+returns one of three results: `Same`, `Replaced` (the path exists and its
+identity, length or modification time differ) or `Unreachable` (the path is
+missing, or `stat` fails with an I/O or permission error). On `Unreachable`
+the write is refused with `DATABASE_UNAVAILABLE { path }` before anything is
+written, and the session is marked `storage_lost`. An SQLite I/O error
+(`SQLITE_IOERR`, `SQLITE_CANTOPEN`) during a write does the same, since the
+connection's file handle may already be dead. The session stays open, so the
+form keeps its unsaved input on screen, but from then on every write is
+refused with the same code, whatever the fingerprint later says, because a
+remounted drive can come back with a new device number and look replaced.
+The close that follows makes no backup (`CloseOutcome.backup = "failed"`,
+with the `backupFailed` notice saying the file could not be reached) and writes
+nothing, so the open marker stays set. It is this computer's own marker, so
+the next open here, once the storage is back, clears it without a warning.
+A drive that disappears and comes back between two checks, with a new
+device number, is still reported as a take-over. That is rare, and it is
+safe, because a take-over also writes nothing.
+
 ---
 
 ## §7 Backups: when, where, what they are called, how many
@@ -442,13 +471,25 @@ dialog (contracts/ui-databases.md). The backup settings panel repeats it
    folder carrying its id, newest first, with date, time and size).
 2. They enter **that backup's** passphrase, since the backup keeps the one
    that was current when it was made. The dialog says so before they type.
+   **Before anything is written**, the restore checks its preconditions and
+   refuses with nothing changed if one fails: the backup location is
+   available and writable (`BACKUP_LOCATION_UNAVAILABLE`, with a way to
+   change it), and there is free space (§4's size + 5%) for the restored copy
+   in the database's folder and for the "before restoring" backup (the
+   current file's size) in the backup folder, both summed when the two are on
+   the same volume (`INSUFFICIENT_SPACE`). A damaged database needs only the
+   first, since it is renamed aside rather than backed up.
 3. The backup is copied to `<db dir>/.<file>.new` (with progress, and
    stoppable), opened with that passphrase, verified (§4), and stamped: backup
    stamp cleared, `changes_waiting = 0`, `last_backup_at` unchanged, and
    identity kept.
 4. Only then is the "before restoring" backup made from the current
-   database, whatever the once-a-day limit. The restored copy is known good
-   before the current state is touched.
+   database, whatever the once-a-day limit, and even when automatic backups
+   are turned off (FR-028): it is what makes the restore undoable, not an
+   automatic backup. The restored copy is known good before the current state
+   is touched. If this backup fails or is stopped, the restore is abandoned:
+   its `.partial` and the `.new` copy are removed and the database is left as
+   it was.
 5. The database is closed and replaced (§4), with the old file securely
    deleted (a backup of it now exists), then reopened with the backup's
    passphrase. A saved keyring passphrase for this database is updated to it.
@@ -619,7 +660,7 @@ ScreenSaver interface is reachable at startup. Otherwise the option is shown
 as unavailable with the explanation from contracts/ui-databases.md.
 Desktops that lock without telling logind or implementing ScreenSaver (some
 bare window-manager setups) look available but never report a lock. The
-user guide mentions this.
+in-app guide mentions this.
 
 **Missed or late notices** (FR-037's "finish on waking"): a watchdog tick
 every second compares wall-clock time with monotonic time. On all three
@@ -630,7 +671,19 @@ signal). If the idle lock is on and a database is still open, the sleep lock
 is carried out then (§15). The idle clock also runs on wall time (§15), so
 any sleep longer than the idle duration locks at the first tick after waking
 whatever else happened. The frontend is told first (`session:closed`) so it
-drops the collection view before anything else runs.
+drops the collection view before anything else runs. If a sleep lock was
+started but not finished before the computer slept, `Woke` (or the
+watchdog) runs `finish_on_wake`, which completes FR-037's steps 1–3 before
+any command is accepted, then the rest.
+
+**A sleep during a close already under way** (FR-037, FR-038): a close or
+lock in progress (typically its backup, for a screen lock or a user close) is
+turned into an immediate close whatever the idle-lock setting, since the
+user has already asked for the database to close. The running backup is
+stopped through the operations registry (its `.partial` removed, the changes
+left waiting), and the close continues from `close_immediate`'s step 2. The
+idle-lock switch only decides whether `WillSleep` closes a database that is
+open and not closing.
 
 **Clearing passphrase fields** (FR-007): on `WillSleep` and `ScreenLocked`
 the backend always emits `system:clear-passphrase-fields`, whatever the
@@ -812,7 +865,16 @@ program with a known passphrase and holding a firearm, a photo and a
 document, is opened and compared byte for byte by `portability_test.rs` on
 whatever OS runs the tests. Any accidental change to the pinned settings
 (§1) then fails the build, and on a macOS or Windows machine it is the
-cross-platform check. A second test asserts that the file's first 16 bytes
+cross-platform check. The fixture is made on Linux, so the check is done by
+running the Rust gates (`cargo clippy --all-targets`, `cargo fmt --check`,
+`cargo test`) by hand on macOS and Windows before merge. That is also the
+only place `platform/macos.rs` and `platform/windows.rs`, and every other
+`cfg(target_os = "macos")` or `cfg(windows)` block, are compiled and linted
+(constitution I): the container builds for Linux only, and a cross-target
+`cargo clippy` from it would need a C toolchain and SDK for each target to
+build the bundled SQLCipher. Walkthrough 2
+in quickstart.md covers the other direction, a file made on macOS or Windows
+opened on Linux. A second test asserts that the file's first 16 bytes
 are a random salt and that no machine-local state (settings file, keyring) is
 consulted to open it.
 

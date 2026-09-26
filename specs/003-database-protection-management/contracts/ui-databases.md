@@ -56,7 +56,7 @@ collection data, top-bar tabs or counts are shown.
     locked."
   - backup failed: "<name> was not backed up: <the backup location is not
     available | there is not enough space there | the backup was
-    interrupted>. Its changes will be backed up at the next close." with a
+    interrupted | its file could not be reached>. Its changes will be backed up at the next close." with a
     **Change backup location…** action, which opens the database's backup
     settings (§7) right after the next successful open.
   - taken over: "<name> was taken over on another computer, so HoploDex
@@ -79,6 +79,15 @@ collection data, top-bar tabs or counts are shown.
   confirms.
 - **Selected row, passphrase saved**: **Open** (primary), no prompt. After a
   lock the selected row shows the same (US6-8).
+- **Opening** (SC-003, constitution IV): within 100 ms of **Open** being
+  pressed (or Enter in the field), and before the command returns, the row
+  shows its busy state: **Open** reads "Opening…" with the shared `Button`'s
+  `pending` state (spinner, `aria-busy`), the field, the checkbox and the other rows
+  are disabled, and the live region says "Opening <name>…". Key derivation
+  alone takes about a third of a second, so the busy state is shown at once,
+  not after a delay. The same applies to **Take over** after its
+  confirmation. On failure the row returns to its normal state with the
+  error below.
 - Page actions: **Create a new database…** (§2) and **Open another database
   file…** (a native open dialog filtered to `*.hoplodex`, with an "All files"
   choice). The chosen file becomes the selected row and asks for its
@@ -106,6 +115,17 @@ longer has <name> open, or if it crashed. If it still has it open, or its
 latest changes haven't synced here yet, those changes can be lost."; confirm
 label "Take over". Confirming resends the open with `takeOver: true`.
 
+### Storage that can't be reached while open (FR-032, research §6)
+
+When a save fails with `DATABASE_UNAVAILABLE`, the form or dialog that was
+saving shows the error in its standard error slot, keeping the input:
+"HoploDex can't reach <path>. Nothing already saved was lost. Close the
+database and open it again once the drive or network is back." It is not
+the take-over notice, and the session stays open until the user closes it.
+After that close, the chooser shows the backup-failed notice with the reason
+"its file could not be reached", and the row is marked unavailable if the
+file is still missing.
+
 ## 2. Create a new database (FR-003, FR-004, FR-008, FR-009, FR-024)
 
 A `Dialog` (`size="lg"`), titled "Create a database". Fields, in the usual
@@ -129,7 +149,9 @@ A `Dialog` (`size="lg"`), titled "Create a database". Fields, in the usual
    can open this database or recover the collection." The create button is
    enabled only once it is ticked.
 
-Footer: **Cancel**, **Create database** (primary). On success the new
+Footer: **Cancel**, **Create database** (primary). Within 100 ms of
+**Create database** being pressed it shows "Creating…" in the shared `Button`'s `pending` state, and the fields and **Cancel** are disabled until the command
+returns (constitution IV). On success the new
 database opens (the app shell appears), and the **disk-encryption note**
 (§10) is shown once.
 
@@ -263,6 +285,18 @@ A `Dialog` (`size="lg"`):
    will be kept next to it, renamed."
 4. Footer: **Restore** (a destructive `ConfirmDialog` step: "Replace <name>
    with the backup from <date>?").
+
+Refusals before anything is written (FR-028), shown in the dialog above
+the footer, with the dialog left open:
+- `INSUFFICIENT_SPACE`: "Restoring needs <size> free on <drive or folder>;
+  <available> is free. Nothing has been changed."
+- `BACKUP_LOCATION_UNAVAILABLE`: "The current <name> can't be backed up
+  first, because <the backup location is not available | there is not enough
+  space there>. Nothing has been changed." with **Change backup location…**
+  (opens §7's Backups section).
+- A "before restoring" backup that fails or is stopped while running: "The
+  current <name> couldn't be backed up, so the restore was cancelled.
+  Nothing has been changed."
 
 While it runs: progress as in §8 ("Copying the backup…", "Checking the
 backup…", "Backing up the current database…", "Replacing the database…").

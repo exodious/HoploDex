@@ -37,6 +37,7 @@ database**, and may additionally fail with:
 | `PENDING_CHANGES_UNRESOLVED` | the open database has pending changes not yet resumed or discarded (FR-039) | show the pending-changes prompt |
 | `DATABASE_TAKEN_OVER` | write commands only: the file was replaced or changed by another computer (FR-032, research §6); nothing was written | the session closes with `reason: "takenOver"` |
 | `DATABASE_DAMAGED` | SQLite reported corruption (research §2) | show the damaged message with "Restore from a backup…" |
+| `DATABASE_UNAVAILABLE` | write commands only: the database file can't be reached (its storage has disappeared), or a write hit an I/O error (FR-032, research §6); nothing was written, and every later write is refused the same way until the database is opened again | show the message; the form keeps its input; the session stays open until the user closes it |
 
 `import_collection` and `export_collection` may also fail with
 `OPERATION_STOPPED` (`details.operation`, plus `details.importedCount` for an
@@ -62,6 +63,7 @@ already closed by then, so the chooser shows the notice.
 | `KEYRING_UNAVAILABLE` | — | FR-019 |
 | `OPERATION_STOPPED` | `{ operation, importedCount? }` | FR-037 |
 | `OPERATION_IN_PROGRESS` | `{ operation }` | another long-running operation is already running |
+| `DATABASE_UNAVAILABLE` | `{ path }` | "HoploDex can't reach <path>. Nothing already saved was lost. Close the database and open it again once the drive or network is back." (FR-032) |
 | `REPLACE_FAILED` | `{ path }` | the final rename was refused (for example the file was held by another program); the original is unchanged |
 | `CONFIRMATION_REQUIRED` | — | existing code, reused for delete-all-backups and take-over |
 
@@ -82,7 +84,7 @@ type ChooserNotice =
   | { kind: "closed"; reason: CloseReason; databasePath: string }
   | { kind: "operationStopped"; databasePath: string; operation: OperationKind; importedCount?: number }
   | { kind: "pendingChangesLost"; databasePath: string }
-  | { kind: "backupFailed"; databasePath: string; reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" }
+  | { kind: "backupFailed"; databasePath: string; reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable" }
   | { kind: "takenOver"; databasePath: string };
 
 type CloseReason =
@@ -133,7 +135,7 @@ type DatabaseStatus = {
 
 type CloseOutcome = {
   backup: "made" | "notDue" | "alreadyToday" | "off" | "skipped" | "failed" | "notAttempted";
-  failureReason?: "locationUnavailable" | "insufficientSpace" | "io";
+  failureReason?: "locationUnavailable" | "insufficientSpace" | "io" | "databaseUnreachable"; // databaseUnreachable: research §6
 };
 
 type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: number };
@@ -254,9 +256,9 @@ sleep stops it (FR-037).
 ### `restore_backup` 🔑
 - **Input**: `{ backupPath: string; backupPassphrase: string; databasePath?: string }` (`databasePath` only when restoring a damaged database with nothing open)
 - **Output**: `DatabaseStatus` (the restored database is open), with `notes.restoredWithPassphraseOf` set
-- **Errors**: `PASSPHRASE_INCORRECT` (for the backup), `DATABASE_DAMAGED` (the backup itself fails verification), `INSUFFICIENT_SPACE`, `REPLACE_FAILED`, `OPERATION_STOPPED`
+- **Errors**: `PASSPHRASE_INCORRECT` (for the backup), `DATABASE_DAMAGED` (the backup itself fails verification), `BACKUP_LOCATION_UNAVAILABLE` (checked before anything is written; not for a damaged database), `INSUFFICIENT_SPACE` (checked before anything is written: room for the restored copy in the database's folder and for the "before restoring" backup in the backup folder), `REPLACE_FAILED`, `OPERATION_STOPPED`
 - **Progress**: `restore:progress` `{ phase: "copying" | "checking" | "savingCurrent" | "replacing"; processed; total }`
-- Steps in research §8. `savingCurrent` is the "before restoring" backup, made whatever the once-a-day limit says (FR-028). A damaged database is renamed aside, not deleted, and its new path is returned in `notes.damagedFileKeptAt`.
+- Steps in research §8. `savingCurrent` is the "before restoring" backup, made whatever the once-a-day limit says and even when automatic backups are off (FR-028); if it fails or is stopped, the restore is abandoned and the database is unchanged. A damaged database is renamed aside, not deleted, and its new path is returned in `notes.damagedFileKeptAt`.
 
 ### `delete_all_backups`
 - **Input**: `{ confirmed: boolean }` → **Output**: `{ deletedCount: number; failedPaths: string[] }`

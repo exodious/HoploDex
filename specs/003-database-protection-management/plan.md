@@ -100,7 +100,11 @@ new dialog, the chooser, the session provider and the hooks. WebdriverIO E2E
 scratch `XDG_*` directories, with a scratch `user-dirs.dirs` so even the
 suggested location stays inside the sandbox (§19). Manual per-OS checks for
 the sleep, screen-lock and shutdown notices, which cannot be driven in the
-container ([quickstart.md](./quickstart.md#platform-checks-manual-each-os-before-merge)).
+container, and a by-hand run of the Rust gates (`cargo clippy --all-targets`,
+`cargo fmt --check`, `cargo test`) on macOS and Windows, which is where the
+`cfg(target_os = "macos")` and `cfg(windows)` code is compiled and linted and
+where the Linux-made portability fixture is opened (research §20,
+[quickstart.md](./quickstart.md#platform-checks-manual-each-os-before-merge)).
 No test or tool reads, writes or deletes real application data
 (constitution 1.2.0, research §21); the human-testing seed writes only into
 a sandbox it created.
@@ -112,8 +116,9 @@ or the ScreenSaver interface is present). Unchanged from 001.
 **Project Type**: Desktop application (Tauri: React frontend + Rust backend
 in one repo).
 
-**Performance Goals**: Open ≤ 2 s at 10,000 firearms including key
-derivation (SC-003; 0.34 s derivation measured). Progress shown within
+**Performance Goals**: Open within 1 s at 10,000 firearms including key
+derivation, with the busy state shown within 100 ms (SC-003, constitution
+IV; 0.34 s derivation measured, about 0.7 s estimated on an older laptop). Progress shown within
 100 ms for any backup, passphrase change or restore estimated over 1 s
 (SC-005; estimate at a conservative 50 MiB/s against about 190 MiB/s
 measured). Idle lock between 10:00 and 10:01 after the last input
@@ -130,7 +135,7 @@ under a delay of about 2 s (Windows) to 30 s (macOS). The pre-feature database a
 keyring entry must never be read, changed or deleted (CLAUDE.md).
 
 **Scale/Scope**: Six user stories (P1–P6), 39 functional requirements, 10
-success criteria. 23 new IPC commands, 8 events and 17 error codes. 3
+success criteria. 23 new IPC commands, 8 events and 18 error codes. 3
 new tables, 21 triggers, 1 machine-local file, per-OS listeners on 3
 platforms. About 12 new frontend components and hooks, 3 new E2E specs, 11
 new screenshot screens.
@@ -144,10 +149,10 @@ No NEEDS CLARIFICATION remain: each open technical question is resolved in
 
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
-| I. Code Quality | Lint and static analysis; review; small single-purpose modules; complexity justified by a current requirement | New concerns each get one module: `db::cipher` (pinned settings), `session` (open database, read/write guards, lock procedure, idle clock, operations), `platform::system_events` (per-OS notices behind one enum), `services::{backups, file_swap, keyring, machine_settings, passphrase}`. Existing `ops` signatures are unchanged. Every new dependency answers a named requirement (Technical Context); three are new downloads, the rest are already in the lockfile. `PassphraseField` and `Menu` join the shared components because the passphrase field is used in five dialogs, which clears the "third occurrence" bar. `clippy`, `rustfmt`, `eslint` and `prettier` run locally; CI stays disabled by the owner's choice (a documented deviation) |
-| II. Testing (NON-NEGOTIABLE) | Tests first; real persistence; a test per acceptance scenario; regression tests | Every scenario maps to a test in [quickstart.md](./quickstart.md), against real SQLCipher files with the production format. The spike's findings (copy shares salt, export skips triggers, interrupt works, BUSY before NOTADB, page-1 probe) become permanent tests, so a SQLCipher upgrade that changes them fails loudly. A guard test forces change-tracking triggers onto any future table. The only paths not automated are the OS sleep, screen-lock and shutdown notices themselves; their handlers are tested by calling the same entry points, and the notices are checked by hand per OS. **Isolation (1.2.0)**: no test or tool touches real application data, which now means every user-chosen database, its backups, `machine.json`, the suggested documents folder and the saved-passphrase keyring entries as well as the pre-feature database and key. Tests use temp paths passed in, a fixed test passphrase and the mock keyring; the human-testing seed writes only into a sandbox it created and refuses the real data, config and documents directories, tested by `seed_sandbox_test.rs` (research §21) |
+| I. Code Quality | Lint and static analysis; review; small single-purpose modules; complexity justified by a current requirement | New concerns each get one module: `db::cipher` (pinned settings), `session` (open database, read/write guards, lock procedure, idle clock, operations), `platform::system_events` (per-OS notices behind one enum), `services::{backups, file_swap, keyring, machine_settings, passphrase}`. Existing `ops` signatures are unchanged. Every new dependency answers a named requirement (Technical Context); three are new downloads, the rest are already in the lockfile. `PassphraseField` and `Menu` join the shared components because the passphrase field is used in five dialogs, which clears the "third occurrence" bar. `clippy`, `rustfmt`, `eslint` and `prettier` run locally; CI stays disabled by the owner's choice (a documented deviation). The container builds for Linux only, so the macOS and Windows code (`platform/macos.rs`, `platform/windows.rs` and every other target-gated block) is linted and tested by running the Rust gates by hand on those systems before merge, recorded in the PR (research §20) |
+| II. Testing (NON-NEGOTIABLE) | Tests first; real persistence; a test per acceptance scenario; regression tests | Tests come first in every phase, the foundational one included: the file format, open outcomes, change tracking, machine settings, session guards and the operations registry each have a failing test before the module is written. Every scenario maps to a test in [quickstart.md](./quickstart.md), against real SQLCipher files with the production format. The spike's findings (copy shares salt, export skips triggers, interrupt works, BUSY before NOTADB, page-1 probe) become permanent tests, so a SQLCipher upgrade that changes them fails loudly. A guard test forces change-tracking triggers onto any future table. The only paths not automated are the OS sleep, screen-lock and shutdown notices themselves; their handlers are tested by calling the same entry points, and the notices are checked by hand per OS. **Isolation (1.2.0)**: no test or tool touches real application data, which now means every user-chosen database, its backups, `machine.json`, the suggested documents folder and the saved-passphrase keyring entries as well as the pre-feature database and key. Tests use temp paths passed in, a fixed test passphrase and the mock keyring; the human-testing seed writes only into a sandbox it created and refuses the real data, config and documents directories, tested by `seed_sandbox_test.rs` (research §21) |
 | III. UX Consistency | One component set; one confirmation pattern; WCAG 2.1 AA | Take-over, delete all backups, restore and discarding pending changes use the destructive `ConfirmDialog`. Save / discard / cancel extends `ConfirmDialog` with a third action instead of a one-off prompt. The settings dialog uses the existing `hd-form-grid`/`hd-field--quarter`/`--third` classes. All progress uses `ProgressBar`. Menu roles and focus rules are in [contracts/ui-databases.md](./contracts/ui-databases.md) §0 and §14. New screens join the screenshot walk (§15) |
-| IV. Performance | 100 ms feedback / 1 s completion; no UI-thread blocking; progress on long work | All new commands are async, and long ones emit progress. The closing screen appears within 100 ms. The 1 s rule for backups is SC-005's. Open time is budgeted and measured (SC-003). Import and export gain a per-row cancel check (an atomic load). `performance_test.rs` gains open and progress timing |
+| IV. Performance | 100 ms feedback / 1 s completion; no UI-thread blocking; progress on long work | All new commands are async, and long ones emit progress. The closing screen appears within 100 ms. The 1 s rule for backups is SC-005's. Opening is an interactive action held to the 100 ms / 1 s budget: the busy state shows at once and the open, key derivation included, completes within 1 s at 10,000 firearms, measured (SC-003). Import and export gain a per-row cancel check (an atomic load). `performance_test.rs` gains open and progress timing |
 | V. User Privacy | Local only; encryption at rest; clear disclosure of what goes where; real deletion | Nothing leaves the device. Backups are encrypted copies in a folder the user sees and chooses, disclosed at creation and in settings (FR-024, FR-029). Deleted records remaining in older backups is disclosed, with delete-all and secure rotation. The keyring holds only a passphrase, only on opt-in. `machine.json` holds paths and names only |
 | Security & Data Handling | Platform-standard encryption; keys never logged or sent; sync or backup that leaves the device opt-in and off by default, while a local backup in a location the user sees and chooses may be on by default; vetted dependencies; no known critical or high advisory, unscored advisory, or unmaintained/unsound notice without a scoped, dated exception | SQLCipher with pinned standard settings, and no custom cryptography (§1, §1a). Passphrases are zeroized and never logged, and SQLCipher's log is silenced in release. **Local backups are on by default**, which constitution 1.1.0 allows because they are written only to a folder the user sees and chooses and never leave the device (FR-024, FR-026). Dependencies are reviewed for data collection above, and every new or promoted crate and npm package must pass the dependency audit with no new advisory exception |
 | Licensing | GPL-3.0-only; everything shipped under a GPLv3-compatible license; sources and licenses of bundled data files recorded; license exceptions scoped to packages with the reason; notices shipped with every release | Every new and promoted crate and npm package declares MIT, Apache-2.0 or both, checked by `audit:licenses`. The strength-hint dictionaries are bundled data: their sources are recorded, and the ODC-BY word list in `@zxcvbn-ts/language-en` is an exception scoped to that package, recorded in DEVELOPMENT.md's "License audit" (research §18). No change to the crypto library SQLCipher links, and no new artwork or fonts |
@@ -250,7 +255,9 @@ src-tauri/
     ├── fixtures/portable-v1.hoplodex   # NEW (research §20)
     ├── passphrase_protection_test.rs   # NEW (US1)
     ├── database_open_test.rs       # NEW (US2: outcomes, newer version, in use, recent list)
-    ├── take_over_test.rs           # NEW (FR-032: marker, take-over, fingerprint)
+    ├── session_test.rs             # NEW (session guards, operations registry)
+    ├── take_over_test.rs           # NEW (FR-032: marker, take-over, fingerprint,
+    │                               #  unreachable storage is not a take-over)
     ├── portability_test.rs         # NEW (SC-001, SC-002)
     ├── machine_settings_test.rs    # NEW
     ├── backup_test.rs              # NEW (US3, FR-023–FR-027, FR-029)
@@ -262,7 +269,7 @@ src-tauri/
     ├── lock_test.rs                # NEW (US6, FR-033–FR-038, SC-010)
     ├── pending_changes_test.rs     # NEW (FR-039)
     ├── import_export_test.rs       # + stop between rows keeps imported rows
-    ├── performance_test.rs         # + open ≤ 2 s at 10,000; progress within 100 ms
+    ├── performance_test.rs         # + open ≤ 1 s at 10,000; progress within 100 ms
     ├── human_seed_coverage_test.rs # + new tables; backup-only columns checked in a seeded backup
     ├── seed_sandbox_test.rs        # NEW (constitution 1.2.0: seed refuses targets outside its sandbox)
     └── (every other test file)     # unchanged logic; TestDb now passphrase-keyed
@@ -360,8 +367,8 @@ new Rust crates and four npm packages (Technical Context).
   third action and pushed back into the shared set). The guide follows 002's
   guide pattern. Texts that state security facts are fixed in the UI
   contract. Still PASS.
-- **Performance**: open measured at 0.34 s of key derivation, against a
-  2 s budget. Progress rules are concrete (50 MiB/s estimate, 100 ms). The
+- **Performance**: open measured at 0.34 s of key derivation, against
+  constitution IV's 1 s budget, with the busy state shown within 100 ms. Progress rules are concrete (50 MiB/s estimate, 100 ms). The
   take-over check is one `stat` per write. Still PASS.
 - **User Privacy / Security**: nothing is transmitted; the backend holds no
   passphrase between commands, which the salt-sharing finding makes possible;

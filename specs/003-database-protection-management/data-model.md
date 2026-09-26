@@ -183,6 +183,8 @@ OpenDatabase {
   interrupt: InterruptHandle
   staged_draft: Option<Draft>   // research §16; never written except by a lock or OS shutdown
   pending_unresolved: bool      // collection commands refused while true (FR-039)
+  storage_lost: bool            // set when the file became unreachable; every later
+                                //  write is refused with DATABASE_UNAVAILABLE (research §6)
 }
 
 Operations registry: at most one running long operation
@@ -223,6 +225,15 @@ The backend never holds a passphrase between commands (FR-007, research §1).
       │   without writing anything more
       └───────────────────────────────────────────────────────────
 ```
+
+- **Storage lost** is not a state of its own: the session stays **Open** with
+  `storage_lost` set when the file cannot be reached before a write (research
+  §6). Writes are refused with `DATABASE_UNAVAILABLE`, and the next
+  Closing(normal) skips the backup (`failed`) and the marker clear and writes
+  nothing.
+- A **sleep during Closing(normal)** turns it into Closing(immediate) from
+  that point, whatever the idle-lock setting: the running backup is stopped
+  and its changes stay waiting (FR-037, research §14).
 
 - Pending-changes resolution happens in **Open** before any collection
   command is accepted.
