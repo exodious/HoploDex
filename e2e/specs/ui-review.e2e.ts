@@ -1,5 +1,6 @@
 import { $, addFirearm, back, browser, clickButton, clickEl, expect, fill } from "../support/ui";
 import { goTo, openFirearm, selectOption } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * Regression coverage for the review of the UI redesign (PR #1): what the
@@ -45,6 +46,11 @@ async function chooseTheme(label: string) {
 }
 
 describe("UI review follow-ups", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   before(async () => {
     await goTo("Insurance");
     await clickButton("Add policy");

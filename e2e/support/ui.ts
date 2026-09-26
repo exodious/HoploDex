@@ -597,5 +597,76 @@ export async function addFirearm(firearm: NewFirearm) {
   await browser.pause(300);
 }
 
+/** The passphrase of every database a spec creates. */
+export const E2E_PASSPHRASE = "end to end test passphrase";
+
+/** The FR-004 acknowledgement in the create dialog. */
+const ACKNOWLEDGEMENT =
+  "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
+
+/** The sandbox's documents folder, where the harness points the app's
+ * suggested location (wdio.conf.ts). Specs type locations under it rather
+ * than use the native pickers, which WebDriver can't drive. */
+export function scratchDocuments(): string {
+  const documents = process.env.HOPLODEX_E2E_DOCUMENTS;
+  if (!documents) throw new Error("HOPLODEX_E2E_DOCUMENTS is not set (see wdio.conf.ts)");
+  return documents;
+}
+
+/** Waits for the chooser, the screen shown whenever no database is open. */
+export async function waitForChooser() {
+  await $(".hd-chooser__title").waitForExist({ timeout: 10000 });
+  await browser.pause(SETTLE_MS);
+}
+
+/** Waits for an open database's collection. */
+export async function waitForCollection() {
+  await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
+  await browser.pause(SETTLE_MS);
+}
+
+/** Creates a database from the chooser by typing its location, and waits
+ * for its (empty) collection. Defaults: "Test", in the sandbox's suggested
+ * folder, with {@link E2E_PASSPHRASE}. */
+export async function createDatabase({
+  folder = `${scratchDocuments()}/HoploDex`,
+  name = "Test",
+  passphrase = E2E_PASSPHRASE,
+}: { folder?: string; name?: string; passphrase?: string } = {}) {
+  await waitForChooser();
+  await clickButton("Create a new database…");
+  await $('[role="dialog"]').waitForExist();
+  await fill("Name", name);
+  await fill("Folder", folder);
+  await fill("Passphrase", passphrase);
+  await fill("Confirm passphrase", passphrase);
+  await toggle(ACKNOWLEDGEMENT);
+  await clickButton("Create database");
+  await waitForCollection();
+}
+
+/** Types `passphrase` into the chooser's selected database and presses
+ * **Open**, without waiting for the outcome. */
+export async function submitPassphrase(passphrase: string) {
+  await waitForChooser();
+  const found = await browser.execute((value: string) => {
+    const field = document.querySelector<HTMLInputElement>(".hd-db-row--selected input");
+    if (!field) return false;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.form?.requestSubmit();
+    return true;
+  }, passphrase);
+  if (!found) throw new Error("no database is selected in the chooser");
+  await browser.pause(SETTLE_MS);
+}
+
+/** Opens the chooser's selected database with `passphrase` and waits for
+ * its collection. */
+export async function unlock(passphrase: string) {
+  await submitPassphrase(passphrase);
+  await waitForCollection();
+}
+
 export { $, $$, browser };
 export { expect } from "@wdio/globals";

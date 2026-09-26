@@ -36,7 +36,9 @@ export async function shot(name: string, options: { fullPage?: boolean } = {}) {
     const style = document.createElement("style");
     style.id = "hd-screenshot-freeze";
     style.textContent =
-      "*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }";
+      // Zero-length rather than none, so an animation that fills forwards
+      // (the empty collection's drawing) shows where it ends, not where it starts.
+      "*, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition: none !important; caret-color: transparent !important; }";
     document.head.append(style);
     await document.fonts.ready;
   });
@@ -70,4 +72,13 @@ export async function shot(name: string, options: { fullPage?: boolean } = {}) {
     await browser.pause(300);
   }
   await browser.execute(() => document.getElementById("hd-screenshot-freeze")?.remove());
+}
+
+/** Switches the colour mode through the top bar's toggle, which the
+ * collection and the chooser both have. */
+export async function chooseTheme(label: "Light" | "Dark") {
+  await browser.execute((title: string) => {
+    document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`)?.click();
+  }, label);
+  await browser.pause(300);
 }

@@ -19,6 +19,7 @@ import {
   pressEscape,
   scrollToPinnedStrip,
 } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 3's acceptance scenarios (spec.md),
@@ -110,6 +111,11 @@ async function openCoverage(name: string) {
 }
 
 describe("User Story 3 - Track Value and Insurance Coverage", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   it("flags an unscheduled firearm as uninsured while no blanket policy is in force (Scenarios 1, 13)", async () => {
     await addFirearmWithValue({
       make: "InsE2EGlock",

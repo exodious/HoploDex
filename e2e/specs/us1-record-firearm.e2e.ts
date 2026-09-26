@@ -24,6 +24,7 @@ import {
   toggle,
 } from "../support/ui";
 import type { NewFirearm } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 1's acceptance scenarios (spec.md),
@@ -35,6 +36,11 @@ import type { NewFirearm } from "../support/ui";
  * the record right after creation.
  */
 describe("User Story 1 - Record a Firearm", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   it("creates a firearm and shows it with its values intact (Scenario 1)", async () => {
     await addFirearm({
       make: "Glock",

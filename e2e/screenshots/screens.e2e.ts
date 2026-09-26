@@ -1,5 +1,6 @@
-import { $, back, browser, choose, clickButton, clickEl, goTo, search } from "../support/ui";
-import { shot } from "../support/screenshots";
+import { $, back, browser, choose, clickButton, clickEl, fill, goTo, search } from "../support/ui";
+import { unlock, waitForChooser } from "../support/ui";
+import { chooseTheme, shot } from "../support/screenshots";
 
 /**
  * The standard screenshot set for pull requests that change the UI: the main
@@ -9,17 +10,11 @@ import { shot } from "../support/screenshots";
  * `<nn>-<screen>-<theme>.png` to e2e/screenshots-out/.
  *
  * Names are stable, so running it on the base branch and on the PR branch
- * gives before/after pairs. Add a screen here when a change adds one.
+ * gives before/after pairs. Add a screen here when a change adds one; the
+ * screens that need a sandbox with no databases are in first-run.e2e.ts.
  */
 
 const RECORD = "Glock 19 Gen5"; // the seeded record with photos, documents and every detail
-
-async function chooseTheme(label: "Light" | "Dark") {
-  await browser.execute((title: string) => {
-    document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`)?.click();
-  }, label);
-  await browser.pause(300);
-}
 
 async function openRecord(name: string) {
   await browser.waitUntil(
@@ -66,6 +61,30 @@ async function closeDialog() {
   await $('[role="dialog"]').waitForExist({ reverse: true });
   await browser.pause(200);
 }
+
+// The app starts at the chooser, listing the seeded databases. It has to be
+// shot in both themes before a database is opened.
+describe("Screenshots: the chooser", () => {
+  for (const theme of ["Light", "Dark"] as const) {
+    const suffix = theme.toLowerCase();
+
+    it(`chooser and create database (${suffix})`, async () => {
+      await waitForChooser();
+      await chooseTheme(theme);
+      await shot(`14-chooser-${suffix}`);
+
+      await openDialog("Create a new database…");
+      await fill("Passphrase", "vivid otter ledger crane");
+      await $('[role="meter"]').waitForExist();
+      await shot(`16-create-database-${suffix}`, { fullPage: true });
+      await closeDialog();
+    });
+  }
+
+  after(async () => {
+    await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+  });
+});
 
 for (const theme of ["Light", "Dark"] as const) {
   const suffix = theme.toLowerCase();

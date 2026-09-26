@@ -11,6 +11,7 @@ import {
   expect,
 } from "../support/ui";
 import { openFirearm, rowThumbnail } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 4's acceptance scenarios (spec.md),
@@ -45,6 +46,11 @@ function filesUnder(dir: string): string[] {
 }
 
 describe("User Story 4 - Attach Photos and Documents", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   it("shows a firearm with no photos with its type's generic drawing (Scenario 3)", async () => {
     await addFirearm({
       make: "InsE2EMediaGlock",

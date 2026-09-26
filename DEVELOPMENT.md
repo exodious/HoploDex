@@ -258,10 +258,13 @@ OS keyring. None of the tooling here opens it:
   directory, created by `db::create_database` with a fixed test passphrase
   and the production cipher settings. Tests never mock the database, and
   take every path (database, config directory) as a parameter.
-- `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories and a
-  stub `xdg-open`. E2E builds use the `mock-keyring` feature, which generates
-  a fresh key per launch, so a database left over from one spec would break
-  the next.
+- `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories, a
+  `user-dirs.dirs` whose documents folder (the suggested place for a new
+  database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at
+  a first run and creates its database by typing a location in the sandbox
+  (`createDatabase()` in `e2e/support/ui.ts`). E2E builds use the
+  `mock-keyring` feature, an in-memory keyring for saved passphrases, since a
+  headless session can't unlock a real one.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
   app at `.human-testing/` via `XDG_*_HOME`. The seed writes only into a
   directory that is new, empty or holds the `.hoplodex-sandbox` marker it
@@ -282,12 +285,15 @@ npm run screenshots -- --screenshots=/tmp/pr   # somewhere else
 ```
 
 This runs `e2e/screenshots/screens.e2e.ts` through the E2E harness, under Xvfb
-at a fixed 1200×800 window. It opens the
-[human-testing collection](#human-testing), seeded into the session's
-throwaway sandbox, and walks the main screens and dialogs (collection list
-and tiles, a full record, the record scrolled so its pinned strip shows, the
-edit/coverage/dispose dialogs, add firearm, insurance, a policy, import and
-export) in light and dark mode, writing
+at a fixed 1200×800 window. It starts at the database chooser listing the
+[human-testing databases](#human-testing), seeded into the session's
+throwaway sandbox, shoots it and the create dialog, unlocks "Main collection"
+with the seed's passphrase, and walks the main screens and dialogs
+(collection list and tiles, a full record, the record scrolled so its pinned
+strip shows, the edit/coverage/dispose dialogs, add firearm, insurance, a
+policy, import and export). Then `e2e/screenshots/first-run.e2e.ts`, in an
+unseeded sandbox, shoots the first-run chooser and a new database's
+disk-encryption note. Every screen is taken in light and dark mode, writing
 `<nn>-<screen>-<theme>.png`. Long pages and dialogs are captured whole. The
 names don't change between runs, so for before/after pairs, run it on the base
 branch and then on yours:
@@ -306,8 +312,11 @@ saves only when the run was started with `--screenshots`, so a normal
 npm run test:e2e -- --screenshots --spec e2e/specs/us1-record-firearm.e2e.ts
 ```
 
-The seed and the app share a database key via `HOPLODEX_E2E_DB_KEY`, which
-only `mock-keyring` (E2E) builds read.
+The seed writes into a new `seed` folder in the sandbox, and the harness
+moves the app's config directory there so its recent list names the seeded
+databases. Specs read the seed's passphrase from
+`HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
+`HOPLODEX_E2E_DOCUMENTS`.
 
 ## Human testing
 

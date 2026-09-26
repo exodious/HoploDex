@@ -8,8 +8,9 @@ const repoRoot = path.resolve(__dirname, "..");
 
 // --screenshots[=<dir>] turns on e2e/support/screenshots.ts's shot() (default
 // output e2e/screenshots-out/) and, unless --spec picks other specs, runs the
-// dedicated screenshot walk instead of the test suite.
-const SCREENSHOT_SPEC = "e2e/screenshots/screens.e2e.ts";
+// dedicated screenshot walk instead of the test suite: the seeded walk, and
+// the first-run screens, which need a sandbox with no databases.
+const SCREENSHOT_SPECS = ["e2e/screenshots/screens.e2e.ts", "e2e/screenshots/first-run.e2e.ts"];
 let screenshotDir;
 const extraArgs = process.argv.slice(2).filter((arg) => {
   const match = /^--screenshots(?:=(.+))?$/.exec(arg);
@@ -18,7 +19,7 @@ const extraArgs = process.argv.slice(2).filter((arg) => {
   return false;
 });
 if (screenshotDir && !extraArgs.some((arg) => arg === "--spec" || arg.startsWith("--spec="))) {
-  extraArgs.push("--spec", SCREENSHOT_SPEC);
+  for (const spec of SCREENSHOT_SPECS) extraArgs.push("--spec", spec);
 }
 
 // On Linux, run under an isolated Xvfb virtual display so the app never

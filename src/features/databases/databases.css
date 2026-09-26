@@ -167,14 +167,16 @@
   margin-bottom: var(--space-5);
 }
 
-.hd-db-note {
+/* Doubled up to outrank .hd-banner's blaze, which is kept for coverage
+   warnings: this note is information, in niter. */
+.hd-banner.hd-db-note {
   border-color: color-mix(in srgb, var(--niter) 35%, transparent);
   background: var(--niter-wash);
   color: var(--ink);
   font-weight: 400;
 }
 
-.hd-db-note > svg {
+.hd-banner.hd-db-note > svg {
   color: var(--niter);
 }
 

@@ -8,6 +8,7 @@ import {
   openFirearm,
   openOriginGroup,
 } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of specs/002-firearm-identification's User Story 1
@@ -19,6 +20,11 @@ import {
  * mocks. See e2e/support/ui.ts for why interactions go through page JS.
  */
 describe("User Story 1 - Identification (specs/002-firearm-identification)", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   it("opens the origin guide from the Add firearm form", async () => {
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();

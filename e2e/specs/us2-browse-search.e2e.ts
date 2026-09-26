@@ -1,5 +1,6 @@
 import { $, addFirearm, back, browser, choose, expect, listedNames } from "../support/ui";
 import { openFirearm, search } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 2's acceptance scenarios (spec.md),
@@ -8,6 +9,11 @@ import { openFirearm, search } from "../support/ui";
  * collection. See e2e/support/ui.ts for why interactions go through page JS.
  */
 describe("User Story 2 - Browse, Search, and Group", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   before(async () => {
     await addFirearm({
       make: "BrowseSig",
