@@ -11,8 +11,8 @@ facts each text states are required.
 ## 0. New and changed shared components
 
 - **`PassphraseField`** (new, `src/components/`): a password input used
-  wherever a passphrase is typed (open, create, change, restore, save to
-  keyring: eight fields in five dialogs), so it goes in the shared set. Rules (FR-007):
+  wherever a passphrase is typed (open, take over, create, change, restore,
+  save to keyring: nine fields in six places), so it goes in the shared set. Rules (FR-007):
   - `type="password"`, with a "Show" toggle button (`aria-pressed`);
     `autocomplete="current-password"` or `"new-password"`;
     `spellcheck="false"`, `autocapitalize="off"`.
@@ -116,8 +116,15 @@ collection data, top-bar tabs or counts are shown.
 **Take over…** opens a destructive `ConfirmDialog` (US2-10, FR-032):
 title "Take over <name>?"; description "Only do this if <machineName> no
 longer has <name> open, or if it crashed. If it still has it open, or its
-latest changes haven't synced here yet, those changes can be lost."; confirm
-label "Take over". Confirming resends the open with `takeOver: true`.
+latest changes haven't synced here yet, those changes can be lost."; a
+`PassphraseField` "Passphrase for <name>", focused, with the hint "Enter it
+again to confirm the take-over."; confirm label "Take over". The passphrase
+that found the marker was read once and cleared like any other (FR-007), and
+nothing holds it while the user decides, so typing it again is part of the
+confirmation. An empty field keeps the dialog open with "Enter the
+passphrase to take it over." Confirming reads and clears the field, closes
+the dialog, and resends the open with `takeOver: true`, the row showing its
+busy state; a wrong passphrase is then refused in the row like any other.
 
 ### Storage that can't be reached while open (FR-032, research §6)
 

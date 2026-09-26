@@ -5,6 +5,7 @@ import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
+import { useDirtyForm } from "../session/usePendingDraft";
 import type { Firearm } from "../firearms/types";
 import { expiryLabel } from "./coverage";
 import type { AssignCoverageInput } from "./types";
@@ -47,10 +48,12 @@ function CoverageForm({
 }) {
   const { policies, summary } = useCollection();
   const { open: goTo } = useNavigation();
-  const [policyId, setPolicyId] = useState(
+  const [initialPolicyId] = useState(
     firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_SCHEDULED,
   );
-  const [amount, setAmount] = useState(dollarsToInput(firearm.scheduledCoverageAmount));
+  const [initialAmount] = useState(() => dollarsToInput(firearm.scheduledCoverageAmount));
+  const [policyId, setPolicyId] = useState(initialPolicyId);
+  const [amount, setAmount] = useState(initialAmount);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -66,10 +69,22 @@ function CoverageForm({
         ? "Enter the amount scheduled on the policy."
         : undefined;
 
-  async function handleSubmit(event: FormEvent) {
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  useDirtyForm({
+    label: `${firearmName(firearm)} (coverage)`,
+    isDirty: policyId !== initialPolicyId || amount !== initialAmount,
+    submit: save,
+  });
+
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    void save();
+  }
+
+  /** Validates and saves; resolves whether it was saved. */
+  async function save(): Promise<boolean> {
     setSubmitted(true);
-    if (amountError) return;
+    if (amountError) return false;
 
     setSubmitting(true);
     setServerError(null);
@@ -79,8 +94,10 @@ function CoverageForm({
           ? { policyId: Number(policyId), scheduledCoverageAmount: parsedAmount.dollars }
           : { policyId: null },
       );
+      return true;
     } catch (e) {
       setServerError(e instanceof CommandFailure ? e.message : "Coverage couldn't be saved.");
+      return false;
     } finally {
       setSubmitting(false);
     }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, useToast } from "../../components";
 import { CollectionPage } from "../browse/CollectionPage";
+import { DatabaseMenu } from "../databases/DatabaseMenu";
 import { DatabaseNotes } from "../databases/DatabaseNotes";
 import type { BrowseState } from "../browse/types";
 import { FirearmForm } from "../firearms/FirearmForm";
@@ -221,6 +222,7 @@ export function AppShell() {
             </nav>
 
             <div className="hd-topbar__tools">
+              <DatabaseMenu />
               <Button variant="ghost" size="sm" icon="download" onClick={() => setDialog("import")}>
                 Import
               </Button>

@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { OpenOptions } from "../databases/databasesService";
 import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
 
 /**
@@ -11,9 +12,12 @@ export interface SessionState {
   status: DatabaseStatus | null;
   /** Opens the database at `path`; rejects with the command's
    * `CommandFailure` and leaves the chooser showing. */
-  openDatabase: (path: string, passphrase: string) => Promise<void>;
+  openDatabase: (path: string, passphrase: string, options?: OpenOptions) => Promise<void>;
   /** Creates a database and opens it. */
   createDatabase: (input: CreateDatabaseInput) => Promise<void>;
+  /** Closes the open database, or switches away from it, asking first about
+   * a form with unsaved input (FR-010). */
+  closeDatabase: (reason: "closed" | "switched") => Promise<void>;
   refreshStatus: () => Promise<void>;
   dismissNote: (note: NoteKind) => Promise<void>;
 }

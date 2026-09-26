@@ -1,5 +1,11 @@
 import { $, back, browser, choose, clickButton, clickEl, fill, goTo, search } from "../support/ui";
-import { unlock, waitForChooser } from "../support/ui";
+import {
+  requestQuit,
+  selectChooserRow,
+  submitPassphrase,
+  unlock,
+  waitForChooser,
+} from "../support/ui";
 import { chooseTheme, shot } from "../support/screenshots";
 
 /**
@@ -79,6 +85,16 @@ describe("Screenshots: the chooser", () => {
       await shot(`16-create-database-${suffix}`, { fullPage: true });
       await closeDialog();
     });
+
+    it(`open on another computer (${suffix})`, async () => {
+      // The seeded "Shared collection" is marked open on "Workshop PC".
+      await selectChooserRow("Shared collection");
+      await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+      await $("button=Take over…").waitForExist();
+      await shot(`17-open-elsewhere-${suffix}`);
+      await clickButton("Go back");
+      await selectChooserRow("Main collection");
+    });
   }
 
   after(async () => {
@@ -124,6 +140,17 @@ for (const theme of ["Light", "Dark"] as const) {
 
       await openDialog("Mark disposed");
       await shot(`07-mark-disposed-${suffix}`);
+      await closeDialog();
+
+      // Quitting with an edit under way asks save, discard or cancel.
+      await openDialog("Edit");
+      await fill("Notes", "Swapped the grips for the walnut set.");
+      await requestQuit();
+      await $('[role="alertdialog"]').waitForExist();
+      await browser.pause(300);
+      await shot(`25-unsaved-changes-${suffix}`);
+      await clickButton("Cancel");
+      await $('[role="alertdialog"]').waitForExist({ reverse: true });
       await closeDialog();
 
       await back();

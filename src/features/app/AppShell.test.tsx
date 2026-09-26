@@ -141,7 +141,7 @@ const collection: CollectionState = {
 
 // An open database whose notes were all dismissed.
 const session = {
-  status: { notes: { diskEncryption: false } },
+  status: { name: "Main collection", notes: { diskEncryption: false } },
 } as unknown as SessionState;
 
 function renderShell() {

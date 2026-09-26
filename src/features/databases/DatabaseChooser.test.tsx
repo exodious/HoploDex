@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { formatDateTime } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
 import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
@@ -36,18 +38,19 @@ function chooserState(overrides: Partial<ChooserState> = {}): ChooserState {
   };
 }
 
-function renderChooser(session: Partial<SessionState> = {}) {
+function renderChooser(session: Partial<SessionState> = {}, selectPath?: string) {
   const value: SessionState = {
     status: null,
     openDatabase: vi.fn().mockResolvedValue(undefined),
     createDatabase: vi.fn().mockResolvedValue(undefined),
+    closeDatabase: vi.fn().mockResolvedValue(undefined),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     dismissNote: vi.fn().mockResolvedValue(undefined),
     ...session,
   };
   render(
     <SessionContext.Provider value={value}>
-      <DatabaseChooser />
+      <DatabaseChooser selectPath={selectPath} />
     </SessionContext.Provider>,
   );
   return value;
@@ -193,5 +196,365 @@ describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Create a database" });
     expect(within(dialog).getByLabelText("Folder")).toHaveValue("/home/sam/Documents/HoploDex");
+  });
+});
+
+describe("DatabaseChooser (User Story 2)", () => {
+  const PASSPHRASE = "correct horse battery staple";
+
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
+    vi.mocked(databasesService.removeRecentDatabase)
+      .mockReset()
+      .mockResolvedValue({ removed: true });
+    vi.mocked(databasesService.locateDatabase).mockReset();
+    vi.mocked(openFileDialog).mockReset();
+  });
+
+  function failing(code: string, details?: Record<string, unknown>) {
+    return vi
+      .fn()
+      .mockRejectedValue(new CommandFailure({ code, message: `backend ${code}`, details }));
+  }
+
+  async function openMain(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(
+      await screen.findByLabelText("Passphrase for Main collection"),
+      `${PASSPHRASE}{Enter}`,
+    );
+  }
+
+  it("lists the recent databases, most recent first, with their folders", async () => {
+    renderChooser();
+
+    const list = await screen.findByRole("list", { name: "Recent databases" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows.map((row) => row.querySelector(".hd-db-row__name")?.textContent)).toEqual([
+      "Main collection",
+      "Shared collection",
+    ]);
+    expect(within(rows[0]).getByTitle("/home/sam/Documents/HoploDex")).toBeInTheDocument();
+    expect(within(rows[1]).getByTitle("/mnt/nas/family")).toBeInTheDocument();
+  });
+
+  it("selects the database just closed", async () => {
+    renderChooser({}, shared.path);
+
+    expect(await screen.findByLabelText("Passphrase for Shared collection")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase for Main collection")).not.toBeInTheDocument();
+  });
+
+  it("dims a database whose file is missing and offers Locate… and Remove from list", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [main, { ...shared, available: false }] }),
+    );
+    renderChooser();
+
+    const list = await screen.findByRole("list", { name: "Recent databases" });
+    const row = within(list).getAllByRole("listitem")[1];
+    expect(row).toHaveClass("hd-db-row--unavailable");
+    expect(row).toHaveTextContent("Not found at this location");
+    expect(within(row).getByRole("button", { name: "Locate…" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Remove from list" })).toBeInTheDocument();
+    expect(within(row).queryByLabelText(/Passphrase/)).not.toBeInTheDocument();
+  });
+
+  it("locating a missing database points its entry at the file found and selects it", async () => {
+    const user = userEvent.setup();
+    const found = "/media/usb/Shared collection.hoplodex";
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [main, { ...shared, available: false }] }),
+    );
+    vi.mocked(openFileDialog).mockResolvedValue(found);
+    vi.mocked(databasesService.locateDatabase).mockResolvedValue({ ...shared, path: found });
+    renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "Locate…" }));
+
+    expect(databasesService.locateDatabase).toHaveBeenCalledWith(shared.path, found);
+    const field = await screen.findByLabelText("Passphrase for Shared collection");
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(screen.queryByText("Not found at this location")).not.toBeInTheDocument();
+  });
+
+  it("removing a missing database takes it off the list", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [main, { ...shared, available: false }] }),
+    );
+    renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "Remove from list" }));
+
+    expect(databasesService.removeRecentDatabase).toHaveBeenCalledWith(shared.path);
+    await waitFor(() => expect(screen.queryByText("Shared collection")).not.toBeInTheDocument());
+  });
+
+  it("every row can be removed from the list, which leaves the file alone", async () => {
+    const user = userEvent.setup();
+    renderChooser();
+
+    await user.click(
+      await screen.findByRole("button", { name: "More actions for Shared collection" }),
+    );
+    const item = await screen.findByRole("menuitem", { name: /Remove from list/ });
+    expect(item).toHaveTextContent("The database file is not deleted.");
+    await user.click(item);
+
+    expect(databasesService.removeRecentDatabase).toHaveBeenCalledWith(shared.path);
+    await waitFor(() => expect(screen.queryByText("Shared collection")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+  });
+
+  it("opens another database file chosen with the native dialog (US2-2)", async () => {
+    const user = userEvent.setup();
+    const other = "/media/usb/Club armory.hoplodex";
+    vi.mocked(openFileDialog).mockResolvedValue(other);
+    const session = renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "Open another database file…" }));
+
+    expect(openFileDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        multiple: false,
+        directory: false,
+        filters: [
+          { name: "HoploDex databases", extensions: ["hoplodex"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      }),
+    );
+    const field = await screen.findByLabelText("Passphrase for Club armory");
+    await waitFor(() => expect(field).toHaveFocus());
+    await user.type(field, `${PASSPHRASE}{Enter}`);
+    expect(session.openDatabase).toHaveBeenCalledWith(other, PASSPHRASE);
+  });
+
+  it("a cancelled file dialog changes nothing", async () => {
+    const user = userEvent.setup();
+    vi.mocked(openFileDialog).mockResolvedValue(null);
+    renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "Open another database file…" }));
+
+    await waitFor(() => expect(openFileDialog).toHaveBeenCalled());
+    expect(screen.getByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Recent databases" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it.each([
+    [
+      "DATABASE_IN_USE",
+      "Main collection is open in another copy of HoploDex, on this computer or another one. Close it there first.",
+    ],
+    [
+      "DATABASE_NEWER_VERSION",
+      "Main collection was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed.",
+    ],
+    [
+      "DATABASE_UNREADABLE",
+      "HoploDex can't read Main collection: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.",
+    ],
+    ["DATABASE_DAMAGED", "Main collection is damaged and can't be opened."],
+  ])("explains %s below the passphrase, which stays for another try", async (code, text) => {
+    const user = userEvent.setup();
+    renderChooser({ openDatabase: failing(code) });
+
+    await openMain(user);
+
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    const field = screen.getByLabelText("Passphrase for Main collection");
+    expect(field).toBeEnabled();
+    expect(field).toHaveAccessibleDescription(text);
+  });
+
+  it("says a database no longer at its location can be located or removed", async () => {
+    const user = userEvent.setup();
+    renderChooser({ openDatabase: failing("DATABASE_NOT_FOUND", { path: main.path }) });
+
+    await openMain(user);
+
+    expect(
+      await screen.findByText("Main collection is no longer at this location."),
+    ).toBeInTheDocument();
+    const row = within(screen.getByRole("list", { name: "Recent databases" })).getAllByRole(
+      "listitem",
+    )[0];
+    expect(within(row).getByRole("button", { name: "Locate…" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Remove from list" })).toBeInTheDocument();
+  });
+
+  const since = "2026-09-25T14:30:05Z";
+
+  it("names the other computer and when, for a database open elsewhere (FR-032)", async () => {
+    const user = userEvent.setup();
+    renderChooser({
+      openDatabase: failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since }),
+    });
+
+    await openMain(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `Main collection is marked as open on Workshop PC since ${formatDateTime(since)}. It may still be open there, may not have been closed properly, or its latest changes may not have synced to this computer yet.`,
+    );
+    expect(within(alert).getByText("Workshop PC").tagName).toBe("STRONG");
+    expect(within(alert).getByRole("button", { name: "Go back" })).toBeInTheDocument();
+    expect(within(alert).getByRole("button", { name: "Take over…" })).toBeInTheDocument();
+  });
+
+  it("goes back to the passphrase from the open-elsewhere message", async () => {
+    const user = userEvent.setup();
+    renderChooser({
+      openDatabase: failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since }),
+    });
+    await openMain(user);
+
+    await user.click(await screen.findByRole("button", { name: "Go back" }));
+
+    const field = await screen.findByLabelText("Passphrase for Main collection");
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(screen.queryByRole("button", { name: "Take over…" })).not.toBeInTheDocument();
+  });
+
+  it("takes over only once the passphrase is typed again in the destructive confirmation", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    const openDatabase = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "DATABASE_OPEN_ELSEWHERE",
+          message: "open elsewhere",
+          details: { machineName: "Workshop PC", since },
+        }),
+      )
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)));
+    renderChooser({ openDatabase });
+    await openMain(user);
+
+    await user.click(await screen.findByRole("button", { name: "Take over…" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Take over Main collection?" });
+    expect(confirm).toHaveTextContent(
+      "Only do this if Workshop PC no longer has Main collection open, or if it crashed. If it still has it open, or its latest changes haven't synced here yet, those changes can be lost.",
+    );
+    const takeOver = within(confirm).getByRole("button", { name: "Take over" });
+    expect(takeOver).toHaveClass("hd-button--danger");
+    // Nothing from the refused open was kept (FR-007): it is asked for again.
+    const field = within(confirm).getByLabelText("Passphrase for Main collection");
+    expect(field).toHaveValue("");
+    await waitFor(() => expect(field).toHaveFocus());
+    await user.type(field, PASSPHRASE);
+    await user.click(takeOver);
+
+    expect(openDatabase).toHaveBeenLastCalledWith(main.path, PASSPHRASE, { takeOver: true });
+    expect(field).toHaveValue("");
+    const opening = await screen.findByRole("button", { name: "Opening…" });
+    expect(opening).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Opening Main collection…");
+    finish();
+    await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent("Opening"));
+  });
+
+  it("won't take over without the passphrase", async () => {
+    const user = userEvent.setup();
+    const openDatabase = failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since });
+    renderChooser({ openDatabase });
+    await openMain(user);
+    await user.click(await screen.findByRole("button", { name: "Take over…" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Take over Main collection?" });
+
+    await user.click(within(confirm).getByRole("button", { name: "Take over" }));
+
+    expect(
+      await within(confirm).findByText("Enter the passphrase to take it over."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("alertdialog", { name: "Take over Main collection?" }),
+    ).toBeInTheDocument();
+    expect(openDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it("a wrong passphrase in the take-over is refused like any other", async () => {
+    const user = userEvent.setup();
+    const openDatabase = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "DATABASE_OPEN_ELSEWHERE",
+          message: "open elsewhere",
+          details: { machineName: "Workshop PC", since },
+        }),
+      )
+      .mockRejectedValueOnce(new CommandFailure({ code: "PASSPHRASE_INCORRECT", message: "no" }));
+    renderChooser({ openDatabase });
+    await openMain(user);
+    await user.click(await screen.findByRole("button", { name: "Take over…" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Take over Main collection?" });
+
+    await user.type(
+      within(confirm).getByLabelText("Passphrase for Main collection"),
+      "typo typo typo",
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Take over" }));
+
+    expect(
+      await screen.findByText(
+        "That passphrase didn't open Main collection. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Passphrase for Main collection")).toBeEnabled();
+  });
+
+  it("cancelling the take-over leaves the choice open", async () => {
+    const user = userEvent.setup();
+    const openDatabase = failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since });
+    renderChooser({ openDatabase });
+    await openMain(user);
+
+    await user.click(await screen.findByRole("button", { name: "Take over…" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Cancel" }),
+    );
+
+    expect(openDatabase).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("button", { name: "Take over…" })).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      { kind: "takenOver", databasePath: main.path } as const,
+      "Main collection was taken over on another computer, so HoploDex stopped saving to it here and closed it.",
+    ],
+    [
+      { kind: "backupFailed", databasePath: main.path, reason: "databaseUnreachable" } as const,
+      "Main collection was not backed up: its file could not be reached. Its changes will be backed up at the next close.",
+    ],
+    [
+      { kind: "closed", databasePath: main.path, reason: "lockedByUser" } as const,
+      "HoploDex locked Main collection.",
+    ],
+  ])("shows the %o notice until dismissed", async (notice, text) => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ notices: [notice] }),
+    );
+    renderChooser();
+
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(text)).not.toBeInTheDocument();
+  });
+
+  it("says nothing about an ordinary close", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ notices: [{ kind: "closed", databasePath: main.path, reason: "closed" }] }),
+    );
+    renderChooser();
+
+    await screen.findByLabelText("Passphrase for Main collection");
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
   });
 });

@@ -12,6 +12,8 @@ const PATHS = {
   up: "M5 11.5 10 6.5l5 5",
   chevronLeft: "M12 5 7 10l5 5",
   chevronRight: "M8 5l5 5-5 5",
+  chevronDown: "M5.5 8l4.5 4.5L14.5 8",
+  more: "M5 10h.01M10 10h.01M15 10h.01",
   pencil: "M12.5 4.5 15.5 7.5 7.5 15.5H4.5V12.5ZM10.5 6.5l3 3",
   trash: "M4 6h12M8 6V4.5h4V6M5.5 6l.8 9.5h7.4l.8-9.5M8.5 9v4M11.5 9v4",
   file: "M5.5 3h6l3 3v11h-9zM11.5 3v3h3M8 10h4.5M8 13h4.5",

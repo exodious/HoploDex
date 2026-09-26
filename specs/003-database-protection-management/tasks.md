@@ -203,11 +203,11 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 ### Tests for User Story 2 (mandatory per constitution)
 
-- [ ] T049 [P] [US2] Extend `src-tauri/tests/database_open_test.rs` with the US2 cases:
+- [X] T049 [P] [US2] Extend `src-tauri/tests/database_open_test.rs` with the US2 cases:
   - a file whose `schema_migrations` names an unknown migration gives `DATABASE_NEWER_VERSION`, and the file is byte-identical (FR-014)
   - opening a second database closes the first with reason `switched`
   - `get_chooser_state` marks an entry whose file is missing as unavailable, and selects the database just closed (FR-012, FR-033)
-- [ ] T050 [P] [US2] Write `src-tauri/tests/take_over_test.rs` (FR-032, SC-009), covering:
+- [X] T050 [P] [US2] Write `src-tauri/tests/take_over_test.rs` (FR-032, SC-009), covering:
   - a marker set by `other_machine()` gives `DATABASE_OPEN_ELSEWHERE` with `details { machineName, since }`, and the file is byte-identical
   - `takeOver: true` opens it and sets the marker to this machine
   - this machine's own stale marker (left by a dropped connection) opens without a warning
@@ -218,15 +218,15 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - with the file made unreachable while open (renamed away, then a directory made unreadable), the next `session.write` fails with `DATABASE_UNAVAILABLE { path }`, not `DATABASE_TAKEN_OVER`: nothing is written, no `session:closed` is emitted, and the session stays open
   - after that, every write is refused the same way, even once the file is back at its path
   - the close that follows writes nothing (no marker clear), and with the file back, the next open here succeeds without a warning (its own marker, FR-032)
-- [ ] T051 [P] [US2] Extend `src-tauri/tests/machine_settings_test.rs` with the US2 cases: `locate` replaces `path` and keeps the other fields; `remove` drops only the entry, and the database file is untouched. Use temp config directories only
-- [ ] T052 [P] [US2] Create `src-tauri/examples/portable_fixture.rs`, which regenerates `src-tauri/tests/fixtures/portable-v1.hoplodex` with a known passphrase, one firearm, one photo and one document, through `db::create_database` and `ops`. Commit the generated fixture. Then write `src-tauri/tests/portability_test.rs` (SC-001, SC-002, research §20):
+- [X] T051 [P] [US2] Extend `src-tauri/tests/machine_settings_test.rs` with the US2 cases: `locate` replaces `path` and keeps the other fields; `remove` drops only the entry, and the database file is untouched. Use temp config directories only
+- [X] T052 [P] [US2] Create `src-tauri/examples/portable_fixture.rs`, which regenerates `src-tauri/tests/fixtures/portable-v1.hoplodex` with a known passphrase, one firearm, one photo and one document, through `db::create_database` and `ops`. Commit the generated fixture. Then write `src-tauri/tests/portability_test.rs` (SC-001, SC-002, research §20):
   - open a copy of the fixture with the known passphrase, and compare the firearm fields and the photo and document bytes to the known values
   - assert the first 16 bytes are a salt, not the SQLite header
   - assert opening consults no machine-local state (no config dir, empty mock keyring)
   - a wrong passphrase fails
-- [ ] T053 [P] [US2] Extend `src/components/ConfirmDialog.test.tsx` for the optional third action: `alternativeLabel`/`onAlternative` render a third button with destructive style, and each of the three buttons calls only its own handler (contracts/ui-databases.md §0)
-- [ ] T054 [P] [US2] Write `src/components/Menu.test.tsx`: menu roles, arrow-key navigation, Escape closes and returns focus to the trigger (WCAG 2.1 AA, contracts/ui-databases.md §0)
-- [ ] T055 [P] [US2] Extend `src/features/databases/DatabaseChooser.test.tsx` (US2 cases), covering:
+- [X] T053 [P] [US2] Extend `src/components/ConfirmDialog.test.tsx` for the optional third action: `alternativeLabel`/`onAlternative` render a third button with destructive style, and each of the three buttons calls only its own handler (contracts/ui-databases.md §0)
+- [X] T054 [P] [US2] Write `src/components/Menu.test.tsx`: menu roles, arrow-key navigation, Escape closes and returns focus to the trigger (WCAG 2.1 AA, contracts/ui-databases.md §0)
+- [X] T055 [P] [US2] Extend `src/features/databases/DatabaseChooser.test.tsx` (US2 cases), covering:
   - recent rows in order, with the folder tooltip
   - an unavailable row dimmed with "Not found at this location", **Locate…** and **Remove from list**
   - every row's overflow **Remove from list** with "The database file is not deleted."
@@ -234,8 +234,8 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - the open-failure texts for `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_NOT_FOUND`, `DATABASE_UNREADABLE` and `DATABASE_OPEN_ELSEWHERE` (machine name in bold and the local date/time), with **Go back** and **Take over…**
   - **Take over…** opens the destructive confirm "Take over <name>?", and confirming resends with `takeOver: true`, with the row in its opening busy state until it returns
   - the `takenOver` notice text (contracts/ui-databases.md §1)
-- [ ] T056 [P] [US2] Write `src/features/databases/DatabaseMenu.test.tsx`: the top-bar button shows the database name with `aria-haspopup="menu"`, and **Switch database…** and **Close database** go through the unsaved-changes check and then `close_database` (contracts/ui-databases.md §4)
-- [ ] T057 [P] [US2] Extend `src/features/session/SessionProvider.test.tsx` (US2 cases, FR-010, US2-4a), covering:
+- [X] T056 [P] [US2] Write `src/features/databases/DatabaseMenu.test.tsx`: the top-bar button shows the database name with `aria-haspopup="menu"`, and **Switch database…** and **Close database** go through the unsaved-changes check and then `close_database` (contracts/ui-databases.md §4)
+- [X] T057 [P] [US2] Extend `src/features/session/SessionProvider.test.tsx` (US2 cases, FR-010, US2-4a), covering:
   - close, switch and `app:quit-requested` with a registered dirty form show "Save changes to <label>?" with **Save changes**, **Discard changes** and **Cancel**
   - Save runs the form's submit; if it fails validation, the dialog closes, the form keeps its errors and nothing closes
   - Discard closes
@@ -244,27 +244,27 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `session:closed` unmounts the collection tree and selects `databasePath` in the chooser
   - a save that fails with `DATABASE_UNAVAILABLE` shows contracts/ui-databases.md §1's "can't reach" text in the form, keeps its input and keeps the collection open
   - quit calls `quit_application`
-- [ ] T058 [P] [US2] Write the US2 flows in `e2e/specs/us7-databases.e2e.ts`: create two databases in two scratch folders with different passphrases and a distinct firearm each; switch through the database menu; the chooser lists both, most recent first; closing with an unsaved firearm form asks save, discard or cancel; remove one from the list and check its file still exists
+- [X] T058 [P] [US2] Write the US2 flows in `e2e/specs/us7-databases.e2e.ts`: create two databases in two scratch folders with different passphrases and a distinct firearm each; switch through the database menu; the chooser lists both, most recent first; closing with an unsaved firearm form asks save, discard or cancel; remove one from the list and check its file still exists
 
 ### Implementation for User Story 2
 
-- [ ] T059 [US2] Add research §2 steps 3 and 4 to `db::open_database` in `src-tauri/src/db/mod.rs`. Step 3 is read-only: a `schema_migrations` name this build does not know gives `NewerVersion`. Step 4 is read-only: `open_machine_id` set and not this machine's id gives `OpenElsewhere { machine_name, since }`, unless `take_over` is set. Step 5 sets the marker to this machine's id, display name and the current UTC time, replacing a stale own marker. `open_database` gains `machine: &MachineIdentity` and `take_over: bool`; update the callers (depends on T017)
-- [ ] T060 [P] [US2] Create `src-tauri/src/session/fingerprint.rs`, per research §6. `FileFingerprint { identity: same_file::Handle-derived key, len, mtime }` has `capture(path)` and `check(path) -> Same | Replaced | Unreachable`, where `Unreachable` means the path is missing or `stat` fails with an I/O or permission error. It costs one `stat` plus the handle identity (device/inode on Unix, volume serial/file index on Windows)
-- [ ] T061 [US2] Wire the take-over check into `src-tauri/src/session/mod.rs` and `src-tauri/src/session/lifecycle.rs` (FR-032, data-model.md "TakenOver"; depends on T060). `OpenDatabase` gains `fingerprint`, captured after open. `write()` compares it before running the closure and refreshes it after. `Replaced` refuses with `DATABASE_TAKEN_OVER`, emits `session:closed { reason: "takenOver" }`, pushes a `takenOver` notice, and drops the connection without writing anything more. `Unreachable`, or an `SQLITE_IOERR`/`SQLITE_CANTOPEN` from the write, refuses with `DATABASE_UNAVAILABLE { path }` and sets `OpenDatabase.storage_lost`, keeping the session open; while it is set, every write is refused with that code whatever the fingerprint says (research §6). `close_normal` checks first too: on `Replaced` or `storage_lost` it skips the backup and the marker clear and writes nothing
-- [ ] T062 [US2] Add switch and take-over to `src-tauri/src/session/lifecycle.rs` and `src-tauri/src/commands/databases.rs` (contracts/tauri-commands.md; depends on T059, T061):
+- [X] T059 [US2] Add research §2 steps 3 and 4 to `db::open_database` in `src-tauri/src/db/mod.rs`. Step 3 is read-only: a `schema_migrations` name this build does not know gives `NewerVersion`. Step 4 is read-only: `open_machine_id` set and not this machine's id gives `OpenElsewhere { machine_name, since }`, unless `take_over` is set. Step 5 sets the marker to this machine's id, display name and the current UTC time, replacing a stale own marker. `open_database` gains `machine: &MachineIdentity` and `take_over: bool`; update the callers (depends on T017)
+- [X] T060 [P] [US2] Create `src-tauri/src/session/fingerprint.rs`, per research §6. `FileFingerprint { identity: same_file::Handle-derived key, len, mtime }` has `capture(path)` and `check(path) -> Same | Replaced | Unreachable`, where `Unreachable` means the path is missing or `stat` fails with an I/O or permission error. It costs one `stat` plus the handle identity (device/inode on Unix, volume serial/file index on Windows)
+- [X] T061 [US2] Wire the take-over check into `src-tauri/src/session/mod.rs` and `src-tauri/src/session/lifecycle.rs` (FR-032, data-model.md "TakenOver"; depends on T060). `OpenDatabase` gains `fingerprint`, captured after open. `write()` compares it before running the closure and refreshes it after. `Replaced` refuses with `DATABASE_TAKEN_OVER`, emits `session:closed { reason: "takenOver" }`, pushes a `takenOver` notice, and drops the connection without writing anything more. `Unreachable`, or an `SQLITE_IOERR`/`SQLITE_CANTOPEN` from the write, refuses with `DATABASE_UNAVAILABLE { path }` and sets `OpenDatabase.storage_lost`, keeping the session open; while it is set, every write is refused with that code whatever the fingerprint says (research §6). `close_normal` checks first too: on `Replaced` or `storage_lost` it skips the backup and the marker clear and writes nothing
+- [X] T062 [US2] Add switch and take-over to `src-tauri/src/session/lifecycle.rs` and `src-tauri/src/commands/databases.rs` (contracts/tauri-commands.md; depends on T059, T061):
   - `open_database` accepts `takeOver`; if another database is open, it closes it first as a `switched` close
   - add `close_database { reason: "closed" | "switched" } → CloseOutcome` (with `backup: "notAttempted"` until US3)
   - add `quit_application`: a normal close with reason `quit` if a database is open, then `app.exit(0)`
   - add `remove_recent_database { path } → { removed: true }`, which never touches the file (the keyring part is added in T108)
   - add `locate_database { path, newPath } → RecentDatabase`
   - `get_chooser_state` reports `available` from the path's existence and sets `selectedPath` to the database just closed (FR-012, FR-033)
-- [ ] T063 [US2] Update `src-tauri/src/main.rs` (research §17; depends on T062). `WindowEvent::CloseRequested` and `RunEvent::ExitRequested`, when not OS-initiated, are prevented and emit `app:quit-requested`. Register `close_database`, `quit_application`, `remove_recent_database` and `locate_database` in `generate_handler!`
-- [ ] T064 [P] [US2] Add the optional `alternativeLabel`/`onAlternative` third action (destructive style) to `src/components/ConfirmDialog.tsx`, keeping the existing props and behaviour unchanged (contracts/ui-databases.md §0)
-- [ ] T065 [P] [US2] Create `src/components/Menu.tsx` on `@radix-ui/react-dropdown-menu` (items, separators, shortcut hints), styled with the tokens in `src/styles/tokens.css`, and export it from `src/components/index.ts`
-- [ ] T066 [US2] Create the dirty-form registry in `src/features/session/usePendingDraft.ts` (plan.md). `useDirtyForm({ label, isDirty, submit })` registers the one open firearm or policy form, and `getDirtyForm()` is used by the session layer. Register `src/features/firearms/FirearmForm.tsx`, `DisposeDialog.tsx`, `RestoreDialog.tsx`, `src/features/insurance/InsurancePolicyForm.tsx` and `CoverageDialog.tsx`, each with a label like "Glock 19 (edit)" or "New firearm" (research §16). The draft staging is added in US6 (T133)
-- [ ] T067 [US2] Create `src/features/session/UnsavedChangesPrompt.tsx`: a `ConfirmDialog` with the third action, titled "Save changes to <label>?", with **Save changes** (primary), **Discard changes** (alternative) and **Cancel**, per contracts/ui-databases.md §6. In `src/features/session/SessionProvider.tsx`, route close, switch and `app:quit-requested` through it, then call `close_database`/`quit_application`. Listen for `session:closing` and `session:closed` (drop all collection state, select `databasePath`, show the notice) (depends on T064, T066)
-- [ ] T068 [US2] Create `src/features/databases/DatabaseMenu.tsx`, the top-bar button at the left of `hd-topbar__tools` showing the name with a chevron, opening `Menu` with **Switch database…** and **Close database** (the other items come in later stories). Mount it in `src/features/app/AppShell.tsx` (contracts/ui-databases.md §4) (depends on T065, T067)
-- [ ] T069 [US2] Complete `src/features/databases/DatabaseChooser.tsx` and `RecentDatabaseRow.tsx` for US2 (contracts/ui-databases.md §1):
+- [X] T063 [US2] Update `src-tauri/src/main.rs` (research §17; depends on T062). `WindowEvent::CloseRequested` and `RunEvent::ExitRequested`, when not OS-initiated, are prevented and emit `app:quit-requested`. Register `close_database`, `quit_application`, `remove_recent_database` and `locate_database` in `generate_handler!`
+- [X] T064 [P] [US2] Add the optional `alternativeLabel`/`onAlternative` third action (destructive style) to `src/components/ConfirmDialog.tsx`, keeping the existing props and behaviour unchanged (contracts/ui-databases.md §0)
+- [X] T065 [P] [US2] Create `src/components/Menu.tsx` on `@radix-ui/react-dropdown-menu` (items, separators, shortcut hints), styled with the tokens in `src/styles/tokens.css`, and export it from `src/components/index.ts`
+- [X] T066 [US2] Create the dirty-form registry in `src/features/session/usePendingDraft.ts` (plan.md). `useDirtyForm({ label, isDirty, submit })` registers the one open firearm or policy form, and `getDirtyForm()` is used by the session layer. Register `src/features/firearms/FirearmForm.tsx`, `DisposeDialog.tsx`, `RestoreDialog.tsx`, `src/features/insurance/InsurancePolicyForm.tsx` and `CoverageDialog.tsx`, each with a label like "Glock 19 (edit)" or "New firearm" (research §16). The draft staging is added in US6 (T133)
+- [X] T067 [US2] Create `src/features/session/UnsavedChangesPrompt.tsx`: a `ConfirmDialog` with the third action, titled "Save changes to <label>?", with **Save changes** (primary), **Discard changes** (alternative) and **Cancel**, per contracts/ui-databases.md §6. In `src/features/session/SessionProvider.tsx`, route close, switch and `app:quit-requested` through it, then call `close_database`/`quit_application`. Listen for `session:closing` and `session:closed` (drop all collection state, select `databasePath`, show the notice) (depends on T064, T066)
+- [X] T068 [US2] Create `src/features/databases/DatabaseMenu.tsx`, the top-bar button at the left of `hd-topbar__tools` showing the name with a chevron, opening `Menu` with **Switch database…** and **Close database** (the other items come in later stories). Mount it in `src/features/app/AppShell.tsx` (contracts/ui-databases.md §4) (depends on T065, T067)
+- [X] T069 [US2] Complete `src/features/databases/DatabaseChooser.tsx` and `RecentDatabaseRow.tsx` for US2 (contracts/ui-databases.md §1):
   - unavailable rows with **Locate…** (native file picker) and **Remove from list**
   - the overflow **Remove from list** with its note
   - the open-failure table rows for `DATABASE_IN_USE`, `DATABASE_NEWER_VERSION`, `DATABASE_NOT_FOUND`, `DATABASE_UNREADABLE` and `DATABASE_OPEN_ELSEWHERE`
@@ -273,7 +273,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `DATABASE_UNAVAILABLE` from any save shows §1's "can't reach" text in the saving form's error slot, keeping the input, and does not close the session
   
   Add `close_database`, `quit_application`, `remove_recent_database` and `locate_database` wrappers to the services (depends on T067)
-- [ ] T070 [US2] Add the screens `17-open-elsewhere` (the seeded "Shared collection") and `25-unsaved-changes` (the save / discard / cancel prompt over an edited firearm form, contracts/ui-databases.md §6) to `e2e/screenshots/screens.e2e.ts`, and re-run the E2E spec `us7-databases.e2e.ts` (depends on T069)
+- [X] T070 [US2] Add the screens `17-open-elsewhere` (the seeded "Shared collection") and `25-unsaved-changes` (the save / discard / cancel prompt over an edited firearm form, contracts/ui-databases.md §6) to `e2e/screenshots/screens.e2e.ts`, and re-run the E2E spec `us7-databases.e2e.ts` (depends on T069)
 
 **Checkpoint**: User Stories 1 and 2 work: several databases, switching, the recent list, the unsaved-changes question, and refusals with take-over.
 
@@ -284,6 +284,11 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 **Goal**: A backup when a changed database is closed, at most once a day, rotated to the keep count, with progress and skip; settings to turn them off, move them and delete them all; restore from any backup, including for a damaged database.
 
 **Independent Test**: With a simulated date, change and close a database across several days. Check that one backup appears per day with changes, none after an unchanged session, and never more than the keep count. Restore an earlier backup and check its content returns exactly. Turn backups off and check none are made.
+
+### Follow-ups from User Story 2 (settle before T071)
+
+- [ ] T148 [US3] Stop `std::fs` reads of an open database from dropping its lock. On Linux and macOS, closing any file descriptor on a file cancels every POSIX lock the process holds on it, SQLite's exclusive lock included (research §2, §6). `db::verify_passphrase` (T017) opens and closes a descriptor to copy page 1, and the planned `copy_chunked` backup and restore copy (research §3) would do the same, after which another copy of HoploDex could open a database that is in use. First write a failing test that shows it across processes (the second opener must be another process, since SQLite shares lock state within one), then choose and record a fix in research §3, and apply it to `verify_passphrase` before the backup code is built on the same approach. The take-over fingerprint (T060) already avoids it by using `stat` only
+- [X] T149 [US2] Take-over asks for the passphrase again rather than keeping the one that found the marker, which FR-007 forbids: `TakeOverConfirm` carries its own `PassphraseField`, read once and cleared on confirm, and an empty one keeps the dialog open. `DatabaseChooser` holds no passphrase between the refusal and the resend. contracts/ui-databases.md §0 and §1 say so, and `DatabaseChooser.test.tsx` covers the retyped, empty and wrong cases
 
 ### Tests for User Story 3 (mandatory per constitution)
 

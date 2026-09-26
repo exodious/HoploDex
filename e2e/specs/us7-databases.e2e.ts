@@ -4,15 +4,23 @@ import {
   E2E_PASSPHRASE,
   addFirearm,
   browser,
+  chooseMenuItem,
+  chooserNames,
   clickButton,
   clickEl,
+  createDatabase,
   expect,
+  fieldValue,
   fill,
   goTo,
   isButtonDisabled,
   listedNames,
+  requestQuit,
   scratchDocuments,
+  selectChooserRow,
+  selectedChooserRow,
   submitPassphrase,
+  switchDatabase,
   toggle,
   unlock,
   waitForChooser,
@@ -123,5 +131,123 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
       },
     );
     expect(await diskEncryptionNoteShown()).toBe(false);
+  });
+});
+
+describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
+  const club = {
+    folder: `${scratchDocuments()}/Club`,
+    name: "Club",
+    passphrase: "club armory passphrase",
+  };
+  const home = {
+    folder: `${scratchDocuments()}/Home`,
+    name: "Home",
+    passphrase: "home safe passphrase",
+  };
+
+  async function showsFirearm(make: string): Promise<boolean> {
+    await goTo("Collection");
+    return (await listedNames()).some((name) => name.includes(make));
+  }
+
+  it("keeps two databases with their own passphrases in two folders", async () => {
+    await switchDatabase();
+    await createDatabase(club);
+    await addFirearm({
+      make: "ClubGun",
+      model: "M1",
+      caliber: ".30-06",
+      type: "Rifle",
+      serial: "CL-1",
+    });
+
+    await switchDatabase();
+    await createDatabase(home);
+    await addFirearm({
+      make: "HomeGun",
+      model: "P1",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "HM-1",
+    });
+
+    expect(fs.existsSync(`${club.folder}/Club.hoplodex`)).toBe(true);
+    expect(fs.existsSync(`${home.folder}/Home.hoplodex`)).toBe(true);
+  });
+
+  it("switches through the database menu, listing the most recent first", async () => {
+    await switchDatabase();
+
+    expect(await chooserNames()).toEqual(["Home", "Club", "Test"]);
+    expect(await selectedChooserRow()).toBe("Home");
+
+    await selectChooserRow("Club");
+    await submitPassphrase(home.passphrase);
+    await expect(
+      $(
+        "p=That passphrase didn't open Club. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
+      ),
+    ).toExist();
+    await unlock(club.passphrase);
+    expect(await showsFirearm("ClubGun")).toBe(true);
+    expect(await showsFirearm("HomeGun")).toBe(false);
+  });
+
+  it("removes a database from the list, leaving its file where it is (US2-5)", async () => {
+    const file = `${scratchDocuments()}/Typed folder/Test.hoplodex`;
+    await switchDatabase();
+
+    await chooseMenuItem('button[aria-label="More actions for Test"]', "Remove from list");
+
+    await browser.waitUntil(async () => !(await chooserNames()).includes("Test"), {
+      timeout: 5000,
+      timeoutMsg: "Test is still listed",
+    });
+    expect(await chooserNames()).toEqual(["Club", "Home"]);
+    expect(fs.existsSync(file)).toBe(true);
+  });
+
+  it("asks save, discard or cancel when quitting with an unsaved firearm form (FR-010)", async () => {
+    // "Club" was closed last, so it is selected.
+    expect(await selectedChooserRow()).toBe("Club");
+    await unlock(club.passphrase);
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Make", "Unsaved make");
+
+    const prompt = '[role="alertdialog"]';
+    await requestQuit();
+    await $(prompt).waitForExist();
+    await expect($(prompt)).toHaveText(expect.stringContaining("Save changes to New firearm?"));
+    await clickButton("Cancel");
+    await $(prompt).waitForExist({ reverse: true });
+    expect(await fieldValue("Make")).toBe("Unsaved make");
+
+    // The form isn't complete, so saving fails there and nothing closes.
+    await requestQuit();
+    await $(prompt).waitForExist();
+    await clickButton("Save changes");
+    await $(prompt).waitForExist({ reverse: true });
+    expect(await fieldValue("Make")).toBe("Unsaved make");
+    await expect($("p=Enter the model.")).toExist();
+
+    // Discarding quits; the relaunched app has nothing of the draft.
+    await requestQuit();
+    await $(prompt).waitForExist();
+    // The click quits the app, so it is scheduled for after this script has
+    // answered: a click made inside it would take the session down unanswered.
+    await browser.execute(() => {
+      const discard = [...document.querySelectorAll('[role="alertdialog"] button')].find(
+        (button) => button.textContent?.trim() === "Discard changes",
+      ) as HTMLElement | undefined;
+      setTimeout(() => discard?.click(), 100);
+    });
+    await browser.pause(1500);
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Club");
+    await unlock(club.passphrase);
+    expect(await showsFirearm("Unsaved make")).toBe(false);
+    expect(await showsFirearm("ClubGun")).toBe(true);
   });
 });

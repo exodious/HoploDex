@@ -18,7 +18,9 @@ import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
+import { firearmName } from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
+import { useDirtyForm } from "../session/usePendingDraft";
 import { OriginGuide } from "./OriginGuide";
 import {
   CONDITION_OPTIONS,
@@ -384,6 +386,7 @@ const FIELD_ORDER: Field[] = [
 export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: FirearmFormProps) {
   const disposed = initialValues?.status === "disposed";
   const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
+  const [pristine] = useState(form);
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -490,8 +493,20 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setPendingOrigin(null);
   }
 
-  async function handleSubmit(event: FormEvent) {
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  useDirtyForm({
+    label: initialValues ? `${firearmName(initialValues)} (edit)` : "New firearm",
+    isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
+    submit: save,
+  });
+
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    void save();
+  }
+
+  /** Validates and saves; resolves whether it was saved. */
+  async function save(): Promise<boolean> {
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
@@ -504,7 +519,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       formRef.current
         ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea, button)`)
         ?.focus();
-      return;
+      return false;
     }
 
     const weight = parseWeight(form.weightPounds, form.weightOunces);
@@ -546,7 +561,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       originalSerialNumber: blankToNull(form.originalSerialNumber),
     };
 
-    await submitInput(input);
+    return submitInput(input);
   }
 
   /** A save rejected on a physical detail opens that group, so the error is
@@ -580,11 +595,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   /** specs/002-firearm-identification FR-009, contracts/ui-identification.md
    * §4: an `ORIGINAL_MARKS_MATCH` opens a confirm-to-save dialog instead of
    * the usual error banner; every other failure behaves as before. */
-  async function submitInput(input: FirearmInput, confirmedWarnings?: boolean) {
+  async function submitInput(input: FirearmInput, confirmedWarnings?: boolean): Promise<boolean> {
     setSubmitting(true);
     setServerError(null);
     try {
       await onSubmit(input, confirmedWarnings);
+      return true;
     } catch (error) {
       if (error instanceof CommandFailure) {
         if (error.code === "ORIGINAL_MARKS_MATCH" && !confirmedWarnings) {
@@ -594,9 +610,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
           revealOriginGroupFor(error);
           revealPhysicalGroupFor(error);
         }
-      } else {
-        throw error;
+        return false;
       }
+      throw error;
     } finally {
       setSubmitting(false);
     }

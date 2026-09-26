@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { CommandFailure } from "../../services/tauriClient";
 import { DatabaseNotes } from "../databases/DatabaseNotes";
 import * as databasesService from "../databases/databasesService";
 import type { ChooserState, DatabaseStatus } from "../databases/types";
+import { InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
+import type { InsurancePolicy } from "../insurance/types";
 import { SessionProvider } from "./SessionProvider";
 import * as sessionService from "./sessionService";
+import type { SessionClosed } from "./sessionService";
+import { useSession } from "./sessionStore";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../databases/databasesService");
@@ -155,5 +160,237 @@ describe("SessionProvider (User Story 1)", () => {
 
     await screen.findByText("Collection shell");
     expect(screen.queryByRole("region", { name: "Disk encryption" })).not.toBeInTheDocument();
+  });
+});
+
+// --- User Story 2 -----------------------------------------------------------
+
+const SHARED = "/mnt/nas/family/Shared collection.hoplodex";
+
+const policy: InsurancePolicy = {
+  id: 7,
+  name: "Collector Floater",
+  policyNumber: "CF-100",
+  insuranceCompany: "Acme Mutual",
+  companyContact: null,
+  agentName: null,
+  agentContact: null,
+  notes: null,
+  blanketCoverageLimit: null,
+  effectiveStartDate: "2026-01-01",
+  effectiveEndDate: "2027-01-01",
+  createdAt: "2026-01-01 00:00:00",
+  updatedAt: "2026-01-01 00:00:00",
+  isInForce: true,
+  isExpired: false,
+  isExpiringSoon: false,
+  expiringWarning: false,
+  expiredWarning: false,
+};
+
+/** Stands in for the database menu. */
+function CloseButtons() {
+  const session = useSession();
+  return (
+    <>
+      <button type="button" onClick={() => void session.closeDatabase("closed")}>
+        Close it
+      </button>
+      <button type="button" onClick={() => void session.closeDatabase("switched")}>
+        Switch it
+      </button>
+    </>
+  );
+}
+
+describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () => {
+  let sessionClosed: (closed: SessionClosed) => void;
+  let quitRequested: () => void;
+
+  beforeEach(() => {
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(status(false));
+    vi.mocked(sessionService.closeDatabase).mockReset().mockResolvedValue({
+      backup: "notAttempted",
+    });
+    vi.mocked(sessionService.quitApplication).mockReset().mockResolvedValue(undefined);
+    vi.mocked(sessionService.onSessionClosed)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosed = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onQuitRequested)
+      .mockReset()
+      .mockImplementation((handler) => {
+        quitRequested = handler;
+        return () => {};
+      });
+    vi.mocked(databasesService.getChooserState)
+      .mockReset()
+      .mockResolvedValue({
+        ...chooser,
+        recent: [
+          ...chooser.recent,
+          { ...chooser.recent[0], path: SHARED, name: "Shared collection" },
+        ],
+      });
+  });
+
+  async function renderOpen(form: ReactNode) {
+    render(
+      <SessionProvider>
+        <CloseButtons />
+        {form}
+        <p>Collection shell</p>
+      </SessionProvider>,
+    );
+    await screen.findByText("Collection shell");
+  }
+
+  const prompt = () =>
+    screen.findByRole("alertdialog", { name: "Save changes to New insurance policy?" });
+
+  it("closes a clean form's database without asking", async () => {
+    const user = userEvent.setup();
+    await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Close it" }));
+
+    expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed");
+    expect(await screen.findByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+    expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("asks save, discard or cancel about a form with unsaved input", async () => {
+    const user = userEvent.setup();
+    await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
+    await user.type(screen.getByLabelText(/Policy name/), "Home");
+
+    await user.click(screen.getByRole("button", { name: "Switch it" }));
+
+    const dialog = await prompt();
+    expect(
+      within(dialog)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Cancel", "Discard changes", "Save changes"]);
+    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
+  });
+
+  it("keeps everything open on cancel", async () => {
+    const user = userEvent.setup();
+    await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
+    await user.type(screen.getByLabelText(/Policy name/), "Home");
+    await user.click(screen.getByRole("button", { name: "Close it" }));
+
+    await user.click(within(await prompt()).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Policy name/)).toHaveValue("Home");
+    expect(screen.getByText("Collection shell")).toBeInTheDocument();
+  });
+
+  it("closes without saving on discard", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    await renderOpen(<InsurancePolicyForm onSubmit={onSubmit} />);
+    await user.type(screen.getByLabelText(/Policy name/), "Home");
+    await user.click(screen.getByRole("button", { name: "Switch it" }));
+
+    await user.click(within(await prompt()).getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("switched"));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+  });
+
+  it("saves through the form's own submit, then closes", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    await renderOpen(<InsurancePolicyForm initialValues={policy} onSubmit={onSubmit} />);
+    await user.type(screen.getByLabelText("Notes"), "Renews in January.");
+    await user.click(screen.getByRole("button", { name: "Close it" }));
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Save changes to Collector Floater (edit)?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed"));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ notes: "Renews in January." }));
+    expect(onSubmit.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(sessionService.closeDatabase).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("closes nothing when the save fails validation, and the form shows why", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    await renderOpen(<InsurancePolicyForm onSubmit={onSubmit} />);
+    await user.type(screen.getByLabelText(/Policy name/), "Home");
+    await user.click(screen.getByRole("button", { name: "Close it" }));
+
+    await user.click(within(await prompt()).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter the policy number.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Policy name/)).toHaveValue("Home");
+  });
+
+  it("asks the same question when the window is closed, then quits", async () => {
+    const user = userEvent.setup();
+    await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
+    await user.type(screen.getByLabelText(/Policy name/), "Home");
+
+    act(() => quitRequested());
+
+    await user.click(within(await prompt()).getByRole("button", { name: "Discard changes" }));
+    await waitFor(() => expect(sessionService.quitApplication).toHaveBeenCalledTimes(1));
+    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
+  });
+
+  it("quits at once when nothing is unsaved", async () => {
+    await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
+
+    act(() => quitRequested());
+
+    await waitFor(() => expect(sessionService.quitApplication).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("drops the collection when the backend closes the database, and selects it", async () => {
+    await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
+
+    act(() => sessionClosed({ reason: "takenOver", databasePath: SHARED }));
+
+    expect(await screen.findByLabelText("Passphrase for Shared collection")).toBeInTheDocument();
+    expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Policy name/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the form and the collection when a save can't reach the file", async () => {
+    const user = userEvent.setup();
+    const unreachable =
+      "HoploDex can't reach /media/usb/Main collection.hoplodex. Nothing already saved was lost. Close the database and open it again once the drive or network is back.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "DATABASE_UNAVAILABLE",
+        message: unreachable,
+        details: { path: "/media/usb/Main collection.hoplodex" },
+      }),
+    );
+    await renderOpen(<InsurancePolicyForm initialValues={policy} onSubmit={onSubmit} />);
+    await user.type(screen.getByLabelText("Notes"), "Renews in January.");
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(unreachable);
+    expect(screen.getByLabelText("Notes")).toHaveValue("Renews in January.");
+    expect(screen.getByText("Collection shell")).toBeInTheDocument();
+    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
   });
 });

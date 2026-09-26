@@ -4,6 +4,7 @@ import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
+import { useDirtyForm } from "../session/usePendingDraft";
 import { dispositionLabel } from "./types";
 import type { Firearm, HistoryChoice, ReverseDispositionInput } from "./types";
 import "./forms.css";
@@ -77,6 +78,22 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
       throw error; // keeps the dialog open
     }
   }
+
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  useDirtyForm({
+    label: `${firearmName(firearm)} (restore)`,
+    isDirty: history !== "" || (renaming && nickname !== (firearm.nickname ?? "")),
+    submit: async () => {
+      if (!history) return false;
+      try {
+        await confirm();
+      } catch {
+        return false;
+      }
+      onOpenChange(false);
+      return true;
+    },
+  });
 
   return (
     <ConfirmDialog

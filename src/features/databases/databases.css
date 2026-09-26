@@ -196,3 +196,88 @@
     margin-top: 0;
   }
 }
+
+/* ── The database menu in the top bar ────────────────────────────────── */
+
+.hd-db-menu {
+  max-width: 260px;
+}
+
+.hd-db-menu__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Row actions, unavailable rows, open failures (US2) ──────────────── */
+
+.hd-db-row__head {
+  display: flex;
+  align-items: center;
+}
+
+.hd-db-row__head > .hd-db-row__select,
+.hd-db-row__head > .hd-db-row__summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.hd-db-row__more {
+  flex: none;
+  margin-right: var(--space-3);
+}
+
+.hd-db-row--unavailable .hd-db-row__icon,
+.hd-db-row--unavailable .hd-db-row__name,
+.hd-db-row--unavailable .hd-db-row__folder {
+  opacity: 0.6;
+}
+
+.hd-db-row__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
+.hd-db-row__note,
+.hd-db-row__message {
+  max-width: 60ch;
+  color: var(--ink-2);
+}
+
+.hd-db-row__message {
+  color: var(--ink);
+}
+
+.hd-db-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ── Notices above the list ──────────────────────────────────────────── */
+
+.hd-chooser__notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hd-chooser__notices:empty {
+  display: none;
+}
+
+.hd-chooser__notice {
+  justify-content: space-between;
+}
+
+.hd-chooser__notice > p {
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .hd-db-row__detail {
+    padding-left: var(--space-4);
+  }
+}

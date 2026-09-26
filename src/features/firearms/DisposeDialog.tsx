@@ -5,6 +5,7 @@ import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from
 import { parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
+import { useDirtyForm } from "../session/usePendingDraft";
 import { DISPOSITION_TYPE_OPTIONS } from "./types";
 import type { DisposeFirearmInput, DispositionType, Firearm } from "./types";
 import "./forms.css";
@@ -38,6 +39,7 @@ export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: Dispos
     >
       {/* Mounted only while open, so every opening starts from a blank form. */}
       <DisposeForm
+        label={`${firearmName(firearm)} (disposal)`}
         acquisitionDate={firearm.acquisitionDate}
         onDispose={onDispose}
         onCancel={() => onOpenChange(false)}
@@ -47,17 +49,20 @@ export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: Dispos
 }
 
 function DisposeForm({
+  label,
   acquisitionDate,
   onDispose,
   onCancel,
 }: {
+  label: string;
   acquisitionDate: string | null;
   onDispose: (input: DisposeFirearmInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const [dispositionType, setDispositionType] = useState<DispositionType | "">("");
   const [recipient, setRecipient] = useState("");
-  const [date, setDate] = useState(todayIso());
+  const [today] = useState(todayIso);
+  const [date, setDate] = useState(today);
   const [price, setPrice] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -82,10 +87,22 @@ function DisposeForm({
   };
   const shown = (error: string | undefined) => (submitted ? error : undefined);
 
-  async function handleSubmit(event: FormEvent) {
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  useDirtyForm({
+    label,
+    isDirty: dispositionType !== "" || recipient !== "" || date !== today || price !== "",
+    submit: save,
+  });
+
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    void save();
+  }
+
+  /** Validates and saves; resolves whether it was saved. */
+  async function save(): Promise<boolean> {
     setSubmitted(true);
-    if (Object.values(errors).some(Boolean) || !parsedDate.ok || !parsedPrice.ok) return;
+    if (Object.values(errors).some(Boolean) || !parsedDate.ok || !parsedPrice.ok) return false;
 
     setSubmitting(true);
     setServerError(null);
@@ -96,10 +113,12 @@ function DisposeForm({
         date: parsedDate.iso as string,
         price: parsedPrice.dollars as number,
       });
+      return true;
     } catch (e) {
       setServerError(
         e instanceof CommandFailure ? e.message : "The firearm couldn't be marked disposed.",
       );
+      return false;
     } finally {
       setSubmitting(false);
     }

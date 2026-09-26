@@ -668,5 +668,73 @@ export async function unlock(passphrase: string) {
   await waitForCollection();
 }
 
+/** Opens the Radix menu behind `triggerSelector` (it opens on pointer
+ * down, which a plain click doesn't send) and picks the item whose label
+ * starts with `item`. */
+export async function chooseMenuItem(triggerSelector: string, item: string) {
+  const trigger = await $(triggerSelector);
+  await trigger.waitForExist();
+  await browser.execute((element: HTMLElement) => {
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+    );
+  }, trigger);
+  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+  await browser.waitUntil(
+    () =>
+      browser.execute((label: string) => {
+        const found = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((m) =>
+          (m.textContent ?? "").trim().startsWith(label),
+        );
+        found?.click();
+        return Boolean(found);
+      }, item),
+    { timeout: 5000, timeoutMsg: `no menu item "${item}"` },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
+/** Switches away from the open database through the database menu, and
+ * waits for the chooser. */
+export async function switchDatabase() {
+  await chooseMenuItem("button.hd-db-menu", "Switch database…");
+  await waitForChooser();
+}
+
+/** The chooser's rows, in order. */
+export async function chooserNames(): Promise<string[]> {
+  return browser.execute(() =>
+    [...document.querySelectorAll(".hd-chooser__list .hd-db-row__name")].map(
+      (name) => name.textContent ?? "",
+    ),
+  );
+}
+
+/** The name of the chooser's selected row. */
+export async function selectedChooserRow(): Promise<string | null> {
+  return browser.execute(
+    () => document.querySelector(".hd-db-row--selected .hd-db-row__name")?.textContent ?? null,
+  );
+}
+
+/** Selects the chooser row for `name`. */
+export async function selectChooserRow(name: string) {
+  await clickEl(`button.hd-db-row__select[aria-label^="${name}, "]`);
+}
+
+/** Asks the app to quit as the window's close button does: the backend's
+ * `app:quit-requested` event, sent from the page. */
+export async function requestQuit() {
+  await browser.execute(() => {
+    const internals = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__;
+    void internals.invoke("plugin:event|emit", { event: "app:quit-requested", payload: {} });
+  });
+  await browser.pause(SETTLE_MS);
+}
+
 export { $, $$, browser };
 export { expect } from "@wdio/globals";

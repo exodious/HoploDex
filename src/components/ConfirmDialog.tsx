@@ -21,13 +21,19 @@ export interface ConfirmDialogProps {
    * `children`; a caller that reports failures elsewhere just doesn't
    * reject. */
   onConfirm: () => void | Promise<unknown>;
+  /** An optional third choice beside cancel and confirm, in destructive
+   * style: "Discard changes" in the save / discard / cancel question
+   * (specs/003 contracts/ui-databases.md §6). Handled like `onConfirm`. */
+  alternativeLabel?: string;
+  onAlternative?: () => void | Promise<unknown>;
   children?: ReactNode;
 }
 
 /**
  * The single confirmation pattern for every destructive action in the app
  * (delete firearm, delete policy, delete photo/document, bulk overwrite on
- * import) per constitution Principle III — no screen invents its own.
+ * import) per constitution Principle III — no screen invents its own. With
+ * an alternative action it is also the save / discard / cancel question.
  */
 export function ConfirmDialog({
   open,
@@ -39,9 +45,11 @@ export function ConfirmDialog({
   destructive = true,
   confirmDisabled = false,
   onConfirm,
+  alternativeLabel,
+  onAlternative,
   children,
 }: ConfirmDialogProps) {
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<"confirm" | "alternative" | null>(null);
   // No screen wires its opening button up as a Radix `Trigger`, so Radix's
   // own focus-restore never fires; this captures and restores it here.
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -49,23 +57,23 @@ export function ConfirmDialog({
     if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
   }, [open]);
 
-  function handleConfirm() {
-    const result = onConfirm();
+  function run(action: () => void | Promise<unknown>, which: "confirm" | "alternative") {
+    const result = action();
     if (result instanceof Promise) {
-      setPending(true);
+      setPending(which);
       void result
         .then(
           () => onOpenChange(false),
           () => {}, // stay open; the caller shows the failure
         )
-        .finally(() => setPending(false));
+        .finally(() => setPending(null));
     } else {
       onOpenChange(false);
     }
   }
 
   return (
-    <RadixDialog.Root open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
+    <RadixDialog.Root open={open} onOpenChange={(next) => pending === null && onOpenChange(next)}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="hd-dialog__overlay" />
         <RadixDialog.Content
@@ -87,15 +95,25 @@ export function ConfirmDialog({
           {children && <div className="hd-dialog__body">{children}</div>}
           <footer className="hd-dialog__footer">
             <RadixDialog.Close asChild>
-              <Button variant="secondary" disabled={pending}>
+              <Button variant="secondary" disabled={pending !== null}>
                 {cancelLabel}
               </Button>
             </RadixDialog.Close>
+            {alternativeLabel && onAlternative && (
+              <Button
+                variant="danger"
+                pending={pending === "alternative"}
+                disabled={pending === "confirm"}
+                onClick={() => run(onAlternative, "alternative")}
+              >
+                {alternativeLabel}
+              </Button>
+            )}
             <Button
               variant={destructive ? "danger" : "primary"}
-              pending={pending}
-              disabled={confirmDisabled}
-              onClick={handleConfirm}
+              pending={pending === "confirm"}
+              disabled={confirmDisabled || pending === "alternative"}
+              onClick={() => run(onConfirm, "confirm")}
             >
               {confirmLabel}
             </Button>

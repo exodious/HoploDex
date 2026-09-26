@@ -1,25 +1,48 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { CommandFailure } from "../../services/tauriClient";
 import { DatabaseChooser } from "../databases/DatabaseChooser";
 import * as databasesService from "../databases/databasesService";
 import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
 import * as sessionService from "./sessionService";
 import { SessionContext } from "./sessionStore";
 import type { SessionState } from "./sessionStore";
+import { UnsavedChangesPrompt } from "./UnsavedChangesPrompt";
+import { getDirtyForm } from "./usePendingDraft";
 
 type Phase =
   | { kind: "starting" }
-  | { kind: "chooser" }
+  /** `selectedPath`: the database just closed, which the chooser selects
+   * (FR-033). */
+  | { kind: "chooser"; selectedPath: string | null }
   /** `opens` counts every open, so reopening the same file still mounts a
    * fresh collection tree. */
   | { kind: "open"; status: DatabaseStatus; opens: number };
 
+/** The save / discard / cancel question, and what happens once it is
+ * answered with anything but cancel. */
+interface Question {
+  label: string;
+  save: () => Promise<boolean>;
+  proceed: () => Promise<void>;
+}
+
 /** Holds the session and shows the chooser whenever no database is open.
  * `children`, the collection's providers and shell, render only while one
  * is, keyed by that open, so a close or switch drops every piece of
- * collection state with the tree that held it (contracts/ui-databases.md §3). */
+ * collection state with the tree that held it (contracts/ui-databases.md §3).
+ * Closing, switching and quitting ask first about a form with unsaved input
+ * (FR-010, §6). */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
+  const [question, setQuestion] = useState<Question | null>(null);
+  const openPath = useRef<string | null>(null);
+  openPath.current = phase.kind === "open" ? phase.status.path : null;
+
+  const toChooser = useCallback((selectedPath: string | null) => {
+    setQuestion(null);
+    setPhase({ kind: "chooser", selectedPath });
+  }, []);
 
   const opened = useCallback((status: DatabaseStatus) => {
     setPhase((current) => ({
@@ -34,16 +57,56 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let current = true;
     sessionService.getDatabaseStatus().then(
       (status) => current && opened(status),
-      () => current && setPhase({ kind: "chooser" }),
+      () => current && toChooser(null),
     );
     return () => {
       current = false;
     };
-  }, [opened]);
+  }, [opened, toChooser]);
+
+  // However the database closed (a close here, a take-over noticed by the
+  // backend), everything from it goes, and the chooser selects it.
+  useEffect(
+    () => sessionService.onSessionClosed((closed) => toChooser(closed.databasePath)),
+    [toChooser],
+  );
+
+  /** Runs `proceed` at once, or once the user has chosen to save or discard
+   * a form's unsaved input. */
+  const unlessUnsaved = useCallback((proceed: () => Promise<void>) => {
+    const form = getDirtyForm();
+    if (!form) return proceed();
+    setQuestion({ label: form.label, save: form.submit, proceed });
+    return Promise.resolve();
+  }, []);
+
+  const closeDatabase = useCallback(
+    (reason: "closed" | "switched") =>
+      unlessUnsaved(async () => {
+        const path = openPath.current;
+        try {
+          await sessionService.closeDatabase(reason);
+        } catch (error) {
+          // Already closed, by a lock or a take-over: the chooser it is.
+          if (!(error instanceof CommandFailure && error.code === "DATABASE_CLOSED")) throw error;
+        }
+        toChooser(path);
+      }),
+    [unlessUnsaved, toChooser],
+  );
+
+  // The window's close button, or quitting from the OS (research.md §17).
+  useEffect(
+    () =>
+      sessionService.onQuitRequested(
+        () => void unlessUnsaved(() => sessionService.quitApplication()),
+      ),
+    [unlessUnsaved],
+  );
 
   const openDatabase = useCallback(
-    async (path: string, passphrase: string) => {
-      opened(await databasesService.openDatabase(path, passphrase));
+    async (...open: Parameters<typeof databasesService.openDatabase>) => {
+      opened(await databasesService.openDatabase(...open));
     },
     [opened],
   );
@@ -77,18 +140,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       status: phase.kind === "open" ? phase.status : null,
       openDatabase,
       createDatabase,
+      closeDatabase,
       refreshStatus,
       dismissNote,
     }),
-    [phase, openDatabase, createDatabase, refreshStatus, dismissNote],
+    [phase, openDatabase, createDatabase, closeDatabase, refreshStatus, dismissNote],
   );
 
   return (
     <SessionContext.Provider value={value}>
-      {phase.kind === "chooser" && <DatabaseChooser />}
+      {phase.kind === "chooser" && <DatabaseChooser selectPath={phase.selectedPath} />}
       {phase.kind === "open" && (
         <Fragment key={`${phase.status.path}#${phase.opens}`}>{children}</Fragment>
       )}
+      <UnsavedChangesPrompt
+        label={question?.label ?? null}
+        onSave={async () => {
+          if (!question) return;
+          // A save that fails leaves the form open showing why, and nothing
+          // closes.
+          if (await question.save()) await question.proceed();
+        }}
+        onDiscard={() => void question?.proceed()}
+        onCancel={() => setQuestion(null)}
+      />
     </SessionContext.Provider>
   );
 }
