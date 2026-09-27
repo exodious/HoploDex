@@ -73,7 +73,21 @@ fn handle_system_events(app: AppHandle, events: mpsc::Receiver<SystemEvent>) {
                     drop(ack);
                 }
                 SystemEvent::Woke => lifecycle::finish_on_wake(&session, &machine),
-                SystemEvent::ScreenLocked => lifecycle::screen_locked(&session, &machine),
+                // Its lock makes a backup, which can take a while. Closing a
+                // laptop's lid locks the screen and then sleeps it, and that
+                // sleep must reach the close under way to finish it at once
+                // (research.md §14), so the lock runs on its own thread.
+                SystemEvent::ScreenLocked => {
+                    let app = app.clone();
+                    let spawned =
+                        thread::Builder::new().name("screen-lock".into()).spawn(move || {
+                            let session = app.state::<Session>();
+                            lifecycle::screen_locked(&session, &app.state::<MachineSettings>());
+                        });
+                    if let Err(err) = spawned {
+                        log::error!("could not lock for the screen lock: {err}");
+                    }
+                }
                 SystemEvent::ScreenUnlocked => {}
                 SystemEvent::WillShutDown { ack } => {
                     end_for_the_os(&app);

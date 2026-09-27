@@ -675,7 +675,7 @@ application is ready. Each OS backend runs on its own thread.
 | | Sleep (with time to finish) | Wake | Screen lock | OS shutdown / logout |
 |---|---|---|---|---|
 | **Linux** | logind `PrepareForSleep(true)` on the system bus, holding a **delay inhibitor** (`Inhibit("sleep", …, "delay")`, default maximum 5 s) that is released when the lock finishes and taken again on wake | `PrepareForSleep(false)` | logind session `Lock` signal and `LockedHint` property; `org.freedesktop.ScreenSaver` / `org.gnome.ScreenSaver` `ActiveChanged(true)` on the session bus | logind `PrepareForShutdown(true)` with a `shutdown` delay inhibitor; SIGTERM/SIGHUP/SIGINT (existing) |
-| **macOS** | IOKit `IORegisterForSystemPower`: `kIOMessageSystemWillSleep`, answered by `IOAllowPowerChange` once the lock finishes (the system waits up to 30 s) | `kIOMessageSystemHasPoweredOn` | distributed notification `com.apple.screenIsLocked` | `NSWorkspaceWillPowerOffNotification`, then the quit Apple event (tao reports it as an exit request, which is then known to be OS-initiated) |
+| **macOS** | IOKit `IORegisterForSystemPower`: `kIOMessageSystemWillSleep`, answered by `IOAllowPowerChange` once the lock finishes (the system waits up to 30 s) | `kIOMessageSystemHasPoweredOn` | distributed notification `com.apple.screenIsLocked`, registered to be delivered immediately (AppKit holds distributed notifications back while the application isn't active) | `NSWorkspaceWillPowerOffNotification`, then the quit Apple event (tao reports it as an exit request, which is then known to be OS-initiated) |
 | **Windows** | `WM_POWERBROADCAST` / `PBT_APMSUSPEND` (about 2 s allowed) | `PBT_APMRESUMEAUTOMATIC` | `WTSRegisterSessionNotification` then `WM_WTSSESSION_CHANGE` / `WTS_SESSION_LOCK` | `WM_QUERYENDSESSION` / `WM_ENDSESSION`, with `ShutdownBlockReasonCreate` while pending changes are saved |
 
 On Windows these messages go only to **top-level** windows. Message-only
@@ -719,7 +719,10 @@ lock in progress (typically its backup, for a screen lock or a user close) is
 turned into an immediate close whatever the idle-lock setting, since the
 user has already asked for the database to close. The running backup is
 stopped through the operations registry (its `.partial` removed, the changes
-left waiting), and the close continues from `close_immediate`'s step 2. The
+left waiting), and the close continues from `close_immediate`'s step 2. A
+screen lock's close runs on a thread of its own, not the one that reads the
+notices: closing a laptop's lid locks the screen and then sleeps, and the
+sleep notice must not wait behind the lock's backup. The
 idle-lock switch only decides whether `WillSleep` closes a database that is
 open and not closing.
 

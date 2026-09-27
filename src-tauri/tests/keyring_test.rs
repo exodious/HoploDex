@@ -8,7 +8,7 @@ mod support;
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
@@ -25,6 +25,20 @@ use tempfile::TempDir;
 const SERVICE: &str = "com.hoplodex.app";
 const NEW_PASSPHRASE: &str = "a much longer passphrase of several words";
 
+/// keyring-core's in-memory store is one per process, shared by the tests
+/// running beside each other. The E2E keyring file is written from all of it
+/// and loaded back into it, which could bring back a passphrase another test
+/// had forgotten in between, so that test has the store to itself.
+static STORE: RwLock<()> = RwLock::new(());
+
+fn sharing_the_store() -> RwLockReadGuard<'static, ()> {
+    STORE.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn store_to_itself() -> RwLockWriteGuard<'static, ()> {
+    STORE.write().unwrap_or_else(PoisonError::into_inner)
+}
+
 struct World {
     folder: TempDir,
     _config: TempDir,
@@ -32,6 +46,7 @@ struct World {
     machine: MachineSettings,
     session: Session,
     _events: Arc<TestEvents>,
+    _store: Option<RwLockReadGuard<'static, ()>>,
 }
 
 impl World {
@@ -41,6 +56,11 @@ impl World {
     }
 
     fn with_keyring(keyring: Keyring) -> Self {
+        Self { _store: Some(sharing_the_store()), ..Self::with_the_store_to_itself(keyring) }
+    }
+
+    /// For a test that holds [`store_to_itself`].
+    fn with_the_store_to_itself(keyring: Keyring) -> Self {
         let config = TempDir::new().unwrap();
         let (session, events) = test_session(&config.path().join("opened-documents"));
         Self {
@@ -50,6 +70,7 @@ impl World {
             _config: config,
             session,
             _events: events,
+            _store: None,
         }
     }
 
@@ -430,9 +451,10 @@ fn the_pre_feature_sqlcipher_key_entry_is_never_touched() {
 /// saved passphrase outlives a relaunch there.
 #[test]
 fn an_e2e_keyring_file_keeps_saved_passphrases_between_launches() {
+    let _alone = store_to_itself();
     let files = TempDir::new().unwrap();
     let file = files.path().join("keyring.json");
-    let world = World::with_keyring(Keyring::mock(None, Some(file.clone())));
+    let world = World::with_the_store_to_itself(Keyring::mock(None, Some(file.clone())));
     world.create("Main");
     let id = world.database_id();
     world.save(TEST_PASSPHRASE).unwrap();
