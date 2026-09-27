@@ -704,7 +704,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `contracts/tauri-commands.md`'s introduction and error shape
 - [X] T141 [P] Reconcile `specs/003-database-protection-management/contracts/tauri-commands.md`, `contracts/ui-databases.md` and `data-model.md` with any command shape, event, text or column that changed during implementation, and check that code comments cite this feature's requirement and research IDs accurately
 - [X] T142 Check that nothing touches real application data (constitution 1.2.0, research §21). Grep `src-tauri/tests/`, `src-tauri/examples/`, `e2e/` and `scripts/` for `app_config_dir`, `app_data_dir`, `document_dir`, `dirs::` and keyring use outside `mock-keyring`, and confirm every hit resolves only inside a temp or sandbox directory
-- [ ] T143 Run the full gates in the dev container:
+- [X] T143 Run the full gates in the dev container:
   - `cargo test --manifest-path src-tauri/Cargo.toml`
   - `cargo test --manifest-path src-tauri/Cargo.toml --features mock-keyring --test keyring_test`
   - `npm run test`
@@ -714,7 +714,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   
   Fix every failure (depends on all earlier tasks)
 - [ ] T144 On macOS and on Windows, outside the container, run `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets`, `cargo fmt --manifest-path src-tauri/Cargo.toml --check`, `cargo test --manifest-path src-tauri/Cargo.toml` and the `mock-keyring` keyring test. This is the only place `platform/macos.rs`, `platform/windows.rs` and the other `cfg(target_os = "macos")`/`cfg(windows)` code are compiled and linted (constitution I), and `portability_test` opening the Linux-made fixture there is SC-001's cross-platform check (research §20). Fix every failure and record the results for the PR (quickstart.md platform checks)
-- [ ] T145 Run `npm run screenshots` and collect the before (main) and after images for the new screens 14–25 and the changed top bar and export dialog, for the PR's UI evidence (contracts/ui-databases.md §15)
+- [X] T145 Run `npm run screenshots` and collect the before (main) and after images for the new screens 14–25 and the changed top bar and export dialog, for the PR's UI evidence (contracts/ui-databases.md §15)
 - [ ] T146 Walk through quickstart.md's six walkthroughs with `scripts/human-testing.sh` (by hand, against scratch data), timing walkthrough 1's create and a switch to a second database against SC-006's 2 minutes, and do the per-OS platform checks table on each available OS. Record the results for the PR description
 - [ ] T147 Draft the PR description: the before/after screenshots, the platform-check results (including T144's Rust gates on macOS and Windows), the security and data-handling note (the attack surface listed in spec.md's Assumptions and how each constraint is met: no passphrase held between commands, pinned cipher settings, refused opens never write, copy-verify-replace, secure deletion, local-only backups, keyring opt-in, test isolation), and the performance note (SC-003 open time and SC-005 progress latency as measured by T138)
 
