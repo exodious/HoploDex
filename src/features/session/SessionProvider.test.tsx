@@ -145,7 +145,11 @@ describe("SessionProvider (User Story 1)", () => {
     expect(note).toHaveTextContent(
       "Your collection is encrypted with your passphrase. For extra protection, also turn on your computer's disk encryption: BitLocker on Windows, FileVault on macOS, or LUKS on Linux.",
     );
-    expect(screen.getByRole("button", { name: "Why?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Why?" }));
+    expect(
+      await screen.findByRole("dialog", { name: "About databases and security" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
 

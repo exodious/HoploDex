@@ -117,6 +117,23 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     }
   });
 
+  it("says old backups are deleted as securely as the computer allows, with the guide a click away (FR-030)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const statement = screen.getByText(/Old backups are deleted securely/);
+    expect(statement).toHaveTextContent(
+      "Old backups are deleted securely, as far as this computer allows (see About databases and security).",
+    );
+    await user.click(
+      within(statement).getByRole("button", { name: "About databases and security" }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: "About databases and security" }),
+    ).toBeInTheDocument();
+  });
+
   it("offers restoring from a backup", async () => {
     const user = userEvent.setup();
     const props = renderSettings();

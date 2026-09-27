@@ -6,6 +6,7 @@ import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
 import { useSession } from "../session/sessionStore";
 import * as databasesService from "./databasesService";
+import { DatabaseGuideLink } from "./DatabaseGuide";
 import type { PassphraseChanged, PassphraseChangeProgress } from "./types";
 import "../firearms/forms.css";
 import "./databases.css";
@@ -180,9 +181,15 @@ function ChangePassphraseForm({
       <>
         <div className="hd-dialog__body hd-form-section" role="status">
           <p>
-            {changed.oldFileRemoved
-              ? `The passphrase of ${name} has been changed. The previous file was deleted securely, as far as this computer allows (see About databases and security). Backups and copies made before now still open with the old passphrase.`
-              : `The passphrase of ${name} has been changed. The previous file could not be deleted. It is at ${changed.oldFilePath ?? ""}, and it opens with the old passphrase. Backups and copies made before now still open with the old passphrase too.`}
+            {changed.oldFileRemoved ? (
+              <>
+                The passphrase of {name} has been changed. The previous file was deleted securely,
+                as far as this computer allows (see <DatabaseGuideLink />
+                ). Backups and copies made before now still open with the old passphrase.
+              </>
+            ) : (
+              `The passphrase of ${name} has been changed. The previous file could not be deleted. It is at ${changed.oldFilePath ?? ""}, and it opens with the old passphrase. Backups and copies made before now still open with the old passphrase too.`
+            )}
           </p>
         </div>
         <footer className="hd-dialog__footer">

@@ -225,6 +225,12 @@ for (const theme of ["Light", "Dark"] as const) {
       await browser.pause(300);
       await shot(`21-restore-backup-${suffix}`, { fullPage: true });
       await closeDialog();
+
+      await chooseMenuItem("button.hd-db-menu", "About databases and security");
+      await $('[role="dialog"] .hd-db-guide').waitForExist();
+      await browser.pause(300);
+      await shot(`23-database-guide-${suffix}`);
+      await closeDialog();
     });
 
     it("pending changes after a lock", async () => {

@@ -235,6 +235,9 @@ footer, like every other form.
     removed."
   - "Backups on the same disk as the database don't protect against losing
     that disk."
+  - "Old backups are deleted securely, as far as this computer allows (see
+    About databases and security)." The guide's name is a link that opens
+    it (§11, FR-030).
 - Actions: **Restore from a backup…** (§9) and **Delete all backups…**
   (destructive `ConfirmDialog`, "Delete all <n> backups of <name>? They are
   deleted securely where this computer supports it. This can't be undone.")

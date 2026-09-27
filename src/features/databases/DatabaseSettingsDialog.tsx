@@ -16,6 +16,7 @@ import type { PassphraseFieldHandle } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import * as databasesService from "./databasesService";
 import { folderOf, joinPath } from "./paths";
+import { DatabaseGuideLink } from "./DatabaseGuide";
 import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 import type {
   BackupLocationInput,
@@ -238,6 +239,11 @@ function SettingsForm({
             {BACKUP_STATEMENTS.map((statement) => (
               <li key={statement}>{statement}</li>
             ))}
+            <li>
+              Old backups are deleted securely, as far as this computer allows (see{" "}
+              <DatabaseGuideLink />
+              ).
+            </li>
           </ul>
           <BackupActions name={status.name} disabled={saving} onRestore={onRestore} />
         </fieldset>

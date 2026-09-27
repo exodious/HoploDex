@@ -680,7 +680,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 
 **Purpose**: The in-app guide, performance budgets, documentation, amendments to feature 001's documents, and the PR gates.
 
-- [ ] T137 [P] Write `src/features/databases/DatabaseGuide.test.tsx`, then create `src/features/databases/DatabaseGuide.tsx` (FR-030, contracts/ui-databases.md §11). It is a `Dialog` with headed sections in the style of `src/features/firearms/OriginGuide.tsx`, covering:
+- [X] T137 [P] Write `src/features/databases/DatabaseGuide.test.tsx`, then create `src/features/databases/DatabaseGuide.tsx` (FR-030, contracts/ui-databases.md §11). It is a `Dialog` with headed sections in the style of `src/features/firearms/OriginGuide.tsx`, covering:
   - passphrases (why length matters, no recovery, a copied file protected only by the passphrase)
   - saving the passphrase on this computer
   - locking
@@ -690,7 +690,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - whole-disk encryption
   
   Link it from **About databases and security** in `DatabaseMenu.tsx`, **Why?** in `DatabaseNotes.tsx`, and the "see About databases and security" texts in `ChangePassphraseDialog.tsx` and `DatabaseSettingsDialog.tsx`. Add the screen `23-database-guide` to `e2e/screenshots/screens.e2e.ts`
-- [ ] T138 [P] Extend `src-tauri/tests/performance_test.rs`: opening a database of 10,000 firearms takes at most 1 s including key derivation (SC-003, constitution IV); the first `backup:progress`, `passphrase_change:progress` and `restore:progress` event each arrives within 100 ms of its operation starting (SC-005); 10,000 `session.write` fingerprint checks add no measurable cost against the existing 500 ms search and 1 s action budgets
+- [X] T138 [P] Extend `src-tauri/tests/performance_test.rs`: opening a database of 10,000 firearms takes at most 1 s including key derivation (SC-003, constitution IV); the first `backup:progress`, `passphrase_change:progress` and `restore:progress` event each arrives within 100 ms of its operation starting (SC-005); 10,000 `session.write` fingerprint checks add no measurable cost against the existing 500 ms search and 1 s action budgets
 - [ ] T139 [P] Update DEVELOPMENT.md:
   - "Test isolation": the passphrase model; no DB key environment variable; `HOPLODEX_E2E_KEYRING=unavailable`; the scratch `user-dirs.dirs`; the seed's sandbox marker and refusals; what counts as real application data now (every database, its backups, `machine.json`, the suggested documents folder and the `passphrase:<id>` keyring entries, plus the pre-feature DB and key)
   - "Human testing": two seeded databases, the printed passphrase, "Shared collection" open on "Workshop PC"

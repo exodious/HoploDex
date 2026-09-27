@@ -299,6 +299,9 @@ pub mod ops {
             (&database_folder, restored_len),
             (&settings.folder, current_len),
         ])?;
+        // The bar shows at once (SC-005); checking the passphrase derives a
+        // key, which takes longer than the 100 ms feedback budget.
+        progress(events, "copying", 0, restored_len);
         check_backup_passphrase(backup, passphrase)?;
 
         // 2. The restored copy, known good before the current database is
@@ -388,7 +391,9 @@ pub mod ops {
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
         let database_folder = path.parent().unwrap_or(Path::new("")).to_owned();
-        disk_space::check_room_for_copy(backup_len(backup)?, &database_folder)?;
+        let restored_len = backup_len(backup)?;
+        disk_space::check_room_for_copy(restored_len, &database_folder)?;
+        progress(events, "copying", 0, restored_len);
         check_backup_passphrase(backup, passphrase)?;
         let new = file_swap::new_path(path);
         let made_at = prepare_restored_copy(session, &operation, backup, &new, passphrase)?;
@@ -481,7 +486,20 @@ pub mod ops {
             return Err(CommandError::pending_changes_unresolved());
         }
 
-        // 2. The current passphrase, against the file's first page.
+        // 2. Room for a second copy beside the database (FR-016).
+        let path = open.path.clone();
+        let len = RawFile::of(&open.conn)
+            .and_then(|file| file.size())
+            .map_err(|err| change_io_failure(&path, &err))?;
+        disk_space::check_room_for_copy(len, path.parent().unwrap_or(Path::new("")))?;
+
+        // The bar gets its total now (SC-005): the check below derives a
+        // key, which takes longer than the 100 ms feedback budget.
+        let total = export_total(&open.conn)?;
+        let events = session.events();
+        change_progress(events, "copying", 0, total);
+
+        // 3. The current passphrase, against the file's first page.
         match db::verify_passphrase(&open.conn, current, scratch_dir) {
             Ok(true) => {}
             Ok(false) => {
@@ -497,22 +515,14 @@ pub mod ops {
             }
         }
 
-        // 3. Room for a second copy beside the database (FR-016).
-        let path = open.path.clone();
-        let len = RawFile::of(&open.conn)
-            .and_then(|file| file.size())
-            .map_err(|err| change_io_failure(&path, &err))?;
-        disk_space::check_room_for_copy(len, path.parent().unwrap_or(Path::new("")))?;
-
         // 4. From here a sleep stops it, interrupting the export.
         let operation = session
             .operations()
             .begin(OperationKind::PassphraseChange, Some(open.conn.get_interrupt_handle()))?;
-        let events = session.events();
 
         // 5–7. The copy, stamped and proved sound.
         let new_copy = file_swap::new_path(&path);
-        let prepared = rekeyed_copy(&open.conn, &operation, events, &new_copy, new)
+        let prepared = rekeyed_copy(&open.conn, &operation, events, &new_copy, new, total)
             .and_then(|()| check_rekeyed_copy(&open.conn, &operation, events, &new_copy, new));
         if let Err(err) = prepared {
             remove_copy(&new_copy);
@@ -569,6 +579,19 @@ pub mod ops {
         })
     }
 
+    /// The size the copy grows to, which `sqlcipher_export` progress is
+    /// measured against.
+    fn export_total(conn: &Connection) -> Result<u64, CommandError> {
+        let total: i64 = conn
+            .query_row(
+                "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        Ok(u64::try_from(total).unwrap_or(0))
+    }
+
     /// Makes `.<file>.new`, keyed with `new`, by `sqlcipher_export` into an
     /// attachment (research.md §3), reporting its size as it grows, and
     /// stamps it: no open marker, no pending changes, and a change waiting
@@ -580,15 +603,8 @@ pub mod ops {
         events: &dyn SessionEvents,
         new_copy: &Path,
         new: &Passphrase,
+        total: u64,
     ) -> Result<(), CommandError> {
-        let total: i64 = conn
-            .query_row(
-                "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(CommandError::from_db)?;
-        let total = u64::try_from(total).unwrap_or(0);
         // The session's connection can't create files, only attach one that
         // exists.
         File::create(new_copy).map_err(|err| change_io_failure(new_copy, &err))?;
@@ -601,7 +617,6 @@ pub mod ops {
         conn.execute("ATTACH DATABASE ?1 AS rekey KEY ?2", [copy_path, new.as_str()])
             .map_err(CommandError::from_db)?;
 
-        change_progress(events, "copying", 0, total);
         let copied = cipher::apply_cipher_settings(conn, "rekey")
             .and_then(|()| export_reporting_size(conn, events, new_copy, total))
             .and_then(|()| {

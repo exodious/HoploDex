@@ -143,12 +143,15 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
 
     const user = await fill(CURRENT, NEW);
 
-    expect(
-      await screen.findByText(
-        "The passphrase of Main collection has been changed. The previous file was deleted securely, as far as this computer allows (see About databases and security). Backups and copies made before now still open with the old passphrase.",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "The passphrase of Main collection has been changed. The previous file was deleted securely, as far as this computer allows (see About databases and security). Backups and copies made before now still open with the old passphrase.",
+    );
     expect(session.refreshStatus).toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "About databases and security" }));
+    expect(
+      await screen.findByRole("dialog", { name: "About databases and security" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Done" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

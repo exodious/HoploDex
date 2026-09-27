@@ -254,7 +254,7 @@ sleep stops it (FR-037).
 - **Input**: `{ currentPassphrase: string; newPassphrase: string }`
 - **Output**: `{ oldFileRemoved: boolean; oldFilePath?: string; passphraseSaved: boolean }`
 - **Errors**: `PASSPHRASE_INCORRECT` (current, `fieldErrors.currentPassphrase`, checked on the file's first page, research §1a), `VALIDATION_ERROR` (new, `fieldErrors.newPassphrase`), `INSUFFICIENT_SPACE` (checked before anything is written), `PENDING_CHANGES_UNRESOLVED` (the copy would drop them, FR-039), `REPLACE_FAILED` (the original is unchanged and is reopened with the current passphrase, so the session stays open), `OPERATION_STOPPED`, and `INTERNAL_ERROR` when the new copy fails its checks (research §4; nothing is changed)
-- **Progress**: `passphrase_change:progress` `{ phase: "copying" | "checking" | "replacing"; processed: number; total: number }` (bytes; `checking` and `replacing` are indeterminate, with `total: 0`)
+- **Progress**: `passphrase_change:progress` `{ phase: "copying" | "checking" | "replacing"; processed: number; total: number }` (bytes; `checking` and `replacing` are indeterminate, with `total: 0`). The first `copying` event, with the total, is sent once the space check has passed and before the current passphrase is checked, whose key derivation takes longer than SC-005's 100 ms; a `PASSPHRASE_INCORRECT` refusal can follow it
 - Copy, verify, then replace (FR-015, FR-016, research §3, §4). Sets `changes_waiting` in the new copy (FR-025). Updates the saved keyring passphrase when there is one (FR-018). If the old file cannot be removed, `oldFileRemoved: false` and `oldFilePath` are returned (US4-5).
 
 ### `list_backups`
@@ -266,7 +266,7 @@ sleep stops it (FR-037).
 - **Input**: `{ backupPath: string; backupPassphrase: string; databasePath?: string }` (`databasePath` only when restoring a damaged database with nothing open)
 - **Output**: `DatabaseStatus` (the restored database is open), with `notes.restoredWithPassphraseOf` set
 - **Errors**: `PASSPHRASE_INCORRECT` (for the backup, checked on its first page before anything is copied), `DATABASE_DAMAGED` (the backup itself fails verification), `BACKUP_LOCATION_UNAVAILABLE` (checked before anything is written; not for a damaged database), `INSUFFICIENT_SPACE` (checked before anything is written: room for the restored copy in the database's folder and for the "before restoring" backup in the backup folder), `RESTORE_CANCELLED` (the "before restoring" backup failed), `NOT_FOUND` (the backup is gone), `REPLACE_FAILED` (the database is then closed, since the backend holds no passphrase for it: `session:closed` is emitted and the user opens it again), `OPERATION_STOPPED`
-- **Progress**: `restore:progress` `{ phase: "copying" | "checking" | "savingCurrent" | "replacing"; processed; total }`
+- **Progress**: `restore:progress` `{ phase: "copying" | "checking" | "savingCurrent" | "replacing"; processed; total }`. The first `copying` event, with the total, is sent once the location and space checks have passed and before the backup's passphrase is checked, as for `change_passphrase`; a `PASSPHRASE_INCORRECT` refusal can follow it
 - Steps in research §8. `savingCurrent` is the "before restoring" backup, made whatever the once-a-day limit says and even when automatic backups are off (FR-028); if it fails or is stopped, the restore is abandoned and the database is unchanged. A damaged database is renamed aside, not deleted, and its new path is returned in `notes.damagedFileKeptAt`.
 
 ### `delete_all_backups`

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, Icon, useToast } from "../../components";
 import { formatDateTime } from "../../lib/dates";
 import { useSession } from "../session/sessionStore";
+import { DatabaseGuideLink } from "./DatabaseGuide";
 import type { NoteKind } from "./types";
 import "./databases.css";
 
@@ -77,10 +78,7 @@ export function DatabaseNotes() {
         <section className="hd-banner hd-db-note" aria-label="Disk encryption">
           <Icon name="shield" />
           <p className="hd-banner__text">{DISK_ENCRYPTION}</p>
-          {/* Opens the guide once it exists ("About databases and security"). */}
-          <Button variant="ghost" size="sm">
-            Why?
-          </Button>
+          <DatabaseGuideLink>Why?</DatabaseGuideLink>
           {dismissButton("diskEncryption")}
         </section>
       )}

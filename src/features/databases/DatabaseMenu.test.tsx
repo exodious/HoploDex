@@ -173,7 +173,20 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
       "Database settings…",
       "Change passphrase…",
       "Restore from a backup…",
+      "About databases and security",
     ]);
+  });
+
+  it("opens the guide (§11)", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("menuitem", { name: "About databases and security" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "About databases and security" }),
+    ).toBeInTheDocument();
   });
 
   it("opens the passphrase change (§8)", async () => {
