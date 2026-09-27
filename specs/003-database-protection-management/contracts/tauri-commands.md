@@ -242,7 +242,7 @@ type ExistingBackupsOutcome =
 
 ### `update_backup_settings`
 - **Input**: `{ enabled: boolean; keepCount: number; location: { kind: "default" } | { kind: "custom"; path: string }; existingBackups?: "move" | "leave" | "delete" }`
-- **Output**: `{ settings: CollectionSettings; existingBackups: ExistingBackupsOutcome | null }` (`null` when the location did not change, or the old folder held no backups)
+- **Output**: `{ settings: CollectionSettings; existingBackups: ExistingBackupsOutcome | null }` (`null` when the location did not change, or the old folder held no backups; `{ action: "leave" }` after `leave` for an old folder that couldn't be read, whose backups weren't counted)
 - **Errors**: `VALIDATION_ERROR` (`fieldErrors.keepCount`, `fieldErrors.location`); for a changed location, `BACKUPS_AT_OLD_LOCATION` or `OLD_BACKUP_LOCATION_UNAVAILABLE` when `existingBackups` is missing (or, for an unreadable old folder, is not `leave`); for `move`, `BACKUP_LOCATION_UNAVAILABLE` and `INSUFFICIENT_SPACE`, checked before anything is written; for `delete`, `BACKUPS_NOT_ALL_DELETED`; `OPERATION_IN_PROGRESS`; `OPERATION_STOPPED` (`move` or `delete` stopped by a sleep)
 - A collection change (FR-025). Lowering `keepCount` does not delete anything straight away; the next successful backup rotates.
 - **A changed location** (FR-026, research §22) is one whose resolved folder differs from the current one's. With backups of this database in the old folder, nothing is saved until the user has chosen:

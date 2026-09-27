@@ -207,7 +207,8 @@ Operations registry: at most one running long operation
           | moveBackups,
     cancel: AtomicBool, interrupt: Option<InterruptHandle>,
     done: how far it got (rows imported, backups deleted; for a move,
-          the backups not yet moved) }
+          the backups not yet moved),
+    folder: for a move, the old location the rest are still in }
 
 IdleClock { settings (None while nothing is open), last_input (wall clock),
             paused_by: set<nativeDialog> }   // a registered operation also pauses it

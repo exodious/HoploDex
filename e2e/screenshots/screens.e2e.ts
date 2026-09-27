@@ -212,6 +212,16 @@ for (const theme of ["Light", "Dark"] as const) {
       await $('[role="dialog"]').waitForExist();
       await browser.pause(300);
       await shot(`19-database-settings-${suffix}`, { fullPage: true });
+      // The seeded backups are at a custom location, so going back to the
+      // default asks what to do with them (FR-026). Cancelled: nothing is
+      // saved.
+      await clickButton("Use the default");
+      await clickButton("Save");
+      await $("h2=Backups at the old location").waitForExist();
+      await browser.pause(300);
+      await shot(`27-backup-location-change-${suffix}`);
+      await clickButton("Cancel");
+      await $("h2=Backups at the old location").waitForExist({ reverse: true });
       await closeDialog();
 
       await chooseMenuItem("button.hd-db-menu", "Change passphrase…");

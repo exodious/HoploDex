@@ -1,12 +1,16 @@
 import fs from "node:fs";
 import {
   $,
+  $$,
   E2E_PASSPHRASE,
   addFirearm,
   browser,
+  choose,
   chooseMenuItem,
+  clickButton,
   clickEl,
   createDatabase,
+  invokeCommand,
   expect,
   fill,
   goTo,
@@ -21,17 +25,21 @@ import { realClick } from "../support/realInput";
 /**
  * End-to-end coverage of specs/003-database-protection-management's User
  * Story 3 against the real built app: a backup when a changed database is
- * closed, at most once a day, and restoring from one.
+ * closed, at most once a day, restoring from one, and moving or leaving
+ * them when the backup location changes.
  */
 
 const folder = `${scratchDocuments()}/Backed up`;
 const backups = `${folder}/HoploDex backups`;
 
-/** The backups of "Kept" in its default folder. */
-function backupFiles(): string[] {
-  if (!fs.existsSync(backups)) return [];
+/** Where the backups are moved to, and left, in the location flows. */
+const elsewhere = `${scratchDocuments()}/Elsewhere`;
+
+/** The backups of "Kept" in its default folder, or in `folder`. */
+function backupFiles(folder = backups): string[] {
+  if (!fs.existsSync(folder)) return [];
   return fs
-    .readdirSync(backups)
+    .readdirSync(folder)
     .filter((name) => /^Kept \d{4}-\d{2}-\d{2} \d{6} [0-9a-f]{8}\.hoplodex$/.test(name))
     .sort();
 }
@@ -40,6 +48,46 @@ function backupFiles(): string[] {
 async function closeDatabase() {
   await chooseMenuItem("button.hd-db-menu", "Lock now");
   await waitForChooser();
+}
+
+/** The backups the restore dialog offers: those at the current location. */
+async function restorable(): Promise<number> {
+  await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+  await $('[role="dialog"] .hd-dialog__body').waitForExist();
+  await browser.pause(300);
+  const count = (await $$('[role="dialog"] input[type="radio"]')).length;
+  await clickButton("Cancel");
+  await $('[role="dialog"]').waitForExist({ reverse: true });
+  return count;
+}
+
+/** Makes `elsewhere` the backup location, doing `existingBackups` with the
+ * backups at the old one. The folder is chosen in the OS's own dialog, which
+ * WebDriver can't reach (Tauri's IPC can't be stubbed in the page either),
+ * so the command it leads to is sent directly; a lock and an unlock then
+ * show the settings as saved. */
+async function useElsewhere(existingBackups?: "move" | "leave") {
+  await invokeCommand("update_backup_settings", {
+    enabled: true,
+    keepCount: 5,
+    location: { kind: "custom", path: elsewhere },
+    ...(existingBackups ? { existingBackups } : {}),
+  });
+  await closeDatabase();
+  await unlock(E2E_PASSPHRASE);
+}
+
+/** Goes back to the default backup location in the database settings,
+ * answering "Backups at the old location" with `choice`. */
+async function backToTheDefault(choice: string) {
+  await chooseMenuItem("button.hd-db-menu", "Database settings…");
+  await $('[role="dialog"]').waitForExist();
+  await clickButton("Use the default");
+  await clickButton("Save");
+  await $("h2=Backups at the old location").waitForExist();
+  await choose(choice);
+  await clickButton("Change location");
+  await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
 }
 
 async function listed(make: string): Promise<boolean> {
@@ -126,5 +174,36 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
       timeout: 5000,
       timeoutMsg: "no before-restoring backup appeared",
     });
+  });
+
+  it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async () => {
+    // Still open after the restore, with both backups in the default folder.
+    expect(backupFiles()).toHaveLength(2);
+    fs.mkdirSync(elsewhere, { recursive: true });
+    await useElsewhere("move");
+    // Both moved, and any backup the lock made is at the new location too.
+    const moved = backupFiles(elsewhere);
+    expect(moved.length).toBeGreaterThanOrEqual(2);
+    expect(backupFiles()).toEqual([]);
+
+    await backToTheDefault("Leave them where they are");
+
+    expect(backupFiles(elsewhere)).toEqual(moved);
+    expect(backupFiles()).toEqual([]);
+    expect(await restorable()).toBe(0);
+  });
+
+  it("moves the backups to the new location (FR-026, US3-4a)", async () => {
+    // Their folder chosen again: they are the database's backups again.
+    await useElsewhere();
+    const made = backupFiles(elsewhere);
+    expect(made.length).toBeGreaterThanOrEqual(2);
+    expect(await restorable()).toBe(made.length);
+
+    await backToTheDefault("Move them to the new location");
+
+    expect(backupFiles()).toEqual(made);
+    expect(backupFiles(elsewhere)).toEqual([]);
+    expect(await restorable()).toBe(made.length);
   });
 });

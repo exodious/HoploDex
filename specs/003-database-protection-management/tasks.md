@@ -822,7 +822,7 @@ Each story adds value without breaking the ones before it. Re-run the whole back
 
 ## Phase 10: Convergence
 
-- [ ] T150 [US3] Write `src-tauri/tests/backup_location_change_test.rs` first, against real backups made by earlier closes (temp directories only), per FR-026, US3-4a, US3-4b (missing):
+- [X] T150 [US3] Write `src-tauri/tests/backup_location_change_test.rs` first, against real backups made by earlier closes (temp directories only), per FR-026, US3-4a, US3-4b (missing):
   - a changed location with backups of this database at the old folder gives `BACKUPS_AT_OLD_LOCATION { folder, count, totalBytes }` and saves nothing. With none there, or with the same folder named another way (`same_path`), it saves at once with `existingBackups: null`
   - `leave`: saved; the old backups are no longer returned by `list_backups`, the rotation after the next backup or `delete_all_backups` touch none of them, and setting the location back to their folder lists them again
   - `delete`: only this database's backups at the old folder are removed, each through `secure_delete`, with `backups_delete:progress`; one that can't be deleted (read-only) gives `BACKUPS_NOT_ALL_DELETED { deletedCount, failedPaths }` and keeps the old location
@@ -831,14 +831,14 @@ Each story adds value without breaking the ones before it. Re-run the whole back
   - the recent entry's cached `backupFolder` follows every saved change
   - a leftover `unfinishedBackupMove` at the next launch removes the partial copy, clears the record, and pushes `backupsLeftBehind { databasePath, folder, count }` when any are left
   - the first `backups_move:progress` carries `total` (twice the bytes to copy) and `showNow`
-- [ ] T151 [US3] Add the shared shapes for moving backups per FR-026, FR-037 (missing):
+- [X] T151 [US3] Add the shared shapes for moving backups per FR-026, FR-037 (missing):
   - `OperationKind::MoveBackups` (`moveBackups`) in `src-tauri/src/models/database.rs`
   - `ChooserNotice::OperationStopped` gains `left_behind_count` and `folder`, and there is a new `ChooserNotice::BackupsLeftBehind { database_path, folder, count }`
   - `ExistingBackupsOutcome` (`leave` | `delete { deletedCount }` | `move { movedCount, leftBehind }`, with reasons `nameTaken`, `locationUnavailable`, `insufficientSpace`, `io`)
   - constructors for `BACKUPS_AT_OLD_LOCATION`, `BACKUPS_NOT_ALL_DELETED` and `OLD_BACKUP_LOCATION_UNAVAILABLE` in `src-tauri/src/commands/error.rs`, and `OPERATION_STOPPED` gaining `leftBehindCount` and `folder`
   - `stopped_notice` in `src-tauri/src/session/lifecycle.rs` filling them from the operation's `done()`
   - the TypeScript mirrors in `src/features/databases/types.ts`, as in contracts/tauri-commands.md "Shared types"
-- [ ] T152 [US3] Add `move_backups` to `src-tauri/src/services/backups.rs` per FR-026, plan: research §22 (missing):
+- [X] T152 [US3] Add `move_backups` to `src-tauri/src/services/backups.rs` per FR-026, plan: research §22 (missing):
   - the space check sums the backups to move (leaving out names already taken at the new folder) plus 5%
   - move oldest first, skipping a taken name and counting it as left behind
   - `fs::hard_link` then remove the old name. When linking fails, `copy_chunked` to `<final name>.partial`, flush it, compare it byte for byte with the original, `finalize` it (which refuses a taken name), then `secure_delete` the original
@@ -846,30 +846,30 @@ Each story adds value without breaking the ones before it. Re-run the whole back
   - stop at the first failure, and never rotate
   - report `backups_move:progress` in bytes (the copy and the read-back each count once), check the cancel flag between files and chunks, and record the number not yet moved through `record_done`
   - add a test hook that forces the link to fail
-- [ ] T153 [US3] Rework `ops::update_backup_settings` and its command in `src-tauri/src/commands/databases.rs` per FR-026, US3-4a, US3-4b, contracts/tauri-commands.md (missing):
+- [X] T153 [US3] Rework `ops::update_backup_settings` and its command in `src-tauri/src/commands/databases.rs` per FR-026, US3-4a, US3-4b, contracts/tauri-commands.md (missing):
   - add an `existingBackups?: "move" | "leave" | "delete"` input, and detect a changed resolved folder with `same_path`
   - refuse with `BACKUPS_AT_OLD_LOCATION` or `OLD_BACKUP_LOCATION_UNAVAILABLE` (only `leave` accepted for the latter) before anything is saved
   - `leave` saves
   - `delete` runs the `delete_all_backups` code on the old folder and saves only when every backup went
   - `move` runs `check_location` and the space check, saves through `session.write`, registers `MoveBackups` in `Operations`, records and clears `unfinishedBackupMove` around `move_backups`, and reports `leftBehind`
   - return `{ settings, existingBackups }`, and refresh the recent entry's cached `backupFolder` whenever the location is saved (depends on T151, T152)
-- [ ] T154 [P] [US3] Write the frontend tests first per FR-026, US3-4a, US3-4b, contracts/ui-databases.md §7 (missing):
+- [X] T154 [P] [US3] Write the frontend tests first per FR-026, US3-4a, US3-4b, contracts/ui-databases.md §7 (missing):
   - `src/features/databases/ExistingBackupsDialog.test.tsx`: the "Backups at the old location" question with its count, size and folder; the radio group with **Move them to the new location** selected first, plus the Leave and Delete help texts; **Delete them** asks FR-029's destructive confirm first and cancelling it returns to the question; **Cancel** saves nothing and resets the location while the other fields keep their input; the `ProgressBar` ("Moving the backups…" / "Deleting the backups…", at once on `showNow`, otherwise after 1 s) can't be dismissed and has no lock button; `INSUFFICIENT_SPACE` and `BACKUP_LOCATION_UNAVAILABLE` show "Nothing has been changed." above the footer with the question left open; `BACKUPS_NOT_ALL_DELETED` shows the paths with **Close**
   - `DatabaseSettingsDialog.test.tsx`: **Save** sends the backup settings first and holds back the lock settings until they are through; `OLD_BACKUP_LOCATION_UNAVAILABLE` shows the non-destructive **Continue** confirm, which resends with `leave`; the toasts after a move or delete; and the left-behind warning banner above the footer
   - `DatabaseChooser.test.tsx`: the stopped-move and `backupsLeftBehind` notice texts (contracts/ui-databases.md §1)
-- [ ] T155 [US3] Create `src/features/databases/ExistingBackupsDialog.tsx` and wire it in per FR-026, US3-4a, US3-4b, FR-037 (missing):
+- [X] T155 [US3] Create `src/features/databases/ExistingBackupsDialog.tsx` and wire it in per FR-026, US3-4a, US3-4b, FR-037 (missing):
   - it is a `Dialog` with a radio group, the pattern `RestoreBackupDialog` uses
   - **Save** in `DatabaseSettingsDialog.tsx` goes through it, with the old-location-unavailable `ConfirmDialog`, progress from `backups_move:progress`/`backups_delete:progress`, the refusal texts, the toasts, the left-behind banner and `BACKUPS_NOT_ALL_DELETED`
   - update the `update_backup_settings` wrapper in `src/features/databases/databasesService.ts` for `existingBackups` and the new output
   - add the stopped-move and `backupsLeftBehind` notices to `src/features/databases/DatabaseChooser.tsx`
   - carry field widths and grouping from the other dialogs (CLAUDE.md UI consistency) (depends on T153)
-- [ ] T156 [US6] Extend `src-tauri/tests/lock_test.rs` and `src-tauri/tests/performance_test.rs` per FR-037, US6-4c, SC-010, SC-005 (missing):
+- [X] T156 [US6] Extend `src-tauri/tests/lock_test.rs` and `src-tauri/tests/performance_test.rs` per FR-037, US6-4c, SC-010, SC-005 (missing):
   - a sleep during a move stops it between files: the partial copy is removed and its original kept, the moved ones are at the new folder and the rest at the old one, the new location is kept, and the notice is `operationStopped { operation: "moveBackups", leftBehindCount, folder }`
   - a sleep during a delete made at a location change keeps the old location
   - a running move pauses the idle clock
   - the first `backups_move:progress` arrives within 100 ms of the move starting
-- [ ] T157 [US3] Add `unfinishedBackupMove { databasePath, databaseId, fromFolder, partialPath }` to `src-tauri/src/services/machine_settings.rs`, with set, update and clear, per plan: research §22 (missing):
+- [X] T157 [US3] Add `unfinishedBackupMove { databasePath, databaseId, fromFolder, partialPath }` to `src-tauri/src/services/machine_settings.rs`, with set, update and clear, per plan: research §22 (missing):
   - extend `backups::sweep_unfinished`, called from `src-tauri/src/main.rs` setup: remove the partial file, count this database's backups still in `fromFolder` by the cached id, and push `backupsLeftBehind` when there are any
   - add the `machine_settings_test.rs` round-trip case
-- [ ] T158 [US3] Add the move flows to `e2e/specs/us8-backups.e2e.ts`: change the location to a scratch folder and **Move** (the backups are listed from the new folder and gone from the old one); change it back and **Leave** (the restore list is empty until that folder is chosen again). Add the screen `27-backup-location-change` (light and dark) to `e2e/screenshots/screens.e2e.ts`. Per FR-026, contracts/ui-databases.md §15, Constitution III (missing)
-- [ ] T159 Re-run T143's gates in the dev container for the convergence work (cargo test, including the `mock-keyring` keyring test; clippy; fmt; `npm run test`, lint and format; `npm run audit`; `npm run build`, then `us8-backups.e2e.ts` and `us9-locking.e2e.ts` one at a time), then reconcile contracts/tauri-commands.md and contracts/ui-databases.md with any shape or text that changed, per Constitution (quality gates) (missing)
+- [X] T158 [US3] Add the move flows to `e2e/specs/us8-backups.e2e.ts`: change the location to a scratch folder and **Move** (the backups are listed from the new folder and gone from the old one); change it back and **Leave** (the restore list is empty until that folder is chosen again). Add the screen `27-backup-location-change` (light and dark) to `e2e/screenshots/screens.e2e.ts`. Per FR-026, contracts/ui-databases.md §15, Constitution III (missing)
+- [X] T159 Re-run T143's gates in the dev container for the convergence work (cargo test, including the `mock-keyring` keyring test; clippy; fmt; `npm run test`, lint and format; `npm run audit`; `npm run build`, then `us8-backups.e2e.ts` and `us9-locking.e2e.ts` one at a time), then reconcile contracts/tauri-commands.md and contracts/ui-databases.md with any shape or text that changed, per Constitution (quality gates) (missing)

@@ -88,6 +88,8 @@ collection data, top-bar tabs or counts are shown.
   - backups left behind (a move cut short by a crash, research §22): "The
     backups of <name> were not all moved. <n> are still in <folder>, and
     HoploDex no longer manages them there."
+  - In both, one backup reads "1 is still in <folder>, and HoploDex no
+    longer manages it there."
   - pending changes lost: "Unsaved changes could not be kept when <name>
     locked."
   - backup failed: "<name> was not backed up: <the backup location is not
@@ -290,9 +292,10 @@ footer, like every other form.
 sends the backup settings first, and saves nothing more until they are
 through, so the lock settings wait too:
 - `BACKUPS_AT_OLD_LOCATION`: a `Dialog` titled "Backups at the old
-  location", over the settings: "<count> backups of the database (<size>)
-  are in <old folder>. What should happen to them?", then a radio group,
-  **Move them to the new location** first and selected:
+  location" (`ExistingBackupsDialog`), over the settings: "<count> backups
+  of the database (<size>) are in <old folder>.", then a `ChoiceCards` radio
+  group labelled "What should happen to them?", **Move them to the new
+  location** first and selected:
   - **Move them to the new location**: "They'll be in <new folder>."
   - **Leave them where they are**: "HoploDex will no longer list, restore
     or delete them. They still open directly as a database, and choosing
@@ -332,10 +335,13 @@ through, so the lock settings wait too:
   <because a backup with the same name is already in <new folder> | because
   <new folder> became unavailable | because there wasn't enough space
   there | because of an error>. HoploDex no longer manages them there."
+  (for one: "1 backup was moved", "1 is still in", "manages it there").
 - `BACKUPS_NOT_ALL_DELETED`: the question shows "<n> backups couldn't be
   deleted, so the backup location wasn't changed. They are still this
-  database's backups: <paths>" with **Close**, which returns to the
-  settings.
+  database's backups:" (for one: "1 backup couldn't be deleted, … It is
+  still this database's backup:") above a list of the paths, with **Close**
+  alone in the footer, which returns to the settings with the location put
+  back as for **Cancel**.
 
 **Locking**
 - `Checkbox` **Lock after a period without use**. When checked, **after**

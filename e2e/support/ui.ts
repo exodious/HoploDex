@@ -722,6 +722,23 @@ export async function selectChooserRow(name: string) {
   await clickEl(`button.hd-db-row__select[aria-label^="${name}, "]`);
 }
 
+/** Runs a backend command from the page, as the frontend would, for a
+ * step whose own UI WebDriver can't reach (the OS's folder dialog). */
+export async function invokeCommand(cmd: string, args: Record<string, unknown>) {
+  return browser.execute(
+    (name: string, data: Record<string, unknown>) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      return internals.invoke(name, data);
+    },
+    cmd,
+    args,
+  );
+}
+
 /** Asks the app to quit as the window's close button does: the backend's
  * `app:quit-requested` event, sent from the page. */
 export async function requestQuit() {
