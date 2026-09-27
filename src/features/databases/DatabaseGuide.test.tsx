@@ -149,8 +149,8 @@ describe("DatabaseGuide with a database open", () => {
 
     expect(rows("Backups")).toEqual([
       "On (default)",
-      "10 (default 5)",
-      "/mnt/usb/HoploDex backups (default next to the database)Not available on this computer",
+      "10 (default: 5)",
+      "/mnt/usb/HoploDex backups (default: next to the database)Not available on this computer",
     ]);
   });
 
@@ -160,7 +160,7 @@ describe("DatabaseGuide with a database open", () => {
     expect(rows("Locking")).toEqual([
       "After 10 minutes (default)",
       "On (default)",
-      "On (default off)",
+      "On (default: off)",
     ]);
   });
 

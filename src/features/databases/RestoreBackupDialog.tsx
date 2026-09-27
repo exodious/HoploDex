@@ -38,6 +38,10 @@ export interface RestoreBackupDialogProps {
   onChangeLocation?: () => void;
 }
 
+/** How long the dialog waits for the backup list before it opens anyway,
+ * showing that it is still looking (a slow network folder). */
+const LIST_WAIT_MS = 400;
+
 /** Restores a database from one of its backups (contracts/ui-databases.md
  * §9, FR-028). The backup's own passphrase is asked for, since it keeps the
  * one it was made with. The current database is backed up first, or, when
@@ -51,9 +55,29 @@ export function RestoreBackupDialog({
   onChangeLocation,
 }: RestoreBackupDialogProps) {
   const [running, setRunning] = useState(false);
+  const [list, setList] = useState<BackupList | null>(null);
+  const [waited, setWaited] = useState(false);
+
+  // The list is read before the dialog shows, so it opens at its full size
+  // rather than opening on "Looking for backups…" and then growing: a
+  // centred dialog that grows moves, and WebKitGTK only repaints the new
+  // size on the next mouse move or key press.
+  useEffect(() => {
+    let current = true;
+    databasesService.listBackups(databasePath).then(
+      (listed) => current && setList(listed),
+      () => current && setList({ folder: "", available: false, backups: [] }),
+    );
+    const timer = window.setTimeout(() => current && setWaited(true), LIST_WAIT_MS);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [databasePath]);
+
   return (
     <Dialog
-      open={open}
+      open={open && (list !== null || waited)}
       onOpenChange={onOpenChange}
       title={databasePath ? `Restore “${name}” from a backup` : "Restore from a backup"}
       size="lg"
@@ -61,6 +85,7 @@ export function RestoreBackupDialog({
       bare
     >
       <RestoreForm
+        list={list}
         name={name}
         databasePath={databasePath}
         onChangeLocation={onChangeLocation}
@@ -72,12 +97,14 @@ export function RestoreBackupDialog({
 }
 
 function RestoreForm({
+  list,
   name,
   databasePath,
   onChangeLocation,
   onRunningChange,
   onDone,
 }: {
+  list: BackupList | null;
   name: string;
   databasePath?: string;
   onChangeLocation?: () => void;
@@ -85,8 +112,7 @@ function RestoreForm({
   onDone: () => void;
 }) {
   const session = useSession();
-  const [list, setList] = useState<BackupList | null>(null);
-  const [selected, setSelected] = useState<string>("");
+  const [selected, setSelected] = useState<string>(list?.backups[0]?.path ?? "");
   const [confirming, setConfirming] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<RestoreProgress | null>(null);
@@ -94,20 +120,10 @@ function RestoreForm({
   const [refusal, setRefusal] = useState<{ text: string; changeLocation: boolean } | null>(null);
   const passphrase = useRef<PassphraseFieldHandle>(null);
 
+  // When the list arrives after the dialog opened, the newest is chosen.
   useEffect(() => {
-    let current = true;
-    databasesService.listBackups(databasePath).then(
-      (listed) => {
-        if (!current) return;
-        setList(listed);
-        setSelected(listed.backups[0]?.path ?? "");
-      },
-      () => current && setList({ folder: "", available: false, backups: [] }),
-    );
-    return () => {
-      current = false;
-    };
-  }, [databasePath]);
+    if (list) setSelected((chosen) => chosen || (list.backups[0]?.path ?? ""));
+  }, [list]);
 
   useEffect(
     () => (running ? databasesService.onRestoreProgress(setProgress) : undefined),

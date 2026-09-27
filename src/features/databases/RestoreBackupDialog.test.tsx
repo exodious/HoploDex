@@ -9,7 +9,7 @@ import type { SessionState } from "../session/sessionStore";
 import * as databasesService from "./databasesService";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import type { RestoreBackupDialogProps } from "./RestoreBackupDialog";
-import type { BackupInfo, RestoreProgress } from "./types";
+import type { BackupInfo, BackupList, RestoreProgress } from "./types";
 
 vi.mock("./databasesService");
 
@@ -100,6 +100,35 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
     expect(databasesService.listBackups).toHaveBeenCalledWith(undefined);
   });
 
+  // Regression: it opened on "Looking for backups…" and grew once the list
+  // came, moving the centred dialog.
+  it("opens only once the backups are listed, on the newest", async () => {
+    let listed: (list: BackupList) => void = () => {};
+    vi.mocked(databasesService.listBackups).mockReturnValueOnce(
+      new Promise((resolve) => (listed = resolve)),
+    );
+    renderDialog();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await act(async () => listed({ folder: FOLDER, available: true, backups: [newer, older] }));
+
+    const dialog = screen.getByRole("dialog", { name: "Restore from a backup" });
+    expect(within(dialog).queryByText("Looking for backups…")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: label(newer) })).toBeChecked();
+  });
+
+  it("opens anyway when listing is slow, and chooses the newest once listed", async () => {
+    let listed: (list: BackupList) => void = () => {};
+    vi.mocked(databasesService.listBackups).mockReturnValueOnce(
+      new Promise((resolve) => (listed = resolve)),
+    );
+    renderDialog();
+
+    expect(await screen.findByText("Looking for backups…")).toBeInTheDocument();
+    await act(async () => listed({ folder: FOLDER, available: true, backups: [newer, older] }));
+    expect(screen.getByRole("radio", { name: label(newer) })).toBeChecked();
+  });
+
   it("names the folder when there are no backups", async () => {
     vi.mocked(databasesService.listBackups).mockResolvedValueOnce({
       folder: FOLDER,
@@ -149,7 +178,7 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
 
     // Not the open database, so it is named, in quotes.
     expect(
-      screen.getByRole("dialog", { name: "Restore “Main collection” from a backup" }),
+      await screen.findByRole("dialog", { name: "Restore “Main collection” from a backup" }),
     ).toBeInTheDocument();
     expect(
       await screen.findByText("The damaged file will be kept next to it, renamed."),

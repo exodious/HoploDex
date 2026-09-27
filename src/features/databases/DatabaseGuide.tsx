@@ -149,7 +149,7 @@ function DatabaseSettingsTable({ rows }: { rows: SettingRow[] }) {
               <dd>
                 <span className="hd-db-guide__value">{row.value}</span>{" "}
                 <span className="hd-db-guide__default">
-                  {changed ? `(default ${lowerFirst(row.defaultValue)})` : "(default)"}
+                  {changed ? `(default: ${lowerFirst(row.defaultValue)})` : "(default)"}
                 </span>
                 {row.note && <span className="hd-db-guide__note">{row.note}</span>}
               </dd>
@@ -161,7 +161,7 @@ function DatabaseSettingsTable({ rows }: { rows: SettingRow[] }) {
   );
 }
 
-/** "On" reads "(default on)" after a value. */
+/** "On" reads "(default: on)" after a value. */
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }

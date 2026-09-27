@@ -406,7 +406,7 @@ take-over); and whole-disk encryption. The text states the defaults (5
 backups kept, a HoploDex backups folder next to the database, a lock after
 10 minutes, no lock at a screen lock). With a database open, the locking
 and backup sections each end with "How this database is set up": each setting's
-value with its default beside it, "10 (default 5)", or "(default)" when
+value with its default beside it, "10 (default: 5)", or "(default)" when
 unchanged, a changed row marked at its left. It is reachable from the database menu,
 the disk-encryption note, and "see About databases and security" links in
 the change-passphrase and backup texts.
