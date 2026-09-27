@@ -61,6 +61,10 @@ export function ChoiceCards<T extends string>({
             <span className="hd-choice__face">
               {option.art && <span className="hd-choice__art">{option.art}</span>}
               <span className="hd-choice__label">{option.label}</span>
+              {/* Keeps a space between label and description in the radio's
+                  accessible name without relying on the column layout; the
+                  flex container drops it visually. */}
+              {option.description && " "}
               {option.description && (
                 <span className="hd-choice__description">{option.description}</span>
               )}
