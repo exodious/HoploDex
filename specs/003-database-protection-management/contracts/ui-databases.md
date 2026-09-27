@@ -81,6 +81,13 @@ collection data, top-bar tabs or counts are shown.
     of all backups: "The computer went to sleep while the backups of <name>
     were being deleted, so it was stopped. <n> were deleted; the rest are
     still there. You can delete them in its Database settings."
+    For a move of backups: "The computer went to sleep while the backups
+    of <name> were being moved, so it was stopped. <n> are still in
+    <folder>, and HoploDex no longer manages them there. The new backup
+    location is kept." (FR-037)
+  - backups left behind (a move cut short by a crash, research §22): "The
+    backups of <name> were not all moved. <n> are still in <folder>, and
+    HoploDex no longer manages them there."
   - pending changes lost: "Unsaved changes could not be kept when <name>
     locked."
   - backup failed: "<name> was not backed up: <the backup location is not
@@ -263,6 +270,8 @@ footer, like every other form.
 - **Location**: shows the resolved path and "(next to the database)" for
   the default, plus **Change…** (folder picker) and **Use the default**. An
   unavailable custom location shows "Not available on this computer" (FR-027).
+  A changed location is saved with **Save**, and its backups dealt with
+  then (below).
 - Statements (FR-029), as a short list:
   - "Each backup is a complete copy of the collection."
   - "A backup opens only with the passphrase you had when it was made."
@@ -276,6 +285,57 @@ footer, like every other form.
 - Actions: **Restore from a backup…** (§9) and **Delete all backups…**
   (destructive `ConfirmDialog`, "Delete all <n> backups of <name>? They are
   deleted securely where this computer supports it. This can't be undone.")
+
+**Changing the location** (FR-026, US3-4a, US3-4b, research §22). **Save**
+sends the backup settings first, and saves nothing more until they are
+through, so the lock settings wait too:
+- `BACKUPS_AT_OLD_LOCATION`: a `Dialog` titled "Backups at the old
+  location", over the settings: "<count> backups of the database (<size>)
+  are in <old folder>. What should happen to them?", then a radio group,
+  **Move them to the new location** first and selected:
+  - **Move them to the new location**: "They'll be in <new folder>."
+  - **Leave them where they are**: "HoploDex will no longer list, restore
+    or delete them. They still open directly as a database, and choosing
+    <old folder> again makes them this database's backups again."
+  - **Delete them**: "They're deleted securely, as far as this computer
+    allows."
+
+  Footer: **Change location** (primary) and **Cancel**. **Delete them**
+  first asks FR-029's destructive `ConfirmDialog` ("Delete all <n> backups
+  of <name>? They are deleted securely where this computer supports it.
+  This can't be undone.") and returns to the question if that is cancelled.
+  **Cancel** saves nothing: the question closes, the location goes back to
+  the saved one, and the other fields keep their input.
+- `OLD_BACKUP_LOCATION_UNAVAILABLE`: a `ConfirmDialog` (not destructive
+  styling) titled "The old backup location isn't available": "<old folder>
+  can't be reached from this computer, so any backups there can't be moved
+  or deleted from here. If you continue, they stay there, and HoploDex no
+  longer manages them." Confirm label **Continue**, which resends with
+  **Leave**; **Cancel** as above.
+- **While moving or deleting**, the question's body is replaced by a
+  `ProgressBar` ("Moving the backups…" in bytes, "Deleting the backups…" in
+  files), shown at once when `showNow` is set and otherwise after 1 s, as on
+  the closing screen (§5). It can't be dismissed, so it has no close or lock
+  button (§0).
+- **Refused before anything is written**, shown in the question above its
+  footer, the question left open so another choice can be made:
+  `INSUFFICIENT_SPACE`: "Moving the backups needs <size> free in <new
+  folder>; <available> is free. Nothing has been changed."
+  `BACKUP_LOCATION_UNAVAILABLE`: "<new folder> isn't available. Nothing has
+  been changed."
+- **Afterwards**, the settings dialog closes as after any **Save**, and a
+  `Toast` says what happened: "The backups were moved to <new folder>." /
+  "The backups at <old folder> were deleted." / nothing extra for **Leave**.
+  When some were left behind the result stays in the settings dialog
+  instead, as a warning banner above its footer, since the location is
+  saved: "<moved> backups were moved. <n> are still in <old folder>
+  <because a backup with the same name is already in <new folder> | because
+  <new folder> became unavailable | because there wasn't enough space
+  there | because of an error>. HoploDex no longer manages them there."
+- `BACKUPS_NOT_ALL_DELETED`: the question shows "<n> backups couldn't be
+  deleted, so the backup location wasn't changed. They are still this
+  database's backups: <paths>" with **Close**, which returns to the
+  settings.
 
 **Locking**
 - `Checkbox` **Lock after a period without use**. When checked, **after**
@@ -460,6 +520,8 @@ New stable names, each in light and dark: `14-chooser`, `15-chooser-first-run`,
 `22-pending-changes`, `23-database-guide`, `24-disk-encryption-note`,
 `25-unsaved-changes` (the save / discard / cancel prompt of §6, which adds a
 third action to the shared `ConfirmDialog`), `26-database-guide-settings`
-(the guide scrolled to "How this database is set up", §11). Existing
+(the guide scrolled to "How this database is set up", §11),
+`27-backup-location-change` (the move / leave / delete question of §7).
+Existing
 screens are unchanged apart from the database menu in the top bar and the
 export wording.

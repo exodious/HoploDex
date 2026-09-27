@@ -42,7 +42,9 @@ database**, and may additionally fail with:
 `import_collection` and `export_collection` may also fail with
 `OPERATION_STOPPED` (`details.operation`, plus `details.importedCount` for an
 import) when the computer went to sleep mid-run (FR-037). `delete_all_backups`
-may fail the same way, with `details.deletedCount`. The session is
+may fail the same way, with `details.deletedCount`, and
+`update_backup_settings` with `existingBackups` set, with `details.deletedCount`
+or `details.leftBehindCount` and `details.folder`. The session is
 already closed by then, so the chooser shows the notice.
 
 ---
@@ -62,12 +64,18 @@ already closed by then, so the chooser shows the notice.
 | `INSUFFICIENT_SPACE` | `{ bytesNeeded, bytesAvailable, path }` | FR-016 |
 | `BACKUP_LOCATION_UNAVAILABLE` | `{ path, reason: "missing" \| "notWritable" \| "insufficientSpace" }` | FR-027 |
 | `KEYRING_UNAVAILABLE` | — | FR-019 |
-| `OPERATION_STOPPED` | `{ operation, importedCount?, deletedCount? }` | FR-037 |
+| `OPERATION_STOPPED` | `{ operation, importedCount?, deletedCount?, leftBehindCount?, folder? }` | FR-037 |
+| `BACKUPS_AT_OLD_LOCATION` | `{ folder, count, totalBytes }` | a changed backup location needs the move / leave / delete choice first (FR-026, research §22); nothing was saved |
+| `BACKUPS_NOT_ALL_DELETED` | `{ deletedCount, failedPaths }` | changing the location with `delete`: some backups at the old location couldn't be deleted, so the old location was kept and they are still the database's (research §22) |
+| `OLD_BACKUP_LOCATION_UNAVAILABLE` | `{ folder }` | the old backup location can't be read, so its backups can't be moved or deleted from here; resend with `existingBackups: "leave"` to continue (FR-026); nothing was saved |
 | `OPERATION_IN_PROGRESS` | `{ operation }` | another long-running operation is already running |
 | `DATABASE_UNAVAILABLE` | `{ path }` | "HoploDex can't reach <path>. Nothing already saved was lost. Close the database and open it again once the drive or network is back." (FR-032) |
 | `REPLACE_FAILED` | `{ path }` | the final rename was refused (for example the file was held by another program); the original is unchanged |
 | `RESTORE_CANCELLED` | — | "The current database couldn't be backed up, so the restore was cancelled. Nothing has been changed." (FR-028: the "before restoring" backup failed) |
 | `CONFIRMATION_REQUIRED` | — | existing code, reused for delete-all-backups and take-over |
+
+`BACKUP_LOCATION_UNAVAILABLE` and `INSUFFICIENT_SPACE` are also how a move of
+backups to a new location is refused before anything is written (FR-026).
 
 ---
 
@@ -84,7 +92,9 @@ type RecentDatabase = {
 
 type ChooserNotice =
   | { kind: "closed"; reason: CloseReason; databasePath: string; idleMinutes?: number }  // a lock; idleMinutes for the idle lock
-  | { kind: "operationStopped"; databasePath: string; operation: OperationKind; importedCount?: number; deletedCount?: number }
+  | { kind: "operationStopped"; databasePath: string; operation: OperationKind; importedCount?: number; deletedCount?: number;
+      leftBehindCount?: number; folder?: string }                                  // the last two for moveBackups
+  | { kind: "backupsLeftBehind"; databasePath: string; folder: string; count: number } // a move cut short by a crash (research §22)
   | { kind: "pendingChangesLost"; databasePath: string }
   | { kind: "backupFailed"; databasePath: string; reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable" }
   | { kind: "takenOver"; databasePath: string };
@@ -92,7 +102,8 @@ type ChooserNotice =
 type CloseReason =
   "closed" | "switched" | "quit" | "lockedByUser" | "idle" | "screenLocked" | "sleep" | "shutdown" | "takenOver";
 
-type OperationKind = "backup" | "passphraseChange" | "restore" | "import" | "export" | "deleteBackups";
+type OperationKind =
+  "backup" | "passphraseChange" | "restore" | "import" | "export" | "deleteBackups" | "moveBackups";
 
 type CollectionSettings = {
   backups: {
@@ -144,6 +155,13 @@ type CloseOutcome = {
 };
 
 type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: number };
+
+type ExistingBackupsOutcome =
+  | { action: "leave" }
+  | { action: "delete"; deletedCount: number }
+  | { action: "move"; movedCount: number;
+      leftBehind: { count: number; folder: string;
+                    reason: "nameTaken" | "locationUnavailable" | "insufficientSpace" | "io" } | null };
 ```
 
 ---
@@ -167,7 +185,7 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 - **Output**: `DatabaseStatus`
 - **Errors**: `DATABASE_NOT_FOUND`, `DATABASE_UNREADABLE`, `DATABASE_IN_USE`, `PASSPHRASE_INCORRECT` (with `savedPassphraseFailed` when the saved one was used, US5-5), `DATABASE_NEWER_VERSION`, `DATABASE_OPEN_ELSEWHERE` (unless `takeOver: true`), `DATABASE_DAMAGED`
 - `useSavedPassphrase` finds the saved passphrase through the recent entry's cached `databaseId`; when there is none, or it no longer opens the file, the open fails with `PASSPHRASE_INCORRECT { savedPassphraseFailed: true }`. `rememberPassphrase` on a computer without a keyring still opens the database, with `passphraseSaved: false`.
-- Any other database that is open is closed first, as a `switched` close. The frontend calls `close_database` itself first, so it can ask about unsaved changes. On success with a typed passphrase: the recent entry is added or refreshed, and the keyring entry is written when `rememberPassphrase` is set, or refreshed when it was saved but failed (FR-018). Nothing is written to the file on any failure (FR-006, FR-014).
+- Any other database that is open is closed first, as a `switched` close. The frontend only opens from the chooser, where nothing is open (FR-010: switching is a lock, then an open). On success with a typed passphrase: the recent entry is added or refreshed, and the keyring entry is written when `rememberPassphrase` is set, or refreshed when it was saved but failed (FR-018). Nothing is written to the file on any failure (FR-006, FR-014).
 
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
@@ -205,7 +223,7 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 
 ### `close_database`
 - **Input**: `{ reason: "closed" | "switched" }` → **Output**: `CloseOutcome`
-- The normal close (FR-010, FR-022, FR-025, FR-032). The frontend has already dealt with unsaved changes (save, discard or cancel). Emits `session:closing`, then, if a backup runs, `backup:progress`, then `session:closed`.
+- The normal close (FR-010, FR-022, FR-025, FR-032). Emits `session:closing`, then, if a backup runs, `backup:progress`, then `session:closed`. Within the application a database is closed by locking it (`lock_database`); this command remains for the "couldn't be shown" panel (contracts/ui-databases.md §13, research §17).
 
 ### `lock_database`
 - **Input**: `{ draft: Draft | null }` → **Output**: `CloseOutcome`
@@ -223,9 +241,16 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 ## Commands: settings (User Stories 3, 5, 6)
 
 ### `update_backup_settings`
-- **Input**: `{ enabled: boolean; keepCount: number; location: { kind: "default" } | { kind: "custom"; path: string } }`
-- **Output**: `CollectionSettings` · **Errors**: `VALIDATION_ERROR` (`fieldErrors.keepCount`, `fieldErrors.location`)
+- **Input**: `{ enabled: boolean; keepCount: number; location: { kind: "default" } | { kind: "custom"; path: string }; existingBackups?: "move" | "leave" | "delete" }`
+- **Output**: `{ settings: CollectionSettings; existingBackups: ExistingBackupsOutcome | null }` (`null` when the location did not change, or the old folder held no backups)
+- **Errors**: `VALIDATION_ERROR` (`fieldErrors.keepCount`, `fieldErrors.location`); for a changed location, `BACKUPS_AT_OLD_LOCATION` or `OLD_BACKUP_LOCATION_UNAVAILABLE` when `existingBackups` is missing (or, for an unreadable old folder, is not `leave`); for `move`, `BACKUP_LOCATION_UNAVAILABLE` and `INSUFFICIENT_SPACE`, checked before anything is written; for `delete`, `BACKUPS_NOT_ALL_DELETED`; `OPERATION_IN_PROGRESS`; `OPERATION_STOPPED` (`move` or `delete` stopped by a sleep)
 - A collection change (FR-025). Lowering `keepCount` does not delete anything straight away; the next successful backup rotates.
+- **A changed location** (FR-026, research §22) is one whose resolved folder differs from the current one's. With backups of this database in the old folder, nothing is saved until the user has chosen:
+  - `leave`: the settings are saved; the backups stay where they are and are no longer the database's.
+  - `delete`: sent only after FR-029's destructive confirmation, which it stands for, as `takeOver: true` does for a take-over. The old folder's backups are deleted as by `delete_all_backups` (secure deletion, `backups_delete:progress`, stopping between files), and the settings are saved only if every one was deleted. Otherwise nothing is saved, and the command fails with `BACKUPS_NOT_ALL_DELETED`, or with `OPERATION_STOPPED` at a sleep.
+  - `move`: the new folder's availability and space are checked, the settings are saved, then the backups are moved oldest first as a long-running operation (`moveBackups`), each hard-linked on the same drive, or copied, verified byte for byte and the original securely deleted. A name already taken at the new folder is never overwritten. The move ends at the first failure, keeping the new location; `leftBehind` reports what stayed in the old folder and why (`nameTaken` when names were the only reason). Nothing is rotated.
+  - The cached backup folder in this computer's recent entry is refreshed whenever the location is saved (research §8, §11).
+- **Progress** (`move`): `backups_move:progress` `{ processed; total; showNow }` in bytes, copying and reading back each counted (research §22); `showNow` as for `backup:progress`. The first event, with the total, is sent within 100 ms, once the checks have passed. A same-drive move reports each file's bytes as it is linked.
 
 ### `update_lock_settings`
 - **Input**: `{ idleEnabled: boolean; idleMinutes: number; onScreenLock: boolean }`
@@ -290,7 +315,7 @@ sleep stops it (FR-037).
 | `backup:progress` | `{ processed: number; total: number; showNow: boolean }` | bytes. `showNow` is true when the estimate is over 1 s (research §7). Otherwise the frontend shows the bar only if the close is still running 1 s later |
 | `session:closed` | `{ reason: CloseReason; databasePath: string; outcome?: CloseOutcome; stoppedOperation?: OperationKind }` | The database is closed. The frontend drops **all** collection state and shows the chooser with `databasePath` selected (FR-020, FR-033). For `sleep`, `shutdown` and `takenOver` it is emitted **before** the backend finishes closing (research §14), so what is only known later (the stopped operation's count, pending changes that could not be kept) comes as chooser notices |
 | `chooser:notices` | `{}` | A chooser notice was kept after the chooser may already be showing (an immediate close's later steps). The chooser calls `get_chooser_state` and adds its notices |
-| `passphrase_change:progress`, `restore:progress`, `backups_delete:progress` | see above | |
+| `passphrase_change:progress`, `restore:progress`, `backups_delete:progress`, `backups_move:progress` | see above | |
 | `import_collection:progress`, `export_collection:progress` | unchanged from 001 | |
 | `system:clear-passphrase-fields` | `{}` | The screen locked or the computer is going to sleep. Every passphrase field resets (FR-007), whatever the state |
 | `app:quit-requested` | `{}` | The window's close button or an application quit. The frontend asks about unsaved changes, then calls `quit_application` |

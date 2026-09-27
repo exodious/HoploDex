@@ -28,7 +28,7 @@ Exactly one row. Created with defaults when the database is created.
 | `id` | INTEGER PK | 1 | `CHECK (id = 1)` | |
 | `backups_enabled` | INTEGER | 1 | `CHECK IN (0,1)` | FR-024 |
 | `backup_keep_count` | INTEGER | 5 | `CHECK BETWEEN 1 AND 100` | FR-025 |
-| `backup_location` | TEXT | `'default'` | `'default'`, or an absolute path (validated as absolute by `validate_backup_settings_input`) | FR-026, research §7 |
+| `backup_location` | TEXT | `'default'` | `'default'`, or an absolute path (validated as absolute by `validate_backup_settings_input`). Changing it asks what to do with the backups at the old location first (research §22) | FR-026, research §7 |
 | `idle_lock_enabled` | INTEGER | 1 | `CHECK IN (0,1)`; also decides the lock at sleep | FR-034, FR-037 |
 | `idle_lock_minutes` | INTEGER | 10 | `CHECK BETWEEN 1 AND 240` | FR-034 |
 | `lock_on_screen_lock` | INTEGER | 0 | `CHECK IN (0,1)` | FR-038 |
@@ -106,8 +106,9 @@ journal may exist next to it only while a write is in progress.
 | Name | `<database name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex` (local time of the computer that made it; `<id8>` = first 8 hex digits of `database_id`) |
 | In progress | `<final name>.partial`, renamed on completion; never listed |
 | Content | a byte copy of the database made while it is idle, read through the open connection's own file handle (research.md §3), then stamped: open marker cleared, `pending_changes` emptied, `changes_waiting = 0` (its content is a backup), `backup_made_at` and `backup_of_name` set. Protected by the passphrase current at that moment (FR-023) |
-| Listed as this database's | name matches the pattern and carries this database's `<id8>` |
-| Rotation | after a successful backup, the oldest beyond `backup_keep_count` are securely deleted (FR-025), except the backup a restore is using (FR-028) |
+| Listed as this database's | in the folder of the **current** `backup_location`, with a name that matches the pattern and carries this database's `<id8>`. Backups left at an earlier location are not listed, rotated or deleted with all backups; setting the location back to their folder makes them the database's again (FR-026) |
+| Rotation | after a successful backup, the oldest beyond `backup_keep_count` are securely deleted (FR-025), except the backup a restore is using (FR-028). Moving backups never rotates, so a move into a folder that already holds some may leave more than `backup_keep_count` until the next backup (research §22) |
+| Moved | to a new location only by the user's choice when changing it (FR-026): hard-linked on the same drive, otherwise copied to `<final name>.partial`, verified byte for byte, renamed, and the original securely deleted. A name already taken at the new folder is never overwritten: that backup stays behind (research §22) |
 
 ---
 
@@ -127,15 +128,23 @@ collection data or secrets (research §11).
       "name": "My collection",     // file name without extension, refreshed at each open
       "lastOpenedAt": "2026-09-25T14:30:05Z",
       "databaseId": "3fa2c9d1…",   // cached at each open; null until first opened here
-      "backupFolder": "/home/u/Documents/HoploDex/HoploDex backups", // resolved, cached (for restoring a damaged database)
+      "backupFolder": "/home/u/Documents/HoploDex/HoploDex backups", // resolved, cached at each open and
+                                   //  when the location is saved (for restoring a damaged database)
       "passphraseSaved": true      // FR-017; the passphrase itself is only in the keyring
     }
   ],
   "unfinishedBackup": {            // research §7; null when none
     "databasePath": "…", "partialPath": "…", "startedAt": "…"
   },
+  "unfinishedBackupMove": {        // research §22; null when none
+    "databasePath": "…", "databaseId": "3fa2c9d1…",
+    "fromFolder": "…", "partialPath": "…"   // partialPath: the copy in progress, or null
+  },
   "notices": [                     // shown once in the chooser, then removed
     { "kind": "operationStopped", "databasePath": "…", "operation": "import" },
+    { "kind": "operationStopped", "databasePath": "…", "operation": "moveBackups",
+      "leftBehindCount": 3, "folder": "…" },
+    { "kind": "backupsLeftBehind", "databasePath": "…", "folder": "…", "count": 3 },
     { "kind": "pendingChangesLost", "databasePath": "…" },
     { "kind": "backupFailed", "databasePath": "…", "reason": "locationUnavailable" }
   ]
@@ -194,8 +203,11 @@ Closing { normal: path of a close finishing on its own thread (its backup),
   // DATABASE_CLOSED; a sleep during a normal close hands it the rest
 
 Operations registry: at most one running long operation
-  { kind: backup | passphraseChange | restore | import | export | deleteBackups,
-    cancel: AtomicBool, interrupt: Option<InterruptHandle> }
+  { kind: backup | passphraseChange | restore | import | export | deleteBackups
+          | moveBackups,
+    cancel: AtomicBool, interrupt: Option<InterruptHandle>,
+    done: how far it got (rows imported, backups deleted; for a move,
+          the backups not yet moved) }
 
 IdleClock { settings (None while nothing is open), last_input (wall clock),
             paused_by: set<nativeDialog> }   // a registered operation also pauses it
@@ -260,7 +272,10 @@ The backend never holds a passphrase between commands (FR-007, research §1).
 `closed`, `switched`, `quit`, `lockedByUser`, `idle`, `screenLocked`,
 `sleep`, `shutdown`, `takenOver`. Each has its own sentence in the
 chooser's message (contracts/ui-databases.md). `sleep` and `shutdown` never make a
-backup (FR-027, FR-037).
+backup (FR-027, FR-037). Since Lock is the in-app close (FR-010 as amended
+2026-09-27, research §17), `closed` comes only from the "couldn't be shown"
+panel, and `switched` only when `open_database` finds another database
+still open.
 
 ---
 
@@ -274,5 +289,7 @@ backup (FR-027, FR-037).
 | Create target | `<folder>/<name>.hoplodex` must not exist | `DATABASE_EXISTS` |
 | `backup_keep_count` | 1–100 | `VALIDATION_ERROR` |
 | `backup_location` | `default`, or an absolute path; a path that does not exist is accepted, so a location on another computer's drive can be kept, but is reported on save as currently unavailable | `VALIDATION_ERROR` |
+| A changed `backup_location` | when the old folder holds backups of the database, `existingBackups` must say what to do with them; when the old folder cannot be read, only `leave` is accepted (research §22) | `BACKUPS_AT_OLD_LOCATION`, `OLD_BACKUP_LOCATION_UNAVAILABLE` |
+| `existingBackups: "move"` | the new folder is available and has room for every backup to be moved, plus 5% | `BACKUP_LOCATION_UNAVAILABLE`, `INSUFFICIENT_SPACE` |
 | `idle_lock_minutes` | 1–240 | `VALIDATION_ERROR` |
 | Pending draft | `values_json` ≤ 1 MiB; `kind`/`mode` pair valid | `VALIDATION_ERROR` |

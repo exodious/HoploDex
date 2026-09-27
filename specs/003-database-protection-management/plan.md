@@ -1,6 +1,6 @@
 # Implementation Plan: Database Protection, Portability & Management
 
-**Branch**: `003-database-protection-management` | **Date**: 2026-09-25 | **Spec**: [spec.md](./spec.md)
+**Branch**: `003-database-protection-management` | **Date**: 2026-09-25, amended 2026-09-27 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/003-database-protection-management/spec.md`
 
@@ -16,7 +16,10 @@ at most once a day, when it is closed after changes; changes a passphrase by
 copy, verify and replace; optionally remembers a passphrase in this computer's
 keyring; and locks the application (by command, after inactivity, at sleep,
 or optionally at screen lock) by closing the database completely, keeping
-any unsaved form input as pending changes inside the encrypted file.
+any unsaved form input as pending changes inside the encrypted file. Locking
+is also the in-app close: switching is a lock, then an open from the chooser.
+Changing a database's backup location asks whether to move, leave or delete
+the backups already at the old one (amended 2026-09-27).
 
 Technically, the passphrase becomes SQLCipher's key, with every cipher setting
 pinned and the key-derivation work factor raised to 1,000,000 iterations
@@ -33,7 +36,10 @@ by attaching them without a key, since they share the main file's salt. A
 passphrase change uses `sqlcipher_export` into a newly keyed attachment,
 stoppable with SQLite's interrupt. The backend therefore never holds a
 passphrase after the command that needed it. Replacement is hard link plus
-atomic rename, then secure deletion of the old contents.
+atomic rename, then secure deletion of the old contents. Moving backups to a
+new location reuses both: a hard link on the same drive, otherwise a chunked
+copy verified byte for byte before the original is securely deleted, never
+over an existing file (research §22).
 
 `DbHandle` becomes a session that may hold no database. Every command goes
 through `read`/`write` helpers, which refuse when closed, when pending
@@ -48,10 +54,13 @@ wall-versus-monotonic watchdog. The frontend mirrors any dirty form draft to
 backend memory, so a lock at sleep or shutdown never waits on the webview.
 
 The frontend gains a database chooser, create, open and take-over flows, a
-database menu, settings, change-passphrase and restore dialogs, a closing
-screen with backup progress, the pending-changes prompt, a save / discard /
-cancel prompt on close and quit, a shared `PassphraseField` with a lazily
-loaded zxcvbn strength hint, and an in-app security guide.
+database menu whose only close is Lock now, settings (with the move /
+leave / delete question when the backup location changes),
+change-passphrase and restore dialogs, a closing screen with backup
+progress, the pending-changes prompt, a save / discard / cancel prompt on
+quit, a shared `PassphraseField` with a lazily loaded zxcvbn strength hint,
+and an in-app security guide. The window's title names the open database;
+dialogs about it say "the database" (contracts/ui-databases.md §0, §4).
 
 ## Technical Context
 
@@ -119,7 +128,7 @@ in one repo).
 **Performance Goals**: Open within 1 s at 10,000 firearms including key
 derivation, with the busy state shown within 100 ms (SC-003, constitution
 IV; 0.34 s derivation measured, about 0.7 s estimated on an older laptop). Progress shown within
-100 ms for any backup, passphrase change or restore estimated over 1 s
+100 ms for any backup, passphrase change, restore or move of backups estimated over 1 s
 (SC-005; estimate at a conservative 50 MiB/s against about 190 MiB/s
 measured). Idle lock between 10:00 and 10:01 after the last input
 (SC-010's 10:05 bound). Principle IV budgets for search (500 ms) and actions
@@ -130,18 +139,20 @@ take-over check on writes.
 never holds a passphrase between commands (FR-007). A refused open never
 modifies the file (FR-006, FR-014). The original is untouched until a
 verified copy replaces it in one rename (FR-015). No backup at sleep or OS
-shutdown (FR-027, FR-037). The sleep lock stops work and hides data first,
+shutdown (FR-027, FR-037). A backup is never overwritten, and never removed
+from its old location before its moved copy is complete and verified
+(FR-026). The sleep lock stops work and hides data first,
 under a delay of about 2 s (Windows) to 30 s (macOS). The pre-feature database and
 keyring entry must never be read, changed or deleted (CLAUDE.md).
 
 **Scale/Scope**: Six user stories (P1–P6), 39 functional requirements, 10
-success criteria. 23 new IPC commands, 8 events and 18 error codes. 3
+success criteria. 23 new IPC commands, 10 events and 21 error codes. 3
 new tables, 21 triggers, 1 machine-local file, per-OS listeners on 3
-platforms. About 12 new frontend components and hooks, 3 new E2E specs, 12
+platforms. About 13 new frontend components and hooks, 3 new E2E specs, 14
 new screenshot screens.
 
 No NEEDS CLARIFICATION remain: each open technical question is resolved in
-[research.md](./research.md) (§1–§21).
+[research.md](./research.md) (§1–§22).
 
 ## Constitution Check
 
@@ -151,9 +162,9 @@ No NEEDS CLARIFICATION remain: each open technical question is resolved in
 |---|---|---|
 | I. Code Quality | Lint and static analysis; review; small single-purpose modules; complexity justified by a current requirement | New concerns each get one module: `db::cipher` (pinned settings), `session` (open database, read/write guards, lock procedure, idle clock, operations), `platform::system_events` (per-OS notices behind one enum), `services::{backups, file_swap, keyring, machine_settings, passphrase}`. Existing `ops` signatures are unchanged. Every new dependency answers a named requirement (Technical Context); three are new downloads, the rest are already in the lockfile. `PassphraseField` and `Menu` join the shared components because the passphrase field is used in five dialogs, which clears the "third occurrence" bar. `clippy`, `rustfmt`, `eslint` and `prettier` run locally; CI stays disabled by the owner's choice (a documented deviation). The container builds for Linux only, so the macOS and Windows code (`platform/macos.rs`, `platform/windows.rs` and every other target-gated block) is linted and tested by running the Rust gates by hand on those systems before merge, recorded in the PR (research §20) |
 | II. Testing (NON-NEGOTIABLE) | Tests first; real persistence; a test per acceptance scenario; regression tests | Tests come first in every phase, the foundational one included: the file format, open outcomes, change tracking, machine settings, session guards and the operations registry each have a failing test before the module is written. Every scenario maps to a test in [quickstart.md](./quickstart.md), against real SQLCipher files with the production format. The spike's findings (copy shares salt, export skips triggers, interrupt works, BUSY before NOTADB, page-1 probe) become permanent tests, so a SQLCipher upgrade that changes them fails loudly. A guard test forces change-tracking triggers onto any future table. The only paths not automated are the OS sleep, screen-lock and shutdown notices themselves; their handlers are tested by calling the same entry points, and the notices are checked by hand per OS. **Isolation (1.2.0)**: no test or tool touches real application data, which now means every user-chosen database, its backups, `machine.json`, the suggested documents folder and the saved-passphrase keyring entries as well as the pre-feature database and key. Tests use temp paths passed in, a fixed test passphrase and the mock keyring; the human-testing seed writes only into a sandbox it created and refuses the real data, config and documents directories, tested by `seed_sandbox_test.rs` (research §21) |
-| III. UX Consistency | One component set; one confirmation pattern; WCAG 2.1 AA | Take-over, delete all backups, restore and discarding pending changes use the destructive `ConfirmDialog`. Save / discard / cancel extends `ConfirmDialog` with a third action instead of a one-off prompt. The settings dialog uses the existing `hd-form-grid`/`hd-field--quarter`/`--third` classes. All progress uses `ProgressBar`. Menu roles and focus rules are in [contracts/ui-databases.md](./contracts/ui-databases.md) §0 and §14. New screens join the screenshot walk (§15) |
+| III. UX Consistency | One component set; one confirmation pattern; WCAG 2.1 AA | Take-over, delete all backups (including deleting them when the location changes), restore and discarding pending changes use the destructive `ConfirmDialog`. The move / leave / delete question is a `Dialog` with a radio group, as the restore dialog's backup list is, and its progress uses `ProgressBar`. Save / discard / cancel extends `ConfirmDialog` with a third action instead of a one-off prompt. The settings dialog uses the existing `hd-form-grid`/`hd-field--quarter`/`--third` classes. All progress uses `ProgressBar`. Menu roles and focus rules are in [contracts/ui-databases.md](./contracts/ui-databases.md) §0 and §14. New screens join the screenshot walk (§15) |
 | IV. Performance | 100 ms feedback / 1 s completion; no UI-thread blocking; progress on long work | All new commands are async, and long ones emit progress. The closing screen appears within 100 ms. The 1 s rule for backups is SC-005's. Opening is an interactive action held to the 100 ms / 1 s budget: the busy state shows at once and the open, key derivation included, completes within 1 s at 10,000 firearms, measured (SC-003). Import and export gain a per-row cancel check (an atomic load). `performance_test.rs` gains open and progress timing |
-| V. User Privacy | Local only; encryption at rest; clear disclosure of what goes where; real deletion | Nothing leaves the device. Backups are encrypted copies in a folder the user sees and chooses, disclosed at creation and in settings (FR-024, FR-029). Deleted records remaining in older backups is disclosed, with delete-all and secure rotation. The keyring holds only a passphrase, only on opt-in. `machine.json` holds paths and names only |
+| V. User Privacy | Local only; encryption at rest; clear disclosure of what goes where; real deletion | Nothing leaves the device. Backups are encrypted copies in a folder the user sees and chooses, disclosed at creation and in settings (FR-024, FR-029). Changing that folder says where the existing backups go; backups copied to another drive are securely deleted from the old one, and backups left behind are named as no longer managed (FR-026). Deleted records remaining in older backups is disclosed, with delete-all and secure rotation. The keyring holds only a passphrase, only on opt-in. `machine.json` holds paths and names only |
 | Security & Data Handling | Platform-standard encryption; keys never logged or sent; sync or backup that leaves the device opt-in and off by default, while a local backup in a location the user sees and chooses may be on by default; vetted dependencies; no known critical or high advisory, unscored advisory, or unmaintained/unsound notice without a scoped, dated exception | SQLCipher with pinned standard settings, and no custom cryptography (§1, §1a). Passphrases are zeroized and never logged, and SQLCipher's log is silenced in release. **Local backups are on by default**, which constitution 1.1.0 allows because they are written only to a folder the user sees and chooses and never leave the device (FR-024, FR-026). Dependencies are reviewed for data collection above, and every new or promoted crate and npm package must pass the dependency audit with no new advisory exception |
 | Licensing | GPL-3.0-only; everything shipped under a GPLv3-compatible license; sources and licenses of bundled data files recorded; license exceptions scoped to packages with the reason; notices shipped with every release | Every new and promoted crate and npm package declares MIT, Apache-2.0 or both, checked by `audit:licenses`. The strength-hint dictionaries are bundled data: their sources are recorded, and the ODC-BY word list in `@zxcvbn-ts/language-en` is an exception scoped to that package, recorded in DEVELOPMENT.md's "License audit" (research §18). No change to the crypto library SQLCipher links, and no new artwork or fonts |
 | Workflow & Quality Gates | Lint, tests, dependency audit (vulnerabilities and licenses) and review on every PR; UI evidence; security note for persistence changes; performance note; before every release, the whole-codebase AI security review, the manual license checks and the third-party notices | The PR carries before/after screenshots (contracts/ui-databases.md §15), a security and data-handling note, and a performance note (SC-003, SC-005). `npm run audit` runs with lint and tests. This feature is not a release, so it runs neither release gate: the spec's Assumptions list the attack surface it adds for the first release review, and the ODC-BY attribution and the dictionaries without a stated source are recorded for the release's notices and manual license checks |
@@ -169,7 +180,7 @@ against 1.0.0 (local backups on by default) was resolved by 1.1.0
 ```text
 specs/003-database-protection-management/
 ├── plan.md              # This file (/speckit-plan command output)
-├── research.md          # Phase 0 output: §1–§21, including the SQLCipher spike findings
+├── research.md          # Phase 0 output: §1–§22, including the SQLCipher spike findings
 ├── data-model.md        # Phase 1 output: tables, machine.json, keyring entry, session states
 ├── quickstart.md        # Phase 1 output: story → tests map, walkthroughs, per-OS checks
 ├── contracts/           # Phase 1 output
@@ -222,7 +233,8 @@ src-tauri/
 │   │   └── windows.rs              # hidden top-level window: power, WTS session, end session
 │   ├── commands/
 │   │   ├── databases.rs            # NEW: chooser, create/open/close/lock/quit, settings, keyring,
-│   │   │                           #  pending changes, activity (thin; logic in session/services)
+│   │   │                           #  pending changes, activity (thin; logic in session/services);
+│   │   │                           #  update_backup_settings asks, moves, leaves or deletes (research §22)
 │   │   ├── backups.rs              # NEW: list/restore/delete-all/change_passphrase (+ progress)
 │   │   ├── error.rs                # + details field, new codes, SQLITE_CORRUPT → DATABASE_DAMAGED
 │   │   ├── firearms.rs, insurance.rs, photos.rs, documents.rs
@@ -235,10 +247,12 @@ src-tauri/
 │   │   └── mod.rs
 │   └── services/
 │       ├── passphrase.rs           # NEW: NFC, length/NUL validation, Zeroizing wrapper
-│       ├── backups.rs              # NEW: due rule, naming, listing, rotation, chunked copy + stamp
+│       ├── backups.rs              # NEW: due rule, naming, listing, rotation, chunked copy + stamp;
+│       │                           #  move to a new location (link, or copy + verify), unfinished-move sweep
 │       ├── file_swap.rs            # NEW: hard-link + rename replace, fallback, recovery sweep
 │       ├── keyring.rs              # NEW: saved passphrases (real store / mock feature), probe
-│       ├── machine_settings.rs     # NEW: machine.json (id, recent list, notices), atomic writes
+│       ├── machine_settings.rs     # NEW: machine.json (id, recent list, notices, unfinished backup
+│       │                           #  and move), atomic writes
 │       ├── disk_space.rs           # NEW: free-space check (fs4)
 │       └── secure_delete.rs        # + discard hint, 1 MiB chunks, progress for large files
 ├── examples/
@@ -263,6 +277,7 @@ src-tauri/
     ├── backup_test.rs              # NEW (US3, FR-023–FR-027, FR-029)
     ├── backup_due_tracking_test.rs # NEW (FR-025 housekeeping vs changes, trigger guard)
     ├── restore_test.rs             # NEW (FR-028)
+    ├── backup_location_change_test.rs  # NEW (FR-026: move, leave, delete, unreachable, crash sweep)
     ├── passphrase_change_test.rs   # NEW (US4, SC-004)
     ├── file_swap_test.rs           # NEW
     ├── keyring_test.rs             # NEW (US5; --features mock-keyring)
@@ -296,8 +311,10 @@ src/
 │   ├── databases/                  # NEW
 │   │   ├── DatabaseChooser.tsx, RecentDatabaseRow.tsx, TakeOverConfirm.tsx
 │   │   ├── CreateDatabaseDialog.tsx
-│   │   ├── DatabaseMenu.tsx        # top-bar menu + lock button + Ctrl/⌘+L
+│   │   ├── DatabaseMenu.tsx        # "Database" menu (Lock now is its only close) + lock button
+│   │   │                           #  + Ctrl/⌘+L; the window title names the open database
 │   │   ├── DatabaseSettingsDialog.tsx  # Backups · Locking · This computer
+│   │   ├── ExistingBackupsDialog.tsx   # move / leave / delete when the backup location changes
 │   │   ├── ChangePassphraseDialog.tsx
 │   │   ├── RestoreBackupDialog.tsx
 │   │   ├── DatabaseNotes.tsx       # disk-encryption and opened-backup banners
@@ -316,10 +333,10 @@ e2e/
 ├── wdio.conf.ts                    # drop HOPLODEX_E2E_DB_KEY; scratch user-dirs.dirs; unlock helper
 ├── support/ui.ts                   # createDatabase(), unlock(passphrase)
 ├── specs/us7-databases.e2e.ts      # NEW: US1, US2, US5 flows
-├── specs/us8-backups.e2e.ts        # NEW: backup on close, restore
+├── specs/us8-backups.e2e.ts        # NEW: backup on close, restore, moving backups to a new location
 ├── specs/us9-locking.e2e.ts        # NEW: lock now, pending changes resume and discard
 ├── specs/us1…us6                   # start by unlocking the seeded/created database
-└── screenshots/screens.e2e.ts      # + screens 14–25 (contracts/ui-databases.md §15)
+└── screenshots/screens.e2e.ts      # + screens 14–27 (contracts/ui-databases.md §15)
 
 scripts/human-testing.sh            # new data layout (.human-testing/HoploDex/*.hoplodex), prints passphrase
 DEVELOPMENT.md                      # Test isolation: passphrase model, no DB key env, seed sandbox;
@@ -364,14 +381,20 @@ new Rust crates and four npm packages (Technical Context).
   by passing every path in and by the seed's sandbox check (1.2.0). Still
   PASS.
 - **UX Consistency**: all prompts reuse `ConfirmDialog` (one extended with a
-  third action and pushed back into the shared set). The guide follows 002's
-  guide pattern. Texts that state security facts are fixed in the UI
-  contract. Still PASS.
+  third action and pushed back into the shared set), except the move /
+  leave / delete question, whose three choices plus Cancel are a radio
+  group in a standard `Dialog`, the pattern the restore dialog already uses.
+  The guide follows 002's guide pattern. Texts that state security facts
+  are fixed in the UI contract. One close (Lock now) replaces three menu
+  items that all ended at the chooser. Still PASS.
 - **Performance**: open measured at 0.34 s of key derivation, against
   constitution IV's 1 s budget, with the busy state shown within 100 ms. Progress rules are concrete (50 MiB/s estimate, 100 ms). The
-  take-over check is one `stat` per write. Still PASS.
+  take-over check is one `stat` per write. Moving backups is a
+  long-running operation with the same progress rule; on the same drive it
+  moves no bytes. Still PASS.
 - **User Privacy / Security**: nothing is transmitted; the backend holds no
-  passphrase between commands, which the salt-sharing finding makes possible;
+  passphrase between commands, which the salt-sharing finding makes possible
+  (a moved backup is verified by comparing bytes, so moving needs none);
   decrypted data never touches disk (the page-1 probe copies ciphertext
   only); the developer's pre-feature database and keyring entry are
   untouched by design. The on-by-default local backup is allowed by

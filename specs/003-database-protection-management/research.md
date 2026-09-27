@@ -445,7 +445,8 @@ and resolves, on whichever computer opens the file, to a `HoploDex backups`
 folder in the database's own folder. A custom location is stored as the
 absolute path chosen (FR-024: it may not exist on another computer, in which
 case the backup is skipped and reported, with a way to change the location,
-FR-027).
+FR-027). Changing the location asks what to do with the backups already at
+the old one (§22).
 
 **Names**: `<database name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex`, for example
 `Main collection 2026-09-25 143005 3fa2c9d1.hoplodex`. The database name is
@@ -658,8 +659,9 @@ Import already commits row by row, so a stop keeps every row already
 imported. Raw copies and overwrites check it between chunks. Deleting all
 backups checks it between files and passes it to each file's overwrite; a
 file whose overwrite is stopped part way is removed without finishing, so
-nothing half overwritten is left to look like a backup. The registry is
-also what pauses the idle clock (§15).
+nothing half overwritten is left to look like a backup. Moving backups to a
+new location (§22) checks it between files and between each copy's chunks.
+The registry is also what pauses the idle clock (§15).
 
 ---
 
@@ -822,7 +824,15 @@ against FR-039's "protected by its passphrase").
 - It then calls `quit_application`, which does a normal close (backup if due,
   with progress and skip, FR-027) and exits.
 
-Close and switch take the same path, through `close_database`. OS-initiated
+Within the application a database is closed by locking it (spec,
+Clarifications 2026-09-27): **Lock now** is the database menu's only close,
+and switching is a lock followed by an open from the chooser. A lock never
+asks (FR-033), so quitting is the one place the question is asked. A
+separate close could not ask either: every form that can hold unsaved input
+is a dialog, which covers the menu. `close_database` stays for the one
+screen that still offers a close, the "couldn't be shown" panel
+(contracts/ui-databases.md §13), where nothing unsaved can be recovered.
+OS-initiated
 exits (signals, `PrepareForShutdown`, `WM_ENDSESSION`, macOS power-off) never
 ask. They save the staged draft as pending changes, clear the open marker if
 that is part of the same write, close the connection, delete the decrypted
@@ -976,3 +986,144 @@ of 1.1.0, and a Licensing section.
   a scoped exception. The third-party notices every release must carry are
   left to the first release, like the security review (spec, Clarifications
   2026-09-26); the ODC-BY attribution is recorded for them.
+
+---
+
+## §22 Changing the backup location: move, leave or delete the backups already made
+
+Added 2026-09-27 for FR-026 as amended (spec, Clarifications 2026-09-27).
+
+**Which backups are the database's**: only those at the current location.
+Listing, restore, rotation and "delete all" already select files by folder
+and `<id8>` (§7), so this needs no new state: a backup left at an old folder
+simply stops being listed, and changing the location back to that folder
+lists it again. Nothing records where backups used to be.
+
+**Asking, with the existing warning pattern**: `update_backup_settings`
+gains an optional `existingBackups: "move" | "leave" | "delete"`. When the
+resolved folder changes (compared as §7's `same_path`, so choosing the
+default folder's own path as a custom location is not a change) and the
+choice is absent, the command saves nothing and refuses with one of:
+- `BACKUPS_AT_OLD_LOCATION { folder, count, totalBytes }`: the old folder
+  holds `count` backups of this database. The UI asks the question and sends
+  the settings again with the choice.
+- `OLD_BACKUP_LOCATION_UNAVAILABLE { folder }`: the old folder cannot be
+  read: a custom folder that is missing (its drive unplugged, or a path from
+  another computer) or that cannot be listed. The default folder sits next
+  to a database that is open, and therefore reachable, so for it "missing"
+  only means that no backup has been made yet. The UI warns, and **Continue** resends
+  with `existingBackups: "leave"`.
+
+No backups at the old folder means no question. This is the existing
+"fail with a warning code, resend confirmed" pattern (CLAUDE.md,
+Architecture), so the backend decides, from the files, whether to ask, and
+the frontend never lists folders itself. A separate "count the backups"
+command was rejected: the count could change between it and the save.
+
+**Leave**: the new location is saved. Nothing else happens.
+
+**Delete** (FR-026: "done as deleting all backups under FR-029"): the UI
+first shows FR-029's destructive confirmation, then sends
+`existingBackups: "delete"`, which is itself the confirmation, as
+`takeOver: true` is for a take-over. The command runs the same code as
+`delete_all_backups` (secure deletion, `backups_delete:progress`, stopping
+between files at sleep), on the **old** folder, and saves the new location
+only when every backup there was deleted. If one could not be deleted
+(`BACKUPS_NOT_ALL_DELETED`, naming the files), or a sleep stopped it, the old
+location is kept, so the ones remaining are still
+the database's backups and "delete all backups" in the settings can finish
+the job, which is what the stopped-deletion notice already tells the user
+(FR-037). Saving the new location regardless was rejected: backups the
+user asked to delete would quietly become files the application no longer
+knows about.
+
+**Move**, in this order:
+1. **Preconditions, before anything is written**: the new folder passes
+   §7's `check_location` (the default folder is made if missing; a missing
+   custom one is refused with `BACKUP_LOCATION_UNAVAILABLE`), and it has
+   free space for all the backups to be moved, their sizes summed, plus
+   §4's 5% (`INSUFFICIENT_SPACE`). Backups whose name is already taken at
+   the new folder are left out of both the move and the sum. The check does
+   not try to tell whether the two folders share a drive: the spec asks for
+   room for all of them, and a disk that full could not take the next
+   backup either.
+2. **Save the new location** (a collection change, through `session.write`,
+   so the take-over check runs first). From here the new location is kept
+   whatever happens (FR-026), which is why it is saved before the first file
+   moves: a sleep closes the session at once, and nothing could be saved
+   after it.
+3. **Move each backup, oldest first**, as a long-running operation
+   (`OperationKind::MoveBackups`: it pauses the idle clock and a sleep stops
+   it, §13, §15):
+   - A name already taken at the new folder: skipped and counted as left
+     behind. Nothing is ever overwritten.
+   - **Same drive**: `fs::hard_link(old, new)` then remove the old name.
+     A hard link never replaces an existing file (it fails with
+     `AlreadyExists`), is atomic, and moves no bytes, so the file's blocks
+     are not freed and there is nothing to wipe.
+   - **Otherwise** (the link fails: another drive, or a filesystem without
+     hard links such as FAT or exFAT): copy it in 1 MiB chunks to
+     `<new name>.partial` in the new folder (§3's `copy_chunked`, stoppable
+     between chunks), flush it, **verify** it by reading it back and
+     comparing it byte for byte with the original, then rename it to its
+     final name with §7's `finalize` (which refuses a taken name), and only
+     then remove the original by secure deletion (§12). A partial copy that
+     is stopped or fails is removed, and its original kept.
+   - Progress: `backups_move:progress { processed, total }` in bytes, the
+     copy and the read-back each counting once, so `total` is twice the
+     bytes to be copied. The estimate is §7's 50 MiB/s over that total, and
+     it shows at once when over 1 s (FR-026, as FR-027).
+4. **At the first failure** (the new drive fills or disappears despite the
+   check, or an original cannot be read or removed), the move ends: the
+   backups already moved stay at the new folder and the rest at the old one.
+   The command still succeeds, since the settings were saved, and reports
+   `leftBehind { count, folder }` with the reason. Carrying on after a
+   failure was rejected: a failing destination usually fails every later
+   file too, and the user is told what was left either way.
+
+Moving removes nothing to meet `backup_keep_count`, even when the new
+folder already holds backups of the database (left there by an earlier
+change of location). The next completed backup rotates as usual (FR-025,
+SC-007 as amended).
+
+**Verifying without a key**: a backup keeps the passphrase that was current
+when it was made, and the backend holds no passphrase (FR-007), so the copy
+cannot be opened to check it. A byte-for-byte comparison with the original,
+after the copy is flushed, proves the copy is the same file, which is what a
+move must preserve. It does not prove the original was sound, but a move
+must not change that either. Hashing both was rejected: it reads as much and
+would need a hash crate for no gain.
+
+**Stopped at sleep** (FR-037): the operation records how many backups it
+has not yet moved. `report_stopped` turns that into the chooser notice
+`operationStopped { operation: "moveBackups", leftBehindCount, folder }`:
+"<n> backups of <name> are still in <folder>". The partial copy is removed
+as the operation unwinds (FR-037's step 5), and its original is intact.
+
+**A crash or forced quit mid-move**: before the first file, the move is
+recorded in `machine.json` as `unfinishedBackupMove { databasePath,
+databaseId, fromFolder, partialPath }`, with `partialPath` updated for each
+copy and the record cleared when the move ends. At the next launch the sweep
+that already handles an unfinished backup (§7) removes the partial file,
+counts this database's backups still in `fromFolder` (by the cached id), and
+leaves a `backupsLeftBehind { databasePath, folder, count }` notice when
+there are any. A crash between a copy's rename and its original's removal
+leaves the same backup in both folders. Nothing is lost, and the one in the
+old folder is an unmanaged file like any other left behind.
+
+**Folders are never removed**: an old default `HoploDex backups` folder
+that the move empties is left in place. Removing folders the user may have
+put other files in was rejected, and an empty folder does no harm.
+
+**A lock during the move** (Ctrl/⌘+L): the move is a registered operation
+like "delete all backups", so a lock treats it the same way. Its progress
+view cannot be dismissed, so it shows no lock button (contracts/ui-databases.md
+§0).
+
+**Alternatives considered**: moving with a plain `fs::rename` on the same
+drive (rejected: it replaces an existing file on Unix, which FR-026
+forbids, and "same drive" cannot be told in advance without platform
+code); moving in the background after the settings dialog closes (rejected:
+the user must learn at once whether anything was left behind, and a second
+long-running operation could not start meanwhile); rotating after a move
+into a folder that already holds backups (rejected by the spec).
