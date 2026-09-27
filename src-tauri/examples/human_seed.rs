@@ -68,6 +68,15 @@ const RIFLE: i64 = 2;
 const SHOTGUN: i64 = 3;
 const OTHER: i64 = 4;
 
+/// A real photo from `seed-photos/`, whose README records where each came
+/// from and its licence, as the `(name, bytes, mime type)` that `photos`
+/// takes.
+macro_rules! seed_photo {
+    ($name:literal) => {
+        ($name, include_bytes!(concat!("seed-photos/", $name)).to_vec(), "image/jpeg")
+    };
+}
+
 struct Args {
     dir: PathBuf,
     extra: usize,
@@ -530,9 +539,9 @@ pub fn seed(conn: &Connection, extra: usize) {
     photos(
         glock,
         &[
-            ("glock-19-left.png", gradient_image(800, 600, 210, false), "image/png"),
-            ("glock-19-right.png", gradient_image(800, 600, 200, false), "image/png"),
-            ("glock-19-field-stripped.jpg", gradient_image(800, 600, 190, true), "image/jpeg"),
+            seed_photo!("glock-19-gen3.jpg"),
+            seed_photo!("glock-19-gen4-fde.jpg"),
+            seed_photo!("glock-19-atf.jpg"),
         ],
     );
     documents(
@@ -595,7 +604,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::LikeNew),
         ..base("Benelli", "M4 Super 90", "M123456", "12 gauge", SHOTGUN)
     });
-    photos(benelli, &[("benelli-m4.png", gradient_image(600, 800, 25, false), "image/png")]);
+    photos(benelli, &[seed_photo!("benelli-m4.jpg")]);
 
     // Same identity as a disposed record below: a firearm reacquired as a
     // new record (FR-032 only protects active records).
@@ -606,7 +615,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
     });
     dispose(disposed_p365, DispositionType::Sold, "Dana Whitfield", "2023-04-02", 520);
-    let p365 = add(FirearmInput {
+    add(FirearmInput {
         nickname: text("Carry"),
         notes: text("Bought back from the same friend I sold it to."),
         estimated_value: Some(600),
@@ -617,9 +626,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::NewInBox),
         ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
     });
-    photos(p365, &[("p365.png", gradient_image(800, 600, 160, false), "image/png")]);
 
-    add(FirearmInput {
+    let garand = add(FirearmInput {
         notes: text("Garand thumb is not a myth."),
         estimated_value: Some(1_600),
         acquisition_source: text("Civilian Marksmanship Program"),
@@ -633,6 +641,16 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::Fair),
         ..base("Springfield Armory", "M1 Garand", "1234567", ".30-06", RIFLE)
     });
+    photos(
+        garand,
+        &[
+            seed_photo!("m1-garand-left.jpg"),
+            seed_photo!("m1-garand-right.jpg"),
+            seed_photo!("m1-garand-receiver.jpg"),
+            seed_photo!("m1-garand-stock.jpg"),
+            seed_photo!("m1-garand-sling.jpg"),
+        ],
+    );
 
     add(FirearmInput {
         no_serial_attested: true,
@@ -644,7 +662,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Homebuilt", "AR-15 80% Lower Build", "", "5.56 NATO", RIFLE)
     });
 
-    add(FirearmInput {
+    let remington_replica = add(FirearmInput {
         no_serial_attested: true,
         serial_number: None,
         notes: text("Black powder; no serial number."),
@@ -658,6 +676,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::Poor),
         ..base("Pedersoli", "1858 Remington Replica", "", ".44 black powder", OTHER)
     });
+    photos(remington_replica, &[seed_photo!("remington-new-model-army.jpg")]);
 
     // Only the required fields: no value, so no insurance warning either.
     add(base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN));
@@ -691,6 +710,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2019-04-20"),
         ..base("Sig Sauer", "P320", "58B123456", "9mm", HANDGUN)
     });
+    photos(p320, &[seed_photo!("sig-p320-m18.jpg")]);
     dispose(p320, DispositionType::Sold, "Dave Rossi", "2022-05-10", 450);
     must(
         firearm_ops::reverse_disposition(
@@ -729,13 +749,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         scheduled_coverage_amount: Some(1_000),
         ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357 Magnum", HANDGUN)
     });
-    let ids = photos(
-        s_and_w,
-        &[
-            ("686-left.png", gradient_image(800, 600, 280, false), "image/png"),
-            ("686-detail.png", gradient_image(800, 600, 300, false), "image/png"),
-        ],
-    );
+    let ids =
+        photos(s_and_w, &[seed_photo!("sw-686-cylinder.jpg"), seed_photo!("sw-686-side.jpg")]);
     // Not the first photo: a chosen thumbnail rather than the default.
     must(photo_ops::set_thumbnail_photo(conn, s_and_w, ids[1]), "choosing a thumbnail");
 
@@ -747,16 +762,12 @@ pub fn seed(conn: &Connection, extra: usize) {
         scheduled_coverage_amount: Some(1_500),
         ..base("Winchester", "Model 70 Featherweight", "G2841175", ".270 Win", RIFLE)
     });
-    // A large photo, to see how the app copes with a full-size original.
-    photos(
-        winchester,
-        &[("elk-rifle-range-day.jpg", gradient_image(2400, 1600, 100, true), "image/jpeg")],
-    );
+    photos(winchester, &[seed_photo!("winchester-model-70-featherweight.jpg")]);
 
     // -- Scheduled under Vault Schedule (in force) --------------------------
 
     // Scheduled for less than its value: under-insured.
-    add(FirearmInput {
+    let colt = add(FirearmInput {
         nickname: text("Grandpa's 1911"),
         notes: text("Inherited. Series 70. Family piece, never sell."),
         estimated_value: Some(2_400),
@@ -766,6 +777,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         scheduled_coverage_amount: Some(2_000),
         ..base("Colt", "1911 Government Model", "70S12345", ".45 ACP", HANDGUN)
     });
+    photos(
+        colt,
+        &[seed_photo!("1911a1-field-stripped.jpg"), seed_photo!("colt-m1911-markings.jpg")],
+    );
 
     // Scheduled for exactly its value: adequately insured.
     add(FirearmInput {
@@ -778,7 +793,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     // Long text everywhere, to check truncation and wrapping in tiles/rows.
-    add(FirearmInput {
+    let commemorative = add(FirearmInput {
         nickname: text("The Really Long Nickname Used To Check How Tiles And Rows Truncate"),
         notes: text("Commemorative presentation piece. ".repeat(12).trim_end()),
         estimated_value: Some(3_200),
@@ -793,6 +808,27 @@ pub fn seed(conn: &Connection, extra: usize) {
             HANDGUN,
         )
     });
+    // Twice as many photos as any other record, each a different colour and
+    // shape, in both formats, one of them a large full-size original: to see
+    // how the photo strip and the viewer cope.
+    const PRESENTATION_SHAPES: [(u32, u32, bool); 10] = [
+        (1200, 800, false),
+        (800, 1200, false),
+        (2400, 1600, true),
+        (1000, 1000, false),
+        (320, 240, true),
+        (1600, 400, false),
+        (600, 1800, true),
+        (1024, 768, true),
+        (800, 600, false),
+        (1600, 1200, true),
+    ];
+    for (i, &(width, height, jpeg)) in PRESENTATION_SHAPES.iter().enumerate() {
+        let (extension, mime) = if jpeg { ("jpg", "image/jpeg") } else { ("png", "image/png") };
+        let name = format!("presentation-{:02}.{extension}", i + 1);
+        let bytes = gradient_image(width, height, i as u32 * 36, jpeg);
+        must(photo_ops::add_photo(conn, commemorative, &bytes, &name, mime), &name);
+    }
 
     // -- Scheduled under an expired policy: uninsured despite the amount ----
 
@@ -854,7 +890,7 @@ pub fn seed(conn: &Connection, extra: usize) {
 
     // The importer adopted the maker's own model and serial as the main
     // marks: no separate original-marks entry is needed (US2-3).
-    add(FirearmInput {
+    let imported_beretta = add(FirearmInput {
         notes: text("Importer's stamp only; the maker's marks are already the main marks."),
         estimated_value: Some(480),
         acquisition_source: text("Online auction"),
@@ -864,6 +900,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         importer_name: text("Global Arms Import Co."),
         ..base("Beretta", "92FS", "BER556213", "9mm", HANDGUN)
     });
+
+    photos(imported_beretta, &[seed_photo!("beretta-92fs-atf.jpg")]);
 
     // A domestic firearm, so every `origin` value appears in the seed
     // (human_seed_coverage_test's CHECK-value sweep).
