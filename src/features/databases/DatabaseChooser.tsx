@@ -87,11 +87,21 @@ const STOPPED_OPERATION: Record<OperationKind, string> = {
   import: "an import",
   export: "an export",
   deleteBackups: "the deletion of its backups",
+  moveBackups: "the move of its backups",
 };
+
+/** "<n> are still in <folder>, and HoploDex no longer manages them there." */
+function stillIn(count: number, folder: string) {
+  const one = count === 1;
+  return `${count} ${one ? "is" : "are"} still in ${folder}, and HoploDex no longer manages ${one ? "it" : "them"} there.`;
+}
 
 function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }>, name: string) {
   if (notice.operation === "deleteBackups") {
     return `The computer went to sleep while the backups of ${name} were being deleted, so it was stopped. ${notice.deletedCount ?? 0} were deleted; the rest are still there. You can delete them in its Database settings.`;
+  }
+  if (notice.operation === "moveBackups") {
+    return `The computer went to sleep while the backups of ${name} were being moved, so it was stopped. ${stillIn(notice.leftBehindCount ?? 0, notice.folder ?? "the old backup location")} The new backup location is kept.`;
   }
   const stopped = `The computer went to sleep while ${STOPPED_OPERATION[notice.operation]} was running, so it was stopped.`;
   if (notice.operation === "import") {
@@ -119,6 +129,8 @@ function noticeText(notice: ChooserNotice): string | null {
       return `Unsaved changes could not be kept when ${name} locked.`;
     case "operationStopped":
       return stoppedText(notice, name);
+    case "backupsLeftBehind":
+      return `The backups of ${name} were not all moved. ${stillIn(notice.count, notice.folder)}`;
   }
 }
 

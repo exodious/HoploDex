@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { ToastProvider } from "../../components";
+import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
 import { DatabaseSettingsDialog } from "./DatabaseSettingsDialog";
 import * as databasesService from "./databasesService";
-import type { BackupInfo, CollectionSettings, DatabaseStatus } from "./types";
+import type {
+  BackupInfo,
+  BackupProgress,
+  BackupSettingsSaved,
+  CollectionSettings,
+  DatabaseStatus,
+  ExistingBackupsOutcome,
+} from "./types";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
@@ -60,7 +69,11 @@ function renderSettings(current: DatabaseStatus = status()) {
     onRestore: vi.fn(),
     onPassphraseSavedChange: vi.fn(),
   };
-  render(<DatabaseSettingsDialog open status={current} {...props} />);
+  render(
+    <ToastProvider>
+      <DatabaseSettingsDialog open status={current} {...props} />
+    </ToastProvider>,
+  );
   return props;
 }
 
@@ -167,9 +180,10 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
   it("chooses a folder, then saves the settings", async () => {
     const user = userEvent.setup();
     vi.mocked(openFolderDialog).mockResolvedValue("/media/usb/Backups");
-    vi.mocked(databasesService.updateBackupSettings).mockResolvedValue(
-      settings({ kind: "custom", path: "/media/usb/Backups", available: true }),
-    );
+    vi.mocked(databasesService.updateBackupSettings).mockResolvedValue({
+      settings: settings({ kind: "custom", path: "/media/usb/Backups", available: true }),
+      existingBackups: null,
+    });
     const props = renderSettings();
 
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
@@ -351,13 +365,14 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
       .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
     vi.mocked(databasesService.updateBackupSettings)
       .mockReset()
-      .mockResolvedValue(
-        settings({
+      .mockResolvedValue({
+        settings: settings({
           kind: "default",
           path: DEFAULT_BACKUPS,
           available: true,
         }),
-      );
+        existingBackups: null,
+      });
     vi.mocked(databasesService.updateLockSettings).mockReset();
   });
 
@@ -475,6 +490,250 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
 
     expect(locking()).toHaveTextContent(
       "Because the passphrase is saved on this computer, anyone using this computer account can reopen the database after it locks.",
+    );
+  });
+});
+
+describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.md §7, FR-026, US3-4a, US3-4b)", () => {
+  const USB = "/media/usb/Backups";
+  const saved = (existingBackups: ExistingBackupsOutcome | null): BackupSettingsSaved => ({
+    settings: settings({ kind: "custom", path: USB, available: true }),
+    existingBackups,
+  });
+  const atOldLocation = () =>
+    new CommandFailure({
+      code: "BACKUPS_AT_OLD_LOCATION",
+      message: "There are backups at the old location.",
+      details: { folder: DEFAULT_BACKUPS, count: 3, totalBytes: 636_000_000 },
+    });
+
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({
+        folder: DEFAULT_BACKUPS,
+        available: true,
+        backups: [backup(26), backup(25), backup(24)],
+      });
+    vi.mocked(databasesService.updateBackupSettings).mockReset();
+    vi.mocked(databasesService.updateLockSettings)
+      .mockReset()
+      .mockResolvedValue(settings({ kind: "custom", path: USB, available: true }));
+    vi.mocked(databasesService.onBackupsMoveProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(databasesService.onBackupsDeleteProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(openFolderDialog).mockReset().mockResolvedValue(USB);
+  });
+
+  /** Chooses the USB folder and a new number kept, then saves. */
+  async function changeAndSave(user: ReturnType<typeof userEvent.setup>) {
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "12");
+    await user.click(screen.getByRole("button", { name: "Change…" }));
+    await screen.findByText(USB);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+  }
+
+  it("sends the backup settings first and holds back the lock settings until the question is answered", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockResolvedValueOnce(saved({ action: "move", movedCount: 3, leftBehind: null }));
+    const props = renderSettings();
+
+    await changeAndSave(user);
+    const question = await screen.findByRole("dialog", { name: "Backups at the old location" });
+    expect(question).toHaveTextContent(
+      `3 backups of the database (${formatBytes(636_000_000)}) are in ${DEFAULT_BACKUPS}.`,
+    );
+    expect(databasesService.updateLockSettings).not.toHaveBeenCalled();
+
+    await user.click(within(question).getByRole("button", { name: "Change location" }));
+
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith({
+      enabled: true,
+      keepCount: 12,
+      location: { kind: "custom", path: USB },
+      existingBackups: "move",
+    });
+    expect(databasesService.updateLockSettings).toHaveBeenCalled();
+    expect(props.onSaved).toHaveBeenCalled();
+    expect(await screen.findByText(`The backups were moved to ${USB}.`)).toBeInTheDocument();
+  });
+
+  it("says when the backups at the old location were deleted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockResolvedValueOnce(saved({ action: "delete", deletedCount: 3 }));
+    renderSettings();
+
+    await changeAndSave(user);
+    await user.click(await screen.findByRole("radio", { name: /Delete them/ }));
+    await user.click(screen.getByRole("button", { name: "Change location" }));
+    await user.click(screen.getByRole("button", { name: "Delete all backups" }));
+
+    expect(
+      await screen.findByText(`The backups at ${DEFAULT_BACKUPS} were deleted.`),
+    ).toBeInTheDocument();
+  });
+
+  it("cancelling the question saves nothing and puts the location back, keeping the other fields' input", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings).mockRejectedValueOnce(atOldLocation());
+    const props = renderSettings();
+
+    await changeAndSave(user);
+    const question = await screen.findByRole("dialog", { name: "Backups at the old location" });
+    await user.click(within(question).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Backups at the old location" }),
+      ).not.toBeInTheDocument(),
+    );
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(within(backups).getByText(DEFAULT_BACKUPS)).toBeInTheDocument();
+    expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Keep the latest")).toHaveValue("12");
+    expect(databasesService.updateBackupSettings).toHaveBeenCalledTimes(1);
+    expect(databasesService.updateLockSettings).not.toHaveBeenCalled();
+    expect(props.onSaved).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("warns when the old location can't be reached, and Continue leaves its backups", async () => {
+    const user = userEvent.setup();
+    const old = "/media/old-usb/Backups";
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "OLD_BACKUP_LOCATION_UNAVAILABLE",
+          message: "The old backup location can't be reached.",
+          details: { folder: old },
+        }),
+      )
+      .mockResolvedValueOnce(saved({ action: "leave" }));
+    const props = renderSettings(status({ kind: "custom", path: old, available: false }));
+
+    await changeAndSave(user);
+    const warning = await screen.findByRole("alertdialog", {
+      name: "The old backup location isn't available",
+    });
+    expect(warning).toHaveTextContent(
+      `${old} can't be reached from this computer, so any backups there can't be moved or deleted from here. If you continue, they stay there, and HoploDex no longer manages them.`,
+    );
+    expect(within(warning).getByRole("button", { name: "Continue" })).not.toHaveClass(
+      "hd-button--danger",
+    );
+    await user.click(within(warning).getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ existingBackups: "leave" }),
+    );
+  });
+
+  it("cancelling the unreachable-location warning puts the location back", async () => {
+    const user = userEvent.setup();
+    const old = "/media/old-usb/Backups";
+    vi.mocked(databasesService.updateBackupSettings).mockRejectedValueOnce(
+      new CommandFailure({
+        code: "OLD_BACKUP_LOCATION_UNAVAILABLE",
+        message: "The old backup location can't be reached.",
+        details: { folder: old },
+      }),
+    );
+    renderSettings(status({ kind: "custom", path: old, available: false }));
+
+    await changeAndSave(user);
+    const warning = await screen.findByRole("alertdialog");
+    await user.click(within(warning).getByRole("button", { name: "Cancel" }));
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    await waitFor(() => expect(within(backups).getByText(old)).toBeInTheDocument());
+    expect(databasesService.updateLockSettings).not.toHaveBeenCalled();
+  });
+
+  it("keeps the settings open with a warning when a move left some behind", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockResolvedValueOnce(
+        saved({
+          action: "move",
+          movedCount: 2,
+          leftBehind: { count: 1, folder: DEFAULT_BACKUPS, reason: "nameTaken" },
+        }),
+      );
+    const props = renderSettings();
+
+    await changeAndSave(user);
+    await user.click(await screen.findByRole("button", { name: "Change location" }));
+
+    const settingsDialog = screen.getByRole("dialog", { name: "Database settings" });
+    const banner = await within(settingsDialog).findByRole("status");
+    expect(banner).toHaveTextContent(
+      `2 backups were moved. 1 is still in ${DEFAULT_BACKUPS} because a backup with the same name is already in ${USB}. HoploDex no longer manages it there.`,
+    );
+    expect(banner).toHaveClass("hd-banner");
+    expect(banner).not.toHaveClass("hd-banner--error");
+    expect(props.onSaved).toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    expect(databasesService.updateLockSettings).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["locationUnavailable", `because ${USB} became unavailable`],
+    ["insufficientSpace", "because there wasn't enough space there"],
+    ["io", "because of an error"],
+  ] as const)("says a move stopped by %s left some behind", async (reason, because) => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockResolvedValueOnce(
+        saved({
+          action: "move",
+          movedCount: 1,
+          leftBehind: { count: 2, folder: DEFAULT_BACKUPS, reason },
+        }),
+      );
+    renderSettings();
+
+    await changeAndSave(user);
+    await user.click(await screen.findByRole("button", { name: "Change location" }));
+
+    expect(
+      await screen.findByText(
+        `1 backup was moved. 2 are still in ${DEFAULT_BACKUPS} ${because}. HoploDex no longer manages them there.`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the move's progress from the backend", async () => {
+    const user = userEvent.setup();
+    let progress: (value: BackupProgress) => void = () => {};
+    vi.mocked(databasesService.onBackupsMoveProgress).mockImplementation((handler) => {
+      progress = handler;
+      return () => {};
+    });
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockReturnValueOnce(new Promise(() => {}));
+    renderSettings();
+
+    await changeAndSave(user);
+    await user.click(await screen.findByRole("button", { name: "Change location" }));
+    act(() => progress({ processed: 636_000_000, total: 1_272_000_000, showNow: true }));
+
+    expect(screen.getByRole("progressbar", { name: "Moving the backups" })).toHaveAttribute(
+      "aria-valuenow",
+      "636000000",
     );
   });
 });

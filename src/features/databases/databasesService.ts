@@ -1,8 +1,10 @@
 import { invoke, listen } from "../../services/tauriClient";
 import type {
   BackupList,
+  BackupProgress,
   BackupsDeleted,
   BackupSettingsInput,
+  BackupSettingsSaved,
   ChooserState,
   CollectionSettings,
   CountProgress,
@@ -76,9 +78,11 @@ export function forgetSavedPassphrase(path?: string): Promise<PassphraseSaved> {
   return invoke<PassphraseSaved>("forget_saved_passphrase", path ? { path } : {});
 }
 
-/** Saves the open database's backup settings (FR-024, FR-026). */
-export function updateBackupSettings(input: BackupSettingsInput): Promise<CollectionSettings> {
-  return invoke<CollectionSettings>("update_backup_settings", { ...input });
+/** Saves the open database's backup settings (FR-024, FR-026). A changed
+ * location with backups at the old one is refused until `existingBackups`
+ * says what to do with them, which may move or delete them first. */
+export function updateBackupSettings(input: BackupSettingsInput): Promise<BackupSettingsSaved> {
+  return invoke<BackupSettingsSaved>("update_backup_settings", { ...input });
 }
 
 /** Saves the open database's lock settings (FR-034, FR-038). The idle time
@@ -133,6 +137,10 @@ export function onRestoreProgress(handler: (progress: RestoreProgress) => void):
 
 export function onBackupsDeleteProgress(handler: (progress: CountProgress) => void): () => void {
   return listen<CountProgress>("backups_delete:progress", handler);
+}
+
+export function onBackupsMoveProgress(handler: (progress: BackupProgress) => void): () => void {
+  return listen<BackupProgress>("backups_move:progress", handler);
 }
 
 export function onPassphraseChangeProgress(

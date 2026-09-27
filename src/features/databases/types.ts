@@ -15,7 +15,7 @@ export type CloseReason =
   | "takenOver";
 
 export type OperationKind =
-  "backup" | "passphraseChange" | "restore" | "import" | "export" | "deleteBackups";
+  "backup" | "passphraseChange" | "restore" | "import" | "export" | "deleteBackups" | "moveBackups";
 
 export interface RecentDatabase {
   path: string;
@@ -38,7 +38,12 @@ export type ChooserNotice =
       operation: OperationKind;
       importedCount?: number;
       deletedCount?: number;
+      /** For `moveBackups`: how many are still in `folder`. */
+      leftBehindCount?: number;
+      folder?: string;
     }
+  /** A move of backups cut short by a crash (research.md §22). */
+  | { kind: "backupsLeftBehind"; databasePath: string; folder: string; count: number }
   | { kind: "pendingChangesLost"; databasePath: string }
   | {
       kind: "backupFailed";
@@ -171,15 +176,54 @@ export interface BackupsDeleted {
 /** Where backups go, as `update_backup_settings` takes it. */
 export type BackupLocationInput = { kind: "default" } | { kind: "custom"; path: string };
 
+/** What to do with the backups at the old location when it changes
+ * (FR-026). */
+export type ExistingBackupsChoice = "move" | "leave" | "delete";
+
 /** `update_backup_settings`'s input (FR-024, FR-026). */
 export interface BackupSettingsInput {
   enabled: boolean;
   /** 1–100. */
   keepCount: number;
   location: BackupLocationInput;
+  /** Sent once the user has been asked, after `BACKUPS_AT_OLD_LOCATION` or
+   * `OLD_BACKUP_LOCATION_UNAVAILABLE`. */
+  existingBackups?: ExistingBackupsChoice;
 }
 
-/** `backup:progress`: bytes copied by the backup a close is making. */
+/** What was done with the backups at the old location (FR-026). */
+export type ExistingBackupsOutcome =
+  | { action: "leave" }
+  | { action: "delete"; deletedCount: number }
+  | {
+      action: "move";
+      movedCount: number;
+      /** `nameTaken` only when taken names were the only reason. */
+      leftBehind: {
+        count: number;
+        folder: string;
+        reason: "nameTaken" | "locationUnavailable" | "insufficientSpace" | "io";
+      } | null;
+    };
+
+/** `update_backup_settings`'s answer. `existingBackups` is `null` when the
+ * location did not change or no backups were at the old one. */
+export interface BackupSettingsSaved {
+  settings: CollectionSettings;
+  existingBackups: ExistingBackupsOutcome | null;
+}
+
+/** `BACKUPS_AT_OLD_LOCATION`'s details: the backups the question is
+ * about. */
+export interface OldLocationBackups {
+  folder: string;
+  count: number;
+  totalBytes: number;
+}
+
+/** `backup:progress`: bytes copied by the backup a close is making; also
+ * `backups_move:progress`, bytes copied and read back by a move of backups
+ * (FR-026). */
 export interface BackupProgress {
   processed: number;
   total: number;
@@ -195,7 +239,6 @@ export interface RestoreProgress {
   total: number;
 }
 
-/** `backups_delete:progress`: files deleted so far. */
 /** `passphrase_change:progress`: bytes while copying; `checking` and
  * `replacing` are indeterminate, with `total: 0`. */
 export interface PassphraseChangeProgress {
@@ -219,6 +262,7 @@ export interface PassphraseSaved {
   passphraseSaved: boolean;
 }
 
+/** `backups_delete:progress`: files deleted so far. */
 export interface CountProgress {
   processed: number;
   total: number;

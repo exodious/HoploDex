@@ -848,6 +848,25 @@ describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md 
       "The computer went to sleep while the backups of “Main collection” were being deleted, so it was stopped. 2 were deleted; the rest are still there. You can delete them in its Database settings.",
     ],
     [
+      {
+        kind: "operationStopped",
+        databasePath: main.path,
+        operation: "moveBackups",
+        leftBehindCount: 2,
+        folder: "/home/sam/Documents/HoploDex/HoploDex backups",
+      } as const,
+      "The computer went to sleep while the backups of “Main collection” were being moved, so it was stopped. 2 are still in /home/sam/Documents/HoploDex/HoploDex backups, and HoploDex no longer manages them there. The new backup location is kept.",
+    ],
+    [
+      {
+        kind: "backupsLeftBehind",
+        databasePath: main.path,
+        folder: "/home/sam/Documents/HoploDex/HoploDex backups",
+        count: 1,
+      } as const,
+      "The backups of “Main collection” were not all moved. 1 is still in /home/sam/Documents/HoploDex/HoploDex backups, and HoploDex no longer manages it there.",
+    ],
+    [
       { kind: "pendingChangesLost", databasePath: main.path } as const,
       "Unsaved changes could not be kept when “Main collection” locked.",
     ],

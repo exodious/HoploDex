@@ -429,6 +429,30 @@
   margin: 0;
 }
 
+/* Backups at the old location (contracts/ui-databases.md §7): the question's
+   opening sentence, and the backups that couldn't be deleted, listed under
+   their sentence like the restore's refusals. */
+.hd-existing-backups__about {
+  margin: 0;
+}
+
+.hd-existing-backups__failed {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.hd-existing-backups__failed > p,
+.hd-existing-backups__failed > ul {
+  margin: 0;
+}
+
+.hd-existing-backups__failed > ul {
+  padding-left: var(--space-5);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
 /* About databases and security (contracts/ui-databases.md §11), set out
    like the origin guide: sections divided by a rule. */
 .hd-db-guide {
