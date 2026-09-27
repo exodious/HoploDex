@@ -117,6 +117,13 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
 - [feature] Added 2026-09-26: let users filter the firearms list by whether a firearm has any photos attached (with photos / without photos), alongside 001's existing list filters.
   - Not specified yet.
 
+### B10. (as-yet-undefined) photo gallery / collection browsing view
+
+- [feature] Added 2026-09-26: a gallery view for browsing the whole collection by photo, distinct from the existing photo view within a firearm's record (FR-009/FR-010) — the goal here is collection browsing, not viewing one record's images.
+  - Selecting a photo shows an overlay with a few high-level details only (make, model, caliber, etc.), and a way to navigate from the overlay to the full record.
+  - A mode that auto-cycles between photos on its own. The order is randomized. A hardcoded minimum period must pass before the same firearm's photo can recur — at minimum, never twice in a row — until the list is exhausted, at which point it reshuffles and starts over.
+  - Not specified yet. Open questions for whoever specifies it: how firearms with no photos are handled (skip them, or show the generic FR-009 thumbnail); whether disposed firearms appear; what "a few main details" includes beyond make/model/caliber; whether the recurrence period is measured in photo count or time; overlap with **B9** (photo-presence filter) as the natural entry point into this view.
+
 ## Track C — Not spec work
 
 ### C2. CI / release engineering
