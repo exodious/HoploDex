@@ -32,16 +32,23 @@ export function ChoiceCards<T extends string>({
   minCardWidth = 150,
 }: ChoiceCardsProps<T>) {
   const name = useId();
+  const labelId = `${name}-label`;
   const errorId = `${name}-error`;
+  // A labelled radiogroup rather than a <fieldset>: WebKitGTK counts a
+  // fieldset's legend twice when a dialog first sizes itself, leaving the
+  // dialog too tall until something else changes its layout.
   return (
-    <fieldset
+    <div
+      role="radiogroup"
       className="hd-choices"
+      aria-labelledby={labelId}
       aria-describedby={error ? errorId : undefined}
       aria-invalid={error ? true : undefined}
+      aria-required={required || undefined}
     >
-      <legend className="hd-field__label" data-required={required || undefined}>
+      <span id={labelId} className="hd-field__label" data-required={required || undefined}>
         {label}
-      </legend>
+      </span>
       <div
         className={["hd-choices__grid", error && "hd-choices__grid--error"]
           .filter(Boolean)
@@ -77,6 +84,6 @@ export function ChoiceCards<T extends string>({
           {error}
         </p>
       )}
-    </fieldset>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, ProgressBar } from "../../components";
+import { Button, placeFocus, ProgressBar } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { BrandMark } from "../app/BrandMark";
 import type { BackupProgress } from "../databases/types";
@@ -35,7 +35,7 @@ export function ClosingScreen({ name }: ClosingScreenProps) {
 
   const backingUp = progress !== null && (progress.showNow || late);
   useEffect(() => {
-    if (backingUp) skip.current?.focus();
+    if (backingUp) placeFocus(skip.current);
   }, [backingUp]);
 
   async function skipBackup() {

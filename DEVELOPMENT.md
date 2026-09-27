@@ -248,6 +248,40 @@ copies are removed when the app quits — window closed, SIGTERM, SIGHUP or
 SIGINT — against the built binary: `xvfb-run -a python3
 e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).
 
+### Real keyboard and mouse input
+
+WebDriver's clicks and keys don't reach WebKitGTK the way a person's do, so
+some bugs a person sees don't reproduce under them. Examples: a focus ring
+that shows or doesn't (`:focus-visible` after a script moves focus), or a
+dialog whose layout only corrects itself on the next real key press. When a
+report says "after a mouse click" or "when I press Tab" and a spec can't
+reproduce it, send real X11 input instead. `e2e/scripts/x11-input.py` sends
+it through XTest to the harness's Xvfb display, and `e2e/support/realInput.ts`
+wraps it for specs:
+
+```ts
+import { realClick, realKey } from "../support/realInput";
+
+await realClick("button.hd-db-menu"); // a real pointer click
+await realClick('[role="menuitem"]*=Restore from a backup'); // WebdriverIO's text match
+await realKey("Tab"); // X keysym names
+await realKey("Shift_L+Tab"); // + for a chord
+```
+
+It needs `libX11`, `libXtst` and `python3` (all in the dev container) and
+runs on Linux only. The first call moves the pointer once to find where the
+window sits on the screen. Keys go to the window under the pointer.
+
+To track down a bug of this kind, write a throwaway spec that opens the
+screen with real input and logs what you need from the page with
+`browser.execute`: `getBoundingClientRect()` of the elements involved,
+`document.activeElement.matches(":focus-visible")`, and, to catch a first
+layout that differs from the settled one, a snapshot taken from a
+`MutationObserver` the moment the element appears. Then change one thing
+at a time, by injecting a `<style>` before opening the screen, and compare.
+Run it with `npm run test:e2e -- --screenshots=<dir> --spec <file>`, look
+at the screenshots, and delete the spec before committing.
+
 ### Test isolation
 
 Your real application data is more than one file. It is every `.hoplodex`

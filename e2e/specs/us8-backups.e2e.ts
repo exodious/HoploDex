@@ -16,6 +16,7 @@ import {
   waitForChooser,
   waitForCollection,
 } from "../support/ui";
+import { realClick } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's User
@@ -81,8 +82,35 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     await unlock(E2E_PASSPHRASE);
     expect(await listed("AfterBackup")).toBe(true);
 
-    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    // Opened with a real click, as a person does: WebDriver's own clicks
+    // don't bring out the focus ring.
+    await realClick("button.hd-db-menu");
+    await realClick('[role="menuitem"]*=Restore from a backup');
     await $('[role="dialog"] input[type="radio"]').waitForExist();
+    // Regression: the backup it starts on showed the keyboard focus ring,
+    // after a mouse click, as though already chosen.
+    expect(
+      await browser.execute(() => {
+        const focused = document.activeElement;
+        return focused?.matches('input[type="radio"]') && !focused.matches(":focus-visible");
+      }),
+    ).toBe(true);
+    // Regression: WebKitGTK counted the backup list's <fieldset> legend twice
+    // when the dialog first sized itself, leaving it too tall until focus
+    // moved. The body fits its content exactly once the entrance is over.
+    await browser.pause(300);
+    const slack = await browser.execute(() => {
+      const body = document.querySelector<HTMLElement>('[role="dialog"] .hd-dialog__body')!;
+      const style = getComputedStyle(body);
+      const parts = [...body.children];
+      const content =
+        parts[parts.length - 1].getBoundingClientRect().bottom -
+        parts[0].getBoundingClientRect().top;
+      return (
+        body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - content
+      );
+    });
+    expect(Math.abs(slack)).toBeLessThan(1);
     await fill("Passphrase for this backup", E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist();

@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Button, Checkbox, Icon, Menu, MenuItem, PassphraseField } from "../../components";
+import {
+  Button,
+  Checkbox,
+  Icon,
+  Menu,
+  MenuItem,
+  PassphraseField,
+  placeFocus,
+} from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { formatDateTime } from "../../lib/dates";
 import { folderOf, middleTruncate } from "./paths";
@@ -85,7 +93,10 @@ export function RecentDatabaseRow({
   // returns.
   const wasOpening = useRef(opening);
   useEffect(() => {
-    if (wasOpening.current && !opening) (field.current ?? openButton.current)?.focus();
+    if (wasOpening.current && !opening) {
+      if (field.current) field.current.focus();
+      else placeFocus(openButton.current);
+    }
     wasOpening.current = opening;
   }, [opening]);
 

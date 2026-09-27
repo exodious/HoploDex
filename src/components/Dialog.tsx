@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Icon } from "./Icon";
 import { LOCK_SHORTCUT, useLock } from "./lock";
+import { placeFocus } from "./placeFocus";
 import "./components.css";
 
 const FIRST_FIELD = [
@@ -90,7 +91,7 @@ export function Dialog({
             const first = contentRef.current?.querySelector<HTMLElement>(FIRST_FIELD);
             if (first) {
               event.preventDefault();
-              first.focus();
+              placeFocus(first);
             }
           }}
         >

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Button } from "./Button";
+import { placeFocus } from "./placeFocus";
 import "./components.css";
 
 export interface ConfirmDialogProps {
@@ -53,6 +54,7 @@ export function ConfirmDialog({
   // No screen wires its opening button up as a Radix `Trigger`, so Radix's
   // own focus-restore never fires; this captures and restores it here.
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
   }, [open]);
@@ -78,7 +80,21 @@ export function ConfirmDialog({
         <RadixDialog.Overlay className="hd-dialog__overlay" />
         <RadixDialog.Content
           className="hd-dialog__content hd-dialog__content--sm"
+          ref={contentRef}
           role="alertdialog"
+          onOpenAutoFocus={(event) => {
+            // Radix's own choice (the first control), placed like every
+            // dialog's, unless the content already focused a field itself.
+            const content = contentRef.current;
+            const focused = document.activeElement;
+            event.preventDefault();
+            if (focused && focused !== content && content?.contains(focused)) return;
+            placeFocus(
+              content?.querySelector<HTMLElement>(
+                "input:not([type='hidden']):not(:disabled), textarea, button:not(:disabled)",
+              ) ?? content,
+            );
+          }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             previouslyFocused.current?.focus();

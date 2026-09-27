@@ -1,6 +1,6 @@
 import { Component, useEffect, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
-import { Button, Icon } from "../../components";
+import { Button, Icon, placeFocus } from "../../components";
 import { BrandMark } from "../app/BrandMark";
 import * as sessionService from "./sessionService";
 import "../app/AppShell.css";
@@ -46,7 +46,7 @@ interface FaultScreenProps {
 function FaultScreen({ title, children, actionLabel, onAction }: FaultScreenProps) {
   const [busy, setBusy] = useState(false);
   const action = useRef<HTMLButtonElement>(null);
-  useEffect(() => action.current?.focus(), []);
+  useEffect(() => placeFocus(action.current), []);
 
   return (
     <div className="hd-chooser hd-closing">

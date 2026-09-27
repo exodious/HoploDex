@@ -459,18 +459,10 @@
 /* ── Choice cards ────────────────────────────────────────────────────── */
 
 .hd-choices {
-  margin: 0;
-  padding: 0;
-  border: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.hd-choices > legend {
-  padding: 0;
-  margin-bottom: 6px;
 }
 
 .hd-choices__grid {

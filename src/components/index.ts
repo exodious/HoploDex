@@ -36,6 +36,7 @@ export type { ChoiceCardsProps, ChoiceCard } from "./ChoiceCards";
 export { Disclosure } from "./Disclosure";
 export type { DisclosureProps } from "./Disclosure";
 export { Dialog } from "./Dialog";
+export { placeFocus } from "./placeFocus";
 export type { DialogProps } from "./Dialog";
 export { LOCK_SHORTCUT, LockContext, useLock } from "./lock";
 export { ConfirmDialog } from "./ConfirmDialog";
