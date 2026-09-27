@@ -457,6 +457,9 @@ pub mod ops {
     /// which has no progress callback of its own (research.md §3).
     const EXPORT_POLL_EVERY: Duration = Duration::from_millis(100);
 
+    /// The new passphrase's field error when it is the current one.
+    const SAME_PASSPHRASE: &str = "Choose a passphrase different from the current one.";
+
     /// Changes the open database's passphrase (FR-015, FR-016; research.md
     /// §3, §4): a copy keyed with `new` is made beside it, proved sound and
     /// complete, and only then put in its place in one step, and the
@@ -472,8 +475,12 @@ pub mod ops {
         current: &Passphrase,
         new: &Passphrase,
     ) -> Result<PassphraseChanged, CommandError> {
-        // 1. The new passphrase follows the rules for setting one (FR-003).
-        if let Some(problem) = new_passphrase_problem(new) {
+        // 1. The new passphrase follows the rules for setting one (FR-003),
+        // and is a change: copying the file to the key it already has would
+        // only cost the time.
+        let problem =
+            new_passphrase_problem(new).or_else(|| new.same_as(current).then_some(SAME_PASSPHRASE));
+        if let Some(problem) = problem {
             return Err(CommandError::validation(
                 "Check the new passphrase.",
                 HashMap::from([("newPassphrase".to_owned(), problem.to_owned())]),

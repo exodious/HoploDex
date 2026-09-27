@@ -31,20 +31,20 @@ describe("PassphraseField (contracts/ui-databases.md §0, FR-007)", () => {
     expect(input).toHaveAttribute("autocomplete", "new-password");
   });
 
-  it("shows and hides the passphrase with a pressed toggle", async () => {
+  it("shows and hides the passphrase with a toggle that says Hide while it shows", async () => {
     const user = userEvent.setup();
     render(<PassphraseField label="Passphrase" autoComplete="current-password" />);
     const input = screen.getByLabelText("Passphrase");
-    const toggle = screen.getByRole("button", { name: "Show passphrase" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Show passphrase" })).toHaveTextContent("Show");
 
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "Show passphrase" }));
     expect(input).toHaveAttribute("type", "text");
+    const hide = screen.getByRole("button", { name: "Hide passphrase" });
+    expect(hide).toHaveTextContent("Hide");
 
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(hide);
     expect(input).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: "Show passphrase" })).toHaveTextContent("Show");
   });
 
   it("is read through its handle, and reset empties and hides it", async () => {

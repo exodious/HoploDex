@@ -27,7 +27,8 @@ export interface PassphraseFieldProps {
   required?: boolean;
   id?: string;
   fieldClassName?: string;
-  /** Called on each keystroke, without the value, e.g. to clear an error. */
+  /** Called on each keystroke, without the value, e.g. to clear an error
+   * or check the field again. */
   onInput?: () => void;
 }
 
@@ -99,15 +100,17 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
             onInput?.();
           }}
           trailing={
+            // Says what it will do, and so what is showing now: "Hide" while
+            // the passphrase is readable.
             <button
               type="button"
-              className="hd-input__text-action"
-              aria-pressed={shown}
-              aria-label="Show passphrase"
+              className="hd-input__text-action hd-passphrase__toggle"
+              aria-label={shown ? "Hide passphrase" : "Show passphrase"}
+              data-shown={shown || undefined}
               disabled={disabled}
               onClick={() => setShown((value) => !value)}
             >
-              Show
+              {shown ? "Hide" : "Show"}
             </button>
           }
         />

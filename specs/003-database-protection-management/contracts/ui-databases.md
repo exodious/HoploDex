@@ -13,7 +13,9 @@ facts each text states are required.
 - **`PassphraseField`** (new, `src/components/`): a password input used
   wherever a passphrase is typed (open, take over, create, change, restore,
   save to keyring: nine fields in six places), so it goes in the shared set. Rules (FR-007):
-  - `type="password"`, with a "Show" toggle button (`aria-pressed`);
+  - `type="password"`, with a toggle button that reads "Show" ("Show
+    passphrase" to assistive technology) and, while the passphrase shows,
+    "Hide" ("Hide passphrase"), in the niter colour;
     `autocomplete="current-password"` or `"new-password"`;
     `spellcheck="false"`, `autocapitalize="off"`.
   - **Uncontrolled**: the value is read from the input's ref on submit, and
@@ -28,7 +30,17 @@ facts each text states are required.
     lazily (research §18).
   - Errors use the standard field-error slot. The minimum-length message is
     "Use at least 12 characters." The confirmation message is "The
-    passphrases don't match."
+    passphrases don't match." A new passphrase that is the current one:
+    "Choose a passphrase different from the current one."
+  - **Checked as typed** (`usePassphraseChecks`), wherever a passphrase is
+    set (create, change): each keystroke reads the fields afresh and keeps
+    only the verdict, never a value. The form's button is enabled only while
+    every field is filled in, the new passphrase is long enough (and, for a
+    change, differs from the current one) and the confirmation matches.
+    Problems show after a 400 ms pause in typing and clear the moment they
+    are put right; a confirmation still on its way to the passphrase (a
+    prefix of it) isn't a mismatch, and the length message waits for the
+    confirmation to be started. The same checks run again on submit.
 - **`ConfirmDialog`** gains an optional third action (`alternativeLabel`,
   `onAlternative`) for the save / discard / cancel question (§6). No screen
   builds its own three-button prompt.
@@ -280,7 +292,8 @@ other computers."
 
 **Change passphrase** (FR-015, FR-016, US4): a `Dialog` with **Current
 passphrase**, **New passphrase** (with strength) and **Confirm new
-passphrase**, then the footer **Change passphrase**. While it runs, the body
+passphrase**, then the footer **Change passphrase**, enabled once the
+fields pass the checks of §0. While it runs, the body
 is replaced by a `ProgressBar` with its phase label ("Making a copy with the
 new passphrase…", "Checking the new copy…", "Replacing the database…") and
 the dialog cannot be dismissed. On completion the body says: "The passphrase
@@ -335,7 +348,10 @@ existing notice style:
 - **Disk encryption** (FR-008), after creation until dismissed: "Your
   collection is encrypted with your passphrase. For extra protection, also
   turn on your computer's disk encryption: BitLocker on Windows, FileVault on
-  macOS, or LUKS on Linux." Link: **Why?** (guide §11).
+  macOS, or LUKS on Linux." Link: **Why?** (guide §11), at the end of the
+  sentence. Each note is only as wide as its text, which wraps at about 72
+  characters, so no empty stretch of bar separates the text from its
+  dismiss button.
 - **Restored** (FR-028), once after a restore: "<name> was restored from a
   backup and now opens with the passphrase it had on <date>." For a damaged
   database it adds "The damaged file was kept as <path>."
@@ -355,7 +371,12 @@ folders keeping their own copies); secure deletion (best effort: SSDs,
 journaling and copy-on-write filesystems, snapshots and cloud folders can
 keep old data; an old copy is still protected by its old passphrase);
 using a database from more than one computer (one at a time, the open marker,
-take-over); and whole-disk encryption. It is reachable from the database menu,
+take-over); and whole-disk encryption. The text states the defaults (5
+backups kept, a HoploDex backups folder next to the database, a lock after
+10 minutes, no lock at a screen lock). With a database open, the locking
+and backup sections each end with "How <name> is set up": each setting's
+value with its default beside it, "10 (default 5)", or "(default)" when
+unchanged, a changed row marked at its left. It is reachable from the database menu,
 the disk-encryption note, and "see About databases and security" links in
 the change-passphrase and backup texts.
 
@@ -377,6 +398,20 @@ changes**: a destructive `ConfirmDialog`. When `resumable` is false, the body
 adds "<label> no longer exists, so these changes can only be discarded." and
 only **Discard changes** is offered.
 
+A draft's values come from the database, perhaps from another computer, so
+the form takes only the fields it has, and only those of the same kind (a
+string for a string); every other field starts as it would without the
+draft. A draft short of fields still opens.
+
+**A screen that fails to render** never leaves a blank window. Inside an
+open database the collection is replaced by a full-window panel laid out like
+the closing screen (§5): "<name> couldn't be shown", saying that everything
+saved is safe and unsaved changes are lost, with **Close <name>** (focused),
+a normal close. The session stays mounted, so the window's close button
+still quits. Anything else that fails shows "HoploDex stopped working" with
+**Quit HoploDex**, which, like the window's close button, quits through
+`quit_application`.
+
 ## 14. Accessibility and focus
 
 - The chooser, closing screen and pending-changes dialog set focus on their
@@ -393,6 +428,7 @@ New stable names, each in light and dark: `14-chooser`, `15-chooser-first-run`,
 `19-database-settings`, `20-change-passphrase`, `21-restore-backup`,
 `22-pending-changes`, `23-database-guide`, `24-disk-encryption-note`,
 `25-unsaved-changes` (the save / discard / cancel prompt of §6, which adds a
-third action to the shared `ConfirmDialog`). Existing
+third action to the shared `ConfirmDialog`), `26-database-guide-settings`
+(the guide scrolled to "How <name> is set up", §11). Existing
 screens are unchanged apart from the database menu in the top bar and the
 export wording.

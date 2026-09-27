@@ -143,7 +143,19 @@ const collection: CollectionState = {
 
 // An open database whose notes were all dismissed.
 const session = {
-  status: { name: "Main collection", notes: { diskEncryption: false } },
+  status: {
+    name: "Main collection",
+    notes: { diskEncryption: false },
+    screenLockSupported: true,
+    settings: {
+      backups: {
+        enabled: true,
+        keepCount: 5,
+        location: { kind: "default", path: "/tmp/HoploDex backups", available: true },
+      },
+      lock: { idleEnabled: true, idleMinutes: 10, onScreenLock: false },
+    },
+  },
 } as unknown as SessionState;
 
 function renderShell() {

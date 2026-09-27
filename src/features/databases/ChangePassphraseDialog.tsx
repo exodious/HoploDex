@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Button, Dialog, PassphraseField, ProgressBar } from "../../components";
+import {
+  Button,
+  Dialog,
+  MIN_PASSPHRASE_CHARS,
+  PASSPHRASE_TOO_SHORT,
+  PASSPHRASE_UNCHANGED,
+  PASSPHRASES_DIFFER,
+  PassphraseField,
+  ProgressBar,
+  usePassphraseChecks,
+} from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
@@ -10,8 +20,6 @@ import { DatabaseGuideLink } from "./DatabaseGuide";
 import type { PassphraseChanged, PassphraseChangeProgress } from "./types";
 import "../firearms/forms.css";
 import "./databases.css";
-
-const MIN_PASSPHRASE_CHARS = 12;
 
 const PHASES: Record<PassphraseChangeProgress["phase"], string> = {
   copying: "Making a copy with the new passphrase…",
@@ -74,6 +82,19 @@ function ChangePassphraseForm({
   const currentPassphrase = useRef<PassphraseFieldHandle>(null);
   const newPassphrase = useRef<PassphraseFieldHandle>(null);
   const confirmation = useRef<PassphraseFieldHandle>(null);
+  // Checked as they are typed; Change passphrase waits until all is well.
+  const checks = usePassphraseChecks({
+    current: currentPassphrase,
+    passphrase: newPassphrase,
+    confirmation,
+  });
+
+  /** A keystroke in `field`: whatever the last attempt said about it is
+   * out of date. */
+  function edited(field: Field) {
+    setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+    checks.check();
+  }
 
   useEffect(
     () => (running ? databasesService.onPassphraseChangeProgress(setProgress) : undefined),
@@ -100,13 +121,17 @@ function ChangePassphraseForm({
     const next = newPassphrase.current?.read() ?? "";
     const confirmed = confirmation.current?.read() ?? "";
     for (const field of [currentPassphrase, newPassphrase, confirmation]) field.current?.reset();
+    checks.clear();
 
+    // The button already waits for all of this; checked again all the same.
     const found: Errors = {};
     if (!current) found.currentPassphrase = "Enter the current passphrase.";
     if ([...next.normalize("NFC")].length < MIN_PASSPHRASE_CHARS) {
-      found.newPassphrase = "Use at least 12 characters.";
+      found.newPassphrase = PASSPHRASE_TOO_SHORT;
+    } else if (next.normalize("NFC") === current.normalize("NFC")) {
+      found.newPassphrase = PASSPHRASE_UNCHANGED;
     } else if (next !== confirmed) {
-      found.confirmation = "The passphrases don't match.";
+      found.confirmation = PASSPHRASES_DIFFER;
     }
     setErrors(found);
     setRefusal(null);
@@ -210,6 +235,7 @@ function ChangePassphraseForm({
           autoComplete="current-password"
           required
           error={errors.currentPassphrase}
+          onInput={() => edited("currentPassphrase")}
           fieldClassName="hd-field--half"
         />
         <div className="hd-form-grid hd-form-grid--2">
@@ -219,14 +245,16 @@ function ChangePassphraseForm({
             autoComplete="new-password"
             required
             strength
-            error={errors.newPassphrase}
+            error={errors.newPassphrase ?? checks.errors.passphrase}
+            onInput={() => edited("newPassphrase")}
           />
           <PassphraseField
             ref={confirmation}
             label="Confirm new passphrase"
             autoComplete="new-password"
             required
-            error={errors.confirmation}
+            error={errors.confirmation ?? checks.errors.confirmation}
+            onInput={() => edited("confirmation")}
           />
         </div>
         {refusal && (
@@ -239,7 +267,7 @@ function ChangePassphraseForm({
         <Button variant="secondary" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary">
+        <Button type="submit" variant="primary" disabled={!checks.ready}>
           Change passphrase
         </Button>
       </footer>

@@ -61,13 +61,19 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
     targetId: firearm.id,
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
-  const [resumed] = useState(() => resumedValues<RestoreValues>(target));
+  const [resumed] = useState(() =>
+    resumedValues<RestoreValues>(target, {
+      history: "",
+      renaming: false,
+      nickname: firearm.nickname ?? "",
+    }),
+  );
   useResumedDraftTaken(target);
-  const [history, setHistory] = useState<HistoryChoice | "">(resumed?.history ?? "");
+  const [history, setHistory] = useState<HistoryChoice | "">(resumed.history);
   const [failure, setFailure] = useState<CommandFailure | null>(null);
   // Once the nickname has clashed, the user can pick another right here.
-  const [renaming, setRenaming] = useState(resumed?.renaming ?? false);
-  const [nickname, setNickname] = useState(resumed?.nickname ?? firearm.nickname ?? "");
+  const [renaming, setRenaming] = useState(resumed.renaming);
+  const [nickname, setNickname] = useState(resumed.nickname);
   // specs/002-firearm-identification US3-9: once an ORIGINAL_MARKS_MATCH
   // warning has been shown, the same button resends confirmed.
   const [confirmedWarnings, setConfirmedWarnings] = useState(false);

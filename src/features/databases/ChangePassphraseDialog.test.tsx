@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { PASSPHRASE_CHECK_DELAY_MS } from "../../components";
+import { CLEAR_PASSPHRASE_FIELDS } from "../../components/PassphraseField";
 import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
 import { SessionContext } from "../session/sessionStore";
@@ -10,6 +12,21 @@ import * as databasesService from "./databasesService";
 import type { PassphraseChangeProgress } from "./types";
 
 vi.mock("./databasesService");
+
+/** The backend's events, sent by the test. */
+const events = vi.hoisted(() => {
+  const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  return {
+    listen: (name: string, handler: (event: { payload: unknown }) => void) => {
+      const forName = listeners.get(name) ?? new Set();
+      forName.add(handler);
+      listeners.set(name, forName);
+      return Promise.resolve(() => forName.delete(handler));
+    },
+    send: (name: string) => listeners.get(name)?.forEach((handler) => handler({ payload: {} })),
+  };
+});
+vi.mock("@tauri-apps/api/event", () => ({ listen: events.listen }));
 
 const CURRENT = "correct horse battery staple";
 const NEW = "a much longer passphrase of several words";
@@ -40,11 +57,16 @@ function renderDialog() {
   return { session, onOpenChange };
 }
 
-async function fill(current: string, next: string, confirmation = next) {
+async function type(current: string, next: string, confirmation = next) {
   const user = userEvent.setup();
   if (current) await user.type(screen.getByLabelText("Current passphrase"), current);
   if (next) await user.type(screen.getByLabelText("New passphrase"), next);
   if (confirmation) await user.type(screen.getByLabelText("Confirm new passphrase"), confirmation);
+  return user;
+}
+
+async function fill(current: string, next: string, confirmation = next) {
+  const user = await type(current, next, confirmation);
   await user.click(screen.getByRole("button", { name: "Change passphrase" }));
   return user;
 }
@@ -88,24 +110,67 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
   });
 
   it.each([
-    ["", NEW, NEW, "Current passphrase", "Enter the current passphrase."],
-    [CURRENT, "too short", "too short", "New passphrase", "Use at least 12 characters."],
-    [CURRENT, NEW, `${NEW}!`, "Confirm new passphrase", "The passphrases don't match."],
+    ["", NEW, NEW, null],
+    [CURRENT, "too short", "too short", ["New passphrase", "Use at least 12 characters."]],
+    [CURRENT, NEW, `${NEW}!`, ["Confirm new passphrase", "The passphrases don't match."]],
+    [CURRENT, "different words", "different", null],
+    [
+      CURRENT,
+      CURRENT,
+      CURRENT,
+      ["New passphrase", "Choose a passphrase different from the current one."],
+    ],
   ])(
-    "checks the fields before sending anything (%#)",
-    async (current, next, confirmation, field, message) => {
+    "checks the fields as they are typed, and waits until all is well (%#)",
+    async (current, next, confirmation, problem) => {
       renderDialog();
 
-      await fill(current, next, confirmation);
+      await type(current, next, confirmation);
 
-      expect(await screen.findByText(message)).toBeInTheDocument();
-      expect(screen.getByLabelText(field)).toHaveFocus();
-      expect(databasesService.changePassphrase).not.toHaveBeenCalled();
-      for (const label of ["Current passphrase", "New passphrase", "Confirm new passphrase"]) {
-        expect(screen.getByLabelText(label)).toHaveValue("");
+      if (problem) {
+        const [field, message] = problem;
+        expect(await screen.findByText(message)).toBeInTheDocument();
+        expect(screen.getByLabelText(field)).toHaveAccessibleDescription(message);
+      } else {
+        // An empty field, or a confirmation still on its way, isn't an error.
+        await act(() => new Promise((resolve) => setTimeout(resolve, PASSPHRASE_CHECK_DELAY_MS)));
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       }
+      expect(screen.getByRole("button", { name: "Change passphrase" })).toBeDisabled();
+      // Nothing is cleared: the fields are only read.
+      expect(screen.getByLabelText("New passphrase")).toHaveValue(next);
+      expect(databasesService.changePassphrase).not.toHaveBeenCalled();
     },
   );
+
+  it("waits for a pause before a problem shows, and clears it the moment it is put right", async () => {
+    renderDialog();
+    const user = await type(CURRENT, NEW, "a much longer passphrase of several wordz");
+
+    // Typed, and not yet paused.
+    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Confirm new passphrase"), "{Backspace}s");
+    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
+  });
+
+  it("forgets what it found when the fields are emptied at a lock or sleep (FR-007)", async () => {
+    renderDialog();
+    await type(CURRENT, NEW);
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
+    // Subscribed once the effects have run.
+    await act(async () => {});
+
+    await act(async () => {
+      events.send(CLEAR_PASSPHRASE_FIELDS);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByLabelText("New passphrase")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeDisabled();
+  });
 
   it("shows each phase in place of the form, and can't be dismissed while it runs", async () => {
     let finish: (value: { oldFileRemoved: boolean; passphraseSaved: boolean }) => void = () => {};

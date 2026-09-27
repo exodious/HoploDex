@@ -6,6 +6,15 @@ export { TextField } from "./TextField";
 export type { TextFieldProps } from "./TextField";
 export { PassphraseField } from "./PassphraseField";
 export type { PassphraseFieldHandle, PassphraseFieldProps } from "./PassphraseField";
+export {
+  MIN_PASSPHRASE_CHARS,
+  PASSPHRASE_CHECK_DELAY_MS,
+  PASSPHRASE_TOO_SHORT,
+  PASSPHRASE_UNCHANGED,
+  PASSPHRASES_DIFFER,
+  usePassphraseChecks,
+} from "./usePassphraseChecks";
+export type { PassphraseCheckErrors, PassphraseChecks } from "./usePassphraseChecks";
 export { StrengthHint } from "./StrengthHint";
 export type { StrengthHintHandle, StrengthHintProps } from "./StrengthHint";
 export { TextArea } from "./TextArea";

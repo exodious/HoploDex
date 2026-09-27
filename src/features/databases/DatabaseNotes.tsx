@@ -77,8 +77,10 @@ export function DatabaseNotes() {
       {diskEncryption && (
         <section className="hd-banner hd-db-note" aria-label="Disk encryption">
           <Icon name="shield" />
-          <p className="hd-banner__text">{DISK_ENCRYPTION}</p>
-          <DatabaseGuideLink>Why?</DatabaseGuideLink>
+          <p className="hd-banner__text">
+            {DISK_ENCRYPTION}
+            <DatabaseGuideLink>Why?</DatabaseGuideLink>
+          </p>
           {dismissButton("diskEncryption")}
         </section>
       )}

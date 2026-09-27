@@ -70,10 +70,12 @@ function CoverageForm({
     targetId: firearm.id,
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
-  const [resumed] = useState(() => resumedValues<CoverageValues>(target));
+  const [resumed] = useState(() =>
+    resumedValues<CoverageValues>(target, { policyId: initialPolicyId, amount: initialAmount }),
+  );
   useResumedDraftTaken(target);
-  const [policyId, setPolicyId] = useState(resumed?.policyId ?? initialPolicyId);
-  const [amount, setAmount] = useState(resumed?.amount ?? initialAmount);
+  const [policyId, setPolicyId] = useState(resumed.policyId);
+  const [amount, setAmount] = useState(resumed.amount);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);

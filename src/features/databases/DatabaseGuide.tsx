@@ -1,6 +1,10 @@
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 import type { ReactNode } from "react";
 import { Dialog } from "../../components";
+import { SessionContext } from "../session/sessionStore";
+import { backupRows, DEFAULT_SETTINGS, lockRows, minutesLabel } from "./settings";
+import type { SettingRow } from "./settings";
+import type { DatabaseStatus } from "./types";
 import "./databases.css";
 
 export interface DatabaseGuideProps {
@@ -11,6 +15,9 @@ export interface DatabaseGuideProps {
 interface Section {
   title: string;
   paragraphs: ReactNode[];
+  /** The open database's settings this section explains, beside their
+   * defaults. */
+  settings?: (status: DatabaseStatus) => SettingRow[];
 }
 
 /** The guide's text (FR-030, contracts/ui-databases.md §11). The dialogs
@@ -37,21 +44,23 @@ const SECTIONS: Section[] = [
     title: "Locking",
     paragraphs: [
       "Lock now (Ctrl+L, or ⌘L on a Mac) closes the database completely: its data is cleared from memory, opened document copies are deleted, a backup is made if one is due, and the database is released for other computers. Unlocking is opening it again with its passphrase.",
-      "By default a database also locks after 10 minutes without use, and when the computer goes to sleep. Only typing, clicking and touching in HoploDex counts as use. Turning the idle lock off in Database settings stops both. Locking when the computer's screen locks is a separate setting, off by default.",
+      `By default a database also locks after ${minutesLabel(DEFAULT_SETTINGS.idleMinutes)} without use, and when the computer goes to sleep. Only typing, clicking and touching in HoploDex counts as use. Turning the idle lock off in Database settings stops both. Locking when the computer's screen locks is a separate setting, off by default.`,
       "If you were in the middle of editing a firearm or a policy, the unsaved changes are kept inside the database, encrypted like the rest of it, and offered the next time it opens, on any computer. Nothing else you had typed is kept, and passphrases never are.",
       "Some Linux desktops, such as a bare window manager with its own screen locker, lock the screen without telling other applications. There the screen-lock setting can look available but never lock HoploDex; use the idle lock or Lock now instead.",
     ],
+    settings: (status) => lockRows(status.settings.lock, status.screenLockSupported),
   },
   {
     title: "Backups",
     paragraphs: [
-      "When you close a database you have changed, HoploDex makes a backup, at most once a day, and keeps the latest 5. By default they go in a HoploDex backups folder next to the database. The number kept and the folder can be changed, and backups turned off, in Database settings.",
+      `When you close a database you have changed, HoploDex makes a backup, at most once a day. By default it keeps the latest ${DEFAULT_SETTINGS.keepCount}, in a HoploDex backups folder next to the database. The number kept and the folder can be changed, and backups turned off, in Database settings.`,
       "Each backup is a complete copy of the collection, photos and documents included, encrypted like the database. It opens only with the passphrase the database had when the backup was made, so after a passphrase change, older backups still need the old one. Restoring a backup brings its passphrase back with it.",
       "Firearms and policies you have deleted stay in backups made before you deleted them, until those backups are removed, either as newer ones replace them or with Delete all backups.",
       "A backup on the same disk as the database protects against a damaged file or a mistake, but not against losing the disk or the computer. For that, choose a folder on another drive.",
       "HoploDex never sends backups anywhere. If the database or its backup folder is synced by a cloud service, that service holds only encrypted files, but it may keep copies and older versions of its own that HoploDex cannot delete.",
       "A spreadsheet export is not a backup: it is an unencrypted copy of the collection's data, readable by anyone who can open the file.",
     ],
+    settings: (status) => backupRows(status.settings.backups),
   },
   {
     title: "Secure deletion",
@@ -67,13 +76,13 @@ const SECTIONS: Section[] = [
       "A database file opens on Windows, macOS and Linux with its passphrase alone. You can copy it to another computer, or keep it on a network drive or in a synced folder and use it from several.",
       "Use it on one computer at a time. While it is open, the database records which computer has it open and since when, and another computer that tries to open it is told so and refused. The mark is cleared when the database is closed normally.",
       "If that computer crashed, lost its connection, or hasn't finished syncing, you can choose Take over. If the other computer does still have the database open, or its latest changes haven't synced yet, changes can be lost. Once it notices, the other computer stops saving to the database.",
-      "The backup and lock settings travel inside the database, so it works the same way on every computer. The list of recent databases and a remembered passphrase stay on each computer. A backup folder chosen on one computer may not exist on another; HoploDex says so there.",
+      "The backup and lock settings travel inside the database, so it works the same way on every computer. The list of recent databases and a remembered passphrase stay on each computer. A backup folder chosen on one computer may not exist on another. There, Database settings shows the folder as not available, and HoploDex tells you when a backup couldn't be made, so you can choose another folder on that computer.",
     ],
   },
   {
     title: "Whole-disk encryption",
     paragraphs: [
-      "The passphrase protects the database and its backups. Other files on the computer can still hold collection data: spreadsheet exports, the photos and documents you added from, opened document copies before they are deleted, and the system's swap and hibernation files.",
+      "The passphrase protects the database and its backups. Other files on the computer can still hold collection data: spreadsheet exports, the original files of photos and documents you added, opened document copies before they are deleted, and the system's swap and hibernation files.",
       "Whole-disk encryption protects all of it if the computer is lost or stolen, and covers what secure deletion cannot reach. Turn it on: BitLocker on Windows, FileVault on macOS, or LUKS on Linux. HoploDex doesn't check whether it is on.",
     ],
   },
@@ -81,9 +90,12 @@ const SECTIONS: Section[] = [
 
 /** "About databases and security" (FR-030, contracts/ui-databases.md §11):
  * a shared `Dialog` with headed sections, in the style of the origin guide.
- * Static text; nothing in it depends on the open database. */
+ * The text is the same for every database; with one open, the backup and
+ * lock sections also show how it is set up, beside the defaults. */
 export function DatabaseGuide({ open, onOpenChange }: DatabaseGuideProps) {
   const id = useId();
+  // Also shown where no session is, such as a test of the dialog alone.
+  const status = useContext(SessionContext)?.status ?? null;
   return (
     <Dialog
       open={open}
@@ -105,11 +117,53 @@ export function DatabaseGuide({ open, onOpenChange }: DatabaseGuideProps) {
             {section.paragraphs.map((paragraph, n) => (
               <p key={n}>{paragraph}</p>
             ))}
+            {status && section.settings && (
+              <DatabaseSettingsTable name={status.name} rows={section.settings(status)} />
+            )}
           </section>
         ))}
       </div>
     </Dialog>
   );
+}
+
+/** How the open database is set up, one row a setting: its value, and
+ * the default beside it, "(default)" when they are the same. */
+function DatabaseSettingsTable({ name, rows }: { name: string; rows: SettingRow[] }) {
+  const id = useId();
+  return (
+    <div className="hd-db-guide__settings" role="group" aria-labelledby={id}>
+      <h4 id={id} className="hd-db-guide__settings-title">
+        How {name} is set up
+      </h4>
+      <dl>
+        {rows.map((row) => {
+          const changed = row.value !== row.defaultValue;
+          return (
+            <div
+              key={row.label}
+              className="hd-db-guide__setting"
+              data-changed={changed || undefined}
+            >
+              <dt>{row.label}</dt>
+              <dd>
+                <span className="hd-db-guide__value">{row.value}</span>{" "}
+                <span className="hd-db-guide__default">
+                  {changed ? `(default ${lowerFirst(row.defaultValue)})` : "(default)"}
+                </span>
+                {row.note && <span className="hd-db-guide__note">{row.note}</span>}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </div>
+  );
+}
+
+/** "On" reads "(default on)" after a value. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /** A link that opens the guide, for the texts that point to it: the

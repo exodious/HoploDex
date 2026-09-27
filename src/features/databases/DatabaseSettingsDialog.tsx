@@ -18,6 +18,7 @@ import * as databasesService from "./databasesService";
 import { folderOf, joinPath } from "./paths";
 import { DatabaseGuideLink } from "./DatabaseGuide";
 import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
+import { minutesLabel } from "./settings";
 import type {
   BackupLocationInput,
   CollectionSettings,
@@ -29,14 +30,6 @@ import "./databases.css";
 
 /** The idle durations offered, in minutes (FR-034). */
 const IDLE_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 240];
-
-function minutesLabel(minutes: number): string {
-  if (minutes % 60 === 0 && minutes >= 60) {
-    const hours = minutes / 60;
-    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
-  }
-  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
-}
 
 /** What backups are and aren't (FR-029), said wherever they are set up. */
 const BACKUP_STATEMENTS = [

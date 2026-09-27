@@ -334,6 +334,38 @@ fn a_short_new_passphrase_is_refused_on_its_field() {
 }
 
 #[test]
+fn the_current_passphrase_is_refused_as_the_new_one_before_anything_is_written() {
+    let world = World::new();
+    let before = fs::read(world.path()).unwrap();
+
+    let refused = world.change(support::TEST_PASSPHRASE, support::TEST_PASSPHRASE).unwrap_err();
+
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert_eq!(
+        refused.field_errors.as_ref().unwrap().get("newPassphrase").map(String::as_str),
+        Some("Choose a passphrase different from the current one.")
+    );
+    assert_eq!(fs::read(world.path()).unwrap(), before, "the file is byte-identical");
+    assert!(world.leftovers().is_empty());
+    assert!(world.events.payloads("passphrase_change:progress").is_empty());
+}
+
+#[test]
+fn a_new_passphrase_differing_only_in_unicode_form_is_the_same_one() {
+    let world = World::new();
+    world.change(support::TEST_PASSPHRASE, "caf\u{e9} au lait, extra hot").unwrap();
+
+    // "é" as one code point, then as "e" and a combining acute accent.
+    let refused =
+        world.change("caf\u{e9} au lait, extra hot", "cafe\u{301} au lait, extra hot").unwrap_err();
+
+    assert_eq!(
+        refused.field_errors.as_ref().unwrap().get("newPassphrase").map(String::as_str),
+        Some("Choose a passphrase different from the current one.")
+    );
+}
+
+#[test]
 fn too_little_space_is_refused_before_anything_is_written() {
     let world = World::new();
     let before = fs::read(world.path()).unwrap();

@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
-import { FirearmForm } from "./FirearmForm";
+import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
+import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { Firearm } from "./types";
 
@@ -1078,5 +1079,41 @@ describe("FirearmForm physical details disclosure", () => {
 
     expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Weight must be greater than 0.")).toBeInTheDocument();
+  });
+});
+
+describe("FirearmForm resuming pending changes (FR-039)", () => {
+  afterEach(() => setResumedDraft(null));
+
+  const beretta = {
+    id: 4,
+    make: "Beretta",
+    model: "92FS",
+    serialNumber: "BER92-0417",
+    noSerialAttested: false,
+    caliber: "9mm",
+    firearmTypeId: 1,
+    status: "active",
+    notes: null,
+  } as Firearm;
+
+  it("opens with a draft that is short of fields, or has one of another kind, taking the record's values for them", () => {
+    // As the human-testing seed keeps it: only some of the form's fields,
+    // which once left the others undefined and blanked the window.
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "edit",
+      targetId: 4,
+      label: "Beretta 92FS — edit",
+      values: { make: "Beretta", model: 92, notes: "Swapped the grips; half typed" },
+    });
+
+    render(<FirearmForm initialValues={beretta} onSubmit={vi.fn()} />);
+
+    expect(screen.getByLabelText(/Notes/)).toHaveValue("Swapped the grips; half typed");
+    expect(screen.getByLabelText(/^Model/)).toHaveValue("92FS");
+    expect(screen.getByLabelText(/^Caliber/)).toHaveValue("9mm");
+    expect(getDirtyForm()?.label).toBe("Beretta 92FS (edit)");
   });
 });

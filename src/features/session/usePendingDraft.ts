@@ -181,12 +181,26 @@ function matches(draft: Draft, target: DraftTarget): boolean {
   );
 }
 
-/** The resumed draft's values, when it belongs to a form opening as
- * `target`, to start that form with as unsaved input. Read in a state
- * initializer, which may run twice; {@link useResumedDraftTaken} then
- * clears it once the form is mounted. */
-export function resumedValues<T>(target: DraftTarget): T | null {
-  return resumed && matches(resumed, target) ? (resumed.values as T) : null;
+/** The state a form opening as `target` starts with: `base`, what it would
+ * start with anyway, overlaid with the resumed draft's values when the draft
+ * belongs to it. A draft's values come from the database, perhaps written
+ * on another computer, so only the fields `base` has are taken, and only
+ * when they are of the same kind: a draft that is short of fields, or has a
+ * field of another shape, can't break the form, whose own values fill the
+ * gaps. Read in a state initializer, which may run twice;
+ * {@link useResumedDraftTaken} then clears the draft once the form is
+ * mounted. */
+export function resumedValues<T extends object>(target: DraftTarget, base: T): T {
+  if (!resumed || !matches(resumed, target)) return base;
+  const values: unknown = resumed.values;
+  if (typeof values !== "object" || values === null || Array.isArray(values)) return base;
+  const kept = values as Partial<Record<keyof T, unknown>>;
+  const merged = { ...base };
+  for (const key of Object.keys(base) as (keyof T)[]) {
+    const value = kept[key];
+    if (value !== undefined && typeof value === typeof base[key]) merged[key] = value as T[keyof T];
+  }
+  return merged;
 }
 
 /** Clears the resumed draft once the form it belongs to has opened with it. */

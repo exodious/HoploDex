@@ -36,6 +36,12 @@ impl Passphrase {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Both give the same key: equal once normalized, so a passphrase typed
+    /// with composed or decomposed accents is the same one.
+    pub fn same_as(&self, other: &Passphrase) -> bool {
+        self.0.as_bytes() == other.0.as_bytes()
+    }
 }
 
 /// The rules for a passphrase being set (create, change): at least

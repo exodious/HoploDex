@@ -2,17 +2,25 @@ import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { withIdlePaused } from "../session/useIdleActivity";
-import { Button, Checkbox, Dialog, Icon, PassphraseField, TextField } from "../../components";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  Icon,
+  MIN_PASSPHRASE_CHARS,
+  PASSPHRASE_TOO_SHORT,
+  PASSPHRASES_DIFFER,
+  PassphraseField,
+  TextField,
+  usePassphraseChecks,
+} from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { joinPath } from "./paths";
+import { DEFAULT_SETTINGS } from "./settings";
 import type { CreateDatabaseInput, SuggestedLocation } from "./types";
 import "../firearms/forms.css";
 import "./databases.css";
-
-const MIN_PASSPHRASE_CHARS = 12;
-/** What a new database's backup settings are, before anyone changes them. */
-const DEFAULT_KEEP_COUNT = 5;
 
 const ACKNOWLEDGEMENT =
   "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
@@ -71,6 +79,13 @@ function CreateDatabaseForm({
     setErrors((current) => ({ ...current, [field]: undefined }));
   }
   const confirmation = useRef<PassphraseFieldHandle>(null);
+  // Checked as they are typed; Create database waits until all is well.
+  const checks = usePassphraseChecks({ passphrase, confirmation });
+
+  function edited(field: "passphrase" | "confirmation") {
+    clearError(field);
+    checks.check();
+  }
 
   const trimmedName = name.trim();
   const trimmedFolder = folder.trim();
@@ -101,14 +116,15 @@ function CreateDatabaseForm({
     const confirmed = confirmation.current?.read() ?? "";
     passphrase.current?.reset();
     confirmation.current?.reset();
+    checks.clear();
 
     const found: Errors = {};
     if (!trimmedName) found.name = "Enter a name.";
     if (!trimmedFolder) found.folder = "Enter a folder.";
     if ([...typed.normalize("NFC")].length < MIN_PASSPHRASE_CHARS) {
-      found.passphrase = "Use at least 12 characters.";
+      found.passphrase = PASSPHRASE_TOO_SHORT;
     } else if (typed !== confirmed) {
-      found.confirmation = "The passphrases don't match.";
+      found.confirmation = PASSPHRASES_DIFFER;
     }
     setErrors(found);
     setServerError(null);
@@ -195,7 +211,8 @@ function CreateDatabaseForm({
             required
             strength
             disabled={submitting}
-            error={errors.passphrase}
+            error={errors.passphrase ?? checks.errors.passphrase}
+            onInput={() => edited("passphrase")}
           />
           <PassphraseField
             ref={confirmation}
@@ -203,7 +220,8 @@ function CreateDatabaseForm({
             autoComplete="new-password"
             required
             disabled={submitting}
-            error={errors.confirmation}
+            error={errors.confirmation ?? checks.errors.confirmation}
+            onInput={() => edited("confirmation")}
           />
         </div>
         <section className="hd-privacy-note" role="note" aria-labelledby="create-db-backups">
@@ -217,9 +235,9 @@ function CreateDatabaseForm({
               <strong className="hd-privacy-note__path">
                 {backups ?? "the database's folder"}
               </strong>
-              , at most once a day, keeping the latest {DEFAULT_KEEP_COUNT}. Each backup holds the
-              whole collection and opens with the passphrase you had when it was made. You can
-              change this in the database settings.
+              , at most once a day, keeping the latest {DEFAULT_SETTINGS.keepCount}. Each backup
+              holds the whole collection and opens with the passphrase you had when it was made. You
+              can change this in the database settings.
             </p>
           </div>
         </section>
@@ -244,7 +262,12 @@ function CreateDatabaseForm({
         <Button variant="secondary" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" pending={submitting} disabled={!acknowledged}>
+        <Button
+          type="submit"
+          variant="primary"
+          pending={submitting}
+          disabled={!acknowledged || !checks.ready}
+        >
           {submitting ? "Creating…" : "Create database"}
         </Button>
       </footer>

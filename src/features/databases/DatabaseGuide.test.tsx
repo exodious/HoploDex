@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SessionContext } from "../session/sessionStore";
+import type { SessionState } from "../session/sessionStore";
 import { DatabaseGuide, DatabaseGuideLink } from "./DatabaseGuide";
+import type { DatabaseStatus } from "./types";
 
 // contracts/ui-databases.md §11, FR-030
 describe("DatabaseGuide", () => {
@@ -106,6 +109,68 @@ describe("DatabaseGuide", () => {
     for (const name of ["BitLocker", "FileVault", "LUKS"]) {
       expect(section).toHaveTextContent(name);
     }
+  });
+});
+
+// The open database's settings, beside the defaults.
+describe("DatabaseGuide with a database open", () => {
+  const status = {
+    name: "Main collection",
+    screenLockSupported: true,
+    settings: {
+      backups: {
+        enabled: true,
+        keepCount: 10,
+        location: { kind: "custom", path: "/mnt/usb/HoploDex backups", available: false },
+      },
+      lock: { idleEnabled: true, idleMinutes: 10, onScreenLock: true },
+    },
+  } as DatabaseStatus;
+
+  function renderOpen() {
+    render(
+      <SessionContext.Provider value={{ status } as SessionState}>
+        <DatabaseGuide open onOpenChange={vi.fn()} />
+      </SessionContext.Provider>,
+    );
+  }
+
+  function rows(section: string): string[] {
+    const group = within(screen.getByRole("region", { name: section })).getByRole("group", {
+      name: "How Main collection is set up",
+    });
+    return within(group)
+      .getAllByRole("definition")
+      .map((value) => value.textContent ?? "");
+  }
+
+  it("shows each backup setting, with its default when it was changed", () => {
+    renderOpen();
+
+    expect(rows("Backups")).toEqual([
+      "On (default)",
+      "10 (default 5)",
+      "/mnt/usb/HoploDex backups (default next to the database)Not available on this computer",
+    ]);
+  });
+
+  it("shows each lock setting the same way", () => {
+    renderOpen();
+
+    expect(rows("Locking")).toEqual([
+      "After 10 minutes (default)",
+      "On (default)",
+      "On (default off)",
+    ]);
+  });
+
+  it("shows no settings with no database open", () => {
+    render(<DatabaseGuide open onOpenChange={vi.fn()} />);
+
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Backups" })).toHaveTextContent(
+      /By default it keeps the latest 5/,
+    );
   });
 });
 

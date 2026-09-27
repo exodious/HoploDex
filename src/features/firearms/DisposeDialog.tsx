@@ -82,15 +82,22 @@ function DisposeForm({
     targetId: firearmId,
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
-  const [resumed] = useState(() => resumedValues<DisposeValues>(target));
+  const [today] = useState(todayIso);
+  const [resumed] = useState(() =>
+    resumedValues<DisposeValues>(target, {
+      dispositionType: "",
+      recipient: "",
+      date: today,
+      price: "",
+    }),
+  );
   useResumedDraftTaken(target);
   const [dispositionType, setDispositionType] = useState<DispositionType | "">(
-    resumed?.dispositionType ?? "",
+    resumed.dispositionType,
   );
-  const [recipient, setRecipient] = useState(resumed?.recipient ?? "");
-  const [today] = useState(todayIso);
-  const [date, setDate] = useState(resumed?.date ?? today);
-  const [price, setPrice] = useState(resumed?.price ?? "");
+  const [recipient, setRecipient] = useState(resumed.recipient);
+  const [date, setDate] = useState(resumed.date);
+  const [price, setPrice] = useState(resumed.price);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);

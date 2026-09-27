@@ -196,6 +196,23 @@
   color: var(--niter);
 }
 
+/* As wide as what it says, up to a readable measure: no stretch of empty
+   bar between the text and its dismiss button. */
+.hd-banner.hd-db-note {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.hd-db-note > .hd-banner__text {
+  max-width: 72ch;
+}
+
+/* Follows the sentence it explains. */
+.hd-db-note .hd-link {
+  margin-left: 0.25em;
+  font-weight: 650;
+}
+
 @media (max-width: 900px) {
   .hd-chooser__main {
     padding-left: var(--space-5);
@@ -445,5 +462,89 @@
 }
 
 .hd-db-guide__section > p:last-child {
+  margin-bottom: 0;
+}
+
+/* How the open database is set up (the guide's backup and lock sections). A
+   mark at the left of a row says it differs from the default. */
+.hd-db-guide__settings {
+  max-width: 70ch;
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sheet-sunk);
+}
+
+.hd-db-guide__settings-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.hd-db-guide__settings dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-5);
+  row-gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.hd-db-guide__setting {
+  display: contents;
+}
+
+.hd-db-guide__setting dt {
+  padding-left: var(--space-3);
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+}
+
+.hd-db-guide__setting[data-changed] dt {
+  border-left-color: var(--niter);
+}
+
+.hd-db-guide__setting dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hd-db-guide__setting[data-changed] .hd-db-guide__value {
+  font-weight: 650;
+}
+
+.hd-db-guide__default {
+  color: var(--ink-2);
+}
+
+.hd-db-guide__note {
+  display: block;
+  color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  .hd-db-guide__settings dl {
+    grid-template-columns: 1fr;
+  }
+
+  .hd-db-guide__setting dd {
+    padding-left: calc(var(--space-3) + 2px);
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* A screen that couldn't be shown (FaultScreen). */
+.hd-fault > svg {
+  align-self: center;
+  color: var(--danger);
+}
+
+.hd-fault__text p {
+  margin: 0 0 var(--space-2);
+  color: var(--ink-2);
+}
+
+.hd-fault__text p:last-child {
   margin-bottom: 0;
 }

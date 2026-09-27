@@ -97,8 +97,8 @@ export function InsurancePolicyForm({
     targetId: initialValues?.id ?? null,
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
-  const [form, setForm] = useState<FormState>(
-    () => resumedValues<FormState>(target) ?? toFormState(initialValues),
+  const [form, setForm] = useState<FormState>(() =>
+    resumedValues(target, toFormState(initialValues)),
   );
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues));

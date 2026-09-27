@@ -1041,7 +1041,12 @@
   opacity: 0.6;
 }
 
-.hd-input__text-action[aria-pressed="true"] {
+/* "Show" and "Hide" take the same width, so the toggle doesn't jump. */
+.hd-passphrase__toggle {
+  min-width: 4.5em;
+}
+
+.hd-passphrase__toggle[data-shown] {
   border-color: var(--niter);
   background: var(--niter-wash);
   color: var(--niter);

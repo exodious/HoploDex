@@ -1,7 +1,8 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { CommandFailure } from "../../services/tauriClient";
 import { ClosingScreen } from "./ClosingScreen";
+import { CollectionFault, FaultBoundary } from "./FaultScreen";
 import { DatabaseChooser } from "../databases/DatabaseChooser";
 import * as databasesService from "../databases/databasesService";
 import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
@@ -252,7 +253,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         />
       )}
       {phase.kind === "open" && !phase.status.pendingChanges && (
-        <Fragment key={`${phase.status.path}#${phase.opens}`}>{children}</Fragment>
+        // A screen that fails to render leaves the session, and with it the
+        // way to close the database and to quit, in place.
+        <FaultBoundary
+          key={`${phase.status.path}#${phase.opens}`}
+          fallback={
+            <CollectionFault name={phase.status.name} onClose={() => closeDatabase("closed")} />
+          }
+        >
+          {children}
+        </FaultBoundary>
       )}
       {phase.kind === "closing" && <ClosingScreen name={phase.name} />}
       <UnsavedChangesPrompt

@@ -230,6 +230,12 @@ for (const theme of ["Light", "Dark"] as const) {
       await $('[role="dialog"] .hd-db-guide').waitForExist();
       await browser.pause(300);
       await shot(`23-database-guide-${suffix}`);
+      // How this database is set up, beside the defaults.
+      await browser.execute(() =>
+        document.querySelector(".hd-db-guide__settings")?.scrollIntoView({ block: "center" }),
+      );
+      await browser.pause(300);
+      await shot(`26-database-guide-settings-${suffix}`);
       await closeDialog();
     });
 

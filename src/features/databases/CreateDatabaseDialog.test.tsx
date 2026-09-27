@@ -81,6 +81,7 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
   it("keeps Create database disabled until the no-recovery acknowledgement is ticked (FR-004)", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
+    await fillPassphrases(user, PASSPHRASE);
 
     expect(createButton()).toBeDisabled();
     await user.click(
@@ -94,22 +95,26 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     ).toBeInTheDocument();
   });
 
-  it("refuses a short passphrase and a mismatched confirmation, and clears both fields", async () => {
+  it("checks the passphrases as they are typed, and waits until they are long enough and match", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
     await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+    expect(createButton()).toBeDisabled();
 
     await fillPassphrases(user, "too short");
-    await user.click(createButton());
-    expect(screen.getByText("Use at least 12 characters.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Passphrase")).toHaveValue("");
-    expect(screen.getByLabelText("Confirm passphrase")).toHaveValue("");
+    expect(await screen.findByText("Use at least 12 characters.")).toBeInTheDocument();
+    expect(createButton()).toBeDisabled();
 
+    await user.clear(screen.getByLabelText("Passphrase"));
+    await user.clear(screen.getByLabelText("Confirm passphrase"));
     await fillPassphrases(user, PASSPHRASE, `${PASSPHRASE}!`);
-    await user.click(createButton());
-    expect(screen.getByText("The passphrases don't match.")).toBeInTheDocument();
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
     expect(screen.queryByText("Use at least 12 characters.")).not.toBeInTheDocument();
+    expect(createButton()).toBeDisabled();
 
+    await user.type(screen.getByLabelText("Confirm passphrase"), "{Backspace}");
+    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+    expect(createButton()).toBeEnabled();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
