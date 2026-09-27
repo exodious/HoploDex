@@ -112,6 +112,11 @@ Supersedes/amends: FR-001, FR-012, FirearmType (seeded Handgun/Rifle/Shotgun/Oth
   - **Dependencies:** the barrel/overall length fields (FR-039) (a length below a legal threshold is what makes an SBR or SBS) is the input to any future "this configuration may be regulated" hint, if wanted; B2's type→action mapping; feature 002's identity and marking rules. Insurance (FR-014, FR-036) should be checked for whether such items are scheduled differently.
   - **Open questions for `/speckit-specify`:** how far the app goes in asserting legal status (record only vs. hint vs. warn); what happens to existing records when a type's status changes; whether users can define their own classification like `FirearmType` already lets them add types; whether any of this warrants a warning or disclosure at first use.
 
+### B9. (as-yet-undefined) filter firearms by presence of photos
+
+- [feature] Added 2026-09-26: let users filter the firearms list by whether a firearm has any photos attached (with photos / without photos), alongside 001's existing list filters.
+  - Not specified yet.
+
 ## Track C — Not spec work
 
 ### C2. CI / release engineering
