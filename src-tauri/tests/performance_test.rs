@@ -30,9 +30,9 @@ use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::valuation::get_value_summary;
-use hoplodex_lib::session::{lifecycle, Session};
-use rusqlite::{params, Connection};
-use support::{firearm, passphrase, policy, TestDb, TestEvents, TEST_PASSPHRASE};
+use hoplodex_lib::session::{Session, lifecycle};
+use rusqlite::{Connection, params};
+use support::{TEST_PASSPHRASE, TestDb, TestEvents, firearm, passphrase, policy};
 use tempfile::TempDir;
 
 const RECORD_COUNT: usize = 10_000;

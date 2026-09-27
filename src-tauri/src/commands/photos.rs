@@ -1,9 +1,9 @@
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 use tauri::State;
 
-use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
-use crate::models::photo::{generate_thumbnail, validate_photo_mime_type, Photo, PhotoSummary};
+use crate::commands::firearms::DeleteResult;
+use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
 use crate::services::attachments::read_attachment_file;
 use crate::session::Session;
 

@@ -8,18 +8,18 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::insurance::ops as insurance;
-use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::models::database::{
     BackupOutcome, CloseReason, Draft, DraftKind, DraftMode, PendingAction,
 };
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::session::{lifecycle, Session};
-use serde_json::{json, Value};
-use support::{passphrase, peek, test_session, TestEvents};
+use hoplodex_lib::session::{Session, lifecycle};
+use serde_json::{Value, json};
+use support::{TestEvents, passphrase, peek, test_session};
 use tempfile::TempDir;
 
 struct World {
@@ -374,10 +374,12 @@ fn resuming_returns_the_exact_draft_and_removes_it() {
 
     assert_eq!(resolved.draft, Some(edit_draft(id)));
     assert_eq!(world.pending_rows(), 0);
-    assert!(databases::database_status(&world.session, &world.machine)
-        .unwrap()
-        .pending_changes
-        .is_none());
+    assert!(
+        databases::database_status(&world.session, &world.machine)
+            .unwrap()
+            .pending_changes
+            .is_none()
+    );
 }
 
 #[test]
@@ -470,9 +472,11 @@ fn a_take_over_found_while_finishing_on_waking_loses_the_draft_and_says_so() {
     lifecycle::finish_on_wake(&world.session, &world.machine);
 
     assert!(!world.session.is_open());
-    assert!(world
-        .notices()
-        .contains(&json!({ "kind": "pendingChangesLost", "databasePath": world.path_text() })));
+    assert!(
+        world
+            .notices()
+            .contains(&json!({ "kind": "pendingChangesLost", "databasePath": world.path_text() }))
+    );
     let pending: i64 = peek(&ours)
         .query_row("SELECT count(*) FROM pending_changes", [], |row| row.get(0))
         .unwrap();

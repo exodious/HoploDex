@@ -11,10 +11,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
-use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
     BackupInfo, BackupLocationInput, BackupOutcome, BackupSettingsInput, BackupSettingsSaved,
@@ -23,9 +23,9 @@ use hoplodex_lib::models::database::{
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackupMove};
-use hoplodex_lib::session::{lifecycle, Session};
-use serde_json::{json, Value};
-use support::{passphrase, test_session_at, ManualClock, TestEvents};
+use hoplodex_lib::session::{Session, lifecycle};
+use serde_json::{Value, json};
+use support::{ManualClock, TestEvents, passphrase, test_session_at};
 use tempfile::TempDir;
 
 const START: &str = "2026-09-25T14:30:05+02:00";

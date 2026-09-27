@@ -4,10 +4,10 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops, DisposeFirearmInput};
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, Origin};
-use support::{firearm, TestDb};
+use support::{TestDb, firearm};
 
 /// A record attested as having no serial number, so it records none (FR-029).
 fn no_serial(make: &str, model: &str) -> FirearmInput {

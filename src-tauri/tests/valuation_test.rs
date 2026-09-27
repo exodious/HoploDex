@@ -4,11 +4,11 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops as firearm_ops, DisposeFirearmInput};
+use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops as firearm_ops};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use hoplodex_lib::services::valuation::{get_value_summary, get_value_summary_as_of};
-use support::{date, firearm, policy, TestDb};
+use support::{TestDb, date, firearm, policy};
 
 const TODAY: &str = "2026-06-15";
 

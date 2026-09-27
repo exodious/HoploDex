@@ -2,19 +2,19 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
-use crate::commands::firearms::{ops as firearm_ops, ListFirearmsInput};
 use crate::commands::CommandError;
+use crate::commands::firearms::{ListFirearmsInput, ops as firearm_ops};
 use crate::models::database::OperationKind;
 use crate::models::firearm::{
-    validate_firearm_input, Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
+    Condition, DispositionType, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::services::spreadsheet::{
-    dollars_to_string, parse_scaled_decimal, parse_whole_dollars, read_spreadsheet,
-    scaled_to_string, write_spreadsheet, FirearmExportRow, RawImportRow, SpreadsheetFormat,
+    FirearmExportRow, RawImportRow, SpreadsheetFormat, dollars_to_string, parse_scaled_decimal,
+    parse_whole_dollars, read_spreadsheet, scaled_to_string, write_spreadsheet,
 };
 use crate::session::Session;
 

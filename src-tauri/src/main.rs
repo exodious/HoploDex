@@ -2,18 +2,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use hoplodex_lib::commands::documents::{clear_opened_documents_cache, OPENED_DOCUMENTS_DIR};
+use hoplodex_lib::commands::documents::{OPENED_DOCUMENTS_DIR, clear_opened_documents_cache};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db;
 use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::session::{lifecycle, Session};
+use hoplodex_lib::session::{Session, lifecycle};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 /// What the frontend is sent when the user closes the window or quits: it
@@ -40,7 +40,7 @@ fn end_for_the_os(app: &AppHandle) {
 /// document copies must not outlive the session (FR-035, FR-039).
 #[cfg(unix)]
 fn exit_on_termination_signals(app: tauri::AppHandle) {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
 
     tauri::async_runtime::spawn(async move {
         let (Ok(mut terminate), Ok(mut hangup), Ok(mut interrupt)) = (
@@ -89,9 +89,11 @@ fn handle_system_events(app: AppHandle, events: mpsc::Receiver<SystemEvent>) {
 
 /// The idle lock's 1 s tick (research.md §15).
 fn tick_idle_clock(app: AppHandle) {
-    let spawned = thread::Builder::new().name("idle-clock".into()).spawn(move || loop {
-        thread::sleep(Duration::from_secs(1));
-        lifecycle::idle_tick(&app.state::<Session>(), &app.state::<MachineSettings>());
+    let spawned = thread::Builder::new().name("idle-clock".into()).spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            lifecycle::idle_tick(&app.state::<Session>(), &app.state::<MachineSettings>());
+        }
     });
     if let Err(err) = spawned {
         log::error!("could not start the idle clock: {err}");

@@ -15,7 +15,7 @@ use rusqlite::Connection;
 use crate::db::random_hex;
 use crate::db::raw_file::RawFile;
 use crate::models::database::{
-    BackupFailureReason, BackupInfo, ChooserNotice, LeftBehindReason, DATABASE_EXTENSION,
+    BackupFailureReason, BackupInfo, ChooserNotice, DATABASE_EXTENSION, LeftBehindReason,
 };
 use crate::services::disk_space::{self, InsufficientSpace};
 use crate::services::machine_settings::{MachineSettings, UnfinishedBackup, UnfinishedBackupMove};
@@ -79,11 +79,7 @@ pub fn is_due(
     let last_local_date = last_backup_at
         .and_then(|last| DateTime::parse_from_rfc3339(last).ok())
         .map(|last| last.with_timezone(now.offset()).date_naive());
-    if last_local_date == Some(now.date_naive()) {
-        Due::AlreadyToday
-    } else {
-        Due::Yes
-    }
+    if last_local_date == Some(now.date_naive()) { Due::AlreadyToday } else { Due::Yes }
 }
 
 /// `<name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex`, in local time (research.md
@@ -469,10 +465,10 @@ pub fn make_backup(machine: &MachineSettings, job: BackupJob) -> Result<PathBuf,
 
 /// Removes a backup that did not finish, with its journal if it has one.
 fn remove_partial(partial: &Path) {
-    if let Err(err) = secure_delete::secure_delete_file(partial) {
-        if err.kind() != io::ErrorKind::NotFound {
-            log::warn!("could not remove {}: {err}", partial.display());
-        }
+    if let Err(err) = secure_delete::secure_delete_file(partial)
+        && err.kind() != io::ErrorKind::NotFound
+    {
+        log::warn!("could not remove {}: {err}", partial.display());
     }
     remove_journal(partial);
 }
@@ -689,7 +685,7 @@ fn move_one(
                 return Ok(());
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-                return Err(MoveFailure::NameTaken)
+                return Err(MoveFailure::NameTaken);
             }
             Err(err) => log::info!("copying {} instead of linking it: {err}", src.display()),
         }

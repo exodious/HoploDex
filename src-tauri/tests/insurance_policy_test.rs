@@ -8,7 +8,7 @@ mod support;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
-use support::{firearm, policy, TestDb};
+use support::{TestDb, firearm, policy};
 
 fn blanket(
     name: &str,
@@ -110,10 +110,14 @@ fn a_policy_that_fully_contains_or_sits_inside_another_overlaps_it() {
     let db = TestDb::new();
     insurance_ops::create_policy(&db.conn, &blanket("Middle", "2025-06-01", "2025-09-01")).unwrap();
 
-    assert!(insurance_ops::create_policy(&db.conn, &blanket("Wider", "2025-01-01", "2026-01-01"))
-        .is_err());
-    assert!(insurance_ops::create_policy(&db.conn, &blanket("Inside", "2025-07-01", "2025-08-01"))
-        .is_err());
+    assert!(
+        insurance_ops::create_policy(&db.conn, &blanket("Wider", "2025-01-01", "2026-01-01"))
+            .is_err()
+    );
+    assert!(
+        insurance_ops::create_policy(&db.conn, &blanket("Inside", "2025-07-01", "2025-08-01"))
+            .is_err()
+    );
 }
 
 #[test]
@@ -149,20 +153,24 @@ fn an_edit_that_would_create_an_overlap_is_blocked() {
     assert!(format!("{err:?}").contains("Second"));
 
     // Moving the second policy's start back into the first.
-    assert!(insurance_ops::update_policy(
-        &db.conn,
-        second.id,
-        &blanket("Second", "2025-06-01", "2027-01-01")
-    )
-    .is_err());
+    assert!(
+        insurance_ops::update_policy(
+            &db.conn,
+            second.id,
+            &blanket("Second", "2025-06-01", "2027-01-01")
+        )
+        .is_err()
+    );
 
     // Unchanged dates, or other edits, are fine: a policy never conflicts with itself.
-    assert!(insurance_ops::update_policy(
-        &db.conn,
-        first.id,
-        &blanket("First (renamed)", "2025-01-01", "2026-01-01")
-    )
-    .is_ok());
+    assert!(
+        insurance_ops::update_policy(
+            &db.conn,
+            first.id,
+            &blanket("First (renamed)", "2025-01-01", "2026-01-01")
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -306,21 +314,23 @@ fn the_database_itself_refuses_a_negative_limit_or_scheduled_amount() {
     let created =
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "CHK-1"), false).unwrap();
 
-    assert!(db
-        .conn
-        .execute(
-            "UPDATE insurance_policies SET blanket_coverage_limit = -1 WHERE id = ?1",
-            [rider.id]
-        )
-        .is_err());
-    assert!(db
-        .conn
-        .execute(
-            "UPDATE firearms SET insurance_policy_id = ?1, scheduled_coverage_amount = -1
+    assert!(
+        db.conn
+            .execute(
+                "UPDATE insurance_policies SET blanket_coverage_limit = -1 WHERE id = ?1",
+                [rider.id]
+            )
+            .is_err()
+    );
+    assert!(
+        db.conn
+            .execute(
+                "UPDATE firearms SET insurance_policy_id = ?1, scheduled_coverage_amount = -1
              WHERE id = ?2",
-            [rider.id, created.id]
-        )
-        .is_err());
+                [rider.id, created.id]
+            )
+            .is_err()
+    );
 }
 
 /// FR-027 / US3 Acceptance Scenario 16: a policy carries optional free-form

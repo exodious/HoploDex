@@ -6,11 +6,11 @@
 mod support;
 
 use hoplodex_lib::commands::firearms::{
-    ops, DisposeFirearmInput, HistoryChoice, ReverseDispositionInput,
+    DisposeFirearmInput, HistoryChoice, ReverseDispositionInput, ops,
 };
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::{Condition, DispositionType, FirearmInput};
-use support::{firearm, policy, TestDb};
+use support::{TestDb, firearm, policy};
 
 fn detailed(serial: &str) -> FirearmInput {
     FirearmInput {

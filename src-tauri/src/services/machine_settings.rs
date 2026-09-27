@@ -357,9 +357,5 @@ fn host_display_name() -> String {
         host
     };
     let host: String = host.trim().chars().take(MAX_DISPLAY_NAME_CHARS).collect();
-    if host.is_empty() {
-        "another computer".to_owned()
-    } else {
-        host
-    }
+    if host.is_empty() { "another computer".to_owned() } else { host }
 }

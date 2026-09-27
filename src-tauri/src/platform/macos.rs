@@ -3,13 +3,13 @@
 //! power-off notice (research.md §14).
 
 use std::ffi::c_void;
-use std::sync::mpsc::Sender;
 use std::sync::Mutex;
+use std::sync::mpsc::Sender;
 use std::thread;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject};
-use objc2::{define_class, msg_send, sel, AnyThread, DefinedClass};
+use objc2::{AnyThread, DefinedClass, define_class, msg_send, sel};
 use objc2_app_kit::{NSWorkspace, NSWorkspaceWillPowerOffNotification};
 use objc2_foundation::{NSDistributedNotificationCenter, NSNotification, NSString};
 
@@ -25,7 +25,7 @@ type CfStringRef = *const c_void;
 type PowerCallback = extern "C" fn(*mut c_void, IoObject, u32, *mut c_void);
 
 #[link(name = "IOKit", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn IORegisterForSystemPower(
         refcon: *mut c_void,
         port: *mut NotificationPortRef,
@@ -38,7 +38,7 @@ extern "C" {
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     static kCFRunLoopDefaultMode: CfStringRef;
     fn CFRunLoopGetCurrent() -> CfRunLoopRef;
     fn CFRunLoopAddSource(run_loop: CfRunLoopRef, source: CfRunLoopSourceRef, mode: CfStringRef);

@@ -5,10 +5,10 @@
 mod support;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
-use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::ImportSessionStore;
+use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
-use support::{csv_file, csv_firearm, TestDb};
+use support::{TestDb, csv_file, csv_firearm};
 use tempfile::TempDir;
 
 fn write_csv(dir: &TempDir, contents: &str) -> std::path::PathBuf {

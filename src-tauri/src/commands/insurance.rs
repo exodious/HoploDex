@@ -1,14 +1,14 @@
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::Deserialize;
 use tauri::State;
 
-use crate::commands::firearms;
 use crate::commands::CommandError;
+use crate::commands::firearms;
 use crate::models::firearm::Firearm;
 use crate::models::insurance_policy::{
-    validate_insurance_policy_input, InsurancePolicy, InsurancePolicyInput,
+    InsurancePolicy, InsurancePolicyInput, validate_insurance_policy_input,
 };
-use crate::services::insurance_status::{load_context, PolicyStatus};
+use crate::services::insurance_status::{PolicyStatus, load_context};
 use crate::services::valuation::{self, ValueSummary};
 use crate::session::Session;
 
@@ -376,21 +376,22 @@ pub mod ops {
             }
             resolution => {
                 if let Some(ScheduledFirearmsAction::Unschedule { confirm_unschedule }) = resolution
+                    && !impact.is_expired
+                    && active > 0
+                    && *confirm_unschedule != Some(true)
                 {
-                    if !impact.is_expired && active > 0 && *confirm_unschedule != Some(true) {
-                        let outcome = if impact.unschedule_outcome == "blanket" {
-                            "covered by the blanket policy in force"
-                        } else {
-                            "uninsured"
-                        };
-                        return Err(CommandError::new(
-                            "VALIDATION_ERROR",
-                            format!(
-                                "Leaving {active} firearm(s) unscheduled removes their scheduled \
+                    let outcome = if impact.unschedule_outcome == "blanket" {
+                        "covered by the blanket policy in force"
+                    } else {
+                        "uninsured"
+                    };
+                    return Err(CommandError::new(
+                        "VALIDATION_ERROR",
+                        format!(
+                            "Leaving {active} firearm(s) unscheduled removes their scheduled \
                                  coverage; they would be {outcome}. Confirm to continue."
-                            ),
-                        ));
-                    }
+                        ),
+                    ));
                 }
                 unscheduled_count = conn
                     .execute(

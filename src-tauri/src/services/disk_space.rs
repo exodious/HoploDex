@@ -69,7 +69,7 @@ pub fn check_room(copies: &[(&Path, u64)]) -> Result<(), InsufficientSpace> {
                     bytes_needed: needed,
                     bytes_available: available,
                     path: dir.to_owned(),
-                })
+                });
             }
             Ok(_) => {}
             Err(err) => log::warn!("could not measure the free space in {}: {err}", dir.display()),

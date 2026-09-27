@@ -63,12 +63,10 @@ pub fn replace(original: &Path) -> Result<Replaced, CommandError> {
     let old = old_path(original);
     remove_old(original, &old);
     let linked = !testing::hard_links_disabled() && fs::hard_link(original, &old).is_ok();
-    if !linked {
-        if let Err(err) = fs::rename(original, &old) {
-            log::error!("could not move {} aside: {err}", original.display());
-            let _ = secure_delete::secure_delete_file(&new);
-            return Err(CommandError::replace_failed(original));
-        }
+    if !linked && let Err(err) = fs::rename(original, &old) {
+        log::error!("could not move {} aside: {err}", original.display());
+        let _ = secure_delete::secure_delete_file(&new);
+        return Err(CommandError::replace_failed(original));
     }
     if let Err(err) = rename_with_retry(&new, original) {
         log::error!("could not replace {}: {err}", original.display());
@@ -105,10 +103,10 @@ fn rename_with_retry(from: &Path, to: &Path) -> io::Result<()> {
 /// Flushes the rename to disk, where the OS lets a folder be flushed.
 fn sync_folder(path: &Path) {
     #[cfg(unix)]
-    if let Some(folder) = path.parent() {
-        if let Err(err) = fs::File::open(folder).and_then(|dir| dir.sync_all()) {
-            log::warn!("could not flush {}: {err}", folder.display());
-        }
+    if let Some(folder) = path.parent()
+        && let Err(err) = fs::File::open(folder).and_then(|dir| dir.sync_all())
+    {
+        log::warn!("could not flush {}: {err}", folder.display());
     }
     #[cfg(not(unix))]
     let _ = path;
@@ -176,10 +174,10 @@ pub fn recover(path: &Path) {
     }
     if exists(path) {
         remove_old(path, &old);
-        if exists(&new) {
-            if let Err(err) = secure_delete::secure_delete_file(&new) {
-                log::warn!("could not remove {}: {err}", new.display());
-            }
+        if exists(&new)
+            && let Err(err) = secure_delete::secure_delete_file(&new)
+        {
+            log::warn!("could not remove {}: {err}", new.display());
         }
     }
 }

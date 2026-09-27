@@ -14,7 +14,7 @@ use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use rusqlite::Connection;
-use support::{firearm, sample_png_bytes, TestDb};
+use support::{TestDb, firearm, sample_png_bytes};
 
 const MARKER: &[u8] = b"HOPLODEX-WIPE-ME-0123456789ABCDEF";
 /// Big enough to span many pages, so a leak can't hide in one.
@@ -211,7 +211,7 @@ mod whole_files {
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
 
-    use hoplodex_lib::services::secure_delete::{self, testing, WipeControl, Wiped};
+    use hoplodex_lib::services::secure_delete::{self, WipeControl, Wiped, testing};
     use tempfile::TempDir;
 
     const MIB: u64 = 1 << 20;

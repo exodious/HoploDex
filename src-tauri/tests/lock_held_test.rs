@@ -14,7 +14,7 @@ use std::process::Command;
 use hoplodex_lib::db::{self, OpenError};
 use hoplodex_lib::services::backups::{self, BackupJob};
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use support::{other_machine, passphrase, TestDb};
+use support::{TestDb, other_machine, passphrase};
 use tempfile::TempDir;
 
 /// Set in the child process to the database it should try to open.

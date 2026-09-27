@@ -9,6 +9,7 @@ mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use hoplodex_lib::commands::documents::ops as documents;
 use hoplodex_lib::commands::firearms::ops as firearms;
@@ -22,6 +23,15 @@ use tempfile::TempDir;
 #[allow(dead_code)]
 #[path = "../examples/portable_fixture.rs"]
 mod portable_fixture;
+
+/// Held for the whole of each test here, so they run one at a time: one of
+/// them changes the environment, which is only sound while no other thread
+/// (SQLCipher's C code included) might be reading it.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+fn one_at_a_time() -> MutexGuard<'static, ()> {
+    ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// A computer that has never seen the fixture.
 fn stranger() -> MachineIdentity {
@@ -43,6 +53,7 @@ fn open(path: &Path, passphrase: &str) -> Result<Connection, OpenError> {
 
 #[test]
 fn the_fixture_opens_with_its_passphrase_and_holds_the_known_records() {
+    let _serial = one_at_a_time();
     let (_dir, copy) = copy_of_fixture();
 
     let conn = open(&copy, portable_fixture::PASSPHRASE).unwrap();
@@ -83,6 +94,7 @@ fn the_fixture_opens_with_its_passphrase_and_holds_the_known_records() {
 
 #[test]
 fn the_file_starts_with_its_salt_not_a_readable_header() {
+    let _serial = one_at_a_time();
     let bytes =
         fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join(portable_fixture::FIXTURE)).unwrap();
 
@@ -97,6 +109,7 @@ fn the_file_starts_with_its_salt_not_a_readable_header() {
 
 #[test]
 fn a_wrong_passphrase_does_not_open_it() {
+    let _serial = one_at_a_time();
     let (_dir, copy) = copy_of_fixture();
 
     let result = open(&copy, "portable fixture, cafe edition");
@@ -106,12 +119,15 @@ fn a_wrong_passphrase_does_not_open_it() {
 
 #[test]
 fn opening_needs_only_the_file_and_its_passphrase() {
+    let _serial = one_at_a_time();
     let (_dir, copy) = copy_of_fixture();
     // Every place this computer keeps anything of HoploDex's, empty: no
     // config directory, no machine.json, no recent list.
     let home = TempDir::new().unwrap();
     for var in ["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "APPDATA"] {
-        std::env::set_var(var, home.path());
+        // SAFETY: `one_at_a_time` keeps every other test in this binary
+        // from running, so no other thread reads the environment meanwhile.
+        unsafe { std::env::set_var(var, home.path()) };
     }
     #[cfg(feature = "mock-keyring")]
     keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap());

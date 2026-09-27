@@ -7,8 +7,8 @@
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::commands::databases::PROBE_DIR;
 use crate::commands::CommandError;
+use crate::commands::databases::PROBE_DIR;
 use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
@@ -19,17 +19,17 @@ pub mod ops {
     use std::fs::{self, File};
     use std::io;
     use std::path::{Path, PathBuf};
-    use std::sync::mpsc::{self, RecvTimeoutError};
     use std::sync::MutexGuard;
+    use std::sync::mpsc::{self, RecvTimeoutError};
     use std::thread;
     use std::time::Duration;
 
     use rusqlite::{Connection, OpenFlags};
     use serde_json::json;
 
-    use crate::commands::databases::ops::{refresh_saved, status};
     use crate::commands::CommandError;
-    use crate::db::{self, cipher, raw_file::RawFile, OpenError};
+    use crate::commands::databases::ops::{refresh_saved, status};
+    use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
         BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind, PassphraseChanged,
     };
@@ -37,12 +37,12 @@ pub mod ops {
     use crate::services::disk_space;
     use crate::services::file_swap;
     use crate::services::machine_settings::MachineSettings;
-    use crate::services::passphrase::{new_passphrase_problem, Passphrase};
+    use crate::services::passphrase::{Passphrase, new_passphrase_problem};
     use crate::services::secure_delete::{self, WipeControl, Wiped};
     use crate::session::fingerprint::FingerprintCheck;
     use crate::session::lifecycle;
     use crate::session::operations::OperationGuard;
-    use crate::session::{database_name, OpenDatabase, Session, SessionEvents};
+    use crate::session::{OpenDatabase, Session, SessionEvents, database_name};
 
     /// Where a database's backups are and what is there (FR-028): the open
     /// database's, or, for one that doesn't open, the folder and id this
@@ -262,10 +262,10 @@ pub mod ops {
 
     /// Removes a restore's copy, and the journal checking it may leave.
     fn remove_copy(new: &Path) {
-        if let Err(err) = secure_delete::secure_delete_file(new) {
-            if err.kind() != io::ErrorKind::NotFound {
-                log::warn!("could not remove {}: {err}", new.display());
-            }
+        if let Err(err) = secure_delete::secure_delete_file(new)
+            && err.kind() != io::ErrorKind::NotFound
+        {
+            log::warn!("could not remove {}: {err}", new.display());
         }
         let mut journal = new.as_os_str().to_owned();
         journal.push("-journal");
@@ -411,12 +411,10 @@ pub mod ops {
             crate::models::database::DATABASE_EXTENSION,
         ));
         let set_aside = path.exists();
-        if set_aside {
-            if let Err(err) = fs::rename(path, &kept) {
-                log::error!("could not set {} aside: {err}", path.display());
-                remove_copy(&new);
-                return Err(CommandError::replace_failed(path));
-            }
+        if set_aside && let Err(err) = fs::rename(path, &kept) {
+            log::error!("could not set {} aside: {err}", path.display());
+            remove_copy(&new);
+            return Err(CommandError::replace_failed(path));
         }
         if let Err(err) = fs::rename(&new, path) {
             log::error!("could not put the restored copy at {}: {err}", path.display());
@@ -511,7 +509,7 @@ pub mod ops {
             Ok(true) => {}
             Ok(false) => {
                 return Err(CommandError::passphrase_incorrect(None, None)
-                    .on_field("currentPassphrase", "That isn't the current passphrase."))
+                    .on_field("currentPassphrase", "That isn't the current passphrase."));
             }
             Err(err) => {
                 log::error!("could not check the current passphrase: {err}");

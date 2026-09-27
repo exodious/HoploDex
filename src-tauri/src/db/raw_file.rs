@@ -13,7 +13,7 @@ use std::ffi::{c_int, c_void};
 use std::io;
 use std::marker::PhantomData;
 
-use rusqlite::{ffi, Connection};
+use rusqlite::{Connection, ffi};
 
 /// The main database file of an open connection, read at an offset through
 /// the connection's own VFS handle. SQLCipher encrypts above the VFS, so the

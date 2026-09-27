@@ -8,16 +8,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use hoplodex_lib::commands::databases::ops;
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::databases::ops;
 use hoplodex_lib::db::{self, OpenError};
 use hoplodex_lib::models::database::{BackupOutcome, ChooserState, CloseReason};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::session::{lifecycle, Session};
+use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::Connection;
 use serde_json::json;
-use support::{passphrase, test_machine, test_session, TestDb, TestEvents};
+use support::{TestDb, TestEvents, passphrase, test_machine, test_session};
 use tempfile::TempDir;
 
 /// Opens `path` as this test's computer would.

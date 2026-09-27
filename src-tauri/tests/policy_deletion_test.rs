@@ -6,11 +6,11 @@
 mod support;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
-use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::insurance::ScheduledFirearmsAction;
+use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::FirearmInput;
-use hoplodex_lib::services::insurance_status::{firearm_warning, load_context, InsuranceWarning};
-use support::{firearm, policy, TestDb};
+use hoplodex_lib::services::insurance_status::{InsuranceWarning, firearm_warning, load_context};
+use support::{TestDb, firearm, policy};
 
 const LONG_AGO: &str = "2001-01-01";
 const SOON_PAST: &str = "2001-12-31";

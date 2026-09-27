@@ -2,9 +2,9 @@
 //! lock, and the ScreenSaver interfaces on the session bus (research.md
 //! §14). Each signal stream is read on its own thread.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
 use std::thread;
 
 use zbus::blocking::fdo::DBusProxy;

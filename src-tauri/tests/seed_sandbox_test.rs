@@ -13,7 +13,7 @@ use tempfile::TempDir;
 #[path = "../examples/support/sandbox.rs"]
 mod sandbox;
 
-use sandbox::{check_sandbox, MARKER};
+use sandbox::{MARKER, check_sandbox};
 
 /// A fake home and the variables a test sets on top of `HOME`.
 struct Env {

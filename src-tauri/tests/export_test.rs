@@ -9,7 +9,7 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
-use support::{sample_png_bytes, TestDb};
+use support::{TestDb, sample_png_bytes};
 use tempfile::TempDir;
 
 fn firearm_with_photo(make: &str) -> FirearmInput {

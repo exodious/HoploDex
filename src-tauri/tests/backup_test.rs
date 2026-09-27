@@ -12,10 +12,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
-use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
     BackupFailureReason, BackupInfo, BackupLocationInput, BackupOutcome, BackupSettingsInput,
@@ -24,9 +24,9 @@ use hoplodex_lib::models::database::{
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackup};
-use hoplodex_lib::session::{lifecycle, Session};
-use serde_json::{json, Value};
-use support::{passphrase, peek, test_session_at, ManualClock, TestEvents};
+use hoplodex_lib::session::{Session, lifecycle};
+use serde_json::{Value, json};
+use support::{ManualClock, TestEvents, passphrase, peek, test_session_at};
 use tempfile::TempDir;
 
 /// 14:30:05 on 25 September 2026 in a UTC+2 time zone, 12:30:05 UTC.

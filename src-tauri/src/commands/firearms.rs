@@ -1,11 +1,11 @@
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
-    validate_firearm_input, DispositionType, Firearm, FirearmInput, FirearmStatus,
+    DispositionType, Firearm, FirearmInput, FirearmStatus, validate_firearm_input,
 };
 use crate::session::Session;
 
@@ -328,35 +328,35 @@ pub mod ops {
         }
         let mut errors = std::collections::HashMap::new();
 
-        if let Some(nickname) = &input.nickname {
-            if let Some(other) = find_nickname_clash(conn, exclude_id, nickname)? {
-                errors.insert(
-                    "nickname".to_string(),
-                    format!("That nickname is already used by {other}."),
-                );
-            }
+        if let Some(nickname) = &input.nickname
+            && let Some(other) = find_nickname_clash(conn, exclude_id, nickname)?
+        {
+            errors.insert(
+                "nickname".to_string(),
+                format!("That nickname is already used by {other}."),
+            );
         }
 
-        if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty()) {
-            if let Some(other_id) = find_identity_clash(
+        if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty())
+            && let Some(other_id) = find_identity_clash(
                 conn,
                 exclude_id,
                 &input.make,
                 &input.model,
                 serial,
                 input.year_of_manufacture,
-            )? {
-                let other = describe_firearm(conn, other_id)?;
-                errors.insert(
-                    "serialNumber".to_string(),
-                    format!(
-                        "{other} already has this make, model and serial number. \
+            )?
+        {
+            let other = describe_firearm(conn, other_id)?;
+            errors.insert(
+                "serialNumber".to_string(),
+                format!(
+                    "{other} already has this make, model and serial number. \
                          Change one of them, or dispose of or delete the other record. \
                          Or record a year of manufacture on each firearm: two firearms with the \
                          same marks are accepted when both have a year and the years differ."
-                    ),
-                );
-            }
+                ),
+            );
         }
 
         if errors.is_empty() {
@@ -693,11 +693,7 @@ pub mod ops {
             .as_deref()
             .map(|q| {
                 let phrase = format!("\"{}\"", q.trim().replace('"', "\"\""));
-                if q.chars().any(char::is_alphanumeric) {
-                    phrase + "*"
-                } else {
-                    phrase
-                }
+                if q.chars().any(char::is_alphanumeric) { phrase + "*" } else { phrase }
             })
             .unwrap_or_default();
 

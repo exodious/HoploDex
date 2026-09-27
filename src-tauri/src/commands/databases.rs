@@ -28,25 +28,25 @@ pub mod ops {
     use rusqlite::Connection;
     use serde_json::json;
 
-    use crate::commands::backups::ops::delete_backups_in;
     use crate::commands::CommandError;
+    use crate::commands::backups::ops::delete_backups_in;
     use crate::db;
     use crate::models::database::{
-        validate_backup_settings_input, validate_create_database_input,
-        validate_lock_settings_input, BackupLocation, BackupLocationKind, BackupSettings,
-        BackupSettingsInput, BackupSettingsSaved, ChooserState, CloseOutcome, CloseReason,
-        CollectionSettings, DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice,
-        ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput,
-        NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
-        RecentRemoved, SuggestedLocation,
+        BackupLocation, BackupLocationKind, BackupSettings, BackupSettingsInput,
+        BackupSettingsSaved, ChooserState, CloseOutcome, CloseReason, CollectionSettings,
+        DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice, ExistingBackupsOutcome,
+        IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput, NoteKind, OperationKind,
+        PassphraseSaved, PendingAction, PendingResolved, RecentDatabase, RecentRemoved,
+        SuggestedLocation, validate_backup_settings_input, validate_create_database_input,
+        validate_lock_settings_input,
     };
     use crate::services::backups::{self, MoveJob};
     use crate::services::disk_space;
     use crate::services::machine_settings::{MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
     use crate::session::operations::Operations;
-    use crate::session::{lifecycle, pending};
     use crate::session::{OpenDatabase, Session};
+    use crate::session::{lifecycle, pending};
 
     /// The name the create dialog suggests (research.md §19).
     pub const SUGGESTED_NAME: &str = "My collection";
@@ -192,10 +192,10 @@ pub mod ops {
                 if let Unlock::Typed { passphrase, remember } = unlock {
                     let entry = machine.recent_entry(path);
                     let was_saved = entry.as_ref().is_some_and(|entry| entry.passphrase_saved);
-                    if let Some(id) = entry.and_then(|entry| entry.database_id) {
-                        if remember || was_saved {
-                            save_for(machine, path, &id, passphrase);
-                        }
+                    if let Some(id) = entry.and_then(|entry| entry.database_id)
+                        && (remember || was_saved)
+                    {
+                        save_for(machine, path, &id, passphrase);
                     }
                 }
                 database_status(session, machine)
@@ -275,12 +275,12 @@ pub mod ops {
     /// US2-5).
     pub fn remove_recent_database(machine: &MachineSettings, path: &str) -> RecentRemoved {
         let removed = machine.remove_recent(Path::new(path));
-        if let Some(entry) = removed.filter(|entry| entry.passphrase_saved) {
-            if let Some(id) = entry.database_id {
-                // Logged by the keyring; the entry is off the list either way.
-                if machine.keyring().forget(&id).is_ok() {
-                    machine.clear_passphrase_saved(&id);
-                }
+        if let Some(entry) = removed.filter(|entry| entry.passphrase_saved)
+            && let Some(id) = entry.database_id
+        {
+            // Logged by the keyring; the entry is off the list either way.
+            if machine.keyring().forget(&id).is_ok() {
+                machine.clear_passphrase_saved(&id);
             }
         }
         RecentRemoved { removed: true }
@@ -765,7 +765,7 @@ pub async fn open_database(
             return Err(CommandError::validation(
                 "Give a passphrase, or use the saved one.",
                 [("passphrase".to_owned(), "Enter the passphrase.".to_owned())].into(),
-            ))
+            ));
         }
     };
     ops::open_database(&session, &machine, &path, unlock, take_over.unwrap_or(false))

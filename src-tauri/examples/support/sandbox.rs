@@ -45,7 +45,7 @@ pub fn check_sandbox(target: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> R
             }
         }
         Err(_) if target.exists() => {
-            return Err(format!("refusing to seed {}: it is not a directory", target.display()))
+            return Err(format!("refusing to seed {}: it is not a directory", target.display()));
         }
         Err(_) => {}
     }

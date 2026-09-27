@@ -7,7 +7,7 @@ mod support;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
-use support::{sample_png_bytes, TestDb};
+use support::{TestDb, sample_png_bytes};
 
 fn sample_firearm() -> FirearmInput {
     FirearmInput {

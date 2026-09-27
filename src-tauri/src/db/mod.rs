@@ -119,7 +119,7 @@ pub fn create_database(
     match OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(_) => {}
         Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-            return Err(DbError::Exists(path.to_owned()))
+            return Err(DbError::Exists(path.to_owned()));
         }
         Err(err) => return Err(err.into()),
     }
@@ -170,7 +170,7 @@ pub fn open_database(
         Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => {}
         Ok(_) => return Err(OpenError::Unreadable { path: path.to_owned() }),
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            return Err(OpenError::NotFound { path: path.to_owned() })
+            return Err(OpenError::NotFound { path: path.to_owned() });
         }
         Err(_) => return Err(OpenError::Unreadable { path: path.to_owned() }),
     }
@@ -205,13 +205,14 @@ pub fn open_database(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(OpenError::classify)?;
-    if let Some(marker_id) = marker_id {
-        if marker_id != machine.id && !take_over {
-            return Err(OpenError::OpenElsewhere {
-                machine_name: marker_name.unwrap_or_default(),
-                since: marker_since.unwrap_or_default(),
-            });
-        }
+    if let Some(marker_id) = marker_id
+        && marker_id != machine.id
+        && !take_over
+    {
+        return Err(OpenError::OpenElsewhere {
+            machine_name: marker_name.unwrap_or_default(),
+            since: marker_since.unwrap_or_default(),
+        });
     }
 
     // Step 5: the housekeeping writes. Setting the marker also takes the

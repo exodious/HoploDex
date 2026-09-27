@@ -4,7 +4,7 @@
 //! writing or removing them never makes a backup due, and a backup never
 //! carries them.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::commands::CommandError;
 use crate::models::database::{Draft, DraftKind, DraftMode, PendingAction, PendingSummary};

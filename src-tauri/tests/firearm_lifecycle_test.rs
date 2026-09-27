@@ -4,7 +4,7 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops, DisposeFirearmInput};
+use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
 use support::TestDb;
 

@@ -8,11 +8,11 @@ mod support;
 use std::fs;
 use std::path::Path;
 
-use hoplodex_lib::db::{self, cipher, DbError, OpenError};
-use hoplodex_lib::services::passphrase::{validate_new_passphrase, Passphrase};
-use rusqlite::types::Value;
+use hoplodex_lib::db::{self, DbError, OpenError, cipher};
+use hoplodex_lib::services::passphrase::{Passphrase, validate_new_passphrase};
 use rusqlite::Connection;
-use support::{passphrase, test_machine, TestDb, TEST_PASSPHRASE};
+use rusqlite::types::Value;
+use support::{TEST_PASSPHRASE, TestDb, passphrase, test_machine};
 use tempfile::TempDir;
 
 fn phrase(text: &str) -> Passphrase {
@@ -201,7 +201,9 @@ fn verify_passphrase_checks_a_candidate_without_touching_the_open_file() {
     let before = fs::read(db.path()).unwrap();
 
     assert!(db::verify_passphrase(&db.conn, &passphrase(), scratch.path()).unwrap());
-    assert!(!db::verify_passphrase(&db.conn, &phrase("definitely not it"), scratch.path()).unwrap());
+    assert!(
+        !db::verify_passphrase(&db.conn, &phrase("definitely not it"), scratch.path()).unwrap()
+    );
 
     assert_eq!(fs::read(db.path()).unwrap(), before, "the main file must never be written");
     assert_eq!(
@@ -221,17 +223,17 @@ mod through_commands {
     use std::path::Path;
     use std::sync::Arc;
 
+    use hoplodex_lib::commands::CommandError;
     use hoplodex_lib::commands::databases::ops;
     use hoplodex_lib::commands::firearms::ops as firearms;
-    use hoplodex_lib::commands::CommandError;
     use hoplodex_lib::models::database::{CloseReason, NoteKind};
     use hoplodex_lib::services::machine_settings::MachineSettings;
     use hoplodex_lib::services::passphrase::Passphrase;
-    use hoplodex_lib::session::lifecycle;
     use hoplodex_lib::session::Session;
+    use hoplodex_lib::session::lifecycle;
     use tempfile::TempDir;
 
-    use crate::support::{self, passphrase, test_session, TestEvents, TEST_PASSPHRASE};
+    use crate::support::{self, TEST_PASSPHRASE, TestEvents, passphrase, test_session};
 
     /// A throwaway world: a folder for databases, a config directory for
     /// `machine.json`, and an empty session.

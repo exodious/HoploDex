@@ -4,12 +4,12 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops, DisposeFirearmInput, ListFirearmsInput};
-use hoplodex_lib::commands::import_export::ops as import_export_ops;
+use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ListFirearmsInput, ops};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
+use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
-use support::{csv_file, csv_firearm, firearm, TestDb};
+use support::{TestDb, csv_file, csv_firearm, firearm};
 use tempfile::TempDir;
 
 fn nicknamed(make: &str, model: &str, serial: &str, nickname: &str) -> FirearmInput {

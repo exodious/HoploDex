@@ -410,13 +410,13 @@ pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> 
         today,
         &mut errors,
     );
-    if let (Some(acquired), Some(disposed_on)) = (acquired, disposed_on) {
-        if disposed_on < acquired {
-            errors.insert(
-                "dispositionDate".into(),
-                "Disposition date can't be earlier than the acquisition date.".into(),
-            );
-        }
+    if let (Some(acquired), Some(disposed_on)) = (acquired, disposed_on)
+        && disposed_on < acquired
+    {
+        errors.insert(
+            "dispositionDate".into(),
+            "Disposition date can't be earlier than the acquisition date.".into(),
+        );
     }
 
     match input.status {

@@ -211,10 +211,10 @@ mod mock {
         let Ok(bytes) = fs::read(file) else { return };
         let saved: BTreeMap<String, String> = serde_json::from_slice(&bytes).unwrap_or_default();
         for (user, passphrase) in saved {
-            if user.starts_with(USER_PREFIX) {
-                if let Ok(entry) = Entry::new(SERVICE, &user) {
-                    let _ = entry.set_password(&passphrase);
-                }
+            if user.starts_with(USER_PREFIX)
+                && let Ok(entry) = Entry::new(SERVICE, &user)
+            {
+                let _ = entry.set_password(&passphrase);
             }
         }
     }

@@ -7,7 +7,7 @@ mod support;
 
 use hoplodex_lib::commands::firearms::ops;
 use hoplodex_lib::models::firearm::{FirearmInput, Origin};
-use support::{firearm, TestDb};
+use support::{TestDb, firearm};
 
 fn field_error(input: &FirearmInput, field: &str) {
     let db = TestDb::new();

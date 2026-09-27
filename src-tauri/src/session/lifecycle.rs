@@ -9,8 +9,8 @@ use std::time::Duration;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::json;
 
-use crate::commands::databases::ops::folder_error;
 use crate::commands::CommandError;
+use crate::commands::databases::ops::folder_error;
 use crate::db;
 use crate::models::database::{
     BackupFailureReason, BackupOutcome, ChooserNotice, CloseOutcome, CloseReason, Draft,
@@ -22,7 +22,7 @@ use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
-use crate::session::{pending, ImmediateClose, OpenDatabase, Session};
+use crate::session::{ImmediateClose, OpenDatabase, Session, pending};
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most

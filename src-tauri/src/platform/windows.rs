@@ -10,14 +10,14 @@ use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::RemoteDesktop::{
-    WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
+    NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification,
 };
 use windows_sys::Win32::System::Shutdown::{ShutdownBlockReasonCreate, ShutdownBlockReasonDestroy};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
-    TranslateMessage, MSG, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND, WM_ENDSESSION,
-    WM_POWERBROADCAST, WM_QUERYENDSESSION, WM_WTSSESSION_CHANGE, WNDCLASSW, WS_EX_TOOLWINDOW,
-    WS_OVERLAPPED, WTS_SESSION_LOCK, WTS_SESSION_UNLOCK,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, PBT_APMRESUMEAUTOMATIC,
+    PBT_APMSUSPEND, RegisterClassW, TranslateMessage, WM_ENDSESSION, WM_POWERBROADCAST,
+    WM_QUERYENDSESSION, WM_WTSSESSION_CHANGE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_OVERLAPPED,
+    WTS_SESSION_LOCK, WTS_SESSION_UNLOCK,
 };
 
 use super::{Ack, SystemEvent};
@@ -79,13 +79,17 @@ unsafe extern "system" fn window_procedure(
             if wparam != 0 {
                 // Shown by Windows while pending changes are saved.
                 let reason = wide("Saving unsaved changes and locking the database");
-                ShutdownBlockReasonCreate(window, reason.as_ptr());
+                // SAFETY: `window` is this thread's own window, and `reason`
+                // is a NUL-terminated string that outlives the call.
+                unsafe { ShutdownBlockReasonCreate(window, reason.as_ptr()) };
                 send_and_wait(|ack| SystemEvent::WillShutDown { ack }, SHUTDOWN_WAIT);
-                ShutdownBlockReasonDestroy(window);
+                // SAFETY: `window` is this thread's own window.
+                unsafe { ShutdownBlockReasonDestroy(window) };
             }
             0
         }
-        _ => DefWindowProcW(window, message, wparam, lparam),
+        // SAFETY: the arguments are the ones Windows gave this procedure.
+        _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
     }
 }
 

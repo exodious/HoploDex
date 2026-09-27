@@ -10,15 +10,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::db::{self, OpenError};
 use hoplodex_lib::models::database::{BackupFailureReason, BackupOutcome, CloseReason};
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::session::{lifecycle, Session};
+use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::Connection;
 use serde_json::json;
-use support::{other_machine, passphrase, test_machine, test_session, TestDb, TestEvents};
+use support::{TestDb, TestEvents, other_machine, passphrase, test_machine, test_session};
 use tempfile::TempDir;
 
 /// Marks the database behind `conn` as open on `other_machine()` since
@@ -246,9 +246,9 @@ fn a_close_after_a_take_over_writes_nothing() {
     assert!(!world.session.is_open());
     let events = world.events.recorded();
     assert_eq!(events.last().unwrap().1["reason"], "takenOver");
-    assert!(events
-        .iter()
-        .any(|(event, payload)| event == "notice" && payload["kind"] == "takenOver"));
+    assert!(
+        events.iter().any(|(event, payload)| event == "notice" && payload["kind"] == "takenOver")
+    );
     assert_eq!(fs::read(&ours).unwrap(), ours_before, "no marker clear, no backup");
     assert_eq!(fs::read(world.path()).unwrap(), theirs_before);
 }

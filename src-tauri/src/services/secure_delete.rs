@@ -118,11 +118,7 @@ fn platform_discard(file: &File, len: u64) -> io::Result<()> {
             len,
         )
     };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 #[cfg(target_os = "macos")]
@@ -136,18 +132,14 @@ fn platform_discard(file: &File, len: u64) -> io::Result<()> {
     };
     // SAFETY: the descriptor is open for writing, and `hole` outlives the call.
     let rc = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_PUNCHHOLE, &hole) };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 #[cfg(windows)]
 fn platform_discard(file: &File, len: u64) -> io::Result<()> {
     use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::System::Ioctl::{FILE_ZERO_DATA_INFORMATION, FSCTL_SET_ZERO_DATA};
     use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::{FILE_ZERO_DATA_INFORMATION, FSCTL_SET_ZERO_DATA};
 
     let range = FILE_ZERO_DATA_INFORMATION {
         FileOffset: 0,
@@ -168,11 +160,7 @@ fn platform_discard(file: &File, len: u64) -> io::Result<()> {
             std::ptr::null_mut(),
         )
     };
-    if ok != 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    if ok != 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", windows)))]

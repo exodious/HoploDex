@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
-use crate::services::passphrase::{new_passphrase_problem, Passphrase};
+use crate::services::passphrase::{Passphrase, new_passphrase_problem};
 
 /// A database file's extension, for databases and backups alike (research.md
 /// §19).

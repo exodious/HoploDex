@@ -10,16 +10,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops::{self, Unlock};
 use hoplodex_lib::commands::firearms::ops as firearms;
-use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::models::database::{CloseReason, DatabaseStatus};
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::session::{lifecycle, Session};
-use support::{passphrase, test_session, TestEvents, TEST_PASSPHRASE};
+use hoplodex_lib::session::{Session, lifecycle};
+use support::{TEST_PASSPHRASE, TestEvents, passphrase, test_session};
 use tempfile::TempDir;
 
 const SERVICE: &str = "com.hoplodex.app";

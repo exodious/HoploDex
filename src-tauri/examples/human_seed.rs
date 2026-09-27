@@ -41,7 +41,7 @@ use hoplodex_lib::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
-use hoplodex_lib::services::backups::{self, resolve_folder as backup_folder, BackupJob};
+use hoplodex_lib::services::backups::{self, BackupJob, resolve_folder as backup_folder};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
@@ -522,7 +522,9 @@ pub fn seed(conn: &Connection, extra: usize) {
 
     let glock = add(FirearmInput {
         nickname: text("Daily"),
-        notes: text("Trigger job done by a gunsmith in 2022. Fires reliably with 115 gr FMJ and 124 gr JHP."),
+        notes: text(
+            "Trigger job done by a gunsmith in 2022. Fires reliably with 115 gr FMJ and 124 gr JHP.",
+        ),
         accessories: text("Three 15-round magazines, Streamlight TLR-7 light, Kydex holster"),
         estimated_value: Some(550),
         acquisition_source: text("Ridgeline Arms"),
@@ -577,8 +579,12 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     add(FirearmInput {
-        notes: text("Old duty gun; the bluing is worn at the muzzle and the forend has a hairline crack near the tang. Keep an eye on it. Bring the original barrel-length paperwork when transferring."),
-        accessories: text("Extra 20-inch barrel, Vang Comp magazine tube extension, sling swivels, 4-shell side saddle, Limbsaver recoil pad, spare bead sight, cleaning kit"),
+        notes: text(
+            "Old duty gun; the bluing is worn at the muzzle and the forend has a hairline crack near the tang. Keep an eye on it. Bring the original barrel-length paperwork when transferring.",
+        ),
+        accessories: text(
+            "Extra 20-inch barrel, Vang Comp magazine tube extension, sling swivels, 4-shell side saddle, Limbsaver recoil pad, spare bead sight, cleaning kit",
+        ),
         estimated_value: Some(650),
         acquisition_date: text("2012-11-23"),
         barrel_length_hundredths: Some(2800),
@@ -843,7 +849,9 @@ pub fn seed(conn: &Connection, extra: usize) {
     // -- specs/002-firearm-identification: origin, year, country, importer --
 
     add(FirearmInput {
-        notes: text("Bring-back from a relative's WWII service; the importer's stamp is on the barrel band."),
+        notes: text(
+            "Bring-back from a relative's WWII service; the importer's stamp is on the barrel band.",
+        ),
         estimated_value: Some(1200),
         acquisition_source: text("Family estate"),
         acquisition_date: text("2015-08-14"),

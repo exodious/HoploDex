@@ -14,25 +14,25 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
+use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
-use hoplodex_lib::commands::import_export::{ops as import_export, ImportSessionStore};
-use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::import_export::{ImportSessionStore, ops as import_export};
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
-    validate_lock_settings_input, BackupInfo, BackupLocationInput, BackupOutcome,
-    BackupSettingsInput, BackupSettingsSaved, CloseReason, Draft, DraftKind, DraftMode,
-    ExistingBackupsChoice, IdlePauseReason, LockSettingsInput, OperationKind,
+    BackupInfo, BackupLocationInput, BackupOutcome, BackupSettingsInput, BackupSettingsSaved,
+    CloseReason, Draft, DraftKind, DraftMode, ExistingBackupsChoice, IdlePauseReason,
+    LockSettingsInput, OperationKind, validate_lock_settings_input,
 };
 use hoplodex_lib::platform::WakeWatchdog;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
-use hoplodex_lib::session::{lifecycle, Session};
-use serde_json::{json, Value};
-use support::{passphrase, peek, test_session_at, ManualClock, TestEvents, TEST_PASSPHRASE};
+use hoplodex_lib::session::{Session, lifecycle};
+use serde_json::{Value, json};
+use support::{ManualClock, TEST_PASSPHRASE, TestEvents, passphrase, peek, test_session_at};
 use tempfile::TempDir;
 
 /// 14:30:05 on 25 September 2026 in a UTC+2 time zone.

@@ -9,7 +9,7 @@ use hoplodex_lib::models::database::CloseReason;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::lifecycle;
 use rusqlite::Connection;
-use support::{passphrase, test_machine, test_session, TestDb, TEST_PASSPHRASE};
+use support::{TEST_PASSPHRASE, TestDb, passphrase, test_machine, test_session};
 use tempfile::TempDir;
 
 /// Tables that are not collection data and must never make a backup due.
@@ -68,20 +68,44 @@ fn every_table_is_housekeeping_or_tracks_changes() {
 /// One insert, update and delete for each collection table, in an order
 /// the foreign keys allow.
 const STEPS: &[(&str, &str)] = &[
-    ("firearm_types insert", "INSERT INTO firearm_types (id, name, generic_thumbnail_key) VALUES (9, 'Cannon', 'other')"),
+    (
+        "firearm_types insert",
+        "INSERT INTO firearm_types (id, name, generic_thumbnail_key) VALUES (9, 'Cannon', 'other')",
+    ),
     ("firearm_types update", "UPDATE firearm_types SET name = 'Big cannon' WHERE id = 9"),
-    ("insurance_policies insert", "INSERT INTO insurance_policies (id, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')"),
+    (
+        "insurance_policies insert",
+        "INSERT INTO insurance_policies (id, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')",
+    ),
     ("insurance_policies update", "UPDATE insurance_policies SET notes = 'n' WHERE id = 1"),
-    ("firearms insert", "INSERT INTO firearms (id, make, model, serial_number, caliber, firearm_type_id, created_at, updated_at) VALUES (1, 'Glock', '19', 'ABC', '9mm', 1, 'now', 'now')"),
+    (
+        "firearms insert",
+        "INSERT INTO firearms (id, make, model, serial_number, caliber, firearm_type_id, created_at, updated_at) VALUES (1, 'Glock', '19', 'ABC', '9mm', 1, 'now', 'now')",
+    ),
     ("firearms update", "UPDATE firearms SET notes = 'n' WHERE id = 1"),
-    ("photos insert", "INSERT INTO photos (id, firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, sort_order, created_at) VALUES (1, 1, x'00', 'a.png', 'image/png', x'00', 0, 'now')"),
+    (
+        "photos insert",
+        "INSERT INTO photos (id, firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, sort_order, created_at) VALUES (1, 1, x'00', 'a.png', 'image/png', x'00', 0, 'now')",
+    ),
     ("photos update", "UPDATE photos SET sort_order = 1 WHERE id = 1"),
     ("photos delete", "DELETE FROM photos WHERE id = 1"),
-    ("document_attachments insert", "INSERT INTO document_attachments (id, firearm_id, file_bytes, original_filename, mime_type, created_at) VALUES (1, 1, x'00', 'a.pdf', 'application/pdf', 'now')"),
-    ("document_attachments update", "UPDATE document_attachments SET original_filename = 'b.pdf' WHERE id = 1"),
+    (
+        "document_attachments insert",
+        "INSERT INTO document_attachments (id, firearm_id, file_bytes, original_filename, mime_type, created_at) VALUES (1, 1, x'00', 'a.pdf', 'application/pdf', 'now')",
+    ),
+    (
+        "document_attachments update",
+        "UPDATE document_attachments SET original_filename = 'b.pdf' WHERE id = 1",
+    ),
     ("document_attachments delete", "DELETE FROM document_attachments WHERE id = 1"),
-    ("disposition_history insert", "INSERT INTO disposition_history (id, firearm_id, disposition_type, disposition_recipient, disposition_date, reversed_at) VALUES (1, 1, 'sold', 'R', '2026-01-02', 'now')"),
-    ("disposition_history update", "UPDATE disposition_history SET disposition_recipient = 'S' WHERE id = 1"),
+    (
+        "disposition_history insert",
+        "INSERT INTO disposition_history (id, firearm_id, disposition_type, disposition_recipient, disposition_date, reversed_at) VALUES (1, 1, 'sold', 'R', '2026-01-02', 'now')",
+    ),
+    (
+        "disposition_history update",
+        "UPDATE disposition_history SET disposition_recipient = 'S' WHERE id = 1",
+    ),
     ("disposition_history delete", "DELETE FROM disposition_history WHERE id = 1"),
     ("firearms delete", "DELETE FROM firearms WHERE id = 1"),
     ("insurance_policies delete", "DELETE FROM insurance_policies WHERE id = 1"),

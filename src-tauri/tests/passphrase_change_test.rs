@@ -10,11 +10,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::documents::ops as documents;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::photos::ops as photos;
-use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{CloseReason, PassphraseChanged};
 use hoplodex_lib::services::backups;
@@ -22,10 +22,10 @@ use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::file_swap;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::session::{lifecycle, Session};
+use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::Connection;
 use serde_json::json;
-use support::{passphrase, sample_png_bytes, test_session_at, ManualClock, TestEvents};
+use support::{ManualClock, TestEvents, passphrase, sample_png_bytes, test_session_at};
 use tempfile::TempDir;
 
 const START: &str = "2026-09-25T14:30:05+02:00";
