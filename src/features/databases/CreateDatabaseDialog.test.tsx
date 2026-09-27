@@ -118,6 +118,16 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     expect(onCreate).not.toHaveBeenCalled();
   });
 
+  it("says a confirmation left a character short doesn't match", async () => {
+    const user = userEvent.setup();
+    renderDialog(onCreate);
+    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+
+    await fillPassphrases(user, PASSPHRASE, PASSPHRASE.slice(0, -1));
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
+    expect(createButton()).toBeDisabled();
+  });
+
   it("sends the details with the passphrase read from the field, then clears it", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);

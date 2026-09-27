@@ -222,7 +222,6 @@ function CreateDatabaseForm({
             disabled={submitting}
             error={errors.confirmation ?? checks.errors.confirmation}
             onInput={() => edited("confirmation")}
-            onBlur={checks.check}
           />
         </div>
         <section className="hd-privacy-note" role="note" aria-labelledby="create-db-backups">

@@ -247,7 +247,6 @@ function ChangePassphraseForm({
             required
             error={errors.confirmation ?? checks.errors.confirmation}
             onInput={() => edited("confirmation")}
-            onBlur={checks.check}
           />
         </div>
         {refusal && (

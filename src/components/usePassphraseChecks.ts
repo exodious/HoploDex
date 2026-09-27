@@ -35,7 +35,7 @@ export interface PassphraseChecks {
    * differs from the current one, and the confirmation matches. */
   ready: boolean;
   errors: PassphraseCheckErrors;
-  /** For each field's `onInput`, and the confirmation's `onBlur`. */
+  /** For each field's `onInput`. */
   check: () => void;
   /** Forgets every result, once the fields have been emptied. */
   clear: () => void;
@@ -60,12 +60,9 @@ function inspect(fields: PassphraseCheckFields): { ready: boolean; errors: Passp
     // hint is advice enough, and a half-typed passphrase isn't an error.
     errors.passphrase = PASSPHRASE_TOO_SHORT;
   }
-  // A confirmation still being typed on its way to the passphrase isn't
-  // wrong yet. Once the typing moves elsewhere, a prefix is a mismatch: one
-  // left a character short, or a passphrase lengthened after it matched.
-  const onItsWay =
-    (fields.confirmation.current?.hasFocus() ?? false) && passphrase.startsWith(confirmation);
-  if (confirmation && confirmation !== passphrase && !onItsWay) {
+  // Any difference, a confirmation a character short included: the pause
+  // before it shows is what lets the typing finish.
+  if (confirmation && confirmation !== passphrase) {
     errors.confirmation = PASSPHRASES_DIFFER;
   }
   const ready =

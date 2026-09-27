@@ -12,8 +12,6 @@ export interface PassphraseFieldHandle {
   /** Empties the field and hides the passphrase again. */
   reset(): void;
   focus(): void;
-  /** Whether focus is in the field: its input or its Show/Hide toggle. */
-  hasFocus(): boolean;
 }
 
 export interface PassphraseFieldProps {
@@ -32,8 +30,6 @@ export interface PassphraseFieldProps {
   /** Called on each keystroke, without the value, e.g. to clear an error
    * or check the field again. */
   onInput?: () => void;
-  /** Called when the input loses focus. */
-  onBlur?: () => void;
 }
 
 /** Sent when the screen locks or the computer is going to sleep. */
@@ -58,11 +54,9 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
       id,
       fieldClassName,
       onInput,
-      onBlur,
     },
     ref,
   ) => {
-    const frameRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const strengthRef = useRef<StrengthHintHandle>(null);
     const [shown, setShown] = useState(false);
@@ -79,7 +73,6 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
         read: () => inputRef.current?.value ?? "",
         reset,
         focus: () => inputRef.current?.focus(),
-        hasFocus: () => frameRef.current?.contains(document.activeElement) ?? false,
       }),
       [reset],
     );
@@ -87,7 +80,7 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
     useEffect(() => listen<unknown>(CLEAR_PASSPHRASE_FIELDS, reset), [reset]);
 
     return (
-      <div ref={frameRef} className={["hd-passphrase", fieldClassName].filter(Boolean).join(" ")}>
+      <div className={["hd-passphrase", fieldClassName].filter(Boolean).join(" ")}>
         <TextField
           ref={inputRef}
           id={id}
@@ -106,7 +99,6 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
             strengthRef.current?.update();
             onInput?.();
           }}
-          onBlur={onBlur}
           trailing={
             // Says what it will do, and so what is showing now: "Hide" while
             // the passphrase is readable.

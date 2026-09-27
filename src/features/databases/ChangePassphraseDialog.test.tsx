@@ -113,7 +113,12 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
     ["", NEW, NEW, null],
     [CURRENT, "too short", "too short", ["New passphrase", "Use at least 12 characters."]],
     [CURRENT, NEW, `${NEW}!`, ["Confirm new passphrase", "The passphrases don't match."]],
-    [CURRENT, "different words", "different", null],
+    [
+      CURRENT,
+      "different words",
+      "different",
+      ["Confirm new passphrase", "The passphrases don't match."],
+    ],
     [
       CURRENT,
       CURRENT,
@@ -132,7 +137,7 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
         expect(await screen.findByText(message)).toBeInTheDocument();
         expect(screen.getByLabelText(field)).toHaveAccessibleDescription(message);
       } else {
-        // An empty field, or a confirmation still on its way, isn't an error.
+        // An empty field isn't an error.
         await act(() => new Promise((resolve) => setTimeout(resolve, PASSPHRASE_CHECK_DELAY_MS)));
         expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       }
@@ -156,27 +161,26 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
     expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
   });
 
-  it("says a confirmation left short doesn't match, once the typing moves on", async () => {
+  it("says a confirmation left short doesn't match after a pause, with focus still in it", async () => {
     renderDialog();
-    const user = await type(CURRENT, NEW, NEW.slice(0, -1));
-    // Still in the confirmation: it may be on its way.
-    await act(() => new Promise((resolve) => setTimeout(resolve, PASSPHRASE_CHECK_DELAY_MS)));
-    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+    await type(CURRENT, NEW, NEW.slice(0, -1));
 
-    await user.click(screen.getByLabelText("Current passphrase"));
+    expect(screen.getByLabelText("Confirm new passphrase")).toHaveFocus();
     expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
     expect(screen.getByLabelText("Confirm new passphrase")).toHaveAccessibleDescription(
       "The passphrases don't match.",
     );
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeDisabled();
   });
 
-  it("isn't put off by showing the confirmation while it is being typed", async () => {
+  it("says a confirmation paused partway doesn't match, and clears it once finished", async () => {
     renderDialog();
     const user = await type(CURRENT, NEW, NEW.slice(0, 10));
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
 
-    await user.click(screen.getAllByRole("button", { name: "Show passphrase" })[2]);
-    await act(() => new Promise((resolve) => setTimeout(resolve, PASSPHRASE_CHECK_DELAY_MS)));
+    await user.type(screen.getByLabelText("Confirm new passphrase"), NEW.slice(10));
     expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
   });
 
   it("says the passphrases don't match when the new one changes after they did, every time", async () => {

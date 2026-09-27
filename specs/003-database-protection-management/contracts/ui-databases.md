@@ -38,10 +38,10 @@ facts each text states are required.
     every field is filled in, the new passphrase is long enough (and, for a
     change, differs from the current one) and the confirmation matches.
     Problems show after a 400 ms pause in typing and clear the moment they
-    are put right. A confirmation still being typed on its way to the
-    passphrase (a prefix of it, with focus in the confirmation field) isn't a
-    mismatch; once focus leaves it, or the passphrase is edited, a prefix is
-    one. The length message waits for the confirmation to be started. The same checks run again on submit.
+    are put right. Any confirmation that differs from the passphrase is a
+    mismatch, one a character short included: the pause is what lets the
+    typing finish. The length message waits for the confirmation to be
+    started. The same checks run again on submit.
 - **`Dialog`**, while a database is open, has a lock button ("Lock now",
   lock icon, `title` "Lock now (Ctrl+L)") in its header beside the close
   button, since a dialog covers the top bar's (§4). It does what Ctrl/⌘+L
