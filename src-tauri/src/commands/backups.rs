@@ -752,8 +752,20 @@ pub mod ops {
         let (folder, database_id) = session.inspect(|open| {
             Ok((backup_settings(&open.conn, &open.path)?.folder, open.database_id.clone()))
         })?;
+        delete_backups_in(session, &folder, &database_id)
+    }
+
+    /// Deletes every backup of the database `database_id` in `folder`, as
+    /// [`delete_all_backups`] does: the current location's, or the old one's
+    /// when the location changes (FR-026). Registered as `deleteBackups`, so
+    /// a sleep stops it between files.
+    pub(crate) fn delete_backups_in(
+        session: &Session,
+        folder: &Path,
+        database_id: &str,
+    ) -> Result<BackupsDeleted, CommandError> {
         let operation = session.operations().begin(OperationKind::DeleteBackups, None)?;
-        let listed = backups::list(&folder, &database_id).unwrap_or_default();
+        let listed = backups::list(folder, database_id).unwrap_or_default();
         let total = listed.len() as u64;
         let mut deleted = 0;
         let mut failed_paths = Vec::new();

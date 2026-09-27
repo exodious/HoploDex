@@ -56,6 +56,19 @@ pub struct UnfinishedBackup {
     pub started_at: String,
 }
 
+/// A move of backups to a new location that was under way when HoploDex
+/// stopped (research.md §22).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnfinishedBackupMove {
+    pub database_path: PathBuf,
+    pub database_id: String,
+    /// The old location, where the backups not yet moved still are.
+    pub from_folder: PathBuf,
+    /// The copy being made, if a backup was being copied rather than linked.
+    pub partial_path: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineFile {
@@ -65,6 +78,8 @@ struct MachineFile {
     recent_databases: Vec<RecentEntry>,
     #[serde(default)]
     unfinished_backup: Option<UnfinishedBackup>,
+    #[serde(default)]
+    unfinished_backup_move: Option<UnfinishedBackupMove>,
     #[serde(default)]
     notices: Vec<ChooserNotice>,
 }
@@ -76,6 +91,7 @@ impl MachineFile {
             machine_id: random_hex(16).map_err(io::Error::other)?,
             recent_databases: Vec::new(),
             unfinished_backup: None,
+            unfinished_backup_move: None,
             notices: Vec::new(),
         })
     }
@@ -195,6 +211,17 @@ impl MachineSettings {
         });
     }
 
+    /// Records where the backups of the database at `path` now go, after
+    /// its backup location was saved (research.md §8, §11). Nothing happens
+    /// when `path` isn't in the list.
+    pub fn set_backup_folder(&self, path: &Path, backup_folder: &Path) {
+        self.update(|file| {
+            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
+                entry.backup_folder = Some(backup_folder.to_owned());
+            }
+        });
+    }
+
     /// The recent entry for `path`, if there is one.
     pub fn recent_entry(&self, path: &Path) -> Option<RecentEntry> {
         self.lock().recent_databases.iter().find(|entry| entry.path == path).cloned()
@@ -278,6 +305,27 @@ impl MachineSettings {
 
     pub fn clear_unfinished_backup(&self) {
         self.update(|file| file.unfinished_backup = None);
+    }
+
+    pub fn unfinished_backup_move(&self) -> Option<UnfinishedBackupMove> {
+        self.lock().unfinished_backup_move.clone()
+    }
+
+    pub fn set_unfinished_backup_move(&self, record: UnfinishedBackupMove) {
+        self.update(|file| file.unfinished_backup_move = Some(record));
+    }
+
+    /// Records the copy the move is making now, or none.
+    pub fn set_unfinished_backup_move_partial(&self, partial_path: Option<&Path>) {
+        self.update(|file| {
+            if let Some(record) = &mut file.unfinished_backup_move {
+                record.partial_path = partial_path.map(Path::to_owned);
+            }
+        });
+    }
+
+    pub fn clear_unfinished_backup_move(&self) {
+        self.update(|file| file.unfinished_backup_move = None);
     }
 }
 

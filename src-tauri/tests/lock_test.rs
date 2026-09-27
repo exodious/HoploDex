@@ -21,8 +21,9 @@ use hoplodex_lib::commands::import_export::{ops as import_export, ImportSessionS
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
-    validate_lock_settings_input, BackupOutcome, CloseReason, Draft, DraftKind, DraftMode,
-    IdlePauseReason, LockSettingsInput, OperationKind,
+    validate_lock_settings_input, BackupInfo, BackupLocationInput, BackupOutcome,
+    BackupSettingsInput, BackupSettingsSaved, CloseReason, Draft, DraftKind, DraftMode,
+    ExistingBackupsChoice, IdlePauseReason, LockSettingsInput, OperationKind,
 };
 use hoplodex_lib::platform::WakeWatchdog;
 use hoplodex_lib::services::backups;
@@ -666,6 +667,151 @@ fn a_sleep_stops_deleting_the_backups_between_files() {
         "deleteBackups",
         json!({ "deletedCount": 1 })
     )));
+}
+
+/// "Mine" with three backups in its default folder, each made on its own
+/// day, left open; each several chunks long when `large`. Oldest first.
+fn with_three_backups(world: &World, large: bool) -> Vec<(BackupInfo, Vec<u8>)> {
+    world.create();
+    if large {
+        world.grow(3 * 1024 * 1024);
+    }
+    for _ in 0..3 {
+        world.change();
+        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+        world.open();
+        world.clock.advance(chrono::Duration::days(1));
+    }
+    let mut listed = backups::list(&world.backup_folder(), &world.database_id()).unwrap();
+    listed.reverse();
+    listed
+        .into_iter()
+        .map(|backup| {
+            let bytes = fs::read(&backup.path).unwrap();
+            (backup, bytes)
+        })
+        .collect()
+}
+
+/// Changes the backup location to `folder`, doing `choice` with the
+/// backups at the old one.
+fn change_location(
+    world: &World,
+    folder: &Path,
+    choice: ExistingBackupsChoice,
+) -> Result<BackupSettingsSaved, CommandError> {
+    databases::update_backup_settings(
+        &world.session,
+        &world.machine,
+        &BackupSettingsInput {
+            enabled: true,
+            keep_count: 5,
+            location: BackupLocationInput::Custom { path: folder.to_string_lossy().into_owned() },
+            existing_backups: Some(choice),
+        },
+    )
+}
+
+fn saved_backup_folder(world: &World) -> PathBuf {
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    PathBuf::from(status.settings.backups.location.path)
+}
+
+#[test]
+fn a_sleep_stops_moving_the_backups_between_files_and_keeps_the_new_location() {
+    let world = Arc::new(World::new());
+    let made = with_three_backups(&world, true);
+    let new = world.dir.path().join("elsewhere");
+    fs::create_dir(&new).unwrap();
+    let old = world.backup_folder();
+    // Copied, as between drives, and stopped midway through the second.
+    let _copying = backups::testing::fail_hard_links();
+    let first = made[0].0.size_bytes * 2;
+    let sleeper = world.sleep_at("backups_move:progress", move |payload| {
+        payload["processed"].as_u64().unwrap() > first
+    });
+
+    let moved = change_location(&world, &new, ExistingBackupsChoice::Move);
+    join(&sleeper);
+    world.events.on_event(|_, _| {});
+
+    let stopped = moved.unwrap_err();
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    let left = json!({ "leftBehindCount": 2, "folder": old.to_string_lossy() });
+    assert_eq!(
+        stopped.details.as_deref(),
+        Some(&json!({ "operation": "moveBackups", "leftBehindCount": 2,
+                      "folder": old.to_string_lossy() }))
+    );
+    assert_eq!(fs::read(new.join(&made[0].0.file_name)).unwrap(), made[0].1, "moved");
+    for (backup, bytes) in &made[1..] {
+        assert_eq!(&fs::read(&backup.path).unwrap(), bytes, "{} kept", backup.file_name);
+        assert!(!new.join(&backup.file_name).exists());
+    }
+    let partials: Vec<_> = fs::read_dir(&new)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name.to_string_lossy().ends_with(".partial"))
+        .collect();
+    assert!(partials.is_empty(), "the partial copy is removed");
+    assert!(world.notices().contains(&stopped_notice(&world, "moveBackups", left)));
+    assert_eq!(world.machine.unfinished_backup_move(), None);
+    world.open();
+    assert_eq!(saved_backup_folder(&world), new, "the new location is kept");
+}
+
+#[test]
+fn a_sleep_stops_deleting_the_backups_at_a_location_change_and_keeps_the_old_location() {
+    let world = Arc::new(World::new());
+    let made = with_three_backups(&world, false);
+    let new = world.dir.path().join("elsewhere");
+    fs::create_dir(&new).unwrap();
+    let sleeper = world.sleep_at("backups_delete:progress", |payload| payload["processed"] == 1);
+
+    let deleted = change_location(&world, &new, ExistingBackupsChoice::Delete);
+    join(&sleeper);
+    world.events.on_event(|_, _| {});
+
+    let stopped = deleted.unwrap_err();
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    assert_eq!(
+        stopped.details.as_deref(),
+        Some(&json!({ "operation": "deleteBackups", "deletedCount": 1 }))
+    );
+    world.open();
+    assert_eq!(saved_backup_folder(&world), world.backup_folder(), "the old location is kept");
+    assert_eq!(backups::list(&world.backup_folder(), &world.database_id()).unwrap().len(), 2);
+    assert_eq!(made.len(), 3);
+}
+
+#[test]
+fn a_running_move_of_backups_pauses_the_idle_clock() {
+    let world = Arc::new(World::new());
+    with_three_backups(&world, false);
+    let new = world.dir.path().join("elsewhere");
+    fs::create_dir(&new).unwrap();
+    let locked = Arc::new(AtomicBool::new(false));
+    let (during, locked_during) = (Arc::clone(&world), Arc::clone(&locked));
+    world.events.on_event(move |name, payload| {
+        if name == "backups_move:progress" && payload["processed"] == 0 {
+            assert_eq!(
+                during.session.operations().running_kind(),
+                Some(OperationKind::MoveBackups)
+            );
+            during.minutes(30);
+            locked_during.store(during.tick(), Ordering::SeqCst);
+        }
+    });
+
+    change_location(&world, &new, ExistingBackupsChoice::Move).unwrap();
+    world.events.on_event(|_, _| {});
+
+    assert!(!locked.load(Ordering::SeqCst), "no idle lock while the move runs");
+    assert!(!world.tick(), "the idle time starts again once it has finished");
+    world.minutes(9);
+    assert!(!world.tick());
+    world.minutes(1);
+    assert!(world.tick());
 }
 
 // --- A sleep during a close already under way (FR-037, FR-038) -------------

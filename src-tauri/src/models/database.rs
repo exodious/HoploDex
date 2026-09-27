@@ -35,6 +35,7 @@ text_enum!(OperationKind {
     Import => "import",
     Export => "export",
     DeleteBackups => "deleteBackups",
+    MoveBackups => "moveBackups",
 });
 
 text_enum!(DraftKind {
@@ -86,6 +87,23 @@ text_enum!(BackupLocationKind {
 text_enum!(PendingAction {
     Resume => "resume",
     Discard => "discard",
+});
+
+// What to do with the backups at the old location when it changes (FR-026,
+// research.md §22).
+text_enum!(ExistingBackupsChoice {
+    Move => "move",
+    Leave => "leave",
+    Delete => "delete",
+});
+
+// Why a move of backups left some at the old location (FR-026). `NameTaken`
+// only when taken names were the only reason.
+text_enum!(LeftBehindReason {
+    NameTaken => "nameTaken",
+    LocationUnavailable => "locationUnavailable",
+    InsufficientSpace => "insufficientSpace",
+    Io => "io",
 });
 
 // Why the idle clock is paused from the frontend (research.md §15). Running
@@ -145,6 +163,18 @@ pub enum ChooserNotice {
         imported_count: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         deleted_count: Option<u64>,
+        /// A move of backups (FR-026): how many are still in `folder`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        left_behind_count: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        folder: Option<String>,
+    },
+    /// A move of backups cut short by a crash or a forced quit (research.md
+    /// §22): `count` of them are still in `folder`.
+    BackupsLeftBehind {
+        database_path: String,
+        folder: String,
+        count: u64,
     },
     PendingChangesLost {
         database_path: String,
@@ -348,6 +378,38 @@ pub struct BackupSettingsInput {
     pub enabled: bool,
     pub keep_count: i64,
     pub location: BackupLocationInput,
+    /// For a changed location with backups at the old one: what to do with
+    /// them. Absent until the user has been asked (research.md §22).
+    #[serde(default)]
+    pub existing_backups: Option<ExistingBackupsChoice>,
+}
+
+/// Backups a move left at the old location, and why (FR-026).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeftBehind {
+    pub count: u64,
+    pub folder: String,
+    pub reason: LeftBehindReason,
+}
+
+/// What was done with the backups at the old location (FR-026).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "action", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ExistingBackupsOutcome {
+    Leave,
+    Delete { deleted_count: u64 },
+    Move { moved_count: u64, left_behind: Option<LeftBehind> },
+}
+
+/// `update_backup_settings`'s answer: the saved settings, and what was done
+/// with the backups at the old location, `None` when the location did not
+/// change or no backups were there.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupSettingsSaved {
+    pub settings: CollectionSettings,
+    pub existing_backups: Option<ExistingBackupsOutcome>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

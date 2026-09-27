@@ -6,8 +6,9 @@
 //!
 //! Feature 003 adds opening a database, key derivation included, to the 1s
 //! action budget (SC-003), the first progress event of a backup, a
-//! passphrase change and a restore to the 100ms feedback budget (SC-005),
-//! and the take-over check every save makes (research.md §6).
+//! passphrase change, a restore and a move of backups to the 100ms feedback
+//! budget (SC-005), and the take-over check every save makes (research.md
+//! §6).
 
 mod support;
 
@@ -20,8 +21,11 @@ use hoplodex_lib::commands::databases::ops::{self as databases_ops, Unlock};
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
-use hoplodex_lib::models::database::{BackupOutcome, CloseReason};
+use hoplodex_lib::models::database::{
+    BackupLocationInput, BackupOutcome, BackupSettingsInput, CloseReason, ExistingBackupsChoice,
+};
 use hoplodex_lib::models::firearm::{FirearmInput, Origin};
+use hoplodex_lib::services::backups;
 use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
@@ -499,7 +503,7 @@ fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_deriv
 }
 
 #[test]
-fn backup_passphrase_change_and_restore_each_report_progress_within_100ms() {
+fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
     let new_passphrase = "a much longer passphrase of several words";
@@ -534,6 +538,28 @@ fn backup_passphrase_change_and_restore_each_report_progress_within_100ms() {
     });
     restored.unwrap();
     assert_progress_in_time("restore:progress", waited);
+
+    // Moving the backups (the close's and the restore's) to a new location,
+    // by the slower copy-and-verify path, as between drives (FR-026).
+    let new_folder = large.dir.path().join("elsewhere");
+    std::fs::create_dir(&new_folder).unwrap();
+    let _copying = backups::testing::fail_hard_links();
+    let (moved, waited) = large.first_event_after("backups_move:progress", || {
+        databases_ops::update_backup_settings(
+            &large.session,
+            &large.machine,
+            &BackupSettingsInput {
+                enabled: true,
+                keep_count: 5,
+                location: BackupLocationInput::Custom {
+                    path: new_folder.to_string_lossy().into_owned(),
+                },
+                existing_backups: Some(ExistingBackupsChoice::Move),
+            },
+        )
+    });
+    assert_eq!(serde_json::to_value(moved.unwrap().existing_backups).unwrap()["movedCount"], 2);
+    assert_progress_in_time("backups_move:progress", waited);
 }
 
 #[test]

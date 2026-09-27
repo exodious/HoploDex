@@ -190,6 +190,55 @@ impl CommandError {
             .with_details(Some(details))
     }
 
+    /// FR-037: a sleep stopped a move of backups (FR-026), with
+    /// `left_behind_count` of them still in `folder`. The new location is
+    /// kept.
+    pub fn move_stopped(left_behind_count: u64, folder: &Path) -> Self {
+        Self::new("OPERATION_STOPPED", "The operation was stopped before it finished.")
+            .with_details(Some(json!({
+                "operation": OperationKind::MoveBackups,
+                "leftBehindCount": left_behind_count,
+                "folder": folder.to_string_lossy(),
+            })))
+    }
+
+    /// FR-026: the backup location changed and `count` backups of the
+    /// database, `total_bytes` in all, are at the old one. Nothing was
+    /// saved; the UI asks what to do with them and sends the settings again.
+    pub fn backups_at_old_location(folder: &Path, count: u64, total_bytes: u64) -> Self {
+        Self::new(
+            "BACKUPS_AT_OLD_LOCATION",
+            "There are backups at the old location. Choose what to do with them.",
+        )
+        .with_details(Some(json!({
+            "folder": folder.to_string_lossy(),
+            "count": count,
+            "totalBytes": total_bytes,
+        })))
+    }
+
+    /// FR-026: some backups at the old location couldn't be deleted, so the
+    /// old location was kept, and they are still the database's.
+    pub fn backups_not_all_deleted(deleted_count: u64, failed_paths: &[String]) -> Self {
+        Self::new(
+            "BACKUPS_NOT_ALL_DELETED",
+            "Some backups couldn't be deleted, so the backup location wasn't changed.",
+        )
+        .with_details(Some(json!({ "deletedCount": deleted_count, "failedPaths": failed_paths })))
+    }
+
+    /// FR-026: the old backup location can't be read, so its backups can't
+    /// be moved or deleted from here. Nothing was saved; leaving them is
+    /// the only choice.
+    pub fn old_backup_location_unavailable(folder: &Path) -> Self {
+        Self::new(
+            "OLD_BACKUP_LOCATION_UNAVAILABLE",
+            "The old backup location can't be reached, so its backups can't be moved or deleted \
+             from here.",
+        )
+        .with_details(Some(json!({ "folder": folder.to_string_lossy() })))
+    }
+
     pub fn operation_in_progress(operation: OperationKind) -> Self {
         Self::new(
             "OPERATION_IN_PROGRESS",

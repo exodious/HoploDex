@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::models::database::{ChooserNotice, OperationKind};
-use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackup};
+use hoplodex_lib::services::machine_settings::{
+    MachineSettings, UnfinishedBackup, UnfinishedBackupMove,
+};
 use tempfile::TempDir;
 
 fn names(settings: &MachineSettings) -> Vec<String> {
@@ -115,6 +117,8 @@ fn notices_are_returned_once() {
         operation: OperationKind::Import,
         imported_count: Some(12),
         deleted_count: None,
+        left_behind_count: None,
+        folder: None,
     };
     settings.push_notice(stopped.clone());
 
@@ -135,6 +139,8 @@ fn the_file_uses_the_documented_shape() {
         operation: OperationKind::Import,
         imported_count: None,
         deleted_count: None,
+        left_behind_count: None,
+        folder: None,
     });
 
     let json: serde_json::Value =
@@ -173,6 +179,62 @@ fn an_unfinished_backup_survives_a_reload_until_cleared() {
 
     settings.clear_unfinished_backup();
     assert_eq!(MachineSettings::load(config.path()).unwrap().unfinished_backup(), None);
+}
+
+#[test]
+fn an_unfinished_backup_move_survives_a_reload_until_cleared() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let record = UnfinishedBackupMove {
+        database_path: "/data/A.hoplodex".into(),
+        database_id: "a".repeat(32),
+        from_folder: "/data/HoploDex backups".into(),
+        partial_path: None,
+    };
+    let partial = Path::new("/usb/backups/A 2026-09-26 101500 aaaaaaaa.hoplodex.partial");
+
+    settings.set_unfinished_backup_move(record.clone());
+    assert_eq!(
+        MachineSettings::load(config.path()).unwrap().unfinished_backup_move(),
+        Some(record.clone())
+    );
+    settings.set_unfinished_backup_move_partial(Some(partial));
+    let json: serde_json::Value =
+        serde_json::from_slice(&fs::read(config.path().join("machine.json")).unwrap()).unwrap();
+    assert_eq!(
+        json["unfinishedBackupMove"],
+        serde_json::json!({
+            "databasePath": "/data/A.hoplodex",
+            "databaseId": "a".repeat(32),
+            "fromFolder": "/data/HoploDex backups",
+            "partialPath": partial,
+        })
+    );
+    settings.set_unfinished_backup_move_partial(None);
+    assert_eq!(
+        MachineSettings::load(config.path()).unwrap().unfinished_backup_move(),
+        Some(record)
+    );
+
+    settings.clear_unfinished_backup_move();
+    assert_eq!(MachineSettings::load(config.path()).unwrap().unfinished_backup_move(), None);
+}
+
+#[test]
+fn saving_a_backup_location_updates_only_the_cached_folder() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let a = Path::new("/data/A.hoplodex");
+    settings.touch_recent(a, "A", &"a".repeat(32), Path::new("/data/HoploDex backups"));
+    let before = settings.recent_entry(a).unwrap();
+
+    settings.set_backup_folder(a, Path::new("/usb/backups"));
+    settings.set_backup_folder(Path::new("/not/listed.hoplodex"), Path::new("/x"));
+
+    let after = MachineSettings::load(config.path()).unwrap().recent();
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].backup_folder.as_deref(), Some(Path::new("/usb/backups")));
+    assert_eq!(after[0].last_opened_at, before.last_opened_at);
 }
 
 // --- User Story 2 -----------------------------------------------------------

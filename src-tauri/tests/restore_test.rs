@@ -18,6 +18,7 @@ use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::db::cipher;
 use hoplodex_lib::models::database::{
     BackupInfo, BackupLocationInput, BackupSettingsInput, CloseReason, DatabaseStatus,
+    ExistingBackupsChoice,
 };
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
@@ -156,9 +157,13 @@ impl World {
     }
 
     fn set_backups(&self, enabled: bool, keep_count: i64, location: BackupLocationInput) {
+        // Backups already at an old location stay there, as before FR-026
+        // asked about them; backup_location_change_test covers the rest.
+        let existing_backups = Some(ExistingBackupsChoice::Leave);
         databases::update_backup_settings(
             &self.session,
-            &BackupSettingsInput { enabled, keep_count, location },
+            &self.machine,
+            &BackupSettingsInput { enabled, keep_count, location, existing_backups },
         )
         .unwrap();
     }

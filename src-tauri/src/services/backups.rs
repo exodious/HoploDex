@@ -2,7 +2,8 @@
 //! "Backup files"): when one is due, where it goes, what it is called, how
 //! it is copied and stamped, and how many are kept. The close in
 //! `session::lifecycle` and the restore in `commands::backups` make them
-//! through [`make_backup`].
+//! through [`make_backup`]. [`move_backups`] takes them to a new location
+//! when it changes (FR-026, research.md §22).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -13,9 +14,11 @@ use rusqlite::Connection;
 
 use crate::db::random_hex;
 use crate::db::raw_file::RawFile;
-use crate::models::database::{BackupFailureReason, BackupInfo, ChooserNotice, DATABASE_EXTENSION};
+use crate::models::database::{
+    BackupFailureReason, BackupInfo, ChooserNotice, LeftBehindReason, DATABASE_EXTENSION,
+};
 use crate::services::disk_space::{self, InsufficientSpace};
-use crate::services::machine_settings::{MachineSettings, UnfinishedBackup};
+use crate::services::machine_settings::{MachineSettings, UnfinishedBackup, UnfinishedBackupMove};
 use crate::services::secure_delete::{self, WipeControl};
 
 /// The default backup folder's name, in the database's own folder.
@@ -329,7 +332,9 @@ pub fn rotate(
     failed
 }
 
-fn same_path(a: &Path, b: &Path) -> bool {
+/// Whether `a` and `b` name the same file or folder, however they are
+/// spelled (research.md §7).
+pub fn same_path(a: &Path, b: &Path) -> bool {
     a == b || matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
 }
 
@@ -474,14 +479,367 @@ fn remove_partial(partial: &Path) {
 
 /// At launch: a backup recorded as unfinished was cut short by a crash or a
 /// forced quit (US3-7). Its partial file is removed and the chooser says
-/// the changes will be backed up at the next close.
+/// the changes will be backed up at the next close. A move of backups cut
+/// short the same way (research.md §22) has its partial copy removed, and
+/// the chooser says how many backups are still at the old location.
 pub fn sweep_unfinished(machine: &MachineSettings) {
-    let Some(record) = machine.unfinished_backup() else { return };
-    log::warn!("the last backup of {} did not finish", record.database_path.display());
-    remove_partial(&record.partial_path);
-    machine.push_notice(ChooserNotice::BackupFailed {
-        database_path: record.database_path.to_string_lossy().into_owned(),
-        reason: BackupFailureReason::Interrupted,
+    if let Some(record) = machine.unfinished_backup() {
+        log::warn!("the last backup of {} did not finish", record.database_path.display());
+        remove_partial(&record.partial_path);
+        machine.push_notice(ChooserNotice::BackupFailed {
+            database_path: record.database_path.to_string_lossy().into_owned(),
+            reason: BackupFailureReason::Interrupted,
+        });
+        machine.clear_unfinished_backup();
+    }
+    if let Some(record) = machine.unfinished_backup_move() {
+        log::warn!("the move of the backups of {} did not finish", record.database_path.display());
+        if let Some(partial) = &record.partial_path {
+            remove_partial(partial);
+        }
+        let count = list(&record.from_folder, &record.database_id).map_or(0, |left| left.len());
+        if count > 0 {
+            machine.push_notice(ChooserNotice::BackupsLeftBehind {
+                database_path: record.database_path.to_string_lossy().into_owned(),
+                folder: record.from_folder.to_string_lossy().into_owned(),
+                count: count as u64,
+            });
+        }
+        machine.clear_unfinished_backup_move();
+    }
+}
+
+/// The backups of a database a move to a new folder takes, oldest first,
+/// and those it leaves because a file of the same name is already there
+/// (FR-026: nothing is ever overwritten).
+#[derive(Debug, Clone, Default)]
+pub struct MovePlan {
+    pub to_move: Vec<BackupInfo>,
+    pub name_taken: Vec<BackupInfo>,
+}
+
+impl MovePlan {
+    /// The bytes to be moved, which the new folder needs room for.
+    pub fn bytes(&self) -> u64 {
+        self.to_move.iter().map(|backup| backup.size_bytes).sum()
+    }
+
+    /// Every backup of the database in the old folder.
+    pub fn count(&self) -> u64 {
+        (self.to_move.len() + self.name_taken.len()) as u64
+    }
+}
+
+/// Plans moving the backups of `database_id` from `from` to `to`.
+pub fn plan_move(from: &Path, to: &Path, database_id: &str) -> io::Result<MovePlan> {
+    let mut listed = list(from, database_id)?;
+    listed.reverse();
+    let (name_taken, to_move) = listed
+        .into_iter()
+        .partition(|backup| fs::symlink_metadata(to.join(&backup.file_name)).is_ok());
+    Ok(MovePlan { to_move, name_taken })
+}
+
+/// One move of a database's backups to its new location.
+pub struct MoveJob<'a> {
+    pub machine: &'a MachineSettings,
+    pub database_path: &'a Path,
+    pub database_id: &'a str,
+    pub from: &'a Path,
+    pub to: &'a Path,
+    pub plan: &'a MovePlan,
+    /// Asked between files and between chunks: `true` stops the move.
+    pub cancel: &'a dyn Fn() -> bool,
+    /// `(bytes processed, total)`, first with nothing processed. Copying
+    /// and reading back each count, so `total` is twice the bytes to move.
+    pub progress: &'a mut dyn FnMut(u64, u64),
+    /// How many backups are still in `from`, after each one moved.
+    pub not_yet_moved: &'a dyn Fn(u64),
+}
+
+/// How a move ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moved {
+    pub moved: u64,
+    /// Still in the old folder.
+    pub left_behind: u64,
+    /// Why some were left behind; `None` when none were, or when stopped.
+    pub reason: Option<LeftBehindReason>,
+    /// A sleep stopped it (FR-037).
+    pub stopped: bool,
+}
+
+/// Why one backup was not moved.
+enum MoveFailure {
+    Stopped,
+    NameTaken,
+    Io(io::Error),
+}
+
+impl From<io::Error> for MoveFailure {
+    fn from(err: io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<CopyError> for MoveFailure {
+    fn from(err: CopyError) -> Self {
+        match err {
+            CopyError::Stopped => Self::Stopped,
+            CopyError::Io(err) => Self::Io(err),
+        }
+    }
+}
+
+/// Moves the planned backups, oldest first (FR-026, research.md §22). Each
+/// is hard-linked into the new folder and its old name removed; when
+/// linking fails (another drive, or a filesystem without hard links) it is
+/// copied to `<name>.partial`, read back and compared byte for byte with
+/// the original, renamed to its name, and only then is the original
+/// securely deleted. A copy that is stopped or fails is removed and its
+/// original kept. A name taken at the new folder is skipped and counted as
+/// left behind. The move ends at the first failure, and never rotates.
+/// While it runs, `machine.json` records it, for the sweep after a crash.
+pub fn move_backups(job: MoveJob) -> Moved {
+    let total = job.plan.bytes() * 2;
+    let mut processed = 0;
+    (job.progress)(0, total);
+    let mut left_behind = job.plan.count();
+    (job.not_yet_moved)(left_behind);
+    job.machine.set_unfinished_backup_move(UnfinishedBackupMove {
+        database_path: job.database_path.to_owned(),
+        database_id: job.database_id.to_owned(),
+        from_folder: job.from.to_owned(),
+        partial_path: None,
     });
-    machine.clear_unfinished_backup();
+    let mut name_taken = !job.plan.name_taken.is_empty();
+    let mut ended = None;
+    for backup in &job.plan.to_move {
+        if (job.cancel)() {
+            ended = Some(MoveFailure::Stopped);
+            break;
+        }
+        let src = Path::new(&backup.path);
+        let dst = job.to.join(&backup.file_name);
+        let base = processed;
+        let mut file_progress = |done: u64| (job.progress)(base + done, total);
+        match move_one(job.machine, src, &dst, backup.size_bytes, job.cancel, &mut file_progress) {
+            Ok(()) => {
+                left_behind -= 1;
+                (job.not_yet_moved)(left_behind);
+            }
+            Err(MoveFailure::NameTaken) => name_taken = true,
+            Err(failure) => {
+                ended = Some(failure);
+                break;
+            }
+        }
+        processed = base + backup.size_bytes * 2;
+        (job.progress)(processed, total);
+    }
+    job.machine.clear_unfinished_backup_move();
+    let moved = job.plan.count() - left_behind;
+    let (reason, stopped) = match ended {
+        Some(MoveFailure::Stopped) => (None, true),
+        Some(MoveFailure::Io(err)) => {
+            log::error!("the move of backups to {} failed: {err}", job.to.display());
+            (Some(failure_reason(job.to, &err)), false)
+        }
+        Some(MoveFailure::NameTaken) | None => {
+            (name_taken.then_some(LeftBehindReason::NameTaken), false)
+        }
+    };
+    Moved { moved, left_behind, reason, stopped }
+}
+
+/// Why a move failed, as the user is told: the new folder gone, full, or
+/// anything else.
+fn failure_reason(to: &Path, err: &io::Error) -> LeftBehindReason {
+    if !to.is_dir() {
+        LeftBehindReason::LocationUnavailable
+    } else if is_disk_full(err) {
+        LeftBehindReason::InsufficientSpace
+    } else {
+        LeftBehindReason::Io
+    }
+}
+
+/// The OS said the disk is full. `io::ErrorKind::StorageFull` is newer
+/// than the crate's minimum Rust version, so its codes are matched here:
+/// `ENOSPC` on Linux and macOS, `ERROR_HANDLE_DISK_FULL` and
+/// `ERROR_DISK_FULL` on Windows.
+fn is_disk_full(err: &io::Error) -> bool {
+    #[cfg(unix)]
+    const DISK_FULL: &[i32] = &[28];
+    #[cfg(windows)]
+    const DISK_FULL: &[i32] = &[39, 112];
+    err.raw_os_error().is_some_and(|code| DISK_FULL.contains(&code))
+}
+
+/// Moves one backup of `len` bytes from `src` to `dst`, reporting its own
+/// progress from 0 to twice `len`.
+fn move_one(
+    machine: &MachineSettings,
+    src: &Path,
+    dst: &Path,
+    len: u64,
+    cancel: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(u64),
+) -> Result<(), MoveFailure> {
+    if !testing::hard_links_fail() {
+        match fs::hard_link(src, dst) {
+            Ok(()) => {
+                // The same file under two names: taking the new one away
+                // again undoes it.
+                if let Err(err) = fs::remove_file(src) {
+                    let _ = fs::remove_file(dst);
+                    return Err(err.into());
+                }
+                sync_folder(dst);
+                sync_folder(src);
+                progress(len * 2);
+                return Ok(());
+            }
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+                return Err(MoveFailure::NameTaken)
+            }
+            Err(err) => log::info!("copying {} instead of linking it: {err}", src.display()),
+        }
+    }
+    // The original must be deletable once copied, or the move stops here
+    // with nothing done.
+    OpenOptions::new().write(true).open(src)?;
+    let mut partial = dst.as_os_str().to_owned();
+    partial.push(PARTIAL_SUFFIX);
+    let partial = PathBuf::from(partial);
+    machine.set_unfinished_backup_move_partial(Some(&partial));
+    let copied = copy_and_verify(src, &partial, dst, cancel, progress);
+    if copied.is_err() {
+        remove_partial(&partial);
+    }
+    machine.set_unfinished_backup_move_partial(None);
+    copied?;
+    // The copy is verified and in place. If the original can't be deleted
+    // now, both are kept: nothing is lost, and the move stops.
+    secure_delete::secure_delete_whole_file(
+        src,
+        WipeControl { progress: None, cancel: Some(cancel) },
+    )?;
+    sync_folder(src);
+    Ok(())
+}
+
+/// Copies `src` to `partial`, reads it back comparing it byte for byte
+/// with `src`, then renames it to `dst`, which must not be taken.
+fn copy_and_verify(
+    src: &Path,
+    partial: &Path,
+    dst: &Path,
+    cancel: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(u64),
+) -> Result<(), MoveFailure> {
+    let source = File::open(src)?;
+    let len = ReadAt::size(&source)?;
+    copy_chunked(&source, partial, cancel, &mut |done, _| progress(done))?;
+    testing::after_copy(partial);
+    let copy = File::open(partial)?;
+    if ReadAt::size(&copy)? != len {
+        return Err(MoveFailure::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the copy is not the size of the original",
+        )));
+    }
+    let mut expected = vec![0u8; COPY_CHUNK as usize];
+    let mut found = vec![0u8; COPY_CHUNK as usize];
+    let mut done = 0;
+    while done < len {
+        if cancel() {
+            return Err(MoveFailure::Stopped);
+        }
+        let n = (len - done).min(COPY_CHUNK) as usize;
+        source.read_exact_at(&mut expected[..n], done)?;
+        copy.read_exact_at(&mut found[..n], done)?;
+        if expected[..n] != found[..n] {
+            return Err(MoveFailure::Io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the copy differs from the original",
+            )));
+        }
+        done += n as u64;
+        progress(len + done);
+    }
+    drop(copy);
+    match finalize(partial, dst) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Err(MoveFailure::NameTaken),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Makes a rename or removal in the folder holding `path` durable.
+fn sync_folder(path: &Path) {
+    #[cfg(unix)]
+    if let Some(folder) = path.parent() {
+        let _ = File::open(folder).and_then(|dir| dir.sync_all());
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+type AfterCopy = Box<dyn Fn(&Path)>;
+
+thread_local! {
+    static HARD_LINKS_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static AFTER_COPY: std::cell::RefCell<Option<AfterCopy>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Lets the tests take a move of backups down the copy path on one drive,
+/// and tamper with a copy before it is verified.
+#[doc(hidden)]
+pub mod testing {
+    use super::*;
+
+    /// Undoes [`fail_hard_links`] when dropped.
+    pub struct HardLinksFailGuard(());
+
+    impl Drop for HardLinksFailGuard {
+        fn drop(&mut self) {
+            HARD_LINKS_FAIL.with(|fail| fail.set(false));
+        }
+    }
+
+    /// Until the guard is dropped, moves on this thread copy instead of
+    /// linking, as between drives.
+    pub fn fail_hard_links() -> HardLinksFailGuard {
+        HARD_LINKS_FAIL.with(|fail| fail.set(true));
+        HardLinksFailGuard(())
+    }
+
+    pub(super) fn hard_links_fail() -> bool {
+        HARD_LINKS_FAIL.with(|fail| fail.get())
+    }
+
+    /// Undoes [`after_each_copy`] when dropped.
+    pub struct AfterCopyGuard(());
+
+    impl Drop for AfterCopyGuard {
+        fn drop(&mut self) {
+            AFTER_COPY.with(|hook| hook.borrow_mut().take());
+        }
+    }
+
+    /// Until the guard is dropped, `hook` sees each copy a move on this
+    /// thread makes, before it is verified.
+    pub fn after_each_copy(hook: impl Fn(&Path) + 'static) -> AfterCopyGuard {
+        AFTER_COPY.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+        AfterCopyGuard(())
+    }
+
+    pub(super) fn after_copy(partial: &Path) {
+        AFTER_COPY.with(|hook| {
+            if let Some(hook) = hook.borrow().as_ref() {
+                hook(partial);
+            }
+        });
+    }
 }

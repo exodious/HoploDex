@@ -10,9 +10,10 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::CommandError;
 use crate::models::database::{
-    BackupLocationInput, BackupSettingsInput, ChooserState, CloseOutcome, CloseReason,
-    CollectionSettings, DatabaseStatus, Draft, IdlePauseReason, LockSettingsInput, NoteKind,
-    PassphraseSaved, PendingAction, PendingResolved, RecentDatabase, RecentRemoved,
+    BackupLocationInput, BackupSettingsInput, BackupSettingsSaved, ChooserState, CloseOutcome,
+    CloseReason, CollectionSettings, DatabaseStatus, Draft, ExistingBackupsChoice, IdlePauseReason,
+    LockSettingsInput, NoteKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
+    RecentRemoved,
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
@@ -25,18 +26,22 @@ pub mod ops {
     use std::path::{Path, PathBuf};
 
     use rusqlite::Connection;
+    use serde_json::json;
 
+    use crate::commands::backups::ops::delete_backups_in;
     use crate::commands::CommandError;
     use crate::db;
     use crate::models::database::{
         validate_backup_settings_input, validate_create_database_input,
         validate_lock_settings_input, BackupLocation, BackupLocationKind, BackupSettings,
-        BackupSettingsInput, ChooserState, CloseOutcome, CloseReason, CollectionSettings,
-        DatabaseNotes, DatabaseStatus, Draft, IdlePauseReason, LockSettings, LockSettingsInput,
+        BackupSettingsInput, BackupSettingsSaved, ChooserState, CloseOutcome, CloseReason,
+        CollectionSettings, DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice,
+        ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput,
         NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
         RecentRemoved, SuggestedLocation,
     };
-    use crate::services::backups;
+    use crate::services::backups::{self, MoveJob};
+    use crate::services::disk_space;
     use crate::services::machine_settings::{MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
     use crate::session::operations::Operations;
@@ -297,10 +302,8 @@ pub mod ops {
         let (path, database_id) = session.inspect(|open| {
             match db::verify_passphrase(&open.conn, passphrase, scratch_dir) {
                 Ok(true) => Ok((open.path.clone(), open.database_id.clone())),
-                Ok(false) => Err(CommandError::passphrase_incorrect(None, None).on_field(
-                    "passphrase",
-                    "That isn't this database's passphrase.".to_owned(),
-                )),
+                Ok(false) => Err(CommandError::passphrase_incorrect(None, None)
+                    .on_field("passphrase", "That isn't this database's passphrase.".to_owned())),
                 Err(err) => {
                     log::error!("could not check the passphrase to save: {err}");
                     Err(CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked."))
@@ -447,21 +450,184 @@ pub mod ops {
     /// Saves the backup settings (FR-024, FR-026), a change to the
     /// collection (FR-025). Lowering the number kept deletes nothing now:
     /// the next backup rotates.
+    ///
+    /// A changed location (its resolved folder, however spelled) with
+    /// backups of the database at the old one saves nothing until
+    /// `existing_backups` says what to do with them (research.md §22):
+    /// `leave` saves; `delete` deletes them as "delete all backups" does and
+    /// saves only when every one went; `move` checks the new folder and its
+    /// space, saves, then moves them. An old folder that can't be read
+    /// allows only `leave`. The recent entry's cached backup folder follows
+    /// every save.
     pub fn update_backup_settings(
         session: &Session,
+        machine: &MachineSettings,
         input: &BackupSettingsInput,
-    ) -> Result<CollectionSettings, CommandError> {
+    ) -> Result<BackupSettingsSaved, CommandError> {
         let location = validate_backup_settings_input(input)?;
-        session.write(|conn| {
-            conn.execute(
-                "UPDATE collection_settings
-                 SET backups_enabled = ?1, backup_keep_count = ?2, backup_location = ?3",
-                rusqlite::params![input.enabled, input.keep_count, location],
-            )
-            .map(|_| ())
-            .map_err(CommandError::from_db)
+        let (database_path, database_id, old_location) = session.inspect(|open| {
+            let old: String = open
+                .conn
+                .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
+                .map_err(CommandError::from_db)?;
+            Ok((open.path.clone(), open.database_id.clone(), old))
         })?;
-        session.inspect(|open| collection_settings(&open.conn, &open.path))
+        let old_folder = backups::resolve_folder(&database_path, &old_location);
+        let new_folder = backups::resolve_folder(&database_path, &location);
+        let change = LocationChange { input, location: &location, database_path: &database_path };
+        let saved = |settings, existing_backups| BackupSettingsSaved { settings, existing_backups };
+        if backups::same_path(&old_folder, &new_folder) {
+            return Ok(saved(change.save(session, machine)?, None));
+        }
+
+        // The default folder sits beside the open database, so it is only
+        // missing when no backup has been made yet; a custom one that is
+        // missing is on a drive that isn't there.
+        let listed = if old_location != "default" && !old_folder.is_dir() {
+            None
+        } else {
+            backups::list(&old_folder, &database_id).ok()
+        };
+        let Some(listed) = listed else {
+            return match input.existing_backups {
+                Some(ExistingBackupsChoice::Leave) => {
+                    Ok(saved(change.save(session, machine)?, Some(ExistingBackupsOutcome::Leave)))
+                }
+                _ => Err(CommandError::old_backup_location_unavailable(&old_folder)),
+            };
+        };
+        if listed.is_empty() {
+            return Ok(saved(change.save(session, machine)?, None));
+        }
+        match input.existing_backups {
+            None => Err(CommandError::backups_at_old_location(
+                &old_folder,
+                listed.len() as u64,
+                listed.iter().map(|backup| backup.size_bytes).sum(),
+            )),
+            Some(ExistingBackupsChoice::Leave) => {
+                Ok(saved(change.save(session, machine)?, Some(ExistingBackupsOutcome::Leave)))
+            }
+            Some(ExistingBackupsChoice::Delete) => {
+                let deleted = delete_backups_in(session, &old_folder, &database_id)?;
+                if !deleted.failed_paths.is_empty() {
+                    return Err(CommandError::backups_not_all_deleted(
+                        deleted.deleted_count,
+                        &deleted.failed_paths,
+                    ));
+                }
+                let outcome =
+                    ExistingBackupsOutcome::Delete { deleted_count: deleted.deleted_count };
+                Ok(saved(change.save(session, machine)?, Some(outcome)))
+            }
+            Some(ExistingBackupsChoice::Move) => {
+                let new_is_default = location == "default";
+                move_existing(
+                    session,
+                    machine,
+                    &change,
+                    &database_id,
+                    &old_folder,
+                    &new_folder,
+                    new_is_default,
+                )
+            }
+        }
+    }
+
+    /// The backup settings a save writes.
+    struct LocationChange<'a> {
+        input: &'a BackupSettingsInput,
+        /// As `backup_location` stores it.
+        location: &'a str,
+        database_path: &'a Path,
+    }
+
+    impl LocationChange<'_> {
+        /// Saves the settings through `session.write`, so a take-over is
+        /// found first, and points the recent entry at the new folder.
+        fn save(
+            &self,
+            session: &Session,
+            machine: &MachineSettings,
+        ) -> Result<CollectionSettings, CommandError> {
+            session.write(|conn| {
+                conn.execute(
+                    "UPDATE collection_settings
+                     SET backups_enabled = ?1, backup_keep_count = ?2, backup_location = ?3",
+                    rusqlite::params![self.input.enabled, self.input.keep_count, self.location],
+                )
+                .map(|_| ())
+                .map_err(CommandError::from_db)
+            })?;
+            machine.set_backup_folder(
+                self.database_path,
+                &backups::resolve_folder(self.database_path, self.location),
+            );
+            session.inspect(|open| collection_settings(&open.conn, &open.path))
+        }
+    }
+
+    /// Moves the backups at the old location to the new one (FR-026,
+    /// research.md §22): the new folder is checked for availability and
+    /// room first, with nothing saved if it fails; then the settings are
+    /// saved, and kept whatever happens to the move, which runs as the
+    /// `moveBackups` operation.
+    fn move_existing(
+        session: &Session,
+        machine: &MachineSettings,
+        change: &LocationChange,
+        database_id: &str,
+        old_folder: &Path,
+        new_folder: &Path,
+        new_is_default: bool,
+    ) -> Result<BackupSettingsSaved, CommandError> {
+        backups::check_location(new_folder, new_is_default).map_err(|problem| {
+            CommandError::backup_location_unavailable(new_folder, problem.as_reason())
+        })?;
+        let plan = backups::plan_move(old_folder, new_folder, database_id)
+            .map_err(|_| CommandError::old_backup_location_unavailable(old_folder))?;
+        disk_space::check_room_for_copy(plan.bytes(), new_folder)?;
+        let operation = session.operations().begin(OperationKind::MoveBackups, None)?;
+        operation.record_folder(old_folder);
+        let settings = change.save(session, machine)?;
+
+        let events = session.events();
+        let moved = backups::move_backups(MoveJob {
+            machine,
+            database_path: change.database_path,
+            database_id,
+            from: old_folder,
+            to: new_folder,
+            plan: &plan,
+            cancel: &|| operation.is_cancelled(),
+            progress: &mut |processed, total| {
+                events.emit(
+                    "backups_move:progress",
+                    json!({
+                        "processed": processed,
+                        "total": total,
+                        "showNow": backups::shows_progress_at_once(total),
+                    }),
+                );
+            },
+            not_yet_moved: &|count| operation.record_done(count),
+        });
+        if moved.stopped {
+            return Err(CommandError::move_stopped(moved.left_behind, old_folder));
+        }
+        let left_behind = moved.reason.map(|reason| LeftBehind {
+            count: moved.left_behind,
+            folder: old_folder.to_string_lossy().into_owned(),
+            reason,
+        });
+        Ok(BackupSettingsSaved {
+            settings,
+            existing_backups: Some(ExistingBackupsOutcome::Move {
+                moved_count: moved.moved,
+                left_behind,
+            }),
+        })
     }
 
     /// Stops the backup the current close is making (FR-027). Its partial
@@ -693,9 +859,15 @@ pub async fn update_backup_settings(
     enabled: bool,
     keep_count: i64,
     location: BackupLocationInput,
+    existing_backups: Option<ExistingBackupsChoice>,
     session: State<'_, Session>,
-) -> Result<CollectionSettings, CommandError> {
-    ops::update_backup_settings(&session, &BackupSettingsInput { enabled, keep_count, location })
+    machine: State<'_, MachineSettings>,
+) -> Result<BackupSettingsSaved, CommandError> {
+    ops::update_backup_settings(
+        &session,
+        &machine,
+        &BackupSettingsInput { enabled, keep_count, location, existing_backups },
+    )
 }
 
 #[tauri::command]

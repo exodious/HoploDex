@@ -18,8 +18,11 @@ struct Running {
     kind: OperationKind,
     cancel: AtomicBool,
     interrupt: Option<InterruptHandle>,
-    /// How far it got: rows imported, backups deleted.
+    /// How far it got: rows imported, backups deleted; for a move of
+    /// backups, how many are not yet moved.
     done: AtomicU64,
+    /// The folder a move of backups is moving them from.
+    folder: Mutex<Option<String>>,
 }
 
 /// Kept in the session.
@@ -43,6 +46,11 @@ impl StoppedOperation {
     /// What it recorded with [`OperationGuard::record_done`].
     pub fn done(&self) -> u64 {
         self.0.done.load(Ordering::SeqCst)
+    }
+
+    /// What it recorded with [`OperationGuard::record_folder`].
+    pub fn folder(&self) -> Option<String> {
+        self.0.folder.lock().expect("operation folder mutex poisoned").clone()
     }
 }
 
@@ -80,6 +88,13 @@ impl OperationGuard<'_> {
     pub fn record_done(&self, done: u64) {
         self.running.done.store(done, Ordering::SeqCst);
     }
+
+    /// Records the folder a move of backups is moving them from, for the
+    /// notice when a sleep stops it.
+    pub fn record_folder(&self, folder: &std::path::Path) {
+        *self.running.folder.lock().expect("operation folder mutex poisoned") =
+            Some(folder.to_string_lossy().into_owned());
+    }
 }
 
 impl Drop for OperationGuard<'_> {
@@ -114,6 +129,7 @@ impl Operations {
             cancel: AtomicBool::new(false),
             interrupt,
             done: AtomicU64::new(0),
+            folder: Mutex::new(None),
         });
         *running = Some(Arc::clone(&registered));
         Ok(OperationGuard { operations: self, running: registered })
