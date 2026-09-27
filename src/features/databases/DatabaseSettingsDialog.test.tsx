@@ -32,6 +32,7 @@ function status(
     name: "Main collection",
     passphraseSaved: false,
     keyringAvailable: false,
+    screenLockSupported: false,
     settings: settings(location),
     pendingChanges: null,
     notes: {
@@ -323,5 +324,140 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
       within(thisComputer()).getByText("Not available: this computer has no keyring service."),
     ).toBeInTheDocument();
     expect(within(thisComputer()).queryByRole("button")).not.toBeInTheDocument();
+  });
+});
+
+describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034, FR-036, FR-038)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockReset()
+      .mockResolvedValue(
+        settings({
+          kind: "default",
+          path: DEFAULT_BACKUPS,
+          available: true,
+        }),
+      );
+    vi.mocked(databasesService.updateLockSettings).mockReset();
+  });
+
+  const locking = () => screen.getByRole("group", { name: "Locking" });
+
+  /** Renders the dialog once its backups have been counted. */
+  async function renderSettled(current: DatabaseStatus = status()) {
+    const props = renderSettings(current);
+    await screen.findByText("There are no backups yet.");
+    return props;
+  }
+
+  it("comes after Backups and before This computer", async () => {
+    await renderSettled();
+
+    const sections = screen.getAllByRole("group");
+    expect(sections.map((section) => section.querySelector("legend")?.textContent)).toEqual([
+      "Backups",
+      "Locking",
+      "This computer",
+    ]);
+  });
+
+  it("offers the idle lock with its duration and says it also covers sleep", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const idle = within(locking()).getByRole("checkbox", {
+      name: "Lock after a period without use",
+    });
+    expect(idle).toBeChecked();
+    expect(
+      within(locking()).getByText(
+        "Also locks when the computer goes to sleep. Turning this off stops both.",
+      ),
+    ).toBeInTheDocument();
+    const minutes = within(locking()).getByRole("combobox", { name: "After" });
+    expect(minutes).toHaveTextContent("10 minutes");
+    expect(minutes.closest(".hd-field")).toHaveClass("hd-field--third");
+
+    await user.click(minutes);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "1 minute",
+      "2 minutes",
+      "5 minutes",
+      "10 minutes",
+      "15 minutes",
+      "30 minutes",
+      "1 hour",
+      "2 hours",
+      "4 hours",
+    ]);
+  });
+
+  it("enables the duration only while the idle lock is on", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(
+      within(locking()).getByRole("checkbox", { name: "Lock after a period without use" }),
+    );
+
+    expect(within(locking()).getByRole("combobox", { name: "After" })).toBeDisabled();
+  });
+
+  it("saves the lock settings with Save", async () => {
+    const user = userEvent.setup();
+    const props = renderSettings({ ...status(), screenLockSupported: true });
+
+    await user.click(within(locking()).getByRole("combobox", { name: "After" }));
+    await user.click(screen.getByRole("option", { name: "30 minutes" }));
+    await user.click(
+      within(locking()).getByRole("checkbox", {
+        name: "Lock when the computer's screen locks",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(databasesService.updateLockSettings).toHaveBeenCalledWith({
+        idleEnabled: true,
+        idleMinutes: 30,
+        onScreenLock: true,
+      }),
+    );
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("shows the screen-lock option as unavailable where the screen lock isn't reported", async () => {
+    await renderSettled();
+
+    const onScreenLock = within(locking()).getByRole("checkbox", {
+      name: "Lock when the computer's screen locks",
+    });
+    expect(onScreenLock).toBeDisabled();
+    expect(onScreenLock).not.toBeChecked();
+    expect(
+      within(locking()).getByText(
+        "Not available: this computer doesn't tell applications when the screen locks.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("states what locking does", async () => {
+    await renderSettled();
+
+    expect(locking()).toHaveTextContent(
+      "Locking closes Main collection: its data is cleared from memory, opened document copies are deleted, a backup is made if one is due, and it's released for other computers.",
+    );
+    expect(locking()).not.toHaveTextContent("anyone using this computer account");
+  });
+
+  it("says a saved passphrase reopens a locked database (FR-036)", async () => {
+    await renderSettled({ ...status(), passphraseSaved: true });
+
+    expect(locking()).toHaveTextContent(
+      "Because the passphrase is saved on this computer, anyone using this computer account can reopen Main collection after it locks.",
+    );
   });
 });

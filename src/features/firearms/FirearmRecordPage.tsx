@@ -10,6 +10,7 @@ import { firearmName, useCollection } from "../app/collectionStore";
 import { FirearmName } from "../app/FirearmName";
 import { useNavigation } from "../app/navigation";
 import { RunningHead } from "../app/RunningHead";
+import { peekResumedDraft } from "../session/usePendingDraft";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { CoverageDialog } from "../insurance/CoverageDialog";
 import { coverageStatus, expiryLabel } from "../insurance/coverage";
@@ -70,6 +71,16 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       cancelled = true;
     };
   }, [id, revision]);
+
+  // Pending changes the user resumed for this firearm reopen their form
+  // (FR-039), which takes them as its unsaved input.
+  const loadedId = firearm?.id;
+  useEffect(() => {
+    const resumed = peekResumedDraft();
+    if (loadedId === undefined || resumed?.kind !== "firearm" || resumed.targetId !== loadedId)
+      return;
+    if (resumed.mode !== "add") setDialog(resumed.mode);
+  }, [loadedId]);
 
   if (loadError) {
     return (

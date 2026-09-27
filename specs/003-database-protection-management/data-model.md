@@ -185,13 +185,21 @@ OpenDatabase {
   pending_unresolved: bool      // collection commands refused while true (FR-039)
   storage_lost: bool            // set when the file became unreachable; every later
                                 //  write is refused with DATABASE_UNAVAILABLE (research §6)
+  lock_settings                 // the file's lock settings, for the idle clock
 }
+
+Closing { normal: path of a close finishing on its own thread (its backup),
+          immediate: an immediate close from its first step to its last }
+  // from an immediate close's first step, every command is refused with
+  // DATABASE_CLOSED; a sleep during a normal close hands it the rest
 
 Operations registry: at most one running long operation
   { kind: backup | passphraseChange | restore | import | export | deleteBackups,
     cancel: AtomicBool, interrupt: Option<InterruptHandle> }
 
-IdleClock { last_input_wall: SystemTime, paused_by: set<operation | nativeDialog> }
+IdleClock { settings (None while nothing is open), last_input (wall clock),
+            paused_by: set<nativeDialog> }   // a registered operation also pauses it
+// Both are held by the Session.
 ```
 
 The backend never holds a passphrase between commands (FR-007, research §1).
@@ -218,7 +226,9 @@ The backend never holds a passphrase between commands (FR-007, research §1).
       │   stop operation → emit session:closed → save draft as   │
       │   pending (+ clear marker in the same write; the marker  │
       │   alone when no draft is staged) → close                 │
-      │   conn → delete document copies → remove partial files   │
+      │   conn → delete document copies → the stopped operation  │
+      │   removes its partial files as it unwinds, and the close │
+      │   waits for it to report how far it got                  │
       ├─────────────────────────────────────────────────────────┘
       │
       │   TakenOver: fingerprint mismatch before a write or at close

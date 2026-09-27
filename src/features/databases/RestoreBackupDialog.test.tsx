@@ -38,6 +38,7 @@ function renderDialog(props: Partial<RestoreBackupDialogProps> = {}) {
     openDatabase: vi.fn(),
     createDatabase: vi.fn(),
     closeDatabase: vi.fn(),
+    lockDatabase: vi.fn(),
     refreshStatus: vi.fn(),
     dismissNote: vi.fn(),
     restoreBackup: vi.fn().mockResolvedValue(undefined),

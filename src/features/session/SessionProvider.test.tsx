@@ -43,6 +43,7 @@ function status(diskEncryption: boolean): DatabaseStatus {
     name: "Main collection",
     passphraseSaved: false,
     keyringAvailable: false,
+    screenLockSupported: false,
     settings: {
       backups: {
         enabled: true,

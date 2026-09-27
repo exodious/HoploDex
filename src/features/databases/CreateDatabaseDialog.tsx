@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { withIdlePaused } from "../session/useIdleActivity";
 import { Button, Checkbox, Dialog, Icon, PassphraseField, TextField } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
@@ -78,12 +79,14 @@ function CreateDatabaseForm({
   const backups = trimmedFolder ? joinPath(trimmedFolder, "HoploDex backups") : null;
 
   async function chooseFolder() {
-    const selected = await openFolderDialog({
-      directory: true,
-      multiple: false,
-      title: "Choose where to keep the database",
-      defaultPath: trimmedFolder || undefined,
-    });
+    const selected = await withIdlePaused(() =>
+      openFolderDialog({
+        directory: true,
+        multiple: false,
+        title: "Choose where to keep the database",
+        defaultPath: trimmedFolder || undefined,
+      }),
+    );
     if (typeof selected === "string") {
       setFolder(selected);
       clearError("folder");

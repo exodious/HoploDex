@@ -572,25 +572,25 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `system:clear-passphrase-fields` is emitted on sleep and screen lock whether or not a database is open
   - `validate_lock_settings_input` enforces `idle_lock_minutes` "1–240"
 - [X] T115 [P] [US6] Extend `src-tauri/tests/import_export_test.rs`: with the cancel flag set after N rows, `import_collection` stops after the row in progress, keeps each imported row complete and returns `OPERATION_STOPPED { operation: "import", importedCount: N }`; a stopped `export_collection` removes its partial file and returns `OPERATION_STOPPED { operation: "export" }`
-- [ ] T116 [P] [US6] Write `src/features/session/useIdleActivity.test.ts` (research §15), covering:
+- [X] T116 [P] [US6] Write `src/features/session/useIdleActivity.test.ts` (research §15), covering:
   - `keydown`, `pointerdown`, `pointermove`, `wheel` and `touchstart` call `note_activity` at most once per second, on the leading and trailing edge
   - `withIdlePaused(fn)` sends `set_idle_paused { paused: true }` before and `false` after, even when `fn` throws
   - `pauseIdleForFileInput(input)` sends `paused: true` on the input's `click`, and `false` on its `change`, on its `cancel`, or, when neither fires, on the window's next `focus`; it sends `false` only once per `click`, and removes its listeners on unmount
-- [ ] T117 [P] [US6] Write `src/features/session/usePendingDraft.test.tsx` (research §16), covering:
+- [X] T117 [P] [US6] Write `src/features/session/usePendingDraft.test.tsx` (research §16), covering:
   - edits stage a draft with `{ formVersion, kind, mode, targetId, label, values }`, debounced to 250 ms and flushed at once on blur
   - a clean or saved form stages `null`
   - a form given a resumed draft starts with those values as unsaved input, and its dirty state is true
-- [ ] T118 [P] [US6] Write `src/features/session/PendingChangesDialog.test.tsx` (contracts/ui-databases.md §13), covering:
+- [X] T118 [P] [US6] Write `src/features/session/PendingChangesDialog.test.tsx` (contracts/ui-databases.md §13), covering:
   - the non-dismissable dialog "Unsaved changes to <label>" with "<name> locked on <date, time> while you were editing <label>. Your changes were kept."
   - **Resume editing** calls `resolve_pending_changes("resume")`, navigates to the target and opens its form with the draft
   - **Discard changes** asks for destructive confirmation first
   - with `resumable: false`, only Discard is offered, with the "no longer exists" sentence
-- [ ] T119 [P] [US6] Extend the frontend tests for locking:
+- [X] T119 [P] [US6] Extend the frontend tests for locking:
   - `src/components/PassphraseField.test.tsx`: `system:clear-passphrase-fields` resets every mounted field (FR-007)
   - `src/features/databases/DatabaseMenu.test.tsx`: **Lock now** in the menu, the lock icon button (`aria-label` "Lock now") and Ctrl/⌘+L from any focus, including inside a dialog, call `lock_database` with the current draft and no confirmation (FR-035)
   - `src/features/databases/DatabaseSettingsDialog.test.tsx`, Locking section: **Lock after a period without use**, and the minutes `Select` (1, 2, 5, 10, 15, 30, 60, 120, 240; `hd-field--third`) enabled only when checked, with the help "Also locks when the computer goes to sleep. Turning this off stops both."; **Lock when the computer's screen locks**, disabled with "Not available: this computer doesn't tell applications when the screen locks." when unsupported; the lock statement; the FR-036 sentence when the passphrase is saved
   - `src/features/databases/DatabaseChooser.test.tsx`: the notices "HoploDex locked <name>." (with " after <n> minutes without use" for idle), the stopped-operation text (the import variant with the row count, and the deletion-of-backups variant with the number deleted), and "Unsaved changes could not be kept when <name> locked."; after a lock, focus is on the passphrase field, or on **Open** when the passphrase is saved
-- [ ] T120 [P] [US6] Write `e2e/specs/us9-locking.e2e.ts`, covering:
+- [X] T120 [P] [US6] Write `e2e/specs/us9-locking.e2e.ts`, covering:
   - Ctrl+L while editing a firearm locks, with no collection DOM left
   - the chooser shows the database selected with the locked notice
   - unlock, and the pending-changes dialog names the firearm; Resume brings back the exact input
@@ -659,18 +659,18 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `set_idle_paused { reason: "nativeDialog", paused }`
   - `update_lock_settings`, with `validate_lock_settings_input` in `src-tauri/src/models/database.rs`: `idle_lock_minutes` "1–240". A collection change; it restarts the idle clock
   - `get_chooser_state` reports `screenLockSupported` from `platform::screen_lock_supported()`
-- [ ] T131 [US6] Make `PassphraseField` listen for `system:clear-passphrase-fields` and reset, whether or not a database is open (FR-007). File: `src/components/PassphraseField.tsx`
-- [ ] T132 [P] [US6] Create `src/features/session/useIdleActivity.ts`, with the throttled window listeners → `note_activity`, and `withIdlePaused(fn)`. Mount it in `SessionProvider` while a database is open. Wrap every `@tauri-apps/plugin-dialog` call in `withIdlePaused`: `src/features/import-export/ImportDialog.tsx`, `ExportDialog.tsx`, `src/features/databases/CreateDatabaseDialog.tsx` (Choose…), `DatabaseChooser.tsx` (Open another…, Locate…) and `DatabaseSettingsDialog.tsx` (Change…). The photo and document pickers are `<input type="file">` elements with no promise to wrap, so add `pauseIdleForFileInput(input)` to the same hook (research §15) and attach it to the inputs in `src/features/media/PhotoGallery.tsx` and `src/features/media/DocumentList.tsx`
-- [ ] T133 [US6] Add draft staging to `src/features/session/usePendingDraft.ts` (research §16). Registered forms stage `{ formVersion, kind, mode, targetId, label, values }` via `stage_pending_changes`, debounced to 250 ms, flushed on blur, and `null` when clean. Expose `currentDraft()` for `lock_database`. Make `FirearmForm.tsx`, `DisposeDialog.tsx`, `RestoreDialog.tsx`, `InsurancePolicyForm.tsx` and `CoverageDialog.tsx` accept a resumed draft as their initial unsaved state, each with a `FORM_VERSION` constant (depends on T066)
-- [ ] T134 [US6] Create `src/features/session/PendingChangesDialog.tsx` per contracts/ui-databases.md §13. `SessionProvider` shows it after any open whose status reports `pendingChanges`, before the collection can be used. **Resume editing** navigates to the record or policy and opens its form with the draft (via `src/features/app/navigation.ts`). **Discard changes** asks for destructive confirmation first (depends on T133)
-- [ ] T135 [US6] Add locking to the database UI (contracts/ui-databases.md §1, §4, §7, §14):
+- [X] T131 [US6] Make `PassphraseField` listen for `system:clear-passphrase-fields` and reset, whether or not a database is open (FR-007). File: `src/components/PassphraseField.tsx`
+- [X] T132 [P] [US6] Create `src/features/session/useIdleActivity.ts`, with the throttled window listeners → `note_activity`, and `withIdlePaused(fn)`. Mount it in `SessionProvider` while a database is open. Wrap every `@tauri-apps/plugin-dialog` call in `withIdlePaused`: `src/features/import-export/ImportDialog.tsx`, `ExportDialog.tsx`, `src/features/databases/CreateDatabaseDialog.tsx` (Choose…), `DatabaseChooser.tsx` (Open another…, Locate…) and `DatabaseSettingsDialog.tsx` (Change…). The photo and document pickers are `<input type="file">` elements with no promise to wrap, so add `pauseIdleForFileInput(input)` to the same hook (research §15) and attach it to the inputs in `src/features/media/PhotoGallery.tsx` and `src/features/media/DocumentList.tsx`
+- [X] T133 [US6] Add draft staging to `src/features/session/usePendingDraft.ts` (research §16). Registered forms stage `{ formVersion, kind, mode, targetId, label, values }` via `stage_pending_changes`, debounced to 250 ms, flushed on blur, and `null` when clean. Expose `currentDraft()` for `lock_database`. Make `FirearmForm.tsx`, `DisposeDialog.tsx`, `RestoreDialog.tsx`, `InsurancePolicyForm.tsx` and `CoverageDialog.tsx` accept a resumed draft as their initial unsaved state, each with a `FORM_VERSION` constant (depends on T066)
+- [X] T134 [US6] Create `src/features/session/PendingChangesDialog.tsx` per contracts/ui-databases.md §13. `SessionProvider` shows it after any open whose status reports `pendingChanges`, before the collection can be used. **Resume editing** navigates to the record or policy and opens its form with the draft (via `src/features/app/navigation.ts`). **Discard changes** asks for destructive confirmation first (depends on T133)
+- [X] T135 [US6] Add locking to the database UI (contracts/ui-databases.md §1, §4, §7, §14):
   - **Lock now** (with the Ctrl+L/⌘L hint) at the top of `DatabaseMenu.tsx`, plus the lock icon button beside the menu
   - a global Ctrl/⌘+L handler that works from any focus, including inside dialogs, and calls `lock_database` with `currentDraft()` and no confirmation
   - the Locking section in `DatabaseSettingsDialog.tsx`, with the FR-036 sentence when the passphrase is saved
   - the chooser notices for locks, stopped operations and lost pending changes in `DatabaseChooser.tsx`
   - focus moves to the passphrase field or **Open** after a lock
   - add the wrappers to `sessionService.ts`
-- [ ] T136 [US6] Add the screen `22-pending-changes` (the seeded "Shared collection" after take-over, or a lock during an edit) to `e2e/screenshots/screens.e2e.ts`, and run the E2E spec `us9-locking.e2e.ts` (depends on T134, T135)
+- [X] T136 [US6] Add the screen `22-pending-changes` (the seeded "Shared collection" after take-over, or a lock during an edit) to `e2e/screenshots/screens.e2e.ts`, and run the E2E spec `us9-locking.e2e.ts` (depends on T134, T135)
 
 **Checkpoint**: All six user stories work on their own.
 

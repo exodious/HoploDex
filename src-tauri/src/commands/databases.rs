@@ -374,6 +374,7 @@ pub mod ops {
             name: open.name.clone(),
             passphrase_saved,
             keyring_available: machine.keyring().is_available(),
+            screen_lock_supported: crate::platform::screen_lock_supported(),
             settings: collection_settings(&open.conn, &open.path)?,
             pending_changes: pending::summary(&open.conn)?,
             notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },

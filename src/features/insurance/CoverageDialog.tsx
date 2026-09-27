@@ -5,7 +5,8 @@ import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName, useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
-import { useDirtyForm } from "../session/usePendingDraft";
+import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
+import type { DraftTarget } from "../session/usePendingDraft";
 import type { Firearm } from "../firearms/types";
 import { expiryLabel } from "./coverage";
 import type { AssignCoverageInput } from "./types";
@@ -37,6 +38,16 @@ export function CoverageDialog({ open, onOpenChange, firearm, onSave }: Coverage
   );
 }
 
+/** The version of this form's kept drafts (research.md §16). Raise it when
+ * {@link CoverageValues} changes shape, so older drafts are only discarded. */
+export const FORM_VERSION = 1;
+
+/** The form's input, as a kept draft holds it. */
+interface CoverageValues {
+  policyId: string;
+  amount: string;
+}
+
 function CoverageForm({
   firearm,
   onSave,
@@ -52,8 +63,17 @@ function CoverageForm({
     firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_SCHEDULED,
   );
   const [initialAmount] = useState(() => dollarsToInput(firearm.scheduledCoverageAmount));
-  const [policyId, setPolicyId] = useState(initialPolicyId);
-  const [amount, setAmount] = useState(initialAmount);
+  const target: DraftTarget = {
+    formVersion: FORM_VERSION,
+    kind: "firearm",
+    mode: "coverage",
+    targetId: firearm.id,
+  };
+  // Pending changes the user resumed start as unsaved input (FR-039).
+  const [resumed] = useState(() => resumedValues<CoverageValues>(target));
+  useResumedDraftTaken(target);
+  const [policyId, setPolicyId] = useState(resumed?.policyId ?? initialPolicyId);
+  const [amount, setAmount] = useState(resumed?.amount ?? initialAmount);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -69,11 +89,14 @@ function CoverageForm({
         ? "Enter the amount scheduled on the policy."
         : undefined;
 
-  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
+  // and a lock keeps it (FR-039).
+  const values: CoverageValues = { policyId, amount };
   useDirtyForm({
     label: `${firearmName(firearm)} (coverage)`,
     isDirty: policyId !== initialPolicyId || amount !== initialAmount,
     submit: save,
+    draft: { ...target, values },
   });
 
   function handleSubmit(event: FormEvent) {

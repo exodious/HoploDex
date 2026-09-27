@@ -199,6 +199,8 @@ pub struct CollectionSettings {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingSummary {
+    /// The form's draft version, which the frontend checks it still knows.
+    pub form_version: i64,
     pub kind: DraftKind,
     pub mode: DraftMode,
     pub target_id: Option<i64>,
@@ -252,6 +254,9 @@ pub struct DatabaseStatus {
     /// Passphrases can be saved on this computer (FR-019), for the
     /// settings' "This computer" section.
     pub keyring_available: bool,
+    /// This desktop reports a screen lock (FR-038), for the settings'
+    /// "Locking" section.
+    pub screen_lock_supported: bool,
     pub settings: CollectionSettings,
     pub pending_changes: Option<PendingSummary>,
     pub notes: DatabaseNotes,

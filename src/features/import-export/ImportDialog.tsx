@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { withIdlePaused } from "../session/useIdleActivity";
 import {
   Button,
   ConfirmDialog,
@@ -76,11 +77,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [unresolved, setUnresolved] = useState<RowError[]>([]);
 
   async function chooseFile() {
-    const selected = await openDialog({
-      multiple: false,
-      title: "Import spreadsheet",
-      filters: [{ name: "Spreadsheet", extensions: ["csv", "xlsx"] }],
-    });
+    const selected = await withIdlePaused(() =>
+      openDialog({
+        multiple: false,
+        title: "Import spreadsheet",
+        filters: [{ name: "Spreadsheet", extensions: ["csv", "xlsx"] }],
+      }),
+    );
     if (typeof selected === "string") {
       setFilePath(selected);
       setFileError(undefined);

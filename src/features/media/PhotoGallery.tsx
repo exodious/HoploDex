@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { pauseIdleForFileInput } from "../session/useIdleActivity";
 import type { ChangeEvent } from "react";
 import { Button, ConfirmDialog, Dialog, Icon, useToast } from "../../components";
 import { bytesToDataUrl, fileToByteArray } from "../../lib/bytes";
@@ -37,6 +38,9 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
   const [viewing, setViewing] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<PhotoSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The system's file chooser gives the window no input while it is open
+  // (research.md §15).
+  useEffect(() => (inputRef.current ? pauseIdleForFileInput(inputRef.current) : undefined), []);
 
   async function load() {
     try {

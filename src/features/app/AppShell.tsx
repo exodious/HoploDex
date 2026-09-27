@@ -16,6 +16,8 @@ import { BrandMark } from "./BrandMark";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
+import { peekResumedDraft } from "../session/usePendingDraft";
+import type { Draft } from "../databases/types";
 import type { BackTarget, Navigation, Route, ShellDialog } from "./navigation";
 import "./AppShell.css";
 
@@ -42,13 +44,29 @@ interface Visit {
  * a search, grouping, or scroll position survives opening a record and
  * coming back. Following a link (a policy from a firearm, a firearm from a
  * policy) pushes onto a trail, so "back" retraces the path taken. */
+/** Where the form of resumed pending changes is: the firearm's record, or
+ * the policy's page, whose own dialogs then open with them. */
+function resumedRoute(resumed: Draft | null): Route {
+  if (resumed?.kind === "firearm" && resumed.targetId != null)
+    return { page: "firearm", id: resumed.targetId, from: "collection" };
+  if (resumed?.kind === "policy")
+    return resumed.targetId != null
+      ? { page: "policy", id: resumed.targetId }
+      : { page: "insurance" };
+  return { page: "collection" };
+}
+
 export function AppShell() {
   const { firearmsById, firearms, policiesById, refresh } = useCollection();
   const notify = useToast();
-  const [route, setRoute] = useState<Route>({ page: "collection" });
+  // Resumed pending changes open where their form is (FR-039).
+  const [route, setRoute] = useState<Route>(() => resumedRoute(peekResumedDraft()));
   const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
-  const [dialog, setDialog] = useState<ShellDialog | null>(null);
+  const [dialog, setDialog] = useState<ShellDialog | null>(() => {
+    const resumed = peekResumedDraft();
+    return resumed?.kind === "firearm" && resumed.mode === "add" ? "addFirearm" : null;
+  });
   const scrollMemory = useRef<Partial<Record<Route["page"], number>>>({});
   // Set when going back, to restore the scroll position of the page returned to.
   const restore = useRef<{ route: Route; scrollY: number } | null>(null);

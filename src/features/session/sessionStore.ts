@@ -19,6 +19,9 @@ export interface SessionState {
   /** Closes the open database, or switches away from it, asking first about
    * a form with unsaved input (FR-010). */
   closeDatabase: (reason: "closed" | "switched") => Promise<void>;
+  /** Locks the open database at once, keeping unsaved input as pending
+   * changes (FR-033, FR-035, FR-039). */
+  lockDatabase: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   dismissNote: (note: NoteKind) => Promise<void>;
   /** Restores the open database, or the damaged one at `databasePath`, from

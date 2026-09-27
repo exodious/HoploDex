@@ -30,7 +30,8 @@ export interface RecentDatabase {
 }
 
 export type ChooserNotice =
-  | { kind: "closed"; reason: CloseReason; databasePath: string }
+  /** A lock; `idleMinutes` for the idle lock. */
+  | { kind: "closed"; reason: CloseReason; databasePath: string; idleMinutes?: number }
   | {
       kind: "operationStopped";
       databasePath: string;
@@ -60,6 +61,8 @@ export interface CollectionSettings {
 }
 
 export interface PendingSummary {
+  /** The form's draft version, which must be one this frontend knows. */
+  formVersion: number;
   kind: "firearm" | "policy";
   mode: "add" | "edit" | "dispose" | "restore" | "coverage";
   targetId: number | null;
@@ -86,6 +89,8 @@ export interface DatabaseStatus {
   passphraseSaved: boolean;
   /** Passphrases can be saved on this computer (FR-019). */
   keyringAvailable: boolean;
+  /** This desktop reports a screen lock (FR-038). */
+  screenLockSupported: boolean;
   settings: CollectionSettings;
   pendingChanges: PendingSummary | null;
   notes: {
@@ -218,3 +223,6 @@ export interface CountProgress {
   processed: number;
   total: number;
 }
+
+/** `update_lock_settings`'s input (FR-034, FR-038). */
+export type LockSettingsInput = CollectionSettings["lock"];

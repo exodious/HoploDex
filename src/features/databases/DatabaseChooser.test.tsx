@@ -44,6 +44,7 @@ function renderChooser(session: Partial<SessionState> = {}, selectPath?: string)
     openDatabase: vi.fn().mockResolvedValue(undefined),
     createDatabase: vi.fn().mockResolvedValue(undefined),
     closeDatabase: vi.fn().mockResolvedValue(undefined),
+    lockDatabase: vi.fn().mockResolvedValue(undefined),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     dismissNote: vi.fn().mockResolvedValue(undefined),
     restoreBackup: vi.fn().mockResolvedValue(undefined),
@@ -790,5 +791,115 @@ describe("DatabaseChooser (User Story 5)", () => {
     expect(
       screen.getByText("Not available: this computer has no keyring service."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md §1, §3, §14)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
+    vi.mocked(databasesService.onChooserNotices)
+      .mockReset()
+      .mockReturnValue(() => {});
+  });
+
+  it.each([
+    [
+      { kind: "closed", databasePath: main.path, reason: "sleep" } as const,
+      "HoploDex locked Main collection.",
+    ],
+    [
+      { kind: "closed", databasePath: main.path, reason: "screenLocked" } as const,
+      "HoploDex locked Main collection.",
+    ],
+    [
+      { kind: "closed", databasePath: main.path, reason: "idle", idleMinutes: 10 } as const,
+      "HoploDex locked Main collection after 10 minutes without use.",
+    ],
+    [
+      { kind: "operationStopped", databasePath: main.path, operation: "passphraseChange" } as const,
+      "The computer went to sleep while the passphrase change was running, so it was stopped. Main collection is as it was before it started.",
+    ],
+    [
+      { kind: "operationStopped", databasePath: main.path, operation: "backup" } as const,
+      "The computer went to sleep while a backup was running, so it was stopped. Main collection is as it was before it started.",
+    ],
+    [
+      {
+        kind: "operationStopped",
+        databasePath: main.path,
+        operation: "import",
+        importedCount: 12,
+      } as const,
+      "The computer went to sleep while an import was running, so it was stopped. 12 rows were imported before it stopped. You can import the file again; rows already imported will be found as matches.",
+    ],
+    [
+      {
+        kind: "operationStopped",
+        databasePath: main.path,
+        operation: "deleteBackups",
+        deletedCount: 2,
+      } as const,
+      "The computer went to sleep while the backups of Main collection were being deleted, so it was stopped. 2 were deleted; the rest are still there. You can delete them from Main collection's backup settings.",
+    ],
+    [
+      { kind: "pendingChangesLost", databasePath: main.path } as const,
+      "Unsaved changes could not be kept when Main collection locked.",
+    ],
+  ])("says %o", async (notice, text) => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ notices: [notice] }),
+    );
+    renderChooser();
+
+    expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
+  it("adds notices that come after it shows, such as what a sleep stopped", async () => {
+    let noticesCame = () => {};
+    vi.mocked(databasesService.onChooserNotices).mockImplementation((handler) => {
+      noticesCame = handler;
+      return () => {};
+    });
+    vi.mocked(databasesService.getChooserState)
+      .mockResolvedValueOnce(
+        chooserState({ notices: [{ kind: "closed", databasePath: main.path, reason: "sleep" }] }),
+      )
+      .mockResolvedValueOnce(
+        chooserState({
+          notices: [{ kind: "operationStopped", databasePath: main.path, operation: "export" }],
+        }),
+      );
+    renderChooser(undefined, main.path);
+    await screen.findByText("HoploDex locked Main collection.");
+
+    noticesCame();
+
+    expect(
+      await screen.findByText(
+        "The computer went to sleep while an export was running, so it was stopped. Main collection is as it was before it started.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("HoploDex locked Main collection.")).toBeInTheDocument();
+  });
+
+  it("selects the locked database with its passphrase field focused", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ notices: [{ kind: "closed", databasePath: shared.path, reason: "idle" }] }),
+    );
+    renderChooser(undefined, shared.path);
+
+    const field = await screen.findByLabelText("Passphrase for Shared collection");
+    await waitFor(() => expect(field).toHaveFocus());
+  });
+
+  it("focuses Open after a lock when the passphrase is saved", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [main, { ...shared, passphraseSaved: true }] }),
+    );
+    renderChooser(undefined, shared.path);
+
+    const open = await screen.findByRole("button", { name: "Open" });
+    await waitFor(() => expect(open).toHaveFocus());
+    expect(screen.queryByLabelText("Passphrase for Shared collection")).not.toBeInTheDocument();
   });
 });

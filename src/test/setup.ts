@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import { vi } from "vitest";
+
+// There is no Tauri backend in jsdom: events never arrive unless a test
+// mocks this module itself to send them.
+vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
 
 // jsdom does not implement ResizeObserver; Radix UI primitives (Checkbox,
 // Select) use it for layout measurement.

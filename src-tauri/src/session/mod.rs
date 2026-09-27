@@ -437,6 +437,9 @@ fn storage_lost_if_unreachable<T>(
     }
 }
 
+/// Tells a chooser already showing that notices are waiting.
+pub const CHOOSER_NOTICES: &str = "chooser:notices";
+
 /// Where the session reports what happens to it: the frontend and
 /// `machine.json` in the app, a recorder in the tests.
 pub trait SessionEvents: Send + Sync {
@@ -456,8 +459,11 @@ impl<R: tauri::Runtime> SessionEvents for tauri::AppHandle<R> {
         use tauri::Manager;
         match self.try_state::<MachineSettings>() {
             Some(machine) => machine.push_notice(notice),
-            None => log::warn!("no machine settings to keep a notice in"),
+            None => return log::warn!("no machine settings to keep a notice in"),
         }
+        // A chooser already showing picks up a notice that came after it,
+        // such as the operation a sleep stopped (FR-037).
+        SessionEvents::emit(self, CHOOSER_NOTICES, serde_json::json!({}));
     }
 }
 

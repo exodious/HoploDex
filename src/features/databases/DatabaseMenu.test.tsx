@@ -19,6 +19,7 @@ const status = {
   name: "Main collection",
   passphraseSaved: false,
   keyringAvailable: false,
+  screenLockSupported: false,
   settings: {
     backups: {
       enabled: true,
@@ -59,7 +60,18 @@ const chooser: ChooserState = {
 
 /** A form with unsaved input, registered as the real forms are. */
 function DirtyForm() {
-  useDirtyForm({ label: "Glock 19 (edit)", isDirty: true, submit: async () => true });
+  useDirtyForm({
+    label: "Glock 19 (edit)",
+    isDirty: true,
+    submit: async () => true,
+    draft: {
+      formVersion: 1,
+      kind: "firearm",
+      mode: "edit",
+      targetId: 3,
+      values: { make: "Glock" },
+    },
+  });
   return null;
 }
 
@@ -155,6 +167,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
 
     const items = await screen.findAllByRole("menuitem");
     expect(items.map((item) => item.textContent)).toEqual([
+      "Lock nowCtrl+L",
       "Switch database…",
       "Close database",
       "Database settings…",
@@ -187,5 +200,75 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
       await screen.findByRole("dialog", { name: "Restore Main collection from a backup" }),
     ).toBeInTheDocument();
     expect(databasesService.listBackups).toHaveBeenCalledWith(undefined);
+  });
+});
+
+describe("Lock now (FR-033, FR-035)", () => {
+  const draft = {
+    formVersion: 1,
+    kind: "firearm" as const,
+    mode: "edit" as const,
+    targetId: 3,
+    label: "Glock 19 (edit)",
+    values: { make: "Glock" },
+  };
+
+  beforeEach(() => {
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(status);
+    vi.mocked(sessionService.lockDatabase).mockReset().mockResolvedValue({ backup: "notDue" });
+    vi.mocked(sessionService.closeDatabase).mockReset();
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    vi.mocked(databasesService.listBackups).mockReset().mockResolvedValue({
+      folder: "/home/sam/Documents/HoploDex/HoploDex backups",
+      available: true,
+      backups: [],
+    });
+  });
+
+  it("locks from the menu with the form's unsaved input, asking nothing", async () => {
+    const user = userEvent.setup();
+    renderMenu(true);
+
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    const item = await screen.findByRole("menuitem", { name: /Lock now/ });
+    expect(item).toHaveTextContent("Ctrl+L");
+    await user.click(item);
+
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
+  });
+
+  it("locks with one click on the lock button", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(await screen.findByRole("button", { name: "Lock now" }));
+
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(null));
+  });
+
+  it("locks with Ctrl+L from anywhere, inside a dialog too", async () => {
+    const user = userEvent.setup();
+    renderMenu(true);
+    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Main collection settings" });
+    await user.click(within(dialog).getByRole("textbox", { name: "Keep the latest" }));
+
+    await user.keyboard("{Control>}l{/Control}");
+
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
+    expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks with ⌘L too", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await screen.findByRole("button", { name: "Lock now" });
+
+    await user.keyboard("{Meta>}l{/Meta}");
+
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1));
   });
 });

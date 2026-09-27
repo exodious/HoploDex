@@ -1,18 +1,31 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, useToast } from "../../components";
 import { useCollection } from "../app/collectionStore";
 import * as insuranceService from "./insuranceService";
 import { InsurancePolicyForm } from "./InsurancePolicyForm";
 import { PolicyDeleteDialog } from "./PolicyDeleteDialog";
+import { peekResumedDraft } from "../session/usePendingDraft";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 
 /** What the add/edit and delete dialogs need from a page: which policy each
  * is open for, and the callbacks that open them. */
 export function usePolicyEditors(onDeleted?: () => void) {
-  const { refresh } = useCollection();
+  const { refresh, policiesById } = useCollection();
   const notify = useToast();
   const [editing, setEditing] = useState<InsurancePolicy | "new" | null>(null);
   const [deleting, setDeleting] = useState<InsurancePolicy | null>(null);
+
+  // Pending changes the user resumed for a policy reopen its form (FR-039),
+  // which takes them as its unsaved input.
+  useEffect(() => {
+    const resumed = peekResumedDraft();
+    if (resumed?.kind !== "policy") return;
+    if (resumed.targetId == null) setEditing("new");
+    else {
+      const policy = policiesById.get(resumed.targetId);
+      if (policy) setEditing(policy);
+    }
+  }, [policiesById]);
 
   async function handleSave(input: InsurancePolicyInput) {
     if (editing === "new") {

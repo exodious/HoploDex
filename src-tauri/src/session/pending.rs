@@ -107,7 +107,7 @@ pub fn write_pending(
 pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError> {
     let row = conn
         .query_row(
-            "SELECT kind, mode, target_id, label, saved_at FROM pending_changes",
+            "SELECT kind, mode, target_id, label, saved_at, form_version FROM pending_changes",
             [],
             |row| {
                 Ok((
@@ -116,12 +116,13 @@ pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError
                     row.get::<_, Option<i64>>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
                 ))
             },
         )
         .optional()
         .map_err(CommandError::from_db)?;
-    let Some((kind, mode, target_id, label, saved_at)) = row else { return Ok(None) };
+    let Some((kind, mode, target_id, label, saved_at, form_version)) = row else { return Ok(None) };
     let resumable = match target_id {
         None => true,
         Some(id) => {
@@ -137,7 +138,7 @@ pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError
             .map_err(CommandError::from_db)?
         }
     };
-    Ok(Some(PendingSummary { kind, mode, target_id, label, saved_at, resumable }))
+    Ok(Some(PendingSummary { form_version, kind, mode, target_id, label, saved_at, resumable }))
 }
 
 /// Resumes or discards the database's pending changes (FR-039): either way

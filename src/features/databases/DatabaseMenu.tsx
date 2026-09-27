@@ -6,11 +6,15 @@ import { DatabaseSettingsDialog } from "./DatabaseSettingsDialog";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import "./databases.css";
 
+/** "Ctrl+L", or "⌘L" on a Mac. */
+const LOCK_SHORTCUT =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘L" : "Ctrl+L";
+
 /** The open database's menu, at the left of the top bar's tools
- * (contracts/ui-databases.md §4). Switching and closing are normal closes,
- * which ask first about a form with unsaved input (§6). It also holds the
- * database's settings (§7), the passphrase change (§8) and the restore
- * dialog (§9). */
+ * (contracts/ui-databases.md §4), with a lock button beside it. Locking
+ * asks nothing (FR-035). Switching and closing are normal closes, which ask
+ * first about a form with unsaved input (§6). It also holds the database's
+ * settings (§7), the passphrase change (§8) and the restore dialog (§9). */
 export function DatabaseMenu() {
   const session = useSession();
   const [dialog, setDialog] = useState<"settings" | "passphrase" | "restore" | null>(null);
@@ -37,6 +41,9 @@ export function DatabaseMenu() {
           </Button>
         }
       >
+        <MenuItem icon="lock" shortcut={LOCK_SHORTCUT} onSelect={() => void session.lockDatabase()}>
+          Lock now
+        </MenuItem>
         <MenuItem onSelect={() => void session.closeDatabase("switched")}>
           Switch database…
         </MenuItem>
@@ -46,6 +53,14 @@ export function DatabaseMenu() {
         <MenuItem onSelect={() => setDialog("passphrase")}>Change passphrase…</MenuItem>
         <MenuItem onSelect={() => setDialog("restore")}>Restore from a backup…</MenuItem>
       </Menu>
+      <Button
+        variant="ghost"
+        size="sm"
+        icon="lock"
+        aria-label="Lock now"
+        title={`Lock now (${LOCK_SHORTCUT})`}
+        onClick={() => void session.lockDatabase()}
+      />
       <DatabaseSettingsDialog
         open={dialog === "settings"}
         onOpenChange={(open) => setDialog(open ? "settings" : null)}

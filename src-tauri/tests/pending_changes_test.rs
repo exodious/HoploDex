@@ -270,6 +270,7 @@ fn the_next_open_reports_the_pending_changes() {
     .unwrap();
 
     let pending = status.pending_changes.expect("reported");
+    assert_eq!(pending.form_version, 1);
     assert_eq!(pending.kind, DraftKind::Firearm);
     assert_eq!(pending.mode, DraftMode::Edit);
     assert_eq!(pending.target_id, Some(id));

@@ -23,6 +23,7 @@ function renderDialog() {
     openDatabase: vi.fn(),
     createDatabase: vi.fn(),
     closeDatabase: vi.fn(),
+    lockDatabase: vi.fn(),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     dismissNote: vi.fn(),
     restoreBackup: vi.fn(),

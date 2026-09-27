@@ -20,7 +20,8 @@ import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
-import { useDirtyForm } from "../session/usePendingDraft";
+import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
+import type { DraftTarget } from "../session/usePendingDraft";
 import { OriginGuide } from "./OriginGuide";
 import {
   CONDITION_OPTIONS,
@@ -190,6 +191,10 @@ export interface FirearmFormProps {
   onSubmit: (input: FirearmInput, confirmedWarnings?: boolean) => Promise<void>;
   onCancel?: () => void;
 }
+
+/** The version of this form's kept drafts (research.md §16). Raise it when
+ * `FormState` changes shape, so older drafts are only discarded. */
+export const FORM_VERSION = 1;
 
 interface FormState {
   make: string;
@@ -385,8 +390,18 @@ const FIELD_ORDER: Field[] = [
  * and footer (use inside `<Dialog bare>`). */
 export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: FirearmFormProps) {
   const disposed = initialValues?.status === "disposed";
-  const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
-  const [pristine] = useState(form);
+  const target: DraftTarget = {
+    formVersion: FORM_VERSION,
+    kind: "firearm",
+    mode: initialValues ? "edit" : "add",
+    targetId: initialValues?.id ?? null,
+  };
+  // Pending changes the user resumed start as unsaved input (FR-039).
+  const [form, setForm] = useState<FormState>(
+    () => resumedValues<FormState>(target) ?? toFormState(initialValues),
+  );
+  useResumedDraftTaken(target);
+  const [pristine] = useState(() => toFormState(initialValues));
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -398,12 +413,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // see where to type, but neither animated nor smooth-scrolled.
   const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
   const [showOriginGuide, setShowOriginGuide] = useState(false);
-  const [originGroupOpen, setOriginGroupOpen] = useState(() =>
-    hasOriginGroupValue(toFormState(initialValues)),
-  );
-  const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() =>
-    hasPhysicalGroupValue(toFormState(initialValues)),
-  );
+  const [originGroupOpen, setOriginGroupOpen] = useState(() => hasOriginGroupValue(form));
+  const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() => hasPhysicalGroupValue(form));
   const originGuideButtonRef = useRef<HTMLButtonElement>(null);
   // specs/002-firearm-identification FR-010: set while the discard
   // confirmation is open, holding the origin the user picked and what it
@@ -493,11 +504,13 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setPendingOrigin(null);
   }
 
-  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
+  // and a lock keeps it (FR-039).
   useDirtyForm({
     label: initialValues ? `${firearmName(initialValues)} (edit)` : "New firearm",
     isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
     submit: save,
+    draft: { ...target, values: form },
   });
 
   function handleSubmit(event: FormEvent) {

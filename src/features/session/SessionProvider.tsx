@@ -6,10 +6,12 @@ import { DatabaseChooser } from "../databases/DatabaseChooser";
 import * as databasesService from "../databases/databasesService";
 import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
 import * as sessionService from "./sessionService";
+import { PendingChangesDialog } from "./PendingChangesDialog";
 import { SessionContext } from "./sessionStore";
 import type { SessionState } from "./sessionStore";
 import { UnsavedChangesPrompt } from "./UnsavedChangesPrompt";
-import { getDirtyForm } from "./usePendingDraft";
+import { useIdleActivity } from "./useIdleActivity";
+import { currentDraft, getDirtyForm, setResumedDraft } from "./usePendingDraft";
 
 type Phase =
   | { kind: "starting" }
@@ -35,7 +37,10 @@ interface Question {
  * is, keyed by that open, so a close or switch drops every piece of
  * collection state with the tree that held it (contracts/ui-databases.md §3).
  * Closing, switching and quitting ask first about a form with unsaved input
- * (FR-010, §6). */
+ * (FR-010, §6); a lock never asks, and keeps it as pending changes, which
+ * the next open offers before the collection shows (FR-039, §13). Ctrl/⌘+L
+ * locks from anywhere (FR-035), and input is reported for the idle lock
+ * (FR-034). */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [question, setQuestion] = useState<Question | null>(null);
@@ -96,6 +101,48 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!form) return proceed();
     setQuestion({ label: form.label, save: form.submit, proceed });
     return Promise.resolve();
+  }, []);
+
+  /** "Lock now": at once, with no question, keeping unsaved input exactly
+   * as it is now (FR-033, FR-035). The backend's `session:closing` and
+   * `session:closed` then take the collection away. */
+  const lockDatabase = useCallback(async () => {
+    try {
+      await sessionService.lockDatabase(currentDraft());
+    } catch (error) {
+      // Closed already, by another lock or a take-over.
+      if (!(error instanceof CommandFailure && error.code === "DATABASE_CLOSED")) throw error;
+    }
+  }, []);
+
+  const isOpen = phase.kind === "open";
+  useIdleActivity(isOpen);
+
+  // Ctrl/⌘+L locks from any focus, inside dialogs too: listened for before
+  // anything else sees the key.
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== "l") return;
+      event.preventDefault();
+      event.stopPropagation();
+      void lockDatabase();
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isOpen, lockDatabase]);
+
+  /** Resumes or discards the pending changes the open reported. On resume,
+   * the form they belong to opens with them once the collection shows. */
+  const resolvePending = useCallback(async (action: "resume" | "discard") => {
+    const { draft } = await sessionService.resolvePendingChanges(action);
+    setResumedDraft(action === "resume" ? (draft ?? null) : null);
+    setPhase((current) =>
+      current.kind === "open"
+        ? { ...current, status: { ...current.status, pendingChanges: null } }
+        : current,
+    );
   }, []);
 
   const closeDatabase = useCallback(
@@ -170,6 +217,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       openDatabase,
       createDatabase,
       closeDatabase,
+      lockDatabase,
       refreshStatus,
       dismissNote,
       restoreBackup,
@@ -182,6 +230,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       openDatabase,
       createDatabase,
       closeDatabase,
+      lockDatabase,
       refreshStatus,
       dismissNote,
       restoreBackup,
@@ -194,7 +243,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return (
     <SessionContext.Provider value={value}>
       {phase.kind === "chooser" && <DatabaseChooser selectPath={phase.selectedPath} />}
-      {phase.kind === "open" && (
+      {phase.kind === "open" && phase.status.pendingChanges && (
+        <PendingChangesDialog
+          name={phase.status.name}
+          pending={phase.status.pendingChanges}
+          onResume={() => resolvePending("resume")}
+          onDiscard={() => resolvePending("discard")}
+        />
+      )}
+      {phase.kind === "open" && !phase.status.pendingChanges && (
         <Fragment key={`${phase.status.path}#${phase.opens}`}>{children}</Fragment>
       )}
       {phase.kind === "closing" && <ClosingScreen name={phase.name} />}

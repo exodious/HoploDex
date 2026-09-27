@@ -83,7 +83,7 @@ type RecentDatabase = {
 };
 
 type ChooserNotice =
-  | { kind: "closed"; reason: CloseReason; databasePath: string }
+  | { kind: "closed"; reason: CloseReason; databasePath: string; idleMinutes?: number }  // a lock; idleMinutes for the idle lock
   | { kind: "operationStopped"; databasePath: string; operation: OperationKind; importedCount?: number; deletedCount?: number }
   | { kind: "pendingChangesLost"; databasePath: string }
   | { kind: "backupFailed"; databasePath: string; reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable" }
@@ -104,6 +104,7 @@ type CollectionSettings = {
 };
 
 type PendingSummary = {
+  formVersion: number;  // the frontend offers Resume only for a form version it knows
   kind: "firearm" | "policy";
   mode: "add" | "edit" | "dispose" | "restore" | "coverage";
   targetId: number | null;
@@ -126,6 +127,7 @@ type DatabaseStatus = {
   name: string;
   passphraseSaved: boolean;
   keyringAvailable: boolean;    // FR-019, for the settings' "This computer" section
+  screenLockSupported: boolean; // FR-038, for the settings' "Locking" section
   settings: CollectionSettings;
   pendingChanges: PendingSummary | null;
   notes: {
@@ -189,7 +191,7 @@ type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: n
 
 ### `stage_pending_changes`
 - **Input**: `{ draft: Draft | null }` → **Output**: `null`
-- Keeps the draft in backend memory only (research §16). `null` clears it. Validated (`VALIDATION_ERROR` over 1 MiB).
+- Keeps the draft in backend memory only (research §16). `null` clears it. Validated: `VALIDATION_ERROR` with `fieldErrors.values` over 1 MiB, `fieldErrors.mode` for a kind and mode that don't go together (`coverage`, `dispose` and `restore` are firearm-only), `fieldErrors.targetId` when a target is missing (or given for an add), `fieldErrors.label` over 200 characters.
 
 ### `dismiss_note`
 - **Input**: `{ note: "diskEncryption" | "openedBackup" | "restored" }` → **Output**: `null`
@@ -286,7 +288,8 @@ sleep stops it (FR-037).
 |---|---|---|
 | `session:closing` | `{ reason: CloseReason }` | A normal close has started. The frontend shows the closing screen (a backup may follow) |
 | `backup:progress` | `{ processed: number; total: number; showNow: boolean }` | bytes. `showNow` is true when the estimate is over 1 s (research §7). Otherwise the frontend shows the bar only if the close is still running 1 s later |
-| `session:closed` | `{ reason: CloseReason; databasePath: string; outcome?: CloseOutcome; stoppedOperation?: OperationKind; pendingChangesLost?: boolean }` | The database is closed. The frontend drops **all** collection state and shows the chooser with `databasePath` selected (FR-020, FR-033). For `sleep`, `shutdown` and `takenOver` it is emitted **before** the backend finishes closing (research §14) |
+| `session:closed` | `{ reason: CloseReason; databasePath: string; outcome?: CloseOutcome; stoppedOperation?: OperationKind }` | The database is closed. The frontend drops **all** collection state and shows the chooser with `databasePath` selected (FR-020, FR-033). For `sleep`, `shutdown` and `takenOver` it is emitted **before** the backend finishes closing (research §14), so what is only known later (the stopped operation's count, pending changes that could not be kept) comes as chooser notices |
+| `chooser:notices` | `{}` | A chooser notice was kept after the chooser may already be showing (an immediate close's later steps). The chooser calls `get_chooser_state` and adds its notices |
 | `passphrase_change:progress`, `restore:progress`, `backups_delete:progress` | see above | |
 | `import_collection:progress`, `export_collection:progress` | unchanged from 001 | |
 | `system:clear-passphrase-fields` | `{}` | The screen locked or the computer is going to sleep. Every passphrase field resets (FR-007), whatever the state |
@@ -304,7 +307,8 @@ Added to `generate_handler!`: `get_chooser_state`, `create_database`,
 `update_backup_settings`, `update_lock_settings`, `save_passphrase`,
 `forget_saved_passphrase`, `change_passphrase`, `list_backups`,
 `restore_backup`, `delete_all_backups`. `setup` no longer opens a database.
-It manages `Session`, `Operations`, `IdleClock` and `MachineSettings`, starts
-the system-events listener (research §14), and runs the startup sweeps:
+It manages `Session` (which holds the operations registry and the
+`IdleClock`) and `MachineSettings`, starts the system-events listener
+(research §14) and the idle clock's 1 s tick, and runs the startup sweeps:
 decrypted document copies (001 FR-035), unfinished backup (research §7), and
 interrupted swaps (research §4).

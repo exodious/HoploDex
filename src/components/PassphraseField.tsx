@@ -1,5 +1,6 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { listen } from "../services/tauriClient";
 import { StrengthHint } from "./StrengthHint";
 import type { StrengthHintHandle } from "./StrengthHint";
 import { TextField } from "./TextField";
@@ -30,10 +31,14 @@ export interface PassphraseFieldProps {
   onInput?: () => void;
 }
 
+/** Sent when the screen locks or the computer is going to sleep. */
+export const CLEAR_PASSPHRASE_FIELDS = "system:clear-passphrase-fields";
+
 /** The one input for typing a passphrase (contracts/ui-databases.md §0,
  * FR-007). It is uncontrolled: the value lives only in the input, is read
  * through the handle on submit and reset straight after, and is never put
- * in React state, context or any store. */
+ * in React state, context or any store. It empties itself when the screen
+ * locks or the computer goes to sleep, whether or not a database is open. */
 export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseFieldProps>(
   (
     {
@@ -55,19 +60,23 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
     const strengthRef = useRef<StrengthHintHandle>(null);
     const [shown, setShown] = useState(false);
 
+    const reset = useCallback(() => {
+      if (inputRef.current) inputRef.current.value = "";
+      setShown(false);
+      strengthRef.current?.update();
+    }, []);
+
     useImperativeHandle(
       ref,
       () => ({
         read: () => inputRef.current?.value ?? "",
-        reset: () => {
-          if (inputRef.current) inputRef.current.value = "";
-          setShown(false);
-          strengthRef.current?.update();
-        },
+        reset,
         focus: () => inputRef.current?.focus(),
       }),
-      [],
+      [reset],
     );
+
+    useEffect(() => listen<unknown>(CLEAR_PASSPHRASE_FIELDS, reset), [reset]);
 
     return (
       <div className={["hd-passphrase", fieldClassName].filter(Boolean).join(" ")}>

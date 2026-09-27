@@ -4,7 +4,8 @@ import { Button, DateField, MoneyField, TextArea, TextField } from "../../compon
 import { parseDateInput } from "../../lib/dates";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { useDirtyForm } from "../session/usePendingDraft";
+import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
+import type { DraftTarget } from "../session/usePendingDraft";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 import "../firearms/forms.css";
 
@@ -13,6 +14,10 @@ export interface InsurancePolicyFormProps {
   onSubmit: (input: InsurancePolicyInput) => Promise<void>;
   onCancel?: () => void;
 }
+
+/** The version of this form's kept drafts (research.md §16). Raise it when
+ * `FormState` changes shape, so older drafts are only discarded. */
+export const FORM_VERSION = 1;
 
 interface FormState {
   name: string;
@@ -85,8 +90,18 @@ export function InsurancePolicyForm({
   onSubmit,
   onCancel,
 }: InsurancePolicyFormProps) {
-  const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
-  const [pristine] = useState(form);
+  const target: DraftTarget = {
+    formVersion: FORM_VERSION,
+    kind: "policy",
+    mode: initialValues ? "edit" : "add",
+    targetId: initialValues?.id ?? null,
+  };
+  // Pending changes the user resumed start as unsaved input (FR-039).
+  const [form, setForm] = useState<FormState>(
+    () => resumedValues<FormState>(target) ?? toFormState(initialValues),
+  );
+  useResumedDraftTaken(target);
+  const [pristine] = useState(() => toFormState(initialValues));
   const formRef = useRef<HTMLFormElement>(null);
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -112,11 +127,13 @@ export function InsurancePolicyForm({
   });
   const set = (field: Field) => (text: string) => setForm((prev) => ({ ...prev, [field]: text }));
 
-  // Closing or quitting asks about unsaved input first (specs/003 FR-010).
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
+  // and a lock keeps it (FR-039).
   useDirtyForm({
     label: initialValues ? `${initialValues.name} (edit)` : "New insurance policy",
     isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
     submit: save,
+    draft: { ...target, values: form },
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

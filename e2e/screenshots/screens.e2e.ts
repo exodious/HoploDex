@@ -227,6 +227,35 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
     });
 
+    it("pending changes after a lock", async () => {
+      // A lock with an edit under way keeps it, and the next open asks.
+      await goTo("Collection");
+      await openRecord(RECORD);
+      await openDialog("Edit");
+      await fill("Notes", "Swapped the grips for the walnut set.");
+      await browser.pause(400);
+      await browser.execute(() =>
+        (document.activeElement ?? document.body).dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "l",
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      );
+      await waitForChooser();
+      await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+      await $("button=Resume editing").waitForExist({ timeout: 10000 });
+      await browser.pause(300);
+      await shot(`22-pending-changes-${suffix}`);
+      await clickButton("Discard changes");
+      await $('[role="alertdialog"]').waitForExist();
+      await clickButton("Discard changes");
+      await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
+      await browser.pause(300);
+    });
+
     it("closing with a backup", async () => {
       // The seeded collection was backed up today, so a real close makes no
       // backup: the closing screen is shown with the events a long one sends.

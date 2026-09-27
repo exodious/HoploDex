@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { withIdlePaused } from "../session/useIdleActivity";
 import { Button, ChoiceCards, Dialog, Icon, ProgressBar, TextField } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
@@ -66,11 +67,13 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   }, [filterActive, query, browse.includeDisposed]);
 
   async function chooseFolder() {
-    const selected = await openDialog({
-      directory: true,
-      multiple: false,
-      title: "Export to folder",
-    });
+    const selected = await withIdlePaused(() =>
+      openDialog({
+        directory: true,
+        multiple: false,
+        title: "Export to folder",
+      }),
+    );
     if (typeof selected === "string") {
       setFolder(selected);
       setFolderError(undefined);

@@ -8,6 +8,7 @@ import type {
   CountProgress,
   CreateDatabaseInput,
   DatabaseStatus,
+  LockSettingsInput,
   PassphraseChanged,
   PassphraseChangeProgress,
   PassphraseSaved,
@@ -78,6 +79,18 @@ export function forgetSavedPassphrase(path?: string): Promise<PassphraseSaved> {
 /** Saves the open database's backup settings (FR-024, FR-026). */
 export function updateBackupSettings(input: BackupSettingsInput): Promise<CollectionSettings> {
   return invoke<CollectionSettings>("update_backup_settings", { ...input });
+}
+
+/** Saves the open database's lock settings (FR-034, FR-038). The idle time
+ * starts again. */
+export function updateLockSettings(input: LockSettingsInput): Promise<CollectionSettings> {
+  return invoke<CollectionSettings>("update_lock_settings", { ...input });
+}
+
+/** Notices came for a chooser already showing, such as the operation a
+ * sleep stopped (FR-037): `getChooserState` has them. */
+export function onChooserNotices(handler: () => void): () => void {
+  return listen<unknown>("chooser:notices", () => handler());
 }
 
 /** The open database's backups, or, with `databasePath`, those of a

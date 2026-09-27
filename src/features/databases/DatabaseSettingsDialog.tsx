@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { withIdlePaused } from "../session/useIdleActivity";
 import {
   Button,
   Checkbox,
@@ -8,6 +9,7 @@ import {
   Dialog,
   PassphraseField,
   ProgressBar,
+  Select,
   TextField,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
@@ -23,6 +25,17 @@ import type {
 } from "./types";
 import "../firearms/forms.css";
 import "./databases.css";
+
+/** The idle durations offered, in minutes (FR-034). */
+const IDLE_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 240];
+
+function minutesLabel(minutes: number): string {
+  if (minutes % 60 === 0 && minutes >= 60) {
+    const hours = minutes / 60;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+}
 
 /** What backups are and aren't (FR-029), said wherever they are set up. */
 const BACKUP_STATEMENTS = [
@@ -46,9 +59,10 @@ export interface DatabaseSettingsDialogProps {
 
 /** The open database's settings (contracts/ui-databases.md §7): its
  * backups, where they go and how many are kept (FR-024, FR-026), what they
- * are (FR-029), restoring from one, and deleting them all, which apply with
- * Save, like every other form; and whether this computer remembers its
- * passphrase (FR-017), which changes at once. */
+ * are (FR-029), restoring from one, and deleting them all, and when it
+ * locks (FR-034, FR-038), which apply with Save, like every other form;
+ * and whether this computer remembers its passphrase (FR-017), which
+ * changes at once. */
 export function DatabaseSettingsDialog({
   open,
   onOpenChange,
@@ -109,17 +123,20 @@ function SettingsForm({
     path: saved.location.path,
     available: saved.location.available,
   });
+  const [lock, setLock] = useState(status.settings.lock);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function chooseFolder() {
-    const chosen = await openFolderDialog({
-      directory: true,
-      multiple: false,
-      title: `Choose where to keep backups of ${status.name}`,
-      defaultPath: location.available ? location.path : undefined,
-    });
+    const chosen = await withIdlePaused(() =>
+      openFolderDialog({
+        directory: true,
+        multiple: false,
+        title: `Choose where to keep backups of ${status.name}`,
+        defaultPath: location.available ? location.path : undefined,
+      }),
+    );
     if (typeof chosen !== "string") return;
     setLocation({ input: { kind: "custom", path: chosen }, path: chosen, available: true });
     setErrors((current) => ({ ...current, location: undefined }));
@@ -141,13 +158,12 @@ function SettingsForm({
     setServerError(null);
     setSaving(true);
     try {
-      onSaved(
-        await databasesService.updateBackupSettings({
-          enabled,
-          keepCount: count,
-          location: location.input,
-        }),
-      );
+      await databasesService.updateBackupSettings({
+        enabled,
+        keepCount: count,
+        location: location.input,
+      });
+      onSaved(await databasesService.updateLockSettings(lock));
     } catch (e) {
       if (e instanceof CommandFailure && e.fieldErrors) setErrors(e.fieldErrors);
       else
@@ -225,6 +241,7 @@ function SettingsForm({
           </ul>
           <BackupActions name={status.name} disabled={saving} onRestore={onRestore} />
         </fieldset>
+        <LockingSection status={status} lock={lock} disabled={saving} onChange={setLock} />
         <ThisComputer status={status} disabled={saving} onChange={onPassphraseSavedChange} />
       </div>
       <footer className="hd-dialog__footer">
@@ -236,6 +253,71 @@ function SettingsForm({
         </Button>
       </footer>
     </form>
+  );
+}
+
+/** When the database locks (FR-034, FR-036, FR-038;
+ * contracts/ui-databases.md §7 "Locking"). */
+function LockingSection({
+  status,
+  lock,
+  disabled,
+  onChange,
+}: {
+  status: DatabaseStatus;
+  lock: CollectionSettings["lock"];
+  disabled: boolean;
+  onChange: (lock: CollectionSettings["lock"]) => void;
+}) {
+  // A duration set some other way is still shown as it is.
+  const offered = IDLE_MINUTES.includes(lock.idleMinutes)
+    ? IDLE_MINUTES
+    : [...IDLE_MINUTES, lock.idleMinutes].sort((a, b) => a - b);
+  return (
+    <fieldset className="hd-form-section hd-form-fieldset">
+      <legend className="hd-form-subgroup__title">Locking</legend>
+      <Checkbox
+        label="Lock after a period without use"
+        checked={lock.idleEnabled}
+        disabled={disabled}
+        onCheckedChange={(idleEnabled) => onChange({ ...lock, idleEnabled })}
+        hint="Also locks when the computer goes to sleep. Turning this off stops both."
+      />
+      <Select
+        label="After"
+        value={String(lock.idleMinutes)}
+        disabled={disabled || !lock.idleEnabled}
+        onValueChange={(value) => onChange({ ...lock, idleMinutes: Number(value) })}
+        options={offered.map((minutes) => ({
+          value: String(minutes),
+          label: minutesLabel(minutes),
+        }))}
+        fieldClassName="hd-field--third"
+      />
+      <Checkbox
+        label="Lock when the computer's screen locks"
+        checked={status.screenLockSupported && lock.onScreenLock}
+        disabled={disabled || !status.screenLockSupported}
+        onCheckedChange={(onScreenLock) => onChange({ ...lock, onScreenLock })}
+        hint={
+          status.screenLockSupported
+            ? undefined
+            : "Not available: this computer doesn't tell applications when the screen locks."
+        }
+      />
+      <ul className="hd-settings-statements">
+        <li>
+          Locking closes {status.name}: its data is cleared from memory, opened document copies are
+          deleted, a backup is made if one is due, and it&apos;s released for other computers.
+        </li>
+        {status.passphraseSaved && (
+          <li>
+            Because the passphrase is saved on this computer, anyone using this computer account can
+            reopen {status.name} after it locks.
+          </li>
+        )}
+      </ul>
+    </fieldset>
   );
 }
 

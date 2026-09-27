@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { BrandMark } from "../app/BrandMark";
 import { ThemeToggle } from "../app/ThemeToggle";
 import { useSession } from "../session/sessionStore";
+import { withIdlePaused } from "../session/useIdleActivity";
 import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
 import * as databasesService from "./databasesService";
 import { databaseNameOf } from "./paths";
@@ -12,7 +13,7 @@ import { RecentDatabaseRow } from "./RecentDatabaseRow";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import type { ChooserRow, OpenElsewhere } from "./RecentDatabaseRow";
 import { TakeOverConfirm } from "./TakeOverConfirm";
-import type { ChooserNotice, ChooserState } from "./types";
+import type { ChooserNotice, ChooserState, OperationKind } from "./types";
 import "../app/AppShell.css";
 import "./databases.css";
 
@@ -77,15 +78,38 @@ function offersRestore(error: unknown): boolean {
   );
 }
 
+/** What a sleep stopped, as the notice names it (FR-037). */
+const STOPPED_OPERATION: Record<OperationKind, string> = {
+  backup: "a backup",
+  passphraseChange: "the passphrase change",
+  restore: "a restore",
+  import: "an import",
+  export: "an export",
+  deleteBackups: "the deletion of its backups",
+};
+
+function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }>, name: string) {
+  if (notice.operation === "deleteBackups") {
+    return `The computer went to sleep while the backups of ${name} were being deleted, so it was stopped. ${notice.deletedCount ?? 0} were deleted; the rest are still there. You can delete them from ${name}'s backup settings.`;
+  }
+  const stopped = `The computer went to sleep while ${STOPPED_OPERATION[notice.operation]} was running, so it was stopped.`;
+  if (notice.operation === "import") {
+    const count = notice.importedCount ?? 0;
+    return `${stopped} ${count} ${count === 1 ? "row was" : "rows were"} imported before it stopped. You can import the file again; rows already imported will be found as matches.`;
+  }
+  return `${stopped} ${name} is as it was before it started.`;
+}
+
 /** A notice's sentence (contracts/ui-databases.md §1 "Notices"), or `null`
  * for one with nothing to say, such as an ordinary close. */
 function noticeText(notice: ChooserNotice): string | null {
   const name = databaseNameOf(notice.databasePath);
   switch (notice.kind) {
     case "closed":
-      return ["lockedByUser", "idle", "sleep", "screenLocked"].includes(notice.reason)
-        ? `HoploDex locked ${name}.`
-        : null;
+      if (!["lockedByUser", "idle", "sleep", "screenLocked"].includes(notice.reason)) return null;
+      return notice.reason === "idle" && notice.idleMinutes
+        ? `HoploDex locked ${name} after ${notice.idleMinutes} ${notice.idleMinutes === 1 ? "minute" : "minutes"} without use.`
+        : `HoploDex locked ${name}.`;
     case "takenOver":
       return `${name} was taken over on another computer, so HoploDex stopped saving to it here and closed it.`;
     case "backupFailed":
@@ -93,8 +117,30 @@ function noticeText(notice: ChooserNotice): string | null {
     case "pendingChangesLost":
       return `Unsaved changes could not be kept when ${name} locked.`;
     case "operationStopped":
-      return null;
+      return stoppedText(notice, name);
   }
+}
+
+/** A notice as the chooser lists it. */
+interface ShownNotice {
+  id: number;
+  text: string;
+  name: string;
+  changeLocation: boolean;
+}
+
+/** The notices worth a line, numbered from `firstId`. */
+function shownNotices(notices: ChooserNotice[], firstId: number): ShownNotice[] {
+  return notices.flatMap((notice, index) => {
+    const text = noticeText(notice);
+    // A backup location that let it down can be changed once the database
+    // is open again.
+    const changeLocation =
+      notice.kind === "backupFailed" &&
+      (notice.reason === "locationUnavailable" || notice.reason === "insufficientSpace");
+    const name = databaseNameOf(notice.databasePath);
+    return text ? [{ id: firstId + index, text, name, changeLocation }] : [];
+  });
 }
 
 /** Why the last open of a row failed. */
@@ -121,9 +167,9 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [notices, setNotices] = useState<
-    { id: number; text: string; name: string; changeLocation: boolean }[]
-  >([]);
+  const [notices, setNotices] = useState<ShownNotice[]>([]);
+  /** Numbers the notices, including those that come later. */
+  const noticeCount = useRef(0);
   const [restoring, setRestoring] = useState<ChooserRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [announcement, setAnnouncement] = useState("");
@@ -139,18 +185,8 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
         setState(loaded);
         const wanted = selectPath ?? loaded.selectedPath;
         setSelected(loaded.recent.some((r) => r.path === wanted) ? wanted : loaded.selectedPath);
-        setNotices(
-          loaded.notices.flatMap((notice, id) => {
-            const text = noticeText(notice);
-            // A backup location that let it down can be changed once the
-            // database is open again.
-            const changeLocation =
-              notice.kind === "backupFailed" &&
-              (notice.reason === "locationUnavailable" || notice.reason === "insufficientSpace");
-            const name = databaseNameOf(notice.databasePath);
-            return text ? [{ id, text, name, changeLocation }] : [];
-          }),
-        );
+        setNotices(shownNotices(loaded.notices, noticeCount.current));
+        noticeCount.current += loaded.notices.length;
       },
       () => current && setLoadError("HoploDex couldn't read its list of databases."),
     );
@@ -158,6 +194,24 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
       current = false;
     };
   }, [selectPath]);
+
+  // Notices that come once the chooser shows, such as what a sleep stopped
+  // (FR-037), are added to those already listed.
+  useEffect(
+    () =>
+      databasesService.onChooserNotices(() => {
+        databasesService.getChooserState().then(
+          (loaded) => {
+            setState(loaded);
+            const added = shownNotices(loaded.notices, noticeCount.current);
+            noticeCount.current += loaded.notices.length;
+            setNotices((current) => [...current, ...added]);
+          },
+          () => {},
+        );
+      }),
+    [],
+  );
 
   const rows = useMemo<ChooserRow[]>(() => {
     const known: ChooserRow[] = (state?.recent ?? []).map(
@@ -245,12 +299,14 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   }
 
   async function locateRow(row: ChooserRow) {
-    const chosen = await openFileDialog({
-      multiple: false,
-      directory: false,
-      title: `Locate ${row.name}`,
-      filters: DATABASE_FILTERS,
-    });
+    const chosen = await withIdlePaused(() =>
+      openFileDialog({
+        multiple: false,
+        directory: false,
+        title: `Locate ${row.name}`,
+        filters: DATABASE_FILTERS,
+      }),
+    );
     if (typeof chosen !== "string") return;
     if (inRecentList(row.path)) {
       const located = await databasesService.locateDatabase(row.path, chosen);
@@ -281,12 +337,14 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   }
 
   async function openAnotherFile() {
-    const chosen = await openFileDialog({
-      multiple: false,
-      directory: false,
-      title: "Open a database file",
-      filters: DATABASE_FILTERS,
-    });
+    const chosen = await withIdlePaused(() =>
+      openFileDialog({
+        multiple: false,
+        directory: false,
+        title: "Open a database file",
+        filters: DATABASE_FILTERS,
+      }),
+    );
     if (typeof chosen !== "string") return;
     if (!rows.some((row) => row.path === chosen)) {
       setPicked((current) => [
