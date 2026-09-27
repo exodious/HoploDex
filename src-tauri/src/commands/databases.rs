@@ -299,7 +299,7 @@ pub mod ops {
                 Ok(true) => Ok((open.path.clone(), open.database_id.clone())),
                 Ok(false) => Err(CommandError::passphrase_incorrect(None, None).on_field(
                     "passphrase",
-                    format!("That isn't the passphrase of {}.", open.name),
+                    "That isn't this database's passphrase.".to_owned(),
                 )),
                 Err(err) => {
                     log::error!("could not check the passphrase to save: {err}");

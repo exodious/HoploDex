@@ -54,7 +54,7 @@ export function DatabaseNotes() {
         <section className="hd-banner hd-db-note" aria-label="Restored from a backup">
           <Icon name="archive" />
           <p className="hd-banner__text">
-            {status.name} was restored from a backup
+            The database was restored from a backup
             {restoredWithPassphraseOf &&
               ` and now opens with the passphrase it had on ${formatDateTime(restoredWithPassphraseOf)}`}
             .{damagedFileKeptAt && ` The damaged file was kept as ${damagedFileKeptAt}.`}
@@ -66,9 +66,9 @@ export function DatabaseNotes() {
         <section className="hd-banner hd-db-note" aria-label="A backup">
           <Icon name="archive" />
           <p className="hd-banner__text">
-            This is a backup of {openedBackup.backupOfName} made on{" "}
-            {formatDateTime(openedBackup.madeAt)}. Changes here aren&apos;t part of{" "}
-            {openedBackup.backupOfName}. It&apos;s still in the backup folder, where it may be
+            This is a backup of “{openedBackup.backupOfName}” made on{" "}
+            {formatDateTime(openedBackup.madeAt)}. Changes here aren&apos;t part of “
+            {openedBackup.backupOfName}”. It&apos;s still in the backup folder, where it may be
             removed when older backups are cleared: move the file elsewhere to keep it.
           </p>
           {dismissButton("openedBackup")}

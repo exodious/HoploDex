@@ -62,7 +62,7 @@ async function restore(choice: BackupInfo = older) {
   await user.type(screen.getByLabelText("Passphrase for this backup"), PASSPHRASE);
   await user.click(screen.getByRole("button", { name: "Restore" }));
   const confirm = await screen.findByRole("alertdialog", {
-    name: `Replace Main collection with the backup from ${formatDateTime(choice.madeAt)}?`,
+    name: `Replace “Main collection” with the backup from ${formatDateTime(choice.madeAt)}?`,
   });
   await user.click(within(confirm).getByRole("button", { name: "Restore" }));
   return user;
@@ -108,7 +108,7 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
     });
     renderDialog();
     expect(
-      await screen.findByText(`There are no backups of Main collection in ${FOLDER}.`),
+      await screen.findByText(`There are no backups of this database in ${FOLDER}.`),
     ).toBeInTheDocument();
   });
 
@@ -133,12 +133,12 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
 
     expect(
       screen.getByText(
-        `Enter the passphrase Main collection had on ${formatDateTime(older.madeAt)}. After restoring, Main collection will open with that passphrase.`,
+        `Enter the passphrase the database had on ${formatDateTime(older.madeAt)}. After restoring, it opens with that passphrase.`,
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "The current Main collection is backed up first, so you can undo this by restoring that backup.",
+        "Before restoring, the database is backed up as it is now, so you can undo this by restoring that backup.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/damaged file/)).not.toBeInTheDocument();
@@ -147,9 +147,16 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
   it("restores a damaged database from its path, keeping the damaged file", async () => {
     const { session } = renderDialog({ databasePath: DATABASE });
 
+    // Not the open database, so it is named, in quotes.
+    expect(
+      screen.getByRole("dialog", { name: "Restore “Main collection” from a backup" }),
+    ).toBeInTheDocument();
     expect(
       await screen.findByText("The damaged file will be kept next to it, renamed."),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Passphrase for this backup")).toHaveAccessibleDescription(
+      `Enter the passphrase “Main collection” had on ${formatDateTime(newer.madeAt)}. After restoring, it opens with that passphrase.`,
+    );
     expect(screen.queryByText(/is backed up first/)).not.toBeInTheDocument();
     expect(databasesService.listBackups).toHaveBeenCalledWith(DATABASE);
     await restore();
@@ -231,7 +238,7 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
         message: "The backup folder can't be used.",
         details: { path: FOLDER, reason: "missing" },
       }),
-      "The current Main collection can't be backed up first, because the backup location is not available. Nothing has been changed.",
+      "The database can't be backed up first, because the backup location is not available. Nothing has been changed.",
       true,
     ],
     [
@@ -240,12 +247,12 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
         message: "The backup folder can't be used.",
         details: { path: FOLDER, reason: "insufficientSpace" },
       }),
-      "The current Main collection can't be backed up first, because there is not enough space there. Nothing has been changed.",
+      "The database can't be backed up first, because there is not enough space there. Nothing has been changed.",
       true,
     ],
     [
       new CommandFailure({ code: "RESTORE_CANCELLED", message: "The restore was cancelled." }),
-      "The current Main collection couldn't be backed up, so the restore was cancelled. Nothing has been changed.",
+      "The database couldn't be backed up, so the restore was cancelled. Nothing has been changed.",
       false,
     ],
   ])("keeps the dialog open with what stopped it: %s", async (failure, text, offersLocation) => {

@@ -176,7 +176,7 @@ export function RecentDatabaseRow({
       {elsewhere && !opening ? (
         <div className="hd-db-row__detail" role="alert">
           <p className="hd-db-row__message">
-            {entry.name} is marked as open on <strong>{elsewhere.machineName}</strong> since{" "}
+            “{entry.name}” is marked as open on <strong>{elsewhere.machineName}</strong> since{" "}
             {formatDateTime(elsewhere.since)}. It may still be open there, may not have been closed
             properly, or its latest changes may not have synced to this computer yet.
           </p>
@@ -201,7 +201,7 @@ export function RecentDatabaseRow({
             {!usesSaved && (
               <PassphraseField
                 ref={field}
-                label={`Passphrase for ${entry.name}`}
+                label={`Passphrase for “${entry.name}”`}
                 autoComplete="current-password"
                 autoFocus
                 disabled={opening}

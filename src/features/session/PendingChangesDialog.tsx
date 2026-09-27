@@ -29,8 +29,6 @@ function canResume(pending: PendingSummary): boolean {
 }
 
 export interface PendingChangesDialogProps {
-  /** The database's name. */
-  name: string;
   pending: PendingSummary;
   /** Resolves once the form has its changes back. */
   onResume: () => Promise<void>;
@@ -40,12 +38,7 @@ export interface PendingChangesDialogProps {
 /** Unsaved changes kept at a lock, offered before the collection can be
  * used (FR-039, contracts/ui-databases.md §13). It can't be dismissed: the
  * changes are resumed or discarded, and discarding asks first. */
-export function PendingChangesDialog({
-  name,
-  pending,
-  onResume,
-  onDiscard,
-}: PendingChangesDialogProps) {
+export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingChangesDialogProps) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -83,8 +76,8 @@ export function PendingChangesDialog({
         }
       >
         <p role="status" aria-live="polite">
-          {name} locked on {formatDateTime(pending.savedAt)} while you were editing {pending.label}.
-          Your changes were kept.
+          The database locked on {formatDateTime(pending.savedAt)} while you were editing{" "}
+          {pending.label}. Your changes were kept.
           {!pending.resumable && (
             <> {pending.label} no longer exists, so these changes can only be discarded.</>
           )}

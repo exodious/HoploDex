@@ -125,7 +125,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
 
     const dialog = await prompt();
     expect(dialog).toHaveTextContent(
-      `Main collection locked on ${formatDateTime(SAVED_AT)} while you were editing Collector Floater (edit). Your changes were kept.`,
+      `The database locked on ${formatDateTime(SAVED_AT)} while you were editing Collector Floater (edit). Your changes were kept.`,
     );
     expect(within(dialog).getByRole("button", { name: "Resume editing" })).toHaveFocus();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();

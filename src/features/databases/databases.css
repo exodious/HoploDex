@@ -237,16 +237,6 @@
 
 /* ── The database menu in the top bar ────────────────────────────────── */
 
-.hd-db-menu {
-  max-width: 260px;
-}
-
-.hd-db-menu__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ── Row actions, unavailable rows, open failures (US2) ──────────────── */
 
 .hd-db-row__head {

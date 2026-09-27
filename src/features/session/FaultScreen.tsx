@@ -87,15 +87,15 @@ function FaultScreen({ title, children, actionLabel, onAction }: FaultScreenProp
 export function CollectionFault({ name, onClose }: { name: string; onClose: () => Promise<void> }) {
   return (
     <FaultScreen
-      title={`${name} couldn't be shown`}
-      actionLabel={`Close ${name}`}
+      title={`“${name}” couldn't be shown`}
+      actionLabel="Close the database"
       onAction={onClose}
     >
       <p>
         Something went wrong while showing this screen. Everything saved is safe in the database,
         but changes that weren&apos;t saved yet are lost.
       </p>
-      <p>Close {name} and open it again to carry on.</p>
+      <p>Close the database and open it again to carry on.</p>
     </FaultScreen>
   );
 }

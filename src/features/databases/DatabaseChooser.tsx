@@ -29,8 +29,9 @@ const DATABASE_FILTERS = [
 
 /** What a failed open says, in the selected row (contracts/ui-databases.md
  * §1 "Open failures"). `DATABASE_NOT_FOUND` and `DATABASE_OPEN_ELSEWHERE`
- * are shown by the row itself. */
-function openFailureText(name: string, error: unknown): string {
+ * are shown by the row itself. A sentence names a database in quotes. */
+function openFailureText(databaseName: string, error: unknown): string {
+  const name = `“${databaseName}”`;
   if (!(error instanceof CommandFailure)) return `HoploDex couldn't open ${name}.`;
   switch (error.code) {
     case "PASSPHRASE_INCORRECT":
@@ -90,7 +91,7 @@ const STOPPED_OPERATION: Record<OperationKind, string> = {
 
 function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }>, name: string) {
   if (notice.operation === "deleteBackups") {
-    return `The computer went to sleep while the backups of ${name} were being deleted, so it was stopped. ${notice.deletedCount ?? 0} were deleted; the rest are still there. You can delete them from ${name}'s backup settings.`;
+    return `The computer went to sleep while the backups of ${name} were being deleted, so it was stopped. ${notice.deletedCount ?? 0} were deleted; the rest are still there. You can delete them in its Database settings.`;
   }
   const stopped = `The computer went to sleep while ${STOPPED_OPERATION[notice.operation]} was running, so it was stopped.`;
   if (notice.operation === "import") {
@@ -103,7 +104,7 @@ function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }
 /** A notice's sentence (contracts/ui-databases.md §1 "Notices"), or `null`
  * for one with nothing to say, such as an ordinary close. */
 function noticeText(notice: ChooserNotice): string | null {
-  const name = databaseNameOf(notice.databasePath);
+  const name = `“${databaseNameOf(notice.databasePath)}”`;
   switch (notice.kind) {
     case "closed":
       if (!["lockedByUser", "idle", "sleep", "screenLocked"].includes(notice.reason)) return null;
@@ -234,7 +235,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   ) {
     setOpening(row.path);
     setFailure(null);
-    setAnnouncement(`Opening ${row.name}…`);
+    setAnnouncement(`Opening “${row.name}”…`);
     try {
       // On success the session replaces this screen with the collection.
       if (options.takingOver) await session.openDatabase(row.path, passphrase, { takeOver: true });
@@ -396,7 +397,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                         n.id === notice.id
                           ? {
                               ...n,
-                              text: `Its backup settings will open when you open ${n.name}.`,
+                              text: `Its backup settings will open when you open “${n.name}”.`,
                               changeLocation: false,
                             }
                           : n,
@@ -438,7 +439,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                       error={failed?.kind === "message" ? failed.message : undefined}
                       unavailableNote={
                         failed?.kind === "notFound"
-                          ? `${row.name} is no longer at this location.`
+                          ? `“${row.name}” is no longer at this location.`
                           : undefined
                       }
                       elsewhere={failed?.kind === "elsewhere" ? failed.elsewhere : undefined}

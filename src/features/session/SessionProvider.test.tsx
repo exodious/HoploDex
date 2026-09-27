@@ -17,6 +17,9 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../databases/databasesService");
 vi.mock("./sessionService");
 
+const setTitle = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ setTitle }) }));
+
 const PATH = "/home/sam/Documents/HoploDex/Main collection.hoplodex";
 const PASSPHRASE = "correct horse battery staple";
 
@@ -89,7 +92,7 @@ describe("SessionProvider (User Story 1)", () => {
   it("shows only the chooser while no database is open", async () => {
     renderSession();
 
-    expect(await screen.findByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
   });
 
@@ -99,13 +102,27 @@ describe("SessionProvider (User Story 1)", () => {
     renderSession();
 
     await user.type(
-      await screen.findByLabelText("Passphrase for Main collection"),
+      await screen.findByLabelText("Passphrase for “Main collection”"),
       `${PASSPHRASE}{Enter}`,
     );
 
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
     expect(databasesService.openDatabase).toHaveBeenCalledWith(PATH, PASSPHRASE);
-    expect(screen.queryByLabelText("Passphrase for Main collection")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+  });
+
+  it("names the open database in the window's title, and only then (§4)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.openDatabase).mockResolvedValue(status(false));
+    setTitle.mockClear();
+    renderSession();
+
+    const field = await screen.findByLabelText("Passphrase for “Main collection”");
+    expect(setTitle).toHaveBeenLastCalledWith("HoploDex");
+    await user.type(field, `${PASSPHRASE}{Enter}`);
+
+    await screen.findByText("Collection shell");
+    expect(setTitle).toHaveBeenLastCalledWith("Main collection — HoploDex");
   });
 
   it("shows the collection once a database is created", async () => {
@@ -114,6 +131,9 @@ describe("SessionProvider (User Story 1)", () => {
     renderSession();
 
     await user.click(await screen.findByRole("button", { name: "Create a new database…" }));
+    // Nothing is open to lock, so the dialog has only its close button.
+    expect(screen.queryByRole("button", { name: "Lock now" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("Passphrase"), PASSPHRASE);
     await user.type(screen.getByLabelText("Confirm passphrase"), PASSPHRASE);
     await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
@@ -263,7 +283,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
     await user.click(screen.getByRole("button", { name: "Close it" }));
 
     expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed");
-    expect(await screen.findByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
@@ -309,7 +329,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
 
     await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("switched"));
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(await screen.findByLabelText("Passphrase for Main collection")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
   });
 
   it("saves through the form's own submit, then closes", async () => {
@@ -373,7 +393,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
 
     act(() => sessionClosed({ reason: "takenOver", databasePath: SHARED }));
 
-    expect(await screen.findByLabelText("Passphrase for Shared collection")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Passphrase for “Shared collection”")).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Policy name/)).not.toBeInTheDocument();
   });

@@ -84,7 +84,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
   it("shows the backup settings, with the default location next to the database", () => {
     renderSettings();
 
-    expect(screen.getByRole("dialog", { name: "Main collection settings" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Database settings" })).toBeInTheDocument();
     const backups = screen.getByRole("group", { name: "Backups" });
     expect(within(backups).getByRole("checkbox", { name: "Make automatic backups" })).toBeChecked();
     const keep = within(backups).getByLabelText("Keep the latest");
@@ -154,7 +154,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     await user.click(screen.getByRole("button", { name: "Delete all backups…" }));
 
     const confirm = await screen.findByRole("alertdialog", {
-      name: "Delete all 3 backups of Main collection?",
+      name: "Delete all 3 backups of “Main collection”?",
     });
     expect(confirm).toHaveTextContent(
       "They are deleted securely where this computer supports it. This can't be undone.",
@@ -212,7 +212,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
 
 describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, §8)", () => {
   const FACTS =
-    "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open Main collection without knowing the passphrase.";
+    "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open the database without knowing the passphrase.";
 
   beforeEach(() => {
     vi.mocked(databasesService.listBackups)
@@ -231,7 +231,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
 
     expect(
       within(thisComputer()).getByText(
-        "Not remembered: Main collection asks for its passphrase each time it opens.",
+        "Not remembered: the database asks for its passphrase each time it opens.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -252,13 +252,13 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
       }),
     );
     const confirm = await screen.findByRole("alertdialog", {
-      name: "Remember the passphrase of Main collection?",
+      name: "Remember this database's passphrase?",
     });
     expect(confirm).toHaveTextContent(FACTS);
     expect(confirm).toHaveTextContent(
       "Locking will no longer need the passphrase on this computer, though it still clears the collection from memory, deletes opened document copies, and releases the database for other computers.",
     );
-    const field = within(confirm).getByLabelText("Passphrase for Main collection");
+    const field = within(confirm).getByLabelText("Passphrase");
     await user.type(field, "correct horse battery staple");
     // A choice, not a destructive action.
     const remember = within(confirm).getByRole("button", { name: "Remember passphrase" });
@@ -276,7 +276,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
       new CommandFailure({
         code: "PASSPHRASE_INCORRECT",
         message: "The passphrase is incorrect.",
-        fieldErrors: { passphrase: "That isn't the passphrase of Main collection." },
+        fieldErrors: { passphrase: "That isn't this database's passphrase." },
       }),
     );
     const props = renderSettings({ ...status(), keyringAvailable: true });
@@ -287,12 +287,12 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
       }),
     );
     const confirm = await screen.findByRole("alertdialog");
-    const field = within(confirm).getByLabelText("Passphrase for Main collection");
+    const field = within(confirm).getByLabelText("Passphrase");
     await user.type(field, "a guess");
     await user.click(within(confirm).getByRole("button", { name: "Remember passphrase" }));
 
     expect(
-      await within(confirm).findByText("That isn't the passphrase of Main collection."),
+      await within(confirm).findByText("That isn't this database's passphrase."),
     ).toBeInTheDocument();
     expect(field).toHaveValue("");
     expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
@@ -323,7 +323,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
 
     expect(
       within(thisComputer()).getByText(
-        "The passphrase is remembered on this computer: Main collection opens without asking for it.",
+        "The passphrase is remembered on this computer: the database opens without asking for it.",
       ),
     ).toBeInTheDocument();
     await user.click(
@@ -465,7 +465,7 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
     await renderSettled();
 
     expect(locking()).toHaveTextContent(
-      "Locking closes Main collection: its data is cleared from memory, opened document copies are deleted, a backup is made if one is due, and it's released for other computers.",
+      "Locking closes the database: its data is cleared from memory, opened document copies are deleted, a backup is made if one is due, and it's released for other computers.",
     );
     expect(locking()).not.toHaveTextContent("anyone using this computer account");
   });
@@ -474,7 +474,7 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
     await renderSettled({ ...status(), passphraseSaved: true });
 
     expect(locking()).toHaveTextContent(
-      "Because the passphrase is saved on this computer, anyone using this computer account can reopen Main collection after it locks.",
+      "Because the passphrase is saved on this computer, anyone using this computer account can reopen the database after it locks.",
     );
   });
 });

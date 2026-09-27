@@ -30,30 +30,24 @@ const PHASES: Record<PassphraseChangeProgress["phase"], string> = {
 export interface ChangePassphraseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The open database. */
-  name: string;
 }
 
 /** Changes the open database's passphrase (contracts/ui-databases.md §8,
  * FR-015, FR-016). A copy with the new passphrase is made, checked and put
  * in place of the database, which is untouched until then, and the previous
  * file is deleted securely. */
-export function ChangePassphraseDialog({ open, onOpenChange, name }: ChangePassphraseDialogProps) {
+export function ChangePassphraseDialog({ open, onOpenChange }: ChangePassphraseDialogProps) {
   const [running, setRunning] = useState(false);
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Change the passphrase of ${name}`}
+      title="Change passphrase"
       dismissible={!running}
       bare
     >
       {/* Mounted only while open, so every opening starts empty. */}
-      <ChangePassphraseForm
-        name={name}
-        onRunningChange={setRunning}
-        onDone={() => onOpenChange(false)}
-      />
+      <ChangePassphraseForm onRunningChange={setRunning} onDone={() => onOpenChange(false)} />
     </Dialog>
   );
 }
@@ -62,11 +56,9 @@ type Field = "currentPassphrase" | "newPassphrase" | "confirmation";
 type Errors = Partial<Record<Field, string>>;
 
 function ChangePassphraseForm({
-  name,
   onRunningChange,
   onDone,
 }: {
-  name: string;
   onRunningChange: (running: boolean) => void;
   onDone: () => void;
 }) {
@@ -178,7 +170,7 @@ function ChangePassphraseForm({
         return;
       case "OPERATION_STOPPED":
         setRefusal(
-          `The passphrase change was stopped. ${name} still opens with its current passphrase.`,
+          "The passphrase change was stopped. The database still opens with its current passphrase.",
         );
         return;
       default:
@@ -208,12 +200,12 @@ function ChangePassphraseForm({
           <p>
             {changed.oldFileRemoved ? (
               <>
-                The passphrase of {name} has been changed. The previous file was deleted securely,
-                as far as this computer allows (see <DatabaseGuideLink />
+                The passphrase has been changed. The previous file was deleted securely, as far as
+                this computer allows (see <DatabaseGuideLink />
                 ). Backups and copies made before now still open with the old passphrase.
               </>
             ) : (
-              `The passphrase of ${name} has been changed. The previous file could not be deleted. It is at ${changed.oldFilePath ?? ""}, and it opens with the old passphrase. Backups and copies made before now still open with the old passphrase too.`
+              `The passphrase has been changed. The previous file could not be deleted. It is at ${changed.oldFilePath ?? ""}, and it opens with the old passphrase. Backups and copies made before now still open with the old passphrase too.`
             )}
           </p>
         </div>

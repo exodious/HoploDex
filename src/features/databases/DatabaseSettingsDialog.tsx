@@ -66,7 +66,17 @@ export function DatabaseSettingsDialog({
   onPassphraseSavedChange,
 }: DatabaseSettingsDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={`${status.name} settings`} bare>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Database settings"
+      description={
+        <>
+          The database file is <span className="hd-privacy-note__path">{status.path}</span>
+        </>
+      }
+      bare
+    >
       {/* Mounted only while open, so every opening starts from what is saved. */}
       <SettingsForm
         status={status}
@@ -127,7 +137,7 @@ function SettingsForm({
       openFolderDialog({
         directory: true,
         multiple: false,
-        title: `Choose where to keep backups of ${status.name}`,
+        title: "Choose where to keep this database's backups",
         defaultPath: location.available ? location.path : undefined,
       }),
     );
@@ -184,7 +194,7 @@ function SettingsForm({
             checked={enabled}
             disabled={saving}
             onCheckedChange={setEnabled}
-            hint="When you close a changed database, at most once a day."
+            hint="When a changed database locks or HoploDex quits, at most once a day."
           />
           <TextField
             label="Keep the latest"
@@ -306,13 +316,13 @@ function LockingSection({
       />
       <ul className="hd-settings-statements">
         <li>
-          Locking closes {status.name}: its data is cleared from memory, opened document copies are
+          Locking closes the database: its data is cleared from memory, opened document copies are
           deleted, a backup is made if one is due, and it&apos;s released for other computers.
         </li>
         {status.passphraseSaved && (
           <li>
             Because the passphrase is saved on this computer, anyone using this computer account can
-            reopen {status.name} after it locks.
+            reopen the database after it locks.
           </li>
         )}
       </ul>
@@ -394,7 +404,7 @@ function BackupActions({
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Delete all ${count ?? 0} backups of ${name}?`}
+        title={`Delete all ${count ?? 0} backups of “${name}”?`}
         description="They are deleted securely where this computer supports it. This can't be undone."
         confirmLabel="Delete all backups"
         onConfirm={deleteAll}
@@ -439,7 +449,7 @@ function ThisComputer({
       await databasesService.savePassphrase(passphrase);
     } catch (e) {
       if (e instanceof CommandFailure && e.code === "PASSPHRASE_INCORRECT")
-        setError(e.fieldErrors?.passphrase ?? `That isn't the passphrase of ${status.name}.`);
+        setError(e.fieldErrors?.passphrase ?? "That isn't this database's passphrase.");
       else if (e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE")
         setError(KEYRING_UNAVAILABLE);
       else setError("The passphrase couldn't be saved.");
@@ -470,7 +480,7 @@ function ThisComputer({
     body = (
       <>
         <p className="hd-settings-state">
-          The passphrase is remembered on this computer: {status.name} opens without asking for it.
+          The passphrase is remembered on this computer: the database opens without asking for it.
         </p>
         <div className="hd-settings-actions__buttons">
           <Button size="sm" pending={forgetting} disabled={disabled} onClick={() => void forget()}>
@@ -485,7 +495,7 @@ function ThisComputer({
     body = (
       <>
         <p className="hd-settings-state">
-          Not remembered: {status.name} asks for its passphrase each time it opens.
+          Not remembered: the database asks for its passphrase each time it opens.
         </p>
         <div className="hd-settings-actions__buttons">
           <Button
@@ -514,7 +524,6 @@ function ThisComputer({
       )}
       <RememberPassphraseConfirm
         open={asking}
-        name={status.name}
         onClose={() => {
           setAsking(false);
           setError(undefined);
@@ -523,7 +532,7 @@ function ThisComputer({
       >
         <PassphraseField
           ref={field}
-          label={`Passphrase for ${status.name}`}
+          label="Passphrase"
           autoComplete="current-password"
           autoFocus
           error={error}

@@ -71,19 +71,21 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     await fill("Folder", folder);
     await expect($(`p=Saved as ${folder}/Test.hoplodex`)).toExist();
 
-    // Create stays disabled until the no-recovery acknowledgement is ticked.
-    expect(await isButtonDisabled("Create database")).toBe(true);
-    await toggle(ACKNOWLEDGEMENT);
-    expect(await isButtonDisabled("Create database")).toBe(false);
-
+    // Create waits for a long enough passphrase, confirmed, and for the
+    // no-recovery acknowledgement.
     await fill("Passphrase", "too short");
     await fill("Confirm passphrase", "too short");
-    await clickButton("Create database");
+    await toggle(ACKNOWLEDGEMENT);
     await expect($("p=Use at least 12 characters.")).toExist();
+    expect(await isButtonDisabled("Create database")).toBe(true);
     expect(fs.existsSync(`${folder}/Test.hoplodex`)).toBe(false);
 
     await fill("Passphrase", E2E_PASSPHRASE);
     await fill("Confirm passphrase", E2E_PASSPHRASE);
+    await toggle(ACKNOWLEDGEMENT);
+    expect(await isButtonDisabled("Create database")).toBe(true);
+    await toggle(ACKNOWLEDGEMENT);
+    expect(await isButtonDisabled("Create database")).toBe(false);
     await clickButton("Create database");
     await waitForCollection();
     expect(fs.existsSync(`${folder}/Test.hoplodex`)).toBe(true);
@@ -116,7 +118,7 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     await submitPassphrase("not the right passphrase");
     await expect(
       $(
-        "p=That passphrase didn't open Test. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
+        "p=That passphrase didn't open “Test”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
       ),
     ).toExist();
     expect(await $('nav[aria-label="Sections"]').isExisting()).toBe(false);
@@ -192,7 +194,7 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
     await submitPassphrase(home.passphrase);
     await expect(
       $(
-        "p=That passphrase didn't open Club. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
+        "p=That passphrase didn't open “Club”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
       ),
     ).toExist();
     await unlock(club.passphrase);
@@ -270,7 +272,7 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     const confirm = '[role="alertdialog"]';
     await $(confirm).waitForExist();
     await expect($(confirm)).toHaveText(
-      expect.stringContaining("will be able to open Home without knowing the passphrase"),
+      expect.stringContaining("will be able to open “Home” without knowing the passphrase"),
     );
     await clickButton("Remember passphrase");
     await $(confirm).waitForExist({ reverse: true });
@@ -302,7 +304,9 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     );
     await clickButton("Forget saved passphrase");
     await expect($("fieldset*=This computer")).toHaveText(
-      expect.stringContaining("Not remembered: Home asks for its passphrase each time it opens."),
+      expect.stringContaining(
+        "Not remembered: the database asks for its passphrase each time it opens.",
+      ),
     );
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });

@@ -82,9 +82,9 @@ describe("A screen that fails to render", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Shared collection couldn't be shown" }),
+      await screen.findByRole("heading", { name: "“Shared collection” couldn't be shown" }),
     ).toBeInTheDocument();
-    const close = screen.getByRole("button", { name: "Close Shared collection" });
+    const close = screen.getByRole("button", { name: "Close the database" });
     expect(close).toHaveFocus();
 
     act(() => quitRequested());

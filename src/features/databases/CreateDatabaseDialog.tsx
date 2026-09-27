@@ -232,7 +232,8 @@ function CreateDatabaseForm({
               Backups
             </h3>
             <p>
-              Backups are on. When you close {shownName} after changing it, HoploDex saves a copy in{" "}
+              Backups are on. When “{shownName}” locks or HoploDex quits after a change, HoploDex
+              saves a copy in{" "}
               <strong className="hd-privacy-note__path">
                 {backups ?? "the database's folder"}
               </strong>

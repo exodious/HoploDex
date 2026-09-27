@@ -51,7 +51,7 @@ function renderDialog() {
   const onOpenChange = vi.fn();
   render(
     <SessionContext.Provider value={session}>
-      <ChangePassphraseDialog open onOpenChange={onOpenChange} name="Main collection" />
+      <ChangePassphraseDialog open onOpenChange={onOpenChange} />
     </SessionContext.Provider>,
   );
   return { session, onOpenChange };
@@ -87,7 +87,7 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
   it("asks for the current passphrase and the new one twice, with a strength hint", async () => {
     renderDialog();
 
-    expect(screen.getByRole("dialog", { name: "Change the passphrase of Main collection" }));
+    expect(screen.getByRole("dialog", { name: "Change passphrase" }));
     expect(screen.getByLabelText("Current passphrase")).toHaveAttribute(
       "autocomplete",
       "current-password",
@@ -249,7 +249,7 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
     const user = await fill(CURRENT, NEW);
 
     expect(await screen.findByRole("status")).toHaveTextContent(
-      "The passphrase of Main collection has been changed. The previous file was deleted securely, as far as this computer allows (see About databases and security). Backups and copies made before now still open with the old passphrase.",
+      "The passphrase has been changed. The previous file was deleted securely, as far as this computer allows (see About databases and security). Backups and copies made before now still open with the old passphrase.",
     );
     expect(session.refreshStatus).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "About databases and security" }));
@@ -333,7 +333,7 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
 
     expect(
       await screen.findByText(
-        "The passphrase change was stopped. Main collection still opens with its current passphrase.",
+        "The passphrase change was stopped. The database still opens with its current passphrase.",
       ),
     ).toBeInTheDocument();
   });

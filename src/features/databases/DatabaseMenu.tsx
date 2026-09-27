@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Icon, Menu, MenuItem, MenuSeparator } from "../../components";
+import { Button, Icon, LOCK_SHORTCUT, Menu, MenuItem, MenuSeparator } from "../../components";
 import { useSession } from "../session/sessionStore";
 import { ChangePassphraseDialog } from "./ChangePassphraseDialog";
 import { DatabaseGuide } from "./DatabaseGuide";
@@ -7,16 +7,13 @@ import { DatabaseSettingsDialog } from "./DatabaseSettingsDialog";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import "./databases.css";
 
-/** "Ctrl+L", or "⌘L" on a Mac. */
-const LOCK_SHORTCUT =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘L" : "Ctrl+L";
-
 /** The open database's menu, at the left of the top bar's tools
- * (contracts/ui-databases.md §4), with a lock button beside it. Locking
- * asks nothing (FR-035). Switching and closing are normal closes, which ask
- * first about a form with unsaved input (§6). It also holds the database's
- * settings (§7), the passphrase change (§8), the restore dialog (§9) and
- * the guide (§11). */
+ * (contracts/ui-databases.md §4), with a lock button beside it. Its label
+ * is always "Database": the window's title names the open one. Locking
+ * asks nothing (FR-035) and is the way to close the database from here; it
+ * leads to the chooser, which opens this database or another. The menu also
+ * holds the database's settings (§7), the passphrase change (§8), the
+ * restore dialog (§9) and the guide (§11). */
 export function DatabaseMenu() {
   const session = useSession();
   const [dialog, setDialog] = useState<"settings" | "passphrase" | "restore" | "guide" | null>(
@@ -40,7 +37,7 @@ export function DatabaseMenu() {
         align="end"
         trigger={
           <Button variant="ghost" size="sm" className="hd-db-menu">
-            <span className="hd-db-menu__name">{status.name}</span>
+            Database
             <Icon name="chevronDown" size={16} />
           </Button>
         }
@@ -48,10 +45,6 @@ export function DatabaseMenu() {
         <MenuItem icon="lock" shortcut={LOCK_SHORTCUT} onSelect={() => void session.lockDatabase()}>
           Lock now
         </MenuItem>
-        <MenuItem onSelect={() => void session.closeDatabase("switched")}>
-          Switch database…
-        </MenuItem>
-        <MenuItem onSelect={() => void session.closeDatabase("closed")}>Close database</MenuItem>
         <MenuSeparator />
         <MenuItem onSelect={() => setDialog("settings")}>Database settings…</MenuItem>
         <MenuItem onSelect={() => setDialog("passphrase")}>Change passphrase…</MenuItem>
@@ -79,7 +72,6 @@ export function DatabaseMenu() {
         <ChangePassphraseDialog
           open
           onOpenChange={(open) => setDialog(open ? "passphrase" : null)}
-          name={status.name}
         />
       )}
       {dialog === "restore" && (

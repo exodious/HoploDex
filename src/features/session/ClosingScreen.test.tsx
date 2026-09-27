@@ -82,7 +82,7 @@ describe("ClosingScreen (contracts/ui-databases.md §5, SC-005)", () => {
 
     act(() => sendClosing({ reason: "closed" }));
 
-    expect(screen.getByRole("heading", { name: "Closing Main collection…" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Closing “Main collection”…" })).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
   });
 
@@ -91,7 +91,7 @@ describe("ClosingScreen (contracts/ui-databases.md §5, SC-005)", () => {
 
     act(() => sendProgress({ processed: 0, total: 300_000_000, showNow: true }));
 
-    expect(screen.getByText("Backing up Main collection…")).toBeInTheDocument();
+    expect(screen.getByText("Backing up “Main collection”…")).toBeInTheDocument();
     const bar = screen.getByRole("progressbar", { name: "Backup progress" });
     expect(bar).toHaveAttribute("aria-valuenow", "0");
     act(() => sendProgress({ processed: 150_000_000, total: 300_000_000, showNow: true }));
@@ -104,7 +104,7 @@ describe("ClosingScreen (contracts/ui-databases.md §5, SC-005)", () => {
 
     act(() => sendProgress({ processed: 0, total: 4_000_000, showNow: false }));
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Closing Main collection…" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Closing “Main collection”…" })).toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(999));
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();

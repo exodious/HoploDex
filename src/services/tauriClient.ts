@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
  * Mirrors src-tauri/src/commands/error.rs's `CommandError` — the one error
@@ -110,4 +111,19 @@ export function listenForFileDrops(handler: (event: FileDropEvent) => void): () 
     stopped = true;
     unlisten?.();
   };
+}
+
+/** Sets the window's title, as the taskbar and window switcher show it.
+ * Does nothing outside the Tauri shell (unit tests, a plain browser
+ * preview). */
+export function setWindowTitle(title: string): void {
+  try {
+    void getCurrentWindow()
+      .setTitle(title)
+      .catch(() => {
+        // The title stays as it was; nothing depends on it.
+      });
+  } catch {
+    // Not running inside the Tauri shell.
+  }
 }

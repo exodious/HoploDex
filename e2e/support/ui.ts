@@ -694,10 +694,10 @@ export async function chooseMenuItem(triggerSelector: string, item: string) {
   await browser.pause(SETTLE_MS);
 }
 
-/** Switches away from the open database through the database menu, and
- * waits for the chooser. */
+/** Leaves the open database the way the database menu does, by locking it,
+ * and waits for the chooser, where another can be opened. */
 export async function switchDatabase() {
-  await chooseMenuItem("button.hd-db-menu", "Switch database…");
+  await chooseMenuItem("button.hd-db-menu", "Lock now");
   await waitForChooser();
 }
 

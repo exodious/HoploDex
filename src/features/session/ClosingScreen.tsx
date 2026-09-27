@@ -57,10 +57,10 @@ export function ClosingScreen({ name }: ClosingScreenProps) {
       </header>
       <main className="hd-closing__main">
         <section className="hd-closing__panel" aria-live="polite">
-          <h1 className="hd-closing__title">Closing {name}…</h1>
+          <h1 className="hd-closing__title">Closing “{name}”…</h1>
           {backingUp && (
             <div className="hd-closing__backup">
-              <p>Backing up {name}…</p>
+              <p>Backing up “{name}”…</p>
               <ProgressBar value={progress} label="Backup progress" formatAmount={formatBytes} />
               <div className="hd-closing__skip">
                 <Button

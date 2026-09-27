@@ -53,7 +53,7 @@ const SECTIONS: Section[] = [
   {
     title: "Backups",
     paragraphs: [
-      `When you close a database you have changed, HoploDex makes a backup, at most once a day. By default it keeps the latest ${DEFAULT_SETTINGS.keepCount}, in a HoploDex backups folder next to the database. The number kept and the folder can be changed, and backups turned off, in Database settings.`,
+      `When a database you have changed closes, because it locks or HoploDex quits, HoploDex makes a backup, at most once a day. By default it keeps the latest ${DEFAULT_SETTINGS.keepCount}, in a HoploDex backups folder next to the database. The number kept and the folder can be changed, and backups turned off, in Database settings.`,
       "Each backup is a complete copy of the collection, photos and documents included, encrypted like the database. It opens only with the passphrase the database had when the backup was made, so after a passphrase change, older backups still need the old one. Restoring a backup brings its passphrase back with it.",
       "Firearms and policies you have deleted stay in backups made before you deleted them, until those backups are removed, either as newer ones replace them or with Delete all backups.",
       "A backup on the same disk as the database protects against a damaged file or a mistake, but not against losing the disk or the computer. For that, choose a folder on another drive.",
@@ -118,7 +118,7 @@ export function DatabaseGuide({ open, onOpenChange }: DatabaseGuideProps) {
               <p key={n}>{paragraph}</p>
             ))}
             {status && section.settings && (
-              <DatabaseSettingsTable name={status.name} rows={section.settings(status)} />
+              <DatabaseSettingsTable rows={section.settings(status)} />
             )}
           </section>
         ))}
@@ -129,12 +129,12 @@ export function DatabaseGuide({ open, onOpenChange }: DatabaseGuideProps) {
 
 /** How the open database is set up, one row a setting: its value, and
  * the default beside it, "(default)" when they are the same. */
-function DatabaseSettingsTable({ name, rows }: { name: string; rows: SettingRow[] }) {
+function DatabaseSettingsTable({ rows }: { rows: SettingRow[] }) {
   const id = useId();
   return (
     <div className="hd-db-guide__settings" role="group" aria-labelledby={id}>
       <h4 id={id} className="hd-db-guide__settings-title">
-        How {name} is set up
+        How this database is set up
       </h4>
       <dl>
         {rows.map((row) => {

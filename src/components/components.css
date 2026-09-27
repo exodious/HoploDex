@@ -692,13 +692,18 @@
   max-width: 60ch;
 }
 
-.hd-dialog__close {
+.hd-dialog__tools {
   flex: none;
+  display: flex;
+  gap: var(--space-1);
+  margin: -4px -8px 0 0;
+}
+
+.hd-dialog__tool {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  margin: -4px -8px 0 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -706,7 +711,7 @@
   cursor: pointer;
 }
 
-.hd-dialog__close:hover {
+.hd-dialog__tool:hover {
   background: var(--sheet-sunk);
   color: var(--ink);
 }

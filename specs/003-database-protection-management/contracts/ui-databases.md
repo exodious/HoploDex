@@ -42,6 +42,19 @@ facts each text states are required.
     passphrase (a prefix of it, with focus in the confirmation field) isn't a
     mismatch; once focus leaves it, or the passphrase is edited, a prefix is
     one. The length message waits for the confirmation to be started. The same checks run again on submit.
+- **`Dialog`**, while a database is open, has a lock button ("Lock now",
+  lock icon, `title` "Lock now (Ctrl+L)") in its header beside the close
+  button, since a dialog covers the top bar's (§4). It does what Ctrl/⌘+L
+  does. It isn't shown while nothing is open, or where the close button
+  isn't (a dialog that can't be dismissed).
+- **Naming a database.** Where only the open database can be meant (its
+  dialogs, notes and statements), the text says "the database" or "this
+  database" and doesn't name it: the window's title does (§4), and a dialog's
+  title uses its menu item's words. Where a sentence must name one (the
+  chooser and its notices, the closing and fault screens, a database restored
+  from the chooser, and a confirmation that replaces or deletes), the name is
+  in curly quotes, as policy names and nicknames are: "HoploDex locked “Main
+  collection”." Below, `<name>` in a sentence stands for the quoted name.
 - **`ConfirmDialog`** gains an optional third action (`alternativeLabel`,
   `onAlternative`) for the save / discard / cancel question (§6). No screen
   builds its own three-button prompt.
@@ -52,7 +65,7 @@ facts each text states are required.
 ## 1. Database chooser (FR-020, FR-021, FR-012, US2-3)
 
 A full-window screen that replaces the app shell whenever no database is
-open: at launch, after close, switch or lock, and after a take-over. No
+open: at launch, after a lock or a close, and after a take-over. No
 collection data, top-bar tabs or counts are shown.
 
 - **Header**: the HoploDex brand. The theme toggle stays available.
@@ -67,7 +80,7 @@ collection data, top-bar tabs or counts are shown.
     again; rows already imported will be found as matches." For a deletion
     of all backups: "The computer went to sleep while the backups of <name>
     were being deleted, so it was stopped. <n> were deleted; the rest are
-    still there. You can delete them from <name>'s backup settings."
+    still there. You can delete them in its Database settings."
   - pending changes lost: "Unsaved changes could not be kept when <name>
     locked."
   - backup failed: "<name> was not backed up: <the backup location is not
@@ -166,7 +179,7 @@ A `Dialog` (`size="lg"`), titled "Create a database". Fields, in the usual
 3. **Passphrase**: `PassphraseField` with `strength`.
 4. **Confirm passphrase**: `PassphraseField`.
 5. **Backups** (read-only disclosure, FR-024), a short panel: "Backups are on.
-   When you close <name> after changing it, HoploDex saves a copy in
+   When <name> locks or HoploDex quits after a change, HoploDex saves a copy in
    <folder>/HoploDex backups, at most once a day, keeping the latest 5.
    Each backup holds the whole collection and opens with the passphrase you
    had when it was made. You can change this in the database settings."
@@ -190,14 +203,15 @@ from it is in the DOM.
 
 ## 4. The database menu (top bar)
 
-At the left of `hd-topbar__tools`: a button showing the database name with
-a chevron (`aria-haspopup="menu"`), opening a `Menu`:
+At the left of `hd-topbar__tools`: a button labelled **Database** with a
+chevron (`aria-haspopup="menu"`), the same whichever database is open,
+opening a `Menu`:
 
 - **Lock now** (shortcut Ctrl+L / ⌘L, available from anywhere, including
-  inside dialogs)
-- **Switch database…**: a normal close (the unsaved-changes question if
-  needed, §6), then the chooser
-- **Close database**
+  inside dialogs): the one way to close the database from here. It leads to
+  the chooser, which opens it again or another one. (A separate close would
+  do the same: every form that can hold unsaved input is a dialog, which
+  covers the menu, so it could never ask the §6 question either.)
 - separator
 - **Database settings…** (§7)
 - **Change passphrase…** (§8)
@@ -206,7 +220,14 @@ a chevron (`aria-haspopup="menu"`), opening a `Menu`:
 - **About databases and security**: opens the guide (§11)
 
 Beside it, a lock icon button, "Lock now" (`aria-label`), for the one-click
-lock. Neither needs confirmation (FR-035).
+lock; every dialog has one too (§0). None needs confirmation (FR-035).
+
+An item ending in "…" asks for something more before it acts, as buttons
+do across the app; **Lock now** acts at once and the guide only informs.
+
+The open database's name is the window's title: "<name> — HoploDex" (the
+name unquoted, as window titles are), and "HoploDex" while none is open. Its
+file's full path is in Database settings (§7).
 
 ## 5. Closing screen (FR-027, SC-005)
 
@@ -215,13 +236,13 @@ On `session:closing` the app shell is replaced by a centred panel:
 still running 1 s after it started, it shows "Backing up <name>…" with a
 determinate `ProgressBar` (bytes; `aria-valuenow`), and a **Skip this
 backup** button (secondary) with the note "Its changes will be backed up
-next time." The quit or switch waits for it (FR-027). The panel appears
+next time." The lock or quit waits for it (FR-027). The panel appears
 within 100 ms of the close starting.
 
-## 6. Unsaved changes when closing, switching or quitting (FR-010, US2-4a)
+## 6. Unsaved changes when quitting (FR-010, US2-4a)
 
-When the user closes, switches or quits (including the window's close
-button) while a firearm or policy form has unsaved input, a `ConfirmDialog`
+When the user quits (the window's close button, or quitting from the OS)
+while a firearm or policy form has unsaved input, a `ConfirmDialog`
 with a third action appears. Title: "Save changes to <label>?". Buttons:
 **Save changes** (primary), **Discard changes** (alternative; destructive
 style), **Cancel**. Saving runs the form's own submit. If it fails validation
@@ -230,8 +251,9 @@ never shows this (FR-033).
 
 ## 7. Database settings (FR-024, FR-026, FR-029, FR-034, FR-036, FR-038, FR-017)
 
-A standard `Dialog` titled "<name> settings", with three sections in
-this order, each a titled fieldset. Settings apply with **Save** in the
+A standard `Dialog` titled "Database settings", its description giving the
+database file's full path ("The database file is <path>"), with three
+sections in this order, each a titled fieldset. Settings apply with **Save** in the
 footer, like every other form.
 
 **Backups**
@@ -263,19 +285,20 @@ footer, like every other form.
 - `Checkbox` **Lock when the computer's screen locks** (off by default).
   Where unsupported, it is disabled with "Not available: this computer
   doesn't tell applications when the screen locks." (FR-038)
-- Statement: "Locking closes <name>: its data is cleared from memory,
+- Statement: "Locking closes the database: its data is cleared from memory,
   opened document copies are deleted, a backup is made if one is due, and
   it's released for other computers."
 - When the passphrase is saved on this computer (FR-036): "Because the
   passphrase is saved on this computer, anyone using this computer account
-  can reopen <name> after it locks."
+  can reopen the database after it locks."
 
 **This computer** (acts at once, not with **Save**)
 - Shows the current state: "The passphrase is remembered on this computer:
-  <name> opens without asking for it." with **Forget saved passphrase**, or
-  "Not remembered: <name> asks for its passphrase each time it opens." with
-  **Remember the passphrase on this computer…**, which opens the FR-017
-  confirmation (§8) with a `PassphraseField` "Passphrase for <name>" in it.
+  the database opens without asking for it." with **Forget saved
+  passphrase**, or "Not remembered: the database asks for its passphrase each
+  time it opens." with **Remember the passphrase on this computer…**, which
+  opens the FR-017 confirmation (§8) with a `PassphraseField` "Passphrase" in
+  it. A wrong one: "That isn't this database's passphrase."
   A passphrase that doesn't open the database keeps the confirmation open
   with the error on the field.
 - Unavailable-keyring text as in §1.
@@ -283,22 +306,25 @@ footer, like every other form.
 ## 8. Passphrase dialogs
 
 **Remember-passphrase confirmation** (FR-017, US5-1): a `ConfirmDialog`
-(not destructive styling, confirm label "Remember passphrase"): "Anyone
+(not destructive styling, confirm label "Remember passphrase"), titled
+"Remember the passphrase of <name>?" from the chooser and "Remember this
+database's passphrase?" from the settings: "Anyone
 who can use this computer account, or its keyring while it's unlocked,
-will be able to open <name> without knowing the passphrase. On a shared
+will be able to open <name | the database> without knowing the passphrase. On a shared
 account this defeats the passphrase. Locking will no longer need the
 passphrase on this computer, though it still clears the collection from
 memory, deletes opened document copies, and releases the database for
 other computers."
 
-**Change passphrase** (FR-015, FR-016, US4): a `Dialog` with **Current
+**Change passphrase** (FR-015, FR-016, US4): a `Dialog` titled "Change
+passphrase", with **Current
 passphrase**, **New passphrase** (with strength) and **Confirm new
 passphrase**, then the footer **Change passphrase**, enabled once the
 fields pass the checks of §0. While it runs, the body
 is replaced by a `ProgressBar` with its phase label ("Making a copy with the
 new passphrase…", "Checking the new copy…", "Replacing the database…") and
 the dialog cannot be dismissed. On completion the body says: "The passphrase
-of <name> has been changed. The previous file was deleted securely, as far as
+has been changed. The previous file was deleted securely, as far as
 this computer allows (see About databases and security). Backups and copies
 made before now still open with the old passphrase." When the old file
 remains: "The previous file could not be deleted. It is at <path>, and it
@@ -307,31 +333,35 @@ passphrase needs <size> free on the database's drive; <available> is free."
 
 ## 9. Restore from a backup (FR-028, US3-5, US3-6)
 
-A `Dialog` (`size="lg"`):
+A `Dialog` (`size="lg"`) titled "Restore from a backup", or "Restore <name>
+from a backup" for a damaged database restored from the chooser (US3-6),
+where the text below names it for "the database":
 1. **Choose a backup**: a radio list of `list_backups` entries, newest first
    ("25 September 2026, 14:30 — 212 MB"). An empty or unavailable folder
-   says so, and names the folder: "There are no backups of <name> in
+   says so, and names the folder: "There are no backups of this database in
    <folder>." / "The backup folder <folder> isn't available on this
    computer."
 2. **Passphrase for this backup**: a `PassphraseField`, with the note "Enter
-   the passphrase <name> had on <date>. After restoring, <name> will open
-   with that passphrase."
-3. Statement: "The current <name> is backed up first, so you can undo this
-   by restoring that backup." For a damaged database: "The damaged file
-   will be kept next to it, renamed."
+   the passphrase the database had on <date>. After restoring, it opens with
+   that passphrase."
+3. Statement: "Before restoring, the database is backed up as it is now, so
+   you can undo this by restoring that backup." For a damaged database: "The
+   damaged file will be kept next to it, renamed."
 4. Footer: **Restore** (a destructive `ConfirmDialog` step: "Replace <name>
-   with the backup from <date>?").
+   with the backup from <date>?", described "The backup takes its place,
+   after the database is backed up as it is now." or, for a damaged one,
+   "The backup takes its place, and the damaged file is kept beside it.").
 
 Refusals before anything is written (FR-028), shown in the dialog above
 the footer, with the dialog left open:
 - `INSUFFICIENT_SPACE`: "Restoring needs <size> free on <drive or folder>;
   <available> is free. Nothing has been changed."
-- `BACKUP_LOCATION_UNAVAILABLE`: "The current <name> can't be backed up
+- `BACKUP_LOCATION_UNAVAILABLE`: "The database can't be backed up
   first, because <the backup location is not available | there is not enough
   space there>. Nothing has been changed." with **Change backup location…**
   (opens §7's Backups section).
 - A "before restoring" backup that fails or is stopped while running: "The
-  current <name> couldn't be backed up, so the restore was cancelled.
+  database couldn't be backed up, so the restore was cancelled.
   Nothing has been changed."
 
 A wrong passphrase for the backup is shown on its field: "That passphrase
@@ -339,8 +369,8 @@ didn't open the backup from <date>."
 
 While it runs: progress as in §8 ("Copying the backup…", "Checking the
 backup…", "Backing up the current database…", "Replacing the database…"),
-and the dialog has no close button and ignores Escape. Afterwards <name> is
-open, and a notice says it now opens with the passphrase from <date> (US3-5).
+and the dialog has no close button and ignores Escape. Afterwards the
+database is open, and a notice says it now opens with the passphrase from <date> (US3-5).
 
 ## 10. Notes shown once in the collection
 
@@ -353,8 +383,8 @@ existing notice style:
   sentence. Each note is only as wide as its text, which wraps at about 72
   characters, so no empty stretch of bar separates the text from its
   dismiss button.
-- **Restored** (FR-028), once after a restore: "<name> was restored from a
-  backup and now opens with the passphrase it had on <date>." For a damaged
+- **Restored** (FR-028), once after a restore: "The database was restored
+  from a backup and now opens with the passphrase it had on <date>." For a damaged
   database it adds "The damaged file was kept as <path>."
 - **Backup opened directly** (research §9): "This is a backup of <backupOfName>
   made on <date>. Changes here aren't part of <backupOfName>. It's still in the
@@ -375,7 +405,7 @@ using a database from more than one computer (one at a time, the open marker,
 take-over); and whole-disk encryption. The text states the defaults (5
 backups kept, a HoploDex backups folder next to the database, a lock after
 10 minutes, no lock at a screen lock). With a database open, the locking
-and backup sections each end with "How <name> is set up": each setting's
+and backup sections each end with "How this database is set up": each setting's
 value with its default beside it, "10 (default 5)", or "(default)" when
 unchanged, a changed row marked at its left. It is reachable from the database menu,
 the disk-encryption note, and "see About databases and security" links in
@@ -392,7 +422,7 @@ see Database settings." The feature 001 SC-005 wording is amended to match.
 
 After an open that reports `pendingChanges`, and before the collection can
 be used, a non-dismissable `Dialog`: "Unsaved changes to <label>". Body:
-"<name> locked on <date, time> while you were editing <label>. Your changes
+"The database locked on <date, time> while you were editing <label>. Your changes
 were kept." Buttons: **Resume editing** (primary): navigates to the record
 or policy and opens its form with the draft as unsaved input. **Discard
 changes**: a destructive `ConfirmDialog`. When `resumable` is false, the body
@@ -407,8 +437,8 @@ draft. A draft short of fields still opens.
 **A screen that fails to render** never leaves a blank window. Inside an
 open database the collection is replaced by a full-window panel laid out like
 the closing screen (§5): "<name> couldn't be shown", saying that everything
-saved is safe and unsaved changes are lost, with **Close <name>** (focused),
-a normal close. The session stays mounted, so the window's close button
+saved is safe and unsaved changes are lost, with **Close the database**
+(focused), a normal close. The session stays mounted, so the window's close button
 still quits. Anything else that fails shows "HoploDex stopped working" with
 **Quit HoploDex**, which, like the window's close button, quits through
 `quit_application`.
@@ -430,6 +460,6 @@ New stable names, each in light and dark: `14-chooser`, `15-chooser-first-run`,
 `22-pending-changes`, `23-database-guide`, `24-disk-encryption-note`,
 `25-unsaved-changes` (the save / discard / cancel prompt of §6, which adds a
 third action to the shared `ConfirmDialog`), `26-database-guide-settings`
-(the guide scrolled to "How <name> is set up", §11). Existing
+(the guide scrolled to "How this database is set up", §11). Existing
 screens are unchanged apart from the database menu in the top bar and the
 export wording.

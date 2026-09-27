@@ -71,7 +71,7 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     expect(note).toHaveTextContent("/home/sam/Documents/HoploDex/HoploDex backups");
     expect(note).toHaveTextContent("at most once a day");
     expect(note).toHaveTextContent("keeping the latest 5");
-    expect(note).toHaveTextContent("When you close My collection after changing it");
+    expect(note).toHaveTextContent("When “My collection” locks or HoploDex quits after a change");
 
     await user.clear(screen.getByLabelText("Folder"));
     await user.type(screen.getByLabelText("Folder"), "/mnt/usb");

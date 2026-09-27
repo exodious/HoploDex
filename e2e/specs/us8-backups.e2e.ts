@@ -35,8 +35,9 @@ function backupFiles(): string[] {
     .sort();
 }
 
+/** Locking is the database menu's close: it makes the backup a close makes. */
 async function closeDatabase() {
-  await chooseMenuItem("button.hd-db-menu", "Close database");
+  await chooseMenuItem("button.hd-db-menu", "Lock now");
   await waitForChooser();
 }
 

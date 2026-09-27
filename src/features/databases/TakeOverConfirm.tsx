@@ -43,10 +43,10 @@ export function TakeOverConfirm({ target, onCancel, onConfirm }: TakeOverConfirm
         setError(undefined);
         onCancel();
       }}
-      title={`Take over ${target?.name ?? ""}?`}
+      title={`Take over “${target?.name ?? ""}”?`}
       description={
         target &&
-        `Only do this if ${target.machineName} no longer has ${target.name} open, or if it crashed. If it still has it open, or its latest changes haven't synced here yet, those changes can be lost.`
+        `Only do this if ${target.machineName} no longer has “${target.name}” open, or if it crashed. If it still has it open, or its latest changes haven't synced here yet, those changes can be lost.`
       }
       confirmLabel="Take over"
       onConfirm={confirm}
@@ -54,7 +54,7 @@ export function TakeOverConfirm({ target, onCancel, onConfirm }: TakeOverConfirm
       {target && (
         <PassphraseField
           ref={field}
-          label={`Passphrase for ${target.name}`}
+          label={`Passphrase for “${target.name}”`}
           hint="Enter it again to confirm the take-over."
           autoComplete="current-password"
           autoFocus

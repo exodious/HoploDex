@@ -3,8 +3,9 @@ import { ConfirmDialog } from "../../components";
 
 export interface RememberPassphraseConfirmProps {
   open: boolean;
-  /** The database whose passphrase would be saved. */
-  name: string;
+  /** The database whose passphrase would be saved, when it isn't the open
+   * one (the chooser names it; the settings are the open database's). */
+  name?: string;
   /** It closed, confirmed or not. */
   onClose: () => void;
   /** Handled like `ConfirmDialog`'s: a rejected promise keeps it open. */
@@ -16,8 +17,8 @@ export interface RememberPassphraseConfirmProps {
 
 /** What saving a passphrase on this computer gives away (FR-017, US5-1,
  * contracts/ui-databases.md §8), confirmed before it is saved. */
-function rememberFacts(name: string): string {
-  return `Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open ${name} without knowing the passphrase. On a shared account this defeats the passphrase. Locking will no longer need the passphrase on this computer, though it still clears the collection from memory, deletes opened document copies, and releases the database for other computers.`;
+function rememberFacts(database: string): string {
+  return `Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open ${database} without knowing the passphrase. On a shared account this defeats the passphrase. Locking will no longer need the passphrase on this computer, though it still clears the collection from memory, deletes opened document copies, and releases the database for other computers.`;
 }
 
 /** The FR-017 confirmation, shown before a passphrase is saved in this
@@ -34,8 +35,10 @@ export function RememberPassphraseConfirm({
     <ConfirmDialog
       open={open}
       onOpenChange={(next) => !next && onClose()}
-      title={`Remember the passphrase of ${name}?`}
-      description={rememberFacts(name)}
+      title={
+        name ? `Remember the passphrase of “${name}”?` : "Remember this database's passphrase?"
+      }
+      description={rememberFacts(name ? `“${name}”` : "the database")}
       confirmLabel="Remember passphrase"
       destructive={false}
       onConfirm={onConfirm}

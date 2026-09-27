@@ -104,72 +104,33 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
       .mockReturnValue(() => {});
   });
 
-  it("shows the open database's name on a menu button", async () => {
+  it("is always labelled Database, whichever database is open", async () => {
     renderMenu();
 
-    const button = await screen.findByRole("button", { name: "Main collection" });
+    const button = await screen.findByRole("button", { name: "Database" });
     expect(button).toHaveAttribute("aria-haspopup", "menu");
-  });
-
-  it("switches through a normal close, then shows the chooser", async () => {
-    const user = userEvent.setup();
-    renderMenu();
-
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Switch database…" }));
-
-    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("switched"));
-    expect(await screen.findByLabelText("Passphrase for Main collection")).toBeInTheDocument();
-  });
-
-  it("closes through a normal close", async () => {
-    const user = userEvent.setup();
-    renderMenu();
-
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Close database" }));
-
-    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed"));
-  });
-
-  it("asks about unsaved changes before closing", async () => {
-    const user = userEvent.setup();
-    renderMenu(true);
-
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Close database" }));
-
-    const prompt = await screen.findByRole("alertdialog", {
-      name: "Save changes to Glock 19 (edit)?",
-    });
-    expect(sessionService.closeDatabase).not.toHaveBeenCalled();
-    await user.click(within(prompt).getByRole("button", { name: "Discard changes" }));
-    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed"));
+    expect(screen.queryByText("Main collection")).not.toBeInTheDocument();
   });
 
   it("opens the database settings (§7)", async () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
 
-    expect(
-      await screen.findByRole("dialog", { name: "Main collection settings" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Database settings" })).toBeInTheDocument();
   });
 
   it("lists its items in the contract's order", async () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
 
     const items = await screen.findAllByRole("menuitem");
     expect(items.map((item) => item.textContent)).toEqual([
       "Lock nowCtrl+L",
-      "Switch database…",
-      "Close database",
       "Database settings…",
       "Change passphrase…",
       "Restore from a backup…",
@@ -181,7 +142,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "About databases and security" }));
 
     expect(
@@ -193,11 +154,11 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "Change passphrase…" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Change the passphrase of Main collection",
+      name: "Change passphrase",
     });
     expect(within(dialog).getByLabelText("Current passphrase")).toBeInTheDocument();
   });
@@ -206,11 +167,11 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     const user = userEvent.setup();
     renderMenu();
 
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "Restore from a backup…" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Restore Main collection from a backup" }),
+      await screen.findByRole("dialog", { name: "Restore from a backup" }),
     ).toBeInTheDocument();
     expect(databasesService.listBackups).toHaveBeenCalledWith(undefined);
   });
@@ -242,7 +203,7 @@ describe("Lock now (FR-033, FR-035)", () => {
     const user = userEvent.setup();
     renderMenu(true);
 
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
     const item = await screen.findByRole("menuitem", { name: /Lock now/ });
     expect(item).toHaveTextContent("Ctrl+L");
     await user.click(item);
@@ -264,15 +225,30 @@ describe("Lock now (FR-033, FR-035)", () => {
   it("locks with Ctrl+L from anywhere, inside a dialog too", async () => {
     const user = userEvent.setup();
     renderMenu(true);
-    await user.click(await screen.findByRole("button", { name: "Main collection" }));
+    await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
-    const dialog = await screen.findByRole("dialog", { name: "Main collection settings" });
+    const dialog = await screen.findByRole("dialog", { name: "Database settings" });
     await user.click(within(dialog).getByRole("textbox", { name: "Keep the latest" }));
 
     await user.keyboard("{Control>}l{/Control}");
 
     await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
     expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks from a dialog's lock button, which covers the top bar's", async () => {
+    const user = userEvent.setup();
+    renderMenu(true);
+    await user.click(await screen.findByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Database settings" });
+
+    const lock = within(dialog).getByRole("button", { name: "Lock now" });
+    expect(lock).toHaveAttribute("title", "Lock now (Ctrl+L)");
+    await user.click(lock);
+
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("locks with ⌘L too", async () => {

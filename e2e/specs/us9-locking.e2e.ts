@@ -106,7 +106,7 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
 
   it("shows the locked database selected, with the locked notice", async () => {
     expect(await selectedChooserRow()).toBe("Locked");
-    expect(await chooserSays("HoploDex locked Locked.")).toBe(true);
+    expect(await chooserSays("HoploDex locked “Locked”.")).toBe(true);
     const focused = await browser.execute(
       () => document.activeElement?.closest(".hd-db-row--selected") != null,
     );
@@ -158,7 +158,7 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
       timeoutMsg: "the idle lock never locked",
     });
 
-    expect(await chooserSays("HoploDex locked Locked after 1 minute without use.")).toBe(true);
+    expect(await chooserSays("HoploDex locked “Locked” after 1 minute without use.")).toBe(true);
     // A minute of waiting, beyond the usual limit.
   }).timeout(150000);
 });

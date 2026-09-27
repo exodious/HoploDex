@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { CommandFailure } from "../../services/tauriClient";
+import { LockContext } from "../../components";
+import { CommandFailure, setWindowTitle } from "../../services/tauriClient";
 import { ClosingScreen } from "./ClosingScreen";
 import { CollectionFault, FaultBoundary } from "./FaultScreen";
 import { DatabaseChooser } from "../databases/DatabaseChooser";
@@ -37,11 +38,12 @@ interface Question {
  * `children`, the collection's providers and shell, render only while one
  * is, keyed by that open, so a close or switch drops every piece of
  * collection state with the tree that held it (contracts/ui-databases.md §3).
- * Closing, switching and quitting ask first about a form with unsaved input
+ * Quitting, and a normal close, ask first about a form with unsaved input
  * (FR-010, §6); a lock never asks, and keeps it as pending changes, which
  * the next open offers before the collection shows (FR-039, §13). Ctrl/⌘+L
- * locks from anywhere (FR-035), and input is reported for the idle lock
- * (FR-034). */
+ * locks from anywhere (FR-035), and so does every dialog's lock button; input
+ * is reported for the idle lock (FR-034). The window's title names the open
+ * database (§4). */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [question, setQuestion] = useState<Question | null>(null);
@@ -118,6 +120,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const isOpen = phase.kind === "open";
   useIdleActivity(isOpen);
+
+  const lockFromDialog = useCallback(() => void lockDatabase(), [lockDatabase]);
+
+  const openName =
+    phase.kind === "open" ? phase.status.name : phase.kind === "closing" ? phase.name : null;
+  useEffect(() => setWindowTitle(openName ? `${openName} — HoploDex` : "HoploDex"), [openName]);
 
   // Ctrl/⌘+L locks from any focus, inside dialogs too: listened for before
   // anything else sees the key.
@@ -243,39 +251,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <SessionContext.Provider value={value}>
-      {phase.kind === "chooser" && <DatabaseChooser selectPath={phase.selectedPath} />}
-      {phase.kind === "open" && phase.status.pendingChanges && (
-        <PendingChangesDialog
-          name={phase.status.name}
-          pending={phase.status.pendingChanges}
-          onResume={() => resolvePending("resume")}
-          onDiscard={() => resolvePending("discard")}
+      <LockContext.Provider value={isOpen ? lockFromDialog : null}>
+        {phase.kind === "chooser" && <DatabaseChooser selectPath={phase.selectedPath} />}
+        {phase.kind === "open" && phase.status.pendingChanges && (
+          <PendingChangesDialog
+            pending={phase.status.pendingChanges}
+            onResume={() => resolvePending("resume")}
+            onDiscard={() => resolvePending("discard")}
+          />
+        )}
+        {phase.kind === "open" && !phase.status.pendingChanges && (
+          // A screen that fails to render leaves the session, and with it the
+          // way to close the database and to quit, in place.
+          <FaultBoundary
+            key={`${phase.status.path}#${phase.opens}`}
+            fallback={
+              <CollectionFault name={phase.status.name} onClose={() => closeDatabase("closed")} />
+            }
+          >
+            {children}
+          </FaultBoundary>
+        )}
+        {phase.kind === "closing" && <ClosingScreen name={phase.name} />}
+        <UnsavedChangesPrompt
+          label={question?.label ?? null}
+          onSave={async () => {
+            if (!question) return;
+            // A save that fails leaves the form open showing why, and nothing
+            // closes.
+            if (await question.save()) await question.proceed();
+          }}
+          onDiscard={() => void question?.proceed()}
+          onCancel={() => setQuestion(null)}
         />
-      )}
-      {phase.kind === "open" && !phase.status.pendingChanges && (
-        // A screen that fails to render leaves the session, and with it the
-        // way to close the database and to quit, in place.
-        <FaultBoundary
-          key={`${phase.status.path}#${phase.opens}`}
-          fallback={
-            <CollectionFault name={phase.status.name} onClose={() => closeDatabase("closed")} />
-          }
-        >
-          {children}
-        </FaultBoundary>
-      )}
-      {phase.kind === "closing" && <ClosingScreen name={phase.name} />}
-      <UnsavedChangesPrompt
-        label={question?.label ?? null}
-        onSave={async () => {
-          if (!question) return;
-          // A save that fails leaves the form open showing why, and nothing
-          // closes.
-          if (await question.save()) await question.proceed();
-        }}
-        onDiscard={() => void question?.proceed()}
-        onCancel={() => setQuestion(null)}
-      />
+      </LockContext.Provider>
     </SessionContext.Provider>
   );
 }

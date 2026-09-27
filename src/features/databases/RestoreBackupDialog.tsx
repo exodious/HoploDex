@@ -41,7 +41,8 @@ export interface RestoreBackupDialogProps {
 /** Restores a database from one of its backups (contracts/ui-databases.md
  * §9, FR-028). The backup's own passphrase is asked for, since it keeps the
  * one it was made with. The current database is backed up first, or, when
- * it is damaged, kept beside the restored one. */
+ * it is damaged, kept beside the restored one. The open database is "the
+ * database"; one restored from the chooser is named, in quotes. */
 export function RestoreBackupDialog({
   open,
   onOpenChange,
@@ -54,7 +55,7 @@ export function RestoreBackupDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Restore ${name} from a backup`}
+      title={databasePath ? `Restore “${name}” from a backup` : "Restore from a backup"}
       size="lg"
       dismissible={!running}
       bare
@@ -115,6 +116,7 @@ function RestoreForm({
 
   const chosen: BackupInfo | undefined = list?.backups.find((b) => b.path === selected);
   const when = chosen ? formatDateTime(chosen.madeAt) : "";
+  const quoted = `“${name}”`;
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -174,14 +176,14 @@ function RestoreForm({
             ? "there is not enough space there"
             : "the backup location is not available";
         setRefusal({
-          text: `The current ${name} can't be backed up first, because ${why}. Nothing has been changed.`,
+          text: `The database can't be backed up first, because ${why}. Nothing has been changed.`,
           changeLocation: true,
         });
         return;
       }
       case "RESTORE_CANCELLED":
         setRefusal({
-          text: `The current ${name} couldn't be backed up, so the restore was cancelled. Nothing has been changed.`,
+          text: "The database couldn't be backed up, so the restore was cancelled. Nothing has been changed.",
           changeLocation: false,
         });
         return;
@@ -229,7 +231,7 @@ function RestoreForm({
           </p>
         ) : backups.length === 0 ? (
           <p className="hd-banner">
-            There are no backups of {name} in {list.folder}.
+            There are no backups of {databasePath ? quoted : "this database"} in {list.folder}.
           </p>
         ) : (
           <ChoiceCards
@@ -249,13 +251,13 @@ function RestoreForm({
               ref={passphrase}
               label="Passphrase for this backup"
               autoComplete="current-password"
-              hint={`Enter the passphrase ${name} had on ${when}. After restoring, ${name} will open with that passphrase.`}
+              hint={`Enter the passphrase ${databasePath ? quoted : "the database"} had on ${when}. After restoring, it opens with that passphrase.`}
               error={fieldError}
             />
             <p className="hd-restore__statement">
               {databasePath
                 ? "The damaged file will be kept next to it, renamed."
-                : `The current ${name} is backed up first, so you can undo this by restoring that backup.`}
+                : "Before restoring, the database is backed up as it is now, so you can undo this by restoring that backup."}
             </p>
           </>
         )}
@@ -281,11 +283,11 @@ function RestoreForm({
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Replace ${name} with the backup from ${when}?`}
+        title={`Replace ${quoted} with the backup from ${when}?`}
         description={
           databasePath
-            ? `${name} is replaced by the backup, and the damaged file is kept beside it.`
-            : `${name} is replaced by the backup, after the current ${name} is backed up.`
+            ? "The backup takes its place, and the damaged file is kept beside it."
+            : "The backup takes its place, after the database is backed up as it is now."
         }
         confirmLabel="Restore"
         onConfirm={() => void restore()}

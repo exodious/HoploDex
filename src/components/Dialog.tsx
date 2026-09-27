@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Icon } from "./Icon";
+import { LOCK_SHORTCUT, useLock } from "./lock";
 import "./components.css";
 
 const FIRST_FIELD = [
@@ -31,7 +32,10 @@ export interface DialogProps {
 
 /** Shared dialog shell (focus trap, Escape-to-close, ARIA labelling via
  * Radix) — no screen builds its own modal. Header and footer stay put
- * while a long body scrolls, so a form's Save is always in reach. */
+ * while a long body scrolls, so a form's Save is always in reach. While a
+ * database is open, the header also has a lock button beside the close
+ * button, since the dialog covers the top bar's (contracts/ui-databases.md
+ * §4); a lock keeps a form's unsaved input as pending changes (FR-039). */
 export function Dialog({
   open,
   onOpenChange,
@@ -44,6 +48,7 @@ export function Dialog({
   children,
 }: DialogProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const lock = useLock();
   // No screen wires its opening button up as a Radix `Trigger` (each opens
   // from its own state instead), so Radix's own focus-restore never fires;
   // this captures and restores it here, once, for every dialog.
@@ -99,9 +104,22 @@ export function Dialog({
               )}
             </div>
             {dismissible && (
-              <RadixDialog.Close className="hd-dialog__close" aria-label="Close">
-                <Icon name="close" />
-              </RadixDialog.Close>
+              <div className="hd-dialog__tools">
+                {lock && (
+                  <button
+                    type="button"
+                    className="hd-dialog__tool"
+                    aria-label="Lock now"
+                    title={`Lock now (${LOCK_SHORTCUT})`}
+                    onClick={lock}
+                  >
+                    <Icon name="lock" />
+                  </button>
+                )}
+                <RadixDialog.Close className="hd-dialog__tool" aria-label="Close">
+                  <Icon name="close" />
+                </RadixDialog.Close>
+              </div>
             )}
           </header>
           {bare ? children : <div className="hd-dialog__body">{children}</div>}

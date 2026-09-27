@@ -137,7 +137,7 @@ describe("DatabaseGuide with a database open", () => {
 
   function rows(section: string): string[] {
     const group = within(screen.getByRole("region", { name: section })).getByRole("group", {
-      name: "How Main collection is set up",
+      name: "How this database is set up",
     });
     return within(group)
       .getAllByRole("definition")
