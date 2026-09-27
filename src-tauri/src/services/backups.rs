@@ -322,7 +322,7 @@ pub fn rotate(
     let rotated = listed
         .iter()
         .map(|b| PathBuf::from(&b.path))
-        .filter(|path| protected.map_or(true, |protected| !same_path(path, protected)));
+        .filter(|path| protected.is_none_or(|protected| !same_path(path, protected)));
     for path in rotated.skip(keep) {
         if let Err(err) = secure_delete::secure_delete_whole_file(&path, WipeControl::default()) {
             log::warn!("could not delete the old backup {}: {err}", path.display());
@@ -657,23 +657,11 @@ pub fn move_backups(job: MoveJob) -> Moved {
 fn failure_reason(to: &Path, err: &io::Error) -> LeftBehindReason {
     if !to.is_dir() {
         LeftBehindReason::LocationUnavailable
-    } else if is_disk_full(err) {
+    } else if err.kind() == io::ErrorKind::StorageFull {
         LeftBehindReason::InsufficientSpace
     } else {
         LeftBehindReason::Io
     }
-}
-
-/// The OS said the disk is full. `io::ErrorKind::StorageFull` is newer
-/// than the crate's minimum Rust version, so its codes are matched here:
-/// `ENOSPC` on Linux and macOS, `ERROR_HANDLE_DISK_FULL` and
-/// `ERROR_DISK_FULL` on Windows.
-fn is_disk_full(err: &io::Error) -> bool {
-    #[cfg(unix)]
-    const DISK_FULL: &[i32] = &[28];
-    #[cfg(windows)]
-    const DISK_FULL: &[i32] = &[39, 112];
-    err.raw_os_error().is_some_and(|code| DISK_FULL.contains(&code))
 }
 
 /// Moves one backup of `len` bytes from `src` to `dst`, reporting its own
@@ -841,5 +829,28 @@ pub mod testing {
                 hook(partial);
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The OS's disk-full codes reach the user as insufficient space
+    /// (FR-026): `ENOSPC` on Linux and macOS, `ERROR_HANDLE_DISK_FULL` and
+    /// `ERROR_DISK_FULL` on Windows.
+    #[test]
+    fn a_full_disk_is_reported_as_insufficient_space() {
+        #[cfg(unix)]
+        let codes = [28];
+        #[cfg(windows)]
+        let codes = [39, 112];
+        let folder = std::env::temp_dir();
+        for code in codes {
+            let err = io::Error::from_raw_os_error(code);
+            assert_eq!(failure_reason(&folder, &err), LeftBehindReason::InsufficientSpace);
+        }
+        let other = io::Error::from(io::ErrorKind::PermissionDenied);
+        assert_eq!(failure_reason(&folder, &other), LeftBehindReason::Io);
     }
 }

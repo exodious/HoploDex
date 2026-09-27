@@ -64,7 +64,7 @@ dialogs about it say "the database" (contracts/ui-databases.md §0, §4).
 
 ## Technical Context
 
-**Language/Version**: Rust 1.75+ (backend, `src-tauri`), TypeScript 5.x /
+**Language/Version**: Rust 1.97+ (backend, `src-tauri`), TypeScript 5.x /
 React 18 (frontend, `src`). Unchanged.
 
 **Primary Dependencies**: Existing: Tauri 2, `rusqlite` 0.40

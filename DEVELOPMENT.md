@@ -64,7 +64,7 @@ prerequisites below.
 
 ## Prerequisites
 
-**Rust** (stable, 1.75+), via [rustup](https://rustup.rs):
+**Rust** (stable, 1.97+), via [rustup](https://rustup.rs):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Linux/macOS

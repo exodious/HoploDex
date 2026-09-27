@@ -23,7 +23,7 @@ from policy dates and never assigned per firearm (FR-014, FR-036).
 
 ## Technical Context
 
-**Language/Version**: Rust 1.75+ (backend, `src-tauri`), TypeScript 5.x /
+**Language/Version**: Rust 1.97+ (backend, `src-tauri`), TypeScript 5.x /
 React 18+ (frontend, `src`)
 
 **Primary Dependencies**: Tauri 2.x (app shell, IPC, async commands, native

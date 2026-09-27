@@ -9,7 +9,7 @@
 //! of an open database goes through the descriptor SQLite already holds. On
 //! Windows the same path avoids the lock bytes a second handle can't read.
 
-use std::ffi::{c_int, c_void, CStr};
+use std::ffi::{c_int, c_void};
 use std::io;
 use std::marker::PhantomData;
 
@@ -27,10 +27,6 @@ impl<'conn> RawFile<'conn> {
     /// The main database file of `conn`, which must not be used from another
     /// thread while this is alive (the session's mutex sees to that).
     pub fn of(conn: &'conn Connection) -> io::Result<Self> {
-        const MAIN: &CStr = match CStr::from_bytes_with_nul(b"main\0") {
-            Ok(name) => name,
-            Err(_) => panic!("a C string"),
-        };
         let mut file: *mut ffi::sqlite3_file = std::ptr::null_mut();
         // SAFETY: `conn.handle()` is a live connection for `'conn`, and
         // SQLITE_FCNTL_FILE_POINTER writes one `sqlite3_file*` to the
@@ -38,7 +34,7 @@ impl<'conn> RawFile<'conn> {
         let rc = unsafe {
             ffi::sqlite3_file_control(
                 conn.handle(),
-                MAIN.as_ptr(),
+                c"main".as_ptr(),
                 ffi::SQLITE_FCNTL_FILE_POINTER,
                 (&mut file as *mut *mut ffi::sqlite3_file).cast::<c_void>(),
             )

@@ -86,7 +86,7 @@ fn the_file_starts_with_its_salt_not_a_readable_header() {
     let bytes =
         fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join(portable_fixture::FIXTURE)).unwrap();
 
-    assert!(bytes.len() >= 4096 && bytes.len() % 4096 == 0, "whole 4096-byte pages");
+    assert!(bytes.len() >= 4096 && bytes.len().is_multiple_of(4096), "whole 4096-byte pages");
     assert_ne!(&bytes[..16], b"SQLite format 3\0", "the whole file is encrypted");
     assert!(bytes[..16].iter().any(|&b| b != 0), "the first 16 bytes are a random salt");
     let text = String::from_utf8_lossy(&bytes);

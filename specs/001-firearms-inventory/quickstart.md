@@ -7,7 +7,7 @@ independent test from spec.md. Field/command names reference
 
 ## Prerequisites
 
-- Rust toolchain (stable, 1.75+) with `cargo`.
+- Rust toolchain (stable, 1.97+) with `cargo`.
 - Node.js 18+ and a package manager (npm/pnpm) for the frontend.
 - Tauri 2.x CLI prerequisites for your OS (WebView2 on Windows,
   WebKitGTK dev packages on Linux — see Tauri's own platform prerequisites).
