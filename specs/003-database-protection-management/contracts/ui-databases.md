@@ -38,9 +38,10 @@ facts each text states are required.
     every field is filled in, the new passphrase is long enough (and, for a
     change, differs from the current one) and the confirmation matches.
     Problems show after a 400 ms pause in typing and clear the moment they
-    are put right; a confirmation still on its way to the passphrase (a
-    prefix of it) isn't a mismatch, and the length message waits for the
-    confirmation to be started. The same checks run again on submit.
+    are put right. A confirmation still being typed on its way to the
+    passphrase (a prefix of it, with focus in the confirmation field) isn't a
+    mismatch; once focus leaves it, or the passphrase is edited, a prefix is
+    one. The length message waits for the confirmation to be started. The same checks run again on submit.
 - **`ConfirmDialog`** gains an optional third action (`alternativeLabel`,
   `onAlternative`) for the save / discard / cancel question (§6). No screen
   builds its own three-button prompt.

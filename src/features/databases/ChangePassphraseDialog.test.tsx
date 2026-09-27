@@ -156,6 +156,46 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
     expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
   });
 
+  it("says a confirmation left short doesn't match, once the typing moves on", async () => {
+    renderDialog();
+    const user = await type(CURRENT, NEW, NEW.slice(0, -1));
+    // Still in the confirmation: it may be on its way.
+    await act(() => new Promise((resolve) => setTimeout(resolve, PASSPHRASE_CHECK_DELAY_MS)));
+    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("Current passphrase"));
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Confirm new passphrase")).toHaveAccessibleDescription(
+      "The passphrases don't match.",
+    );
+  });
+
+  it("isn't put off by showing the confirmation while it is being typed", async () => {
+    renderDialog();
+    const user = await type(CURRENT, NEW, NEW.slice(0, 10));
+
+    await user.click(screen.getAllByRole("button", { name: "Show passphrase" })[2]);
+    await act(() => new Promise((resolve) => setTimeout(resolve, PASSPHRASE_CHECK_DELAY_MS)));
+    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+  });
+
+  it("says the passphrases don't match when the new one changes after they did, every time", async () => {
+    renderDialog();
+    const user = await type(CURRENT, NEW);
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
+
+    await user.type(screen.getByLabelText("New passphrase"), " too");
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Confirm new passphrase"), " too");
+    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();
+
+    await user.type(screen.getByLabelText("New passphrase"), "!");
+    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
+  });
+
   it("forgets what it found when the fields are emptied at a lock or sleep (FR-007)", async () => {
     renderDialog();
     await type(CURRENT, NEW);
