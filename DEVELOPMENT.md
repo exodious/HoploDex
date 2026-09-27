@@ -250,9 +250,17 @@ e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).
 
 ### Test isolation
 
-Your real collection lives in an encrypted database at
-`~/.local/share/com.hoplodex.app/hoplodex.db` (on Linux), with its key in the
-OS keyring. None of the tooling here opens it:
+Your real application data is more than one file. It is every `.hoplodex`
+database you have created or opened, wherever you keep it, and its backups
+(in `HoploDex backups` next to it, or the folder you chose);
+`machine.json`, with the recent-databases list, in the app's config
+directory (`~/.config/com.hoplodex.app/` on Linux); the suggested
+`<Documents>/HoploDex` folder; and each saved passphrase, a
+`passphrase:<database id>` entry under `com.hoplodex.app` in the OS keyring.
+The database from before the passphrase model,
+`~/.local/share/com.hoplodex.app/hoplodex.db`, and its key in the keyring
+count too; nothing reads them any more. None of the tooling here touches any
+of it:
 
 - Rust tests use `tests/support::TestDb`, a real SQLCipher database in a temp
   directory, created by `db::create_database` with a fixed test passphrase
@@ -266,7 +274,10 @@ OS keyring. None of the tooling here opens it:
   `user-dirs.dirs` whose documents folder (the suggested place for a new
   database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at
   a first run and creates its database by typing a location in the sandbox
-  (`createDatabase()` in `e2e/support/ui.ts`). E2E builds use the
+  (`createDatabase()` in `e2e/support/ui.ts`), or unlocks the seeded one
+  with its passphrase (`unlock()`). There is no database key in the
+  environment: a database opens with its passphrase alone, as in the app.
+  E2E builds use the
   `mock-keyring` feature, an in-memory keyring for saved passphrases, since a
   headless session can't unlock a real one. The harness keeps it in
   `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
@@ -297,8 +308,11 @@ at a fixed 1200×800 window. It starts at the database chooser listing the
 throwaway sandbox, shoots it and the create dialog, unlocks "Main collection"
 with the seed's passphrase, and walks the main screens and dialogs
 (collection list and tiles, a full record, the record scrolled so its pinned
-strip shows, the edit/coverage/dispose dialogs, add firearm, insurance, a
-policy, import and export). Then `e2e/screenshots/first-run.e2e.ts`, in an
+strip shows, the edit/coverage/dispose dialogs, the unsaved-changes question,
+add firearm, insurance, a policy, import and export), then the database menu's
+dialogs (settings, change passphrase, restore from a backup, the guide), the
+pending-changes question after a lock, the closing screen with its backup
+bar, and "Shared collection" refused as open on another computer. Then `e2e/screenshots/first-run.e2e.ts`, in an
 unseeded sandbox, shoots the first-run chooser and a new database's
 disk-encryption note. Every screen is taken in light and dark mode, writing
 `<nn>-<screen>-<theme>.png`. Long pages and dialogs are captured whole. The
@@ -343,7 +357,9 @@ policy expiring soon. Policy dates are relative to the day it is seeded. The
 data lives in `.human-testing/` (git-ignored): two databases in `HoploDex/`,
 "Main collection" (the full collection) and "Shared collection" (left open
 by "Workshop PC", with pending changes), both opened with the passphrase the
-script prints; the `machine.json` listing them; and three spreadsheets in
+script prints; two backups of "Main collection" in `Backups/`, its custom
+backup folder; the `machine.json` listing both databases; and three
+spreadsheets in
 `import-samples/` (clean, conflicting and invalid rows) to try File > Import
 with. The app is pointed at it through `XDG_*_HOME` and a `user-dirs.dirs`
 whose documents folder is the sandbox, so your real collections are never

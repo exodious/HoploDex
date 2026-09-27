@@ -22,13 +22,13 @@ tauri-build = { version = "2", features = [] }
 # Enabled for production/E2E builds so the app loads bundled frontendDist
 # assets via Tauri's custom protocol instead of the devUrl dev server.
 custom-protocol = ["tauri/custom-protocol"]
-# Enabled for E2E builds only. Swaps the OS-native keyring (Secret
-# Service/Keychain/Credential Manager) for keyring-core's in-memory mock
-# store, so the SQLCipher passphrase never depends on a real, unlockable
-# platform credential store — headless/CI environments have no way to
-# answer the Secret Service's unlock prompt (research.md §5 already
-# assumes the real store is silently unlocked via the user's login
-# session, which doesn't hold in CI).
+# Enabled for E2E builds and the keyring tests only. Swaps the OS-native
+# keyring (Secret Service/Keychain/Credential Manager), which holds a
+# database's passphrase only when the user asks this computer to remember
+# it (FR-017), for keyring-core's in-memory mock store: a headless session
+# can't answer the Secret Service's unlock prompt, and tests must never
+# reach the developer's real keyring. `HOPLODEX_E2E_KEYRING=unavailable`
+# makes it behave like a computer with no keyring (research.md §10).
 mock-keyring = ["dep:keyring-core"]
 
 [dependencies]

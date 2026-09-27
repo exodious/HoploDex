@@ -691,19 +691,19 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   
   Link it from **About databases and security** in `DatabaseMenu.tsx`, **Why?** in `DatabaseNotes.tsx`, and the "see About databases and security" texts in `ChangePassphraseDialog.tsx` and `DatabaseSettingsDialog.tsx`. Add the screen `23-database-guide` to `e2e/screenshots/screens.e2e.ts`
 - [X] T138 [P] Extend `src-tauri/tests/performance_test.rs`: opening a database of 10,000 firearms takes at most 1 s including key derivation (SC-003, constitution IV); the first `backup:progress`, `passphrase_change:progress` and `restore:progress` event each arrives within 100 ms of its operation starting (SC-005); 10,000 `session.write` fingerprint checks add no measurable cost against the existing 500 ms search and 1 s action budgets
-- [ ] T139 [P] Update DEVELOPMENT.md:
+- [X] T139 [P] Update DEVELOPMENT.md:
   - "Test isolation": the passphrase model; no DB key environment variable; `HOPLODEX_E2E_KEYRING=unavailable`; the scratch `user-dirs.dirs`; the seed's sandbox marker and refusals; what counts as real application data now (every database, its backups, `machine.json`, the suggested documents folder and the `passphrase:<id>` keyring entries, plus the pre-feature DB and key)
   - "Human testing": two seeded databases, the printed passphrase, "Shared collection" open on "Workshop PC"
   - the `mock-keyring` feature comment in `src-tauri/Cargo.toml`, which no longer describes a random key
-- [ ] T140 [P] Add the one-line "amended by 003" pointers to feature 001's documents, at each anchor the spec's "Relationship to Feature 001" lists:
+- [X] T140 [P] Add the one-line "amended by 003" pointers to feature 001's documents, at each anchor the spec's "Relationship to Feature 001" lists:
   - `specs/001-firearms-inventory/research.md` §5
   - `quickstart.md`'s first-run flow
   - `spec.md` FR-021, FR-035, SC-005 (reworded to call the spreadsheet a data export, FR-031) and the Assumptions
   - `plan.md`'s Constitution rows V and Security & Data Handling, and its Project Structure keyring note
   - `data-model.md`'s storage note and entity list
   - `contracts/tauri-commands.md`'s introduction and error shape
-- [ ] T141 [P] Reconcile `specs/003-database-protection-management/contracts/tauri-commands.md`, `contracts/ui-databases.md` and `data-model.md` with any command shape, event, text or column that changed during implementation, and check that code comments cite this feature's requirement and research IDs accurately
-- [ ] T142 Check that nothing touches real application data (constitution 1.2.0, research §21). Grep `src-tauri/tests/`, `src-tauri/examples/`, `e2e/` and `scripts/` for `app_config_dir`, `app_data_dir`, `document_dir`, `dirs::` and keyring use outside `mock-keyring`, and confirm every hit resolves only inside a temp or sandbox directory
+- [X] T141 [P] Reconcile `specs/003-database-protection-management/contracts/tauri-commands.md`, `contracts/ui-databases.md` and `data-model.md` with any command shape, event, text or column that changed during implementation, and check that code comments cite this feature's requirement and research IDs accurately
+- [X] T142 Check that nothing touches real application data (constitution 1.2.0, research §21). Grep `src-tauri/tests/`, `src-tauri/examples/`, `e2e/` and `scripts/` for `app_config_dir`, `app_data_dir`, `document_dir`, `dirs::` and keyring use outside `mock-keyring`, and confirm every hit resolves only inside a temp or sandbox directory
 - [ ] T143 Run the full gates in the dev container:
   - `cargo test --manifest-path src-tauri/Cargo.toml`
   - `cargo test --manifest-path src-tauri/Cargo.toml --features mock-keyring --test keyring_test`

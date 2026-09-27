@@ -7,6 +7,8 @@ Every table below is a real SQL table (or virtual table for FTS5) — none of
 this is mocked for testing; `cargo test` integration tests run against a
 real temporary SQLCipher database with this schema applied.
 
+_Amended by [spec 003](../003-database-protection-management/data-model.md): the database is one passphrase-keyed file per collection, in a folder the user chooses, and there may be several._
+
 ## Entity: FirearmType (lookup)
 
 Structured, extensible list backing FR-012's grouping and the generic
@@ -282,6 +284,8 @@ Firearm (1) ── thumbnail_photo_id ──> (1) Photo            [nullable]
 InsurancePolicy (1) ──< (many) Firearm  [insurance_policy_id, nullable]
 Firearm ──< firearms_fts (FTS5 shadow index, external-content)
 ```
+
+_Amended by [spec 003](../003-database-protection-management/data-model.md): three single-row tables join these, `collection_settings`, `app_state` and `pending_changes`._
 
 ## Import row shape (not persisted as an entity)
 
