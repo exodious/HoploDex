@@ -18,6 +18,7 @@ description: "Task list template for feature implementation"
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
+- Work that has to be built, tested or run on a specific platform (Linux, macOS, Windows) gets a separate task per platform, each starting "On <platform>, …" with its commands; never one task for several platforms
 
 ## Path Conventions
 

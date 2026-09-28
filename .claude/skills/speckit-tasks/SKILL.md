@@ -202,6 +202,14 @@ Every task MUST strictly follow this format:
    - Foundational/blocking tasks → Foundational phase (Phase 2)
    - Story-specific setup → within that story's phase
 
+5. **Per-platform work** — ONE TASK PER PLATFORM:
+   - Any task that must be built, tested, linted, run in dev or checked by hand on a specific platform (Linux, macOS, Windows, or a platform the dev container can't reach) MUST be split into a separate task for each platform. Never write one task covering "macOS and Windows" or "each platform".
+   - Each platform task names its platform first in the description (e.g. "On Windows, …"), carries the exact commands to run there and says where its results are recorded, so it can be picked up and checked off by whoever is at that machine.
+   - Platform tasks for the same step are independent of each other and get the [P] marker. A later task that needs all platforms (e.g. a PR description quoting the results) depends on every one of them by ID.
+   - Writing platform-specific code (a `cfg(target_os = …)` module) and verifying it on that platform may stay in one task only when the code is for that single platform; code shared across platforms still gets one verification task per platform.
+   - ✅ CORRECT: `- [ ] T144 [P] On macOS, outside the container, run cargo clippy … and cargo test …; record the results for the PR` and `- [ ] T145 [P] On Windows, outside the container, run cargo clippy … and cargo test …; record the results for the PR`
+   - ❌ WRONG: `- [ ] T144 On macOS and on Windows, run cargo clippy … and cargo test …`
+
 ### Phase Structure
 
 - **Phase 1**: Setup (project initialization)
