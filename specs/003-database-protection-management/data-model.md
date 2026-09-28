@@ -50,7 +50,7 @@ close, backup and restore.
 | `open_machine_name` | TEXT | ≤ 255 chars | Open marker: name shown to the user |
 | `open_since` | TEXT | UTC ISO-8601 | Open marker: since when |
 | `changes_waiting` | INTEGER NOT NULL DEFAULT 0 | `CHECK IN (0,1)` | Backup record: changes not yet in a backup (FR-025) |
-| `last_backup_at` | TEXT | UTC ISO-8601 | Backup record: most recent backup. The once-a-day rule compares its **local** date on the closing computer with today's |
+| `last_backup_at` | TEXT | UTC ISO-8601 | Backup record: most recent backup. The once-a-day rule compares its **local** date on the closing computer with today's, and holds only while one of today's backups is still at the backup location |
 | `disk_encryption_note_dismissed` | INTEGER NOT NULL DEFAULT 0 | `CHECK IN (0,1)` | FR-008 |
 | `backup_made_at` | TEXT | UTC ISO-8601; set only in backup copies | Backup stamp (research §9) |
 | `backup_of_name` | TEXT | set only in backup copies | Database name for the "backup opened directly" notice |

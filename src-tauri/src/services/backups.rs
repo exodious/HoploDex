@@ -9,7 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 use rusqlite::Connection;
 
 use crate::db::random_hex;
@@ -57,18 +57,24 @@ pub enum Due {
     Off,
     /// Nothing has changed since the last backup.
     NothingChanged,
-    /// There was a backup today already, in local time.
+    /// There was a backup today already, in local time, and it is still
+    /// at the backup location.
     AlreadyToday,
 }
 
 /// Backups on, changes waiting, and no backup yet today on this computer's
 /// calendar: `last_backup_at` (UTC) is compared by its local date with
-/// `now`'s.
+/// `now`'s. A record saying today is not enough on its own: when
+/// `kept_from(today)` finds none of today's backups left at the location
+/// (all deleted, FR-029, or left behind at an old location, FR-026), the
+/// changes would otherwise be in no backup at all, so one is due. It is
+/// asked only when the record says today.
 pub fn is_due(
     enabled: bool,
     changes_waiting: bool,
     last_backup_at: Option<&str>,
     now: &DateTime<FixedOffset>,
+    kept_from: impl FnOnce(NaiveDate) -> bool,
 ) -> Due {
     if !enabled {
         return Due::Off;
@@ -76,10 +82,28 @@ pub fn is_due(
     if !changes_waiting {
         return Due::NothingChanged;
     }
+    let today = now.date_naive();
     let last_local_date = last_backup_at
         .and_then(|last| DateTime::parse_from_rfc3339(last).ok())
         .map(|last| last.with_timezone(now.offset()).date_naive());
-    if last_local_date == Some(now.date_naive()) { Due::AlreadyToday } else { Due::Yes }
+    if last_local_date == Some(today) && kept_from(today) { Due::AlreadyToday } else { Due::Yes }
+}
+
+/// Whether `folder` holds a backup of the database `database_id` made on
+/// `date`, by the local date in its name. A folder that can't be read might
+/// still hold one, so it counts as holding one: the once-a-day limit then
+/// stands, as it did before the folder became unreadable.
+pub fn has_backup_made_on(folder: &Path, database_id: &str, date: NaiveDate) -> bool {
+    match list(folder, database_id) {
+        Ok(listed) => listed.iter().any(|backup| {
+            NaiveDateTime::parse_from_str(&backup.made_at, "%Y-%m-%dT%H:%M:%S")
+                .is_ok_and(|made_at| made_at.date() == date)
+        }),
+        Err(err) => {
+            log::warn!("could not list the backups in {}: {err}", folder.display());
+            true
+        }
+    }
 }
 
 /// `<name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex`, in local time (research.md

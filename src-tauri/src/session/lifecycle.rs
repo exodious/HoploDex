@@ -534,7 +534,9 @@ fn backup_at_close(
     if session.closing_immediately() {
         return CloseOutcome::backup(BackupOutcome::Skipped);
     }
-    match backups::is_due(enabled, changes_waiting, last_backup_at.as_deref(), &now) {
+    let folder = backups::resolve_folder(&open.path, &location);
+    let kept_from = |today| backups::has_backup_made_on(&folder, &open.database_id, today);
+    match backups::is_due(enabled, changes_waiting, last_backup_at.as_deref(), &now, kept_from) {
         Due::Off => return CloseOutcome::backup(BackupOutcome::Off),
         Due::NothingChanged => return CloseOutcome::backup(BackupOutcome::NotDue),
         Due::AlreadyToday => return CloseOutcome::backup(BackupOutcome::AlreadyToday),
@@ -544,7 +546,6 @@ fn backup_at_close(
         log::error!("another operation was running at the close of {}", open.path.display());
         return backup_failed(session, open, BackupFailureReason::Io);
     };
-    let folder = backups::resolve_folder(&open.path, &location);
     let events = session.events();
     let mut progress = |processed: u64, total: u64| {
         events.emit(

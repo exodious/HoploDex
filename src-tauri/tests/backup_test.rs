@@ -208,6 +208,70 @@ fn a_second_close_the_same_day_makes_none_but_the_next_days_close_does() {
 }
 
 #[test]
+fn deleting_all_backups_lifts_the_once_a_day_limit() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+
+    world.open();
+    backups_ops::delete_all_backups(&world.session, true).unwrap();
+    world.change();
+    world.clock.set("2026-09-25T18:00:00+02:00");
+
+    assert_eq!(world.close().backup, BackupOutcome::Made, "otherwise no backup would be left");
+    assert_eq!(world.backups_in(&world.default_folder(), &id).len(), 1);
+    world.open();
+    assert!(!world.backup_record().0, "the changes are in the new backup");
+}
+
+#[test]
+fn a_backup_from_today_removed_outside_the_app_lifts_the_limit_too() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    world.close();
+    world.open();
+    world.change();
+    world.clock.set("2026-09-25T18:00:00+02:00");
+    assert_eq!(world.close().backup, BackupOutcome::AlreadyToday);
+
+    let today = world.backups_in(&world.default_folder(), &id);
+    fs::remove_file(&today[0].path).unwrap();
+    // One from an earlier day doesn't count against today.
+    fs::write(
+        world.default_folder().join(format!("Mine 2026-09-24 101010 {}.hoplodex", &id[..8])),
+        b"",
+    )
+    .unwrap();
+    world.open();
+
+    assert_eq!(world.close().backup, BackupOutcome::Made, "the waiting changes are backed up");
+    assert_eq!(world.backups_in(&world.default_folder(), &id).len(), 2);
+}
+
+#[test]
+fn an_unreadable_backup_location_keeps_the_once_a_day_limit() {
+    let world = World::new();
+    world.create();
+    let folder = world.dir.path().join("Backups");
+    fs::create_dir(&folder).unwrap();
+    world.set_backups(true, 5, BackupLocationInput::Custom { path: path_text(&folder) });
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+
+    world.open();
+    world.change();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o000)).unwrap();
+    let outcome = world.close();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(outcome.backup, BackupOutcome::AlreadyToday, "not reported as a failure");
+}
+
+#[test]
 fn an_unchanged_session_makes_no_backup() {
     let world = World::new();
     world.create();
