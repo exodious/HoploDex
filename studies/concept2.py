@@ -90,7 +90,7 @@ def hoplon(R, device=True, emblem=None):
             + tongues(R * 0.835, R * 0.77, 44)
             + circle(R * 0.77, "open")
             + "</g>"
-            + (f'<g transform="scale({R * 0.0064:.4f})">{emblem or OWL}</g>' if device else "")
+            + (f'<g transform="scale({R * 0.0064:.4f})" style="--u:{1 / (R * 0.0064):.4f}">{emblem or OWL}</g>' if device else "")
             # the dome, suggested by hatching on its shadowed side
             + "".join(f'<path class="hatch" d="M{R*0.72*math.cos(a):.1f} {R*0.72*math.sin(a):.1f}'
                       f'A{R*0.72:.1f} {R*0.72:.1f} 0 0 1 {R*0.72*math.cos(a+0.55):.1f} {R*0.72*math.sin(a+0.55):.1f}"'
@@ -139,12 +139,12 @@ def scale_bar(x, y, px, label):
 
 PLATE_CSS = """
 .plate{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.plate .part{fill:var(--vellum);stroke:var(--line);stroke-width:1.5px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
-.plate .open{fill:none;stroke:var(--line);stroke-width:1.5px;vector-effect:non-scaling-stroke}
-.plate .thin,.plate .detail{fill:none;stroke:var(--line);stroke-width:1px;vector-effect:non-scaling-stroke}
-.plate .orn{fill:none;stroke:var(--orn);stroke-width:1px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.plate .part{fill:var(--vellum);stroke:var(--line);stroke-width:calc(1.5px * var(--u, 1));stroke-linejoin:round}
+.plate .open{fill:none;stroke:var(--line);stroke-width:calc(1.5px * var(--u, 1))}
+.plate .thin,.plate .detail{fill:none;stroke:var(--line);stroke-width:calc(1px * var(--u, 1))}
+.plate .orn{fill:none;stroke:var(--orn);stroke-width:calc(1px * var(--u, 1));stroke-linejoin:round}
 .plate .dot{fill:var(--orn)}
-.plate .hatch{display:none;fill:none;stroke:var(--line);stroke-width:.75px;vector-effect:non-scaling-stroke;opacity:.6}
+.plate .hatch{display:none;fill:none;stroke:var(--line);stroke-width:calc(.75px * var(--u, 1));opacity:.6}
 .plate .device .body{stroke:var(--orn);stroke-width:13;stroke-linecap:round}
 .plate .device .head{fill:var(--orn)}
 .plate .device .tongue{fill:none;stroke:var(--orn);stroke-width:2.5;stroke-linecap:round}
@@ -152,14 +152,14 @@ PLATE_CSS = """
 .plate .device .kl{fill:none;stroke:var(--vellum);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
 .plate .device .fl{fill:none;stroke:var(--orn);stroke-width:5;stroke-linecap:round}
 .plate .device .kl.thin{stroke-width:3}
-.plate .device .ol{fill:none;stroke:var(--orn);stroke-width:1.5px;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
-.plate .device .fe{fill:none;stroke:var(--orn);stroke-width:1px;vector-effect:non-scaling-stroke;stroke-linecap:round}
+.plate .device .ol{fill:none;stroke:var(--orn);stroke-width:calc(1.5px * var(--u, 1));stroke-linecap:round;stroke-linejoin:round}
+.plate .device .fe{fill:none;stroke:var(--orn);stroke-width:calc(1px * var(--u, 1));stroke-linecap:round}
 .plate .device .pf,.plate .device .pfi,.plate .device .sf{fill:var(--orn)}.plate .device .paper,.plate .device .sk{fill:var(--vellum)}
 .plate .device .wash{fill:var(--orn);opacity:.13}
-.plate .key{fill:none;stroke:var(--orn);stroke-width:1.25px;vector-effect:non-scaling-stroke;stroke-linejoin:miter}
-.plate .cut{fill:url(#phatch);stroke:var(--line);stroke-width:1.5px;vector-effect:non-scaling-stroke}
+.plate .key{fill:none;stroke:var(--orn);stroke-width:calc(1.25px * var(--u, 1));stroke-linejoin:miter}
+.plate .cut{fill:url(#phatch);stroke:var(--line);stroke-width:calc(1.5px * var(--u, 1))}
 .plate .hl{stroke:var(--line);stroke-width:1;opacity:.5}
-.plate .axis{fill:none;stroke:var(--niter);stroke-width:1px;stroke-dasharray:18 4 3 4;opacity:.7;vector-effect:non-scaling-stroke}
+.plate .axis{fill:none;stroke:var(--niter);stroke-width:calc(1px * var(--u, 1));stroke-dasharray:18 4 3 4;opacity:.7}
 .plate .sb-fill{fill:var(--ink-2)}.plate .sb-empty{fill:none;stroke:var(--ink-2);stroke-width:1}
 .plate .sb{font:500 12px var(--font-body);fill:var(--ink-2)}
 .plate .no{font:800 30px var(--font-display);fill:var(--ink)}
@@ -202,7 +202,7 @@ PLATE = f"""<defs><pattern id="phatch" width="7" height="7" patternUnits="userSp
 <text x="668" y="445" class="cap"><tspan class="t">Hoplon.</tspan> The Greek hoplite’s shield, bronze over wood.</text>
 <text x="668" y="465" class="cap">About 500 BC.</text>
 {meander(640, 492, 500, 3.5)}
-{concept1.drawing("rifle", "translate(630 440) scale(1.6)")}
+<g style="--u:.625">{concept1.drawing("rifle", "translate(630 440) scale(1.6)")}</g>
 {scale_bar(990, 668, 150, "30 cm")}
 <text x="640" y="712" class="no">2</text>
 <text x="668" y="705" class="cap"><tspan class="t">Rifle.</tspan> Steel, aluminium and plastic. 1967.</text>
@@ -239,30 +239,17 @@ def split_subpaths(svg):
 PLATE = split_subpaths(PLATE)
 
 
-# pathLength="1" measures a line in its own units, but Firefox dashes a
-# non-scaling stroke in screen units: inside the rifle's 1.6x group the
-# "hidden" dash covered only ~60% of each line. Other engines may dash in the
-# line's own units. So dash every drawn line by the longer of its own and its
-# on-screen length; the CSS keyframes then run the offset down to 0.
-DRAW_JS = """<script>
-function measureDrawing(svg) {
-  svg.querySelectorAll("[pathLength]").forEach((el) => {
-    const m = el.getScreenCTM();
-    // Browsers differ on which units a non-scaling stroke is dashed in, so
-    // dash by the longer of the two: long enough to hide and to show all of it.
-    const user = el.getTotalLength();
-    const len = Math.max(user, user * Math.hypot(m.a, m.b)) + 2;
-    el.removeAttribute("pathLength");
-    el.style.strokeDasharray = len;
-    el.style.strokeDashoffset = len;
-  });
-}
-document.querySelectorAll("svg.anim").forEach(measureDrawing);
-</script>"""
+# Lines are drawn in with pathLength="1" and a dash offset. That only works
+# the same in every engine on plain strokes: with vector-effect:
+# non-scaling-stroke, Firefox, WebKit and Safari each dash in different units
+# (a line in a scaled group drew only partly, or in several places at once).
+# So the plate's strokes scale normally, and each scaled group sets --u to
+# 1/scale to keep its line weights.
+DRAW_JS = ""
 
 
 def chooser(theme, content, anim=False):
-    css = ".col{width:560px;padding:40px 0 0 42px;position:relative;z-index:1}" + PLATE_CSS
+    css = build.GRID + ".col{width:560px;padding:40px 0 0 42px;position:relative;z-index:1}" + PLATE_CSS
     svg = f'<svg class="plate{" anim" if anim else ""}" viewBox="0 0 1200 744">{PLATE}</svg>'
     html = build.page(theme, f'<main>{svg}<div class="col">{content}</div></main>{DRAW_JS if anim else ""}', css + BRAND_CSS)
     start = html.index('<div class="brand"><svg'); end = html.index("</svg>", start) + 6

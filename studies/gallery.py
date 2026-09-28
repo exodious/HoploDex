@@ -87,7 +87,6 @@ const pristine = document.querySelector("#live svg").outerHTML;
 document.getElementById("replay").addEventListener("click", () => {{
   const box = document.getElementById("live");
   box.innerHTML = pristine;
-  measureDrawing(box.querySelector("svg"));
 }});
 </script>"""
 page = re.sub(r"\n\s*\n", "\n", page)
