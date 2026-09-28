@@ -115,6 +115,11 @@ Check on each available OS, and record the results in the PR description:
 | Screen-lock option shown as unavailable where it cannot work | a bare window manager without logind session locking | — | — |
 | Rust gates on this OS: `cargo clippy --all-targets`, `cargo fmt --check` and `cargo test` pass, compiling and linting the target-gated code (constitution I), and `portability_test` opens the Linux-made fixture (SC-001) | in the container | by hand | by hand |
 
+On 2026-09-28 most of these checks were deferred, with Windows's Rust
+gates and walkthrough 2 from macOS or Windows: tasks.md Phase 11 records
+what was done. #36 automates what can be, and #37 turns the rest into
+step-by-step procedures, run best effort before a release.
+
 ## Done when
 
 - Every acceptance scenario in spec.md maps to a passing test above, or to a

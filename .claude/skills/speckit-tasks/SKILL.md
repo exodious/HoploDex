@@ -208,6 +208,8 @@ Every task MUST strictly follow this format:
    - ✅ CORRECT: `- [ ] T050 [P] On macOS, run the test suite` and `- [ ] T051 [P] On Windows, run the test suite`
    - ❌ WRONG: `- [ ] T050 On macOS and Windows, run the test suite`
 
+6. **Manual checks**: prefer a task that automates the check. A check that stays manual points to its numbered procedure in quickstart.md rather than describing the steps itself.
+
 ### Phase Structure
 
 - **Phase 1**: Setup (project initialization)
