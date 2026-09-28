@@ -80,12 +80,16 @@ OWL = owl.COIN_OWL  # the tetradrachm owl replaces the sketch above
 def hoplon(R, device=True, emblem=None):
     """The shield head-on, as a catalogue drawing: rim with a guilloche,
     a band of tongues, the bowl, and the device in the field."""
-    return (f'<circle r="{R}" class="part" pathLength="1"/>'
+    # the rim is turned a quarter back, so its lines, the braid and the
+    # braid's beads and tongues all start at 12 o'clock and run clockwise
+    return ('<g transform="rotate(-90)">'
+            + f'<circle r="{R}" class="part" pathLength="1"/>'
             + circle(R * 0.965)
             + guilloche(R * 0.9, R * 0.09, 30)
             + circle(R * 0.835)
             + tongues(R * 0.835, R * 0.77, 44)
             + circle(R * 0.77, "open")
+            + "</g>"
             + (f'<g transform="scale({R * 0.0064:.4f})">{emblem or OWL}</g>' if device else "")
             # the dome, suggested by hatching on its shadowed side
             + "".join(f'<path class="hatch" d="M{R*0.72*math.cos(a):.1f} {R*0.72*math.sin(a):.1f}'
@@ -235,15 +239,19 @@ def split_subpaths(svg):
 PLATE = split_subpaths(PLATE)
 
 
-# pathLength="1" measures a line in its own units, but a non-scaling stroke is
-# dashed in screen units: inside the rifle's 1.6x group the "hidden" dash
-# covered only ~60% of each line. So measure every drawn line on screen and
-# dash it by that length; the CSS keyframes then run the offset down to 0.
+# pathLength="1" measures a line in its own units, but Firefox dashes a
+# non-scaling stroke in screen units: inside the rifle's 1.6x group the
+# "hidden" dash covered only ~60% of each line. Other engines may dash in the
+# line's own units. So dash every drawn line by the longer of its own and its
+# on-screen length; the CSS keyframes then run the offset down to 0.
 DRAW_JS = """<script>
 function measureDrawing(svg) {
   svg.querySelectorAll("[pathLength]").forEach((el) => {
     const m = el.getScreenCTM();
-    const len = el.getTotalLength() * Math.hypot(m.a, m.b) + 2;
+    // Browsers differ on which units a non-scaling stroke is dashed in, so
+    // dash by the longer of the two: long enough to hide and to show all of it.
+    const user = el.getTotalLength();
+    const len = Math.max(user, user * Math.hypot(m.a, m.b)) + 2;
     el.removeAttribute("pathLength");
     el.style.strokeDasharray = len;
     el.style.strokeDashoffset = len;
