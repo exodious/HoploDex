@@ -10,7 +10,7 @@ The design reasons are in [research.md](./research.md).
 
 - The development container (`scripts/dev-container.sh`, DEVELOPMENT.md) on
   Linux, or Rust, Node.js and the Tauri prerequisites on macOS or Windows.
-- Node via nvm on `PATH`. Use `npm@11` when the lockfile changes: this
+- Node via nvm on `PATH`. Use npm 12 when the lockfile changes: this
   feature adds `@zxcvbn-ts/core`, `@zxcvbn-ts/language-common`,
   `@zxcvbn-ts/language-en` and `@radix-ui/react-dropdown-menu`, and the Rust
   crates `unicode-normalization`, `gethostname` and `fs4`. It makes `zeroize`,

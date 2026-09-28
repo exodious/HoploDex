@@ -72,7 +72,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Linux/macOS
 
 On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
 
-**Node.js 22+** (tested on 22 and 24 LTS) and **npm 11+** — via
+**Node.js 24 LTS** and **npm 12+** (npm 12 writes the lockfile format the
+repo uses) — via
 [nodejs.org](https://nodejs.org), [nvm](https://github.com/nvm-sh/nvm), or
 your platform's package manager.
 
