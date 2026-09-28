@@ -96,17 +96,24 @@ def profile(R):
             f'<path class="axis" d="M0 {-1.35*h}V{0.35*h}"/>')
 
 
+KEY_TIME = 1.25  # s: the Greek key is drawn first, then everything else
+UNIT_TIME = 0.4  # s: one key unit
+
+
 def meander(x, y, width, u):
-    """A running Greek key, `u` to the step, between two border lines."""
+    """A running Greek key, `u` to the step, between two border lines. It
+    draws in from both ends at once and meets in the middle: each key is its
+    own line, started as the border lines reach it."""
     n = int(width // (4 * u))
-    # each key is its own line, started a beat after the one before, so the
-    # pattern runs out from the left along with its border lines
+    step = (KEY_TIME - UNIT_TIME) / ((n - 1) // 2)
     keys = "".join(
-        f'<path class="key unit" pathLength="1" style="animation-delay:{0.6 + i * 1.4 / n:.3f}s" '
+        f'<path class="key unit" pathLength="1" style="animation-delay:{min(i, n - 1 - i) * step:.3f}s" '
         f'd="M{x+i*4*u} {y+4*u}V{y}H{x+i*4*u+3*u}V{y+3*u}H{x+i*4*u+u}V{y+u}H{x+i*4*u+2*u}"/>' for i in range(n))
-    return (keys + f'<path class="key" pathLength="1" d="M{x} {y+4*u}H{x+n*4*u}"/>'
-            f'<path class="key" pathLength="1" d="M{x} {y-u}H{x+n*4*u}" opacity=".6"/>'
-            f'<path class="key" pathLength="1" d="M{x} {y+5*u}H{x+n*4*u}" opacity=".6"/>')
+    x1, mid = x + n * 4 * u, x + n * 2 * u
+    lines = "".join(
+        f'<path class="key" pathLength="1" d="M{x} {ly}H{mid}"{op}/><path class="key" pathLength="1" d="M{x1} {ly}H{mid}"{op}/>'
+        for ly, op in ((y + 4 * u, ""), (y - u, ' opacity=".6"'), (y + 5 * u, ' opacity=".6"')))
+    return keys + lines
 
 
 def scale_bar(x, y, px, label):
@@ -150,18 +157,18 @@ PLATE_CSS = """
 .plate .ptitle{font:600 14px var(--font-display);letter-spacing:.06em;fill:var(--ink-3)}
 :root{--orn:#9a6a2c}
 :root[data-theme=dark]{--orn:#d3a45f}
-.anim .part,.anim .open,.anim .thin,.anim .detail,.anim .orn,.anim .cut{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.6s cubic-bezier(.2,.7,.2,1) forwards}
-.anim .orn{animation-delay:.35s}
-.anim .dot,.anim .hatch,.anim .axis,.anim text,.anim rect{opacity:0;animation:fade .6s 1.3s forwards}
+.anim .part,.anim .open,.anim .thin,.anim .detail,.anim .orn,.anim .cut{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.6s 1.3s cubic-bezier(.2,.7,.2,1) forwards}
+.anim .orn{animation-delay:1.65s}
+.anim .dot,.anim .hatch,.anim .axis,.anim text,.anim rect{opacity:0;animation:fade .6s 2.6s forwards}
 @keyframes draw{to{stroke-dashoffset:0}}
 @keyframes fade{to{opacity:1}}
 /* the owl is engraved after the rim: lines first, then its eyes and bronze ground */
-.anim .device .ol,.anim .device .fe{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.8s .9s cubic-bezier(.2,.7,.2,1) forwards}
-.anim .device .pf{opacity:0;animation:fade .6s 2.6s forwards}
-/* the Greek key runs out from the left after the rim's ornament */
-.anim .key{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.6s .6s cubic-bezier(.4,0,.2,1) forwards}
-.anim .key.unit{animation-duration:.45s;animation-timing-function:linear}
-.anim .device .wash{opacity:0;animation:wash .8s 2.3s forwards}
+.anim .device .ol,.anim .device .fe{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.8s 2.2s cubic-bezier(.2,.7,.2,1) forwards}
+.anim .device .pf{opacity:0;animation:fade .6s 3.9s forwards}
+/* the Greek key comes first, from both ends to the middle; the rest waits for it */
+.anim .key{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.25s linear forwards}
+.anim .key.unit{animation-duration:.4s}
+.anim .device .wash{opacity:0;animation:wash .8s 3.6s forwards}
 @keyframes wash{to{opacity:.13}}
 @media (prefers-reduced-motion:reduce){.anim *{animation:none!important;stroke-dasharray:none!important;opacity:1!important}.anim .device .wash{opacity:.13!important}}
 """
@@ -213,10 +220,28 @@ def split_subpaths(svg):
 PLATE = split_subpaths(PLATE)
 
 
+# pathLength="1" measures a line in its own units, but a non-scaling stroke is
+# dashed in screen units: inside the rifle's 1.6x group the "hidden" dash
+# covered only ~60% of each line. So measure every drawn line on screen and
+# dash it by that length; the CSS keyframes then run the offset down to 0.
+DRAW_JS = """<script>
+function measureDrawing(svg) {
+  svg.querySelectorAll("[pathLength]").forEach((el) => {
+    const m = el.getScreenCTM();
+    const len = el.getTotalLength() * Math.hypot(m.a, m.b) + 2;
+    el.removeAttribute("pathLength");
+    el.style.strokeDasharray = len;
+    el.style.strokeDashoffset = len;
+  });
+}
+document.querySelectorAll("svg.anim").forEach(measureDrawing);
+</script>"""
+
+
 def chooser(theme, content, anim=False):
     css = ".col{width:560px;padding:40px 0 0 42px;position:relative;z-index:1}" + PLATE_CSS
     svg = f'<svg class="plate{" anim" if anim else ""}" viewBox="0 0 1200 744">{PLATE}</svg>'
-    html = build.page(theme, f'<main>{svg}<div class="col">{content}</div></main>', css + BRAND_CSS)
+    html = build.page(theme, f'<main>{svg}<div class="col">{content}</div></main>{DRAW_JS if anim else ""}', css + BRAND_CSS)
     start = html.index('<div class="brand"><svg'); end = html.index("</svg>", start) + 6
     return html[:start] + '<div class="brand">' + BRAND_MARK + html[end:]
 
