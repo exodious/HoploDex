@@ -221,9 +221,7 @@ Append to the **end** of `tasks.md`, per the append contract:
 
    Constitution-violation tasks MUST be emitted first and described as
    `CRITICAL`.
-   A finding that needs build, test or dev work on more than one platform (Linux, macOS,
-   Windows) becomes one task per platform, each starting "On <platform>, …", following the
-   per-platform rule in `speckit-tasks`.
+   A finding that needs work on more than one platform becomes one task per platform.
 4. Never reuse or renumber existing IDs. If a prior Convergence phase exists, add a new,
    separately-numbered one below it — do not touch the old one.
 
