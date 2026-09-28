@@ -76,8 +76,9 @@ owl a solid silhouette with its eyes cut out; the top bar uses the same small ve
 
 <section><h2>Startup animation (issue #23)</h2>
 <p>The Greek key draws first, from both ends. Then the shield and rifle are drawn over the grid, their fills coming in as
-their lines do, while the braid runs round the rim with its beads and tongues following. The owl is engraved next, twig
-and beak included, and its eyes come last. The overall timing is still to be tuned.</p>
+their lines do. One sweep draws the whole rim from 12 o'clock, its circles, braid, beads and tongues together. The owl
+is engraved next, twig and beak included, and after a pause its eyes come last. The overall timing is still to be tuned:
+every time is a named knob in concept2.py.</p>
 <div class="live" id="live"><svg class="plate anim" viewBox="600 40 580 700" aria-hidden="true">{concept2.PLATE}</svg></div>
 <button type="button" id="replay">Replay the animation</button></section>
 </div>
