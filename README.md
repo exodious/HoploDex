@@ -15,7 +15,7 @@ Each entry is numbered, captioned and has a scale bar, and a Greek key rule divi
 
 - **Owl:** based on the Athenian tetradrachm: a little owl (no ear tufts), body in profile, head turned to face you, with a small olive sprig. It's an engraving in fine bronze lines, with rows of feathers, eyes that are mostly pupil, a hooked beak, and talons on a ground line. The coins' crescent moon is left out.
 - **Icon:** the owl shield on a blued-steel tile. At 32 px and below, the owl is a solid silhouette with its eyes cut out, and the top-bar mark uses that version.
-- **Animation:** everything draws in stroke by stroke: the outlines, the rim ornament, the Greek key, then the owl's lines. The owl's eyes and bronze wash come last, which is what gives it its watchful look; keep that. The overall timing is still too fast.
+- **Animation:** everything draws in stroke by stroke: the outlines, the rim ornament, the Greek key, then the owl's lines. The owl's eyes and bronze wash come last, which is what gives it its watchful look; keep that. The Greek key's units run out from the left, one after another. `studies/shots/animation/` has frames at 0.9, 1.5, 2.3 and 2.8 s. The overall timing is still too fast.
 
 ## What was tried and dropped
 

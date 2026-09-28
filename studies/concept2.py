@@ -99,9 +99,14 @@ def profile(R):
 def meander(x, y, width, u):
     """A running Greek key, `u` to the step, between two border lines."""
     n = int(width // (4 * u))
-    keys = "".join(f"M{x+i*4*u} {y+4*u}V{y}H{x+i*4*u+3*u}V{y+3*u}H{x+i*4*u+u}V{y+u}H{x+i*4*u+2*u}" for i in range(n))
-    return (f'<path class="key" pathLength="1" d="{keys}M{x} {y+4*u}H{x+n*4*u}"/>'
-            f'<path class="key" pathLength="1" d="M{x} {y-u}H{x+n*4*u}M{x} {y+5*u}H{x+n*4*u}" opacity=".6"/>')
+    # each key is its own line, started a beat after the one before, so the
+    # pattern runs out from the left along with its border lines
+    keys = "".join(
+        f'<path class="key unit" pathLength="1" style="animation-delay:{0.6 + i * 1.4 / n:.3f}s" '
+        f'd="M{x+i*4*u} {y+4*u}V{y}H{x+i*4*u+3*u}V{y+3*u}H{x+i*4*u+u}V{y+u}H{x+i*4*u+2*u}"/>' for i in range(n))
+    return (keys + f'<path class="key" pathLength="1" d="M{x} {y+4*u}H{x+n*4*u}"/>'
+            f'<path class="key" pathLength="1" d="M{x} {y-u}H{x+n*4*u}" opacity=".6"/>'
+            f'<path class="key" pathLength="1" d="M{x} {y+5*u}H{x+n*4*u}" opacity=".6"/>')
 
 
 def scale_bar(x, y, px, label):
@@ -155,6 +160,7 @@ PLATE_CSS = """
 .anim .device .pf{opacity:0;animation:fade .6s 2.6s forwards}
 /* the Greek key runs out from the left after the rim's ornament */
 .anim .key{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.6s .6s cubic-bezier(.4,0,.2,1) forwards}
+.anim .key.unit{animation-duration:.45s;animation-timing-function:linear}
 .anim .device .wash{opacity:0;animation:wash .8s 2.3s forwards}
 @keyframes wash{to{opacity:.13}}
 @media (prefers-reduced-motion:reduce){.anim *{animation:none!important;stroke-dasharray:none!important;opacity:1!important}.anim .device .wash{opacity:.13!important}}
@@ -183,6 +189,28 @@ BRAND_CSS = """.brand svg.mark{width:30px;height:30px;--o:var(--ink);--p:var(--v
 .mark .rim{fill:none;stroke:var(--ink);stroke-width:12}.mark .rim2{fill:none;stroke:var(--ink);stroke-width:5;stroke-dasharray:9 7}
 .mark .device .sf{fill:var(--o)}.mark .device .sk{fill:var(--p)}.mark .device .f{fill:var(--o)}.mark .device .ring{fill:none;stroke:var(--o);stroke-width:1.6}.mark .device .k{fill:var(--p)}
 .mark .device .kl{fill:none;stroke:var(--p);stroke-width:6;stroke-linecap:round}.mark .device .fl{fill:none;stroke:var(--o);stroke-width:7;stroke-linecap:round}"""
+
+
+def split_subpaths(svg):
+    """A dash-drawn path made of several pieces draws each piece in a sliver of
+    the time, so they pop in. Give every piece of the stroke-only line work its
+    own path. Filled parts stay whole, since their pieces may cut holes."""
+    import re
+
+    def one(m):
+        attrs, d, rest = m.group(1), m.group(2), m.group(3)
+        cls = re.search(r'class="([^"]*)"', attrs + rest)
+        if not cls or not set(cls.group(1).split()) & {"open", "detail", "thin", "orn", "fe", "ol"}:
+            return m.group(0)
+        parts = [part for part in re.split(r"(?=M)", d) if part.strip()]
+        if len(parts) < 2:
+            return m.group(0)
+        return "".join(f'<path {attrs}d="{part}"{rest}/>' for part in parts)
+
+    return re.sub(r'<path ([^>]*?)d="([^"]*)"([^>]*?)/>', one, svg)
+
+
+PLATE = split_subpaths(PLATE)
 
 
 def chooser(theme, content, anim=False):
