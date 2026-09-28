@@ -1,27 +1,86 @@
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
 use hoplodex_lib::db;
+use hoplodex_lib::models::database::ChooserNotice;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::machine_settings::MachineIdentity;
+use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::session::clock::Clock;
+use hoplodex_lib::session::{Session, SessionEvents};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+/// The fixed passphrase of every test database (research.md §20).
+#[allow(dead_code)]
+pub const TEST_PASSPHRASE: &str = "correct horse battery staple";
+
+/// [`TEST_PASSPHRASE`] as the backend holds it.
+#[allow(dead_code)]
+pub fn passphrase() -> Passphrase {
+    Passphrase::from_input(TEST_PASSPHRASE.to_owned())
+}
+
+/// The computer the tests run "on", as the open marker records it.
+#[allow(dead_code)]
+pub fn test_machine() -> MachineIdentity {
+    MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() }
+}
+
+/// Another computer, for open-marker and take-over cases.
+#[allow(dead_code)]
+pub fn other_machine() -> MachineIdentity {
+    MachineIdentity { id: "2".repeat(32), display_name: "Workshop PC".into() }
+}
+
 /// A real, migrated, encrypted SQLCipher database in a temp directory —
 /// never a mock connection, per the constitution's Testing Standards
-/// principle. `_dir` is held only to keep the temp directory alive for the
-/// lifetime of the returned handle.
+/// principle. It is made by the real `db::create_database` with
+/// [`TEST_PASSPHRASE`] and the production cipher settings, so every test
+/// exercises the real file format. The temp directory lives as long as the
+/// handle.
 pub struct TestDb {
     pub conn: Connection,
-    _dir: TempDir,
+    dir: TempDir,
 }
 
 impl TestDb {
     pub fn new() -> Self {
         let dir = TempDir::new().expect("failed to create temp dir for test DB");
-        let db_path = dir.path().join("test.db");
-        let key_hex = db::generate_key_hex().expect("failed to generate test DB key");
         let conn =
-            db::open_encrypted(&db_path, &key_hex).expect("failed to open encrypted test DB");
-        Self { conn, _dir: dir }
+            db::create_database(&dir.path().join("test.hoplodex"), &passphrase(), &test_machine())
+                .expect("failed to create the test database");
+        Self { conn, dir }
+    }
+
+    /// The database file.
+    #[allow(dead_code)]
+    pub fn path(&self) -> PathBuf {
+        self.dir.path().join("test.hoplodex")
+    }
+
+    /// The temp directory holding the database, for files a test makes
+    /// beside it.
+    #[allow(dead_code)]
+    pub fn dir(&self) -> &Path {
+        self.dir.path()
+    }
+
+    /// Closes the connection and opens the file again, as the app would.
+    #[allow(dead_code)]
+    pub fn reopen(&mut self) {
+        drop(std::mem::replace(&mut self.conn, Connection::open_in_memory().unwrap()));
+        self.conn = db::open_database(&self.path(), &passphrase(), &test_machine(), false)
+            .expect("failed to reopen the test database");
+    }
+
+    /// The connection and the directory that must outlive it, for tests
+    /// that hand the connection on (to a session, a thread) or close it.
+    #[allow(dead_code)]
+    pub fn into_parts(self) -> (Connection, TempDir) {
+        (self.conn, self.dir)
     }
 }
 
@@ -29,6 +88,124 @@ impl Default for TestDb {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Called with each event as it is recorded, to act at a given point of an
+/// operation (stop a backup midway, look at the files). It is called
+/// without holding the recorder, so it may wait for another thread that
+/// records events too.
+type EventHook = Arc<dyn Fn(&str, &serde_json::Value) + Send + Sync>;
+
+/// Records the session's events in order, in place of the Tauri app, with
+/// each notice kept for the chooser recorded as a `"notice"` event.
+#[derive(Default)]
+pub struct TestEvents {
+    recorded: Mutex<Vec<(String, serde_json::Value)>>,
+    hook: Mutex<Option<EventHook>>,
+}
+
+impl TestEvents {
+    /// Calls `hook` with every later event, before it is recorded.
+    #[allow(dead_code)]
+    pub fn on_event(&self, hook: impl Fn(&str, &serde_json::Value) + Send + Sync + 'static) {
+        *self.hook.lock().unwrap() = Some(Arc::new(hook));
+    }
+
+    fn record(&self, event: &str, payload: serde_json::Value) {
+        let hook = self.hook.lock().unwrap().clone();
+        if let Some(hook) = hook {
+            hook(event, &payload);
+        }
+        self.recorded.lock().unwrap().push((event.to_owned(), payload));
+    }
+
+    /// The payloads of the recorded `event`s, in order.
+    #[allow(dead_code)]
+    pub fn payloads(&self, event: &str) -> Vec<serde_json::Value> {
+        self.recorded().into_iter().filter(|(name, _)| name == event).map(|(_, p)| p).collect()
+    }
+
+    #[allow(dead_code)]
+    pub fn recorded(&self) -> Vec<(String, serde_json::Value)> {
+        self.recorded.lock().unwrap().clone()
+    }
+
+    /// The events recorded so far, which are then forgotten.
+    #[allow(dead_code)]
+    pub fn take(&self) -> Vec<(String, serde_json::Value)> {
+        std::mem::take(&mut *self.recorded.lock().unwrap())
+    }
+}
+
+impl SessionEvents for TestEvents {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        self.record(event, payload);
+    }
+
+    fn notice(&self, notice: ChooserNotice) {
+        self.record("notice", serde_json::to_value(notice).unwrap());
+    }
+}
+
+/// A clock the test sets and moves, with its own time zone, in place of the
+/// computer's.
+pub struct ManualClock(Mutex<chrono::DateTime<chrono::FixedOffset>>);
+
+impl ManualClock {
+    /// Starts at `rfc3339`, whose offset is the clock's time zone.
+    #[allow(dead_code)]
+    pub fn at(rfc3339: &str) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(chrono::DateTime::parse_from_rfc3339(rfc3339).unwrap())))
+    }
+
+    #[allow(dead_code)]
+    pub fn set(&self, rfc3339: &str) {
+        *self.0.lock().unwrap() = chrono::DateTime::parse_from_rfc3339(rfc3339).unwrap();
+    }
+
+    #[allow(dead_code)]
+    pub fn advance(&self, by: chrono::Duration) {
+        let mut now = self.0.lock().unwrap();
+        *now += by;
+    }
+}
+
+impl Clock for ManualClock {
+    fn now(&self) -> chrono::DateTime<chrono::FixedOffset> {
+        *self.0.lock().unwrap()
+    }
+}
+
+/// An empty session reporting to a [`TestEvents`], with decrypted document
+/// copies in `opened_documents`.
+#[allow(dead_code)]
+pub fn test_session(opened_documents: &Path) -> (Session, Arc<TestEvents>) {
+    let events = Arc::new(TestEvents::default());
+    let session = Session::new(events.clone(), Some(opened_documents.to_owned()));
+    (session, events)
+}
+
+/// [`test_session`] on `clock`.
+#[allow(dead_code)]
+pub fn test_session_at(
+    opened_documents: &Path,
+    clock: Arc<ManualClock>,
+) -> (Session, Arc<TestEvents>) {
+    let events = Arc::new(TestEvents::default());
+    let session = Session::new(events.clone(), Some(opened_documents.to_owned())).with_clock(clock);
+    (session, events)
+}
+
+/// Opens the database at `path` with [`TEST_PASSPHRASE`] only to look at
+/// it: keyed and configured like the app's connections, but nothing is
+/// written, not even the open marker.
+#[allow(dead_code)]
+pub fn peek(path: &Path) -> Connection {
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .expect("could not open the file");
+    conn.pragma_update(None, "key", TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    conn
 }
 
 /// A tiny (20x20, solid red) but genuinely valid PNG, so

@@ -86,6 +86,8 @@ library) so nothing is left as NEEDS CLARIFICATION going into Phase 1.
 
 ## 5. Key management: keyring crate
 
+_Superseded by [spec 003](../003-database-protection-management/spec.md#relationship-to-feature-001): each database is keyed by a passphrase the user chooses, and the keyring holds only that passphrase, only when the user opts in (003 research.md §1, §10)._
+
 - **Decision**: `keyring` crate to store/retrieve the SQLCipher passphrase
   from the OS-native secret store (Windows Credential Manager, macOS
   Keychain, Linux Secret Service/libsecret via `zbus`/`dbus` backend).

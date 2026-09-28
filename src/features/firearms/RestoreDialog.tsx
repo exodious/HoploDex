@@ -4,6 +4,8 @@ import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
+import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
+import type { DraftTarget } from "../session/usePendingDraft";
 import { dispositionLabel } from "./types";
 import type { Firearm, HistoryChoice, ReverseDispositionInput } from "./types";
 import "./forms.css";
@@ -40,12 +42,38 @@ const HISTORY_OPTIONS: { value: HistoryChoice; label: string; description: strin
   },
 ];
 
+/** The version of this form's kept drafts (research.md §16). Raise it when
+ * {@link RestoreValues} changes shape, so older drafts are only discarded. */
+export const FORM_VERSION = 1;
+
+/** The dialog's input, as a kept draft holds it. */
+interface RestoreValues {
+  history: HistoryChoice | "";
+  renaming: boolean;
+  nickname: string;
+}
+
 function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDialogProps, "open">) {
-  const [history, setHistory] = useState<HistoryChoice | "">("");
+  const target: DraftTarget = {
+    formVersion: FORM_VERSION,
+    kind: "firearm",
+    mode: "restore",
+    targetId: firearm.id,
+  };
+  // Pending changes the user resumed start as unsaved input (FR-039).
+  const [resumed] = useState(() =>
+    resumedValues<RestoreValues>(target, {
+      history: "",
+      renaming: false,
+      nickname: firearm.nickname ?? "",
+    }),
+  );
+  useResumedDraftTaken(target);
+  const [history, setHistory] = useState<HistoryChoice | "">(resumed.history);
   const [failure, setFailure] = useState<CommandFailure | null>(null);
   // Once the nickname has clashed, the user can pick another right here.
-  const [renaming, setRenaming] = useState(false);
-  const [nickname, setNickname] = useState(firearm.nickname ?? "");
+  const [renaming, setRenaming] = useState(resumed.renaming);
+  const [nickname, setNickname] = useState(resumed.nickname);
   // specs/002-firearm-identification US3-9: once an ORIGINAL_MARKS_MATCH
   // warning has been shown, the same button resends confirmed.
   const [confirmedWarnings, setConfirmedWarnings] = useState(false);
@@ -77,6 +105,25 @@ function RestoreDialogBody({ onOpenChange, firearm, onRestore }: Omit<RestoreDia
       throw error; // keeps the dialog open
     }
   }
+
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
+  // and a lock keeps it (FR-039).
+  const values: RestoreValues = { history, renaming, nickname };
+  useDirtyForm({
+    label: `${firearmName(firearm)} (restore)`,
+    isDirty: history !== "" || (renaming && nickname !== (firearm.nickname ?? "")),
+    draft: { ...target, values },
+    submit: async () => {
+      if (!history) return false;
+      try {
+        await confirm();
+      } catch {
+        return false;
+      }
+      onOpenChange(false);
+      return true;
+    },
+  });
 
   return (
     <ConfirmDialog

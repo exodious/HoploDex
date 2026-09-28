@@ -1,13 +1,13 @@
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
-use crate::db::DbHandle;
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
-    validate_firearm_input, DispositionType, Firearm, FirearmInput, FirearmStatus,
+    DispositionType, Firearm, FirearmInput, FirearmStatus, validate_firearm_input,
 };
+use crate::session::Session;
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
 /// Equivalent to calling `update_firearm` with `status: "disposed"` and
@@ -328,35 +328,35 @@ pub mod ops {
         }
         let mut errors = std::collections::HashMap::new();
 
-        if let Some(nickname) = &input.nickname {
-            if let Some(other) = find_nickname_clash(conn, exclude_id, nickname)? {
-                errors.insert(
-                    "nickname".to_string(),
-                    format!("That nickname is already used by {other}."),
-                );
-            }
+        if let Some(nickname) = &input.nickname
+            && let Some(other) = find_nickname_clash(conn, exclude_id, nickname)?
+        {
+            errors.insert(
+                "nickname".to_string(),
+                format!("That nickname is already used by {other}."),
+            );
         }
 
-        if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty()) {
-            if let Some(other_id) = find_identity_clash(
+        if let Some(serial) = input.serial_number.as_deref().filter(|s| !s.trim().is_empty())
+            && let Some(other_id) = find_identity_clash(
                 conn,
                 exclude_id,
                 &input.make,
                 &input.model,
                 serial,
                 input.year_of_manufacture,
-            )? {
-                let other = describe_firearm(conn, other_id)?;
-                errors.insert(
-                    "serialNumber".to_string(),
-                    format!(
-                        "{other} already has this make, model and serial number. \
+            )?
+        {
+            let other = describe_firearm(conn, other_id)?;
+            errors.insert(
+                "serialNumber".to_string(),
+                format!(
+                    "{other} already has this make, model and serial number. \
                          Change one of them, or dispose of or delete the other record. \
                          Or record a year of manufacture on each firearm: two firearms with the \
                          same marks are accepted when both have a year and the years differ."
-                    ),
-                );
-            }
+                ),
+            );
         }
 
         if errors.is_empty() {
@@ -693,11 +693,7 @@ pub mod ops {
             .as_deref()
             .map(|q| {
                 let phrase = format!("\"{}\"", q.trim().replace('"', "\"\""));
-                if q.chars().any(char::is_alphanumeric) {
-                    phrase + "*"
-                } else {
-                    phrase
-                }
+                if q.chars().any(char::is_alphanumeric) { phrase + "*" } else { phrase }
             })
             .unwrap_or_default();
 
@@ -798,10 +794,9 @@ pub mod ops {
 pub async fn create_firearm(
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::create_firearm(&conn, &input, confirmed_warnings.unwrap_or(false))
+    session.write(|conn| ops::create_firearm(conn, &input, confirmed_warnings.unwrap_or(false)))
 }
 
 #[tauri::command]
@@ -809,56 +804,50 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::update_firearm(&conn, id, &input, confirmed_warnings.unwrap_or(false))
+    session.write(|conn| ops::update_firearm(conn, id, &input, confirmed_warnings.unwrap_or(false)))
 }
 
 #[tauri::command]
 pub async fn dispose_firearm(
     id: i64,
     input: DisposeFirearmInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::dispose_firearm(&conn, id, &input)
+    session.write(|conn| ops::dispose_firearm(conn, id, &input))
 }
 
 #[tauri::command]
 pub async fn reverse_disposition(
     id: i64,
     input: ReverseDispositionInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::reverse_disposition(&conn, id, &input)
+    session.write(|conn| ops::reverse_disposition(conn, id, &input))
 }
 
 #[tauri::command]
 pub async fn delete_firearm(
     id: i64,
     confirmed: bool,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DeleteResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::delete_firearm(&conn, id, confirmed)
+    session.write(|conn| ops::delete_firearm(conn, id, confirmed))
 }
 
 #[tauri::command]
 pub async fn get_firearm(
     id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<FirearmDetail, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::get_firearm_detail(&conn, id)
+    session.read(|conn| ops::get_firearm_detail(conn, id))
 }
 
 #[tauri::command]
 pub async fn list_firearms(
     input: ListFirearmsInput,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<ListFirearmsOutput, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::list_firearms(&conn, &input)
+    session.read(|conn| ops::list_firearms(conn, &input))
 }

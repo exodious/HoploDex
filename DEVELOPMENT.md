@@ -64,7 +64,7 @@ prerequisites below.
 
 ## Prerequisites
 
-**Rust** (stable, 1.75+), via [rustup](https://rustup.rs):
+**Rust** (stable, 1.97+), via [rustup](https://rustup.rs):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Linux/macOS
@@ -72,7 +72,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Linux/macOS
 
 On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
 
-**Node.js 22+** (tested on 22 and 24 LTS) and **npm 11+** — via
+**Node.js 24 LTS** and **npm 12+** (npm 12 writes the lockfile format the
+repo uses) — via
 [nodejs.org](https://nodejs.org), [nvm](https://github.com/nvm-sh/nvm), or
 your platform's package manager.
 
@@ -248,21 +249,80 @@ copies are removed when the app quits — window closed, SIGTERM, SIGHUP or
 SIGINT — against the built binary: `xvfb-run -a python3
 e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).
 
+### Real keyboard and mouse input
+
+WebDriver's clicks and keys don't reach WebKitGTK the way a person's do, so
+some bugs a person sees don't reproduce under them. Examples: a focus ring
+that shows or doesn't (`:focus-visible` after a script moves focus), or a
+dialog whose layout only corrects itself on the next real key press. When a
+report says "after a mouse click" or "when I press Tab" and a spec can't
+reproduce it, send real X11 input instead. `e2e/scripts/x11-input.py` sends
+it through XTest to the harness's Xvfb display, and `e2e/support/realInput.ts`
+wraps it for specs:
+
+```ts
+import { realClick, realKey } from "../support/realInput";
+
+await realClick("button.hd-db-menu"); // a real pointer click
+await realClick('[role="menuitem"]*=Restore from a backup'); // WebdriverIO's text match
+await realKey("Tab"); // X keysym names
+await realKey("Shift_L+Tab"); // + for a chord
+```
+
+It needs `libX11`, `libXtst` and `python3` (all in the dev container) and
+runs on Linux only. The first call moves the pointer once to find where the
+window sits on the screen. Keys go to the window under the pointer.
+
+To track down a bug of this kind, write a throwaway spec that opens the
+screen with real input and logs what you need from the page with
+`browser.execute`: `getBoundingClientRect()` of the elements involved,
+`document.activeElement.matches(":focus-visible")`, and, to catch a first
+layout that differs from the settled one, a snapshot taken from a
+`MutationObserver` the moment the element appears. Then change one thing
+at a time, by injecting a `<style>` before opening the screen, and compare.
+Run it with `npm run test:e2e -- --screenshots=<dir> --spec <file>`, look
+at the screenshots, and delete the spec before committing.
+
 ### Test isolation
 
-Your real collection lives in an encrypted database at
-`~/.local/share/com.hoplodex.app/hoplodex.db` (on Linux), with its key in the
-OS keyring. None of the tooling here opens it:
+Your real application data is more than one file. It is every `.hoplodex`
+database you have created or opened, wherever you keep it, and its backups
+(in `HoploDex backups` next to it, or the folder you chose);
+`machine.json`, with the recent-databases list, in the app's config
+directory (`~/.config/com.hoplodex.app/` on Linux); the suggested
+`<Documents>/HoploDex` folder; and each saved passphrase, a
+`passphrase:<database id>` entry under `com.hoplodex.app` in the OS keyring.
+The database from before the passphrase model,
+`~/.local/share/com.hoplodex.app/hoplodex.db`, and its key in the keyring
+count too; nothing reads them any more. None of the tooling here touches any
+of it:
 
 - Rust tests use `tests/support::TestDb`, a real SQLCipher database in a temp
-  directory. Tests never mock the database.
-- `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories and a
-  stub `xdg-open`. E2E builds use the `mock-keyring` feature, which generates
-  a fresh key per launch, so a database left over from one spec would break
-  the next.
+  directory, created by `db::create_database` with a fixed test passphrase
+  and the production cipher settings. Tests never mock the database, and
+  take every path (database, config directory) as a parameter.
+  `MachineSettings::load` starts with the keyring off, so they never reach the
+  OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
+  with `--features mock-keyring`, against keyring-core's in-memory store:
+  `cargo test --manifest-path src-tauri/Cargo.toml --features mock-keyring --test keyring_test`.
+- `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories, a
+  `user-dirs.dirs` whose documents folder (the suggested place for a new
+  database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at
+  a first run and creates its database by typing a location in the sandbox
+  (`createDatabase()` in `e2e/support/ui.ts`), or unlocks the seeded one
+  with its passphrase (`unlock()`). There is no database key in the
+  environment: a database opens with its passphrase alone, as in the app.
+  E2E builds use the
+  `mock-keyring` feature, an in-memory keyring for saved passphrases, since a
+  headless session can't unlock a real one. The harness keeps it in
+  `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
+  passphrase survives a relaunch, and launches any `*-no-keyring.e2e.ts` spec
+  with `HOPLODEX_E2E_KEYRING=unavailable`, a computer without a keyring.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
-  app at `.human-testing/` via `XDG_*_HOME` and refuse to target the real data
-  directory.
+  app at `.human-testing/` via `XDG_*_HOME`. The seed writes only into a
+  directory that is new, empty or holds the `.hoplodex-sandbox` marker it
+  left there, refuses anything inside the real data, config or documents
+  directory, and never touches the keyring.
 - The [development container](#development-container-linux-recommended) has
   none of the host's app data at all.
 
@@ -278,12 +338,18 @@ npm run screenshots -- --screenshots=/tmp/pr   # somewhere else
 ```
 
 This runs `e2e/screenshots/screens.e2e.ts` through the E2E harness, under Xvfb
-at a fixed 1200×800 window. It opens the
-[human-testing collection](#human-testing), seeded into the session's
-throwaway sandbox, and walks the main screens and dialogs (collection list
-and tiles, a full record, the record scrolled so its pinned strip shows, the
-edit/coverage/dispose dialogs, add firearm, insurance, a policy, import and
-export) in light and dark mode, writing
+at a fixed 1200×800 window. It starts at the database chooser listing the
+[human-testing databases](#human-testing), seeded into the session's
+throwaway sandbox, shoots it and the create dialog, unlocks "Main collection"
+with the seed's passphrase, and walks the main screens and dialogs
+(collection list and tiles, a full record, the record scrolled so its pinned
+strip shows, the edit/coverage/dispose dialogs, the unsaved-changes question,
+add firearm, insurance, a policy, import and export), then the database menu's
+dialogs (settings, change passphrase, restore from a backup, the guide), the
+pending-changes question after a lock, the closing screen with its backup
+bar, and "Shared collection" refused as open on another computer. Then `e2e/screenshots/first-run.e2e.ts`, in an
+unseeded sandbox, shoots the first-run chooser and a new database's
+disk-encryption note. Every screen is taken in light and dark mode, writing
 `<nn>-<screen>-<theme>.png`. Long pages and dialogs are captured whole. The
 names don't change between runs, so for before/after pairs, run it on the base
 branch and then on yours:
@@ -302,8 +368,11 @@ saves only when the run was started with `--screenshots`, so a normal
 npm run test:e2e -- --screenshots --spec e2e/specs/us1-record-firearm.e2e.ts
 ```
 
-The seed and the app share a database key via `HOPLODEX_E2E_DB_KEY`, which
-only `mock-keyring` (E2E) builds read.
+The seed writes into a new `seed` folder in the sandbox, and the harness
+moves the app's config directory there so its recent list names the seeded
+databases. Specs read the seed's passphrase from
+`HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
+`HOPLODEX_E2E_DOCUMENTS`.
 
 ## Human testing
 
@@ -319,26 +388,37 @@ scripts/human-testing.sh --extra 200    # also generate 200 plain firearms
 The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own
 command layer, so it covers photos, documents, dispositions and every
 insurance state: healthy, under-insured, uninsured (expired policy), and a
-policy expiring soon. Policy dates are relative to the day it is seeded. The
-data lives in `.human-testing/` (git-ignored), along with three spreadsheets
-in `import-samples/` (clean, conflicting and invalid rows) to try File >
-Import with. The app is pointed at it through `XDG_*_HOME`, so your real
-collection is never opened. Linux only.
+policy expiring soon. Policy dates are relative to the day it is seeded.
+Some firearms carry real photos from `src-tauri/examples/seed-photos/`, all
+public domain or freely licensed, whose `README.md` records each one's
+source, licence and the credit line to use if they appear on a web page; one
+record carries ten generated images for size and count testing. The
+data lives in `.human-testing/` (git-ignored): two databases in `HoploDex/`,
+"Main collection" (the full collection) and "Shared collection" (left open
+by "Workshop PC", with pending changes), both opened with the passphrase the
+script prints; two backups of "Main collection" in `Backups/`, its custom
+backup folder; the `machine.json` listing both databases; and three
+spreadsheets in
+`import-samples/` (clean, conflicting and invalid rows) to try File > Import
+with. The app is pointed at it through `XDG_*_HOME` and a `user-dirs.dirs`
+whose documents folder is the sandbox, so your real collections are never
+opened. Linux only. A `.human-testing/` made before the passphrase model has
+no sandbox marker, and the seed refuses it: delete it and run the script
+again.
 
 **Changing the data model?** Update the seed in the same change. The seed
 compiles when a new field is simply left out, so
-`src-tauri/tests/human_seed_coverage_test.rs` runs it against a temporary
-database and fails if any column is empty in every row, if a `CHECK ... IN`
-value never appears, or if no import sample fills a spreadsheet column. Fix a
+`src-tauri/tests/human_seed_coverage_test.rs` runs it into a temporary
+sandbox and fails if any column is empty in every row of both databases, if a
+`CHECK ... IN` value never appears in either, or if no import sample fills a
+spreadsheet column. Fix a
 failure by seeding a record that uses the new field (and adding it to the
 import samples), not by loosening the test.
 
 In the [development container](#development-container-linux-recommended),
 run it as `scripts/dev-container.sh --gui scripts/human-testing.sh`. The
 container keeps the data in `~/human-testing` in its home volume (via
-`HUMAN_TESTING_DIR`), not in the checkout's `.human-testing/`. That's because
-it is encrypted with the container's own keyring, which a host-seeded copy's
-key isn't in, and the reverse is true too.
+`HUMAN_TESTING_DIR`), not in the checkout's `.human-testing/`.
 
 ## Linting & formatting
 
@@ -416,9 +496,30 @@ license, check it against the FSF's
 [list of GPL-compatible licenses](https://www.gnu.org/licenses/license-list.html).
 A license that's only acceptable for particular packages goes in the script's
 `EXCEPTIONS` (npm) or a `[[licenses.exceptions]]` entry (Rust), with the
-reason. Today there is one: OFL-1.1, for the `@fontsource` fonts only. The
-tools can't check some things, so check these by hand when they change and
+reason. Today there is one: OFL-1.1, for the `@fontsource` fonts only.
+
+The passphrase strength hint's English dictionary is a second exception, which
+the tools can't see because the package declares MIT. `@zxcvbn-ts/language-en`
+4.1.1 bundles `commonWords.json`, which its `THIRD_PARTY_LICENSES.md` and
+`NOTICE.md` say is derived from the OpenSubtitles 2024 dataset (via OPUS,
+Helsinki-NLP) under ODC-BY, a data license whose only condition is
+attribution. It's accepted for that package only: the list is data the
+strength estimate looks words up in, not code combined with the program. The
+release's third-party notices must carry the attribution, including the
+package's `NOTICE.md`, which asks to be kept on redistribution: "commonWords.json
+contains data derived from OpenSubtitles 2024 (https://opus.nlpl.eu/),
+provided by Helsinki-NLP / OPUS, under the Open Data Commons Attribution
+License (ODC-BY)."
+
+The tools can't check some things, so check these by hand when they change and
 before a release:
+
+- **The strength hint's other word lists**: `wikipedia.json`,
+  `firstnames.json`, `lastnames.json` and `wordSequences.json` in
+  `@zxcvbn-ts/language-en` 4.1.1, and `passwords.json`, `diceware.json` and
+  `adjacencyGraphs.json` in `@zxcvbn-ts/language-common` 4.1.3, state no
+  source. Find out where each comes from and under what license before the
+  first release.
 
 - **MPL-2.0 crates**: a file carrying MPL's Exhibit B notice ("Incompatible
   With Secondary Licenses") can't be combined with GPL code. When a new

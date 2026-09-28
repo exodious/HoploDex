@@ -1,5 +1,13 @@
-import { $, back, browser, choose, clickButton, clickEl, goTo, search } from "../support/ui";
-import { shot } from "../support/screenshots";
+import { $, back, browser, choose, clickButton, clickEl, fill, goTo, search } from "../support/ui";
+import {
+  chooseMenuItem,
+  requestQuit,
+  selectChooserRow,
+  submitPassphrase,
+  unlock,
+  waitForChooser,
+} from "../support/ui";
+import { chooseTheme, shot } from "../support/screenshots";
 
 /**
  * The standard screenshot set for pull requests that change the UI: the main
@@ -9,17 +17,11 @@ import { shot } from "../support/screenshots";
  * `<nn>-<screen>-<theme>.png` to e2e/screenshots-out/.
  *
  * Names are stable, so running it on the base branch and on the PR branch
- * gives before/after pairs. Add a screen here when a change adds one.
+ * gives before/after pairs. Add a screen here when a change adds one; the
+ * screens that need a sandbox with no databases are in first-run.e2e.ts.
  */
 
 const RECORD = "Glock 19 Gen5"; // the seeded record with photos, documents and every detail
-
-async function chooseTheme(label: "Light" | "Dark") {
-  await browser.execute((title: string) => {
-    document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`)?.click();
-  }, label);
-  await browser.pause(300);
-}
 
 async function openRecord(name: string) {
   await browser.waitUntil(
@@ -54,6 +56,24 @@ async function openDialog(button: string) {
   await browser.pause(300);
 }
 
+/** Sends `event` to the page as if the backend had, for a state the
+ * seeded collection doesn't reach on its own. */
+async function emitFromBackend(event: string, payload: unknown) {
+  await browser.execute(
+    (name: string, data: unknown) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      void internals.invoke("plugin:event|emit", { event: name, payload: data });
+    },
+    event,
+    payload,
+  );
+  await browser.pause(300);
+}
+
 /** Dismisses the open dialog the way Escape would, without saving. It must
  * be cancelable like a real key press: the dialog cancels it, which stops the
  * record page's own Escape handler from also going back to the list. */
@@ -66,6 +86,40 @@ async function closeDialog() {
   await $('[role="dialog"]').waitForExist({ reverse: true });
   await browser.pause(200);
 }
+
+// The app starts at the chooser, listing the seeded databases. It has to be
+// shot in both themes before a database is opened.
+describe("Screenshots: the chooser", () => {
+  for (const theme of ["Light", "Dark"] as const) {
+    const suffix = theme.toLowerCase();
+
+    it(`chooser and create database (${suffix})`, async () => {
+      await waitForChooser();
+      await chooseTheme(theme);
+      await shot(`14-chooser-${suffix}`);
+
+      await openDialog("Create a new database…");
+      await fill("Passphrase", "vivid otter ledger crane");
+      await $('[role="meter"]').waitForExist();
+      await shot(`16-create-database-${suffix}`, { fullPage: true });
+      await closeDialog();
+    });
+
+    it(`open on another computer (${suffix})`, async () => {
+      // The seeded "Shared collection" is marked open on "Workshop PC".
+      await selectChooserRow("Shared collection");
+      await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+      await $("button=Take over…").waitForExist();
+      await shot(`17-open-elsewhere-${suffix}`);
+      await clickButton("Go back");
+      await selectChooserRow("Main collection");
+    });
+  }
+
+  after(async () => {
+    await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+  });
+});
 
 for (const theme of ["Light", "Dark"] as const) {
   const suffix = theme.toLowerCase();
@@ -107,6 +161,17 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`07-mark-disposed-${suffix}`);
       await closeDialog();
 
+      // Quitting with an edit under way asks save, discard or cancel.
+      await openDialog("Edit");
+      await fill("Notes", "Swapped the grips for the walnut set.");
+      await requestQuit();
+      await $('[role="alertdialog"]').waitForExist();
+      await browser.pause(300);
+      await shot(`25-unsaved-changes-${suffix}`);
+      await clickButton("Cancel");
+      await $('[role="alertdialog"]').waitForExist({ reverse: true });
+      await closeDialog();
+
       await back();
     });
 
@@ -140,6 +205,101 @@ for (const theme of ["Light", "Dark"] as const) {
       await openDialog("Export");
       await shot(`13-export-${suffix}`);
       await closeDialog();
+    });
+
+    it("database settings, passphrase change and restore", async () => {
+      await chooseMenuItem("button.hd-db-menu", "Database settings…");
+      await $('[role="dialog"]').waitForExist();
+      await browser.pause(300);
+      await shot(`19-database-settings-${suffix}`, { fullPage: true });
+      // The seeded backups are at a custom location, so going back to the
+      // default asks what to do with them (FR-026). Cancelled: nothing is
+      // saved.
+      await clickButton("Use the default");
+      await clickButton("Save");
+      await $("h2=Backups at the old location").waitForExist();
+      await browser.pause(300);
+      await shot(`27-backup-location-change-${suffix}`);
+      await clickButton("Cancel");
+      await $("h2=Backups at the old location").waitForExist({ reverse: true });
+      await closeDialog();
+
+      await chooseMenuItem("button.hd-db-menu", "Change passphrase…");
+      await $('[role="dialog"] input[autocomplete="current-password"]').waitForExist();
+      await browser.pause(300);
+      await shot(`20-change-passphrase-${suffix}`);
+      await closeDialog();
+
+      await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+      await $('[role="dialog"] input[type="radio"]').waitForExist();
+      await browser.pause(300);
+      await shot(`21-restore-backup-${suffix}`, { fullPage: true });
+      await closeDialog();
+
+      await chooseMenuItem("button.hd-db-menu", "About databases and security");
+      await $('[role="dialog"] .hd-db-guide').waitForExist();
+      await browser.pause(300);
+      await shot(`23-database-guide-${suffix}`);
+      // How this database is set up, beside the defaults.
+      await browser.execute(() =>
+        document.querySelector(".hd-db-guide__settings")?.scrollIntoView({ block: "center" }),
+      );
+      await browser.pause(300);
+      await shot(`26-database-guide-settings-${suffix}`);
+      await closeDialog();
+    });
+
+    it("pending changes after a lock", async () => {
+      // A lock with an edit under way keeps it, and the next open asks.
+      await goTo("Collection");
+      await openRecord(RECORD);
+      await openDialog("Edit");
+      await fill("Notes", "Swapped the grips for the walnut set.");
+      await browser.pause(400);
+      await browser.execute(() =>
+        (document.activeElement ?? document.body).dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "l",
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      );
+      await waitForChooser();
+      await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+      await $("button=Resume editing").waitForExist({ timeout: 10000 });
+      await browser.pause(300);
+      await shot(`22-pending-changes-${suffix}`);
+      await clickButton("Discard changes");
+      await $('[role="alertdialog"]').waitForExist();
+      await clickButton("Discard changes");
+      await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
+      await browser.pause(300);
+    });
+
+    it("closing with a backup", async () => {
+      // The seeded collection was backed up today, so a real close makes no
+      // backup: the closing screen is shown with the events a long one sends.
+      await emitFromBackend("session:closing", { reason: "closed" });
+      await emitFromBackend("backup:progress", {
+        processed: 96_000_000,
+        total: 212_000_000,
+        showNow: true,
+      });
+      await $('[role="progressbar"]').waitForExist();
+      await shot(`18-closing-backup-${suffix}`);
+      // Then a real close, and back to the collection for the next walk.
+      await browser.execute(() => {
+        const internals = (
+          window as unknown as {
+            __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+          }
+        ).__TAURI_INTERNALS__;
+        void internals.invoke("close_database", { reason: "closed" });
+      });
+      await waitForChooser();
+      await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     });
   });
 }

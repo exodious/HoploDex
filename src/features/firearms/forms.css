@@ -97,12 +97,15 @@
 }
 
 /* A lone field whose value is short, sized to the column it would have in
-   the grid above while its hint keeps the full width. */
-.hd-field--quarter .hd-input {
+   the grid above while its hint keeps the full width. A select's trigger is
+   sized the same way. */
+.hd-field--quarter .hd-input,
+.hd-field--quarter .hd-select__trigger {
   width: calc((100% - 3 * var(--space-4)) / 4);
 }
 
-.hd-field--third .hd-input {
+.hd-field--third .hd-input,
+.hd-field--third .hd-select__trigger {
   width: calc((100% - 2 * var(--space-4)) / 3);
 }
 
@@ -215,7 +218,9 @@
   }
 
   .hd-field--quarter .hd-input,
-  .hd-field--third .hd-input {
+  .hd-field--quarter .hd-select__trigger,
+  .hd-field--third .hd-input,
+  .hd-field--third .hd-select__trigger {
     width: calc((100% - var(--space-4)) / 2);
   }
 

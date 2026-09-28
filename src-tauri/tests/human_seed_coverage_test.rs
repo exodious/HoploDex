@@ -2,22 +2,27 @@
 //! `scripts/human-testing.sh`) in step with the data model. The seed builds
 //! its records through the same `ops` layer as the app, so a new column
 //! compiles fine and quietly stays empty; a person testing by hand would then
-//! never see the feature. This runs the real seed against a temporary
-//! database and fails when any column is empty in every row, still at its
-//! default in every row, or never holds one of the values a `CHECK ... IN`
-//! allows, and when an import sample leaves a spreadsheet column blank.
+//! never see the feature. This runs the real seed into a temporary sandbox
+//! and fails when any column is empty in every row of both seeded databases,
+//! still at its default in every row, or never holds one of the values a
+//! `CHECK ... IN` allows, and when an import sample leaves a spreadsheet
+//! column blank. Both databases, and the newest seeded backup, count
+//! together: the single-row tables (`collection_settings`, `app_state`,
+//! `pending_changes`) can hold only one value per database, and the backup
+//! stamp (`app_state.backup_made_at`, `backup_of_name`) is only ever set in
+//! a backup.
 //!
 //! When it fails, seed a record that uses the new field in
 //! `examples/human_seed.rs` (and add it to the import samples there). Only
 //! list something in `NEVER_SEEDED` when it truly cannot be seeded, and say why.
 
-mod support;
-
 use std::collections::BTreeSet;
 
+use hoplodex_lib::db;
+use hoplodex_lib::services::machine_settings::MachineIdentity;
+use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
-use support::TestDb;
 use tempfile::TempDir;
 
 #[allow(dead_code)]
@@ -25,12 +30,21 @@ use tempfile::TempDir;
 mod human_seed;
 
 /// `(table, column)` pairs the seed cannot populate, each with the reason.
-const NEVER_SEEDED: &[(&str, &str)] = &[];
+const NEVER_SEEDED: &[(&str, &str)] = &[
+    // A single-row table: its id is always its default, 1.
+    ("collection_settings", "id"),
+];
 
-/// `(table, column)` pairs whose allowed values need not all appear, because
-/// another column already carries the same list: a retained disposition
-/// (FR-033) uses the values `firearms.disposition_type` is checked against.
-const PARTIAL_VALUES_OK: &[(&str, &str)] = &[("disposition_history", "disposition_type")];
+/// `(table, column)` pairs whose allowed values need not all appear:
+/// - a retained disposition (FR-033) uses the values
+///   `firearms.disposition_type` is checked against;
+/// - `pending_changes` holds at most one row per database (FR-039), and the
+///   forms each kind and mode come from are seeded as ordinary records.
+const PARTIAL_VALUES_OK: &[(&str, &str)] = &[
+    ("disposition_history", "disposition_type"),
+    ("pending_changes", "kind"),
+    ("pending_changes", "mode"),
+];
 
 /// Spreadsheet columns no import sample needs: `photo_filenames` is written
 /// on export and ignored on import (FR-019).
@@ -70,8 +84,9 @@ fn columns(conn: &Connection, table: &str) -> Vec<Column> {
         .collect()
 }
 
-/// The quoted values a `CHECK (<column> IN ('a', 'b', ...))` allows, if the
-/// table's SQL has one for this column.
+/// The values, as SQL literals, that a `CHECK (<column> IN ('a', 'b', ...))`
+/// or `CHECK (<column> IN (0, 1))` allows, if the table's SQL has one for
+/// this column.
 fn allowed_values(table_sql: &str, column: &str) -> Vec<String> {
     let needle = format!("{column} IN (");
     let Some(start) = table_sql.find(&needle) else {
@@ -80,23 +95,46 @@ fn allowed_values(table_sql: &str, column: &str) -> Vec<String> {
     let list = &table_sql[start + needle.len()..];
     let list = &list[..list.find(')').unwrap_or(list.len())];
     list.split(',')
-        .filter_map(|item| item.trim().strip_prefix('\'')?.strip_suffix('\''))
+        .map(str::trim)
+        .filter(|item| {
+            (item.starts_with('\'') && item.ends_with('\'')) || item.parse::<i64>().is_ok()
+        })
         .map(str::to_owned)
         .collect()
 }
 
-fn count(conn: &Connection, sql: &str) -> i64 {
-    conn.query_row(sql, [], |row| row.get(0)).unwrap()
+/// The sum of a count over every seeded database.
+fn count(conns: &[Connection], sql: &str) -> i64 {
+    conns.iter().map(|conn| conn.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap()).sum()
 }
 
 #[test]
 fn the_seed_uses_every_column_of_every_table() {
-    let db = TestDb::new();
-    human_seed::seed(&db.conn, 0);
+    let dir = TempDir::new().unwrap();
+    let paths = human_seed::seed_sandbox(dir.path(), 0);
+    let open = |path| {
+        // "Shared collection" is marked open on another computer.
+        let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+        db::open_database(
+            path,
+            &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+            &machine,
+            true,
+        )
+        .unwrap()
+    };
+    let mut seeded_backups: Vec<_> = std::fs::read_dir(&paths.main_backups)
+        .expect("the seed makes backups of the main database")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "hoplodex"))
+        .collect();
+    seeded_backups.sort();
+    assert_eq!(seeded_backups.len(), 2, "yesterday's and today's backups");
+    let conns = [open(&paths.main), open(&paths.shared), open(seeded_backups.last().unwrap())];
 
     let mut unseeded = Vec::new();
-    for (table, sql) in user_tables(&db.conn) {
-        for column in columns(&db.conn, &table) {
+    for (table, sql) in user_tables(&conns[0]) {
+        for column in columns(&conns[0], &table) {
             let name = &column.name;
             if NEVER_SEEDED.contains(&(table.as_str(), name.as_str())) {
                 continue;
@@ -109,7 +147,7 @@ fn the_seed_uses_every_column_of_every_table() {
                 ),
                 None => format!("SELECT COUNT(*) FROM {table} WHERE {name} IS NOT NULL"),
             };
-            if count(&db.conn, &used) == 0 {
+            if count(&conns, &used) == 0 {
                 unseeded.push(format!("{table}.{name} is empty in every seeded row"));
                 continue;
             }
@@ -117,9 +155,9 @@ fn the_seed_uses_every_column_of_every_table() {
                 continue;
             }
             for value in allowed_values(&sql, name) {
-                let has = format!("SELECT COUNT(*) FROM {table} WHERE {name} = '{value}'");
-                if count(&db.conn, &has) == 0 {
-                    unseeded.push(format!("{table}.{name} is never '{value}'"));
+                let has = format!("SELECT COUNT(*) FROM {table} WHERE {name} = {value}");
+                if count(&conns, &has) == 0 {
+                    unseeded.push(format!("{table}.{name} is never {value}"));
                 }
             }
         }

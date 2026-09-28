@@ -23,7 +23,7 @@ from policy dates and never assigned per firearm (FR-014, FR-036).
 
 ## Technical Context
 
-**Language/Version**: Rust 1.75+ (backend, `src-tauri`), TypeScript 5.x /
+**Language/Version**: Rust 1.97+ (backend, `src-tauri`), TypeScript 5.x /
 React 18+ (frontend, `src`)
 
 **Primary Dependencies**: Tauri 2.x (app shell, IPC, async commands, native
@@ -93,8 +93,8 @@ documents of typical consumer sizes (a few MB each).
 | II. Testing (NON-NEGOTIABLE) | Tests before done, red-green, real persistence (no mocks), regression tests for bugs | `cargo test` integration tests run against a real temp SQLCipher DB (via `rusqlite`'s in-memory-file or tempdir DB, never a mock connection); one test per acceptance scenario in spec.md; Vitest for pure frontend logic; WebdriverIO/`tauri-driver` E2E for full user-story flows |
 | III. UX Consistency | Single shared component library, consistent confirmation pattern, WCAG 2.1 AA | Single Radix-based component library (shadcn/ui) is the only source of buttons/dialogs/forms/tables; one shared `<ConfirmDialog>` component used for every destructive action (delete firearm, delete policy, bulk import overwrite); components chosen/audited for WCAG 2.1 AA |
 | IV. Performance | 100ms feedback / 1s completion for interactive ops, 500ms search, no UI-thread blocking, progress indication for bulk ops | All DB access happens in Rust via async Tauri commands off the UI thread; FTS5 index keeps search sub-500ms at 10k-row scale; import/export run as async commands emitting `tauri::Emitter` progress events consumed by a shared progress-bar component |
-| V. User Privacy | Local/encrypted storage, no unconsented transmission, no telemetry on collection contents, clear export disclosure, real deletion | SQLCipher encrypts the entire DB file at rest; `keyring` stores the passphrase in the OS credential store, never logged; no analytics/telemetry dependency is introduced; export dialog explicitly states the destination folder and that files leave the device unencrypted (T139–T140); the webview gets a restrictive CSP and no network-capable plugin is enabled (T141–T142); deleting a firearm, photo, or document issues a real `DELETE` rather than a soft-delete flag, with `PRAGMA secure_delete = ON` zeroing freed pages and a `VACUUM` after deletion returning the space, so deleted BLOB content does not linger in the file (T137–T138) |
-| Security & Data Handling | Encryption at rest, opt-in-only network features, vetted dependencies, no unauthorized external access | No network/sync feature exists in this feature at all (FR-021); all chosen dependencies (`rusqlite`, `keyring`, `rust_xlsxwriter`, `calamine`) are local-only, reviewed for absence of phone-home behavior in research.md; the DB file lives in the OS app-data directory, not a shared/exposed location |
+| V. User Privacy | Local/encrypted storage, no unconsented transmission, no telemetry on collection contents, clear export disclosure, real deletion | SQLCipher encrypts the entire DB file at rest; `keyring` stores the passphrase in the OS credential store, never logged; no analytics/telemetry dependency is introduced; export dialog explicitly states the destination folder and that files leave the device unencrypted (T139–T140); the webview gets a restrictive CSP and no network-capable plugin is enabled (T141–T142); deleting a firearm, photo, or document issues a real `DELETE` rather than a soft-delete flag, with `PRAGMA secure_delete = ON` zeroing freed pages and a `VACUUM` after deletion returning the space, so deleted BLOB content does not linger in the file (T137–T138). _Amended by [spec 003](../003-database-protection-management/plan.md): the database is keyed by the user's passphrase, and the keyring holds only that passphrase, only on opt-in._ |
+| Security & Data Handling | Encryption at rest, opt-in-only network features, vetted dependencies, no unauthorized external access | No network/sync feature exists in this feature at all (FR-021); all chosen dependencies (`rusqlite`, `keyring`, `rust_xlsxwriter`, `calamine`) are local-only, reviewed for absence of phone-home behavior in research.md; the DB file lives in the OS app-data directory, not a shared/exposed location. _Amended by [spec 003](../003-database-protection-management/plan.md): databases and their backups live in folders the user chooses._ |
 
 **Result**: PASS — no violations requiring Complexity Tracking justification.
 
@@ -146,7 +146,7 @@ src-tauri/
 │   ├── valuation_test.rs
 │   ├── insurance_status_test.rs
 │   ├── import_export_test.rs
-│   └── encryption_test.rs       # keyring + SQLCipher unlock/lock integration
+│   └── encryption_test.rs       # keyring + SQLCipher unlock/lock integration (amended by spec 003: replaced by passphrase_protection_test.rs and keyring_test.rs)
 ├── Cargo.toml
 └── tauri.conf.json
 

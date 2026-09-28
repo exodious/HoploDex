@@ -6,6 +6,8 @@ Tauri's IPC command layer (`invoke("command_name", args)` from React,
 the contract between `src` and `src-tauri` — the frontend MUST only reach
 the database, filesystem, or keyring through these commands.
 
+_Amended by [spec 003](../../003-database-protection-management/contracts/tauri-commands.md): every collection command below fails with `DATABASE_CLOSED` while no database is open, and 003 adds the commands that create, open, close, lock and back up databases._
+
 All commands are `async` and run on Tauri's async runtime, never on the
 UI thread (constitution Principle IV). Long-running commands (`import_*`,
 `export_*`) additionally emit progress events over a Tauri event channel
@@ -30,6 +32,8 @@ type CommandError = {
   fieldErrors?: Record<string, string>; // for per-field validation failures
 };
 ```
+
+_Amended by [spec 003](../../003-database-protection-management/contracts/tauri-commands.md): the shape gains an optional `details` object for the codes that carry data, such as `DATABASE_OPEN_ELSEWHERE`'s `machineName` and `since`._
 
 ## Firearm records (User Story 1)
 

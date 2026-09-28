@@ -9,9 +9,9 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::FirearmInput;
 use hoplodex_lib::services::insurance_status::{
-    firearm_warning, load_context_as_of, InsuranceWarning,
+    InsuranceWarning, firearm_warning, load_context_as_of,
 };
-use support::{date, firearm, policy, TestDb};
+use support::{TestDb, date, firearm, policy};
 
 const TODAY: &str = "2026-06-15";
 

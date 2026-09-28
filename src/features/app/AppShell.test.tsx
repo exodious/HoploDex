@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { FirearmSummary } from "../browse/types";
 import type { FirearmDetail } from "../firearms/types";
 import type { InsurancePolicy } from "../insurance/types";
+import { SessionContext } from "../session/sessionStore";
+import type { SessionState } from "../session/sessionStore";
+import { peekResumedDraft, setResumedDraft } from "../session/usePendingDraft";
+import type { Draft } from "../databases/types";
 import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
@@ -137,11 +141,30 @@ const collection: CollectionState = {
   refresh: async () => {},
 };
 
+// An open database whose notes were all dismissed.
+const session = {
+  status: {
+    name: "Main collection",
+    notes: { diskEncryption: false },
+    screenLockSupported: true,
+    settings: {
+      backups: {
+        enabled: true,
+        keepCount: 5,
+        location: { kind: "default", path: "/tmp/HoploDex backups", available: true },
+      },
+      lock: { idleEnabled: true, idleMinutes: 10, onScreenLock: false },
+    },
+  },
+} as unknown as SessionState;
+
 function renderShell() {
   render(
-    <CollectionContext.Provider value={collection}>
-      <AppShell />
-    </CollectionContext.Provider>,
+    <SessionContext.Provider value={session}>
+      <CollectionContext.Provider value={collection}>
+        <AppShell />
+      </CollectionContext.Provider>
+    </SessionContext.Provider>,
   );
 }
 
@@ -334,5 +357,118 @@ describe("Escape stays on a record while something else wants it (FR-040, US1/AC
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     onColt();
+  });
+});
+
+describe("Resumed pending changes open where their form is (FR-039)", () => {
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+  });
+  afterEach(() => setResumedDraft(null));
+
+  /** The Colt's edit form, as a draft keeps it, with new notes. */
+  const coltValues = {
+    make: "Colt",
+    model: "Python",
+    nickname: "",
+    caliber: ".357",
+    firearmTypeId: "1",
+    serialNumber: "V1",
+    noSerialAttested: false,
+    notes: "Kept at the lock",
+    accessories: "",
+    barrelLength: "",
+    overallLength: "",
+    weightPounds: "",
+    weightOunces: "",
+    capacity: "",
+    finish: "",
+    condition: "",
+    estimatedValue: "1,250",
+    acquisitionSource: "",
+    acquisitionDate: "",
+    acquisitionPrice: "",
+    dispositionType: "",
+    dispositionRecipient: "",
+    dispositionDate: "",
+    dispositionPrice: "",
+    origin: "",
+    yearOfManufacture: "",
+    countryOfManufacture: "",
+    importerName: "",
+    originalMake: "",
+    originalModel: "",
+    originalSerialNumber: "",
+  };
+
+  function resume(draft: Omit<Draft, "formVersion" | "label">) {
+    setResumedDraft({ formVersion: 1, label: "Colt Python", ...draft });
+  }
+
+  it("an edit reopens the firearm's edit form with the changes", async () => {
+    resume({ kind: "firearm", mode: "edit", targetId: 1, values: coltValues });
+    renderShell();
+
+    const form = await screen.findByRole("dialog", { name: "Edit Colt Python" });
+    expect(within(form).getByLabelText("Notes")).toHaveValue("Kept at the lock");
+    // On the firearm's record, behind the modal form.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Colt Python", hidden: true }),
+    ).toBeInTheDocument();
+    expect(peekResumedDraft()).toBeNull();
+  });
+
+  it("a new firearm reopens the add form with the changes", async () => {
+    resume({
+      kind: "firearm",
+      mode: "add",
+      targetId: null,
+      values: { ...coltValues, make: "Sako", model: "85", serialNumber: "" },
+    });
+    renderShell();
+
+    const form = await screen.findByRole("dialog", { name: "Add firearm" });
+    expect(within(form).getByLabelText(/^Make/)).toHaveValue("Sako");
+  });
+
+  it("a coverage change reopens the coverage dialog with it", async () => {
+    resume({
+      kind: "firearm",
+      mode: "coverage",
+      targetId: 1,
+      values: { policyId: String(policy.id), amount: "2,000" },
+    });
+    renderShell();
+
+    const dialog = await screen.findByRole("dialog", { name: "Insurance coverage" });
+    expect(within(dialog).getByLabelText(/Scheduled amount/)).toHaveValue("2,000");
+  });
+
+  it("a policy edit reopens the policy's edit form with the changes", async () => {
+    setResumedDraft({
+      formVersion: 1,
+      kind: "policy",
+      mode: "edit",
+      targetId: policy.id,
+      label: "Collector Floater (edit)",
+      values: {
+        name: "Collector Floater",
+        policyNumber: "CF-100",
+        insuranceCompany: "Acme Mutual",
+        companyContact: "",
+        agentName: "Dana",
+        agentContact: "",
+        notes: "",
+        blanketCoverageLimit: "",
+        effectiveStartDate: "2026-01-01",
+        effectiveEndDate: "2027-01-01",
+      },
+    });
+    renderShell();
+
+    const form = await screen.findByRole("dialog", { name: "Edit Collector Floater" });
+    expect(within(form).getByLabelText("Agent name")).toHaveValue("Dana");
   });
 });

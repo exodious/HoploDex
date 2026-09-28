@@ -3,7 +3,7 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops, ListFirearmsInput};
+use hoplodex_lib::commands::firearms::{ListFirearmsInput, ops};
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use support::TestDb;
 

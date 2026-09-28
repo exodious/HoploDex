@@ -1,0 +1,564 @@
+/* The database chooser and the database notes (contracts/ui-databases.md
+   §1, §10). The top bar and brand come from AppShell.css. */
+
+.hd-chooser {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.hd-brand--static {
+  cursor: default;
+}
+
+.hd-chooser__main {
+  flex: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-10) var(--space-8) var(--space-14);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hd-chooser__title {
+  font-family: var(--font-display);
+  font-size: var(--display-md);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+.hd-chooser__welcome {
+  max-width: 52ch;
+  font-size: var(--text-lg);
+  color: var(--ink-2);
+}
+
+.hd-chooser__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-chooser__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hd-chooser__actions--large {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 360px;
+}
+
+.hd-chooser__action--large {
+  justify-content: flex-start;
+  height: 52px;
+  padding: 0 var(--space-5);
+  font-size: var(--text-lg);
+}
+
+/* ── A database in the list ──────────────────────────────────────────── */
+
+.hd-db-row {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--sheet);
+}
+
+.hd-db-row--selected {
+  border-color: var(--niter);
+  box-shadow:
+    0 0 0 1px var(--niter),
+    var(--shadow-raised);
+}
+
+.hd-db-row__select,
+.hd-db-row__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+}
+
+.hd-db-row__select {
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hd-db-row__select:hover:not(:disabled) {
+  background: var(--sheet-sunk);
+}
+
+.hd-db-row__select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.hd-db-row__icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.hd-db-row--selected .hd-db-row__icon {
+  color: var(--niter);
+}
+
+.hd-db-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hd-db-row__name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.hd-db-row__folder {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.hd-db-row__unlock {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
+.hd-db-row__passphrase {
+  flex: 1;
+}
+
+/* Line the button up with the input, below the field's label. */
+.hd-db-row__unlock > .hd-button {
+  margin-top: calc(var(--text-sm) * 1.5 + var(--space-2));
+}
+
+/* The passphrase is saved on this computer: Open alone, no field above it. */
+.hd-db-row__unlock--saved > .hd-button {
+  margin-top: 0;
+}
+
+.hd-db-row__saved {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-db-row__saved-error,
+.hd-db-row__remember {
+  margin-top: calc(-1 * var(--space-2));
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
+/* ── The backups disclosure in the create dialog ─────────────────────── */
+
+.hd-privacy-note__title {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+/* ── Notes shown once in the collection ──────────────────────────────── */
+
+.hd-db-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+/* Doubled up to outrank .hd-banner's blaze, which is kept for coverage
+   warnings: this note is information, in niter. */
+.hd-banner.hd-db-note {
+  border-color: color-mix(in srgb, var(--niter) 35%, transparent);
+  background: var(--niter-wash);
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.hd-banner.hd-db-note > svg {
+  color: var(--niter);
+}
+
+/* As wide as what it says, up to a readable measure: no stretch of empty
+   bar between the text and its dismiss button. */
+.hd-banner.hd-db-note {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.hd-db-note > .hd-banner__text {
+  max-width: 72ch;
+}
+
+/* Follows the sentence it explains. */
+.hd-db-note .hd-link {
+  margin-left: 0.25em;
+  font-weight: 650;
+}
+
+@media (max-width: 900px) {
+  .hd-chooser__main {
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
+  }
+
+  .hd-db-row__unlock {
+    flex-direction: column;
+    align-items: stretch;
+    padding-left: var(--space-4);
+  }
+
+  .hd-db-row__saved-error,
+  .hd-db-row__remember {
+    padding-left: var(--space-4);
+  }
+
+  .hd-db-row__unlock > .hd-button {
+    margin-top: 0;
+  }
+}
+
+/* ── The database menu in the top bar ────────────────────────────────── */
+
+/* ── Row actions, unavailable rows, open failures (US2) ──────────────── */
+
+.hd-db-row__head {
+  display: flex;
+  align-items: center;
+}
+
+.hd-db-row__head > .hd-db-row__select,
+.hd-db-row__head > .hd-db-row__summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.hd-db-row__more {
+  flex: none;
+  margin-right: var(--space-3);
+}
+
+.hd-db-row--unavailable .hd-db-row__icon,
+.hd-db-row--unavailable .hd-db-row__name,
+.hd-db-row--unavailable .hd-db-row__folder {
+  opacity: 0.6;
+}
+
+.hd-db-row__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
+.hd-db-row__note,
+.hd-db-row__message {
+  max-width: 60ch;
+  color: var(--ink-2);
+}
+
+.hd-db-row__message {
+  color: var(--ink);
+}
+
+.hd-db-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Offered under a damaged database's error (US3-6), aligned with the field. */
+.hd-db-row__restore {
+  margin-top: calc(-1 * var(--space-2));
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+}
+
+/* ── Notices above the list ──────────────────────────────────────────── */
+
+.hd-chooser__notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.hd-chooser__notices:empty {
+  display: none;
+}
+
+.hd-chooser__notice {
+  justify-content: space-between;
+}
+
+.hd-chooser__notice > p {
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .hd-db-row__detail {
+    padding-left: var(--space-4);
+  }
+}
+
+/* The closing screen (contracts/ui-databases.md §5). */
+.hd-closing__main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-10) var(--space-8);
+}
+
+.hd-closing__panel {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  text-align: center;
+}
+
+.hd-closing__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--display-sm);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.hd-closing__backup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: start;
+}
+
+.hd-closing__backup > p {
+  margin: 0;
+}
+
+.hd-closing__skip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.hd-closing__note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+/* Database settings (contracts/ui-databases.md §7). */
+.hd-settings-location {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.hd-settings-location__note {
+  color: var(--ink-2);
+}
+
+.hd-settings-location__warning {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.hd-settings-location__actions,
+.hd-settings-actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hd-settings-statements {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.hd-settings-actions {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Whether this computer remembers the passphrase (§7 "This computer"). */
+.hd-settings-state {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+/* Restore from a backup (contracts/ui-databases.md §9). */
+.hd-restore__statement {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.hd-restore__refusal {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.hd-restore__refusal > p {
+  margin: 0;
+}
+
+/* Backups at the old location (contracts/ui-databases.md §7): the question's
+   opening sentence, and the backups that couldn't be deleted, listed under
+   their sentence like the restore's refusals. */
+.hd-existing-backups__about {
+  margin: 0;
+}
+
+.hd-existing-backups__failed {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.hd-existing-backups__failed > p,
+.hd-existing-backups__failed > ul {
+  margin: 0;
+}
+
+.hd-existing-backups__failed > ul {
+  padding-left: var(--space-5);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+/* About databases and security (contracts/ui-databases.md §11), set out
+   like the origin guide: sections divided by a rule. */
+.hd-db-guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.hd-db-guide__section + .hd-db-guide__section {
+  border-top: 1px solid var(--rule);
+  padding-top: var(--space-4);
+}
+
+.hd-db-guide__section > .hd-form-section__title {
+  margin-bottom: var(--space-2);
+}
+
+.hd-db-guide__section > p {
+  margin: 0 0 var(--space-2);
+  max-width: 70ch;
+}
+
+.hd-db-guide__section > p:last-child {
+  margin-bottom: 0;
+}
+
+/* How the open database is set up (the guide's backup and lock sections). A
+   mark at the left of a row says it differs from the default. */
+.hd-db-guide__settings {
+  max-width: 70ch;
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sheet-sunk);
+}
+
+.hd-db-guide__settings-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.hd-db-guide__settings dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-5);
+  row-gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.hd-db-guide__setting {
+  display: contents;
+}
+
+.hd-db-guide__setting dt {
+  padding-left: var(--space-3);
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+}
+
+.hd-db-guide__setting[data-changed] dt {
+  border-left-color: var(--niter);
+}
+
+.hd-db-guide__setting dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hd-db-guide__setting[data-changed] .hd-db-guide__value {
+  font-weight: 650;
+}
+
+.hd-db-guide__default {
+  color: var(--ink-2);
+}
+
+.hd-db-guide__note {
+  display: block;
+  color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  .hd-db-guide__settings dl {
+    grid-template-columns: 1fr;
+  }
+
+  .hd-db-guide__setting dd {
+    padding-left: calc(var(--space-3) + 2px);
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* A screen that couldn't be shown (FaultScreen). */
+.hd-fault > svg {
+  align-self: center;
+  color: var(--danger);
+}
+
+.hd-fault__text p {
+  margin: 0 0 var(--space-2);
+  color: var(--ink-2);
+}
+
+.hd-fault__text p:last-child {
+  margin-bottom: 0;
+}

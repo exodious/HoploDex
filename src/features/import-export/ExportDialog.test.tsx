@@ -26,6 +26,17 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
     vi.mocked(importExportService.exportCollection).mockReset();
   });
 
+  it("describes the export as not encrypted and points to encrypted backups (FR-031)", () => {
+    renderDialog();
+
+    const dialog = screen.getByRole("dialog", { name: "Export collection" });
+    const description = document.getElementById(dialog.getAttribute("aria-describedby") ?? "");
+    expect(description).toHaveTextContent(
+      "Exports the collection to a spreadsheet. The file is not encrypted: anyone who can open it can read it. For encrypted backups of the whole database, see Database settings.",
+    );
+    expect(screen.getByText("not encrypted", { selector: "strong" })).toBeInTheDocument();
+  });
+
   it("says, before anything is chosen, that the export is unencrypted and leaves HoploDex", () => {
     renderDialog();
 

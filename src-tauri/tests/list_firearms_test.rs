@@ -4,7 +4,7 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops, GroupBy, ListFirearmsInput};
+use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput, ops};
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus, Origin};
 use support::TestDb;
 

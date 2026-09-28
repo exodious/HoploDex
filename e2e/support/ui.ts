@@ -597,5 +597,161 @@ export async function addFirearm(firearm: NewFirearm) {
   await browser.pause(300);
 }
 
+/** The passphrase of every database a spec creates. */
+export const E2E_PASSPHRASE = "end to end test passphrase";
+
+/** The FR-004 acknowledgement in the create dialog. */
+const ACKNOWLEDGEMENT =
+  "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
+
+/** The sandbox's documents folder, where the harness points the app's
+ * suggested location (wdio.conf.ts). Specs type locations under it rather
+ * than use the native pickers, which WebDriver can't drive. */
+export function scratchDocuments(): string {
+  const documents = process.env.HOPLODEX_E2E_DOCUMENTS;
+  if (!documents) throw new Error("HOPLODEX_E2E_DOCUMENTS is not set (see wdio.conf.ts)");
+  return documents;
+}
+
+/** Waits for the chooser, the screen shown whenever no database is open. */
+export async function waitForChooser() {
+  await $(".hd-chooser__title").waitForExist({ timeout: 10000 });
+  await browser.pause(SETTLE_MS);
+}
+
+/** Waits for an open database's collection. */
+export async function waitForCollection() {
+  await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
+  await browser.pause(SETTLE_MS);
+}
+
+/** Creates a database from the chooser by typing its location, and waits
+ * for its (empty) collection. Defaults: "Test", in the sandbox's suggested
+ * folder, with {@link E2E_PASSPHRASE}. */
+export async function createDatabase({
+  folder = `${scratchDocuments()}/HoploDex`,
+  name = "Test",
+  passphrase = E2E_PASSPHRASE,
+}: { folder?: string; name?: string; passphrase?: string } = {}) {
+  await waitForChooser();
+  await clickButton("Create a new database…");
+  await $('[role="dialog"]').waitForExist();
+  await fill("Name", name);
+  await fill("Folder", folder);
+  await fill("Passphrase", passphrase);
+  await fill("Confirm passphrase", passphrase);
+  await toggle(ACKNOWLEDGEMENT);
+  await clickButton("Create database");
+  await waitForCollection();
+}
+
+/** Types `passphrase` into the chooser's selected database and presses
+ * **Open**, without waiting for the outcome. */
+export async function submitPassphrase(passphrase: string) {
+  await waitForChooser();
+  const found = await browser.execute((value: string) => {
+    const field = document.querySelector<HTMLInputElement>(".hd-db-row--selected input");
+    if (!field) return false;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.form?.requestSubmit();
+    return true;
+  }, passphrase);
+  if (!found) throw new Error("no database is selected in the chooser");
+  await browser.pause(SETTLE_MS);
+}
+
+/** Opens the chooser's selected database with `passphrase` and waits for
+ * its collection. */
+export async function unlock(passphrase: string) {
+  await submitPassphrase(passphrase);
+  await waitForCollection();
+}
+
+/** Opens the Radix menu behind `triggerSelector` (it opens on pointer
+ * down, which a plain click doesn't send) and picks the item whose label
+ * starts with `item`. */
+export async function chooseMenuItem(triggerSelector: string, item: string) {
+  const trigger = await $(triggerSelector);
+  await trigger.waitForExist();
+  await browser.execute((element: HTMLElement) => {
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+    );
+  }, trigger);
+  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+  await browser.waitUntil(
+    () =>
+      browser.execute((label: string) => {
+        const found = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((m) =>
+          (m.textContent ?? "").trim().startsWith(label),
+        );
+        found?.click();
+        return Boolean(found);
+      }, item),
+    { timeout: 5000, timeoutMsg: `no menu item "${item}"` },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
+/** Leaves the open database the way the database menu does, by locking it,
+ * and waits for the chooser, where another can be opened. */
+export async function switchDatabase() {
+  await chooseMenuItem("button.hd-db-menu", "Lock now");
+  await waitForChooser();
+}
+
+/** The chooser's rows, in order. */
+export async function chooserNames(): Promise<string[]> {
+  return browser.execute(() =>
+    [...document.querySelectorAll(".hd-chooser__list .hd-db-row__name")].map(
+      (name) => name.textContent ?? "",
+    ),
+  );
+}
+
+/** The name of the chooser's selected row. */
+export async function selectedChooserRow(): Promise<string | null> {
+  return browser.execute(
+    () => document.querySelector(".hd-db-row--selected .hd-db-row__name")?.textContent ?? null,
+  );
+}
+
+/** Selects the chooser row for `name`. */
+export async function selectChooserRow(name: string) {
+  await clickEl(`button.hd-db-row__select[aria-label^="${name}, "]`);
+}
+
+/** Runs a backend command from the page, as the frontend would, for a
+ * step whose own UI WebDriver can't reach (the OS's folder dialog). */
+export async function invokeCommand(cmd: string, args: Record<string, unknown>) {
+  return browser.execute(
+    (name: string, data: Record<string, unknown>) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      return internals.invoke(name, data);
+    },
+    cmd,
+    args,
+  );
+}
+
+/** Asks the app to quit as the window's close button does: the backend's
+ * `app:quit-requested` event, sent from the page. */
+export async function requestQuit() {
+  await browser.execute(() => {
+    const internals = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__;
+    void internals.invoke("plugin:event|emit", { event: "app:quit-requested", payload: {} });
+  });
+  await browser.pause(SETTLE_MS);
+}
+
 export { $, $$, browser };
 export { expect } from "@wdio/globals";

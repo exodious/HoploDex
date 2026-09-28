@@ -202,6 +202,14 @@ Every task MUST strictly follow this format:
    - Foundational/blocking tasks → Foundational phase (Phase 2)
    - Story-specific setup → within that story's phase
 
+5. **Per-platform work**:
+   - Work that must be built, tested or run on a specific platform gets a separate task per platform, never one task covering several.
+   - Start each such task with its platform (e.g. "On Windows, …").
+   - ✅ CORRECT: `- [ ] T050 [P] On macOS, run the test suite` and `- [ ] T051 [P] On Windows, run the test suite`
+   - ❌ WRONG: `- [ ] T050 On macOS and Windows, run the test suite`
+
+6. **Manual checks**: prefer a task that automates the check. A check that stays manual points to its numbered procedure in quickstart.md rather than describing the steps itself.
+
 ### Phase Structure
 
 - **Phase 1**: Setup (project initialization)

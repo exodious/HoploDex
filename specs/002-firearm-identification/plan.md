@@ -39,7 +39,7 @@ worked examples.
 
 ## Technical Context
 
-**Language/Version**: Rust 1.75+ (backend, `src-tauri`), TypeScript 5.x /
+**Language/Version**: Rust 1.97+ (backend, `src-tauri`), TypeScript 5.x /
 React 18+ (frontend, `src`) — unchanged from feature 001
 
 **Primary Dependencies**: No new dependencies. Reuses `rusqlite`

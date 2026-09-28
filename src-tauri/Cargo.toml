@@ -2,8 +2,8 @@
 name = "hoplodex"
 version = "0.1.0"
 description = "Firearm Collection Inventory App"
-edition = "2021"
-rust-version = "1.75"
+edition = "2024"
+rust-version = "1.97"
 license = "GPL-3.0-only"
 
 [lib]
@@ -22,13 +22,13 @@ tauri-build = { version = "2", features = [] }
 # Enabled for production/E2E builds so the app loads bundled frontendDist
 # assets via Tauri's custom protocol instead of the devUrl dev server.
 custom-protocol = ["tauri/custom-protocol"]
-# Enabled for E2E builds only. Swaps the OS-native keyring (Secret
-# Service/Keychain/Credential Manager) for keyring-core's in-memory mock
-# store, so the SQLCipher passphrase never depends on a real, unlockable
-# platform credential store — headless/CI environments have no way to
-# answer the Secret Service's unlock prompt (research.md §5 already
-# assumes the real store is silently unlocked via the user's login
-# session, which doesn't hold in CI).
+# Enabled for E2E builds and the keyring tests only. Swaps the OS-native
+# keyring (Secret Service/Keychain/Credential Manager), which holds a
+# database's passphrase only when the user asks this computer to remember
+# it (FR-017), for keyring-core's in-memory mock store: a headless session
+# can't answer the Secret Service's unlock prompt, and tests must never
+# reach the developer's real keyring. `HOPLODEX_E2E_KEYRING=unavailable`
+# makes it behave like a computer with no keyring (research.md §10).
 mock-keyring = ["dep:keyring-core"]
 
 [dependencies]
@@ -49,6 +49,52 @@ chrono = "0.4"
 getrandom = { version = "0.3", features = ["std"] }
 log = "0.4"
 image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
+# Passphrase NFC normalization (research.md §1).
+unicode-normalization = "0.1.25"
+# The open marker's machine name (research.md §6).
+gethostname = "1.1.0"
+# Free space before a copy (research.md §4).
+fs4 = "1.1.0"
+# Promoted from transitive, at the version already in Cargo.lock: wiping
+# passphrases from memory (research.md §1).
+zeroize = "1.9"
+
+# Promoted from transitive, at the version already in Cargo.lock: asking the
+# storage to discard a securely deleted file's blocks (research.md §12).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.189"
+
+# Sleep, wake, screen-lock and shutdown notices (research.md §14). Each is
+# already in the tree for its platform; only the features are switched on.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSDistributedNotificationCenter",
+    "NSNotification",
+    "NSString",
+] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWorkspace"] }
+
+[target.'cfg(windows)'.dependencies]
+# File identity for the take-over check (research.md §6). Unix uses `stat`
+# directly: opening a handle there would drop SQLite's locks when closed.
+same-file = "1.0.6"
+windows-sys = { version = "0.61", features = [
+    # FSCTL_SET_ZERO_DATA after a secure delete (research.md §12).
+    "Win32_Foundation",
+    # The hidden window that receives power and session messages.
+    "Win32_Graphics_Gdi",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_Power",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Shutdown",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 tempfile = "3"

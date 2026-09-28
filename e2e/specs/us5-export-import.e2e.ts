@@ -4,6 +4,7 @@ import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
 import { choose, fillFirearmForm, listedNames, openFirearm, search } from "../support/ui";
 import { openPhysicalGroup, selectOption } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
@@ -95,6 +96,11 @@ async function tally(label: string): Promise<number> {
 }
 
 describe("User Story 5 - Export and Import Records", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   let workDir: string;
 
   before(() => {

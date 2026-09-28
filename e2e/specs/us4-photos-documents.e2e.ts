@@ -11,6 +11,7 @@ import {
   expect,
 } from "../support/ui";
 import { openFirearm, rowThumbnail } from "../support/ui";
+import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 4's acceptance scenarios (spec.md),
@@ -32,7 +33,6 @@ const SAMPLE_PDF_BASE64 = Buffer.from("%PDF-1.4 sample receipt contents").toStri
 // filesystem only run when the run is isolated, so they can never reach a
 // real user's data.
 const cacheHome = process.env.XDG_CACHE_HOME;
-const dataHome = process.env.XDG_DATA_HOME;
 const openedRoot = cacheHome && path.join(cacheHome, "com.hoplodex.app", "opened-documents");
 
 function filesUnder(dir: string): string[] {
@@ -45,6 +45,11 @@ function filesUnder(dir: string): string[] {
 }
 
 describe("User Story 4 - Attach Photos and Documents", () => {
+  // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
+  before(async () => {
+    await createDatabase();
+  });
+
   it("shows a firearm with no photos with its type's generic drawing (Scenario 3)", async () => {
     await addFirearm({
       make: "InsE2EMediaGlock",
@@ -157,17 +162,11 @@ describe("User Story 4 - Attach Photos and Documents", () => {
   // SIGTERM/SIGHUP/SIGINT) can't be observed through WebDriver and is checked
   // against the real binary by e2e/scripts/quit-cleanup.py.
   it("deletes the opened copy at the next launch after an abrupt termination (Scenario 5)", async function () {
-    if (!openedRoot || !dataHome) return this.skip();
+    if (!openedRoot) return this.skip();
     expect(filesUnder(openedRoot).length).toBe(1);
 
-    // The E2E build's mock keyring makes a new key every launch, so the
-    // previous launch's scratch database can't be reopened. Drop it (inside
-    // this run's own data dir only) so the relaunch starts fresh.
-    const dbDir = path.join(dataHome, "com.hoplodex.app");
-    for (const name of fs.readdirSync(dbDir).filter((f) => f.startsWith("hoplodex.db"))) {
-      fs.rmSync(path.join(dbDir, name));
-    }
-
+    // The relaunch opens no database: the sweep runs at startup, before the
+    // chooser (FR-035).
     await browser.reloadSession();
 
     await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {

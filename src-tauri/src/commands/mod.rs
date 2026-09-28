@@ -1,3 +1,5 @@
+pub mod backups;
+pub mod databases;
 pub mod documents;
 pub mod error;
 pub mod firearms;

@@ -5,6 +5,8 @@ import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from
 import { parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { firearmName } from "../app/collectionStore";
+import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
+import type { DraftTarget } from "../session/usePendingDraft";
 import { DISPOSITION_TYPE_OPTIONS } from "./types";
 import type { DisposeFirearmInput, DispositionType, Firearm } from "./types";
 import "./forms.css";
@@ -38,6 +40,8 @@ export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: Dispos
     >
       {/* Mounted only while open, so every opening starts from a blank form. */}
       <DisposeForm
+        firearmId={firearm.id}
+        label={`${firearmName(firearm)} (disposal)`}
         acquisitionDate={firearm.acquisitionDate}
         onDispose={onDispose}
         onCancel={() => onOpenChange(false)}
@@ -46,19 +50,54 @@ export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: Dispos
   );
 }
 
+/** The version of this form's kept drafts (research.md §16). Raise it when
+ * {@link DisposeValues} changes shape, so older drafts are only discarded. */
+export const FORM_VERSION = 1;
+
+/** The form's input, as a kept draft holds it. */
+interface DisposeValues {
+  dispositionType: DispositionType | "";
+  recipient: string;
+  date: string;
+  price: string;
+}
+
 function DisposeForm({
+  firearmId,
+  label,
   acquisitionDate,
   onDispose,
   onCancel,
 }: {
+  firearmId: number;
+  label: string;
   acquisitionDate: string | null;
   onDispose: (input: DisposeFirearmInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [dispositionType, setDispositionType] = useState<DispositionType | "">("");
-  const [recipient, setRecipient] = useState("");
-  const [date, setDate] = useState(todayIso());
-  const [price, setPrice] = useState("");
+  const target: DraftTarget = {
+    formVersion: FORM_VERSION,
+    kind: "firearm",
+    mode: "dispose",
+    targetId: firearmId,
+  };
+  // Pending changes the user resumed start as unsaved input (FR-039).
+  const [today] = useState(todayIso);
+  const [resumed] = useState(() =>
+    resumedValues<DisposeValues>(target, {
+      dispositionType: "",
+      recipient: "",
+      date: today,
+      price: "",
+    }),
+  );
+  useResumedDraftTaken(target);
+  const [dispositionType, setDispositionType] = useState<DispositionType | "">(
+    resumed.dispositionType,
+  );
+  const [recipient, setRecipient] = useState(resumed.recipient);
+  const [date, setDate] = useState(resumed.date);
+  const [price, setPrice] = useState(resumed.price);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -82,10 +121,25 @@ function DisposeForm({
   };
   const shown = (error: string | undefined) => (submitted ? error : undefined);
 
-  async function handleSubmit(event: FormEvent) {
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
+  // and a lock keeps it (FR-039).
+  const values: DisposeValues = { dispositionType, recipient, date, price };
+  useDirtyForm({
+    label,
+    isDirty: dispositionType !== "" || recipient !== "" || date !== today || price !== "",
+    submit: save,
+    draft: { ...target, values },
+  });
+
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    void save();
+  }
+
+  /** Validates and saves; resolves whether it was saved. */
+  async function save(): Promise<boolean> {
     setSubmitted(true);
-    if (Object.values(errors).some(Boolean) || !parsedDate.ok || !parsedPrice.ok) return;
+    if (Object.values(errors).some(Boolean) || !parsedDate.ok || !parsedPrice.ok) return false;
 
     setSubmitting(true);
     setServerError(null);
@@ -96,10 +150,12 @@ function DisposeForm({
         date: parsedDate.iso as string,
         price: parsedPrice.dollars as number,
       });
+      return true;
     } catch (e) {
       setServerError(
         e instanceof CommandFailure ? e.message : "The firearm couldn't be marked disposed.",
       );
+      return false;
     } finally {
       setSubmitting(false);
     }

@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button, DateField, MoneyField, TextArea, TextField } from "../../components";
 import { parseDateInput } from "../../lib/dates";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
+import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
+import type { DraftTarget } from "../session/usePendingDraft";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 import "../firearms/forms.css";
 
@@ -12,6 +14,10 @@ export interface InsurancePolicyFormProps {
   onSubmit: (input: InsurancePolicyInput) => Promise<void>;
   onCancel?: () => void;
 }
+
+/** The version of this form's kept drafts (research.md §16). Raise it when
+ * `FormState` changes shape, so older drafts are only discarded. */
+export const FORM_VERSION = 1;
 
 interface FormState {
   name: string;
@@ -84,7 +90,19 @@ export function InsurancePolicyForm({
   onSubmit,
   onCancel,
 }: InsurancePolicyFormProps) {
-  const [form, setForm] = useState<FormState>(() => toFormState(initialValues));
+  const target: DraftTarget = {
+    formVersion: FORM_VERSION,
+    kind: "policy",
+    mode: initialValues ? "edit" : "add",
+    targetId: initialValues?.id ?? null,
+  };
+  // Pending changes the user resumed start as unsaved input (FR-039).
+  const [form, setForm] = useState<FormState>(() =>
+    resumedValues(target, toFormState(initialValues)),
+  );
+  useResumedDraftTaken(target);
+  const [pristine] = useState(() => toFormState(initialValues));
+  const formRef = useRef<HTMLFormElement>(null);
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -109,15 +127,27 @@ export function InsurancePolicyForm({
   });
   const set = (field: Field) => (text: string) => setForm((prev) => ({ ...prev, [field]: text }));
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
+  // and a lock keeps it (FR-039).
+  useDirtyForm({
+    label: initialValues ? `${initialValues.name} (edit)` : "New insurance policy",
+    isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
+    submit: save,
+    draft: { ...target, values: form },
+  });
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    void save();
+  }
+
+  /** Validates and saves; resolves whether it was saved. */
+  async function save(): Promise<boolean> {
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
-      event.currentTarget
-        .querySelector<HTMLElement>(`[data-field="${firstInvalid}"] input`)
-        ?.focus();
-      return;
+      formRef.current?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] input`)?.focus();
+      return false;
     }
 
     const limit = parseDollars(form.blanketCoverageLimit);
@@ -139,19 +169,20 @@ export function InsurancePolicyForm({
     setServerError(null);
     try {
       await onSubmit(input);
+      return true;
     } catch (error) {
       if (error instanceof CommandFailure) {
         setServerError(error);
-      } else {
-        throw error;
+        return false;
       }
+      throw error;
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <form className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
       <div className="hd-dialog__body">
         {serverError && !serverError.fieldErrors && (
           <p className="hd-banner hd-banner--error hd-form-banner" role="alert">

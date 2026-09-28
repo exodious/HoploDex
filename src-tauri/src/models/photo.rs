@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
-use image::codecs::jpeg::JpegEncoder;
 use image::ImageReader;
+use image::codecs::jpeg::JpegEncoder;
 use rusqlite::Row;
 use serde::Serialize;
 

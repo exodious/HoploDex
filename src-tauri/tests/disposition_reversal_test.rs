@@ -4,12 +4,12 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{
-    ops, DisposeFirearmInput, HistoryChoice, ReverseDispositionInput,
-};
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::firearms::{
+    DisposeFirearmInput, HistoryChoice, ReverseDispositionInput, ops,
+};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
-use support::{firearm, TestDb};
+use support::{TestDb, firearm};
 
 fn dispose(db: &TestDb, id: i64, recipient: &str, date: &str) {
     ops::dispose_firearm(

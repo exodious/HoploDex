@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,31 +21,43 @@ const application = path.resolve(
 let tauriDriver: ChildProcess | undefined;
 let sandbox: string | undefined;
 
+/** Where the documents folder, and so the suggested location for a new
+ * database, points during a session (research.md §19). */
+function writeUserDirs(configDir: string, documents: string) {
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, "user-dirs.dirs"), `XDG_DOCUMENTS_DIR="${documents}"\n`);
+}
+
 /**
- * Points the app at a throwaway data/config/cache directory for this session.
- *
- * The E2E build uses an in-memory keyring that generates a new database key on
- * every launch, so a database left behind by one spec can never be opened by
- * the next: SQLCipher fails its HMAC check and the app never comes up, which
- * leaves the next session request hanging until it times out. A fresh
- * directory per session avoids that, and also keeps E2E runs away from the
- * developer's real database.
+ * Points the app at a throwaway data, config, cache and documents directory
+ * for this session, so each spec starts at a first run and E2E runs never
+ * see the developer's real databases, their recent list or their Documents
+ * folder (constitution 1.2.0, research.md §21). A `user-dirs.dirs` in the
+ * scratch config directory moves the documents folder into the sandbox too,
+ * so even accepting the suggested location for a new database stays inside
+ * it.
  *
  * Set on this process's environment, which tauri-driver, and through it the
- * app, inherits.
+ * app, inherits. Specs read HOPLODEX_E2E_DOCUMENTS to type locations inside
+ * the sandbox.
  */
 function isolateAppData() {
   sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-"));
-  const [data, cache, config] = ["data", "cache", "config"].map((name) => {
+  const [data, cache, config, documents] = ["data", "cache", "config", "documents"].map((name) => {
     const dir = path.join(sandbox!, name);
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   });
+  process.env.HOPLODEX_E2E_DOCUMENTS = documents;
+  // The E2E build's in-memory keyring is kept here between launches, so a
+  // remembered passphrase outlives a relaunch (research.md §10).
+  process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(sandbox, "keyring.json");
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;
     process.env.XDG_CACHE_HOME = cache;
     process.env.XDG_CONFIG_HOME = config;
+    writeUserDirs(config, documents);
     // The document test opens a PDF through xdg-open, which would start a real
     // viewer. Mapping the type to a no-op in mimeapps.list isn't reliable (the
     // desktop environment's own defaults win), so put a stub first on PATH.
@@ -60,24 +71,14 @@ function isolateAppData() {
   }
 }
 
-/**
- * Seeds the session's sandbox with the human-testing collection
- * (src-tauri/examples/human_seed.rs), for the screenshot walk in
- * e2e/screenshots/, which wants a realistic collection rather than an empty
- * one. The mock keyring normally makes a new key on every launch, so the seed
- * and the app are given the same fixed one through HOPLODEX_E2E_DB_KEY (read
- * only by mock-keyring builds).
- */
-function seedCollection() {
-  const key = crypto.randomBytes(32).toString("hex");
-  // The seed refuses to write to XDG_DATA_HOME (it takes it for the real data
-  // directory), and the sandbox is XDG_DATA_HOME now, so leave it out.
-  const env: NodeJS.ProcessEnv = { ...process.env, HOPLODEX_E2E_DB_KEY: key };
-  delete env.XDG_DATA_HOME;
-  const seeded = spawnSync(
+/** Runs the human-testing seed (src-tauri/examples/human_seed.rs) with the
+ * build's features, so it shares the app's build. */
+function runSeed(args: string[], stdio: "inherit" | "pipe") {
+  return spawnSync(
     "cargo",
     [
       "run",
+      "--quiet",
       "--release",
       "--features",
       "custom-protocol,mock-keyring",
@@ -86,13 +87,33 @@ function seedCollection() {
       "--example",
       "human_seed",
       "--",
-      "--dir",
-      sandbox!,
+      ...args,
     ],
-    { cwd: repoRoot, stdio: "inherit", env },
+    { cwd: repoRoot, stdio: ["ignore", stdio, "inherit"], encoding: "utf-8" },
   );
-  if (seeded.status !== 0) throw new Error("seeding the screenshot collection failed");
-  process.env.HOPLODEX_E2E_DB_KEY = key;
+}
+
+/**
+ * Seeds the human-testing databases for the screenshot walk in
+ * e2e/screenshots/, which wants a realistic collection rather than an empty
+ * one. The seed writes only into a directory it creates, so it gets a new
+ * `seed` folder inside the sandbox, with its databases, backups and a
+ * `machine.json` whose recent list names them. The app's config directory
+ * then moves there, keeping the sandbox's documents folder, and the specs
+ * read the seed's fixed passphrase from HOPLODEX_E2E_SEED_PASSPHRASE.
+ */
+function seedCollection() {
+  const dir = path.join(sandbox!, "seed");
+  if (runSeed(["--dir", dir], "inherit").status !== 0) {
+    throw new Error("seeding the screenshot collection failed");
+  }
+  const printed = runSeed(["--print-passphrase"], "pipe");
+  if (printed.status !== 0) throw new Error("reading the seed's passphrase failed");
+  process.env.HOPLODEX_E2E_SEED_PASSPHRASE = printed.stdout.trim();
+
+  const config = path.join(dir, "config");
+  process.env.XDG_CONFIG_HOME = config;
+  writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
 }
 
 /**
@@ -171,23 +192,29 @@ export const config: WebdriverIO.Config = {
   beforeSession: (_config, _capabilities, specs) => {
     killProcessesOnPorts([4444, 4445]);
     isolateAppData();
-    delete process.env.HOPLODEX_E2E_DB_KEY;
+    delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
     spawnSync(
       "cargo",
       [
         "build",
         "--release",
         "--features",
-        // mock-keyring swaps the OS keyring for an in-memory store — CI/
-        // headless environments have no way to unlock a real one (see
-        // src-tauri/src/db/mod.rs).
+        // mock-keyring swaps the OS keyring for an in-memory store, for
+        // saved passphrases: headless environments have no way to unlock a
+        // real one.
         "custom-protocol,mock-keyring",
         "--manifest-path",
         "src-tauri/Cargo.toml",
       ],
       { cwd: repoRoot, stdio: "inherit" },
     );
-    if (specs.some((spec) => spec.includes("/e2e/screenshots/"))) seedCollection();
+    if (specs.some((spec) => spec.endsWith("/e2e/screenshots/screens.e2e.ts"))) seedCollection();
+    // A computer with no keyring service (FR-019).
+    if (specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts"))) {
+      process.env.HOPLODEX_E2E_KEYRING = "unavailable";
+    } else {
+      delete process.env.HOPLODEX_E2E_KEYRING;
+    }
     const nativeDriver = findNativeDriver();
     const args = nativeDriver ? ["--native-driver", nativeDriver] : [];
     tauriDriver = spawn("tauri-driver", args, {

@@ -6,7 +6,7 @@
 //! marks is not a match when both the row and the candidate have a year of
 //! manufacture and the years differ (research.md §4).
 
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 
 use crate::commands::CommandError;
 

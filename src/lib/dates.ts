@@ -39,6 +39,14 @@ export function formatDate(iso: string | null, locale?: string): string {
   }).format(toUtc(iso));
 }
 
+/** A moment (ISO-8601 with a time and zone, such as `2026-09-25T14:30:05Z`)
+ * as the user's local date and time. */
+export function formatDateTime(iso: string, locale?: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "short" }).format(date);
+}
+
 /** Whole days from `fromIso` to `toIso`; negative once `toIso` has passed. */
 export function daysUntil(toIsoDate: string, fromIso: string = todayIso()): number {
   return Math.round((toUtc(toIsoDate).getTime() - toUtc(fromIso).getTime()) / DAY_MS);

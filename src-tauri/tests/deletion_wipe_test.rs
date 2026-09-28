@@ -14,7 +14,7 @@ use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use rusqlite::Connection;
-use support::{firearm, sample_png_bytes, TestDb};
+use support::{TestDb, firearm, sample_png_bytes};
 
 const MARKER: &[u8] = b"HOPLODEX-WIPE-ME-0123456789ABCDEF";
 /// Big enough to span many pages, so a leak can't hide in one.
@@ -202,4 +202,113 @@ fn an_unconfirmed_delete_changes_nothing() {
 
     assert!(document_ops::delete_document(&db.conn, document.id, false).is_err());
     assert!(document_ops::get_document(&db.conn, document.id).is_ok());
+}
+
+// --- Whole files: databases and backups (research.md §12) -------------------
+
+mod whole_files {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    use hoplodex_lib::services::secure_delete::{self, WipeControl, Wiped, testing};
+    use tempfile::TempDir;
+
+    const MIB: u64 = 1 << 20;
+
+    /// A file of `len` non-zero bytes, and a second name for the same data
+    /// that outlives the deletion, so the test can see what was left in it.
+    fn file_with_witness(dir: &TempDir, len: u64) -> (PathBuf, PathBuf) {
+        let path = dir.path().join("Backup.hoplodex");
+        fs::write(&path, vec![0xA5u8; len as usize]).unwrap();
+        let witness = dir.path().join("witness");
+        fs::hard_link(&path, &witness).unwrap();
+        (path, witness)
+    }
+
+    fn delete_with_progress(path: &Path) -> (std::io::Result<Wiped>, Vec<(u64, u64)>) {
+        let mut reported = Vec::new();
+        let mut progress = |done: u64, total: u64| reported.push((done, total));
+        let result = secure_delete::secure_delete_whole_file(
+            path,
+            WipeControl { progress: Some(&mut progress), cancel: None },
+        );
+        (result, reported)
+    }
+
+    #[test]
+    fn a_large_file_is_overwritten_in_one_mebibyte_chunks_with_progress() {
+        let dir = TempDir::new().unwrap();
+        let len = 2 * MIB + MIB / 2;
+        let (path, witness) = file_with_witness(&dir, len);
+
+        let (result, reported) = delete_with_progress(&path);
+
+        assert!(matches!(result, Ok(Wiped::Deleted)), "{result:?}");
+        assert!(!path.exists());
+        assert_eq!(reported, vec![(MIB, len), (2 * MIB, len), (len, len)]);
+        assert!(fs::read(&witness).unwrap().iter().all(|b| *b == 0), "the data was overwritten");
+    }
+
+    #[test]
+    fn a_small_file_keeps_the_small_chunks() {
+        let dir = TempDir::new().unwrap();
+        let len = 200 * 1024;
+        let (path, _witness) = file_with_witness(&dir, len);
+
+        let (_, reported) = delete_with_progress(&path);
+
+        let steps: Vec<u64> = reported.iter().map(|(done, _)| *done).collect();
+        assert_eq!(steps, vec![64 * 1024, 128 * 1024, 192 * 1024, len]);
+    }
+
+    #[test]
+    fn a_failed_discard_step_is_ignored() {
+        let dir = TempDir::new().unwrap();
+        let (path, witness) = file_with_witness(&dir, 3 * MIB);
+        let _refused = testing::fail_discard();
+
+        let (result, _) = delete_with_progress(&path);
+
+        assert!(matches!(result, Ok(Wiped::Deleted)), "{result:?}");
+        assert!(!path.exists());
+        assert!(fs::read(&witness).unwrap().iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn a_stopped_overwrite_still_removes_the_file() {
+        let dir = TempDir::new().unwrap();
+        let (path, witness) = file_with_witness(&dir, 3 * MIB);
+        let mut chunks = 0;
+        let mut progress = |_: u64, _: u64| chunks += 1;
+        // Asked before each chunk: go on once, then stop.
+        let asked = std::cell::Cell::new(0);
+        let stop_after_one = || {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        };
+
+        let result = secure_delete::secure_delete_whole_file(
+            &path,
+            WipeControl { progress: Some(&mut progress), cancel: Some(&stop_after_one) },
+        );
+
+        assert!(matches!(result, Ok(Wiped::Stopped)), "{result:?}");
+        assert!(!path.exists(), "nothing half overwritten is left to look like a backup");
+        assert_eq!(chunks, 1);
+        let left = fs::read(&witness).unwrap();
+        assert!(left[..MIB as usize].iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_overwritten_is_left_alone_and_reported() {
+        let dir = TempDir::new().unwrap();
+        let (path, _witness) = file_with_witness(&dir, MIB);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (result, _) = delete_with_progress(&path);
+
+        assert!(result.is_err());
+        assert!(path.exists(), "unlinking it would leave its data unwiped");
+    }
 }

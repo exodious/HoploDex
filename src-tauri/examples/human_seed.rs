@@ -1,18 +1,29 @@
-//! Seeds a database for human (non-automated) testing: a realistic
-//! collection to poke at, to judge the look and feel and to check the
-//! functions behave as expected. See `scripts/human-testing.sh`, which runs
-//! this and then launches the app against the result.
+//! Seeds a sandbox for human (non-automated) testing: realistic collections
+//! to poke at, to judge the look and feel and to check the functions behave
+//! as expected. See `scripts/human-testing.sh`, which runs this and then
+//! launches the app against the result.
 //!
 //! Everything goes through the same `ops` layer the app's commands use, so
 //! the data obeys every rule (uniqueness, coverage, dispositions) and never
 //! needs a schema of its own to keep up to date.
 //!
-//! The database is created under `<dir>/data/com.hoplodex.app/` (Linux app
-//! data layout, so the app finds it via `XDG_DATA_HOME=<dir>/data`) and is
-//! encrypted with the same OS-keyring key the app uses. It is never the real
-//! database: the target is refused if it resolves to the real data directory.
+//! The sandbox (`--dir`) holds two databases, both protected by
+//! [`PASSPHRASE`], under `<dir>/HoploDex/`, and the `machine.json` that lists
+//! them under `<dir>/config/com.hoplodex.app/` (the app finds it through
+//! `XDG_CONFIG_HOME=<dir>/config`):
+//! - "Main collection": the full collection, with non-default backup and lock
+//!   settings, backed up (two backups, yesterday's and today's, in
+//!   `<dir>/Backups`) and closed cleanly;
+//! - "Shared collection": a few firearms, changes waiting for a backup,
+//!   pending changes from a locked edit, and left open by another computer
+//!   ("Workshop PC"), so the take-over prompt shows.
+//!
+//! It writes only into a directory it created, checked by
+//! `support/sandbox.rs`, never to the real data, config or documents
+//! directory, and never touches the keyring (constitution 1.2.0).
 //!
 //! Usage: cargo run --example human_seed -- [--dir <path>] [--extra <n>] [--reset]
+//!        cargo run --example human_seed -- --print-passphrase
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -30,16 +41,41 @@ use hoplodex_lib::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::services::backups::{self, BackupJob, resolve_folder as backup_folder};
+use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::COLUMNS;
 use rusqlite::Connection;
 
+#[path = "support/sandbox.rs"]
+mod sandbox;
+
+/// The passphrase of both seeded databases. A test fixture, not a secret:
+/// it is printed, and `scripts/human-testing.sh` and the E2E harness read it
+/// through `--print-passphrase`.
+pub const PASSPHRASE: &str = "human testing passphrase";
+
 const APP_IDENTIFIER: &str = "com.hoplodex.app";
+pub const MAIN_NAME: &str = "Main collection";
+pub const SHARED_NAME: &str = "Shared collection";
+/// The computer that left "Shared collection" open.
+const OTHER_MACHINE_ID: &str = "0badc0de0badc0de0badc0de0badc0de";
+const OTHER_MACHINE_NAME: &str = "Workshop PC";
 
 // Ids seeded by migration 0003_seed_firearm_types.
 const HANDGUN: i64 = 1;
 const RIFLE: i64 = 2;
 const SHOTGUN: i64 = 3;
 const OTHER: i64 = 4;
+
+/// A real photo from `seed-photos/`, whose README records where each came
+/// from and its licence, as the `(name, bytes, mime type)` that `photos`
+/// takes.
+macro_rules! seed_photo {
+    ($name:literal) => {
+        ($name, include_bytes!(concat!("seed-photos/", $name)).to_vec(), "image/jpeg")
+    };
+}
 
 struct Args {
     dir: PathBuf,
@@ -64,6 +100,10 @@ fn parse_args() -> Args {
                     .unwrap_or_else(|| usage("--extra needs a number"));
             }
             "--reset" => args.reset = true,
+            "--print-passphrase" => {
+                println!("{PASSPHRASE}");
+                std::process::exit(0);
+            }
             "-h" | "--help" => usage(""),
             other => usage(&format!("unknown argument {other}")),
         }
@@ -77,58 +117,215 @@ fn usage(problem: &str) -> ! {
     }
     eprintln!(
         "Usage: cargo run --example human_seed -- [options]\n\n\
-         --dir <path>   where the test data lives (default: <repo>/.human-testing)\n\
-         --extra <n>    also generate n plain firearms, to test scrolling and search\n\
-         --reset        delete and recreate an existing test database"
+         --dir <path>          the sandbox to seed (default: <repo>/.human-testing); it must be\n\
+         \x20                     new, empty, or one this seed made\n\
+         --extra <n>           also generate n plain firearms, to test scrolling and search\n\
+         --reset               delete and recreate the seeded databases\n\
+         --print-passphrase    print the seeded databases' passphrase and exit"
     );
     std::process::exit(if problem.is_empty() { 0 } else { 2 });
 }
 
 fn main() {
     let args = parse_args();
-    let data_home = args.dir.join("data");
-    let db_dir = data_home.join(APP_IDENTIFIER);
-    std::fs::create_dir_all(&db_dir).expect("create the test data directory");
-    refuse_real_data_dir(&data_home);
+    if let Err(problem) = sandbox::check_sandbox(&args.dir, &|name| std::env::var_os(name)) {
+        eprintln!("{problem}");
+        std::process::exit(1);
+    }
 
-    let db_path = db_dir.join("hoplodex.db");
-    if db_path.exists() {
+    let paths = SandboxPaths::new(&args.dir);
+    if paths.main.exists() || paths.shared.exists() {
         if !args.reset {
             eprintln!(
-                "{} already exists. Pass --reset to delete it and start over.",
-                db_path.display()
+                "{} is already seeded. Pass --reset to delete it and start over.",
+                args.dir.display()
             );
             std::process::exit(1);
         }
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            let _ = std::fs::remove_file(format!("{}{suffix}", db_path.display()));
-        }
+        paths.remove();
     }
 
-    let key = db::get_or_create_passphrase().expect("read or create the database key");
-    let conn = db::open_encrypted(&db_path, &key).expect("create the encrypted database");
-
-    seed(&conn, args.extra);
+    seed_sandbox(&args.dir, args.extra);
     let samples = write_import_samples(&args.dir.join("import-samples"));
 
+    let identity = must(MachineSettings::load(&paths.config), "machine.json").identity();
+    let conn = must(
+        db::open_database(&paths.main, &passphrase(), &identity, false),
+        "reopening the main database",
+    );
     print_summary(&conn);
-    println!("\nDatabase:       {}", db_path.display());
+    println!("\nDatabases:      {}", paths.databases.display());
+    println!("Passphrase:     {PASSPHRASE}");
     println!("Import samples: {}", samples.display());
     println!("\nLaunch the app against it with:\n  scripts/human-testing.sh");
 }
 
-/// The app finds its database by the platform's data directory, so seeding
-/// into that directory would overwrite the developer's real collection.
-fn refuse_real_data_dir(data_home: &Path) {
-    let real = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
-    if let (Some(real), Ok(target)) = (real, data_home.canonicalize()) {
-        if real.canonicalize().is_ok_and(|real| real == target) {
-            eprintln!("refusing to seed the real data directory {}", target.display());
-            std::process::exit(1);
+fn passphrase() -> Passphrase {
+    Passphrase::from_input(PASSPHRASE.to_owned())
+}
+
+/// Where the seed puts things inside the sandbox.
+pub struct SandboxPaths {
+    pub databases: PathBuf,
+    pub main: PathBuf,
+    pub shared: PathBuf,
+    pub main_backups: PathBuf,
+    pub config: PathBuf,
+}
+
+impl SandboxPaths {
+    pub fn new(dir: &Path) -> Self {
+        let databases = dir.join("HoploDex");
+        Self {
+            main: databases.join(format!("{MAIN_NAME}.hoplodex")),
+            shared: databases.join(format!("{SHARED_NAME}.hoplodex")),
+            databases,
+            main_backups: dir.join("Backups"),
+            config: dir.join("config").join(APP_IDENTIFIER),
         }
     }
+
+    /// Deletes what an earlier seed made (inside the checked sandbox only).
+    fn remove(&self) {
+        for database in [&self.main, &self.shared] {
+            for suffix in ["", "-journal"] {
+                let _ = std::fs::remove_file(format!("{}{suffix}", database.display()));
+            }
+        }
+        let _ = std::fs::remove_dir_all(&self.main_backups);
+        let _ = std::fs::remove_dir_all(self.databases.join("HoploDex backups"));
+        let _ = std::fs::remove_file(self.config.join("machine.json"));
+    }
+}
+
+/// Seeds both databases and `machine.json` into `dir`, which the caller has
+/// checked is a sandbox.
+pub fn seed_sandbox(dir: &Path, extra: usize) -> SandboxPaths {
+    let paths = SandboxPaths::new(dir);
+    must(std::fs::create_dir_all(&paths.databases), "the databases folder");
+    let machine = must(MachineSettings::load(&paths.config), "machine.json");
+    let identity = machine.identity();
+
+    // "Shared collection": open on another computer, with changes waiting
+    // and a locked edit kept as pending changes.
+    let shared = must(
+        db::create_database(&paths.shared, &passphrase(), &identity),
+        "creating the shared database",
+    );
+    let shared_firearm = seed_shared(&shared);
+    must(
+        shared.execute_batch(
+            "UPDATE collection_settings SET backups_enabled = 0, idle_lock_enabled = 0,
+                                            lock_on_screen_lock = 1;",
+        ),
+        "the shared database's settings",
+    );
+    must(
+        shared.execute(
+            "INSERT INTO pending_changes (id, kind, mode, target_id, label, form_version,
+                                          values_json, saved_at)
+             VALUES (1, 'firearm', 'edit', ?1, 'Beretta 92FS — edit', 1, ?2, ?3)",
+            rusqlite::params![
+                shared_firearm,
+                serde_json::json!({
+                    "make": "Beretta", "model": "92FS", "serialNumber": "BER92-0417",
+                    "caliber": "9mm", "notes": "Swapped the grips for the walnut set; half typed"
+                })
+                .to_string(),
+                db::now_utc()
+            ],
+        ),
+        "the shared database's pending changes",
+    );
+    must(
+        shared.execute(
+            "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
+            rusqlite::params![OTHER_MACHINE_ID, OTHER_MACHINE_NAME, db::now_utc()],
+        ),
+        "the shared database's open marker",
+    );
+    machine.touch_recent(
+        &paths.shared,
+        SHARED_NAME,
+        &database_id(&shared),
+        &backup_folder(&paths.shared, "default"),
+    );
+    drop(shared);
+
+    // "Main collection": everything, custom settings, backed up and closed.
+    let main = must(
+        db::create_database(&paths.main, &passphrase(), &identity),
+        "creating the main database",
+    );
+    seed(&main, extra);
+    must(
+        main.execute(
+            "UPDATE collection_settings SET backups_enabled = 1, backup_keep_count = 3,
+                    backup_location = ?1, idle_lock_enabled = 1, idle_lock_minutes = 15",
+            [paths.main_backups.to_string_lossy()],
+        ),
+        "the main database's settings",
+    );
+    // Two backups, as two days' closes would have made them, so the restore
+    // dialog has a choice and a seeded backup carries the backup stamp.
+    let now = Local::now().fixed_offset();
+    for made_at in [now - Duration::days(1), now] {
+        must(
+            backups::make_backup(
+                &machine,
+                BackupJob {
+                    conn: &main,
+                    database_path: &paths.main,
+                    name: MAIN_NAME,
+                    database_id: &database_id(&main),
+                    folder: &paths.main_backups,
+                    make_folder: true,
+                    now: made_at,
+                    cancel: &|| false,
+                    progress: &mut |_, _| {},
+                },
+            ),
+            "a backup of the main database",
+        );
+    }
+    must(
+        main.execute(
+            "UPDATE app_state SET disk_encryption_note_dismissed = 1, changes_waiting = 0,
+                    last_backup_at = ?1, open_machine_id = NULL, open_machine_name = NULL,
+                    open_since = NULL",
+            [backups::utc_text(&now)],
+        ),
+        "the main database's backup record",
+    );
+    // Opened last, so the chooser selects it.
+    machine.touch_recent(&paths.main, MAIN_NAME, &database_id(&main), &paths.main_backups);
+    paths
+}
+
+fn database_id(conn: &Connection) -> String {
+    must(conn.query_row("SELECT database_id FROM app_state", [], |row| row.get(0)), "a database id")
+}
+
+/// A few firearms of their own; returns the one the pending edit is for.
+fn seed_shared(conn: &Connection) -> i64 {
+    let add = |input: FirearmInput| {
+        let label = format!("{} {}", input.make, input.model);
+        must(firearm_ops::create_firearm(conn, &input, false), &label).id
+    };
+    let beretta = add(FirearmInput {
+        estimated_value: Some(650),
+        ..base("Beretta", "92FS", "BER92-0417", "9mm", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(1_100),
+        notes: text("Kept at the workshop"),
+        ..base("Tikka", "T3x Lite", "TK-558120", ".308 Win", RIFLE)
+    });
+    add(FirearmInput {
+        estimated_value: Some(400),
+        ..base("Mossberg", "500", "MOS-V441872", "12 ga", SHOTGUN)
+    });
+    beretta
 }
 
 // ---------------------------------------------------------------------------
@@ -325,7 +522,9 @@ pub fn seed(conn: &Connection, extra: usize) {
 
     let glock = add(FirearmInput {
         nickname: text("Daily"),
-        notes: text("Trigger job done by a gunsmith in 2022. Fires reliably with 115 gr FMJ and 124 gr JHP."),
+        notes: text(
+            "Trigger job done by a gunsmith in 2022. Fires reliably with 115 gr FMJ and 124 gr JHP.",
+        ),
         accessories: text("Three 15-round magazines, Streamlight TLR-7 light, Kydex holster"),
         estimated_value: Some(550),
         acquisition_source: text("Ridgeline Arms"),
@@ -342,9 +541,9 @@ pub fn seed(conn: &Connection, extra: usize) {
     photos(
         glock,
         &[
-            ("glock-19-left.png", gradient_image(800, 600, 210, false), "image/png"),
-            ("glock-19-right.png", gradient_image(800, 600, 200, false), "image/png"),
-            ("glock-19-field-stripped.jpg", gradient_image(800, 600, 190, true), "image/jpeg"),
+            seed_photo!("glock-19-gen3.jpg"),
+            seed_photo!("glock-19-gen4-fde.jpg"),
+            seed_photo!("glock-19-atf.jpg"),
         ],
     );
     documents(
@@ -380,8 +579,12 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     add(FirearmInput {
-        notes: text("Old duty gun; the bluing is worn at the muzzle and the forend has a hairline crack near the tang. Keep an eye on it. Bring the original barrel-length paperwork when transferring."),
-        accessories: text("Extra 20-inch barrel, Vang Comp magazine tube extension, sling swivels, 4-shell side saddle, Limbsaver recoil pad, spare bead sight, cleaning kit"),
+        notes: text(
+            "Old duty gun; the bluing is worn at the muzzle and the forend has a hairline crack near the tang. Keep an eye on it. Bring the original barrel-length paperwork when transferring.",
+        ),
+        accessories: text(
+            "Extra 20-inch barrel, Vang Comp magazine tube extension, sling swivels, 4-shell side saddle, Limbsaver recoil pad, spare bead sight, cleaning kit",
+        ),
         estimated_value: Some(650),
         acquisition_date: text("2012-11-23"),
         barrel_length_hundredths: Some(2800),
@@ -407,7 +610,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::LikeNew),
         ..base("Benelli", "M4 Super 90", "M123456", "12 gauge", SHOTGUN)
     });
-    photos(benelli, &[("benelli-m4.png", gradient_image(600, 800, 25, false), "image/png")]);
+    photos(benelli, &[seed_photo!("benelli-m4.jpg")]);
 
     // Same identity as a disposed record below: a firearm reacquired as a
     // new record (FR-032 only protects active records).
@@ -418,7 +621,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
     });
     dispose(disposed_p365, DispositionType::Sold, "Dana Whitfield", "2023-04-02", 520);
-    let p365 = add(FirearmInput {
+    add(FirearmInput {
         nickname: text("Carry"),
         notes: text("Bought back from the same friend I sold it to."),
         estimated_value: Some(600),
@@ -429,9 +632,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::NewInBox),
         ..base("Sig Sauer", "P365 XL", "66A123456", "9mm", HANDGUN)
     });
-    photos(p365, &[("p365.png", gradient_image(800, 600, 160, false), "image/png")]);
 
-    add(FirearmInput {
+    let garand = add(FirearmInput {
         notes: text("Garand thumb is not a myth."),
         estimated_value: Some(1_600),
         acquisition_source: text("Civilian Marksmanship Program"),
@@ -445,6 +647,16 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::Fair),
         ..base("Springfield Armory", "M1 Garand", "1234567", ".30-06", RIFLE)
     });
+    photos(
+        garand,
+        &[
+            seed_photo!("m1-garand-left.jpg"),
+            seed_photo!("m1-garand-right.jpg"),
+            seed_photo!("m1-garand-receiver.jpg"),
+            seed_photo!("m1-garand-stock.jpg"),
+            seed_photo!("m1-garand-sling.jpg"),
+        ],
+    );
 
     add(FirearmInput {
         no_serial_attested: true,
@@ -456,7 +668,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Homebuilt", "AR-15 80% Lower Build", "", "5.56 NATO", RIFLE)
     });
 
-    add(FirearmInput {
+    let remington_replica = add(FirearmInput {
         no_serial_attested: true,
         serial_number: None,
         notes: text("Black powder; no serial number."),
@@ -470,6 +682,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         condition: Some(Condition::Poor),
         ..base("Pedersoli", "1858 Remington Replica", "", ".44 black powder", OTHER)
     });
+    photos(remington_replica, &[seed_photo!("remington-new-model-army.jpg")]);
 
     // Only the required fields: no value, so no insurance warning either.
     add(base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN));
@@ -503,6 +716,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2019-04-20"),
         ..base("Sig Sauer", "P320", "58B123456", "9mm", HANDGUN)
     });
+    photos(p320, &[seed_photo!("sig-p320-m18.jpg")]);
     dispose(p320, DispositionType::Sold, "Dave Rossi", "2022-05-10", 450);
     must(
         firearm_ops::reverse_disposition(
@@ -541,13 +755,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         scheduled_coverage_amount: Some(1_000),
         ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357 Magnum", HANDGUN)
     });
-    let ids = photos(
-        s_and_w,
-        &[
-            ("686-left.png", gradient_image(800, 600, 280, false), "image/png"),
-            ("686-detail.png", gradient_image(800, 600, 300, false), "image/png"),
-        ],
-    );
+    let ids =
+        photos(s_and_w, &[seed_photo!("sw-686-cylinder.jpg"), seed_photo!("sw-686-side.jpg")]);
     // Not the first photo: a chosen thumbnail rather than the default.
     must(photo_ops::set_thumbnail_photo(conn, s_and_w, ids[1]), "choosing a thumbnail");
 
@@ -559,16 +768,12 @@ pub fn seed(conn: &Connection, extra: usize) {
         scheduled_coverage_amount: Some(1_500),
         ..base("Winchester", "Model 70 Featherweight", "G2841175", ".270 Win", RIFLE)
     });
-    // A large photo, to see how the app copes with a full-size original.
-    photos(
-        winchester,
-        &[("elk-rifle-range-day.jpg", gradient_image(2400, 1600, 100, true), "image/jpeg")],
-    );
+    photos(winchester, &[seed_photo!("winchester-model-70-featherweight.jpg")]);
 
     // -- Scheduled under Vault Schedule (in force) --------------------------
 
     // Scheduled for less than its value: under-insured.
-    add(FirearmInput {
+    let colt = add(FirearmInput {
         nickname: text("Grandpa's 1911"),
         notes: text("Inherited. Series 70. Family piece, never sell."),
         estimated_value: Some(2_400),
@@ -578,6 +783,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         scheduled_coverage_amount: Some(2_000),
         ..base("Colt", "1911 Government Model", "70S12345", ".45 ACP", HANDGUN)
     });
+    photos(
+        colt,
+        &[seed_photo!("1911a1-field-stripped.jpg"), seed_photo!("colt-m1911-markings.jpg")],
+    );
 
     // Scheduled for exactly its value: adequately insured.
     add(FirearmInput {
@@ -590,7 +799,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     // Long text everywhere, to check truncation and wrapping in tiles/rows.
-    add(FirearmInput {
+    let commemorative = add(FirearmInput {
         nickname: text("The Really Long Nickname Used To Check How Tiles And Rows Truncate"),
         notes: text("Commemorative presentation piece. ".repeat(12).trim_end()),
         estimated_value: Some(3_200),
@@ -605,6 +814,27 @@ pub fn seed(conn: &Connection, extra: usize) {
             HANDGUN,
         )
     });
+    // Twice as many photos as any other record, each a different colour and
+    // shape, in both formats, one of them a large full-size original: to see
+    // how the photo strip and the viewer cope.
+    const PRESENTATION_SHAPES: [(u32, u32, bool); 10] = [
+        (1200, 800, false),
+        (800, 1200, false),
+        (2400, 1600, true),
+        (1000, 1000, false),
+        (320, 240, true),
+        (1600, 400, false),
+        (600, 1800, true),
+        (1024, 768, true),
+        (800, 600, false),
+        (1600, 1200, true),
+    ];
+    for (i, &(width, height, jpeg)) in PRESENTATION_SHAPES.iter().enumerate() {
+        let (extension, mime) = if jpeg { ("jpg", "image/jpeg") } else { ("png", "image/png") };
+        let name = format!("presentation-{:02}.{extension}", i + 1);
+        let bytes = gradient_image(width, height, i as u32 * 36, jpeg);
+        must(photo_ops::add_photo(conn, commemorative, &bytes, &name, mime), &name);
+    }
 
     // -- Scheduled under an expired policy: uninsured despite the amount ----
 
@@ -619,7 +849,9 @@ pub fn seed(conn: &Connection, extra: usize) {
     // -- specs/002-firearm-identification: origin, year, country, importer --
 
     add(FirearmInput {
-        notes: text("Bring-back from a relative's WWII service; the importer's stamp is on the barrel band."),
+        notes: text(
+            "Bring-back from a relative's WWII service; the importer's stamp is on the barrel band.",
+        ),
         estimated_value: Some(1200),
         acquisition_source: text("Family estate"),
         acquisition_date: text("2015-08-14"),
@@ -666,7 +898,7 @@ pub fn seed(conn: &Connection, extra: usize) {
 
     // The importer adopted the maker's own model and serial as the main
     // marks: no separate original-marks entry is needed (US2-3).
-    add(FirearmInput {
+    let imported_beretta = add(FirearmInput {
         notes: text("Importer's stamp only; the maker's marks are already the main marks."),
         estimated_value: Some(480),
         acquisition_source: text("Online auction"),
@@ -676,6 +908,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         importer_name: text("Global Arms Import Co."),
         ..base("Beretta", "92FS", "BER556213", "9mm", HANDGUN)
     });
+
+    photos(imported_beretta, &[seed_photo!("beretta-92fs-atf.jpg")]);
 
     // A domestic firearm, so every `origin` value appears in the seed
     // (human_seed_coverage_test's CHECK-value sweep).

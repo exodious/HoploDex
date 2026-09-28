@@ -4,16 +4,26 @@ import "./components.css";
 
 export interface ProgressBarProps {
   /** Tauri event name, e.g. `"import_collection:progress"`
-   * (contracts/tauri-commands.md: `"{command}:progress"`). */
-  eventName: string;
+   * (contracts/tauri-commands.md: `"{command}:progress"`). Leave it out and
+   * pass `value` for progress the caller already follows. */
+  eventName?: string;
+  /** The progress to show when there is no `eventName`; `null` or a zero
+   * `total` is indeterminate. */
+  value?: ProgressPayload | null;
   /** Accessible name for the progressbar role (WCAG 4.1.2 Name, Role,
    * Value) — e.g. "Export progress". */
   label: string;
   /** What's being counted, e.g. "firearms" or "rows". */
-  unit: string;
+  unit?: string;
+  /** Writes an amount, e.g. as bytes; the default writes the number and
+   * `unit`. */
+  formatAmount?: (amount: number) => string;
+  /** Replaces the "x of y" text; `""` shows none, for a step the caller
+   * already names. */
+  caption?: string;
 }
 
-interface ProgressPayload {
+export interface ProgressPayload {
   processed: number;
   total: number;
 }
@@ -22,20 +32,35 @@ interface ProgressPayload {
  * operation (import/export), consuming a Tauri progress event
  * (constitution Principle IV: no user-facing operation may run without
  * progress indication). Indeterminate until the first event arrives. */
-export function ProgressBar({ eventName, label, unit }: ProgressBarProps) {
-  const [progress, setProgress] = useState<ProgressPayload | null>(null);
+export function ProgressBar({
+  eventName,
+  value = null,
+  label,
+  unit = "",
+  formatAmount,
+  caption,
+}: ProgressBarProps) {
+  const [heard, setHeard] = useState<ProgressPayload | null>(null);
 
   useEffect(() => {
+    if (!eventName) return;
     const unlisten = listen<ProgressPayload>(eventName, (event) => {
-      setProgress(event.payload);
+      setHeard(event.payload);
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
   }, [eventName]);
 
+  const progress = eventName ? heard : value;
   const determinate = progress != null && progress.total > 0;
   const percent = determinate ? Math.round((progress.processed / progress.total) * 100) : 0;
+  const amount = (n: number) => (formatAmount ? formatAmount(n) : `${n}`);
+  const counted = determinate
+    ? formatAmount
+      ? `${amount(progress.processed)} of ${amount(progress.total)}`
+      : `${progress.processed} of ${progress.total} ${unit}`
+    : "Starting…";
 
   return (
     <div className="hd-progress">
@@ -54,9 +79,7 @@ export function ProgressBar({ eventName, label, unit }: ProgressBarProps) {
           style={determinate ? { width: `${percent}%` } : undefined}
         />
       </div>
-      <p className="hd-progress__label hd-num">
-        {determinate ? `${progress.processed} of ${progress.total} ${unit}` : "Starting…"}
-      </p>
+      {caption !== "" && <p className="hd-progress__label hd-num">{caption ?? counted}</p>}
     </div>
   );
 }

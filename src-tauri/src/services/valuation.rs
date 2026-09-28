@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::commands::CommandError;
-use crate::services::insurance_status::{load_context_as_of, InsuranceContext};
+use crate::services::insurance_status::{InsuranceContext, load_context_as_of};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

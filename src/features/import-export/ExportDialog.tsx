@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { withIdlePaused } from "../session/useIdleActivity";
 import { Button, ChoiceCards, Dialog, Icon, ProgressBar, TextField } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
@@ -26,7 +27,13 @@ export function ExportDialog({ open, onOpenChange, browse }: ExportDialogProps) 
       open={open}
       onOpenChange={onOpenChange}
       title="Export collection"
-      description="Saves a spreadsheet with every recorded field, plus a folder of the original photos."
+      description={
+        <>
+          Exports the collection to a spreadsheet. The file is <strong>not encrypted</strong>:
+          anyone who can open it can read it. For encrypted backups of the whole database, see
+          Database settings.
+        </>
+      }
       bare
     >
       <ExportForm browse={browse} onClose={() => onOpenChange(false)} />
@@ -60,11 +67,13 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   }, [filterActive, query, browse.includeDisposed]);
 
   async function chooseFolder() {
-    const selected = await openDialog({
-      directory: true,
-      multiple: false,
-      title: "Export to folder",
-    });
+    const selected = await withIdlePaused(() =>
+      openDialog({
+        directory: true,
+        multiple: false,
+        title: "Export to folder",
+      }),
+    );
     if (typeof selected === "string") {
       setFolder(selected);
       setFolderError(undefined);

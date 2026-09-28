@@ -7,7 +7,7 @@ independent test from spec.md. Field/command names reference
 
 ## Prerequisites
 
-- Rust toolchain (stable, 1.75+) with `cargo`.
+- Rust toolchain (stable, 1.97+) with `cargo`.
 - Node.js 18+ and a package manager (npm/pnpm) for the frontend.
 - Tauri 2.x CLI prerequisites for your OS (WebView2 on Windows,
   WebKitGTK dev packages on Linux — see Tauri's own platform prerequisites).
@@ -28,6 +28,8 @@ First launch generates a random encryption key, stores it via `keyring` in
 the OS credential store, creates the encrypted SQLCipher database in the
 OS app-data directory, and applies migrations (schema + FTS5 tables +
 seeded `FirearmType` rows).
+
+_Superseded by [spec 003](../003-database-protection-management/quickstart.md): first launch shows the database chooser, which creates a database with a chosen passphrase and location or opens an existing one; no key is generated or stored._
 
 ```bash
 npm run tauri dev

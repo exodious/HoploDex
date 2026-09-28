@@ -23,6 +23,8 @@ export interface SelectProps {
   required?: boolean;
   id?: string;
   disabled?: boolean;
+  /** Classes on the field's wrapper, such as a width. */
+  fieldClassName?: string;
 }
 
 /** Labeled, keyboard-navigable select — the dropdown pattern for option
@@ -38,6 +40,7 @@ export function Select({
   required,
   id,
   disabled,
+  fieldClassName,
 }: SelectProps) {
   const { inputId, hintId, errorId, describedBy } = useFieldIds(id, hint, error);
   const labelId = `${inputId}-label`;
@@ -52,6 +55,7 @@ export function Select({
       hintId={hintId}
       error={error}
       errorId={errorId}
+      className={fieldClassName}
     >
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger

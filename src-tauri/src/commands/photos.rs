@@ -1,11 +1,11 @@
-use rusqlite::{named_params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, named_params};
 use tauri::State;
 
-use crate::commands::firearms::DeleteResult;
 use crate::commands::CommandError;
-use crate::db::DbHandle;
-use crate::models::photo::{generate_thumbnail, validate_photo_mime_type, Photo, PhotoSummary};
+use crate::commands::firearms::DeleteResult;
+use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
 use crate::services::attachments::read_attachment_file;
+use crate::session::Session;
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -187,10 +187,11 @@ pub mod ops {
 #[tauri::command]
 pub async fn list_photos(
     firearm_id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Vec<PhotoSummary>, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    Ok(ops::list_photos(&conn, firearm_id)?.into_iter().map(PhotoSummary::from).collect())
+    session.read(|conn| {
+        Ok(ops::list_photos(conn, firearm_id)?.into_iter().map(PhotoSummary::from).collect())
+    })
 }
 
 #[tauri::command]
@@ -199,10 +200,12 @@ pub async fn add_photo(
     file_bytes: Vec<u8>,
     original_filename: String,
     mime_type: String,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<PhotoSummary, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::add_photo(&conn, firearm_id, &file_bytes, &original_filename, &mime_type).map(Into::into)
+    session.write(|conn| {
+        ops::add_photo(conn, firearm_id, &file_bytes, &original_filename, &mime_type)
+            .map(Into::into)
+    })
 }
 
 /// Adds a photo from a file on disk: what a drop onto the window delivers.
@@ -210,10 +213,11 @@ pub async fn add_photo(
 pub async fn add_photo_from_path(
     firearm_id: i64,
     path: String,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<PhotoSummary, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::add_photo_from_path(&conn, firearm_id, std::path::Path::new(&path)).map(Into::into)
+    session.write(|conn| {
+        ops::add_photo_from_path(conn, firearm_id, std::path::Path::new(&path)).map(Into::into)
+    })
 }
 
 /// Just the small cached thumbnail bytes for one photo — lets browse views
@@ -222,10 +226,9 @@ pub async fn add_photo_from_path(
 #[tauri::command]
 pub async fn get_photo_thumbnail(
     photo_id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<Vec<u8>, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    Ok(ops::get_photo(&conn, photo_id)?.thumbnail_bytes)
+    session.read(|conn| Ok(ops::get_photo(conn, photo_id)?.thumbnail_bytes))
 }
 
 /// The full-resolution original bytes for one photo, returned as a raw
@@ -235,28 +238,26 @@ pub async fn get_photo_thumbnail(
 #[tauri::command]
 pub async fn get_photo_original(
     photo_id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<tauri::ipc::Response, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    Ok(tauri::ipc::Response::new(ops::get_photo(&conn, photo_id)?.original_bytes))
+    session
+        .read(|conn| Ok(tauri::ipc::Response::new(ops::get_photo(conn, photo_id)?.original_bytes)))
 }
 
 #[tauri::command]
 pub async fn set_thumbnail_photo(
     firearm_id: i64,
     photo_id: i64,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<crate::models::firearm::Firearm, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::set_thumbnail_photo(&conn, firearm_id, photo_id)
+    session.write(|conn| ops::set_thumbnail_photo(conn, firearm_id, photo_id))
 }
 
 #[tauri::command]
 pub async fn delete_photo(
     photo_id: i64,
     confirmed: bool,
-    state: State<'_, DbHandle>,
+    session: State<'_, Session>,
 ) -> Result<DeleteResult, CommandError> {
-    let conn = state.0.lock().expect("db mutex poisoned");
-    ops::delete_photo(&conn, photo_id, confirmed)
+    session.write(|conn| ops::delete_photo(conn, photo_id, confirmed))
 }

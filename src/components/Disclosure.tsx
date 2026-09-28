@@ -47,6 +47,10 @@ export function Disclosure({
             <span className="hd-disclosure__title" id={titleId}>
               {title}
             </span>
+            {/* Keeps a space between title and summary in the button's
+                accessible name without relying on the column layout; the
+                flex container drops it visually. */}
+            {summary && " "}
             {summary && <span className="hd-disclosure__summary">{summary}</span>}
           </span>
         </button>

@@ -4,9 +4,9 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{ops, DisposeFirearmInput};
+use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, Origin};
-use support::{firearm, TestDb};
+use support::{TestDb, firearm};
 
 fn imported(make: &str, model: &str, serial: &str) -> FirearmInput {
     FirearmInput { origin: Some(Origin::Imported), ..firearm(make, model, serial) }
