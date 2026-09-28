@@ -5,8 +5,8 @@ it's minor there, and alone it's easily read as a political or religious
 symbol. Drawn in a ±100 box, y down.
 
 Line work like the rest of the plate, so it can be drawn in stroke by stroke:
-ol = outline, fe = feather and vein detail, pf = the few solid marks (pupils,
-beak), wash = a faint bronze ground, paper = the field, hiding lines behind."""
+ol = outline, fe = feather and vein detail, pf = the pupils, the only solid marks,
+which come in last; pfi = the fill of the beak and berry, which are drawn as outlines, wash = a faint bronze ground, paper = the field, hiding lines behind."""
 import pathlib
 
 HERE = pathlib.Path(__file__).parent
@@ -43,7 +43,7 @@ COIN_OWL = f"""<g class="device" transform="translate(20 0)">
 <path class="ol" pathLength="1" d="M-52-66C-64-80-62-94-56-100C-48-90-46-76-52-66Z"/>
 <path class="ol" pathLength="1" d="M-60-58C-74-60-88-66-92-74C-80-76-66-72-60-58Z"/>
 <path class="fe" pathLength="1" d="M-52-66C-54-78-55-88-56-96M-60-58C-70-62-80-67-88-73"/>
-<circle class="pf" cx="-80" cy="-34" r="4"/>
+<circle class="pfi" cx="-80" cy="-34" r="4"/><circle class="ol" pathLength="1" cx="-80" cy="-34" r="4"/>
 <!-- body: ground, outline, wing, feathering -->
 <path class="wash" d="{BODY_CLOSED}"/>
 <path class="ol" pathLength="1" d="{BODY}"/>
@@ -61,7 +61,7 @@ COIN_OWL = f"""<g class="device" transform="translate(20 0)">
 <path class="fe" pathLength="1" d="{"".join(_disc(x, y, 20) for x, y in EYES)}"/>
 <path class="ol" pathLength="1" d="{"".join(f"M{x+13} {y}A13 13 0 1 1 {x-13} {y}A13 13 0 1 1 {x+13} {y}" for x, y in EYES)}"/>
 {"".join(f'<circle class="pf" cx="{x+1}" cy="{y}" r="9"/>' for x, y in EYES)}
-<path class="pf" d="M-3-40H9C9-33 7-27 3-21C2-27-1-33-3-40Z"/>
+<path class="pfi" d="M-3-40H9C9-33 7-27 3-21C2-27-1-33-3-40Z"/><path class="ol" pathLength="1" d="M-3-40H9C9-33 7-27 3-21C2-27-1-33-3-40Z"/>
 </g>"""
 
 # For 32 px and below, where lines disappear: the same owl as a silhouette,
@@ -74,7 +74,7 @@ SOLID_OWL = f"""<g class="device solid" transform="translate(20 0)">
 
 CSS = """.device .ol{fill:none;stroke:var(--o);stroke-width:1.6px;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
 .device .fe{fill:none;stroke:var(--o);stroke-width:1px;vector-effect:non-scaling-stroke;stroke-linecap:round}
-.device .pf{fill:var(--o)}.device .paper{fill:var(--p)}.device .wash{fill:var(--o);opacity:.13}
+.device .pf,.device .pfi{fill:var(--o)}.device .paper{fill:var(--p)}.device .wash{fill:var(--o);opacity:.13}
 .device .sf{fill:var(--o)}.device .sk{fill:var(--p)}"""
 
 if __name__ == "__main__":

@@ -75,8 +75,9 @@ owl a solid silhouette with its eyes cut out; the top bar uses the same small ve
 <figure>{img("c2-icons", "Catalogue icon candidates at four sizes on light and dark backgrounds")}</figure></section>
 
 <section><h2>Startup animation (issue #23)</h2>
-<p>The owl is now engraved stroke by stroke after the rim, then its eyes and bronze ground settle in. The overall timing
-is still to be tuned.</p>
+<p>The Greek key draws first, from both ends. Then the shield and rifle are drawn over the grid, their fills coming in as
+their lines do, while the braid runs round the rim with its beads and tongues following. The owl is engraved next, twig
+and beak included, and its eyes come last. The overall timing is still to be tuned.</p>
 <div class="live" id="live"><svg class="plate anim" viewBox="600 40 580 700" aria-hidden="true">{concept2.PLATE}</svg></div>
 <button type="button" id="replay">Replay the animation</button></section>
 </div>

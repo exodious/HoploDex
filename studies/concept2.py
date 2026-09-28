@@ -14,6 +14,14 @@ def circle(r, cls="thin"):
     return f'<circle r="{r:.2f}" class="{cls}" pathLength="1"/>'
 
 
+RIM_START, RIM_TIME = 1.65, 1.8  # s: when the braid starts, and how long it takes to go round
+
+
+def _round(frac):
+    """The delay for something at `frac` of the way round, so it appears as the braid reaches it."""
+    return f' style="animation-delay:{RIM_START + frac * RIM_TIME:.3f}s"'
+
+
 def guilloche(r0, w, n):
     """Two interlaced strands around a ring, with a dot in each eye."""
     out = []
@@ -26,7 +34,7 @@ def guilloche(r0, w, n):
         out.append(f'<path class="orn" pathLength="1" d="M{"L".join(pts)}Z"/>')
     for k in range(n * 2):
         t = (k + 0.5) * math.pi / n
-        out.append(f'<circle class="dot" cx="{r0 * math.cos(t):.2f}" cy="{r0 * math.sin(t):.2f}" r="{w * 0.12:.2f}"/>')
+        out.append(f'<circle class="dot"{_round((k + 0.5) / (n * 2))} cx="{r0 * math.cos(t):.2f}" cy="{r0 * math.sin(t):.2f}" r="{w * 0.12:.2f}"/>')
     return "".join(out)
 
 
@@ -41,7 +49,7 @@ def tongues(r_out, r_in, n):
         tip = (r_in * math.cos(am), r_in * math.sin(am))
         c0 = (r_in * 1.02 * math.cos(a0 + 0.02), r_in * 1.02 * math.sin(a0 + 0.02))
         c1 = (r_in * 1.02 * math.cos(a1 - 0.02), r_in * 1.02 * math.sin(a1 - 0.02))
-        out.append(f'<path class="orn" pathLength="1" d="M{p0[0]:.2f} {p0[1]:.2f}Q{c0[0]:.2f} {c0[1]:.2f} {tip[0]:.2f} {tip[1]:.2f}'
+        out.append(f'<path class="orn unit"{_round((k + 0.5) / n)} pathLength="1" d="M{p0[0]:.2f} {p0[1]:.2f}Q{c0[0]:.2f} {c0[1]:.2f} {tip[0]:.2f} {tip[1]:.2f}'
                    f'Q{c1[0]:.2f} {c1[1]:.2f} {p1[0]:.2f} {p1[1]:.2f}"/>')
     return "".join(out)
 
@@ -142,7 +150,7 @@ PLATE_CSS = """
 .plate .device .kl.thin{stroke-width:3}
 .plate .device .ol{fill:none;stroke:var(--orn);stroke-width:1.5px;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
 .plate .device .fe{fill:none;stroke:var(--orn);stroke-width:1px;vector-effect:non-scaling-stroke;stroke-linecap:round}
-.plate .device .pf,.plate .device .sf{fill:var(--orn)}.plate .device .paper,.plate .device .sk{fill:var(--vellum)}
+.plate .device .pf,.plate .device .pfi,.plate .device .sf{fill:var(--orn)}.plate .device .paper,.plate .device .sk{fill:var(--vellum)}
 .plate .device .wash{fill:var(--orn);opacity:.13}
 .plate .key{fill:none;stroke:var(--orn);stroke-width:1.25px;vector-effect:non-scaling-stroke;stroke-linejoin:miter}
 .plate .cut{fill:url(#phatch);stroke:var(--line);stroke-width:1.5px;vector-effect:non-scaling-stroke}
@@ -158,7 +166,14 @@ PLATE_CSS = """
 :root{--orn:#9a6a2c}
 :root[data-theme=dark]{--orn:#d3a45f}
 .anim .part,.anim .open,.anim .thin,.anim .detail,.anim .orn,.anim .cut{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.6s 1.3s cubic-bezier(.2,.7,.2,1) forwards}
-.anim .orn{animation-delay:1.65s}
+.anim .orn{animation-delay:1.65s;animation-duration:1.8s;animation-timing-function:linear}
+.anim .orn.unit{animation-duration:.35s}
+.anim .dot{animation-duration:.25s}
+/* fills fade in as their lines are drawn, so the grid shows until the drawing covers it */
+.anim .part{fill-opacity:0;animation:draw 1.6s 1.3s cubic-bezier(.2,.7,.2,1) forwards,fillin .9s 1.7s forwards}
+.anim .device .paper{fill-opacity:0;animation:fillin .9s 2.6s forwards}
+.anim .device .pfi{opacity:0;animation:fade .5s 3.3s forwards}
+@keyframes fillin{to{fill-opacity:1}}
 .anim .dot,.anim .hatch,.anim .axis,.anim text,.anim rect{opacity:0;animation:fade .6s 2.6s forwards}
 @keyframes draw{to{stroke-dashoffset:0}}
 @keyframes fade{to{opacity:1}}
@@ -170,7 +185,7 @@ PLATE_CSS = """
 .anim .key.unit{animation-duration:.4s}
 .anim .device .wash{opacity:0;animation:wash .8s 3.6s forwards}
 @keyframes wash{to{opacity:.13}}
-@media (prefers-reduced-motion:reduce){.anim *{animation:none!important;stroke-dasharray:none!important;opacity:1!important}.anim .device .wash{opacity:.13!important}}
+@media (prefers-reduced-motion:reduce){.anim *{animation:none!important;stroke-dasharray:none!important;opacity:1!important;fill-opacity:1!important}.anim .device .wash{opacity:.13!important}}
 """
 
 HOPLON_R = 140
@@ -261,7 +276,7 @@ ICON_CSS = """<style>
 .ic .device .kl.thin{stroke-width:3}
 .ic .device .ol{fill:none;stroke:var(--o);stroke-width:var(--ow);vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-linejoin:round}
 .ic .device .fe{fill:none;stroke:var(--o);stroke-width:calc(var(--ow) * .6);vector-effect:non-scaling-stroke;stroke-linecap:round}
-.ic .device .pf,.ic .device .sf{fill:var(--o)}.ic .device .paper,.ic .device .sk{fill:var(--p)}.ic .device .wash{fill:var(--o);opacity:.15}
+.ic .device .pf,.ic .device .pfi,.ic .device .sf{fill:var(--o)}.ic .device .paper,.ic .device .sk{fill:var(--p)}.ic .device .wash{fill:var(--o);opacity:.15}
 </style>"""
 
 
