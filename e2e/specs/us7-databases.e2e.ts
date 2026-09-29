@@ -19,6 +19,7 @@ import {
   scratchDocuments,
   selectChooserRow,
   selectedChooserRow,
+  settleChooserPlate,
   submitPassphrase,
   switchDatabase,
   toggle,
@@ -62,6 +63,53 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     );
     await expect($("button=Create a new database…")).toExist();
     await expect($("button=Open another database file…")).toExist();
+  });
+
+  it("fits the first-run chooser in the window, with no scrollbar", async () => {
+    // The plate is as tall as the window less the top bar; a 1px miss made
+    // the page always scroll.
+    const overflow = await browser.execute(
+      () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  it("draws the catalogue plate in, then cycles its firearm drawings (#23)", async () => {
+    // In the app's own engine: the draw-in's CSS animations, and the cycle's
+    // Web Animations, which repeat until a database is opened.
+    const plate = await browser.execute(() => {
+      const svg = document.querySelector(".hd-catalogue");
+      const all = svg?.getAnimations({ subtree: true }) ?? [];
+      const forever = all.filter((a) => a.effect?.getComputedTiming().iterations === Infinity);
+      return {
+        hidden: svg?.getAttribute("aria-hidden"),
+        drawing: all.length - forever.length,
+        cycling: forever.length,
+        drawings: [...(svg?.querySelectorAll(".layer") ?? [])].map((l) =>
+          l.getAttribute("data-drawing"),
+        ),
+        numbers: [...(svg?.querySelectorAll(".layer .no") ?? [])].map((n) => n.textContent),
+      };
+    });
+    expect(plate.hidden).toBe("true");
+    expect(plate.drawing).toBeGreaterThan(500);
+    expect(plate.cycling).toBeGreaterThan(0);
+    // shuffled at startup, each keeping its own number
+    expect([...plate.drawings].sort()).toEqual(["handgun", "other", "rifle", "shotgun"]);
+    expect(plate.numbers).toEqual(
+      plate.drawings.map((d) => ({ rifle: "2", handgun: "3", shotgun: "4", other: "5" })[d!]),
+    );
+  });
+
+  it("blinks the owl when its beak is clicked, once its pupils are in", async () => {
+    await settleChooserPlate();
+    await $(".hd-catalogue .device .beak").click();
+    const blinks = await browser.execute(() =>
+      [...document.querySelectorAll(".hd-catalogue .device .pf")].map(
+        (pupil) => pupil.getAnimations().filter((a) => !("animationName" in a)).length,
+      ),
+    );
+    expect(blinks).toEqual([1, 1]);
   });
 
   it("creates a database only with a long enough passphrase and the acknowledgement (FR-003, FR-004)", async () => {

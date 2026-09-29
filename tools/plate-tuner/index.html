@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chooser Plate Tuner</title>
+  </head>
+  <body>
+    <header class="head">
+      <div>
+        <h1>Chooser plate tuner</h1>
+        <p>
+          Play or scrub the chooser’s drawing, try a preset, or move the sliders. Paused, the plate
+          shows that moment with the new timing; playing, it starts again when you let go. The
+          values live in
+          <code>src/features/databases/plate/timing.ts</code>.
+        </p>
+      </div>
+      <div class="seg" role="group" aria-label="Colours">
+        <button type="button" data-plate="light" aria-pressed="false">Light</button
+        ><button type="button" data-plate="dark" aria-pressed="false">Dark</button>
+      </div>
+    </header>
+    <main class="app">
+      <div class="stage" id="stage"></div>
+      <section class="play" aria-label="Playback">
+        <div class="transport">
+          <button type="button" class="btn primary" id="toggle">Pause</button>
+          <button type="button" class="btn" id="replay">Replay</button>
+          <span class="clock" id="clock"></span>
+          <div class="seg" role="group" aria-label="Playback rate">
+            <button type="button" data-rate="1" aria-pressed="true">1×</button
+            ><button type="button" data-rate="0.5" aria-pressed="false">½×</button
+            ><button type="button" data-rate="0.25" aria-pressed="false">¼×</button>
+          </div>
+        </div>
+        <div class="transport">
+          <div class="seg" role="group" aria-label="Timeline shows">
+            <button type="button" data-view="drawIn" aria-pressed="true">The draw-in</button
+            ><button type="button" data-view="cycle" aria-pressed="false">The whole loop</button>
+          </div>
+          <button type="button" class="btn" id="to-cycle">Play the first change</button>
+        </div>
+        <input type="range" id="scrub" min="0" step="0.01" aria-label="Time in seconds" />
+        <div class="tl">
+          <div class="tl-body" id="tl" tabindex="0" aria-label="Timeline: drag to scrub"></div>
+          <div class="tl-axis">
+            <span></span>
+            <div class="ticks" id="ticks"></div>
+          </div>
+          <p class="tl-note">
+            Each bar is when that part draws. Eased line work looks finished where its bar fades.
+          </p>
+        </div>
+        <h2>Changing drawings</h2>
+        <div class="presets" id="presets"></div>
+        <div class="out">
+          <div class="out-head">
+            <h2>Your changes</h2>
+            <div class="transport">
+              <button type="button" class="btn primary" id="save" hidden>Save to timing.ts</button>
+              <button type="button" class="btn" id="copy">Copy</button>
+              <button type="button" class="btn" id="reset">Reset</button>
+            </div>
+          </div>
+          <div id="changes"></div>
+          <p class="saved" id="saved" role="status"></p>
+        </div>
+      </section>
+      <form class="controls" id="controls" aria-label="Timing"></form>
+    </main>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

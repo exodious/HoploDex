@@ -9,7 +9,6 @@ import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
 import { SearchBar } from "./SearchBar";
-import { TypeDrawing } from "./TypeDrawing";
 import { GROUP_BY_OPTIONS } from "./types";
 import type { BrowseState, FirearmGroup, GroupBy, VisibleGroup } from "./types";
 import "./collection.css";
@@ -123,9 +122,6 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
       <>
         <PageHeader activeCount={0} valueDollars={0} disposedCount={0} />
         <div className="hd-empty">
-          <div className="hd-empty__art">
-            <TypeDrawing typeKey="rifle" animate />
-          </div>
           <h2 className="hd-empty__title">Start the record</h2>
           <p className="hd-empty__text">
             Add each firearm with its make, model, and serial number, then fill in value, insurance,

@@ -900,3 +900,20 @@ On 2026-09-28 the manual checks not yet done were deferred rather than done in t
   - **Deferred** (2026-09-28) to #37: this task's direction, a database made on macOS with a firearm, a photo and a document, opened on Linux
 - [X] T166 On Windows, do quickstart.md's walkthrough 2 the same way: create a database there with a firearm, a photo and a document (scratch folder, as in T163), copy it to Linux, open it with **Open another database file…** and its passphrase, and check every record, photo and document. Record the result for the PR, then, once T161–T165 are done too, tick T146, per T146, SC-001, US2-6 (partial)
   - **Deferred** (2026-09-28) to #27 and #37: no Windows test environment yet
+
+---
+
+## Phase 12: Convergence
+
+FR-040 (the selected database's last open, backups and outside changes in the chooser) was added to the spec on 2026-09-29 and implemented with its contracts, but no task tracked it. This phase covers what remains of it, and the branch's catalogue plate and icon (#22, #23).
+
+- [X] T167 [US2] Stop the chooser from reading a missing backup folder as "no backups" per FR-040 (partial):
+  - `backups::list` returns an empty list for a folder that doesn't exist (`src-tauri/src/services/backups.rs`), so `backup_summary` in `src-tauri/src/commands/databases.rs` reports `count: 0`, shown as "Last backup: None", for a custom location on an unplugged drive or one that doesn't exist on this computer. FR-040 says to leave that part out rather than guess
+  - read a missing folder as "none" only when it is the default `HoploDex backups` folder next to the database file; for any other missing folder, `backups` is `null`
+  - write the regression test first in `src-tauri/tests/chooser_details_test.rs`: a cached custom backup folder that doesn't exist gives `backups: None`, and a default folder not yet made gives `count: 0`
+- [X] T168 [P] [US3] In `e2e/specs/us8-backups.e2e.ts`, after a close that made a backup, check that the chooser's selected row shows "Last opened here" with "Today at …" and "Last backup" with "Today at …" and "1 kept", and that a row that isn't selected shows neither, per FR-040, Constitution II (partial)
+- [X] T169 [P] Add FR-040 to `specs/003-database-protection-management/quickstart.md` per FR-040 (partial):
+  - a row in the automated test map naming `tests/chooser_details_test.rs`, `DatabaseChooser.test.tsx`, `src/lib/dates.test.ts` and T168's e2e check
+  - a numbered walkthrough step: close a database, change its file from outside (another computer, or a scratch copy opened and saved), and see "Changed …, after it was last closed here." on the selected row
+- [X] T170 [P] Record the chooser's catalogue plate (`src/features/databases/plate/`, #23) in `specs/003-database-protection-management/contracts/ui-databases.md` §1: the plate on the right of the list, decorative (`aria-hidden`), drawn in and then cycling, still under `prefers-reduced-motion`, and gone once a database opens. Also record the header's owl brand mark and the program icon (#22). Or, if the user keeps them outside 003, say so in the contract with the issue numbers, per contracts/ui-databases.md §1 (unrequested)
+- [X] T171 Re-run the gates in the dev container for this phase's work: cargo test (including `chooser_details_test`), clippy and fmt; `npm run test`, lint and format; `npm run audit`; then `npm run build` and `us7-databases.e2e.ts` and `us8-backups.e2e.ts` one at a time. Reconcile contracts/tauri-commands.md (`BackupSummary`) with anything that changed, per Constitution (quality gates) (missing)

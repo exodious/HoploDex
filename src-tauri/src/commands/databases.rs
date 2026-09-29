@@ -33,16 +33,16 @@ pub mod ops {
     use crate::db;
     use crate::models::database::{
         BackupLocation, BackupLocationKind, BackupSettings, BackupSettingsInput,
-        BackupSettingsSaved, ChooserState, CloseOutcome, CloseReason, CollectionSettings,
-        DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice, ExistingBackupsOutcome,
-        IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput, NoteKind, OperationKind,
-        PassphraseSaved, PendingAction, PendingResolved, RecentDatabase, RecentRemoved,
-        SuggestedLocation, validate_backup_settings_input, validate_create_database_input,
-        validate_lock_settings_input,
+        BackupSettingsSaved, BackupSummary, ChooserState, CloseOutcome, CloseReason,
+        CollectionSettings, DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice,
+        ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput,
+        NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
+        RecentRemoved, SuggestedLocation, validate_backup_settings_input,
+        validate_create_database_input, validate_lock_settings_input,
     };
     use crate::services::backups::{self, MoveJob};
     use crate::services::disk_space;
-    use crate::services::machine_settings::{MachineSettings, RecentEntry};
+    use crate::services::machine_settings::{self, MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
     use crate::session::operations::Operations;
     use crate::session::{OpenDatabase, Session};
@@ -63,15 +63,56 @@ pub mod ops {
     }
 
     /// A recent-list entry as the chooser shows it: unavailable when its
-    /// file isn't at its path (FR-012).
+    /// file isn't at its path (FR-012), and otherwise with its backups and
+    /// whether it changed after this computer left it (FR-040). Only file
+    /// names and times are read: nothing is decrypted.
     fn recent_database(entry: RecentEntry) -> RecentDatabase {
+        let available = entry.path.is_file();
+        let backups = match (&entry.database_id, &entry.backup_folder) {
+            (Some(id), Some(folder)) if available => backup_summary(&entry.path, folder, id),
+            _ => None,
+        };
+        let changed_since_left_at = entry.left_modified_at.as_deref().and_then(|left| {
+            let now = machine_settings::modified_at(&entry.path)?;
+            (later(&now, left)?).then_some(now)
+        });
         RecentDatabase {
-            available: entry.path.is_file(),
+            available,
             path: entry.path.to_string_lossy().into_owned(),
             name: entry.name,
             last_opened_at: entry.last_opened_at,
             passphrase_saved: entry.passphrase_saved,
+            backups,
+            changed_since_left_at,
         }
+    }
+
+    /// A missing folder means no backups only when it is the default one,
+    /// which the first backup makes. A chosen folder that isn't there may be
+    /// on a drive that isn't plugged in, so then nothing is said (FR-040).
+    fn backup_summary(database: &Path, folder: &Path, database_id: &str) -> Option<BackupSummary> {
+        if matches!(folder.try_exists(), Ok(false))
+            && folder != backups::resolve_folder(database, "default")
+        {
+            return None;
+        }
+        match backups::list(folder, database_id) {
+            Ok(found) => Some(BackupSummary {
+                count: found.len(),
+                latest_made_at: found.first().map(|backup| backup.made_at.clone()),
+                oldest_made_at: found.last().map(|backup| backup.made_at.clone()),
+            }),
+            Err(err) => {
+                log::warn!("could not list the backups in {}: {err}", folder.display());
+                None
+            }
+        }
+    }
+
+    /// Whether the time `a` is after `b`; `None` when either doesn't parse.
+    fn later(a: &str, b: &str) -> Option<bool> {
+        let parse = |text: &str| chrono::DateTime::parse_from_rfc3339(text).ok();
+        Some(parse(a)? > parse(b)?)
     }
 
     /// The chooser's state (FR-012, FR-020, FR-021). The selected row is the

@@ -1,0 +1,429 @@
+/* The tuner's page. Colours come from the app's tokens.css. */
+:root {
+  color-scheme: light dark;
+  --label-w: 9.5rem;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--vellum);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+  padding: 20px 20px 48px;
+}
+h1 {
+  font: 800 2rem/1 var(--font-display);
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+h2 {
+  font: 700 1.25rem/1.1 var(--font-display);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+code {
+  font: 0.9em var(--font-mono);
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin: 0 auto 20px;
+  max-width: 1500px;
+}
+.head p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  max-width: 70ch;
+}
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+.tl-body:focus-visible {
+  outline: 2px solid var(--niter);
+  outline-offset: 2px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  background: var(--sheet);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.seg button + button {
+  border-left: 1px solid var(--rule-strong);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.app {
+  display: grid;
+  gap: 20px;
+  max-width: 1500px;
+  margin-inline: auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "stage" "play" "controls";
+}
+@media (min-width: 780px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-areas: "stage controls" "play controls";
+  }
+}
+@media (min-width: 1240px) {
+  .app {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) 340px;
+    grid-template-areas: "stage play controls";
+  }
+}
+.stage {
+  grid-area: stage;
+  aspect-ratio: 580 / 756;
+  max-width: 100%;
+  align-self: start;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: var(--vellum);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+  background-size:
+    100px 100px,
+    100px 100px,
+    20px 20px,
+    20px 20px;
+}
+.stage svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (min-width: 780px) and (max-width: 1239px) {
+  .stage {
+    max-height: 78vh;
+    justify-self: center;
+    width: auto;
+    height: 78vh;
+  }
+}
+.play {
+  grid-area: play;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+.btn {
+  border: 1px solid var(--rule-strong);
+  background: var(--sheet);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.btn.primary {
+  background: var(--ink);
+  color: var(--on-ink);
+  border-color: var(--ink);
+  min-width: 6.5rem;
+}
+.clock {
+  font: 500 15px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  margin-right: auto;
+}
+.clock b {
+  color: var(--ink);
+  font-weight: 700;
+}
+#scrub {
+  width: 100%;
+  accent-color: var(--niter);
+  margin: 0;
+}
+.tl {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--sheet);
+  padding: 12px 14px 8px;
+}
+.tl-body {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  cursor: ew-resize;
+  touch-action: none;
+  border-radius: 4px;
+}
+.tl-row {
+  display: grid;
+  grid-template-columns: var(--label-w) minmax(0, 1fr);
+  align-items: center;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.tl-track {
+  position: relative;
+  height: 16px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--rule) 0 1px,
+    transparent 1px var(--tick-gap, 10%)
+  );
+}
+.bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  min-width: 2px;
+}
+.bar.orn,
+.bar.solid {
+  background: var(--bronze);
+}
+.bar.solid {
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+.bar.line {
+  background: var(--rule-strong);
+}
+.bar.ink {
+  background: var(--ink-2);
+}
+.bar.niter {
+  background: var(--niter);
+}
+.bar.fill {
+  background: color-mix(in srgb, var(--bronze) 40%, transparent);
+}
+.bar.eased {
+  background: linear-gradient(
+    90deg,
+    var(--c) 0 var(--done),
+    color-mix(in srgb, var(--c) 30%, transparent) var(--done)
+  );
+}
+.bar.eased.orn {
+  --c: var(--bronze);
+}
+.bar.eased.line {
+  --c: var(--rule-strong);
+}
+.tl-axis {
+  display: grid;
+  grid-template-columns: var(--label-w) minmax(0, 1fr);
+  font: 12px var(--font-mono);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.ticks {
+  position: relative;
+  height: 16px;
+}
+.ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+.playhead {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--niter);
+  pointer-events: none;
+  left: calc(var(--label-w) + (100% - var(--label-w)) * var(--p, 0) - 1px);
+}
+.tl-note {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin: 8px 0 0;
+}
+.presets {
+  display: grid;
+  gap: 8px;
+}
+.preset {
+  text-align: left;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  display: grid;
+  gap: 1px;
+}
+.preset b {
+  font-size: 14.5px;
+}
+.preset span {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.preset[aria-pressed="true"] {
+  border-color: var(--niter);
+  box-shadow: 0 0 0 1px var(--niter);
+  background: var(--niter-wash);
+}
+.out {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--sheet);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+.out-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.out pre {
+  margin: 0;
+  font: 13.5px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.out .empty,
+.saved {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+.saved:empty {
+  display: none;
+}
+.controls {
+  grid-area: controls;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+@media (min-width: 780px) {
+  .controls {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+}
+fieldset {
+  border: 0;
+  border-top: 1px solid var(--ink);
+  margin: 0;
+  padding: 8px 0 0;
+  display: grid;
+  gap: 12px;
+}
+legend {
+  font: 700 1.2rem/1 var(--font-display);
+  letter-spacing: 0.02em;
+  padding: 0 8px 0 0;
+}
+.knob {
+  display: grid;
+  gap: 3px;
+}
+.knob-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.knob-head label {
+  font-weight: 600;
+  font-size: 14px;
+}
+.knob-head output {
+  font: 600 14px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.knob.changed .knob-head output {
+  color: var(--niter);
+}
+.knob input[type="range"] {
+  width: 100%;
+  accent-color: var(--niter);
+  margin: 0;
+}
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.switch input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--niter);
+}
+.knob select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+.knob.changed select {
+  border-color: var(--niter);
+}
+.knob-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+}
+.knob-foot code {
+  font: 12px var(--font-mono);
+  color: var(--ink-3);
+}
+.hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  flex-basis: 100%;
+}

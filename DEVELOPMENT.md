@@ -56,6 +56,16 @@ logs you out of `gh` and `claude`.
 `CONTAINER_ENGINE=docker` works too. Docker has no `keep-id`, though, so files
 end up owned by uid 1000, which is fine if that's your uid.
 
+On macOS the container runs in podman's Linux VM, which can't see XQuartz's
+Unix socket, so `--gui` connects to XQuartz over TCP instead and renders in
+software, with a 24 px pointer (XQuartz gives clients no size, so GTK would pick
+48 px on a 4K screen). One-time setup: install XQuartz, tick "Allow connections from
+network clients" in its Settings > Security (or `defaults write
+org.xquartz.X11 nolisten_tcp -bool false`), quit and reopen it, and run
+`xhost +localhost` (the VM's connection arrives as a local one, so this admits
+only your own machine). The script checks that XQuartz is listening and says
+what to change if it isn't.
+
 The container has none of the host's app data, so nothing run inside it can
 reach your real collection (see [Test isolation](#test-isolation)).
 
@@ -374,6 +384,58 @@ databases. Specs read the seed's passphrase from
 `HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
 `HOPLODEX_E2E_DOCUMENTS`.
 
+## Tuning the chooser's drawing
+
+The database chooser's catalogue plate (the hoplon with its owl, the Greek
+key and the firearm drawings) draws itself in stroke by stroke, then cycles
+entry 2 through the firearm drawings until a database is opened. Every time
+it uses, and how one drawing gives way to the next (`CYCLE_STYLE`), is in
+`src/features/databases/plate/timing.ts`, one value per line. The app builds
+in whatever that file holds.
+
+To judge a change, watch it in the tuner rather than editing numbers blind:
+
+```bash
+npm run tuner         # http://localhost:1430: sliders, a scrubbable timeline, presets, Save
+npm run tuner:build   # -> dist-tuner/plate-tuner.html, one file to open anywhere (no Save)
+```
+
+The tuner plays the app's own plate and animation code. Paused, it shows the
+moment on the timeline with the new values; playing, it starts again when
+you let go of a slider. "The whole loop" stretches the timeline over the
+cycle, and the presets under "Changing drawings" each play one way of
+changing drawings from just before the first change. **Save to timing.ts**
+(served by `npm run tuner` only) writes what you changed into the file, and
+the page reloads with them as its values; the built page lists your changes
+to copy into it instead. A link can open it on a preset and paused at a
+moment: `?preset=2&view=cycle&at=8.5`.
+
+Inside the [development container](#development-container-linux-recommended)
+the tuner's server can't be reached from your browser, so there use
+`npm run tuner:build` and open `dist-tuner/plate-tuner.html` from your
+checkout.
+
+Entry 2's drawings, their captions and their real lengths (which size the
+scale bars) are in `plate/entries.ts`; the artwork is `plate/PlateArt.tsx`.
+The app shows the drawings in an order shuffled once at startup, and the
+draw-in draws whichever comes first; each keeps its catalogue number (2 to
+5, from its place in `PLATE_ENTRIES`). The tuner always plays them in
+`PLATE_ENTRIES`' order, starting with the rifle.
+
+## Program icon
+
+`src-tauri/icons/` is generated from `tools/icons/AppIcon.tsx`, which draws
+the chooser plate's shield and owl on a blued-steel tile. After changing
+either, regenerate every size (16 to 1024 px), `icon.ico` and `icon.icns`:
+
+```bash
+npm run icons
+```
+
+At 32 px and below the icon has its own drawing, a solid owl on a plain rim,
+as the top bar's mark does (`src/features/app/BrandMark.tsx`).
+`src-tauri/icons/source/` keeps the two drawings as SVG, for reference.
+
 ## Human testing
 
 To poke at the app by hand (look and feel, workflows) against a realistic
@@ -542,8 +604,11 @@ before a release:
   make their source available.
 - **Assets that aren't packages**: the type drawings
   (`src/features/browse/typeDrawings.ts`), the icon set
-  (`src/components/Icon.tsx`) and `src-tauri/icons/` are the project's own
-  work, under the project license. Record the source and license of any
+  (`src/components/Icon.tsx`), the chooser's catalogue plate
+  (`src/features/databases/plate/`), and the program icon (`tools/icons/`,
+  `src-tauri/icons/`) are the project's own work, under the project license.
+  The plate's owl is drawn after the owl on the Athenian tetradrachm, a
+  5th-century BC coin whose design is in the public domain. Record the source and license of any
   third-party artwork, font or data file before adding it.
 
 Compatible doesn't mean there's nothing to do. MIT, BSD, Apache-2.0, ISC and

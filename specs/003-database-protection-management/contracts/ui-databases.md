@@ -68,7 +68,26 @@ A full-window screen that replaces the app shell whenever no database is
 open: at launch, after a lock or a close, and after a take-over. No
 collection data, top-bar tabs or counts are shown.
 
-- **Header**: the HoploDex brand. The theme toggle stays available.
+- **Header**: the HoploDex brand: the name after its mark, a hoplon (the
+  round shield the name comes from) with Athena's owl as its device, solid
+  at that size (`BrandMark`, issue #22). The same mark heads the collection's
+  top bar, the closing screen and the fault screen. It is decorative
+  (`aria-hidden`): the name is the brand's accessible text. The theme toggle
+  stays available.
+- **Catalogue plate** (issue #23, `src/features/databases/plate/`): to the
+  right of the list, an engraved plate of the hoplon with its owl and a
+  firearm drawing, filling the height below the top bar and staying in view
+  while a long list scrolls. When the chooser opens it is drawn in stroke by
+  stroke, then cycles through the firearm drawings, in an order shuffled at
+  launch, until a database is opened; the timing is `plate/timing.ts`'s.
+  With `prefers-reduced-motion: reduce` it shows finished and stays still.
+  It is decorative: `aria-hidden`, not focusable, and ignored by the pointer
+  except the owl's beak, which makes the owl blink. It is gone once a
+  database opens, with the rest of the chooser, and below a 960 px window
+  width, where the list is centred instead.
+- **Program icon** (issue #22): the plate's hoplon and owl in bronze on a
+  blued-steel tile, with the owl a silhouette at 32 px and below. It is made
+  from `tools/icons/AppIcon.tsx` with `npm run icons`, never drawn by hand.
 - **Notices** (from `get_chooser_state` and `session:closed`), above the list,
   one line each, dismissible:
   - locked: "HoploDex locked <name>." (for `lockedByUser`, `idle`, `sleep`,
@@ -110,6 +129,17 @@ collection data, top-bar tabs or counts are shown.
     location" and offer **Locate…** (file picker) and **Remove from list**.
   - Every row offers **Remove from list** in its overflow, with the note "The
     database file is not deleted." (FR-012, US2-5).
+- **Selected row, what this computer knows** (FR-040): below the name and
+  folder, before the passphrase or **Open**, a short list ruled like an
+  index card and lined up with the name. It is left out for a file just
+  picked with **Open another database file…**.
+  - "Last opened here": "Today at 9:12 AM", "Yesterday at 5:40 PM" or
+    "September 12 at 8:05 PM" (the year only when it isn't this year). When
+    `changedSinceLeftAt` is set, a second line in niter: "Changed on
+    September 27, after it was last closed here." ("Changed today, …",
+    "Changed yesterday, …").
+  - "Last backup", when `backups` is known: the latest in the same form, or
+    "None"; then "5 kept, the oldest from September 14", or "1 kept".
 - **Selected row, passphrase not saved**: an inline form opens in the row, a
   `PassphraseField` labelled "Passphrase for <name>", focused, with **Open**
   (primary). Below it, a `Checkbox` **Remember on this computer** (off),

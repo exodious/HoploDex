@@ -27,6 +27,20 @@ export interface RecentDatabase {
   available: boolean;
   /** FR-017, on this computer. */
   passphraseSaved: boolean;
+  /** Its backups, by file name (FR-040); `null` when this computer doesn't
+   * know where they are, can't read the folder, or a chosen folder isn't
+   * there (a missing default folder means none yet). */
+  backups: BackupSummary | null;
+  /** ISO-8601 UTC: the file changed at this time, after this computer last
+   * closed it (FR-040). */
+  changedSinceLeftAt: string | null;
+}
+
+export interface BackupSummary {
+  count: number;
+  /** Local date and time, without a zone. `null` when there are none. */
+  latestMadeAt: string | null;
+  oldestMadeAt: string | null;
 }
 
 export type ChooserNotice =

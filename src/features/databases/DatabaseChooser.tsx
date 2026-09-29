@@ -10,6 +10,7 @@ import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
 import * as databasesService from "./databasesService";
 import { databaseNameOf } from "./paths";
 import { RecentDatabaseRow } from "./RecentDatabaseRow";
+import { CataloguePlate } from "./plate/CataloguePlate";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import type { ChooserRow, OpenElsewhere } from "./RecentDatabaseRow";
 import { TakeOverConfirm } from "./TakeOverConfirm";
@@ -228,7 +229,13 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
 
   const rows = useMemo<ChooserRow[]>(() => {
     const known: ChooserRow[] = (state?.recent ?? []).map(
-      ({ path, name, available, passphraseSaved }) => ({ path, name, available, passphraseSaved }),
+      ({ path, name, available, passphraseSaved, lastOpenedAt, backups, changedSinceLeftAt }) => ({
+        path,
+        name,
+        available,
+        passphraseSaved,
+        details: { lastOpenedAt, backups, changedSinceLeftAt },
+      }),
     );
     return [...picked.filter((row) => !known.some((k) => k.path === row.path)), ...known];
   }, [picked, state]);
@@ -389,139 +396,152 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
         </div>
       </header>
 
-      <main className="hd-chooser__main">
-        {loadError && (
-          <p className="hd-banner hd-banner--error" role="alert">
-            {loadError}
-          </p>
-        )}
-        <div className="hd-chooser__notices" aria-live="polite">
-          {notices.map((notice) => (
-            <div key={notice.id} className="hd-banner hd-db-note hd-chooser__notice">
-              <p>{notice.text}</p>
-              {notice.changeLocation && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    session.requestSettings();
-                    setNotices((current) =>
-                      current.map((n) =>
-                        n.id === notice.id
-                          ? {
-                              ...n,
-                              text: `Its backup settings will open when you open “${n.name}”.`,
-                              changeLocation: false,
-                            }
-                          : n,
-                      ),
-                    );
-                  }}
+      <div className="hd-chooser__stage">
+        <div className="hd-chooser__stage-inner">
+          <main className="hd-chooser__main">
+            {loadError && (
+              <p className="hd-banner hd-banner--error" role="alert">
+                {loadError}
+              </p>
+            )}
+            <div className="hd-chooser__notices" aria-live="polite">
+              {notices.map((notice) => (
+                <div key={notice.id} className="hd-banner hd-db-note hd-chooser__notice">
+                  <p>{notice.text}</p>
+                  {notice.changeLocation && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        session.requestSettings();
+                        setNotices((current) =>
+                          current.map((n) =>
+                            n.id === notice.id
+                              ? {
+                                  ...n,
+                                  text: `Its backup settings will open when you open “${n.name}”.`,
+                                  changeLocation: false,
+                                }
+                              : n,
+                          ),
+                        );
+                      }}
+                    >
+                      Change backup location…
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="close"
+                    aria-label="Dismiss"
+                    onClick={() =>
+                      setNotices((current) => current.filter((n) => n.id !== notice.id))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            {state && (
+              <>
+                <h1 className="hd-chooser__title">
+                  {firstRun ? "Welcome to HoploDex" : "Open a database"}
+                </h1>
+                {firstRun ? (
+                  <p className="hd-chooser__welcome">{WELCOME}</p>
+                ) : (
+                  <ul className="hd-chooser__list" aria-label="Recent databases">
+                    {rows.map((row) => {
+                      const failed = failure?.path === row.path ? failure : null;
+                      return (
+                        <RecentDatabaseRow
+                          key={row.path}
+                          entry={row}
+                          selected={row.path === selected}
+                          disabled={opening !== null && opening !== row.path}
+                          opening={opening === row.path}
+                          error={failed?.kind === "message" ? failed.message : undefined}
+                          unavailableNote={
+                            failed?.kind === "notFound"
+                              ? `“${row.name}” is no longer at this location.`
+                              : undefined
+                          }
+                          elsewhere={failed?.kind === "elsewhere" ? failed.elsewhere : undefined}
+                          savedFailed={savedFailed.has(row.path)}
+                          keyringAvailable={state.keyringAvailable}
+                          onSelect={() => select(row.path)}
+                          onOpen={(passphrase, remember) =>
+                            void openRow(row, passphrase, { remember })
+                          }
+                          onRemove={() => void removeRow(row)}
+                          onLocate={() => void locateRow(row)}
+                          onGoBack={() => setFailure(null)}
+                          onTakeOver={() =>
+                            failed?.kind === "elsewhere" &&
+                            setTakeOver({ row, machineName: failed.elsewhere.machineName })
+                          }
+                          onRestore={
+                            failed?.kind === "message" && failed.restore
+                              ? () => setRestoring(row)
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </ul>
+                )}
+                <div
+                  className={
+                    firstRun
+                      ? "hd-chooser__actions hd-chooser__actions--large"
+                      : "hd-chooser__actions"
+                  }
                 >
-                  Change backup location…
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="close"
-                aria-label="Dismiss"
-                onClick={() => setNotices((current) => current.filter((n) => n.id !== notice.id))}
-              />
-            </div>
-          ))}
+                  <Button
+                    variant={firstRun ? "primary" : "secondary"}
+                    icon="plus"
+                    className={actionClass}
+                    disabled={opening !== null}
+                    onClick={() => setCreating(true)}
+                  >
+                    Create a new database…
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    icon="folder"
+                    className={actionClass}
+                    disabled={opening !== null}
+                    onClick={() => void openAnotherFile()}
+                  >
+                    Open another database file…
+                  </Button>
+                </div>
+                <CreateDatabaseDialog
+                  open={creating}
+                  onOpenChange={setCreating}
+                  suggested={state.suggested}
+                  onCreate={session.createDatabase}
+                />
+                {restoring && (
+                  <RestoreBackupDialog
+                    open
+                    onOpenChange={(open) => !open && setRestoring(null)}
+                    name={restoring.name}
+                    databasePath={restoring.path}
+                  />
+                )}
+                <TakeOverConfirm
+                  target={
+                    takeOver && { name: takeOver.row.name, machineName: takeOver.machineName }
+                  }
+                  onCancel={() => setTakeOver(null)}
+                  onConfirm={confirmTakeOver}
+                />
+              </>
+            )}
+          </main>
+          <CataloguePlate className="hd-chooser__plate" />
         </div>
-        {state && (
-          <>
-            <h1 className="hd-chooser__title">
-              {firstRun ? "Welcome to HoploDex" : "Open a database"}
-            </h1>
-            {firstRun ? (
-              <p className="hd-chooser__welcome">{WELCOME}</p>
-            ) : (
-              <ul className="hd-chooser__list" aria-label="Recent databases">
-                {rows.map((row) => {
-                  const failed = failure?.path === row.path ? failure : null;
-                  return (
-                    <RecentDatabaseRow
-                      key={row.path}
-                      entry={row}
-                      selected={row.path === selected}
-                      disabled={opening !== null && opening !== row.path}
-                      opening={opening === row.path}
-                      error={failed?.kind === "message" ? failed.message : undefined}
-                      unavailableNote={
-                        failed?.kind === "notFound"
-                          ? `“${row.name}” is no longer at this location.`
-                          : undefined
-                      }
-                      elsewhere={failed?.kind === "elsewhere" ? failed.elsewhere : undefined}
-                      savedFailed={savedFailed.has(row.path)}
-                      keyringAvailable={state.keyringAvailable}
-                      onSelect={() => select(row.path)}
-                      onOpen={(passphrase, remember) => void openRow(row, passphrase, { remember })}
-                      onRemove={() => void removeRow(row)}
-                      onLocate={() => void locateRow(row)}
-                      onGoBack={() => setFailure(null)}
-                      onTakeOver={() =>
-                        failed?.kind === "elsewhere" &&
-                        setTakeOver({ row, machineName: failed.elsewhere.machineName })
-                      }
-                      onRestore={
-                        failed?.kind === "message" && failed.restore
-                          ? () => setRestoring(row)
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-              </ul>
-            )}
-            <div
-              className={
-                firstRun ? "hd-chooser__actions hd-chooser__actions--large" : "hd-chooser__actions"
-              }
-            >
-              <Button
-                variant={firstRun ? "primary" : "secondary"}
-                icon="plus"
-                className={actionClass}
-                disabled={opening !== null}
-                onClick={() => setCreating(true)}
-              >
-                Create a new database…
-              </Button>
-              <Button
-                variant="secondary"
-                icon="folder"
-                className={actionClass}
-                disabled={opening !== null}
-                onClick={() => void openAnotherFile()}
-              >
-                Open another database file…
-              </Button>
-            </div>
-            <CreateDatabaseDialog
-              open={creating}
-              onOpenChange={setCreating}
-              suggested={state.suggested}
-              onCreate={session.createDatabase}
-            />
-            {restoring && (
-              <RestoreBackupDialog
-                open
-                onOpenChange={(open) => !open && setRestoring(null)}
-                name={restoring.name}
-                databasePath={restoring.path}
-              />
-            )}
-            <TakeOverConfirm
-              target={takeOver && { name: takeOver.row.name, machineName: takeOver.machineName }}
-              onCancel={() => setTakeOver(null)}
-              onConfirm={confirmTakeOver}
-            />
-          </>
-        )}
-      </main>
+      </div>
 
       <p className="hd-sr-only" role="status" aria-live="polite">
         {announcement}

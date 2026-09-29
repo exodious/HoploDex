@@ -15,7 +15,7 @@ export interface TypeDrawingProps {
    * unknown keys fall back to the "other" drawing. */
   typeKey: string;
   className?: string;
-  /** Draws the lines in, once — reserved for the empty-collection state. */
+  /** Draws the lines in, once. */
   animate?: boolean;
   /** Crops the canvas to the drawing's own bounds, so long guns fill a
    * short, wide frame instead of keeping the shared 320×200 box. */

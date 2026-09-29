@@ -90,6 +90,29 @@ async function backToTheDefault(choice: string) {
   await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
 }
 
+/** What the chooser row `row` says under `label` (FR-040): the moment, and
+ * the note after it, or `null` when the row doesn't show that fact. */
+async function chooserFact(
+  label: string,
+  row = ".hd-db-row--selected",
+): Promise<{ moment: string; note: string } | null> {
+  return browser.execute(
+    (row: string, label: string) => {
+      const term = [...document.querySelectorAll(`${row} .hd-db-row__details dt`)].find(
+        (dt) => dt.textContent?.trim() === label,
+      );
+      const detail = term?.nextElementSibling;
+      if (!detail) return null;
+      return {
+        moment: detail.firstChild?.textContent?.trim() ?? "",
+        note: detail.querySelector(".hd-db-row__fact-note")?.textContent?.trim() ?? "",
+      };
+    },
+    row,
+    label,
+  );
+}
+
 async function listed(make: string): Promise<boolean> {
   await goTo("Collection");
   return (await listedNames()).some((name) => name.includes(make));
@@ -109,6 +132,12 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     await closeDatabase();
 
     expect(backupFiles()).toHaveLength(1);
+    // The chooser, back on the database just closed, says so (FR-040).
+    const opened = await chooserFact("Last opened here");
+    expect(opened?.moment).toMatch(/^Today at /);
+    const backedUp = await chooserFact("Last backup");
+    expect(backedUp?.moment).toMatch(/^Today at /);
+    expect(backedUp?.note).toBe("1 kept");
   });
 
   it("makes no second backup the same day", async () => {
@@ -205,5 +234,19 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(backupFiles()).toEqual(made);
     expect(backupFiles(elsewhere)).toEqual([]);
     expect(await restorable()).toBe(made.length);
+  });
+
+  it("shows what it knows of the selected database only (FR-040)", async () => {
+    await closeDatabase();
+    await createDatabase({ folder: elsewhere, name: "Other" });
+    await closeDatabase();
+
+    // The one just closed is selected; "Kept", with its backups, isn't.
+    await expect($(".hd-db-row--selected .hd-db-row__name")).toHaveText("Other");
+    expect(await chooserFact("Last opened here")).not.toBeNull();
+    const kept = ".hd-db-row:not(.hd-db-row--selected)";
+    await expect($(`${kept} .hd-db-row__name`)).toHaveText("Kept");
+    expect(await chooserFact("Last opened here", kept)).toBeNull();
+    expect(await chooserFact("Last backup", kept)).toBeNull();
   });
 });

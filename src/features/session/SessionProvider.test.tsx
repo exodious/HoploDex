@@ -31,6 +31,8 @@ const chooser: ChooserState = {
       lastOpenedAt: "2026-09-25T10:00:00Z",
       available: true,
       passphraseSaved: false,
+      backups: null,
+      changedSinceLeftAt: null,
     },
   ],
   selectedPath: PATH,

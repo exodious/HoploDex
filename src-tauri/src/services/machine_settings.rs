@@ -1,8 +1,8 @@
 //! `machine.json`: what this computer (this OS account) keeps about
 //! databases, and nothing more (FR-013, research.md §6, §11; data-model.md
-//! "Machine-local"). It holds paths and names only, never collection data or
-//! secrets. The config directory is always passed in, so tests and tools use
-//! throwaway ones.
+//! "Machine-local"). It holds paths, names and times only, never collection
+//! data or secrets. The config directory is always passed in, so tests and
+//! tools use throwaway ones.
 
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -45,6 +45,25 @@ pub struct RecentEntry {
     pub backup_folder: Option<PathBuf>,
     /// FR-017. The passphrase itself is only ever in the keyring.
     pub passphrase_saved: bool,
+    /// The file's modification time, UTC ISO-8601 to the millisecond, when
+    /// this computer last closed it (FR-040). `None` while it is open here
+    /// or after it ended without a close (a crash), after a close that found
+    /// it out of reach or taken over, and after the entry is re-located:
+    /// then nothing is said about changes made elsewhere.
+    #[serde(default)]
+    pub left_modified_at: Option<String>,
+}
+
+/// The modification time of the file at `path`, as `left_modified_at`
+/// records it, or `None` when it can't be read. Only `stat`s the file, so
+/// it is safe on a database this process holds open.
+pub fn modified_at(path: &Path) -> Option<String> {
+    let modified = fs::metadata(path).and_then(|meta| meta.modified()).ok()?;
+    Some(
+        chrono::DateTime::<chrono::Utc>::from(modified)
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string(),
+    )
 }
 
 /// A backup that was being written when HoploDex stopped (research.md §7).
@@ -206,6 +225,7 @@ impl MachineSettings {
                     database_id: Some(database_id.to_owned()),
                     backup_folder: Some(backup_folder.to_owned()),
                     passphrase_saved,
+                    left_modified_at: None,
                 },
             );
         });
@@ -218,6 +238,17 @@ impl MachineSettings {
         self.update(|file| {
             if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
                 entry.backup_folder = Some(backup_folder.to_owned());
+            }
+        });
+    }
+
+    /// Records the modification time of the file at `path` as this
+    /// computer leaves it, at a close (FR-040). Nothing happens when `path`
+    /// isn't in the list.
+    pub fn set_left_modified(&self, path: &Path, left_modified_at: Option<String>) {
+        self.update(|file| {
+            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
+                entry.left_modified_at = left_modified_at;
             }
         });
     }
@@ -263,9 +294,9 @@ impl MachineSettings {
     }
 
     /// Points the recent entry for `path` at `new_path`, where the user found
-    /// the file, keeping everything else about it (FR-012). An entry already
-    /// at `new_path` is merged away, since entries are identified by path.
-    /// `None` when `path` isn't in the list.
+    /// the file, keeping everything else about it but the time it was left
+    /// (FR-012, FR-040). An entry already at `new_path` is merged away, since
+    /// entries are identified by path. `None` when `path` isn't in the list.
     pub fn locate_recent(&self, path: &Path, new_path: &Path) -> Option<RecentEntry> {
         let mut located = None;
         self.update(|file| {
@@ -275,6 +306,8 @@ impl MachineSettings {
             };
             let mut entry = file.recent_databases.remove(index);
             entry.path = new_path.to_owned();
+            // The file found may be a copy, with a time of its own.
+            entry.left_modified_at = None;
             file.recent_databases.retain(|other| other.path != new_path);
             let index = index.min(file.recent_databases.len());
             file.recent_databases.insert(index, entry.clone());

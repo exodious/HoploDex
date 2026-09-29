@@ -10,7 +10,8 @@ import {
   placeFocus,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
-import { formatDateTime } from "../../lib/dates";
+import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
+import type { BackupSummary } from "./types";
 import { folderOf, middleTruncate } from "./paths";
 import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 
@@ -21,6 +22,16 @@ export interface ChooserRow {
   available: boolean;
   /** Its passphrase is saved on this computer (FR-017). */
   passphraseSaved: boolean;
+  /** What this computer knows about it, for a database in the recent list
+   * (FR-040); a file just picked has none. */
+  details?: RowDetails;
+}
+
+export interface RowDetails {
+  /** ISO-8601 UTC. */
+  lastOpenedAt: string;
+  backups: BackupSummary | null;
+  changedSinceLeftAt: string | null;
 }
 
 /** Another computer's open marker, from `DATABASE_OPEN_ELSEWHERE`. */
@@ -60,9 +71,10 @@ export interface RecentDatabaseRowProps {
   onTakeOver: () => void;
 }
 
-/** One database in the chooser: its name and folder and, when selected, its
- * passphrase and **Open** (only **Open** when the passphrase is saved), or
- * what stopped it opening (contracts/ui-databases.md §1). */
+/** One database in the chooser: its name and folder and, when selected, what
+ * this computer knows about it, its passphrase and **Open** (only **Open**
+ * when the passphrase is saved), or what stopped it opening
+ * (contracts/ui-databases.md §1). */
 export function RecentDatabaseRow({
   entry,
   selected,
@@ -202,6 +214,7 @@ export function RecentDatabaseRow({
         </div>
       ) : (
         <>
+          {entry.details && <Details details={entry.details} />}
           <form
             className={
               usesSaved ? "hd-db-row__unlock hd-db-row__unlock--saved" : "hd-db-row__unlock"
@@ -295,5 +308,47 @@ function Identity({
         )}
       </span>
     </>
+  );
+}
+
+/** "on September 27", or "today" and "yesterday" alone. */
+function onDay(moment: string): string {
+  const day = formatRecentDay(moment);
+  return day === "today" || day === "yesterday" ? day : `on ${day}`;
+}
+
+/** What this computer knows about the selected database before it is
+ * unlocked (FR-040): its last open here, whether the file changed after it
+ * was last closed here, and its backups. Nothing from inside it. */
+function Details({ details }: { details: RowDetails }) {
+  const { lastOpenedAt, backups, changedSinceLeftAt } = details;
+  return (
+    <dl className="hd-db-row__details">
+      <div className="hd-db-row__fact">
+        <dt>Last opened here</dt>
+        <dd>
+          {formatRecentMoment(lastOpenedAt)}
+          {changedSinceLeftAt && (
+            <span className="hd-db-row__changed">
+              Changed {onDay(changedSinceLeftAt)}, after it was last closed here.
+            </span>
+          )}
+        </dd>
+      </div>
+      {backups && (
+        <div className="hd-db-row__fact">
+          <dt>Last backup</dt>
+          <dd>
+            {backups.latestMadeAt ? formatRecentMoment(backups.latestMadeAt) : "None"}
+            {backups.count === 1 && <span className="hd-db-row__fact-note">1 kept</span>}
+            {backups.count > 1 && backups.oldestMadeAt && (
+              <span className="hd-db-row__fact-note">
+                {backups.count} kept, the oldest from {formatRecentDay(backups.oldestMadeAt)}
+              </span>
+            )}
+          </dd>
+        </div>
+      )}
+    </dl>
   );
 }

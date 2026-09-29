@@ -4,6 +4,7 @@ import {
   requestQuit,
   selectChooserRow,
   submitPassphrase,
+  settleChooserPlate,
   unlock,
   waitForChooser,
 } from "../support/ui";
@@ -96,6 +97,7 @@ describe("Screenshots: the chooser", () => {
     it(`chooser and create database (${suffix})`, async () => {
       await waitForChooser();
       await chooseTheme(theme);
+      await settleChooserPlate();
       await shot(`14-chooser-${suffix}`);
 
       await openDialog("Create a new database…");
@@ -110,6 +112,7 @@ describe("Screenshots: the chooser", () => {
       await selectChooserRow("Shared collection");
       await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
       await $("button=Take over…").waitForExist();
+      await settleChooserPlate();
       await shot(`17-open-elsewhere-${suffix}`);
       await clickButton("Go back");
       await selectChooserRow("Main collection");
