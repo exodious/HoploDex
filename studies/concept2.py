@@ -18,7 +18,7 @@ HERE = pathlib.Path(__file__).parent
 # settings it gives you back here. For a one-off build, any of these can also
 # be overridden on the command line: python3 gallery.py OWL_GAP=0.4
 
-SPEED = 1.0  # multiplies every time below: 1.5 plays the whole thing half again slower
+SPEED = 0.65  # multiplies every time below: 1.5 plays the whole thing half again slower
 
 # 1. The Greek key draws first, from both ends to the middle.
 KEY_START = 0.0
@@ -27,17 +27,17 @@ KEY_UNIT_TIME = 0.4  # one key unit
 
 # 2. The rifle, once the key is done.
 RIFLE_START = 1.3
-RIFLE_TIME = 1.6  # eased: most of it is drawn in the first half
-BORE_AXIS = True  # the rifle's dashed centreline along its bore; it fades in with the captions
+RIFLE_TIME = 2.1  # eased: most of it is drawn in the first half
+BORE_AXIS = False  # the rifle's dashed centreline along its bore; it fades in with the captions
 
 # 3. The shield's rim. One sweep draws its circles, braid, beads and tongues
 #    together, from 12 o'clock clockwise back to 12.
 RIM_START = 1.3  # when the sweep leaves 12 o'clock
 RIM_TIME = 1.8  # once round
 RIM_EASE = (0, 0, 1, 1)  # the sweep's cubic-bezier: (0, 0, 1, 1) is steady, (.45, 0, .55, 1) eases in and out
-BRAID_LAG = 0.0  # the braid runs this far behind the rim circles (the tongues and beads keep to the braid)
+BRAID_LAG = 0.16  # the braid runs this far behind the rim circles (the tongues and beads keep to the braid)
 TONGUE_TIME = 0.35  # each tongue takes this long, starting as the sweep reaches it
-BEAD_TIME = 0.25  # each bead fades in over this, as the sweep reaches the middle of its eye
+BEAD_TIME = 0.35  # each bead fades in over this, as the sweep reaches the middle of its eye
 SHIELD_FILL_AT = 0.8  # the shield's ground starts fading in once the sweep is this far round,
 SHIELD_FILL_TIME = 0.6  # so the grid shows through until the rim is nearly closed
 
@@ -50,12 +50,12 @@ BEAK_FILL_AFTER = 1.1  # the beak and berry fill once their outlines are drawn
 BEAK_FILL_TIME = 0.5
 WASH_AFTER = 1.4
 WASH_TIME = 0.8
-PUPIL_PAUSE = 0.3  # the beat after the owl's lines finish before its pupils fill
+PUPIL_PAUSE = 0.5  # the beat after the owl's lines finish before its pupils fill
 PUPIL_TIME = 0.4  # how long the pupils take to fill: smaller is quicker
 
 # 5. The captions, scale bars and centreline.
-LABELS_START = 2.6
-LABELS_TIME = 0.6
+LABELS_START = 3.35
+LABELS_TIME = 1.3
 
 # The rim's geometry. These change the drawing, so they stay in Python.
 RIM_LINE_PIECES = 60  # each rim circle is drawn in this many arcs
@@ -405,13 +405,13 @@ if __name__ == "__main__":
     }
     for name, html in pages.items():
         (HERE / f"{name}.html").write_text(html)
-    sizes = [256, 64, 32, 16]
+    sizes = [512, 256, 64, 32, 16]
     rows = ""
     for kind, emblem in (("shield", OWL),):
         rows += '<div class="row">' + "".join(
             f'<div class="bg {bg}">' + "".join(icon(kind, s, emblem) for s in sizes) + "</div>" for bg in ("light", "dark")) + "</div>"
     (HERE / "c2-icons.html").write_text(f"""<!doctype html><html><head><meta charset="utf-8">{ICON_CSS}<style>
-*{{margin:0}}body{{background:#d8dbd5;padding:24px;width:1100px;display:grid;gap:16px}}.row{{display:flex;gap:16px}}
+*{{margin:0}}body{{background:#d8dbd5;padding:24px;width:max-content;display:grid;gap:16px}}.row{{display:flex;flex-wrap:wrap;gap:16px}}
 .bg{{display:flex;align-items:flex-end;gap:24px;padding:20px 24px;border-radius:10px}}.light{{background:#f3f3f1}}.dark{{background:#2a2d31}}
 svg{{display:block}}</style></head><body>{rows}</body></html>""")
     print("ok")

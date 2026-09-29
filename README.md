@@ -1,5 +1,7 @@
 # Branding studies (checkpoint, to be discarded)
 
+**Moved into the app (2026-09-29):** the plate, its animation, the tuner and the icon now live on `main`'s branch `chooser-plate-and-icon`: the timing in `src/features/databases/plate/timing.ts`, the tuner in `tools/plate-tuner/` (`npm run tuner`), the icon in `tools/icons/` (`npm run icons`). Tune there, not here. The knobs below carry the values chosen in the tuner on 2026-09-29.
+
 Throwaway design sketches for issues #22 (program icon) and #23 (startup animation), and for filling the database chooser's empty right side. This orphan branch shares no history with `main`. It holds the sketches as they stood on 2026-09-28 so we can refer back to them, and is meant to be deleted once the real work lands.
 
 `hoplodex-chooser-studies.html` is the self-contained gallery of the current round, with images and fonts embedded. Open it in a browser; its "Replay the animation" button replays the startup draw-in.
