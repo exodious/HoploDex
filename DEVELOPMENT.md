@@ -58,7 +58,8 @@ end up owned by uid 1000, which is fine if that's your uid.
 
 On macOS the container runs in podman's Linux VM, which can't see XQuartz's
 Unix socket, so `--gui` connects to XQuartz over TCP instead and renders in
-software. One-time setup: install XQuartz, tick "Allow connections from
+software, with a 24 px pointer (XQuartz gives clients no size, so GTK would pick
+48 px on a 4K screen). One-time setup: install XQuartz, tick "Allow connections from
 network clients" in its Settings > Security (or `defaults write
 org.xquartz.X11 nolisten_tcp -bool false`), quit and reopen it, and run
 `xhost +localhost` (the VM's connection arrives as a local one, so this admits

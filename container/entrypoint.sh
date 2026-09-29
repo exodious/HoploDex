@@ -7,6 +7,7 @@
 #   `tauri dev` and scripts/human-testing.sh. The keyring lives in the home
 #   volume and is unlocked with a blank password, like the headless-host setup
 #   in DEVELOPMENT.md.
+# - the X pointer size, when HOPLODEX_XCURSOR_SIZE is set (see below).
 # - first-run ownership of the named volumes, and `npm ci` into an empty
 #   node_modules volume.
 set -euo pipefail
@@ -28,6 +29,15 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
   eval "$(printf '\n' | gnome-keyring-daemon --login --daemonize --components=pkcs11,secrets 2>/dev/null)" || true
   eval "$(gnome-keyring-daemon --start --components=pkcs11,secrets 2>/dev/null)" || true
   set +a
+fi
+
+# An X server that sets no Xcursor.size (XQuartz) leaves libXcursor to size the
+# pointer from the screen height, which is enormous on a 4K screen. Xlib merges
+# the file XENVIRONMENT names into the X resources, so this needs no change to
+# the server (an `xrdb -merge` would touch the host's other X apps).
+if [[ -n "${HOPLODEX_XCURSOR_SIZE:-}" ]]; then
+  printf 'Xcursor.size: %s\n' "$HOPLODEX_XCURSOR_SIZE" > "$XDG_RUNTIME_DIR/xresources"
+  export XENVIRONMENT="$XDG_RUNTIME_DIR/xresources"
 fi
 
 # Named volumes can come up root-owned on first use, depending on the engine.

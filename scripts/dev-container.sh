@@ -201,9 +201,12 @@ EOF_XQUARTZ
   fi
   host_alias=host.containers.internal
   [[ "$engine" == docker ]] && host_alias=host.docker.internal
-  # No GPU is passed through the VM, so render in software.
+  # No GPU is passed through the VM, so render in software. XQuartz sets no
+  # Xcursor.size, so GTK sizes the pointer from the screen height (a 4K screen
+  # gets 48 px); the entrypoint turns HOPLODEX_XCURSOR_SIZE into that resource.
   args+=(
     -e "DISPLAY=$host_alias:$display_number"
+    -e HOPLODEX_XCURSOR_SIZE=24
     -e LIBGL_ALWAYS_SOFTWARE=1
     -e WEBKIT_DISABLE_COMPOSITING_MODE=1
   )
