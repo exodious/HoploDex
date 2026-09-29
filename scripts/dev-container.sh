@@ -162,7 +162,7 @@ if [[ $ssh_agent -eq 1 ]]; then
 fi
 # Tokens, only with --gh-token / --anthropic-api-key. Passed by name, so the
 # values stay off the command line.
-for var in "${env_vars[@]}"; do
+for var in ${env_vars[@]+"${env_vars[@]}"}; do
   args+=(-e "$var")
 done
 for var in TERM COLORTERM; do
