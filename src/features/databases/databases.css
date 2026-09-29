@@ -11,15 +11,61 @@
   cursor: default;
 }
 
-.hd-chooser__main {
+/* The chooser sits on the blueprint grid: the list on the left, in line
+   with the brand, and the catalogue plate filling the right. */
+.hd-chooser__stage {
   flex: 1;
-  width: 100%;
-  max-width: 720px;
+  background-color: var(--vellum);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+  background-size:
+    100px 100px,
+    100px 100px,
+    20px 20px,
+    20px 20px;
+  background-position: -1px -1px;
+}
+
+.hd-chooser__stage-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  max-width: var(--page-max);
   margin: 0 auto;
-  padding: var(--space-10) var(--space-8) var(--space-14);
+  padding: 0 var(--space-8);
+}
+
+.hd-chooser__main {
+  flex: 0 1 560px;
+  min-width: 0;
+  padding: var(--space-10) 0 var(--space-14);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+}
+
+/* It stays in view while a long list scrolls. */
+.hd-chooser__plate {
+  flex: 1 1 0;
+  min-width: 0;
+  position: sticky;
+  top: var(--topbar-height);
+  height: calc(100vh - var(--topbar-height));
+}
+
+/* Too narrow for both: the plate goes, and the list is centred as before. */
+@media (max-width: 960px) {
+  .hd-chooser__plate {
+    display: none;
+  }
+
+  .hd-chooser__main {
+    flex-basis: 720px;
+    margin: 0 auto;
+  }
 }
 
 .hd-chooser__title {

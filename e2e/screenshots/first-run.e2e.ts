@@ -1,4 +1,4 @@
-import { $, createDatabase, waitForChooser } from "../support/ui";
+import { $, createDatabase, settleChooserPlate, waitForChooser } from "../support/ui";
 import { chooseTheme, shot } from "../support/screenshots";
 
 /**
@@ -13,6 +13,7 @@ describe("Screenshots: first run", () => {
     it(`first-run chooser (${theme.toLowerCase()})`, async () => {
       await waitForChooser();
       await chooseTheme(theme);
+      await settleChooserPlate();
       await shot(`15-chooser-first-run-${theme.toLowerCase()}`);
     });
   }

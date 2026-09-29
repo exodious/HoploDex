@@ -1,0 +1,198 @@
+/* The chooser's catalogue plate (PlateArt.tsx). Lines keep their weight
+   through each group's scale with --u (1 / the group's scale): strokes are
+   plain, never non-scaling, because with vector-effect: non-scaling-stroke
+   Firefox, WebKit and Safari each dash a line in different units, and the
+   draw-in dashes every line. */
+
+.hd-catalogue {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  --line: var(--plate-line);
+  --orn: var(--bronze);
+}
+
+.hd-catalogue .part {
+  fill: var(--vellum);
+  stroke: var(--line);
+  stroke-width: calc(1.5px * var(--u, 1));
+  stroke-linejoin: round;
+}
+
+.hd-catalogue .open {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: calc(1.5px * var(--u, 1));
+  stroke-linejoin: round;
+}
+
+.hd-catalogue .thin,
+.hd-catalogue .detail {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: calc(1px * var(--u, 1));
+}
+
+.hd-catalogue .orn {
+  fill: none;
+  stroke: var(--orn);
+  stroke-width: calc(1px * var(--u, 1));
+  stroke-linejoin: round;
+}
+
+.hd-catalogue .dot {
+  fill: var(--orn);
+}
+
+.hd-catalogue .ground {
+  fill: var(--vellum);
+}
+
+.hd-catalogue .device .ol {
+  fill: none;
+  stroke: var(--orn);
+  stroke-width: calc(1.5px * var(--u, 1));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hd-catalogue .device .fe {
+  fill: none;
+  stroke: var(--orn);
+  stroke-width: calc(1px * var(--u, 1));
+  stroke-linecap: round;
+}
+
+.hd-catalogue .device .pf,
+.hd-catalogue .device .pfi {
+  fill: var(--orn);
+}
+
+.hd-catalogue .device .paper {
+  fill: var(--vellum);
+}
+
+.hd-catalogue .device .wash {
+  fill: var(--orn);
+  opacity: 0.13;
+}
+
+.hd-catalogue .key {
+  fill: none;
+  stroke: var(--orn);
+  stroke-width: calc(1.25px * var(--u, 1));
+  stroke-linejoin: miter;
+}
+
+.hd-catalogue .axis {
+  fill: none;
+  stroke: var(--niter);
+  stroke-width: calc(1px * var(--u, 1));
+  stroke-dasharray: 18 4 3 4;
+  opacity: 0.7;
+}
+
+.hd-catalogue .sb-fill {
+  fill: var(--ink-2);
+}
+
+.hd-catalogue .sb-empty {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+
+.hd-catalogue .sb {
+  font: 500 12px var(--font-body);
+  fill: var(--ink-2);
+}
+
+.hd-catalogue .no {
+  font: 800 30px var(--font-display);
+  fill: var(--ink);
+}
+
+.hd-catalogue .cap {
+  font: 15px var(--font-body);
+  fill: var(--ink-2);
+}
+
+.hd-catalogue .cap .t {
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+/* Entry 2: only its first drawing shows until the cycle brings in the
+   others. The straightedge shows only while it wipes. */
+.hd-catalogue .layer:not([data-layer="0"]) > * {
+  opacity: 0;
+}
+
+.hd-catalogue .edge {
+  fill: none;
+  stroke: var(--niter);
+  stroke-width: 1.5px;
+  opacity: 0;
+}
+
+/* The draw-in's starting state; animation.ts gives every element its
+   timing. Lines are drawn in with pathLength="1" and a dash offset. The gap
+   is longer than the line and the offset starts a hair past it: otherwise
+   the dash sits at zero length on the line's start, and a round cap paints
+   it as a dot before the line starts drawing. Entry 2's other drawings are
+   dashed too, but drawn, for the cycle to draw them in again. */
+.hd-catalogue--animate .key,
+.hd-catalogue--animate .open,
+.hd-catalogue--animate .thin,
+.hd-catalogue--animate .detail,
+.hd-catalogue--animate .part,
+.hd-catalogue--animate .swept,
+.hd-catalogue--animate .device .ol,
+.hd-catalogue--animate .device .fe {
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1.01;
+}
+
+.hd-catalogue--animate .layer:not([data-layer="0"]) .art * {
+  stroke-dashoffset: 0;
+}
+
+.hd-catalogue--animate .layer[data-layer="0"] .part,
+.hd-catalogue--animate .ground,
+.hd-catalogue--animate .device .paper {
+  fill-opacity: 0;
+}
+
+.hd-catalogue--animate .dot,
+.hd-catalogue--animate .device .pfi,
+.hd-catalogue--animate .device .wash,
+.hd-catalogue--animate .device .pf,
+.hd-catalogue--animate .axis,
+.hd-catalogue--animate text,
+.hd-catalogue--animate rect:not(.clip) {
+  opacity: 0;
+}
+
+@keyframes plate-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes plate-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes plate-fill {
+  to {
+    fill-opacity: 1;
+  }
+}
+
+@keyframes plate-wash {
+  to {
+    opacity: 0.13;
+  }
+}

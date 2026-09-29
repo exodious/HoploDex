@@ -64,6 +64,26 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     await expect($("button=Open another database file…")).toExist();
   });
 
+  it("draws the catalogue plate in, then cycles its firearm drawings (#23)", async () => {
+    // In the app's own engine: the draw-in's CSS animations, and the cycle's
+    // Web Animations, which repeat until a database is opened.
+    const plate = await browser.execute(() => {
+      const svg = document.querySelector(".hd-catalogue");
+      const all = svg?.getAnimations({ subtree: true }) ?? [];
+      const forever = all.filter((a) => a.effect?.getComputedTiming().iterations === Infinity);
+      return {
+        hidden: svg?.getAttribute("aria-hidden"),
+        drawing: all.length - forever.length,
+        cycling: forever.length,
+        drawings: [...(svg?.querySelectorAll(".layer") ?? [])].map((l) => l.getAttribute("data-drawing")),
+      };
+    });
+    expect(plate.hidden).toBe("true");
+    expect(plate.drawing).toBeGreaterThan(500);
+    expect(plate.cycling).toBeGreaterThan(0);
+    expect(plate.drawings).toEqual(["rifle", "handgun", "shotgun", "other"]);
+  });
+
   it("creates a database only with a long enough passphrase and the acknowledgement (FR-003, FR-004)", async () => {
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();

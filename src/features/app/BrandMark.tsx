@@ -1,11 +1,15 @@
-/** A hoplon — the round shield the name comes from — crossed by the same
- * dash-dot axis as the type drawings. */
+import { SolidOwl } from "./SolidOwl";
+
+/** A hoplon — the round shield the name comes from — with Athena's owl as
+ * its device: the program icon's small version (issue #22). */
 export function BrandMark() {
   return (
-    <svg className="hd-brand__mark" viewBox="0 0 28 28" aria-hidden focusable={false}>
-      <circle cx="14" cy="14" r="11.5" />
-      <circle cx="14" cy="14" r="7" />
-      <path d="M1 14h26" className="hd-brand__axis" />
+    <svg className="hd-brand__mark" viewBox="-110 -110 220 220" aria-hidden focusable={false}>
+      <circle r={102} className="hd-brand__rim" />
+      <circle r={84} className="hd-brand__braid" />
+      <g transform="scale(.66)">
+        <SolidOwl fill="currentColor" ground="var(--vellum)" />
+      </g>
     </svg>
   );
 }

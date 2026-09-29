@@ -29,6 +29,12 @@
   --danger: #a8231c;
   --danger-wash: #f8e1de;
   --on-ink: #f9faf7;
+  /* The chooser's catalogue plate: its drawing lines, the bronze of the
+     shield's ornament and owl, and the blueprint grid it sits on. */
+  --plate-line: rgb(79 89 101 / 0.62);
+  --bronze: #9a6a2c;
+  --grid-minor: rgb(35 68 190 / 0.045);
+  --grid-major: rgb(35 68 190 / 0.085);
   --scrim: rgb(16 22 30 / 0.45);
   --shadow-raised: 0 1px 2px rgb(16 22 30 / 0.06), 0 4px 16px -6px rgb(16 22 30 / 0.12);
   --shadow-float: 0 2px 6px rgb(16 22 30 / 0.08), 0 24px 64px -16px rgb(16 22 30 / 0.35);
@@ -93,6 +99,10 @@
     --danger: #ff8f86;
     --danger-wash: #3b1714;
     --on-ink: #0f1419;
+    --plate-line: rgb(168 177 187 / 0.5);
+    --bronze: #d3a45f;
+    --grid-minor: rgb(147 168 255 / 0.035);
+    --grid-major: rgb(147 168 255 / 0.07);
     --scrim: rgb(0 0 0 / 0.6);
     --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px -6px rgb(0 0 0 / 0.5);
     --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);
@@ -118,6 +128,10 @@
   --danger: #ff8f86;
   --danger-wash: #3b1714;
   --on-ink: #0f1419;
+  --plate-line: rgb(168 177 187 / 0.5);
+  --bronze: #d3a45f;
+  --grid-minor: rgb(147 168 255 / 0.035);
+  --grid-major: rgb(147 168 255 / 0.07);
   --scrim: rgb(0 0 0 / 0.6);
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px -6px rgb(0 0 0 / 0.5);
   --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);

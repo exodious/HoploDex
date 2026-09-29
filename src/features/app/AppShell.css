@@ -37,17 +37,23 @@
 }
 
 .hd-brand__mark {
-  width: 26px;
-  height: 26px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
+  width: 30px;
+  height: 30px;
 }
 
-.hd-brand__axis {
-  stroke: var(--niter);
-  stroke-width: 1.1;
-  stroke-dasharray: 5 1.5 1 1.5;
+.hd-brand__rim,
+.hd-brand__braid {
+  fill: none;
+  stroke: currentColor;
+}
+
+.hd-brand__rim {
+  stroke-width: 12;
+}
+
+.hd-brand__braid {
+  stroke-width: 5;
+  stroke-dasharray: 9 7;
 }
 
 .hd-brand__name {

@@ -619,6 +619,20 @@ export async function waitForChooser() {
   await browser.pause(SETTLE_MS);
 }
 
+/** Finishes the chooser plate's draw-in and stops its cycle through the
+ * firearm drawings, so a shot of the chooser is the same every time. */
+export async function settleChooserPlate() {
+  await browser.execute(() => {
+    document.querySelectorAll(".hd-catalogue").forEach((svg) =>
+      svg.getAnimations({ subtree: true }).forEach((animation) => {
+        if (animation.effect?.getComputedTiming().iterations === Infinity) animation.cancel();
+        else animation.finish();
+      }),
+    );
+  });
+  await browser.pause(SETTLE_MS);
+}
+
 /** Waits for an open database's collection. */
 export async function waitForCollection() {
   await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
