@@ -448,7 +448,7 @@ export function PlateArt({ clipId, entries }: { clipId: string; entries: readonl
       <text x={668} y={465} className="cap">
         About 500 BC.
       </text>
-      <Meander x={640} y={492} width={500} u={3.5} />
+      <Meander x={632} y={492} width={518} u={3.5} />
       <Entry2 clipId={clipId} entries={entries} />
     </>
   );
