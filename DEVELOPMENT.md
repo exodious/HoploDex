@@ -56,6 +56,16 @@ logs you out of `gh` and `claude`.
 `CONTAINER_ENGINE=docker` works too. Docker has no `keep-id`, though, so files
 end up owned by uid 1000, which is fine if that's your uid.
 
+On macOS the container runs in podman's Linux VM, which can't see XQuartz's
+Unix socket, so `--gui` connects to XQuartz over TCP instead and renders in
+software, with a 24 px pointer (XQuartz gives clients no size, so GTK would pick
+48 px on a 4K screen). One-time setup: install XQuartz, tick "Allow connections from
+network clients" in its Settings > Security (or `defaults write
+org.xquartz.X11 nolisten_tcp -bool false`), quit and reopen it, and run
+`xhost +localhost` (the VM's connection arrives as a local one, so this admits
+only your own machine). The script checks that XQuartz is listening and says
+what to change if it isn't.
+
 The container has none of the host's app data, so nothing run inside it can
 reach your real collection (see [Test isolation](#test-isolation)).
 
