@@ -65,6 +65,15 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     await expect($("button=Open another database file…")).toExist();
   });
 
+  it("fits the first-run chooser in the window, with no scrollbar", async () => {
+    // The plate is as tall as the window less the top bar; a 1px miss made
+    // the page always scroll.
+    const overflow = await browser.execute(
+      () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
   it("draws the catalogue plate in, then cycles its firearm drawings (#23)", async () => {
     // In the app's own engine: the draw-in's CSS animations, and the cycle's
     // Web Animations, which repeat until a database is opened.

@@ -47,13 +47,15 @@
   gap: var(--space-6);
 }
 
-/* It stays in view while a long list scrolls. */
+/* It stays in view while a long list scrolls. It fills what the top bar
+   leaves, and the bar is its height plus its 1px bottom border: without that
+   pixel the page is 1px taller than the window and always scrolls. */
 .hd-chooser__plate {
   flex: 1 1 0;
   min-width: 0;
   position: sticky;
   top: var(--topbar-height);
-  height: calc(100vh - var(--topbar-height));
+  height: calc(100vh - var(--topbar-height) - 1px);
 }
 
 /* Too narrow for both: the plate goes, and the list is centred as before. */
