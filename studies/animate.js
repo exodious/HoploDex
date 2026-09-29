@@ -63,29 +63,30 @@ const hoplon = (() => {
     // 2. the rifle
     const rifle = `draw ${s(k.RIFLE_TIME)} ${s(k.RIFLE_START)} ${EASE} forwards`;
     set(".dwg-gun .open, .dwg-gun .thin, .dwg-gun .detail, .dwg-gun .cut", rifle);
-    set(".dwg-gun .part", `${rifle}, fillin .9s ${s(k.RIFLE_START + 0.4)} forwards`);
+    set(".dwg-gun .part", `${rifle}, fillin .9s ${s(k.RIFLE_START + 0.4)} linear forwards`);
 
     // 3. the rim: each piece starts as the sweep reaches it
     svg.querySelectorAll("[data-sweep]").forEach(el => {
       const [f0, f1, kind] = el.dataset.sweep.split(" ");
       const lag = kind === "line" ? 0 : k.BRAID_LAG;
       const t0 = sweepTime(k, +f0) + lag;
-      if (kind === "bead") el.style.animation = `fade ${s(k.BEAD_TIME)} ${s(t0)} forwards`;
+      if (kind === "bead") el.style.animation = `fade ${s(k.BEAD_TIME)} ${s(t0)} linear forwards`;
       else if (kind === "tongue") el.style.animation = `draw ${s(k.TONGUE_TIME)} ${s(t0)} linear forwards`;
       else el.style.animation = `draw ${s(sweepTime(k, +f1) - sweepTime(k, +f0))} ${s(t0)} linear forwards`;
     });
-    set(".ground", `fillin ${s(k.SHIELD_FILL_TIME)} ${s(sweepTime(k, k.SHIELD_FILL_AT))} forwards`);
+    set(".ground", `fillin ${s(k.SHIELD_FILL_TIME)} ${s(sweepTime(k, k.SHIELD_FILL_AT))} linear forwards`);
 
     // 4. the owl, after the braid closes: lines, grounds, wash, then pupils
     const owl = owlStart(k);
     set(".device .ol, .device .fe", `draw ${s(k.OWL_LINES_TIME)} ${s(owl)} ${EASE} forwards`);
-    set(".device .paper", `fillin .9s ${s(owl + k.OWL_PAPER_AFTER)} forwards`);
-    set(".device .pfi", `fade ${s(k.BEAK_FILL_TIME)} ${s(owl + k.BEAK_FILL_AFTER)} forwards`);
-    set(".device .wash", `wash ${s(k.WASH_TIME)} ${s(owl + k.WASH_AFTER)} forwards`);
+    set(".device .paper", `fillin .9s ${s(owl + k.OWL_PAPER_AFTER)} linear forwards`);
+    set(".device .pfi", `fade ${s(k.BEAK_FILL_TIME)} ${s(owl + k.BEAK_FILL_AFTER)} linear forwards`);
+    set(".device .wash", `wash ${s(k.WASH_TIME)} ${s(owl + k.WASH_AFTER)} linear forwards`);
+    // the pupils ease in: slow to start, then they open
     set(".device .pf", `fade ${s(k.PUPIL_TIME)} ${s(owl + k.OWL_LINES_TIME + k.PUPIL_PAUSE)} ease-in forwards`);
 
     // 5. captions, scale bars and the rifle's centreline
-    set(".hatch, .axis, text, rect", `fade ${s(k.LABELS_TIME)} ${s(k.LABELS_START)} forwards`);
+    set(".hatch, .axis, text, rect", `fade ${s(k.LABELS_TIME)} ${s(k.LABELS_START)} linear forwards`);
     svg.querySelectorAll(".dwg-gun .axis").forEach(el => { el.style.display = k.BORE_AXIS === false ? "none" : ""; });
   }
 
