@@ -18,7 +18,9 @@
 #                        delete this checkout's node_modules and target volumes
 #                        first; =all also deletes the shared /home/dev volume
 #                        (logins, caches, history). Bind mounts are untouched.
-#   --gui                forward your Wayland/X11 display and /dev/dri
+#   --gui                forward your Wayland/X11 display and /dev/dri. On
+#                        macOS the engine runs in a VM, so this reaches
+#                        XQuartz over TCP instead; see DEVELOPMENT.md.
 #   --git-config[=FILE]  mount your git config read-only (default ~/.gitconfig,
 #                        else ~/.config/git/config)
 #   --ssh-agent          forward your SSH agent socket ($SSH_AUTH_SOCK)
@@ -169,7 +171,43 @@ for var in TERM COLORTERM; do
   [[ -n "${!var:-}" ]] && args+=(-e "$var")
 done
 
-if [[ $gui -eq 1 ]]; then
+if [[ $gui -eq 1 && "$(uname -s)" == Darwin ]]; then
+  # The engine runs containers in a Linux VM, so XQuartz's Unix socket (a
+  # launchd path on the Mac) can't be mounted. Reach it over TCP through the
+  # engine's alias for the host instead. XQuartz must allow network clients,
+  # and xhost must admit localhost, which is how the VM's connection arrives.
+  if [[ -z "${DISPLAY:-}" ]]; then
+    echo "error: --gui needs DISPLAY set; start XQuartz first" >&2
+    exit 1
+  fi
+  display_number="${DISPLAY##*:}"
+  display_number="${display_number%%.*}"
+  if [[ ! "$display_number" =~ ^[0-9]+$ ]]; then
+    echo "error: --gui can't read a display number from DISPLAY=$DISPLAY" >&2
+    exit 1
+  fi
+  x_port=$((6000 + display_number))
+  if ! nc -z localhost "$x_port" >/dev/null 2>&1; then
+    cat >&2 <<EOF_XQUARTZ
+error: nothing is listening on TCP port $x_port, so the container can't reach XQuartz.
+In XQuartz, open Settings > Security and tick "Allow connections from network
+clients" (or run: defaults write org.xquartz.X11 nolisten_tcp -bool false),
+then quit and reopen XQuartz.
+EOF_XQUARTZ
+    exit 1
+  fi
+  if command -v xhost >/dev/null 2>&1 && ! xhost 2>/dev/null | grep -q 'INET:localhost'; then
+    echo "warning: XQuartz may refuse the container; if the window doesn't appear, run: xhost +localhost" >&2
+  fi
+  host_alias=host.containers.internal
+  [[ "$engine" == docker ]] && host_alias=host.docker.internal
+  # No GPU is passed through the VM, so render in software.
+  args+=(
+    -e "DISPLAY=$host_alias:$display_number"
+    -e LIBGL_ALWAYS_SOFTWARE=1
+    -e WEBKIT_DISABLE_COMPOSITING_MODE=1
+  )
+elif [[ $gui -eq 1 ]]; then
   if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
     socket="$WAYLAND_DISPLAY"
     [[ "$socket" == /* ]] || socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$socket"
