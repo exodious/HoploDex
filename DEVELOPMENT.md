@@ -407,6 +407,10 @@ checkout.
 
 Entry 2's drawings, their captions and their real lengths (which size the
 scale bars) are in `plate/entries.ts`; the artwork is `plate/PlateArt.tsx`.
+The app shows the drawings in an order shuffled once at startup, and the
+draw-in draws whichever comes first; each keeps its catalogue number (2 to
+5, from its place in `PLATE_ENTRIES`). The tuner always plays them in
+`PLATE_ENTRIES`' order, starting with the rifle.
 
 ## Program icon
 

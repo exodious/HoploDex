@@ -2,9 +2,15 @@ import { DRAWINGS } from "../../browse/typeDrawings";
 
 /*
  * Entry 2 of the catalogue plate: the firearm drawings it cycles through,
- * in order, each with its caption and its real size for the scale bar. The
- * first is the one the draw-in draws. The drawings are the app's own type
- * drawings (typeDrawings.ts), so they are never retraced here.
+ * each with its caption and its real size for the scale bar. The drawings
+ * are the app's own type drawings (typeDrawings.ts), so they are never
+ * retraced here.
+ *
+ * The app shows them in an order shuffled once at startup
+ * (STARTUP_ENTRIES), so someone who opens a database soon after starting
+ * it still sees each drawing over time; the first in that order is the one
+ * the draw-in draws. Each keeps its own catalogue number, from its place in
+ * PLATE_ENTRIES, whatever the order.
  */
 
 export interface PlateEntry {
@@ -46,15 +52,37 @@ export const PLATE_ENTRIES: PlateEntry[] = [
     lengthMm: 1010,
     barCm: 30,
   },
-  // A .308-class rifle cartridge: 71 mm overall.
+  // A .308-class rifle cartridge: 71 mm overall. The year is the 8 mm
+  // Lebel's, the first military cartridge to pair a drawn brass case and
+  // smokeless powder with a jacketed bullet.
   {
     key: "other",
     title: "Cartridge.",
-    caption: "Brass case, jacketed bullet.",
+    caption: "Brass case, jacketed bullet. About 1886.",
     lengthMm: 71,
     barCm: 2,
   },
 ];
+
+/** An entry's catalogue number, the one beside its caption: its place in
+ * PLATE_ENTRIES, counting on from the hoplon's 1. */
+export function entryNumber(entry: PlateEntry): number {
+  return PLATE_ENTRIES.findIndex((e) => e.key === entry.key) + 2;
+}
+
+/** `items` in a random order (Fisher–Yates), leaving `items` as it was. */
+export function shuffled<T>(items: readonly T[], random: () => number = Math.random): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** The order the app shows entry 2's drawings in, shuffled once each time
+ * it starts. */
+export const STARTUP_ENTRIES: readonly PlateEntry[] = shuffled(PLATE_ENTRIES);
 
 /** Where entry 2's drawings go, in plate pixels: each is scaled to fit this
  * box (never above MAX_SCALE, the rifle's), against its left edge and

@@ -68,6 +68,12 @@
   fill: var(--orn);
 }
 
+/* The one part that takes the pointer: a click on the beak makes the owl
+   blink (animation.ts). The cursor stays as it is. */
+.hd-catalogue .device .beak {
+  pointer-events: auto;
+}
+
 .hd-catalogue .device .paper {
   fill: var(--vellum);
 }

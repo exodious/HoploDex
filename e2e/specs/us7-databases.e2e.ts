@@ -19,6 +19,7 @@ import {
   scratchDocuments,
   selectChooserRow,
   selectedChooserRow,
+  settleChooserPlate,
   submitPassphrase,
   switchDatabase,
   toggle,
@@ -75,13 +76,31 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
         hidden: svg?.getAttribute("aria-hidden"),
         drawing: all.length - forever.length,
         cycling: forever.length,
-        drawings: [...(svg?.querySelectorAll(".layer") ?? [])].map((l) => l.getAttribute("data-drawing")),
+        drawings: [...(svg?.querySelectorAll(".layer") ?? [])].map((l) =>
+          l.getAttribute("data-drawing"),
+        ),
+        numbers: [...(svg?.querySelectorAll(".layer .no") ?? [])].map((n) => n.textContent),
       };
     });
     expect(plate.hidden).toBe("true");
     expect(plate.drawing).toBeGreaterThan(500);
     expect(plate.cycling).toBeGreaterThan(0);
-    expect(plate.drawings).toEqual(["rifle", "handgun", "shotgun", "other"]);
+    // shuffled at startup, each keeping its own number
+    expect([...plate.drawings].sort()).toEqual(["handgun", "other", "rifle", "shotgun"]);
+    expect(plate.numbers).toEqual(
+      plate.drawings.map((d) => ({ rifle: "2", handgun: "3", shotgun: "4", other: "5" })[d!]),
+    );
+  });
+
+  it("blinks the owl when its beak is clicked, once its pupils are in", async () => {
+    await settleChooserPlate();
+    await $(".hd-catalogue .device .beak").click();
+    const blinks = await browser.execute(() =>
+      [...document.querySelectorAll(".hd-catalogue .device .pf")].map(
+        (pupil) => pupil.getAnimations().filter((a) => !("animationName" in a)).length,
+      ),
+    );
+    expect(blinks).toEqual([1, 1]);
   });
 
   it("creates a database only with a long enough passphrase and the acknowledgement (FR-003, FR-004)", async () => {

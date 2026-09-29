@@ -47,6 +47,8 @@ export interface PlateTiming {
   CYCLE_OVERLAP: number;
   CYCLE_SLIDE: number;
   CYCLE_CAPTION_TIME: number;
+  BLINK_OUT_TIME: number;
+  BLINK_WAIT: number;
 }
 
 export const PLATE_TIMING: PlateTiming = {
@@ -57,7 +59,8 @@ export const PLATE_TIMING: PlateTiming = {
   KEY_TIME: 1.25, // the whole rule
   KEY_UNIT_TIME: 0.4, // one key unit
 
-  // 2. The rifle, once the key is done.
+  // 2. Entry 2's first drawing, once the key is done: the rifle in the
+  //    tuner, and whichever drawing the startup shuffle put first in the app.
   RIFLE_START: 1.3,
   RIFLE_TIME: 2.1, // eased: most of it is drawn in the first half
   BORE_AXIS: false, // the dashed centreline along the bore; it fades in with the captions
@@ -92,12 +95,18 @@ export const PLATE_TIMING: PlateTiming = {
 
   // 6. Once everything is drawn, entry 2 cycles through the firearm
   //    drawings until a database is opened. Each one stays for CYCLE_HOLD.
-  CYCLE: true, // false keeps the rifle
-  CYCLE_HOLD: 6, // how long each drawing stays, and the wait after the draw-in
-  CYCLE_STYLE: "slide", // "slide", "redraw", "slideDraw", "straightedge" or "erase"
-  CYCLE_OUT_TIME: 0.8, // the old drawing leaving
-  CYCLE_IN_TIME: 1.2, // the new one arriving (drawing in, for "redraw", "slideDraw" and "erase")
-  CYCLE_OVERLAP: 0.3, // the new one starts this long before the old has gone; negative leaves a gap
-  CYCLE_SLIDE: 60, // how far a drawing slides, in the plate's pixels ("slide" and "slideDraw")
+  CYCLE: true, // false keeps the first drawing
+  CYCLE_HOLD: 8, // how long each drawing stays, and the wait after the draw-in
+  CYCLE_STYLE: "erase", // "slide", "redraw", "slideDraw", "straightedge" or "erase"
+  CYCLE_OUT_TIME: 1.5, // the old drawing leaving
+  CYCLE_IN_TIME: 2, // the new one arriving (drawing in, for "redraw", "slideDraw" and "erase")
+  CYCLE_OVERLAP: 0, // the new one starts this long before the old has gone; negative leaves a gap
+  CYCLE_SLIDE: 40, // how far a drawing slides, in the plate's pixels ("slide" and "slideDraw")
   CYCLE_CAPTION_TIME: 0.5, // the caption and scale bar fade out, then in, over this each
+
+  // 7. A click on the owl's beak makes it blink, once its pupils are drawn:
+  //    they go out quickly, as if its eyes closed, and after a moment fill
+  //    back in over PUPIL_TIME, as they did in the draw-in.
+  BLINK_OUT_TIME: 0.1, // how quickly the pupils go out
+  BLINK_WAIT: 0.8, // how long they stay out before filling back in
 };

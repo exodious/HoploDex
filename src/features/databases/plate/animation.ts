@@ -11,6 +11,8 @@ import type { CycleStyle, PlateTiming } from "./timing";
  * one loop through every drawing of entry 2. Both are plain animations with
  * delays, so the tuner can put the whole plate at any moment by setting
  * their currentTime.
+ *
+ * A click on the owl's beak makes it blink (blinkKeyframes), in real time.
  */
 
 /** The rifle's and the owl's line work. */
@@ -302,6 +304,48 @@ function edgeChanges(k: PlateTiming, n: number): { opacity: Change[]; transform:
 /** The first layer's lines and parts: the draw-in draws them. */
 const LEAD = '.layer[data-layer="0"] .art';
 
+// ── The blink ────────────────────────────────────────────────────────────
+
+/** How long a blink takes, in unscaled seconds: the pupils go out, stay
+ * out, then fill back in as they did in the draw-in. */
+export const blinkTime = (k: PlateTiming) => k.BLINK_OUT_TIME + k.BLINK_WAIT + k.PUPIL_TIME;
+
+/** The pupils' opacity through a blink. */
+export function blinkKeyframes(k: PlateTiming): Keyframe[] {
+  const total = blinkTime(k);
+  return [
+    { offset: 0, opacity: 1, easing: "linear" },
+    { offset: k.BLINK_OUT_TIME / total, opacity: 0, easing: "linear" },
+    // they fill back in eased, as in the draw-in: slow to start, then they open
+    { offset: (k.BLINK_OUT_TIME + k.BLINK_WAIT) / total, opacity: 0, easing: "ease-in" },
+    { offset: 1, opacity: 1 },
+  ];
+}
+
+/** Makes a click on the owl's beak blink its eyes, once its pupils are
+ * drawn and while it isn't already blinking. Returns a function that stops
+ * listening, and stops a blink under way. */
+function listenForBlink(svg: SVGSVGElement, k: PlateTiming): () => void {
+  const beak = svg.querySelector<SVGElement>(".device .beak");
+  const pupils = [...svg.querySelectorAll<SVGElement>(".device .pf")];
+  if (!beak || !pupils.length) return () => {};
+  let blink: Animation[] = [];
+  const onClick = () => {
+    if (typeof beak.animate !== "function") return;
+    if (blink.some((a) => a.playState === "running")) return;
+    // not yet drawn: the draw-in is still bringing them in
+    if (pupils.some((p) => Number(getComputedStyle(p).opacity || "1") < 1)) return;
+    const frames = blinkKeyframes(k);
+    const duration = blinkTime(k) * k.SPEED * 1000;
+    blink = pupils.map((p) => p.animate(frames, { duration }));
+  };
+  beak.addEventListener("click", onClick);
+  return () => {
+    beak.removeEventListener("click", onClick);
+    blink.forEach((a) => a.cancel());
+  };
+}
+
 /** Gives every element of the plate its animation, and returns a function
  * that stops them. */
 export function applyPlateAnimation(svg: SVGSVGElement, k: PlateTiming): () => void {
@@ -320,7 +364,7 @@ export function applyPlateAnimation(svg: SVGSVGElement, k: PlateTiming): () => v
   });
   set(".key:not(.unit)", `plate-draw ${s(k.KEY_TIME)} ${s(k.KEY_START)} linear forwards`);
 
-  // 2. the rifle
+  // 2. entry 2's first drawing
   const rifle = `plate-draw ${s(k.RIFLE_TIME)} ${s(k.RIFLE_START)} ${EASE} forwards`;
   set(`${LEAD} .open, ${LEAD} .detail`, rifle);
   set(`${LEAD} .part`, `${rifle}, plate-fill ${s(0.9)} ${s(k.RIFLE_START + 0.4)} linear forwards`);
@@ -368,6 +412,11 @@ export function applyPlateAnimation(svg: SVGSVGElement, k: PlateTiming): () => v
 
   // 6. the cycle through entry 2's drawings, forever
   const stops: Animation[] = [];
+  const stopBlink = listenForBlink(svg, k);
+  const stop = () => {
+    stopBlink();
+    stops.forEach((a) => a.cancel());
+  };
   const layers = [...svg.querySelectorAll<SVGGElement>(".entry .layer")];
   const n = layers.length;
   const clipped = k.CYCLE_STYLE === "straightedge";
@@ -379,9 +428,7 @@ export function applyPlateAnimation(svg: SVGSVGElement, k: PlateTiming): () => v
       else art.removeAttribute("clip-path");
     }
   });
-  if (!k.CYCLE || n < 2 || typeof svg.animate !== "function") {
-    return () => stops.forEach((a) => a.cancel());
-  }
+  if (!k.CYCLE || n < 2 || typeof svg.animate !== "function") return stop;
   const st = step(k);
   const period = n * st.length;
   const timing: KeyframeAnimationOptions = {
@@ -421,7 +468,7 @@ export function applyPlateAnimation(svg: SVGSVGElement, k: PlateTiming): () => v
     play(line, loopKeyframes("opacity", period, "0", edge.opacity));
     play(line, loopKeyframes("transform", period, "translateX(0px)", edge.transform));
   }
-  return () => stops.forEach((a) => a.cancel());
+  return stop;
 }
 
 /** How long the draw-in and one loop of the cycle take, in scaled seconds. */

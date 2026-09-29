@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { OWL_BODY, OWL_EYES, OWL_HEAD, OWL_LEAVES, OWL_OFFSET } from "../../app/owlShapes";
 import { DRAWINGS } from "../../browse/typeDrawings";
-import { ENTRY_BOX, PLATE_ENTRIES, entryLayout } from "./entries";
+import { ENTRY_BOX, entryLayout, entryNumber } from "./entries";
 import type { PlateEntry } from "./entries";
 
 /*
@@ -244,7 +244,8 @@ export function Owl() {
       {OWL_EYES.map(([x, y]) => (
         <circle key={`pupil${x}`} className="pf" cx={x + 1} cy={y} r={9} />
       ))}
-      <path className="pfi" d={BEAK} />
+      {/* the beak's fill takes a click, for the blink (animation.ts) */}
+      <path className="pfi beak" d={BEAK} />
       <path className="ol" pathLength={1} d={BEAK} />
     </g>
   );
@@ -376,17 +377,17 @@ function EntryDrawing({ entry }: { entry: PlateEntry }) {
 
 const ENTRY_RIGHT = ENTRY_BOX.x + ENTRY_BOX.width;
 
-/** Entry 2: one layer per drawing it cycles through. The first shows; the
- * others wait, hidden, for animation.ts to bring them in. Each layer's art
- * and caption change separately, and the art can be clipped by the
- * straightedge (`clipId`). */
-function Entry2({ clipId }: { clipId: string }) {
+/** Entry 2: one layer per drawing it cycles through, in the order given.
+ * The first shows; the others wait, hidden, for animation.ts to bring them
+ * in. Each layer's art and caption (with its catalogue number) change
+ * separately, and the art can be clipped by the straightedge (`clipId`). */
+function Entry2({ clipId, entries }: { clipId: string; entries: readonly PlateEntry[] }) {
   const clipX = ENTRY_BOX.x - 20;
   const clipW = ENTRY_BOX.width + 60;
   return (
     <g className="entry">
       <defs>
-        {PLATE_ENTRIES.map((entry, i) => (
+        {entries.map((entry, i) => (
           <clipPath key={entry.key} id={`${clipId}-${i}`}>
             <rect
               className="clip"
@@ -398,7 +399,7 @@ function Entry2({ clipId }: { clipId: string }) {
           </clipPath>
         ))}
       </defs>
-      {PLATE_ENTRIES.map((entry, i) => {
+      {entries.map((entry, i) => {
         const { barPx } = entryLayout(entry);
         return (
           <g key={entry.key} className="layer" data-layer={i} data-drawing={entry.key}>
@@ -407,6 +408,9 @@ function Entry2({ clipId }: { clipId: string }) {
             </g>
             <g className="caption">
               <ScaleBar right={ENTRY_RIGHT} y={668} px={barPx} label={`${entry.barCm} cm`} />
+              <text x={640} y={712} className="no">
+                {entryNumber(entry)}
+              </text>
               <text x={668} y={705} className="cap">
                 <tspan className="t">{entry.title}</tspan> {entry.caption}
               </text>
@@ -419,9 +423,6 @@ function Entry2({ clipId }: { clipId: string }) {
         className="edge"
         d={`M${clipX} ${ENTRY_BOX.y - 22}V${ENTRY_BOX.y + ENTRY_BOX.height + 22}`}
       />
-      <text x={640} y={712} className="no">
-        2
-      </text>
     </g>
   );
 }
@@ -430,7 +431,8 @@ function Entry2({ clipId }: { clipId: string }) {
  * past the box's right. */
 export const STRAIGHTEDGE_TRAVEL = ENTRY_BOX.width + 60;
 
-export function PlateArt({ clipId }: { clipId: string }) {
+/** The whole plate, with entry 2's drawings in the order `entries` gives. */
+export function PlateArt({ clipId, entries }: { clipId: string; entries: readonly PlateEntry[] }) {
   return (
     <>
       <g transform={`translate(${HOPLON.x} ${HOPLON.y})`}>
@@ -447,7 +449,7 @@ export function PlateArt({ clipId }: { clipId: string }) {
         About 500 BC.
       </text>
       <Meander x={640} y={492} width={500} u={3.5} />
-      <Entry2 clipId={clipId} />
+      <Entry2 clipId={clipId} entries={entries} />
     </>
   );
 }

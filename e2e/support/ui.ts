@@ -619,16 +619,23 @@ export async function waitForChooser() {
   await browser.pause(SETTLE_MS);
 }
 
-/** Finishes the chooser plate's draw-in and stops its cycle through the
- * firearm drawings, so a shot of the chooser is the same every time. */
+/** Finishes the chooser plate's draw-in, stops its cycle through the
+ * firearm drawings and shows the rifle, whichever drawing the startup
+ * shuffle put first, so a shot of the chooser is the same every time. */
 export async function settleChooserPlate() {
   await browser.execute(() => {
-    document.querySelectorAll(".hd-catalogue").forEach((svg) =>
+    document.querySelectorAll(".hd-catalogue").forEach((svg) => {
       svg.getAnimations({ subtree: true }).forEach((animation) => {
         if (animation.effect?.getComputedTiming().iterations === Infinity) animation.cancel();
         else animation.finish();
-      }),
-    );
+      });
+      svg.querySelectorAll<SVGGElement>(".entry .layer").forEach((layer) => {
+        const shown = layer.dataset.drawing === "rifle";
+        layer.querySelectorAll<SVGElement>(":scope > *").forEach((el) => {
+          el.style.opacity = shown ? "1" : "0";
+        });
+      });
+    });
   });
   await browser.pause(SETTLE_MS);
 }

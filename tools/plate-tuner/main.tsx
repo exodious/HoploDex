@@ -47,7 +47,7 @@ const pristine = renderToStaticMarkup(
     role="img"
     aria-label="The chooser’s catalogue plate: the hoplon with its owl, the Greek key and the firearm drawings"
   >
-    <PlateArt clipId="tuner" />
+    <PlateArt clipId="tuner" entries={PLATE_ENTRIES} />
   </svg>,
 );
 
