@@ -28,6 +28,7 @@ KEY_UNIT_TIME = 0.4  # one key unit
 # 2. The rifle, once the key is done.
 RIFLE_START = 1.3
 RIFLE_TIME = 1.6  # eased: most of it is drawn in the first half
+BORE_AXIS = True  # the rifle's dashed centreline along its bore; it fades in with the captions
 
 # 3. The shield's rim. One sweep draws its circles, braid, beads and tongues
 #    together, from 12 o'clock clockwise back to 12.

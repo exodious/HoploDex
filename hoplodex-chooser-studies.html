@@ -208,12 +208,13 @@ const hoplon = (() => {
     set(".device .pf", `fade ${s(k.PUPIL_TIME)} ${s(owl + k.OWL_LINES_TIME + k.PUPIL_PAUSE)} ease-in forwards`);
     // 5. captions, scale bars and the rifle's centreline
     set(".hatch, .axis, text, rect", `fade ${s(k.LABELS_TIME)} ${s(k.LABELS_START)} forwards`);
+    svg.querySelectorAll(".dwg-gun .axis").forEach(el => { el.style.display = k.BORE_AXIS === false ? "none" : ""; });
   }
   // How long the whole draw-in takes, in scaled seconds.
   const duration = k => k.SPEED * Math.max(...phases(k).map(p => p.span[1]));
   return { apply, phases, duration, looksDone, DEFAULTS: null };
 })();
-hoplon.DEFAULTS = {"SPEED": 1.0, "KEY_START": 0.0, "KEY_TIME": 1.25, "KEY_UNIT_TIME": 0.4, "RIFLE_START": 1.3, "RIFLE_TIME": 1.6, "RIM_START": 1.3, "RIM_TIME": 1.8, "RIM_EASE": [0, 0, 1, 1], "BRAID_LAG": 0.0, "TONGUE_TIME": 0.35, "BEAD_TIME": 0.25, "SHIELD_FILL_AT": 0.8, "SHIELD_FILL_TIME": 0.6, "OWL_GAP": 0.2, "OWL_LINES_TIME": 1.8, "OWL_PAPER_AFTER": 0.4, "BEAK_FILL_AFTER": 1.1, "BEAK_FILL_TIME": 0.5, "WASH_AFTER": 1.4, "WASH_TIME": 0.8, "PUPIL_PAUSE": 0.3, "PUPIL_TIME": 0.4, "LABELS_START": 2.6, "LABELS_TIME": 0.6, "TONGUES": 44, "BRAID_WAVES": 30};
+hoplon.DEFAULTS = {"SPEED": 1.0, "KEY_START": 0.0, "KEY_TIME": 1.25, "KEY_UNIT_TIME": 0.4, "RIFLE_START": 1.3, "RIFLE_TIME": 1.6, "BORE_AXIS": true, "RIM_START": 1.3, "RIM_TIME": 1.8, "RIM_EASE": [0, 0, 1, 1], "BRAID_LAG": 0.0, "TONGUE_TIME": 0.35, "BEAD_TIME": 0.25, "SHIELD_FILL_AT": 0.8, "SHIELD_FILL_TIME": 0.6, "OWL_GAP": 0.2, "OWL_LINES_TIME": 1.8, "OWL_PAPER_AFTER": 0.4, "BEAK_FILL_AFTER": 1.1, "BEAK_FILL_TIME": 0.5, "WASH_AFTER": 1.4, "WASH_TIME": 0.8, "PUPIL_PAUSE": 0.3, "PUPIL_TIME": 0.4, "LABELS_START": 2.6, "LABELS_TIME": 0.6, "TONGUES": 44, "BRAID_WAVES": 30};
 hoplon.apply(document.querySelector('#live svg'), hoplon.DEFAULTS);</script>
 <script>
 document.getElementById("replay").addEventListener("click", () => {

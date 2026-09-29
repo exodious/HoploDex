@@ -113,6 +113,7 @@
     document.querySelectorAll("[data-knob]").forEach(el => {
       const name = el.dataset.knob;
       if (name === "RIM_EASE") el.value = easeIndex(k.RIM_EASE);
+      else if (el.type === "checkbox") el.checked = k[name];
       else { el.value = k[name]; document.getElementById(`${name}-out`).textContent = fmt(name, k[name]); }
       el.closest(".knob").classList.toggle("changed", !same(k[name], D[name]));
     });
@@ -124,7 +125,7 @@
     try { localStorage.setItem(SAVE, JSON.stringify({ knobs: k, plate: stage.dataset.plate })); } catch (e) { /* no storage */ }
   }
 
-  const py = v => Array.isArray(v) ? `(${v.join(", ")})` : String(+v.toFixed(3));
+  const py = v => Array.isArray(v) ? `(${v.join(", ")})` : typeof v === "boolean" ? (v ? "True" : "False") : String(+v.toFixed(3));
   function changed() { return Object.keys(D).filter(n => !same(k[n], D[n])); }
   function showChanges() {
     const names = changed();
@@ -137,7 +138,7 @@
   $("#controls").addEventListener("input", e => {
     const name = e.target.dataset.knob;
     if (!name) return;
-    k[name] = name === "RIM_EASE" ? EASES[+e.target.value][1] : +e.target.value;
+    k[name] = name === "RIM_EASE" ? EASES[+e.target.value][1] : e.target.type === "checkbox" ? e.target.checked : +e.target.value;
     syncControls();
     if (!playing) rebuild(at); else drawTimeline();
   });

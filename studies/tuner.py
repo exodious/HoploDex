@@ -28,6 +28,7 @@ GROUPS = [
     ("Rifle", [
         ("RIFLE_START", "Starts at", 0, 5, 0.05, "s", ""),
         ("RIFLE_TIME", "Draws over", 0.4, 4, 0.05, "s", "Eased, so it looks finished early. The timeline shades the tail."),
+        ("BORE_AXIS", "Bore axis line", None, None, None, "", "The dashed centreline along the barrel. It fades in with the captions."),
     ]),
     ("Shield rim", [
         ("RIM_START", "Sweep starts at", 0, 5, 0.05, "s", ""),
@@ -72,6 +73,9 @@ PRESETS = [
 def control(name, label, lo, hi, step, unit, hint):
     hint_html = f'<p class="hint" id="{name}-hint">{hint}</p>' if hint else ""
     described = f' aria-describedby="{name}-hint"' if hint else ""
+    if name == "BORE_AXIS":
+        return (f'<div class="knob"><label class="switch" for="{name}"><input type="checkbox" id="{name}" data-knob="{name}"{described}>'
+                f'<span>{label}</span></label><div class="knob-foot"><code>{name}</code>{hint_html}</div></div>')
     if name == "RIM_EASE":
         options = "".join(f'<option value="{i}">{text}</option>' for i, (text, _) in enumerate(EASES))
         field = f'<select id="{name}" data-knob="{name}">{options}</select>'
@@ -164,6 +168,8 @@ legend{{font:700 1.2rem/1 var(--font-display);letter-spacing:.02em;padding:0 8px
 .knob-head output{{font:600 14px var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}}
 .knob.changed .knob-head output{{color:var(--niter)}}
 .knob input[type=range]{{width:100%;accent-color:var(--niter);margin:0}}
+.switch{{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;cursor:pointer}}
+.switch input{{width:18px;height:18px;margin:0;accent-color:var(--niter)}}
 .knob select{{width:100%;padding:6px 8px;border:1px solid var(--rule-strong);border-radius:6px;background:var(--sheet)}}
 .knob-foot{{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}}
 .knob-foot code{{font:12px var(--font-mono);color:var(--ink-3)}}

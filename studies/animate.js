@@ -86,6 +86,7 @@ const hoplon = (() => {
 
     // 5. captions, scale bars and the rifle's centreline
     set(".hatch, .axis, text, rect", `fade ${s(k.LABELS_TIME)} ${s(k.LABELS_START)} forwards`);
+    svg.querySelectorAll(".dwg-gun .axis").forEach(el => { el.style.display = k.BORE_AXIS === false ? "none" : ""; });
   }
 
   // How long the whole draw-in takes, in scaled seconds.
