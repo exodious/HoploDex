@@ -15,7 +15,7 @@ Each entry is numbered, captioned and has a scale bar, and a Greek key rule divi
 
 - **Owl:** based on the Athenian tetradrachm: a little owl (no ear tufts), body in profile, head turned to face you, with a small olive sprig. It's an engraving in fine bronze lines, with rows of feathers, eyes that are mostly pupil, a hooked beak, and talons on a ground line. The coins' crescent moon is left out.
 - **Icon:** the owl shield on a blued-steel tile. At 32 px and below, the owl is a solid silhouette with its eyes cut out, and the top-bar mark uses that version.
-- **Animation:** everything draws in stroke by stroke: the outlines, the rim ornament, the Greek key, then the owl's lines. The owl's eyes and bronze wash come last, which is what gives it its watchful look; keep that. The Greek key draws in first, from both ends to the middle (about 1.25 s). Only then are the shield and rifle drawn over the blueprint grid. Their fills fade in as their lines do, so the grid shows until the drawing covers it. One sweep draws the rim from 12 o'clock clockwise back to 12: its circles, the braid, the braid's beads and the tongues all keep to it. Everything on the rim is cut into short pieces, each started as the sweep reaches it, because one long dashed line draws differently from engine to engine (the braid, one 720-point line per strand, came in as several segments at once in some browsers). The owl's twig end and beak are drawn with its other lines, and only its pupils come last, after a short pause. `studies/shots/animation/` has frames at 0.7, 1.6, 2.2, 2.8, 3.4, 4.4 and 4.8 s. Lines are drawn in with `pathLength="1"` and a dash offset, on plain strokes. With `vector-effect: non-scaling-stroke`, Firefox, WebKitGTK and Safari each dashed in different units: lines drew only partly, or in several segments at once. So each scaled group sets `--u` to 1/scale to keep its line weights. The `webkit-at-*.png` frames are from WebKitGTK, the app's engine on Linux. The overall timing is still too fast.
+- **Animation:** everything draws in stroke by stroke: the outlines, the rim ornament, the Greek key, then the owl's lines. The owl's eyes and bronze wash come last, which is what gives it its watchful look; keep that. The Greek key draws in first, from both ends to the middle (about 1.25 s). Only then are the shield and rifle drawn over the blueprint grid. Their fills fade in as their lines do, so the grid shows until the drawing covers it. One sweep draws the rim from 12 o'clock clockwise back to 12: its circles, the braid, the braid's beads and the tongues all keep to it. Everything on the rim is cut into short pieces, each started as the sweep reaches it, because one long dashed line draws differently from engine to engine (the braid, one 720-point line per strand, came in as several segments at once in some browsers). The owl is engraved once the braid has closed. Its twig end and beak are drawn with its other lines, and only its pupils come last, after a short pause. `studies/shots/animation/` has frames at 0.7, 1.6, 2.2, 2.8, 3.4, 4.4, 5.3 and 5.6 s. Lines are drawn in with `pathLength="1"` and a dash offset, on plain strokes. With `vector-effect: non-scaling-stroke`, Firefox, WebKitGTK and Safari each dashed in different units: lines drew only partly, or in several segments at once. So each scaled group sets `--u` to 1/scale to keep its line weights. The dash's gap is longer than the line and its offset starts just past it: otherwise a round-capped line shows a dot at its start before it draws. The `webkit-at-*.png` frames are from WebKitGTK, the app's engine on Linux. The overall timing is still too fast.
 
 ## What was tried and dropped
 
@@ -34,16 +34,9 @@ The earlier rounds' shots are in `studies/shots/`.
 
 ## Trying out the timing
 
-Every time in the animation is a named knob at the top of `studies/concept2.py`, under "Animation knobs", grouped in the order things draw: the Greek key, the rifle, the rim's sweep, the owl, then the captions. `SPEED` scales them all at once. Edit them there, or override them for one run on the command line, with no spaces around `=`:
+`hoplon-tuner.html` plays the draw-in next to its timing on sliders. You can pause it, scrub it on a timeline that shows when each part draws, slow it to ½× or ¼×, and switch between a few presets. It lists the settings you changed, ready to paste into the knobs at the top of `studies/concept2.py`. Those knobs are the starting values for every page; the timing itself is worked out in the page by `studies/animate.js`, so the tuner, the gallery and the `c2-animated-*` pages all animate the same way.
 
-```sh
-cd studies
-python3 concept2.py PUPIL_PAUSE=0.8 PUPIL_TIME=0.2      # then open c2-animated-dark.html; click it to replay
-python3 concept2.py SPEED=1.5 RIM_EASE=.45,0,.55,1       # everything half again slower, the sweep eased in and out
-python3 gallery.py SPEED=1.5 && cp hoplodex-chooser-studies.html ..   # rebuild the gallery with them
-```
-
-A misspelt knob stops with an error instead of being ignored.
+For a one-off build, a knob can also be overridden on the command line: `python3 gallery.py OWL_GAP=0.4`.
 
 ## Rebuilding
 
@@ -55,6 +48,7 @@ python3 make_fonts.py /path/to/HoploDex   # inlines the app's OFL fonts into fon
 python3 concept2.py                       # c2-*.html pages (c2-animated-* play the animation) and c2-icons.html
 python3 owl.py                            # owl-test.html
 python3 gallery.py                        # studies/hoplodex-chooser-studies.html; copy it up to the branch root
+python3 tuner.py                          # studies/hoplon-tuner.html; copy it up too
 firefox --headless --window-size=1200,800 --screenshot "$PWD/shots/c2-list-light.png" "file://$PWD/c2-list-light.html"
 ```
 

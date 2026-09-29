@@ -9,6 +9,7 @@ FONTS = REPO / "node_modules/@fontsource-variable"
 faces = [
     ("Big Shoulders Display Variable", "big-shoulders-display/files/big-shoulders-display-latin-wght-normal.woff2", "100 900"),
     ("Atkinson Hyperlegible Next Variable", "atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2", "200 800"),
+    ("Atkinson Hyperlegible Mono Variable", "atkinson-hyperlegible-mono/files/atkinson-hyperlegible-mono-latin-wght-normal.woff2", "200 800"),
 ]
 css = "".join(
     f"@font-face{{font-family:'{name}';font-weight:{weight};"

@@ -12,11 +12,11 @@ HERE = pathlib.Path(__file__).parent
 
 
 # ── Animation knobs ─────────────────────────────────────────────────────
-# Every time is in seconds from page load. Change them here, or override any
-# of them for one run on the command line (no spaces around "="):
-#   python3 gallery.py PUPIL_PAUSE=0.8 PUPIL_TIME=0.2 SPEED=1.5
-#   python3 concept2.py RIM_EASE=.45,0,.55,1
-# then open c2-animated-dark.html (click it to replay) or the gallery.
+# The starting values for the draw-in's timing, in seconds. The timing itself
+# is worked out in the page, by animate.js, so it can be changed live: open
+# hoplon-tuner.html (python3 tuner.py), move the sliders, and copy the
+# settings it gives you back here. For a one-off build, any of these can also
+# be overridden on the command line: python3 gallery.py OWL_GAP=0.4
 
 SPEED = 1.0  # multiplies every time below: 1.5 plays the whole thing half again slower
 
@@ -29,27 +29,24 @@ RIFLE_START = 1.3
 RIFLE_TIME = 1.6  # eased: most of it is drawn in the first half
 
 # 3. The shield's rim. One sweep draws its circles, braid, beads and tongues
-#    together, from 12 o'clock clockwise back to 12. Everything on it is cut
-#    into short pieces, each started as the sweep reaches it, because one
-#    long dashed line draws differently from engine to engine.
+#    together, from 12 o'clock clockwise back to 12.
 RIM_START = 1.3  # when the sweep leaves 12 o'clock
 RIM_TIME = 1.8  # once round
 RIM_EASE = (0, 0, 1, 1)  # the sweep's cubic-bezier: (0, 0, 1, 1) is steady, (.45, 0, .55, 1) eases in and out
-RIM_LINE_PIECES = 60  # each rim circle is drawn in this many arcs
-BRAID_PIECES_PER_WAVE = 2  # the braid's two strands, in this many pieces per wave (there are 30 waves)
 BRAID_LAG = 0.0  # the braid runs this far behind the rim circles (the tongues and beads keep to the braid)
 TONGUE_TIME = 0.35  # each tongue takes this long, starting as the sweep reaches it
 BEAD_TIME = 0.25  # each bead fades in over this, as the sweep reaches the middle of its eye
 SHIELD_FILL_AT = 0.8  # the shield's ground starts fading in once the sweep is this far round,
 SHIELD_FILL_TIME = 0.6  # so the grid shows through until the rim is nearly closed
 
-# 4. The owl is engraved: its lines, then its bronze wash, and its pupils last.
-OWL_START = 2.2
+# 4. The owl is engraved once the braid has closed: its lines, then its bronze
+#    wash, and its pupils last. Its times count from when its lines start.
+OWL_GAP = 0.2  # after the braid closes; negative starts the owl during the sweep (it was -0.9)
 OWL_LINES_TIME = 1.8  # eased like the rifle, so the lines look done well before this
-OWL_PAPER_START = 2.6  # the head's ground, which hides the body's lines behind it
-BEAK_FILL_START = 3.3  # the beak and berry fill once their outlines are drawn
+OWL_PAPER_AFTER = 0.4  # the head's ground, which hides the body's lines behind it
+BEAK_FILL_AFTER = 1.1  # the beak and berry fill once their outlines are drawn
 BEAK_FILL_TIME = 0.5
-WASH_START = 3.6
+WASH_AFTER = 1.4
 WASH_TIME = 0.8
 PUPIL_PAUSE = 0.3  # the beat after the owl's lines finish before its pupils fill
 PUPIL_TIME = 0.4  # how long the pupils take to fill: smaller is quicker
@@ -57,6 +54,14 @@ PUPIL_TIME = 0.4  # how long the pupils take to fill: smaller is quicker
 # 5. The captions, scale bars and centreline.
 LABELS_START = 2.6
 LABELS_TIME = 0.6
+
+# The rim's geometry. These change the drawing, so they stay in Python.
+RIM_LINE_PIECES = 60  # each rim circle is drawn in this many arcs
+BRAID_WAVES = 30
+BRAID_PIECES_PER_WAVE = 2  # the braid's two strands, in this many pieces per wave
+TONGUES = 44
+
+_GEOMETRY = {"RIM_LINE_PIECES", "BRAID_WAVES", "BRAID_PIECES_PER_WAVE", "TONGUES"}
 
 
 def _knob_overrides(args):
@@ -73,38 +78,30 @@ def _knob_overrides(args):
 _knob_overrides(sys.argv[1:])
 
 
-def _s(t):
-    """A time in seconds, scaled by SPEED, for CSS."""
-    return f"{t * SPEED:.3f}s"
+def knobs():
+    """The timing knobs as they stand, for animate.js."""
+    import json
+    names = [n for n in globals() if n.isupper() and n not in _GEOMETRY and not n.startswith("_")
+             and isinstance(globals()[n], (int, float, tuple))]
+    names = names[:names.index("LABELS_TIME") + 1]
+    return json.dumps({n: globals()[n] for n in names} | {"TONGUES": TONGUES, "BRAID_WAVES": BRAID_WAVES})
 
 
-def _bezier(ease):
-    x1, y1, x2, y2 = ease
-    return f"cubic-bezier({x1},{y1},{x2},{y2})"
+ANIMATE_JS = (HERE / "animate.js").read_text()
 
 
-def _sweep_time(frac):
-    """When the rim's sweep reaches `frac` of the way round: RIM_EASE maps
-    time to progress, so find the time that gives `frac` (by bisection)."""
-    x1, y1, x2, y2 = RIM_EASE
-
-    def at(u, a, b):
-        return 3 * a * u * (1 - u) ** 2 + 3 * b * u * u * (1 - u) + u ** 3
-
-    lo, hi = 0.0, 1.0
-    for _ in range(40):
-        u = (lo + hi) / 2
-        lo, hi = (u, hi) if at(u, y1, y2) < frac else (lo, u)
-    return RIM_START + RIM_TIME * at((lo + hi) / 2, x1, x2)
+def animate_script(select='svg.plate.anim'):
+    """The timing script, applied to the plate as the page loads."""
+    return (f"<script>{ANIMATE_JS}\nhoplon.DEFAULTS = {knobs()};\n"
+            f"hoplon.apply(document.querySelector({select!r}), hoplon.DEFAULTS);</script>")
 
 
-def _swept(f0, f1, lag=0.0, duration=None):
-    """The inline timing for a piece of the rim from `f0` to `f1` of the way
-    round: it starts as the sweep reaches `f0` and, unless it has its own
-    `duration`, keeps pace with it to `f1`."""
-    t0 = _sweep_time(f0) + lag
-    d = duration if duration is not None else _sweep_time(f1) - _sweep_time(f0)
-    return f' style="animation-delay:{_s(t0)};animation-duration:{_s(d)}"'
+def _sweep(f0, f1, kind):
+    """Marks a piece of the rim from `f0` to `f1` of the way round, for
+    animate.js to start as the sweep reaches it. `kind` picks its timing:
+    line and braid pieces keep pace with the sweep, tongues and beads take
+    their own time."""
+    return f' data-sweep="{f0:.5f} {f1:.5f} {kind}"'
 
 
 def rim_circle(r, cls="thin"):
@@ -112,7 +109,7 @@ def rim_circle(r, cls="thin"):
     n = RIM_LINE_PIECES
     pts = [(r * math.cos(2 * math.pi * k / n), r * math.sin(2 * math.pi * k / n)) for k in range(n + 1)]
     return "".join(
-        f'<path class="{cls} swept" pathLength="1"{_swept(k / n, (k + 1) / n)} '
+        f'<path class="{cls} swept" pathLength="1"{_sweep(k / n, (k + 1) / n, "line")} '
         f'd="M{pts[k][0]:.2f} {pts[k][1]:.2f}A{r} {r} 0 0 1 {pts[k + 1][0]:.2f} {pts[k + 1][1]:.2f}"/>'
         for k in range(n))
 
@@ -130,11 +127,11 @@ def guilloche(r0, w, n):
                 t = 2 * math.pi * (k + i / steps) / pieces
                 r = r0 + (w / 2) * math.sin(n * t + phase)
                 pts.append(f"{r * math.cos(t):.2f} {r * math.sin(t):.2f}")
-            out.append(f'<path class="orn swept" pathLength="1"{_swept(k / pieces, (k + 1) / pieces, BRAID_LAG)} d="M{"L".join(pts)}"/>')
+            out.append(f'<path class="orn swept" pathLength="1"{_sweep(k / pieces, (k + 1) / pieces, "braid")} d="M{"L".join(pts)}"/>')
     for k in range(n * 2):
         t = (k + 0.5) * math.pi / n
         frac = (k + 0.5) / (n * 2)
-        out.append(f'<circle class="dot"{_swept(frac, frac, BRAID_LAG, BEAD_TIME)} cx="{r0 * math.cos(t):.2f}" cy="{r0 * math.sin(t):.2f}" r="{w * 0.12:.2f}"/>')
+        out.append(f'<circle class="dot"{_sweep(frac, frac, "bead")} cx="{r0 * math.cos(t):.2f}" cy="{r0 * math.sin(t):.2f}" r="{w * 0.12:.2f}"/>')
     return "".join(out)
 
 
@@ -149,7 +146,7 @@ def tongues(r_out, r_in, n):
         tip = (r_in * math.cos(am), r_in * math.sin(am))
         c0 = (r_in * 1.02 * math.cos(a0 + 0.02), r_in * 1.02 * math.sin(a0 + 0.02))
         c1 = (r_in * 1.02 * math.cos(a1 - 0.02), r_in * 1.02 * math.sin(a1 - 0.02))
-        out.append(f'<path class="orn swept"{_swept(k / n, k / n, BRAID_LAG, TONGUE_TIME)} pathLength="1" d="M{p0[0]:.2f} {p0[1]:.2f}Q{c0[0]:.2f} {c0[1]:.2f} {tip[0]:.2f} {tip[1]:.2f}'
+        out.append(f'<path class="orn swept"{_sweep(k / n, k / n, "tongue")} pathLength="1" d="M{p0[0]:.2f} {p0[1]:.2f}Q{c0[0]:.2f} {c0[1]:.2f} {tip[0]:.2f} {tip[1]:.2f}'
                    f'Q{c1[0]:.2f} {c1[1]:.2f} {p1[0]:.2f} {p1[1]:.2f}"/>')
     return "".join(out)
 
@@ -185,9 +182,9 @@ def hoplon(R, device=True, emblem=None):
     return ('<g transform="rotate(-90)">'
             + f'<circle r="{R}" class="ground"/>' + rim_circle(R, "open")
             + rim_circle(R * 0.965)
-            + guilloche(R * 0.9, R * 0.09, 30)
+            + guilloche(R * 0.9, R * 0.09, BRAID_WAVES)
             + rim_circle(R * 0.835)
-            + tongues(R * 0.835, R * 0.77, 44)
+            + tongues(R * 0.835, R * 0.77, TONGUES)
             + rim_circle(R * 0.77, "open")
             + "</g>"
             + (f'<g transform="scale({R * 0.0064:.4f})" style="--u:{1 / (R * 0.0064):.4f}">{emblem or OWL}</g>' if device else "")
@@ -213,9 +210,8 @@ def meander(x, y, width, u):
     draws in from both ends at once and meets in the middle: each key is its
     own line, started as the border lines reach it."""
     n = int(width // (4 * u))
-    step = (KEY_TIME - KEY_UNIT_TIME) / ((n - 1) // 2)
     keys = "".join(
-        f'<path class="key unit" pathLength="1" style="animation-delay:{_s(min(i, n - 1 - i) * step)}" '
+        f'<path class="key unit" pathLength="1" data-key="{min(i, n - 1 - i)}" '
         f'd="M{x+i*4*u} {y+4*u}V{y}H{x+i*4*u+3*u}V{y+3*u}H{x+i*4*u+u}V{y+u}H{x+i*4*u+2*u}"/>' for i in range(n))
     x1, mid = x + n * 4 * u, x + n * 2 * u
     lines = "".join(
@@ -269,37 +265,24 @@ PLATE_CSS = """
 """
 
 
-def anim_css():
-    """The draw-in, timed from the knobs at the top of this file."""
-    ease = "cubic-bezier(.2,.7,.2,1)"
-    return f"""
-@keyframes draw{{to{{stroke-dashoffset:0}}}}
-@keyframes fade{{to{{opacity:1}}}}
-@keyframes fillin{{to{{fill-opacity:1}}}}
-@keyframes wash{{to{{opacity:.13}}}}
-/* the Greek key comes first, from both ends to the middle; the rest waits for it */
-.anim .key{{stroke-dasharray:1;stroke-dashoffset:1;animation:draw {_s(KEY_TIME)} linear forwards}}
-.anim .key.unit{{animation-duration:{_s(KEY_UNIT_TIME)}}}
-/* the rifle */
-.anim .part,.anim .open,.anim .thin,.anim .detail,.anim .cut{{stroke-dasharray:1;stroke-dashoffset:1;animation:draw {_s(RIFLE_TIME)} {_s(RIFLE_START)} {ease} forwards}}
-.anim .part{{fill-opacity:0;animation:draw {_s(RIFLE_TIME)} {_s(RIFLE_START)} {ease} forwards,fillin .9s {_s(RIFLE_START + 0.4)} forwards}}
-/* the rim: every piece carries its own delay and duration, set from the sweep */
-.anim .swept{{stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1s linear forwards}}
-.anim .dot{{opacity:0;animation:fade 1s forwards}}
-/* fills fade in as their lines are drawn, so the grid shows until the drawing covers it */
-.anim .ground{{fill-opacity:0;animation:fillin {_s(SHIELD_FILL_TIME)} {_s(_sweep_time(SHIELD_FILL_AT))} forwards}}
-/* the owl is engraved after the rim: lines first, then its bronze ground, then its eyes */
-.anim .device .ol,.anim .device .fe{{stroke-dasharray:1;stroke-dashoffset:1;animation:draw {_s(OWL_LINES_TIME)} {_s(OWL_START)} {ease} forwards}}
-.anim .device .paper{{fill-opacity:0;animation:fillin .9s {_s(OWL_PAPER_START)} forwards}}
-.anim .device .pfi{{opacity:0;animation:fade {_s(BEAK_FILL_TIME)} {_s(BEAK_FILL_START)} forwards}}
-.anim .device .wash{{opacity:0;animation:wash {_s(WASH_TIME)} {_s(WASH_START)} forwards}}
-.anim .device .pf{{opacity:0;animation:fade {_s(PUPIL_TIME)} {_s(OWL_START + OWL_LINES_TIME + PUPIL_PAUSE)} ease-in forwards}}
-.anim .hatch,.anim .axis,.anim text,.anim rect{{opacity:0;animation:fade {_s(LABELS_TIME)} {_s(LABELS_START)} forwards}}
-@media (prefers-reduced-motion:reduce){{.anim *{{animation:none!important;stroke-dasharray:none!important;opacity:1!important;fill-opacity:1!important}}.anim .device .wash{{opacity:.13!important}}}}
+# The draw-in's starting state. animate.js gives every element its timing.
+# Lines are drawn in with pathLength="1" and a dash offset. The gap is longer
+# than the line and the offset starts a hair past it: otherwise the dash sits
+# at zero length on the line's start, and round caps paint it as a dot before
+# the line starts drawing. Strokes are plain, never non-scaling: with
+# vector-effect: non-scaling-stroke, Firefox, WebKit and Safari each dash in
+# different units. So each scaled group sets --u to 1/scale to keep its line
+# weights.
+PLATE_CSS += """
+.anim .key,.anim .part,.anim .open,.anim .thin,.anim .detail,.anim .cut,.anim .swept,.anim .device .ol,.anim .device .fe{stroke-dasharray:1 2;stroke-dashoffset:1.01}
+.anim .part,.anim .ground,.anim .device .paper{fill-opacity:0}
+.anim .dot,.anim .device .pfi,.anim .device .wash,.anim .device .pf,.anim .hatch,.anim .axis,.anim text,.anim rect{opacity:0}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes fade{to{opacity:1}}
+@keyframes fillin{to{fill-opacity:1}}
+@keyframes wash{to{opacity:.13}}
+@media (prefers-reduced-motion:reduce){.anim *{animation:none!important;stroke-dasharray:none!important;opacity:1!important;fill-opacity:1!important}.anim .device .wash{opacity:.13!important}}
 """
-
-
-PLATE_CSS += anim_css()
 
 
 HOPLON_R = 140
@@ -349,24 +332,19 @@ def split_subpaths(svg):
 PLATE = split_subpaths(PLATE)
 
 
-# Lines are drawn in with pathLength="1" and a dash offset. That only works
-# the same in every engine on plain strokes: with vector-effect:
-# non-scaling-stroke, Firefox, WebKit and Safari each dash in different units
-# (a line in a scaled group drew only partly, or in several places at once).
-# So the plate's strokes scale normally, and each scaled group sets --u to
-# 1/scale to keep its line weights.
-DRAW_JS = ""
 
 REPLAY_JS = """<script>
-const pristine = document.querySelector("svg.plate").outerHTML;
-document.addEventListener("click", () => { document.querySelector("svg.plate").outerHTML = pristine; });
+document.addEventListener("click", () => {
+  const svg = document.querySelector("svg.plate");
+  svg.getAnimations({ subtree: true }).forEach(a => { a.currentTime = 0; a.play(); });
+});
 </script>"""
 
 
 def chooser(theme, content, anim=False):
     css = build.GRID + ".col{width:560px;padding:40px 0 0 42px;position:relative;z-index:1}" + PLATE_CSS
     svg = f'<svg class="plate{" anim" if anim else ""}" viewBox="0 0 1200 744">{PLATE}</svg>'
-    html = build.page(theme, f'<main>{svg}<div class="col">{content}</div></main>{DRAW_JS if anim else ""}', css + BRAND_CSS)
+    html = build.page(theme, f'<main>{svg}<div class="col">{content}</div></main>{animate_script() if anim else ""}', css + BRAND_CSS)
     start = html.index('<div class="brand"><svg'); end = html.index("</svg>", start) + 6
     return html[:start] + '<div class="brand">' + BRAND_MARK + html[end:]
 

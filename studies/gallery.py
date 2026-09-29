@@ -82,12 +82,10 @@ every time is a named knob in concept2.py.</p>
 <div class="live" id="live"><svg class="plate anim" viewBox="600 40 580 700" aria-hidden="true">{concept2.PLATE}</svg></div>
 <button type="button" id="replay">Replay the animation</button></section>
 </div>
-{concept2.DRAW_JS}
+{concept2.animate_script("#live svg")}
 <script>
-const pristine = document.querySelector("#live svg").outerHTML;
 document.getElementById("replay").addEventListener("click", () => {{
-  const box = document.getElementById("live");
-  box.innerHTML = pristine;
+  document.querySelector("#live svg").getAnimations({{ subtree: true }}).forEach(a => {{ a.currentTime = 0; a.play(); }});
 }});
 </script>"""
 page = re.sub(r"\n\s*\n", "\n", page)
