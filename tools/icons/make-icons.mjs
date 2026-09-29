@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
@@ -41,12 +42,16 @@ const PNGS = {
 /** Windows: the sizes Explorer and the taskbar use. */
 const ICO = [16, 32, 48, 64, 256];
 
-/** macOS: each .icns entry's type and size (the @2x types are Retina). */
+/**
+ * macOS: each .icns entry's type and size. The @2x types are Retina. The 16 and
+ * 32 px slots of the 1x set (ic04, ic05) hold ARGB runs, not PNG; the Windows
+ * style icp4 to icp6 types hold PNG, which macOS reads as raw pixels, so Finder's
+ * small views showed noise. Larger types and the @2x ones are PNG.
+ */
 const ICNS = [
-  ["icp4", 16],
-  ["icp5", 32],
+  ["ic04", 16, "argb"],
+  ["ic05", 32, "argb"],
   ["ic11", 32], // 16@2x
-  ["icp6", 64],
   ["ic12", 64], // 32@2x
   ["ic07", 128],
   ["ic08", 256],
@@ -118,13 +123,90 @@ function ico(png) {
   return Buffer.concat([header, ...entries, ...ICO.map((size) => png[size])]);
 }
 
-/** An .icns of PNG images. */
+/** The RGBA pixels of an 8-bit, non-interlaced RGBA PNG (what resvg writes). */
+function decodePng(buf) {
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  if (buf[24] !== 8 || buf[25] !== 6 || buf[28] !== 0) {
+    throw new Error("expected an 8-bit RGBA PNG without interlacing");
+  }
+  const idat = [];
+  for (let at = 8; at < buf.length;) {
+    const length = buf.readUInt32BE(at);
+    if (buf.toString("ascii", at + 4, at + 8) === "IDAT") {
+      idat.push(buf.subarray(at + 8, at + 8 + length));
+    }
+    at += 12 + length;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * 4;
+  const pixels = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const left = x >= 4 ? pixels[y * stride + x - 4] : 0;
+      const up = y > 0 ? pixels[(y - 1) * stride + x] : 0;
+      const upLeft = x >= 4 && y > 0 ? pixels[(y - 1) * stride + x - 4] : 0;
+      let predictor = 0;
+      if (filter === 1) predictor = left;
+      else if (filter === 2) predictor = up;
+      else if (filter === 3) predictor = (left + up) >> 1;
+      else if (filter === 4) {
+        const p = left + up - upLeft;
+        const [a, b, c] = [Math.abs(p - left), Math.abs(p - up), Math.abs(p - upLeft)];
+        predictor = a <= b && a <= c ? left : b <= c ? up : upLeft;
+      }
+      pixels[y * stride + x] = (line[x] + predictor) & 255;
+    }
+  }
+  return pixels;
+}
+
+/** One channel, run-length coded as icns does: a byte n < 128 is followed by
+ * n + 1 literal bytes; a byte 128 + n by one byte repeated n + 3 times. */
+function rle(channel) {
+  const out = [];
+  let literal = [];
+  const flush = () => {
+    for (let at = 0; at < literal.length; at += 128) {
+      const part = literal.slice(at, at + 128);
+      out.push(part.length - 1, ...part);
+    }
+    literal = [];
+  };
+  for (let i = 0; i < channel.length;) {
+    let run = 1;
+    while (i + run < channel.length && channel[i + run] === channel[i] && run < 130) run++;
+    if (run >= 3) {
+      flush();
+      out.push(125 + run, channel[i]);
+      i += run;
+    } else {
+      literal.push(channel[i++]);
+    }
+  }
+  flush();
+  return Buffer.from(out);
+}
+
+/** An icns "ARGB" entry: the magic, then the alpha, red, green and blue channels. */
+function argb(png) {
+  const pixels = decodePng(png);
+  const channels = [3, 0, 1, 2].map((offset) =>
+    Uint8Array.from({ length: pixels.length / 4 }, (_, i) => pixels[i * 4 + offset]),
+  );
+  return Buffer.concat([Buffer.from("ARGB", "ascii"), ...channels.map(rle)]);
+}
+
+/** An .icns of PNG images (and ARGB runs for the 1x small sizes). */
 function icns(png) {
-  const chunks = ICNS.map(([type, size]) => {
+  const chunks = ICNS.map(([type, size, format]) => {
+    const data = format === "argb" ? argb(png[size]) : png[size];
     const head = Buffer.alloc(8);
     head.write(type, 0, "ascii");
-    head.writeUInt32BE(8 + png[size].length, 4);
-    return Buffer.concat([head, png[size]]);
+    head.writeUInt32BE(8 + data.length, 4);
+    return Buffer.concat([head, data]);
   });
   const body = Buffer.concat(chunks);
   const head = Buffer.alloc(8);
