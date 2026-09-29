@@ -126,7 +126,8 @@ pub struct RecentDatabase {
     /// FR-017, on this computer.
     pub passphrase_saved: bool,
     /// The backups at its backup location (FR-040), or `None` when this
-    /// computer doesn't know where they are or can't read the folder.
+    /// computer doesn't know where they are, can't read the folder, or a
+    /// chosen folder isn't there. A missing default folder means none yet.
     pub backups: Option<BackupSummary>,
     /// The file's modification time, ISO-8601 UTC, when it has changed since
     /// this computer last closed it (FR-040): another computer, or something

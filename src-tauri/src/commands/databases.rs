@@ -69,7 +69,7 @@ pub mod ops {
     fn recent_database(entry: RecentEntry) -> RecentDatabase {
         let available = entry.path.is_file();
         let backups = match (&entry.database_id, &entry.backup_folder) {
-            (Some(id), Some(folder)) if available => backup_summary(folder, id),
+            (Some(id), Some(folder)) if available => backup_summary(&entry.path, folder, id),
             _ => None,
         };
         let changed_since_left_at = entry.left_modified_at.as_deref().and_then(|left| {
@@ -87,7 +87,15 @@ pub mod ops {
         }
     }
 
-    fn backup_summary(folder: &Path, database_id: &str) -> Option<BackupSummary> {
+    /// A missing folder means no backups only when it is the default one,
+    /// which the first backup makes. A chosen folder that isn't there may be
+    /// on a drive that isn't plugged in, so then nothing is said (FR-040).
+    fn backup_summary(database: &Path, folder: &Path, database_id: &str) -> Option<BackupSummary> {
+        if matches!(folder.try_exists(), Ok(false))
+            && folder != backups::resolve_folder(database, "default")
+        {
+            return None;
+        }
         match backups::list(folder, database_id) {
             Ok(found) => Some(BackupSummary {
                 count: found.len(),

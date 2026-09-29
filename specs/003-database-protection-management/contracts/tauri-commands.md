@@ -88,7 +88,8 @@ type RecentDatabase = {
   lastOpenedAt: string;         // ISO-8601 UTC
   available: boolean;           // the file exists at path (FR-012)
   passphraseSaved: boolean;     // FR-017, on this computer
-  backups: BackupSummary | null; // FR-040; null when not known here or the folder can't be read
+  backups: BackupSummary | null; // FR-040; null when not known here, the folder can't be read,
+                                //  or a chosen folder isn't there (a missing default folder is count 0)
   changedSinceLeftAt: string | null; // FR-040: the file's modification time (ISO-8601 UTC)
                                 //  when later than the one recorded at this computer's last close
 };

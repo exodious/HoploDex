@@ -239,3 +239,33 @@ fn a_backup_folder_that_cant_be_read_says_nothing_about_backups() {
     fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(backups, None);
 }
+
+#[test]
+fn a_chosen_backup_folder_that_isnt_there_says_nothing_about_backups() {
+    let world = World::new();
+    world.create();
+    world.close();
+    // A folder on a drive that isn't plugged in, or doesn't exist on this
+    // computer: its backups may well be there, so "none" would be a guess.
+    let unplugged = world.dir.path().join("Unplugged drive").join("Backups");
+    world.machine.set_backup_folder(&world.path(), &unplugged);
+
+    assert_eq!(world.listed().backups, None);
+}
+
+#[test]
+fn a_default_backup_folder_not_yet_made_means_no_backups() {
+    let world = World::new();
+    world.create();
+    world.close();
+    let folder = world.machine.recent_entry(&world.path()).unwrap().backup_folder.unwrap();
+    assert_eq!(folder, backups::resolve_folder(&world.path(), "default"));
+    if folder.exists() {
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    assert_eq!(
+        world.listed().backups,
+        Some(BackupSummary { count: 0, latest_made_at: None, oldest_made_at: None })
+    );
+}

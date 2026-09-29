@@ -68,7 +68,26 @@ A full-window screen that replaces the app shell whenever no database is
 open: at launch, after a lock or a close, and after a take-over. No
 collection data, top-bar tabs or counts are shown.
 
-- **Header**: the HoploDex brand. The theme toggle stays available.
+- **Header**: the HoploDex brand: the name after its mark, a hoplon (the
+  round shield the name comes from) with Athena's owl as its device, solid
+  at that size (`BrandMark`, issue #22). The same mark heads the collection's
+  top bar, the closing screen and the fault screen. It is decorative
+  (`aria-hidden`): the name is the brand's accessible text. The theme toggle
+  stays available.
+- **Catalogue plate** (issue #23, `src/features/databases/plate/`): to the
+  right of the list, an engraved plate of the hoplon with its owl and a
+  firearm drawing, filling the height below the top bar and staying in view
+  while a long list scrolls. When the chooser opens it is drawn in stroke by
+  stroke, then cycles through the firearm drawings, in an order shuffled at
+  launch, until a database is opened; the timing is `plate/timing.ts`'s.
+  With `prefers-reduced-motion: reduce` it shows finished and stays still.
+  It is decorative: `aria-hidden`, not focusable, and ignored by the pointer
+  except the owl's beak, which makes the owl blink. It is gone once a
+  database opens, with the rest of the chooser, and below a 960 px window
+  width, where the list is centred instead.
+- **Program icon** (issue #22): the plate's hoplon and owl in bronze on a
+  blued-steel tile, with the owl a silhouette at 32 px and below. It is made
+  from `tools/icons/AppIcon.tsx` with `npm run icons`, never drawn by hand.
 - **Notices** (from `get_chooser_state` and `session:closed`), above the list,
   one line each, dismissible:
   - locked: "HoploDex locked <name>." (for `lockedByUser`, `idle`, `sleep`,
