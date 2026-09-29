@@ -96,7 +96,7 @@ export const PLATE_TIMING: PlateTiming = {
   // 6. Once everything is drawn, entry 2 cycles through the firearm
   //    drawings until a database is opened. Each one stays for CYCLE_HOLD.
   CYCLE: true, // false keeps the first drawing
-  CYCLE_HOLD: 8, // how long each drawing stays, and the wait after the draw-in
+  CYCLE_HOLD: 9, // how long each drawing stays, and the wait after the draw-in
   CYCLE_STYLE: "erase", // "slide", "redraw", "slideDraw", "straightedge" or "erase"
   CYCLE_OUT_TIME: 1.5, // the old drawing leaving
   CYCLE_IN_TIME: 2, // the new one arriving (drawing in, for "redraw", "slideDraw" and "erase")
