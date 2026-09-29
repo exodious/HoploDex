@@ -18,7 +18,7 @@ use crate::models::database::{
 };
 use crate::services::backups::{self, BackupFailure, BackupJob, Due};
 use crate::services::file_swap;
-use crate::services::machine_settings::MachineSettings;
+use crate::services::machine_settings::{self, MachineSettings};
 use crate::services::passphrase::Passphrase;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
@@ -184,7 +184,7 @@ pub fn close_normal(
         if session.closing().immediate.is_some() {
             // A sleep or shutdown stopped the backup: the rest of the close
             // is immediate, and was already announced.
-            finish_immediately(session, open);
+            finish_immediately(session, machine, open);
             finish_closing(session);
             return Ok(outcome);
         }
@@ -214,6 +214,7 @@ pub fn close_normal(
     drop(open);
     session.clear_opened_documents();
     session.set_last_closed(&path);
+    leave(machine, &path, check == FingerprintCheck::Same);
 
     // A sleep that came after the backup has already announced the close.
     if !finish_closing(session) {
@@ -362,7 +363,7 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
 
 /// Steps 2 to 5 of an immediate close that has begun, unless a normal close
 /// under way will finish them, or another thread is already doing so.
-fn complete_immediate(session: &Session, _machine: &MachineSettings) {
+fn complete_immediate(session: &Session, machine: &MachineSettings) {
     {
         let mut closing = session.closing();
         let normal_under_way = closing.normal.is_some();
@@ -375,7 +376,7 @@ fn complete_immediate(session: &Session, _machine: &MachineSettings) {
     let open = session.hold_for_close().take();
     session.forget_open();
     if let Some(open) = open {
-        finish_immediately(session, open);
+        finish_immediately(session, machine, open);
     }
     report_stopped(session);
     session.closing().immediate = None;
@@ -385,7 +386,7 @@ fn complete_immediate(session: &Session, _machine: &MachineSettings) {
 /// Steps 2 to 4 of an immediate close, for the database it took. Nothing is
 /// written to a file that can't be reached or that another computer has
 /// taken over.
-fn finish_immediately(session: &Session, mut open: OpenDatabase) {
+fn finish_immediately(session: &Session, machine: &MachineSettings, mut open: OpenDatabase) {
     let draft = open.staged_draft.take();
     let writable =
         !open.storage_lost && open.fingerprint.check(&open.path) == FingerprintCheck::Same;
@@ -410,6 +411,17 @@ fn finish_immediately(session: &Session, mut open: OpenDatabase) {
     drop(open);
     session.clear_opened_documents();
     session.set_last_closed(&path);
+    // Last, after everything that clears the collection away (FR-037).
+    leave(machine, &path, writable);
+}
+
+/// Records how this computer left the file at `path` (FR-040): its
+/// modification time once the connection has closed, or unknown when the
+/// file was out of reach or another computer had replaced it, so that a
+/// change made there is never taken for this computer's own.
+fn leave(machine: &MachineSettings, path: &Path, reachable_and_ours: bool) {
+    let modified = if reachable_and_ours { machine_settings::modified_at(path) } else { None };
+    machine.set_left_modified(path, modified);
 }
 
 /// Step 5 of an immediate close, if one has begun: waits for the operation

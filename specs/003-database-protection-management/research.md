@@ -598,11 +598,12 @@ keyring off, and only the app (and `keyring_test`) give it a real one.
 directory (`~/.config/com.hoplodex.app/` on Linux), written atomically
 (write to a temporary file, flush, rename). Contents (data-model.md): the
 machine id (§6), the recent-databases list (path, name, last opened, cached
-database id and resolved backup folder, whether a passphrase is saved), an
+database id and resolved backup folder, whether a passphrase is saved, and
+the file's modification time when this computer last closed it, FR-040), an
 unfinished-backup record (§7), and notices waiting to be shown in the chooser
 (a stopped operation, lost pending changes, a failed backup). This is
 everything FR-013 keeps per computer. It holds no collection data and no
-secret: file paths and names only.
+secret: file paths, names and times only.
 
 A corrupt or unreadable `machine.json` is set aside as `machine.json.bad` and
 a new one started, which loses only the recent list and cached ids. Saved

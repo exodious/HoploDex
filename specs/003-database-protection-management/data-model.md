@@ -115,8 +115,8 @@ journal may exist next to it only while a write is in progress.
 ## Machine-local: `machine.json` (per OS account, never inside a database)
 
 Location: the OS app config directory (`~/.config/com.hoplodex.app/machine.json`
-on Linux). Written atomically. Plain JSON: it holds paths and names, never
-collection data or secrets (research §11).
+on Linux). Written atomically. Plain JSON: it holds paths, names and times,
+never collection data or secrets (research §11).
 
 ```jsonc
 {
@@ -130,7 +130,10 @@ collection data or secrets (research §11).
       "databaseId": "3fa2c9d1…",   // cached at each open; null until first opened here
       "backupFolder": "/home/u/Documents/HoploDex/HoploDex backups", // resolved, cached at each open and
                                    //  when the location is saved (for restoring a damaged database)
-      "passphraseSaved": true      // FR-017; the passphrase itself is only in the keyring
+      "passphraseSaved": true,     // FR-017; the passphrase itself is only in the keyring
+      "leftModifiedAt": "2026-09-25T16:02:11.482Z" // FR-040: the file's modification time once this computer
+                                   //  last closed it; null while open here, after a close that couldn't
+                                   //  read it or found it taken over, and after a re-locate
     }
   ],
   "unfinishedBackup": {            // research §7; null when none
@@ -157,6 +160,12 @@ Rules:
   `path` and keeps the rest.
 - Removing an entry also deletes its keyring entry when `passphraseSaved`
   (FR-018). The database file is never touched.
+- The chooser reports that a database changed elsewhere only when its file's
+  modification time is later than `leftModifiedAt` (FR-040). Opening a
+  database here clears it, since the open writes to the file; every close
+  that lets go of the file here (a normal close or lock, or an immediate
+  one) records it after the connection has closed, unless the file could
+  not be reached or another computer had replaced it.
 - The same database reached by two paths (a symlink, or a copy) gives two
   entries. They are identified by path, as the spec's edge case on same-named
   files requires.

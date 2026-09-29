@@ -443,7 +443,8 @@ export function PlateArt({ clipId, entries }: { clipId: string; entries: readonl
         1
       </text>
       <text x={668} y={445} className="cap">
-        <tspan className="t">Hoplon.</tspan> The Greek hoplite’s shield, bronze over wood. About 500 BC.
+        <tspan className="t">Hoplon.</tspan> The Greek hoplite’s shield, bronze over wood. About 500
+        BC.
       </text>
       <Meander x={632} y={492} width={518} u={3.5} />
       <Entry2 clipId={clipId} entries={entries} />

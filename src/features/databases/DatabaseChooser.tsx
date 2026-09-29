@@ -229,7 +229,13 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
 
   const rows = useMemo<ChooserRow[]>(() => {
     const known: ChooserRow[] = (state?.recent ?? []).map(
-      ({ path, name, available, passphraseSaved }) => ({ path, name, available, passphraseSaved }),
+      ({ path, name, available, passphraseSaved, lastOpenedAt, backups, changedSinceLeftAt }) => ({
+        path,
+        name,
+        available,
+        passphraseSaved,
+        details: { lastOpenedAt, backups, changedSinceLeftAt },
+      }),
     );
     return [...picked.filter((row) => !known.some((k) => k.path === row.path)), ...known];
   }, [picked, state]);

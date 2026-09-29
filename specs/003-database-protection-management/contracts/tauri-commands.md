@@ -88,6 +88,15 @@ type RecentDatabase = {
   lastOpenedAt: string;         // ISO-8601 UTC
   available: boolean;           // the file exists at path (FR-012)
   passphraseSaved: boolean;     // FR-017, on this computer
+  backups: BackupSummary | null; // FR-040; null when not known here or the folder can't be read
+  changedSinceLeftAt: string | null; // FR-040: the file's modification time (ISO-8601 UTC)
+                                //  when later than the one recorded at this computer's last close
+};
+
+type BackupSummary = {          // FR-040, from the backup files' names at the cached backupFolder
+  count: number;
+  latestMadeAt: string | null;  // local "YYYY-MM-DDTHH:MM:SS", as BackupInfo.madeAt; null when none
+  oldestMadeAt: string | null;
 };
 
 type ChooserNotice =
@@ -172,6 +181,7 @@ type ExistingBackupsOutcome =
 - **Input**: none
 - **Output**: `{ recent: RecentDatabase[]; selectedPath: string | null; keyringAvailable: boolean; screenLockSupported: boolean; suggested: { folder: string; name: string }; notices: ChooserNotice[] }`
 - Notices are returned once and then removed from `machine.json`. `selectedPath` is the most recent entry at startup (FR-021), or the database just locked or closed (FR-033).
+- For each available entry, `backups` lists the backup folder cached in `machine.json` by file name, and `changedSinceLeftAt` compares the file's modification time with `leftModifiedAt` (data-model.md "Machine-local"). Nothing is decrypted, and an unavailable entry has neither (FR-040).
 
 ### `create_database` 🔑
 - **Input**: `{ folder: string; name: string; passphrase: string; acknowledgedUnrecoverable: boolean }`
@@ -193,7 +203,7 @@ type ExistingBackupsOutcome =
 
 ### `locate_database`
 - **Input**: `{ path: string; newPath: string }` → **Output**: `RecentDatabase`
-- Replaces an unavailable entry's path (FR-012) and keeps its other fields.
+- Replaces an unavailable entry's path (FR-012) and keeps its other fields, except `leftModifiedAt`, which is forgotten: the file found may be a copy (FR-040).
 
 ---
 

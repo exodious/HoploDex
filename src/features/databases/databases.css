@@ -193,6 +193,45 @@
   flex: 1;
 }
 
+/* What this computer knows about the selected database (FR-040), ruled
+   like an index card and lined up with its name. */
+.hd-db-row__details {
+  margin: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+  font-size: var(--text-sm);
+}
+
+.hd-db-row__fact {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  column-gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.hd-db-row__fact:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.hd-db-row__fact dt {
+  color: var(--ink-2);
+}
+
+.hd-db-row__fact dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hd-db-row__fact-note {
+  color: var(--ink-2);
+}
+
+.hd-db-row__changed {
+  color: var(--niter);
+  font-weight: 650;
+}
+
 /* Line the button up with the input, below the field's label. */
 .hd-db-row__unlock > .hd-button {
   margin-top: calc(var(--text-sm) * 1.5 + var(--space-2));
@@ -276,6 +315,10 @@
   .hd-db-row__saved-error,
   .hd-db-row__remember {
     padding-left: var(--space-4);
+  }
+
+  .hd-db-row__details {
+    margin-left: var(--space-4);
   }
 
   .hd-db-row__unlock > .hd-button {

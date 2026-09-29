@@ -110,6 +110,17 @@ collection data, top-bar tabs or counts are shown.
     location" and offer **Locate…** (file picker) and **Remove from list**.
   - Every row offers **Remove from list** in its overflow, with the note "The
     database file is not deleted." (FR-012, US2-5).
+- **Selected row, what this computer knows** (FR-040): below the name and
+  folder, before the passphrase or **Open**, a short list ruled like an
+  index card and lined up with the name. It is left out for a file just
+  picked with **Open another database file…**.
+  - "Last opened here": "Today at 9:12 AM", "Yesterday at 5:40 PM" or
+    "September 12 at 8:05 PM" (the year only when it isn't this year). When
+    `changedSinceLeftAt` is set, a second line in niter: "Changed on
+    September 27, after it was last closed here." ("Changed today, …",
+    "Changed yesterday, …").
+  - "Last backup", when `backups` is known: the latest in the same form, or
+    "None"; then "5 kept, the oldest from September 14", or "1 kept".
 - **Selected row, passphrase not saved**: an inline form opens in the row, a
   `PassphraseField` labelled "Passphrase for <name>", focused, with **Open**
   (primary). Below it, a `Checkbox` **Remember on this computer** (off),

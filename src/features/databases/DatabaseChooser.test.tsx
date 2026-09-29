@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { formatDateTime } from "../../lib/dates";
+import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
 import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
@@ -20,6 +20,8 @@ function recent(name: string, folder: string, lastOpenedAt: string): RecentDatab
     lastOpenedAt,
     available: true,
     passphraseSaved: false,
+    backups: null,
+    changedSinceLeftAt: null,
   };
 }
 
@@ -331,6 +333,8 @@ describe("DatabaseChooser (User Story 2)", () => {
     );
     const field = await screen.findByLabelText("Passphrase for “Club armory”");
     await waitFor(() => expect(field).toHaveFocus());
+    // Nothing is known about a file this computer hasn't opened (FR-040).
+    expect(screen.queryByText("Last opened here")).not.toBeInTheDocument();
     await user.type(field, `${PASSPHRASE}{Enter}`);
     expect(session.openDatabase).toHaveBeenCalledWith(other, PASSPHRASE);
   });
@@ -926,5 +930,131 @@ describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md 
     const open = await screen.findByRole("button", { name: "Open" });
     await waitFor(() => expect(open).toHaveFocus());
     expect(screen.queryByLabelText("Passphrase for “Shared collection”")).not.toBeInTheDocument();
+  });
+});
+
+describe("What the chooser knows about the selected database (FR-040)", () => {
+  /** A moment `days` ago, at 09:12 local time. */
+  function daysAgo(days: number, hours = 9, minutes = 12): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, hours, minutes);
+  }
+
+  /** As the backend names backups: local time, without a zone. */
+  function local(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+      date.getHours(),
+    )}:${pad(date.getMinutes())}:00`;
+  }
+
+  function fact(label: string): HTMLElement {
+    const term = screen.getByText(label, { selector: "dt" });
+    return term.nextElementSibling as HTMLElement;
+  }
+
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset();
+  });
+
+  it("shows the selected database's last open here and its backups, and no other row's", async () => {
+    const opened = daysAgo(0);
+    const latest = daysAgo(1, 17, 40);
+    const oldest = daysAgo(15, 20, 45);
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({
+        recent: [
+          {
+            ...main,
+            lastOpenedAt: opened.toISOString(),
+            backups: { count: 5, latestMadeAt: local(latest), oldestMadeAt: local(oldest) },
+          },
+          { ...shared, backups: { count: 2, latestMadeAt: local(latest), oldestMadeAt: null } },
+        ],
+      }),
+    );
+    renderChooser();
+
+    await screen.findByLabelText("Passphrase for “Main collection”");
+    expect(fact("Last opened here")).toHaveTextContent(formatRecentMoment(opened.toISOString()));
+    expect(fact("Last opened here")).toHaveTextContent(/^Today at /);
+    const backup = fact("Last backup");
+    expect(backup).toHaveTextContent(/^Yesterday at /);
+    expect(backup).toHaveTextContent(
+      new RegExp(`5 kept, the oldest from ${formatRecentDay(local(oldest))}$`),
+    );
+    expect(screen.getAllByText("Last opened here")).toHaveLength(1);
+    expect(screen.queryByText(/after it was last closed here/)).not.toBeInTheDocument();
+  });
+
+  it("says when the file changed after it was last closed here", async () => {
+    const changed = daysAgo(2, 16, 20);
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [{ ...main, changedSinceLeftAt: changed.toISOString() }] }),
+    );
+    renderChooser();
+
+    await screen.findByLabelText("Passphrase for “Main collection”");
+    expect(fact("Last opened here")).toHaveTextContent(
+      `Changed on ${formatRecentDay(changed.toISOString())}, after it was last closed here.`,
+    );
+  });
+
+  it("says a change made today without a date", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [{ ...main, changedSinceLeftAt: daysAgo(0).toISOString() }] }),
+    );
+    renderChooser();
+
+    expect(
+      await screen.findByText("Changed today, after it was last closed here."),
+    ).toBeInTheDocument();
+  });
+
+  it("says there are no backups, or one, without an oldest", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({
+        recent: [
+          { ...main, backups: { count: 0, latestMadeAt: null, oldestMadeAt: null } },
+          {
+            ...shared,
+            backups: { count: 1, latestMadeAt: local(daysAgo(3)), oldestMadeAt: local(daysAgo(3)) },
+          },
+        ],
+      }),
+    );
+    renderChooser();
+
+    await screen.findByLabelText("Passphrase for “Main collection”");
+    expect(fact("Last backup")).toHaveTextContent(/^None$/);
+
+    await user.click(screen.getByRole("button", { name: "Shared collection, /mnt/nas/family" }));
+
+    await screen.findByLabelText("Passphrase for “Shared collection”");
+    expect(fact("Last backup")).toHaveTextContent(/1 kept$/);
+    expect(fact("Last backup")).not.toHaveTextContent("oldest");
+  });
+
+  it("leaves out the backups when their folder can't be read", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [{ ...main, backups: null }] }),
+    );
+    renderChooser();
+
+    await screen.findByLabelText("Passphrase for “Main collection”");
+    expect(screen.getByText("Last opened here")).toBeInTheDocument();
+    expect(screen.queryByText("Last backup")).not.toBeInTheDocument();
+  });
+
+  it("shows the details above Open when the passphrase is saved", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [{ ...main, passphraseSaved: true }], keyringAvailable: true }),
+    );
+    renderChooser();
+
+    const open = await screen.findByRole("button", { name: "Open" });
+    const details = screen.getByText("Last opened here").closest("dl") as HTMLElement;
+    expect(details.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

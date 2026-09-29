@@ -47,6 +47,42 @@ export function formatDateTime(iso: string, locale?: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "short" }).format(date);
 }
 
+/** Calendar days from the local day of `moment` to that of `now`. */
+function localDaysAgo(moment: Date, now: Date): number {
+  const day = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((day(now) - day(moment)) / DAY_MS);
+}
+
+/** A recent moment's local day: "today", "yesterday", "September 14", or
+ * "September 14, 2025" in another year. `moment` is ISO-8601 with a zone,
+ * or without one for a local time. */
+export function formatRecentDay(moment: string, now: Date = new Date(), locale?: string): string {
+  const date = new Date(moment);
+  if (Number.isNaN(date.getTime())) return moment;
+  const ago = localDaysAgo(date, now);
+  if (ago === 0) return "today";
+  if (ago === 1) return "yesterday";
+  return new Intl.DateTimeFormat(locale, {
+    month: "long",
+    day: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  }).format(date);
+}
+
+/** A recent moment with its local time: "Today at 9:12 AM", "Yesterday at
+ * 5:40 PM" or "September 12 at 8:05 PM" (FR-040). */
+export function formatRecentMoment(
+  moment: string,
+  now: Date = new Date(),
+  locale?: string,
+): string {
+  const date = new Date(moment);
+  if (Number.isNaN(date.getTime())) return moment;
+  const day = formatRecentDay(moment, now, locale);
+  const time = new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(date);
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)} at ${time}`;
+}
+
 /** Whole days from `fromIso` to `toIso`; negative once `toIso` has passed. */
 export function daysUntil(toIsoDate: string, fromIso: string = todayIso()): number {
   return Math.round((toUtc(toIsoDate).getTime() - toUtc(fromIso).getTime()) / DAY_MS);

@@ -125,6 +125,25 @@ pub struct RecentDatabase {
     pub available: bool,
     /// FR-017, on this computer.
     pub passphrase_saved: bool,
+    /// The backups at its backup location (FR-040), or `None` when this
+    /// computer doesn't know where they are or can't read the folder.
+    pub backups: Option<BackupSummary>,
+    /// The file's modification time, ISO-8601 UTC, when it has changed since
+    /// this computer last closed it (FR-040): another computer, or something
+    /// outside HoploDex, has written to it.
+    pub changed_since_left_at: Option<String>,
+}
+
+/// The backups of a database the chooser lists (FR-040), found by their
+/// file names alone, so nothing is decrypted.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupSummary {
+    pub count: usize,
+    /// Local date and time, as `BackupInfo::made_at`. `None` when there are
+    /// none.
+    pub latest_made_at: Option<String>,
+    pub oldest_made_at: Option<String>,
 }
 
 /// `remove_recent_database`'s answer.
