@@ -36,7 +36,7 @@ const hoplon = (() => {
     const fillStart = sweepTime(k, k.SHIELD_FILL_AT);
     const pupils = owl + k.OWL_LINES_TIME + k.PUPIL_PAUSE;
     return [
-      { id: "key", label: "Greek key", tone: "orn", span: [0, k.KEY_TIME] },
+      { id: "key", label: "Greek key", tone: "orn", span: [k.KEY_START, k.KEY_START + k.KEY_TIME] },
       { id: "rifle", label: "Rifle", tone: "line", span: [k.RIFLE_START, k.RIFLE_START + k.RIFLE_TIME], eased: true },
       { id: "rim", label: "Rim sweep", tone: "orn", span: [k.RIM_START, Math.max(braidClosed(k), lastTongue)] },
       { id: "ground", label: "Shield ground", tone: "fill", span: [fillStart, fillStart + k.SHIELD_FILL_TIME] },
@@ -57,8 +57,8 @@ const hoplon = (() => {
     const units = [...svg.querySelectorAll(".key.unit")];
     const far = Math.max(1, ...units.map(el => +el.dataset.key));
     const step = (k.KEY_TIME - k.KEY_UNIT_TIME) / far;
-    units.forEach(el => { el.style.animation = `draw ${s(k.KEY_UNIT_TIME)} ${s(+el.dataset.key * step)} linear forwards`; });
-    set(".key:not(.unit)", `draw ${s(k.KEY_TIME)} 0s linear forwards`);
+    units.forEach(el => { el.style.animation = `draw ${s(k.KEY_UNIT_TIME)} ${s(k.KEY_START + +el.dataset.key * step)} linear forwards`; });
+    set(".key:not(.unit)", `draw ${s(k.KEY_TIME)} ${s(k.KEY_START)} linear forwards`);
 
     // 2. the rifle
     const rifle = `draw ${s(k.RIFLE_TIME)} ${s(k.RIFLE_START)} ${EASE} forwards`;

@@ -164,7 +164,7 @@ const hoplon = (() => {
     const fillStart = sweepTime(k, k.SHIELD_FILL_AT);
     const pupils = owl + k.OWL_LINES_TIME + k.PUPIL_PAUSE;
     return [
-      { id: "key", label: "Greek key", tone: "orn", span: [0, k.KEY_TIME] },
+      { id: "key", label: "Greek key", tone: "orn", span: [k.KEY_START, k.KEY_START + k.KEY_TIME] },
       { id: "rifle", label: "Rifle", tone: "line", span: [k.RIFLE_START, k.RIFLE_START + k.RIFLE_TIME], eased: true },
       { id: "rim", label: "Rim sweep", tone: "orn", span: [k.RIM_START, Math.max(braidClosed(k), lastTongue)] },
       { id: "ground", label: "Shield ground", tone: "fill", span: [fillStart, fillStart + k.SHIELD_FILL_TIME] },
@@ -183,8 +183,8 @@ const hoplon = (() => {
     const units = [...svg.querySelectorAll(".key.unit")];
     const far = Math.max(1, ...units.map(el => +el.dataset.key));
     const step = (k.KEY_TIME - k.KEY_UNIT_TIME) / far;
-    units.forEach(el => { el.style.animation = `draw ${s(k.KEY_UNIT_TIME)} ${s(+el.dataset.key * step)} linear forwards`; });
-    set(".key:not(.unit)", `draw ${s(k.KEY_TIME)} 0s linear forwards`);
+    units.forEach(el => { el.style.animation = `draw ${s(k.KEY_UNIT_TIME)} ${s(k.KEY_START + +el.dataset.key * step)} linear forwards`; });
+    set(".key:not(.unit)", `draw ${s(k.KEY_TIME)} ${s(k.KEY_START)} linear forwards`);
     // 2. the rifle
     const rifle = `draw ${s(k.RIFLE_TIME)} ${s(k.RIFLE_START)} ${EASE} forwards`;
     set(".dwg-gun .open, .dwg-gun .thin, .dwg-gun .detail, .dwg-gun .cut", rifle);
@@ -213,7 +213,7 @@ const hoplon = (() => {
   const duration = k => k.SPEED * Math.max(...phases(k).map(p => p.span[1]));
   return { apply, phases, duration, looksDone, DEFAULTS: null };
 })();
-hoplon.DEFAULTS = {"SPEED": 1.0, "KEY_TIME": 1.25, "KEY_UNIT_TIME": 0.4, "RIFLE_START": 1.3, "RIFLE_TIME": 1.6, "RIM_START": 1.3, "RIM_TIME": 1.8, "RIM_EASE": [0, 0, 1, 1], "BRAID_LAG": 0.0, "TONGUE_TIME": 0.35, "BEAD_TIME": 0.25, "SHIELD_FILL_AT": 0.8, "SHIELD_FILL_TIME": 0.6, "OWL_GAP": 0.2, "OWL_LINES_TIME": 1.8, "OWL_PAPER_AFTER": 0.4, "BEAK_FILL_AFTER": 1.1, "BEAK_FILL_TIME": 0.5, "WASH_AFTER": 1.4, "WASH_TIME": 0.8, "PUPIL_PAUSE": 0.3, "PUPIL_TIME": 0.4, "LABELS_START": 2.6, "LABELS_TIME": 0.6, "TONGUES": 44, "BRAID_WAVES": 30};
+hoplon.DEFAULTS = {"SPEED": 1.0, "KEY_START": 0.0, "KEY_TIME": 1.25, "KEY_UNIT_TIME": 0.4, "RIFLE_START": 1.3, "RIFLE_TIME": 1.6, "RIM_START": 1.3, "RIM_TIME": 1.8, "RIM_EASE": [0, 0, 1, 1], "BRAID_LAG": 0.0, "TONGUE_TIME": 0.35, "BEAD_TIME": 0.25, "SHIELD_FILL_AT": 0.8, "SHIELD_FILL_TIME": 0.6, "OWL_GAP": 0.2, "OWL_LINES_TIME": 1.8, "OWL_PAPER_AFTER": 0.4, "BEAK_FILL_AFTER": 1.1, "BEAK_FILL_TIME": 0.5, "WASH_AFTER": 1.4, "WASH_TIME": 0.8, "PUPIL_PAUSE": 0.3, "PUPIL_TIME": 0.4, "LABELS_START": 2.6, "LABELS_TIME": 0.6, "TONGUES": 44, "BRAID_WAVES": 30};
 hoplon.apply(document.querySelector('#live svg'), hoplon.DEFAULTS);</script>
 <script>
 document.getElementById("replay").addEventListener("click", () => {

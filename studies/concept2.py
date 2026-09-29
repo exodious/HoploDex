@@ -21,6 +21,7 @@ HERE = pathlib.Path(__file__).parent
 SPEED = 1.0  # multiplies every time below: 1.5 plays the whole thing half again slower
 
 # 1. The Greek key draws first, from both ends to the middle.
+KEY_START = 0.0
 KEY_TIME = 1.25  # the whole rule
 KEY_UNIT_TIME = 0.4  # one key unit
 

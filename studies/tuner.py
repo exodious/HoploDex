@@ -21,6 +21,7 @@ GROUPS = [
         ("SPEED", "Overall pace", 0.5, 2.5, 0.05, "×", "Multiplies every time below. Higher is slower."),
     ]),
     ("Greek key", [
+        ("KEY_START", "Starts at", 0, 5, 0.05, "s", ""),
         ("KEY_TIME", "Whole rule", 0.4, 3, 0.05, "s", "It draws from both ends and meets in the middle."),
         ("KEY_UNIT_TIME", "Each key unit", 0.1, 1.2, 0.05, "s", ""),
     ]),
