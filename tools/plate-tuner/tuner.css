@@ -101,7 +101,7 @@ input:focus-visible,
 }
 .stage {
   grid-area: stage;
-  aspect-ratio: 580 / 700;
+  aspect-ratio: 580 / 756;
   max-width: 100%;
   align-self: start;
   border: 1px solid var(--rule);

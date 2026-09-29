@@ -87,7 +87,7 @@ export const STARTUP_ENTRIES: readonly PlateEntry[] = shuffled(PLATE_ENTRIES);
 /** Where entry 2's drawings go, in plate pixels: each is scaled to fit this
  * box (never above MAX_SCALE, the rifle's), against its left edge and
  * centred on its height. */
-export const ENTRY_BOX = { x: 642, y: 520, width: 498, height: 142 };
+export const ENTRY_BOX = { x: 642, y: 548, width: 498, height: 170 };
 const MAX_SCALE = 1.6;
 
 /** A drawing's extent, in its 320×200 drawing units: [x0, y0, x1, y1]. The

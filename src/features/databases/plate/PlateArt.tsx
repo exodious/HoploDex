@@ -19,7 +19,7 @@ import type { PlateEntry } from "./entries";
  * timing.
  */
 
-export const PLATE_VIEWBOX = "600 40 580 700";
+export const PLATE_VIEWBOX = "600 40 580 756";
 
 const HOPLON = { x: 880, y: 220, r: 140 };
 const RIM_LINE_PIECES = 60; // each rim circle is drawn in this many arcs
@@ -407,11 +407,11 @@ function Entry2({ clipId, entries }: { clipId: string; entries: readonly PlateEn
               <EntryDrawing entry={entry} />
             </g>
             <g className="caption">
-              <ScaleBar right={ENTRY_RIGHT} y={668} px={barPx} label={`${entry.barCm} cm`} />
-              <text x={640} y={712} className="no">
+              <ScaleBar right={ENTRY_RIGHT} y={724} px={barPx} label={`${entry.barCm} cm`} />
+              <text x={640} y={768} className="no">
                 {entryNumber(entry)}
               </text>
-              <text x={668} y={705} className="cap">
+              <text x={668} y={761} className="cap">
                 <tspan className="t">{entry.title}</tspan> {entry.caption}
               </text>
             </g>
