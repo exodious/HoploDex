@@ -164,6 +164,9 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
 #[test]
 fn deleting_a_firearm_wipes_its_custom_cartridge() {
     const CARTRIDGE: &str = "Zyxwv Wildcat Special";
+    // The index is a trigram one: it stores the lowercased three-character
+    // pieces of a value, never the whole word (0002_fts5.sql).
+    const INDEX_TOKENS: [&str; 3] = ["zyx", "yxw", "xwv"];
     let contains = |haystack: &[u8], needle: &str| {
         haystack.windows(needle.len()).any(|window| window == needle.as_bytes())
     };
@@ -180,16 +183,21 @@ fn deleting_a_firearm_wipes_its_custom_cartridge() {
     )
     .unwrap();
     firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-7"), false).unwrap();
-    // Guard: the search sees the text and its index token while stored.
+    // Guard: the search sees the text and its index tokens while stored.
     let before = decrypted_export(&db.conn, scratch.path());
     assert!(contains(&before, CARTRIDGE));
-    assert!(contains(&before, "zyxwv"), "the full-text index holds the word");
+    for token in INDEX_TOKENS {
+        assert!(contains(&before, token), "the full-text index holds {token:?}");
+    }
 
     firearm_ops::delete_firearm(&db.conn, created.id, true).unwrap();
 
     let after = decrypted_export(&db.conn, scratch.path());
     assert!(!contains(&after, CARTRIDGE), "the cartridge is still in the database");
-    assert!(!contains(&after, "zyxwv") && !contains(&after, "Zyxwv"), "a remnant was left");
+    assert!(!contains(&after, "Zyxwv"), "a remnant was left");
+    for token in INDEX_TOKENS {
+        assert!(!contains(&after, token), "the index kept {token:?}");
+    }
     assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
 }
 
