@@ -107,6 +107,9 @@ Setup: as M1, with the window at its minimum size.
    above the field if there is no room below), not cut off by the dialog.
 4. Scroll the form with the mouse wheel. Expected: the list moves with the
    field or closes; it never floats detached from it.
+5. Type a short text that gives more than 8 suggestions (for example "9"), then
+   put the pointer over the list and scroll the mouse wheel. Expected: the list
+   scrolls to its later rows, and the form behind it does not move.
 
 ## Checks that must hold before merge
 
