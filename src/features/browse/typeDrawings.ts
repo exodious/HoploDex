@@ -251,10 +251,10 @@ export const DRAWINGS: Record<string, Drawing> = {
   },
   // A rifle-caliber suppressor, mount end left: a threaded mount collar,
   // wrench flats near the mount, and a seam where the end cap seats, flush
-  // with the tube and rounded at the muzzle. Between two break lines the tube is cut away
-  // on the bore axis: a hatched wall, an empty blast chamber, then the
-  // baffle stack, a sleeve of skirts with a cone at each joint, the blast
-  // baffle heavier than the rest.
+  // with the tube and rounded at the muzzle. Between two break lines the
+  // tube is cut away on the bore axis: a hatched wall, an empty blast
+  // chamber, then the baffle stack, a sleeve of skirts with a cone at each
+  // joint, the blast baffle heavier than the rest.
   suppressor: {
     parts: [
       { d: "M29 88.5H47V111.5H29Q27 111.5 27 109.5V90.5Q27 88.5 29 88.5Z", role: "part" },
