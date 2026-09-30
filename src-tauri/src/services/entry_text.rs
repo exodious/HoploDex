@@ -85,6 +85,12 @@ const DASHES: &[char] = &[
 /// Steps 1 and 2 of research.md §3: NFKC, Unicode lower case, `×` as `x`
 /// and every dash as `-`.
 pub fn fold(text: &str) -> String {
+    // NFKC leaves ASCII alone, and nearly every make, model and cartridge is
+    // ASCII: skipping it keeps a 10,000-value suggestion query fast.
+    if text.is_ascii() {
+        // Only `-` is a dash in ASCII, and there is no `×`.
+        return text.to_ascii_lowercase();
+    }
     text.nfkc()
         .collect::<String>()
         .to_lowercase()
@@ -97,13 +103,19 @@ pub fn fold(text: &str) -> String {
         .collect()
 }
 
+/// Whether the first non-space character in `range` is a digit.
+fn digit_beside<'a>(mut range: impl Iterator<Item = &'a char>) -> bool {
+    range.find(|c| !c.is_whitespace()).is_some_and(|c| c.is_ascii_digit())
+}
+
 /// Step 3: the tokens, split on whitespace, `-`, `/`, `.`, `&`, and on an
 /// `x` between two digits (spaces around it allowed: `9x19`, `9 x 19`).
 fn tokens(text: &str) -> Vec<String> {
-    let chars: Vec<char> = fold(text).chars().collect();
-    fn digit_beside<'a>(mut range: impl Iterator<Item = &'a char>) -> bool {
-        range.find(|c| !c.is_whitespace()).is_some_and(|c| c.is_ascii_digit())
+    let folded = fold(text);
+    if folded.is_ascii() {
+        return ascii_tokens(&folded);
     }
+    let chars: Vec<char> = folded.chars().collect();
     let mut tokens = Vec::new();
     let mut current = String::new();
     for (index, &c) in chars.iter().enumerate() {
@@ -122,6 +134,40 @@ fn tokens(text: &str) -> Vec<String> {
     }
     if !current.is_empty() {
         tokens.push(current);
+    }
+    tokens
+}
+
+/// [`tokens`] for ASCII text, which is nearly all of it: the same rule
+/// without decoding to characters, since a 10,000-value suggestion query
+/// tokenizes every value on record.
+fn ascii_tokens(folded: &str) -> Vec<String> {
+    let bytes = folded.as_bytes();
+    fn space(byte: &u8) -> bool {
+        (*byte as char).is_whitespace()
+    }
+    fn digit_beside<'a>(mut range: impl Iterator<Item = &'a u8>) -> bool {
+        range.find(|byte| !space(byte)).is_some_and(u8::is_ascii_digit)
+    }
+    let mut tokens = Vec::new();
+    let mut start = None;
+    for (index, byte) in bytes.iter().enumerate() {
+        let separator = space(byte)
+            || matches!(byte, b'-' | b'/' | b'.' | b'&')
+            || (*byte == b'x'
+                && digit_beside(bytes[..index].iter().rev())
+                && digit_beside(bytes[index + 1..].iter()));
+        match (separator, start) {
+            (true, Some(from)) => {
+                tokens.push(folded[from..index].to_owned());
+                start = None;
+            }
+            (false, None) => start = Some(index),
+            _ => {}
+        }
+    }
+    if let Some(from) = start {
+        tokens.push(folded[from..].to_owned());
     }
     tokens
 }

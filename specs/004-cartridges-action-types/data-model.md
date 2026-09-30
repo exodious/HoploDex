@@ -33,8 +33,10 @@ Assumptions).
 - `idx_firearms_cartridge ON firearms (cartridge)`: **new**, beside the
   existing `idx_firearms_caliber` and `idx_firearms_make`; covers
   `suggest_entries`' `GROUP BY cartridge` (research.md §5).
-- No index on `(make, model)` unless `performance_test.rs` shows the model
-  query needs one.
+- `idx_firearms_make_model ON firearms (make, model)`: **new**, added after
+  `performance_test.rs` showed the model query's `GROUP BY make, model` (a
+  sort of 10,000 rows) took most of the 50 ms budget without it; it covers
+  that query, `MIN(id)` included (research.md §5).
 
 ## Entity: Action Type (new lookup table)
 

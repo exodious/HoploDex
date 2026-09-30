@@ -25,6 +25,7 @@ import type { DraftTarget } from "../session/usePendingDraft";
 import { OriginGuide } from "./OriginGuide";
 import { caliberHint, caliberReducer } from "./caliberDerivation";
 import type { CaliberAction, CaliberMode, CaliberState } from "./caliberDerivation";
+import { EntryField } from "./EntryField";
 import { settleEntry } from "./firearmsService";
 import {
   CONDITION_OPTIONS,
@@ -38,6 +39,7 @@ import type {
   Condition,
   DerivedCaliber,
   DispositionType,
+  EntryFieldName,
   Firearm,
   FirearmInput,
   Origin,
@@ -54,6 +56,21 @@ function yearOfManufactureError(text: string): string | undefined {
     return `Year of manufacture must be a four-digit year from 1400 to ${currentYear}.`;
   }
   return undefined;
+}
+
+/** The four fields with suggestions and snapping (specs/004-cartridges-action-types
+ * FR-009). */
+const ENTRY_FIELDS: readonly EntryFieldName[] = ["make", "model", "cartridge", "caliber"];
+
+function isEntryField(name: string | undefined): name is EntryFieldName {
+  return ENTRY_FIELDS.some((field) => field === name);
+}
+
+/** contracts/ui-entry.md §2: the note under a field that was snapped. */
+function snapNote(changedBy: "catalog" | "record", value: string): string {
+  return changedBy === "catalog"
+    ? `Changed to the built-in spelling “${value}”.`
+    : `Changed to “${value}”, as already in your collection.`;
 }
 
 /** specs/004-cartridges-action-types FR-015, mirrored from the backend's
@@ -453,11 +470,20 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // response to check the field still holds what was sent.
   const latestForm = useRef(form);
   latestForm.current = form;
-  // The cartridge text last settled (a saved one counts as settled, FR-014)
-  // and what it derived, so a caliber left empty is derived again at once.
-  const savedCartridge = initialValues?.cartridge ?? "";
-  const lastSettledCartridge = useRef(savedCartridge.trim());
+  // What each entry field was last settled to (a saved value counts as
+  // settled, FR-014), the cartridge and caliber it derived, so a caliber left
+  // empty is derived again at once, and the settles still in flight.
+  const lastSettled = useRef<Record<EntryFieldName, string>>({
+    make: (initialValues?.make ?? "").trim(),
+    model: (initialValues?.model ?? "").trim(),
+    cartridge: (initialValues?.cartridge ?? "").trim(),
+    caliber: (initialValues?.caliber ?? "").trim(),
+  });
   const derivedFrom = useRef<CaliberState["derivedFrom"]>(null);
+  const settling = useRef(new Set<Promise<boolean>>());
+  // contracts/ui-entry.md §2: the note under a field whose value was snapped,
+  // until the field is edited again.
+  const [entryNotes, setEntryNotes] = useState<Partial<Record<EntryFieldName, string>>>({});
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -539,40 +565,83 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     });
   }
 
-  /** contracts/ui-entry.md §2-§3: when Cartridge is left with text that
-   * changed since it was last settled (and, editing, differs from the saved
-   * value), asks the backend what caliber it derives, and applies the
-   * answer only if the field still holds what was sent. */
-  async function settleCartridge() {
-    const text = form.cartridge;
+  /** contracts/ui-entry.md §2–§3: settles one of the four fields, when it
+   * was left or a suggestion was picked. Only text that changed since it was
+   * last settled and, editing, differs from the saved value is sent (FR-014);
+   * the answer is applied only if the field still holds what was sent.
+   * Resolves whether the value was changed by snapping. A cartridge also
+   * gets the caliber it derives. */
+  function settle(field: EntryFieldName): Promise<boolean> {
+    const text = latestForm.current[field];
     const trimmed = text.trim();
-    if (trimmed === lastSettledCartridge.current) return;
-    const previous = lastSettledCartridge.current;
-    lastSettledCartridge.current = trimmed;
-    if (trimmed === "" || (initialValues && trimmed === savedCartridge.trim())) {
-      // Cleared, or typed back to the saved value (never settled, FR-014):
-      // a derived caliber empties, an edited one loses its suggestion.
-      derivedFrom.current = null;
-      if (trimmed === "" || form.caliberMode === "edited")
-        applyCaliber({ type: "cartridgeCleared" });
-      return;
+    if (trimmed === lastSettled.current[field]) return Promise.resolve(false);
+    const previous = lastSettled.current[field];
+    lastSettled.current[field] = trimmed;
+    if (trimmed === "" || (initialValues && trimmed === (initialValues[field] ?? "").trim())) {
+      // Cleared, or typed back to the saved value (never settled, FR-014): a
+      // derived caliber empties, an edited one loses its suggestion.
+      if (field === "cartridge") {
+        derivedFrom.current = null;
+        if (trimmed === "" || latestForm.current.caliberMode === "edited") {
+          applyCaliber({ type: "cartridgeCleared" });
+        }
+      }
+      return Promise.resolve(false);
     }
-    let settled;
-    try {
-      settled = await settleEntry("cartridge", text);
-    } catch {
-      // Only guidance: saving still checks the caliber. Leaving the field
-      // again tries once more.
-      lastSettledCartridge.current = previous;
-      return;
-    }
-    if (latestForm.current.cartridge !== text) return;
-    derivedFrom.current = { cartridge: settled.value, derived: settled.derivedCaliber };
-    applyCaliber({
-      type: "cartridgeSettled",
-      cartridge: settled.value,
-      derived: settled.derivedCaliber,
-    });
+    const run = (async () => {
+      let settled;
+      try {
+        settled = await settleEntry(field, text);
+      } catch {
+        // Only guidance: saving still checks the field. Leaving it again
+        // tries once more.
+        lastSettled.current[field] = previous;
+        return false;
+      }
+      if (latestForm.current[field] !== text) return false;
+      if (field === "cartridge") {
+        derivedFrom.current = { cartridge: settled.value, derived: settled.derivedCaliber };
+        applyCaliber({
+          type: "cartridgeSettled",
+          cartridge: settled.value,
+          derived: settled.derivedCaliber,
+        });
+      }
+      if (settled.changedBy === null) return false;
+      lastSettled.current[field] = settled.value.trim();
+      const note = snapNote(settled.changedBy, settled.value);
+      flushSync(() => {
+        setEntryNotes((notes) => ({ ...notes, [field]: note }));
+        if (field === "caliber") {
+          applyCaliber({ type: "caliberTyped", caliber: settled.value });
+        } else {
+          update(field, settled.value);
+        }
+      });
+      return true;
+    })();
+    settling.current.add(run);
+    void run.finally(() => settling.current.delete(run));
+    return run;
+  }
+
+  /** The user typed in an entry field: its note goes (§2). */
+  function editEntry(field: EntryFieldName, text: string) {
+    setEntryNotes((notes) => (notes[field] ? { ...notes, [field]: undefined } : notes));
+    if (field === "caliber") applyCaliber({ type: "caliberTyped", caliber: text });
+    else update(field, text);
+  }
+
+  /** The user picked a suggestion: the field takes it and settles at once. */
+  function pickEntry(field: EntryFieldName, value: string) {
+    flushSync(() => editEntry(field, value));
+    void settle(field);
+  }
+
+  function leaveEntry(field: EntryFieldName) {
+    touch(field)();
+    if (field === "caliber") applyCaliber({ type: "caliberLeft" });
+    void settle(field);
   }
 
   const caliberState: CaliberState = {
@@ -650,6 +719,19 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   /** Validates and saves; resolves whether it was saved. */
   async function save(): Promise<boolean> {
+    // contracts/ui-entry.md §2: wait for any settle in flight, then settle
+    // the field that has focus (Enter pressed inside it). If that changes its
+    // value the note shows and nothing is saved: the user reviews the
+    // change, then saves again.
+    if (settling.current.size > 0) await Promise.all([...settling.current]);
+    const focused = formRef.current?.contains(document.activeElement)
+      ? document.activeElement?.closest<HTMLElement>("[data-field]")?.dataset.field
+      : undefined;
+    if (isEntryField(focused) && (await settle(focused))) return false;
+
+    // What the form holds now, after any settle above changed it.
+    const form = latestForm.current;
+    const clientErrors = validate(form, disposed);
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
@@ -781,24 +863,31 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             </h3>
             <div className="hd-form-grid hd-form-grid--2">
               <div data-field="make">
-                <TextField
+                <EntryField
+                  field="make"
                   label="Make"
                   required
                   value={form.make}
-                  onChange={(e) => update("make", e.target.value)}
-                  onBlur={touch("make")}
+                  onValueChange={(text) => editEntry("make", text)}
+                  onPick={(value) => pickEntry("make", value)}
+                  onLeave={() => leaveEntry("make")}
+                  note={entryNotes.make}
                   error={errorFor("make")}
                   placeholder="e.g. Smith & Wesson"
                   autoFocus={!initialValues}
                 />
               </div>
               <div data-field="model">
-                <TextField
+                <EntryField
+                  field="model"
                   label="Model"
                   required
+                  make={form.make}
                   value={form.model}
-                  onChange={(e) => update("model", e.target.value)}
-                  onBlur={touch("model")}
+                  onValueChange={(text) => editEntry("model", text)}
+                  onPick={(value) => pickEntry("model", value)}
+                  onLeave={() => leaveEntry("model")}
+                  note={entryNotes.model}
                   error={errorFor("model")}
                   placeholder="e.g. Model 29"
                 />
@@ -840,30 +929,30 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 cartridge, then the caliber it fills in, to its right. */}
             <div className="hd-form-grid hd-form-grid--2">
               <div data-field="cartridge">
-                <TextField
+                <EntryField
+                  field="cartridge"
                   label="Cartridge"
                   value={form.cartridge}
-                  onChange={(e) => update("cartridge", e.target.value)}
-                  onBlur={() => {
-                    touch("cartridge")();
-                    void settleCartridge();
-                  }}
+                  onValueChange={(text) => editEntry("cartridge", text)}
+                  onPick={(value) => pickEntry("cartridge", value)}
+                  onLeave={() => leaveEntry("cartridge")}
+                  note={entryNotes.cartridge}
                   error={errorFor("cartridge")}
                   hint="Optional. The exact round it's chambered for, e.g. 9x19mm Parabellum."
                   placeholder="e.g. 9x19mm Parabellum"
                 />
               </div>
               <div data-field="caliber" className="hd-form-stack">
-                <TextField
+                <EntryField
+                  field="caliber"
                   id="ff-caliber"
                   label="Caliber"
                   required
                   value={form.caliber}
-                  onChange={(e) => applyCaliber({ type: "caliberTyped", caliber: e.target.value })}
-                  onBlur={() => {
-                    touch("caliber")();
-                    applyCaliber({ type: "caliberLeft" });
-                  }}
+                  onValueChange={(text) => editEntry("caliber", text)}
+                  onPick={(value) => pickEntry("caliber", value)}
+                  onLeave={() => leaveEntry("caliber")}
+                  note={entryNotes.caliber}
                   error={errorFor("caliber")}
                   hint={caliberHintText}
                   placeholder="e.g. 9mm"

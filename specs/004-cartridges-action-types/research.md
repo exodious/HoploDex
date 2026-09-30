@@ -194,8 +194,14 @@ function, `entry_key`, in `services/entry_text.rs`.
     two characters and is a prefix of the candidate's initialism (the first
     character of each word: "sw" and "s&w" find Smith & Wesson, "hk" Heckler &
     Koch); or, for a catalog cartridge, one of its aliases matches `t` by tier
-    1 to 3 (".22 LR", "9mm Luger"), or its class matches `t` by tier 1 ("9mm"
+    1 to 3 (".22 LR", "9mm Luger"), or its class matches `t` by tier 1 ("9m"
     finds every 9mm-class cartridge).
+  - **Exception, an exact class**: when `entry_key(t)` *equals* a cartridge's
+    class key ("9mm", "30" or ".30", ".45"), the cartridge is at **tier 1**,
+    not 3, so that a bore class lists its cartridges most common first
+    (US2-3: 9x19mm Parabellum, .380 ACP, 9x18mm Makarov, 9x21mm) instead of
+    after the rare cartridges whose names merely begin with "9mm" (9mm
+    Largo, 9mm Browning Long). Found while writing T035.
   A candidate takes its best tier.
 - **Decision — order**: for **model**, candidates recorded with the make on the
   form (compared by key) come first, then the rest (US2-9). Then by tier; then

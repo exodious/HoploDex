@@ -126,6 +126,10 @@ CREATE INDEX idx_firearms_caliber ON firearms (caliber);
 -- GROUP BY cartridge.
 CREATE INDEX idx_firearms_cartridge ON firearms (cartridge);
 CREATE INDEX idx_firearms_make ON firearms (make);
+-- specs/004-cartridges-action-types research.md §5 (T043): covers the model
+-- suggestions' GROUP BY make, model, which performance_test.rs holds to 50ms
+-- at 10,000 distinct models.
+CREATE INDEX idx_firearms_make_model ON firearms (make, model);
 CREATE INDEX idx_firearms_status ON firearms (status);
 CREATE INDEX idx_firearms_insurance_policy ON firearms (insurance_policy_id);
 

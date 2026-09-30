@@ -9,8 +9,29 @@ use tauri::State;
 use crate::commands::CommandError;
 use crate::services::cartridges::{DerivedCaliber, derive_caliber};
 use crate::services::entry_text::EntryField;
-use crate::services::suggestions::ChangedBy;
+pub use crate::services::suggestions::Suggestion;
+use crate::services::suggestions::{self, ChangedBy, FieldVocabulary};
 use crate::session::Session;
+
+/// Input for `suggest_entries`: what is typed so far in one of the four
+/// fields.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestEntriesInput {
+    pub field: EntryField,
+    /// May be empty; over 100 characters matches nothing.
+    pub text: String,
+    /// Model only: the make on the form, whose models rank first.
+    #[serde(default)]
+    pub make: Option<String>,
+}
+
+/// At most 20 suggestions, best first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestEntriesOutput {
+    pub suggestions: Vec<Suggestion>,
+}
 
 /// Input for `settle_entry`: a value the user has finished entering (left
 /// the field, or picked a suggestion).
@@ -40,19 +61,48 @@ pub struct SettleEntryOutput {
 pub mod ops {
     use super::*;
 
+    /// The ranked suggestions for one field, from the values on record and
+    /// the catalog, computed now and kept nowhere (FR-011; research.md
+    /// §4–§5).
+    pub fn suggest_entries(
+        conn: &Connection,
+        input: &SuggestEntriesInput,
+    ) -> Result<SuggestEntriesOutput, CommandError> {
+        let vocabulary = FieldVocabulary::load(conn, input.field).map_err(CommandError::from_db)?;
+        let suggestions = suggestions::suggest(&vocabulary, &input.text, input.make.as_deref());
+        Ok(SuggestEntriesOutput { suggestions })
+    }
+
     /// research.md §6–§7. A value that breaks FR-015 comes back trimmed and
     /// unchanged: the form reports the rule, and saving enforces it.
     pub fn settle_entry(
-        _conn: &Connection,
+        conn: &Connection,
         input: &SettleEntryInput,
     ) -> Result<SettleEntryOutput, CommandError> {
-        let value = input.text.trim().to_owned();
+        let vocabulary = FieldVocabulary::load(conn, input.field).map_err(CommandError::from_db)?;
+        let (value, changed_by) = suggestions::snap(&vocabulary, &input.text);
         let derived_caliber = match input.field {
-            EntryField::Cartridge => derive_caliber(&value),
+            EntryField::Cartridge => match derive_caliber(&value) {
+                Some(derived) => {
+                    let calibers = FieldVocabulary::load(conn, EntryField::Caliber)
+                        .map_err(CommandError::from_db)?;
+                    let (caliber, _) = suggestions::snap(&calibers, &derived.caliber);
+                    Some(DerivedCaliber { caliber, ..derived })
+                }
+                None => None,
+            },
             _ => None,
         };
-        Ok(SettleEntryOutput { value, changed_by: None, derived_caliber })
+        Ok(SettleEntryOutput { value, changed_by, derived_caliber })
     }
+}
+
+#[tauri::command]
+pub async fn suggest_entries(
+    input: SuggestEntriesInput,
+    session: State<'_, Session>,
+) -> Result<SuggestEntriesOutput, CommandError> {
+    session.read(|conn| ops::suggest_entries(conn, &input))
 }
 
 #[tauri::command]

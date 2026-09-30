@@ -41,8 +41,10 @@ spec Assumptions).
 
 **When it opens and what it shows**:
 
-- It opens when the field gains focus (showing the ranked list for the current
-  text, even when empty) and on every keystroke. Each keystroke asks
+- It opens when the field gains focus by a click or a Tab from another control
+  (showing the ranked list for the current text, even when empty) and on every
+  keystroke. Focus a dialog places in the field as it opens does not open it,
+  so Escape still closes the dialog; the first key or Down brings the list up. Each keystroke asks
   `suggest_entries`; a response for anything but the field's current text is
   dropped.
 - For **Model**, the request carries the make currently on the form.

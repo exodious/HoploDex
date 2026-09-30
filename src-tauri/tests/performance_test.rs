@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops::{self as databases_ops, Unlock};
+use hoplodex_lib::commands::entries::{SuggestEntriesInput, ops as entry_ops};
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
@@ -26,6 +27,7 @@ use hoplodex_lib::models::database::{
 };
 use hoplodex_lib::models::firearm::{FirearmInput, Origin};
 use hoplodex_lib::services::backups;
+use hoplodex_lib::services::entry_text::EntryField;
 use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
@@ -334,6 +336,37 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
         "list_firearms (cartridge search) took {}ms, over the {BUDGET_MS}ms budget",
         elapsed.as_millis()
     );
+}
+
+/// specs/004-cartridges-action-types SC-004 (research.md §5): the
+/// suggestion list for each field, computed per keystroke at 10,000
+/// firearms with 10,000 distinct models (the worst case), within 50ms: half
+/// of the 100ms budget, the rest being IPC and rendering.
+#[test]
+fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+
+    for (field, text, make) in [
+        (EntryField::Make, "sw", None),
+        (EntryField::Model, "model 12", Some("Ruger")),
+        (EntryField::Model, "", None),
+        (EntryField::Cartridge, "9", None),
+        (EntryField::Cartridge, "", None),
+        (EntryField::Caliber, ".2", None),
+    ] {
+        let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
+        let started = Instant::now();
+        let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
+        let elapsed = started.elapsed();
+        assert!(!output.suggestions.is_empty());
+        assert!(
+            elapsed.as_millis() < 50,
+            "suggest_entries({field:?}, {text:?}) took {}ms at {RECORD_COUNT} records, over the 50ms budget",
+            elapsed.as_millis()
+        );
+    }
 }
 
 #[test]

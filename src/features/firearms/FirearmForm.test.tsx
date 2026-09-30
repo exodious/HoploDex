@@ -9,10 +9,14 @@ import { CommandFailure } from "../../services/tauriClient";
 import type { DerivedCaliber, Firearm } from "./types";
 
 // specs/004-cartridges-action-types: the form settles an entry through the
-// backend (`settle_entry`); here a stand-in derives a few known calibers.
+// backend (`settle_entry`) and lists suggestions (`suggest_entries`); here
+// stand-ins derive a few known calibers and suggest nothing unless a test says.
 const settleEntry = vi.fn();
+const suggestEntries = vi.fn();
 vi.mock("./firearmsService", () => ({
   settleEntry: (field: string, text: string) => settleEntry(field, text),
+  suggestEntries: (field: string, text: string, make?: string | null) =>
+    suggestEntries(field, text, make),
 }));
 
 const DERIVED: Record<string, DerivedCaliber> = {
@@ -24,6 +28,8 @@ const DERIVED: Record<string, DerivedCaliber> = {
 };
 
 beforeEach(() => {
+  suggestEntries.mockReset();
+  suggestEntries.mockResolvedValue([]);
   settleEntry.mockReset();
   settleEntry.mockImplementation(async (field: string, text: string) => ({
     value: text.trim(),
@@ -1254,7 +1260,11 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     await user.type(caliberField(), ".308");
     await enterCartridge(user, "9x19mm Parabellum");
 
-    await waitFor(() => expect(settleEntry).toHaveBeenCalledTimes(2));
+    // The cartridge settled twice; the caliber typed in between settles too
+    // (US2), and its answer changes nothing.
+    await waitFor(() =>
+      expect(settleEntry.mock.calls.filter(([field]) => field === "cartridge")).toHaveLength(2),
+    );
     expect(caliberField()).toHaveValue(".308");
     expect(screen.queryByText("Guess")).not.toBeInTheDocument();
   });
@@ -1289,7 +1299,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     ["Model", "Model"],
     ["Cartridge", "Cartridge"],
     ["Caliber", "Caliber"],
-  ])("shows FR-015's rules for %s when it is left, without truncating", (label, name) => {
+  ])("shows FR-015's rules for %s when it is left, without truncating", async (label, name) => {
     render(<FirearmForm onSubmit={vi.fn()} />);
     const field = screen.getByLabelText(label);
 
@@ -1307,6 +1317,8 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     fireEvent.change(field, { target: { value: "\u{1F52B}".repeat(100) } });
     fireEvent.blur(field);
     expect(screen.queryByText(`${name} can be at most 100 characters.`)).not.toBeInTheDocument();
+    // Let the suggestion and settle answers those events asked for arrive.
+    await act(async () => {});
   });
 
   it("sends the cartridge trimmed, or null when blank", async () => {
@@ -1385,5 +1397,256 @@ describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
     await user.type(screen.getByLabelText("Cartridge"), "9x19mm Parabellum");
     await user.tab();
     await waitFor(() => expect(screen.getByLabelText("Caliber")).toHaveValue("9mm"));
+  });
+});
+
+// specs/004-cartridges-action-types User Story 2: the four entry fields
+// suggest and settle (contracts/ui-entry.md §1–§2).
+describe("FirearmForm suggestions and snapping (US2)", () => {
+  const field = (label: string) => screen.getByLabelText(label);
+  const snappedMake = {
+    value: "Smith & Wesson",
+    changedBy: "record" as const,
+    derivedCaliber: null,
+  };
+  const catalogNote = "Changed to the built-in spelling “9x19mm Parabellum”.";
+  const recordNote = "Changed to “Smith & Wesson”, as already in your collection.";
+
+  /** The description a field's hint gives, where a note shows. */
+  const noteOf = (label: string) => field(label).getAttribute("aria-describedby");
+  const noteText = (label: string) =>
+    (noteOf(label) ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+
+  const saved = {
+    id: 7,
+    make: "Smith & Wesson",
+    model: "686",
+    serialNumber: "S-1",
+    noSerialAttested: false,
+    caliber: ".357",
+    cartridge: ".357 Magnum",
+    firearmTypeId: 1,
+    actionTypeId: null,
+    status: "active",
+  } as Firearm;
+
+  it("makes Make, Model, Cartridge and Caliber comboboxes", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    for (const label of ["Make", "Model", "Cartridge", "Caliber"]) {
+      expect(screen.getByRole("combobox", { name: label })).toHaveAttribute(
+        "aria-autocomplete",
+        "list",
+      );
+    }
+    expect(screen.getByRole("textbox", { name: /^Nickname/ })).toBeInTheDocument();
+  });
+
+  it("asks for Model's list with the make on the form", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    await user.type(field("Make"), "Ruger");
+    suggestEntries.mockClear();
+
+    await user.click(field("Model"));
+
+    expect(suggestEntries).toHaveBeenCalledWith("model", "", "Ruger");
+    await user.type(field("Model"), "1");
+    expect(suggestEntries).toHaveBeenLastCalledWith("model", "1", "Ruger");
+    // The other fields never carry a make.
+    await user.click(field("Cartridge"));
+    expect(suggestEntries).toHaveBeenLastCalledWith("cartridge", "", undefined);
+  });
+
+  it("lists the suggestions with their markers", async () => {
+    suggestEntries.mockResolvedValue([
+      { value: "9x19mm Parabellum", inCatalog: true, useCount: 2, caliber: "9mm" },
+      { value: "Wildcat Special", inCatalog: false, useCount: 1, caliber: null },
+      { value: ".380 ACP", inCatalog: true, useCount: 0, caliber: "9mm" },
+    ]);
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(field("Cartridge"));
+
+    expect(
+      await screen.findByRole("option", {
+        name: "9x19mm Parabellum Built-in · 9mm · 2 in collection",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Wildcat Special 1 in collection" })).toBeVisible();
+    expect(screen.getByRole("option", { name: ".380 ACP Built-in · 9mm" })).toBeVisible();
+  });
+
+  it("settles a changed field when it is left and shows why it changed, until the next edit", async () => {
+    settleEntry.mockImplementation(async (name: string, text: string) =>
+      name === "make" ? snappedMake : { value: text.trim(), changedBy: null, derivedCaliber: null },
+    );
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.type(field("Make"), "smith and wesson");
+    await user.tab();
+
+    await waitFor(() => expect(field("Make")).toHaveValue("Smith & Wesson"));
+    expect(noteText("Make")).toBe(recordNote);
+    expect(within(field("Make").closest("[data-field]")!).getByRole("status")).toHaveTextContent(
+      recordNote,
+    );
+
+    await user.type(field("Make"), "x");
+    expect(noteText("Make")).toBe("");
+  });
+
+  it("names the built-in spelling when the catalog's is taken", async () => {
+    settleEntry.mockResolvedValue({
+      value: "9x19mm Parabellum",
+      changedBy: "catalog",
+      derivedCaliber: { caliber: "9mm", source: "catalog" },
+    });
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.type(field("Cartridge"), "9 x 19mm parabellum");
+    await user.tab();
+
+    await waitFor(() => expect(field("Cartridge")).toHaveValue("9x19mm Parabellum"));
+    expect(noteText("Cartridge")).toContain(catalogNote);
+    // The derived caliber follows the snapped cartridge.
+    expect(field("Caliber")).toHaveValue("9mm");
+  });
+
+  it("snaps a caliber and reports it like the other fields", async () => {
+    settleEntry.mockImplementation(async (name: string, text: string) =>
+      name === "caliber"
+        ? { value: "9mm", changedBy: "catalog", derivedCaliber: null }
+        : { value: text.trim(), changedBy: null, derivedCaliber: null },
+    );
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.type(field("Caliber"), "9 MM");
+    await user.tab();
+
+    await waitFor(() => expect(field("Caliber")).toHaveValue("9mm"));
+    expect(noteText("Caliber")).toContain("Changed to the built-in spelling “9mm”.");
+  });
+
+  it("does not settle an untouched field, or one typed back to its saved value (FR-014)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={saved} onSubmit={vi.fn()} />);
+
+    for (const label of ["Make", "Model", "Cartridge", "Caliber"]) {
+      await user.click(field(label));
+      await user.tab();
+    }
+    expect(settleEntry).not.toHaveBeenCalled();
+
+    await user.type(field("Make"), "x");
+    await user.type(field("Make"), "{Backspace}");
+    await user.tab();
+    expect(settleEntry).not.toHaveBeenCalled();
+
+    await user.type(field("Model"), "-2");
+    await user.tab();
+    expect(settleEntry).toHaveBeenCalledTimes(1);
+    expect(settleEntry).toHaveBeenCalledWith("model", "686-2");
+  });
+
+  it("settles a picked suggestion at once and keeps focus in the field", async () => {
+    suggestEntries.mockResolvedValue([
+      { value: "9x19mm Parabellum", inCatalog: true, useCount: 0, caliber: "9mm" },
+    ]);
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    await user.type(field("Cartridge"), "9x1");
+
+    await user.click(await screen.findByRole("option", { name: /^9x19mm Parabellum/ }));
+
+    expect(field("Cartridge")).toHaveValue("9x19mm Parabellum");
+    expect(field("Cartridge")).toHaveFocus();
+    await waitFor(() => expect(settleEntry).toHaveBeenCalledWith("cartridge", "9x19mm Parabellum"));
+    await waitFor(() => expect(field("Caliber")).toHaveValue("9mm"));
+  });
+
+  it("shows the note and does not save when Enter settles a field to another value, then saves on the next Enter", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+    settleEntry.mockImplementation(async (name: string, text: string) =>
+      name === "make" && text === "smith and wesson"
+        ? snappedMake
+        : { value: text.trim(), changedBy: null, derivedCaliber: null },
+    );
+    await user.clear(field("Make"));
+    await user.type(field("Make"), "smith and wesson");
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(field("Make")).toHaveValue("Smith & Wesson"));
+    expect(noteText("Make")).toBe(recordNote);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ make: "Smith & Wesson" });
+  });
+
+  it("saves the value Enter left as it was when settling changes nothing", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+    await user.clear(field("Make"));
+    await user.type(field("Make"), "Taurus");
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ make: "Taurus" });
+  });
+
+  it("waits for a settle in flight before saving, and saves what it settled to", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+    let answer: (value: typeof snappedMake) => void = () => {};
+    settleEntry.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve as typeof answer)),
+    );
+    await user.clear(field("Make"));
+    await user.type(field("Make"), "smith and wesson");
+    await user.tab();
+
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await act(async () => answer(snappedMake));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ make: "Smith & Wesson" });
+  });
+
+  it("ignores a settle answer for text the field no longer holds", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    let answer: (value: typeof snappedMake) => void = () => {};
+    settleEntry.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve as typeof answer)),
+    );
+    await user.type(field("Make"), "smith and wesson");
+    await user.tab();
+    await user.click(field("Make"));
+    await user.type(field("Make"), " Ltd");
+
+    await act(async () => answer(snappedMake));
+
+    expect(field("Make")).toHaveValue("smith and wesson Ltd");
+    expect(noteText("Make")).toBe("");
   });
 });

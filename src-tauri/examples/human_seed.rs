@@ -1053,6 +1053,49 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
     dispose(cracked, DispositionType::Destroyed, "County buyback program", "2025-02-11", 0);
 
+    // -- specs/004-cartridges-action-types US2: suggestion and snapping data -
+    //
+    // Typing "sw", "smith w" or "s&w" in Make lists "Smith & Wesson" (on
+    // several firearms above) and "S&W" (on one, a different notation that
+    // is kept as typed); "Springfield armory" is a variant of the three
+    // "Springfield Armory" firearms, and snaps to that spelling. With make
+    // "Ruger" on the form, Model lists "10/22" and "Mini-14" before Marlin's
+    // "336".
+
+    add(FirearmInput {
+        estimated_value: Some(475),
+        acquisition_date: text("2020-08-14"),
+        cartridge: text(".38 Special"),
+        ..base("S&W", "Model 60", "S&W-60-1", ".357", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(300),
+        acquisition_date: text("2019-02-02"),
+        ..base("Ruger", "10/22", "0013-99001", ".22", RIFLE)
+    });
+    add(FirearmInput {
+        estimated_value: Some(900),
+        acquisition_date: text("2021-10-09"),
+        cartridge: text(".223 Remington"),
+        ..base("Ruger", "Mini-14", "580-11234", ".22", RIFLE)
+    });
+    add(FirearmInput {
+        estimated_value: Some(550),
+        acquisition_date: text("2022-03-12"),
+        cartridge: text("9x19mm Parabellum"),
+        ..base("Springfield Armory", "XD-M Elite", "XM-330021", "9mm", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(520),
+        acquisition_date: text("2023-01-21"),
+        ..base("Springfield Armory", "Hellcat", "HC-778812", "9mm", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(1100),
+        acquisition_date: text("2023-05-05"),
+        ..base("Springfield armory", "Saint Victor", "SV-556677", ".223", RIFLE)
+    });
+
     // -- Generated filler for scrolling, grouping and search ----------------
 
     for input in extras {

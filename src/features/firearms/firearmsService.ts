@@ -7,6 +7,7 @@ import type {
   FirearmInput,
   ReverseDispositionInput,
   SettleEntryOutput,
+  Suggestion,
 } from "./types";
 
 /** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009). */
@@ -42,4 +43,18 @@ export function getFirearm(id: number): Promise<FirearmDetail> {
  * a cartridge the caliber it derives (contracts/tauri-commands.md). */
 export function settleEntry(field: EntryFieldName, text: string): Promise<SettleEntryOutput> {
   return invoke<SettleEntryOutput>("settle_entry", { input: { field, text } });
+}
+
+/** The ranked suggestions for what is typed so far, best first, at most 20.
+ * `make` is the make on the form, for ranking a model (contracts/
+ * tauri-commands.md). Nothing is kept between calls (FR-011). */
+export async function suggestEntries(
+  field: EntryFieldName,
+  text: string,
+  make?: string | null,
+): Promise<Suggestion[]> {
+  const { suggestions } = await invoke<{ suggestions: Suggestion[] }>("suggest_entries", {
+    input: { field, text, make: make ?? null },
+  });
+  return suggestions;
 }

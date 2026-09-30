@@ -124,6 +124,19 @@ export interface DerivedCaliber {
   source: "catalog" | "guess";
 }
 
+/** One row of `suggest_entries`' list (contracts/tauri-commands.md). Mirrors
+ * `Suggestion` in src-tauri/src/services/suggestions.rs. */
+export interface Suggestion {
+  /** The display spelling: the catalog's when it has one. */
+  value: string;
+  /** Built in (FR-016). */
+  inCatalog: boolean;
+  /** Firearms on record, active and disposed; 0 = catalog only. */
+  useCount: number;
+  /** Catalog cartridges only: the bore class, as a hint. */
+  caliber: string | null;
+}
+
 /** `settle_entry`'s output (contracts/tauri-commands.md). */
 export interface SettleEntryOutput {
   /** Trimmed; the snapped spelling if any. */
