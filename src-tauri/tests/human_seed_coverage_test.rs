@@ -18,6 +18,8 @@
 
 use std::collections::BTreeSet;
 
+mod support;
+
 use hoplodex_lib::db;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
@@ -180,7 +182,12 @@ fn the_import_samples_use_every_spreadsheet_column() {
     let dir = TempDir::new().unwrap();
     human_seed::write_import_samples(dir.path());
 
-    let mut used: BTreeSet<usize> = BTreeSet::new();
+    // Import reads columns by header (specs/004-cartridges-action-types
+    // FR-023), so one sample may be shaped like a sheet exported before
+    // `cartridge` and `action_type` existed. No other header is allowed.
+    let before_004: Vec<&str> =
+        COLUMNS.iter().copied().filter(|c| !matches!(*c, "cartridge" | "action_type")).collect();
+    let mut used: BTreeSet<String> = BTreeSet::new();
     let mut files = 0;
     for entry in std::fs::read_dir(dir.path()).unwrap() {
         let path = entry.unwrap().path();
@@ -189,16 +196,16 @@ fn the_import_samples_use_every_spreadsheet_column() {
         }
         files += 1;
         let mut reader = csv::Reader::from_path(&path).unwrap();
-        assert_eq!(
-            reader.headers().unwrap().iter().collect::<Vec<_>>(),
-            COLUMNS,
+        let headers: Vec<String> = reader.headers().unwrap().iter().map(str::to_owned).collect();
+        assert!(
+            headers == COLUMNS || headers == before_004,
             "{} does not have the export's columns",
             path.display()
         );
         for record in reader.records() {
-            for (index, cell) in record.unwrap().iter().enumerate() {
+            for (header, cell) in headers.iter().zip(record.unwrap().iter()) {
                 if !cell.trim().is_empty() {
-                    used.insert(index);
+                    used.insert(header.clone());
                 }
             }
         }
@@ -207,12 +214,50 @@ fn the_import_samples_use_every_spreadsheet_column() {
 
     let blank: Vec<_> = COLUMNS
         .iter()
-        .enumerate()
-        .filter(|(index, name)| !used.contains(index) && !NOT_IMPORTED.contains(name))
-        .map(|(_, name)| *name)
+        .filter(|name| !used.contains(**name) && !NOT_IMPORTED.contains(name))
+        .copied()
         .collect();
     assert!(
         blank.is_empty(),
         "no import sample in examples/human_seed.rs fills these spreadsheet columns: {blank:?}"
     );
+}
+
+/// The cartridge import sample does what its comments in the seed say, so a
+/// person trying File > Import sees each section of the report.
+#[test]
+fn the_cartridges_import_sample_shows_each_part_of_the_report() {
+    use hoplodex_lib::commands::firearms::ops as firearm_ops;
+    use hoplodex_lib::commands::import_export::{ImportSessionStore, ops as import_export_ops};
+    use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+
+    let dir = TempDir::new().unwrap();
+    human_seed::write_import_samples(dir.path());
+    let db = support::TestDb::new();
+    firearm_ops::create_firearm(
+        &db.conn,
+        &support::firearm("Smith & Wesson", "Model 10", "S-1"),
+        false,
+    )
+    .unwrap();
+
+    let import = |name: &str| {
+        import_export_ops::import_collection(
+            &db.conn,
+            &dir.path().join(name),
+            SpreadsheetFormat::Csv,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap()
+    };
+
+    let result = import("import-cartridges.csv");
+    assert_eq!(result.imported_count, 3, "{:?}", result.row_errors);
+    assert_eq!(result.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(), [4, 5, 6]);
+    assert_eq!(result.derived_calibers.len(), 2);
+    assert_eq!(result.snapped_values.len(), 2, "{:?}", result.snapped_values);
+
+    let legacy = import("import-before-cartridges.csv");
+    assert_eq!(legacy.imported_count, 1, "{:?}", legacy.row_errors);
 }

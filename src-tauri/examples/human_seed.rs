@@ -1256,6 +1256,19 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         }
         writer.flush().expect("flush an import sample");
     };
+    // specs/004-cartridges-action-types FR-023: a sheet exported before
+    // `cartridge` and `action_type` existed, so its header lacks both.
+    let write_without_new_columns = |name: &str, rows: Vec<Vec<String>>| {
+        let kept: Vec<usize> = (0..COLUMNS.len())
+            .filter(|&index| !matches!(COLUMNS[index], "cartridge" | "action_type"))
+            .collect();
+        let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
+        writer.write_record(kept.iter().map(|&index| COLUMNS[index])).expect("write the header");
+        for record in rows {
+            writer.write_record(kept.iter().map(|&index| &record[index])).expect("write a row");
+        }
+        writer.flush().expect("flush an import sample");
+    };
 
     write(
         "import-clean.csv",
@@ -1542,6 +1555,96 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("original_serial_number", "FN-70044"),
             ]),
         ],
+    );
+
+    // specs/004-cartridges-action-types US4: the report's "Calibers filled in
+    // from the cartridge" and "Spellings matched to existing values"
+    // sections, and the action and entry-rule row errors. Import it into the
+    // seeded collection, which has "Smith & Wesson" on several firearms.
+    write(
+        "import-cartridges.csv",
+        vec![
+            // A blank caliber beside a catalog cartridge: filled in as 9mm
+            // (built-in).
+            row(&[
+                ("make", "Sig Sauer"),
+                ("model", "P365"),
+                ("serial_number", "C-001"),
+                ("no_serial_attested", "FALSE"),
+                ("cartridge", "9x19mm Parabellum"),
+                ("action_type", "Semi-automatic"),
+                ("firearm_type", "Handgun"),
+            ]),
+            // A custom cartridge whose bore can be guessed: filled in as .30
+            // (guessed).
+            row(&[
+                ("make", "Thompson/Center"),
+                ("model", "Contender"),
+                ("serial_number", "C-002"),
+                ("no_serial_attested", "FALSE"),
+                ("cartridge", ".30 Custom Improved"),
+                ("action_type", "Single shot (other)"),
+                ("firearm_type", "Rifle"),
+            ]),
+            // A same-notation variant of a make on record, and of the
+            // catalog's cartridge name: both are matched to the spelling in
+            // use and listed. The action is matched ignoring letter case.
+            row(&[
+                ("make", "smith and wesson"),
+                ("model", "Model 15"),
+                ("serial_number", "C-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("cartridge", "9X19mm PARABELLUM"),
+                ("action_type", "REVOLVER"),
+                ("firearm_type", "Handgun"),
+            ]),
+            // A custom cartridge with no readable bore and no caliber: a
+            // row error.
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "One-Off"),
+                ("serial_number", "C-004"),
+                ("no_serial_attested", "FALSE"),
+                ("cartridge", "Wildcat Special"),
+                ("firearm_type", "Rifle"),
+            ]),
+            // An action that isn't on the list: a row error.
+            row(&[
+                ("make", "Pedersoli"),
+                ("model", "Kentucky"),
+                ("serial_number", "C-005"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".45"),
+                ("action_type", "flintlockish"),
+                ("firearm_type", "Rifle"),
+            ]),
+            // An action the firearm's type doesn't have: a row error.
+            row(&[
+                ("make", "Mossberg"),
+                ("model", "Handgun Pump"),
+                ("serial_number", "C-006"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "12 gauge"),
+                ("action_type", "Pump action"),
+                ("firearm_type", "Handgun"),
+            ]),
+        ],
+    );
+
+    // A sheet exported before this feature: no `cartridge` or `action_type`
+    // column, and every later column still lands in its own field.
+    write_without_new_columns(
+        "import-before-cartridges.csv",
+        vec![row(&[
+            ("make", "Ruger"),
+            ("model", "10/22"),
+            ("serial_number", "L-001"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".22 LR"),
+            ("firearm_type", "Rifle"),
+            ("notes", "From a sheet exported before cartridges and actions were recorded."),
+        ])],
     );
 
     dir.to_path_buf()

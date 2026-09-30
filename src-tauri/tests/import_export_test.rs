@@ -1068,3 +1068,571 @@ fn a_stopped_export_leaves_a_photos_folder_it_did_not_make() {
     assert_eq!(stopped.code, "OPERATION_STOPPED");
     assert!(existing.join("mine.jpg").exists());
 }
+
+// --- specs/004-cartridges-action-types User Story 4: cartridge and action
+// through export and import (contracts/spreadsheet-format.md) ---
+
+mod cartridge_spreadsheet {
+    use super::*;
+    use hoplodex_lib::commands::import_export::ImportResult;
+    use hoplodex_lib::models::firearm::{Firearm, FirearmInput};
+    use hoplodex_lib::services::cartridges::CaliberSource;
+    use hoplodex_lib::services::entry_text::EntryField;
+    use hoplodex_lib::services::spreadsheet::COLUMNS;
+
+    const HANDGUN: i64 = 1;
+    const RIFLE: i64 = 2;
+    const SEMI_AUTOMATIC: i64 = 1;
+    const BOLT_ACTION: i64 = 3;
+
+    fn import_text(db: &TestDb, text: &str) -> ImportResult {
+        let dir = TempDir::new().unwrap();
+        let path = write_csv(&dir, text);
+        import_export_ops::import_collection(
+            &db.conn,
+            &path,
+            SpreadsheetFormat::Csv,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap()
+    }
+
+    fn import_rows(db: &TestDb, rows: &[String]) -> ImportResult {
+        import_text(db, &csv_file(rows))
+    }
+
+    /// Every firearm, oldest first.
+    fn all_firearms(db: &TestDb) -> Vec<Firearm> {
+        let mut ids = import_export_ops::all_firearm_ids(&db.conn).unwrap();
+        ids.sort();
+        ids.into_iter().map(|id| firearm_ops::get_firearm(&db.conn, id).unwrap()).collect()
+    }
+
+    fn record(db: &TestDb, input: FirearmInput) {
+        firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    }
+
+    fn on_record(db: &TestDb, make: &str, serial: &str, cartridge: Option<&str>) {
+        record(
+            db,
+            FirearmInput {
+                cartridge: cartridge.map(str::to_owned),
+                ..support::firearm(make, "Model", serial)
+            },
+        );
+    }
+
+    fn export_all(db: &TestDb, dest: &TempDir) -> std::path::PathBuf {
+        let ids = import_export_ops::all_firearm_ids(&db.conn).unwrap();
+        import_export_ops::export_collection(
+            &db.conn,
+            dest.path(),
+            "backup",
+            SpreadsheetFormat::Csv,
+            &ids,
+            &mut |_, _| {},
+        )
+        .unwrap()
+        .spreadsheet_path
+    }
+
+    fn reimport(path: &std::path::Path, into: &TestDb) -> ImportResult {
+        import_export_ops::import_collection(
+            &into.conn,
+            path,
+            SpreadsheetFormat::Csv,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap()
+    }
+
+    fn only_error(result: &ImportResult) -> &str {
+        assert_eq!(result.row_errors.len(), 1, "{:?}", result.row_errors);
+        &result.row_errors[0].message
+    }
+
+    #[test]
+    fn the_header_puts_cartridge_and_action_type_directly_after_caliber() {
+        assert_eq!(COLUMNS.len(), 36);
+        let caliber_at = COLUMNS.iter().position(|c| *c == "caliber").unwrap();
+        assert_eq!(
+            &COLUMNS[caliber_at + 1..caliber_at + 4],
+            ["cartridge", "action_type", "firearm_type"]
+        );
+    }
+
+    #[test]
+    fn export_writes_the_cartridge_and_the_actions_name_and_blank_when_none() {
+        let db = TestDb::new();
+        record(
+            &db,
+            FirearmInput {
+                cartridge: Some("9x19mm Parabellum".into()),
+                action_type_id: Some(SEMI_AUTOMATIC),
+                ..support::firearm("Glock", "19", "A1")
+            },
+        );
+        record(&db, support::firearm("Ruger", "Mk IV", "B2"));
+
+        let dest = TempDir::new().unwrap();
+        let path = export_all(&db, &dest);
+        let mut reader = csv::Reader::from_path(path).unwrap();
+        let headers = reader.headers().unwrap().clone();
+        let at = |name: &str| headers.iter().position(|h| h == name).unwrap();
+        assert_eq!(headers.iter().count(), 36);
+        assert_eq!(at("cartridge"), at("caliber") + 1);
+        assert_eq!(at("action_type"), at("caliber") + 2);
+        let rows: Vec<_> = reader.records().map(Result::unwrap).collect();
+        assert_eq!(&rows[0][at("cartridge")], "9x19mm Parabellum");
+        assert_eq!(&rows[0][at("action_type")], "Semi-automatic");
+        assert_eq!(&rows[1][at("cartridge")], "");
+        assert_eq!(&rows[1][at("action_type")], "");
+    }
+
+    #[test]
+    fn a_collection_without_same_notation_variants_round_trips_exactly() {
+        let db = TestDb::new();
+        record(
+            &db,
+            FirearmInput {
+                cartridge: Some("9x19mm Parabellum".into()),
+                action_type_id: Some(SEMI_AUTOMATIC),
+                ..support::firearm("Glock", "19", "A1")
+            },
+        );
+        record(
+            &db,
+            FirearmInput {
+                caliber: ".30".into(),
+                cartridge: Some(".308 Winchester".into()),
+                action_type_id: Some(BOLT_ACTION),
+                firearm_type_id: RIFLE,
+                ..support::firearm("Remington", "700", "B2")
+            },
+        );
+        record(&db, support::firearm("Ruger", "Mk IV", "C3"));
+
+        let dest = TempDir::new().unwrap();
+        let path = export_all(&db, &dest);
+        let fresh = TestDb::new();
+        let result = reimport(&path, &fresh);
+
+        assert_eq!(result.imported_count, 3, "{:?}", result.row_errors);
+        assert!(result.snapped_values.is_empty(), "{:?}", result.snapped_values);
+        assert!(result.derived_calibers.is_empty());
+        let shape = |db: &TestDb| {
+            let mut all: Vec<_> = all_firearms(db)
+                .into_iter()
+                .map(|f| (f.make, f.model, f.cartridge, f.caliber, f.action_type_id))
+                .collect();
+            all.sort();
+            all
+        };
+        assert_eq!(shape(&fresh), shape(&db));
+    }
+
+    #[test]
+    fn re_importing_a_collection_with_two_spellings_merges_them_and_reports_each_merge() {
+        let db = TestDb::new();
+        for (serial, make) in [
+            ("A1", "Springfield Armory"),
+            ("A2", "Springfield Armory"),
+            ("A3", "Springfield Armory"),
+            ("A4", "Springfield armory"),
+        ] {
+            on_record(&db, make, serial, None);
+        }
+        on_record(&db, "Glock", "G1", Some("9X19mm Parabellum"));
+
+        let dest = TempDir::new().unwrap();
+        let path = export_all(&db, &dest);
+        let fresh = TestDb::new();
+        let result = reimport(&path, &fresh);
+
+        assert_eq!(result.imported_count, 5, "{:?}", result.row_errors);
+        let makes: Vec<_> = all_firearms(&fresh).into_iter().map(|f| f.make).collect();
+        assert_eq!(makes.iter().filter(|m| *m == "Springfield Armory").count(), 4);
+        let glock = all_firearms(&fresh).into_iter().find(|f| f.make == "Glock").unwrap();
+        assert_eq!(glock.cartridge.as_deref(), Some("9x19mm Parabellum"));
+
+        assert_eq!(result.snapped_values.len(), 2);
+        let make = result.snapped_values.iter().find(|s| s.field == EntryField::Make).unwrap();
+        assert_eq!(make.sheet_value, "Springfield armory");
+        assert_eq!(make.recorded_value, "Springfield Armory");
+        let cartridge =
+            result.snapped_values.iter().find(|s| s.field == EntryField::Cartridge).unwrap();
+        assert_eq!(cartridge.sheet_value, "9X19mm Parabellum");
+        assert_eq!(cartridge.recorded_value, "9x19mm Parabellum");
+    }
+
+    #[test]
+    fn a_blank_caliber_is_filled_from_a_catalog_cartridge_and_listed() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm("Glock", "19", "A1", &[("caliber", ""), ("cartridge", "x")]),
+                csv_firearm(
+                    "Sig",
+                    "P320",
+                    "B2",
+                    &[("caliber", ""), ("cartridge", "9x19mm Parabellum")],
+                ),
+            ],
+        );
+        // Row 1's cartridge is unknown and has no readable bore.
+        assert_eq!(result.row_errors.len(), 1);
+        assert_eq!(result.imported_count, 1);
+        let sig = &all_firearms(&db)[0];
+        assert_eq!(sig.caliber, "9mm");
+        assert_eq!(sig.cartridge.as_deref(), Some("9x19mm Parabellum"));
+        assert_eq!(result.derived_calibers.len(), 1);
+        let derived = &result.derived_calibers[0];
+        assert_eq!(derived.row, 2);
+        assert_eq!(derived.cartridge, "9x19mm Parabellum");
+        assert_eq!(derived.caliber, "9mm");
+        assert_eq!(derived.source, CaliberSource::Catalog);
+    }
+
+    #[test]
+    fn a_blank_caliber_with_a_custom_cartridge_is_guessed_and_marked_as_a_guess() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[csv_firearm(
+                "Thompson",
+                "Contender",
+                "A1",
+                &[("caliber", ""), ("cartridge", ".30 Custom Improved")],
+            )],
+        );
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        assert_eq!(all_firearms(&db)[0].caliber, ".30");
+        assert_eq!(result.derived_calibers[0].source, CaliberSource::Guess);
+        assert_eq!(result.derived_calibers[0].caliber, ".30");
+    }
+
+    #[test]
+    fn a_caliber_that_cannot_be_derived_is_a_row_error_and_nothing_is_listed() {
+        let db = TestDb::new();
+        let unreadable = import_rows(
+            &db,
+            &[csv_firearm(
+                "Acme",
+                "One",
+                "A1",
+                &[("caliber", ""), ("cartridge", "Wildcat Special")],
+            )],
+        );
+        assert_eq!(
+            only_error(&unreadable),
+            "caliber: Caliber is required; it couldn't be worked out from the cartridge \"Wildcat Special\"."
+        );
+        assert!(unreadable.derived_calibers.is_empty());
+
+        let both_blank = import_rows(&db, &[csv_firearm("Acme", "Two", "A2", &[("caliber", "")])]);
+        assert_eq!(only_error(&both_blank), "caliber: Caliber is required.");
+        assert_eq!(all_firearms(&db).len(), 0);
+    }
+
+    #[test]
+    fn a_caliber_given_in_the_sheet_is_used_as_given_whatever_the_cartridge() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[csv_firearm(
+                "Acme",
+                "One",
+                "A1",
+                &[("caliber", ".22 LR"), ("cartridge", "9x19mm Parabellum")],
+            )],
+        );
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        assert_eq!(all_firearms(&db)[0].caliber, ".22 LR");
+        assert!(result.derived_calibers.is_empty());
+    }
+
+    #[test]
+    fn a_make_that_is_a_variant_of_one_on_record_takes_the_recorded_spelling() {
+        let db = TestDb::new();
+        on_record(&db, "Smith & Wesson", "S1", None);
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm("smith and wesson", "M&P", "A1", &[]),
+                // A different notation is never snapped.
+                csv_firearm("S&W", "Model 10", "A2", &[]),
+            ],
+        );
+        assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+        let makes: Vec<_> = all_firearms(&db).into_iter().map(|f| f.make).collect();
+        assert_eq!(makes, ["Smith & Wesson", "Smith & Wesson", "S&W"]);
+        assert_eq!(result.snapped_values.len(), 1);
+        let snapped = &result.snapped_values[0];
+        assert_eq!(snapped.row, 1);
+        assert_eq!(snapped.field, EntryField::Make);
+        assert_eq!(snapped.sheet_value, "smith and wesson");
+        assert_eq!(snapped.recorded_value, "Smith & Wesson");
+    }
+
+    #[test]
+    fn the_sheets_own_majority_spelling_wins_and_a_tie_goes_to_the_earliest_row() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm("springfield armory", "A", "A1", &[]),
+                csv_firearm("Ruger", "B", "B1", &[]),
+                csv_firearm("Ruger", "C", "B2", &[]),
+                csv_firearm("Springfield Armory", "D", "A2", &[]),
+                csv_firearm("RUGER", "E", "B3", &[]),
+                csv_firearm("Springfield Armory", "F", "A3", &[]),
+                csv_firearm("Colt", "G", "C1", &[]),
+                csv_firearm("colt", "H", "C2", &[]),
+            ],
+        );
+        assert_eq!(result.imported_count, 8, "{:?}", result.row_errors);
+        let makes: Vec<_> = all_firearms(&db).into_iter().map(|f| f.make).collect();
+        assert_eq!(makes.iter().filter(|m| *m == "Springfield Armory").count(), 3);
+        assert_eq!(makes.iter().filter(|m| *m == "Ruger").count(), 3);
+        // One "Colt" and one "colt": the earlier row's spelling.
+        assert_eq!(makes.iter().filter(|m| *m == "Colt").count(), 2);
+
+        let rows: Vec<_> =
+            result.snapped_values.iter().map(|s| (s.row, s.sheet_value.as_str())).collect();
+        assert_eq!(rows, [(1, "springfield armory"), (5, "RUGER"), (8, "colt")]);
+    }
+
+    #[test]
+    fn snapping_uses_the_values_on_record_when_the_import_started_not_rows_added_by_it() {
+        let db = TestDb::new();
+        on_record(&db, "Springfield armory", "A0", None);
+        // Three rows spell it "Springfield Armory", but the record was there first.
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm("Springfield Armory", "A", "A1", &[]),
+                csv_firearm("Springfield Armory", "B", "A2", &[]),
+                csv_firearm("Springfield Armory", "C", "A3", &[]),
+            ],
+        );
+        assert_eq!(result.imported_count, 3, "{:?}", result.row_errors);
+        assert_eq!(result.snapped_values.len(), 3);
+        assert!(result.snapped_values.iter().all(|s| s.recorded_value == "Springfield armory"));
+    }
+
+    #[test]
+    fn a_variant_row_becomes_a_conflict_with_the_existing_firearm() {
+        let db = TestDb::new();
+        record(&db, support::firearm("Smith & Wesson", "Model 10", "S1"));
+        let store = ImportSessionStore::new();
+        let dir = TempDir::new().unwrap();
+        let path = write_csv(
+            &dir,
+            &csv_file(&[csv_firearm(
+                "smith and wesson",
+                "model 10",
+                "S1",
+                &[("cartridge", "9X19mm Parabellum")],
+            )]),
+        );
+        let result = import_export_ops::import_collection(
+            &db.conn,
+            &path,
+            SpreadsheetFormat::Csv,
+            &store,
+            &mut |_, _| {},
+        )
+        .unwrap();
+        assert_eq!(result.imported_count, 0);
+        assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
+        assert_eq!(result.conflicts[0].make, "Smith & Wesson");
+        assert_eq!(result.conflicts[0].model, "Model 10");
+        // The conflict row is listed too.
+        assert!(result.snapped_values.iter().any(|s| s.field == EntryField::Make));
+        assert!(result.snapped_values.iter().any(|s| s.field == EntryField::Cartridge));
+
+        let resolution = hoplodex_lib::commands::import_export::ConflictResolution {
+            conflict_id: result.conflicts[0].conflict_id.clone(),
+            action: "overwrite".into(),
+        };
+        import_export_ops::resolve_import_conflicts(
+            &db.conn,
+            &store,
+            &result.session_id,
+            &[resolution],
+            None,
+        )
+        .unwrap();
+        let saved = &all_firearms(&db)[0];
+        assert_eq!(saved.make, "Smith & Wesson");
+        assert_eq!(saved.cartridge.as_deref(), Some("9x19mm Parabellum"));
+    }
+
+    #[test]
+    fn a_failed_row_is_not_listed_in_the_report() {
+        let db = TestDb::new();
+        on_record(&db, "Smith & Wesson", "S1", None);
+        let result = import_rows(
+            &db,
+            &[csv_firearm("smith and wesson", "M&P", "A1", &[("firearm_type", "Blunderbuss")])],
+        );
+        assert_eq!(result.row_errors.len(), 1);
+        assert!(result.snapped_values.is_empty());
+        assert!(result.derived_calibers.is_empty());
+    }
+
+    #[test]
+    fn an_action_is_matched_ignoring_case_and_spaces_unknown_and_disallowed_ones_are_row_errors() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm(
+                    "Remington",
+                    "700",
+                    "A1",
+                    &[("firearm_type", "Rifle"), ("action_type", " BOLT ACTION ")],
+                ),
+                csv_firearm("Acme", "Flint", "A2", &[("action_type", "flintlockish")]),
+                csv_firearm("Acme", "Pump", "A3", &[("action_type", "Pump action")]),
+                csv_firearm("Acme", "Plain", "A4", &[]),
+            ],
+        );
+        assert_eq!(result.imported_count, 2);
+        assert_eq!(result.row_errors.len(), 2);
+        assert_eq!(result.row_errors[0].row, 2);
+        assert_eq!(
+            result.row_errors[0].message,
+            "action_type: unknown action type \"flintlockish\""
+        );
+        assert_eq!(result.row_errors[1].row, 3);
+        assert_eq!(
+            result.row_errors[1].message,
+            "action_type: Pump action doesn't apply to a Handgun."
+        );
+        let remington = all_firearms(&db).into_iter().find(|f| f.make == "Remington").unwrap();
+        assert_eq!(remington.action_type_id, Some(BOLT_ACTION));
+        assert_eq!(remington.firearm_type_id, RIFLE);
+        let plain = all_firearms(&db).into_iter().find(|f| f.model == "Plain").unwrap();
+        assert_eq!(plain.action_type_id, None);
+        assert_eq!(plain.firearm_type_id, HANDGUN);
+    }
+
+    #[test]
+    fn an_over_long_or_control_character_entry_is_a_row_error_naming_the_column() {
+        let db = TestDb::new();
+        let long = "x".repeat(101);
+        for column in ["make", "model", "cartridge", "caliber"] {
+            let too_long =
+                import_rows(&db, &[csv_firearm("Acme", "One", "A1", &[(column, long.as_str())])]);
+            let message = only_error(&too_long);
+            assert!(message.starts_with(&format!("{column}: ")), "{message}");
+            assert!(message.contains("at most 100 characters"), "{message}");
+
+            let control =
+                import_rows(&db, &[csv_firearm("Acme", "One", "A1", &[(column, "bad\u{7}text")])]);
+            let message = only_error(&control);
+            assert!(message.starts_with(&format!("{column}: ")), "{message}");
+            assert!(message.contains("control characters"), "{message}");
+        }
+        assert_eq!(all_firearms(&db).len(), 0);
+    }
+
+    #[test]
+    fn a_sheet_without_the_two_new_columns_imports_with_neither_and_later_columns_in_place() {
+        let db = TestDb::new();
+        let legacy: Vec<_> =
+            COLUMNS.iter().copied().filter(|c| *c != "cartridge" && *c != "action_type").collect();
+        assert_eq!(legacy.len(), 34);
+        let row = legacy
+            .iter()
+            .map(|c| match *c {
+                "make" => "Glock",
+                "model" => "19",
+                "serial_number" => "A1",
+                "no_serial_attested" => "FALSE",
+                "caliber" => "9mm",
+                "firearm_type" => "Handgun",
+                "notes" => "kept",
+                "origin" => "Imported",
+                "country_of_manufacture" => "Austria",
+                _ => "",
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let result = import_text(&db, &format!("{}\n{row}\n", legacy.join(",")));
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        let glock = &all_firearms(&db)[0];
+        assert_eq!(glock.cartridge, None);
+        assert_eq!(glock.action_type_id, None);
+        assert_eq!(glock.notes.as_deref(), Some("kept"));
+        assert_eq!(glock.country_of_manufacture.as_deref(), Some("Austria"));
+    }
+
+    #[test]
+    fn columns_are_read_by_header_in_any_order_case_and_spacing_and_unknown_ones_are_ignored() {
+        let db = TestDb::new();
+        let text = "  Model , CALIBER,Serial_Number,unknown extra,Make ,no_serial_attested,Firearm_Type,Cartridge\n\
+                    19,9mm,A1,ignored,Glock,FALSE,Handgun,9x19mm Parabellum\n";
+        let result = import_text(&db, text);
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        let glock = &all_firearms(&db)[0];
+        assert_eq!((glock.make.as_str(), glock.model.as_str()), ("Glock", "19"));
+        assert_eq!(glock.serial_number.as_deref(), Some("A1"));
+        assert_eq!(glock.cartridge.as_deref(), Some("9x19mm Parabellum"));
+    }
+
+    #[test]
+    fn a_header_naming_a_column_twice_fails_the_whole_import_and_imports_nothing() {
+        let db = TestDb::new();
+        let dir = TempDir::new().unwrap();
+        let path = write_csv(
+            &dir,
+            "make,model,caliber,serial_number,Caliber,firearm_type\nGlock,19,9mm,A1,9mm,Handgun\n",
+        );
+        let error = import_export_ops::import_collection(
+            &db.conn,
+            &path,
+            SpreadsheetFormat::Csv,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "VALIDATION_ERROR");
+        assert_eq!(error.message, "The import file has two \"caliber\" columns.");
+        assert_eq!(all_firearms(&db).len(), 0);
+    }
+
+    #[test]
+    fn twenty_variants_all_snap_and_different_notations_never_do() {
+        let db = TestDb::new();
+        on_record(&db, "Springfield Armory", "R0", None);
+        let variants: Vec<String> = (0..20)
+            .map(|i| match i % 4 {
+                0 => "springfield armory".to_owned(),
+                1 => "SPRINGFIELD ARMORY".to_owned(),
+                2 => " Springfield  Armory ".to_owned(),
+                _ => "Springfield-Armory".to_owned(),
+            })
+            .collect();
+        let mut rows: Vec<String> = variants
+            .iter()
+            .enumerate()
+            .map(|(i, make)| csv_firearm(make, "M", &format!("V{i}"), &[]))
+            .collect();
+        rows.push(csv_firearm("Springfield Arms", "M", "D1", &[]));
+        rows.push(csv_firearm("S. Armory", "M", "D2", &[]));
+        let result = import_rows(&db, &rows);
+        assert_eq!(result.imported_count, 22, "{:?}", result.row_errors);
+        // " Springfield  Armory " trims to a spelling that differs from the
+        // record only by the doubled space, so it snaps too.
+        assert_eq!(result.snapped_values.len(), 20);
+        let makes: Vec<_> = all_firearms(&db).into_iter().map(|f| f.make).collect();
+        assert_eq!(makes.iter().filter(|m| *m == "Springfield Armory").count(), 21);
+        assert!(makes.contains(&"Springfield Arms".to_owned()));
+        assert!(makes.contains(&"S. Armory".to_owned()));
+    }
+}

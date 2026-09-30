@@ -6,6 +6,7 @@ import {
   Button,
   ConfirmDialog,
   Dialog,
+  Disclosure,
   Icon,
   ProgressBar,
   SegmentedControl,
@@ -23,6 +24,40 @@ import type {
   SpreadsheetFormat,
 } from "./types";
 import "./importExport.css";
+
+/** One of the import report's lists of what the import changed (contracts/
+ * ui-entry.md §8): a folded section, shown only when it has rows, in row
+ * order. */
+function ReportDisclosure({
+  title,
+  summary,
+  items,
+}: {
+  title: string;
+  summary: string;
+  items: { key: string; text: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <section className="hd-io-section">
+      <Disclosure
+        title={`${title} (${items.length})`}
+        summary={open ? undefined : summary}
+        headingLevel={3}
+        open={open}
+        onOpenChange={setOpen}
+      >
+        <p className="hd-form-note">{summary}</p>
+        <ul className="hd-row-errors hd-row-errors--info">
+          {items.map((item) => (
+            <li key={item.key}>{item.text}</li>
+          ))}
+        </ul>
+      </Disclosure>
+    </section>
+  );
+}
 
 export interface ImportDialogProps {
   open: boolean;
@@ -220,6 +255,25 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           Imported {count(result.importedCount, "new record", "new records")}.{" "}
           {count(result.rowErrors.length, "row", "rows")} failed.
         </p>
+
+        <ReportDisclosure
+          title="Calibers filled in from the cartridge"
+          summary="The cartridge named a caliber, so the blank one was filled in. “Guessed” is a best reading; check it."
+          items={result.derivedCalibers.map((derived) => ({
+            key: `${derived.row}`,
+            text: `Row ${derived.row}: ${derived.cartridge} → ${derived.caliber} (${
+              derived.source === "catalog" ? "built-in" : "guessed"
+            })`,
+          }))}
+        />
+        <ReportDisclosure
+          title="Spellings matched to existing values"
+          summary="These differed only in letter case, spacing or separators, so they now match a spelling already in use."
+          items={result.snappedValues.map((snapped) => ({
+            key: `${snapped.row}-${snapped.field}`,
+            text: `Row ${snapped.row}, ${snapped.field}: “${snapped.sheetValue}” → “${snapped.recordedValue}”`,
+          }))}
+        />
 
         {result.rowErrors.length > 0 && (
           <section className="hd-io-section" aria-labelledby="row-errors-title">

@@ -15,7 +15,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::services::cartridges::catalog;
-use crate::services::entry_text::{EntryField, MAX_ENTRY_CHARS, words};
+use crate::services::entry_text::{EntryField, MAX_ENTRY_CHARS, check_entry_text, words};
 
 /// The most suggestions one call returns (research.md §4).
 pub const MAX_SUGGESTIONS: usize = 20;
@@ -150,6 +150,20 @@ fn words_key(text: &str) -> String {
     words(text).concat()
 }
 
+/// The spelling the catalog or the vocabulary already has for `key`, and
+/// which of the two it is: the catalog first (research.md §6).
+fn known_spelling<'a>(vocabulary: &'a FieldVocabulary, key: &str) -> Option<(&'a str, ChangedBy)> {
+    let from_catalog = match vocabulary.field {
+        EntryField::Cartridge => catalog().entry_by_name_key(key).map(|entry| entry.name.as_str()),
+        EntryField::Caliber => catalog().class_by_key(key).map(|class| class.spelling.as_str()),
+        EntryField::Make | EntryField::Model => None,
+    };
+    if let Some(spelling) = from_catalog {
+        return Some((spelling, ChangedBy::Catalog));
+    }
+    vocabulary.groups.get(key).map(|group| (group.display(), ChangedBy::Record))
+}
+
 /// Steps 1–2 of research.md §6: what `text` becomes in the vocabulary's
 /// field. Returns the trimmed text unchanged when nothing matches, and the
 /// spelling that is already in use when it does.
@@ -162,19 +176,81 @@ pub fn snap(vocabulary: &FieldVocabulary, text: &str) -> (String, Option<Changed
     if key.is_empty() {
         return (trimmed.to_owned(), None);
     }
-    let from_catalog = match vocabulary.field {
-        EntryField::Cartridge => catalog().entry_by_name_key(&key).map(|entry| entry.name.as_str()),
-        EntryField::Caliber => catalog().class_by_key(&key).map(|class| class.spelling.as_str()),
-        EntryField::Make | EntryField::Model => None,
-    };
-    if let Some(spelling) = from_catalog {
-        return (spelling.to_owned(), (spelling != trimmed).then_some(ChangedBy::Catalog));
+    match known_spelling(vocabulary, &key) {
+        Some((spelling, by)) => (spelling.to_owned(), (spelling != trimmed).then_some(by)),
+        None => (trimmed.to_owned(), None),
     }
-    if let Some(group) = vocabulary.groups.get(&key) {
-        let spelling = group.display();
-        return (spelling.to_owned(), (spelling != trimmed).then_some(ChangedBy::Record));
+}
+
+/// One spelling met in a sheet's cells, and how many cells use it.
+struct SheetSpelling {
+    text: String,
+    count: usize,
+    /// The first cell (in row order) using it.
+    first: usize,
+}
+
+/// The import's sheet pass for one field (contracts/spreadsheet-format.md
+/// "Entry rules and snapping on import", FR-026): the spelling most of the
+/// sheet's cells use for each entry key, the earliest row winning a tie. It
+/// is consulted only for a value the catalog and the start-of-import
+/// snapshot don't know.
+#[derive(Default)]
+pub struct SheetSpellings {
+    chosen: HashMap<String, String>,
+}
+
+impl SheetSpellings {
+    /// `cells` are the field's cells in row order. Blank cells, and cells
+    /// that break FR-015's rules (a row error of their own), don't vote.
+    pub fn from_cells<'a>(field: EntryField, cells: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut by_key: HashMap<String, Vec<SheetSpelling>> = HashMap::new();
+        for (index, cell) in cells.into_iter().enumerate() {
+            let text = cell.trim();
+            if text.is_empty() || check_entry_text(field, text).is_err() {
+                continue;
+            }
+            let key = words_key(text);
+            if key.is_empty() {
+                continue;
+            }
+            let spellings = by_key.entry(key).or_default();
+            match spellings.iter_mut().find(|spelling| spelling.text == text) {
+                Some(spelling) => spelling.count += 1,
+                None => {
+                    spellings.push(SheetSpelling { text: text.to_owned(), count: 1, first: index })
+                }
+            }
+        }
+        let chosen = by_key
+            .into_iter()
+            .filter_map(|(key, spellings)| {
+                spellings
+                    .into_iter()
+                    .max_by_key(|spelling| (spelling.count, Reverse(spelling.first)))
+                    .map(|spelling| (key, spelling.text))
+            })
+            .collect();
+        Self { chosen }
     }
-    (trimmed.to_owned(), None)
+}
+
+/// [`snap`] for an import row: the catalog, then a value on record when the
+/// import started (`vocabulary`), then the sheet's own majority spelling.
+/// Returns the trimmed text unchanged when none knows it.
+pub fn snap_for_import(vocabulary: &FieldVocabulary, sheet: &SheetSpellings, text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() > MAX_ENTRY_CHARS {
+        return trimmed.to_owned();
+    }
+    let key = words_key(trimmed);
+    if key.is_empty() {
+        return trimmed.to_owned();
+    }
+    if let Some((spelling, _)) = known_spelling(vocabulary, &key) {
+        return spelling.to_owned();
+    }
+    sheet.chosen.get(&key).cloned().unwrap_or_else(|| trimmed.to_owned())
 }
 
 /// What the user has typed, as the comparison form of research.md §3.

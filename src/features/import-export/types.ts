@@ -40,6 +40,26 @@ export interface ImportConflict {
   serialNumber: string | null;
 }
 
+/** specs/004-cartridges-action-types FR-025: a blank caliber worked out from
+ * the row's cartridge. */
+export interface DerivedCaliber {
+  row: number;
+  /** As recorded (after snapping). */
+  cartridge: string;
+  /** As recorded. */
+  caliber: string;
+  source: "catalog" | "guess";
+}
+
+/** FR-026, SC-007: a value changed to the spelling already in use. */
+export interface SnappedValue {
+  row: number;
+  field: "make" | "model" | "cartridge" | "caliber";
+  /** As in the sheet, trimmed. */
+  sheetValue: string;
+  recordedValue: string;
+}
+
 export interface ImportResult {
   sessionId: string;
   importedCount: number;
@@ -50,6 +70,10 @@ export interface ImportResult {
   /** specs/002-firearm-identification FR-009: rows whose original marks
    * match another active firearm's, imported anyway (US4-6). */
   warnings: RowError[];
+  /** Rows imported or awaiting a decision, never failed ones. */
+  derivedCalibers: DerivedCaliber[];
+  /** Rows imported or awaiting a decision, never failed ones. */
+  snappedValues: SnappedValue[];
 }
 
 export type ConflictAction = "skip" | "overwrite" | "duplicate";

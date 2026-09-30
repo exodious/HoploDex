@@ -12,10 +12,13 @@ use crate::models::database::OperationKind;
 use crate::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
+use crate::services::cartridges::{CaliberSource, derive_caliber};
+use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::spreadsheet::{
     FirearmExportRow, RawImportRow, SpreadsheetFormat, dollars_to_string, parse_scaled_decimal,
     parse_whole_dollars, read_spreadsheet, scaled_to_string, write_spreadsheet,
 };
+use crate::services::suggestions::{FieldVocabulary, SheetSpellings, snap_for_import};
 use crate::session::Session;
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,6 +64,36 @@ pub struct ImportResult {
     /// match another active firearm's, imported anyway (US4-6). Disjoint
     /// from `row_errors` — a row appears here only when it did not fail.
     pub warnings: Vec<RowError>,
+    /// specs/004-cartridges-action-types FR-025: rows whose blank caliber was
+    /// filled in from the cartridge. Imported and conflict rows only, never
+    /// failed ones.
+    pub derived_calibers: Vec<DerivedCaliberReport>,
+    /// FR-026, SC-007: every value the import changed to a spelling already
+    /// in use. Imported and conflict rows only.
+    pub snapped_values: Vec<SnappedValue>,
+}
+
+/// A caliber worked out from the row's cartridge (FR-025).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DerivedCaliberReport {
+    pub row: usize,
+    /// As recorded (after snapping).
+    pub cartridge: String,
+    /// As recorded.
+    pub caliber: String,
+    pub source: CaliberSource,
+}
+
+/// A value changed to the spelling in use (FR-026).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnappedValue {
+    pub row: usize,
+    pub field: EntryField,
+    /// As in the sheet, trimmed.
+    pub sheet_value: String,
+    pub recorded_value: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -201,6 +234,17 @@ pub mod ops {
                     |row| row.get(0),
                 )
                 .map_err(CommandError::from_db)?;
+            let action_type_name: Option<String> = match firearm.action_type_id {
+                Some(action_id) => conn
+                    .query_row(
+                        "SELECT name FROM action_types WHERE id = :id",
+                        named_params! { ":id": action_id },
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(CommandError::from_db)?,
+                None => None,
+            };
             let insurance_policy_name: Option<String> = match firearm.insurance_policy_id {
                 Some(policy_id) => conn
                     .query_row(
@@ -236,6 +280,8 @@ pub mod ops {
                 no_serial_attested: if firearm.no_serial_attested { "TRUE" } else { "FALSE" }
                     .to_string(),
                 caliber: firearm.caliber,
+                cartridge: firearm.cartridge.unwrap_or_default(),
+                action_type: action_type_name.unwrap_or_default(),
                 firearm_type: firearm_type_name,
                 notes: firearm.notes.unwrap_or_default(),
                 accessories: firearm.accessories.unwrap_or_default(),
@@ -342,6 +388,133 @@ pub mod ops {
             .join("; ")
     }
 
+    /// The snapping context of one import (research.md §12): the four fields'
+    /// vocabularies as they were on record when the import started, and the
+    /// sheet's own majority spellings. Rows added by the import never enter
+    /// the vocabularies.
+    struct Snapping {
+        vocabularies: HashMap<EntryField, FieldVocabulary>,
+        sheet: HashMap<EntryField, SheetSpellings>,
+    }
+
+    impl Snapping {
+        fn new(conn: &Connection, raw_rows: &[RawImportRow]) -> Result<Self, CommandError> {
+            let mut vocabularies = HashMap::new();
+            let mut sheet = HashMap::new();
+            for field in EntryField::ALL {
+                vocabularies.insert(
+                    field,
+                    FieldVocabulary::load(conn, field).map_err(CommandError::from_db)?,
+                );
+                sheet.insert(
+                    field,
+                    SheetSpellings::from_cells(
+                        field,
+                        raw_rows.iter().map(|raw| cell(raw, field).unwrap_or_default()),
+                    ),
+                );
+            }
+            Ok(Self { vocabularies, sheet })
+        }
+
+        fn snap(&self, field: EntryField, text: &str) -> String {
+            snap_for_import(&self.vocabularies[&field], &self.sheet[&field], text)
+        }
+    }
+
+    fn cell(raw: &RawImportRow, field: EntryField) -> Option<&str> {
+        match field {
+            EntryField::Make => raw.make.as_deref(),
+            EntryField::Model => raw.model.as_deref(),
+            EntryField::Cartridge => raw.cartridge.as_deref(),
+            EntryField::Caliber => raw.caliber.as_deref(),
+        }
+    }
+
+    fn set_cell(raw: &mut RawImportRow, field: EntryField, value: String) {
+        let slot = match field {
+            EntryField::Make => &mut raw.make,
+            EntryField::Model => &mut raw.model,
+            EntryField::Cartridge => &mut raw.cartridge,
+            EntryField::Caliber => &mut raw.caliber,
+        };
+        *slot = Some(value);
+    }
+
+    /// What settling a row changed, reported only if the row is imported or
+    /// becomes a conflict.
+    #[derive(Default)]
+    struct Settled {
+        snapped: Vec<(EntryField, String, String)>,
+        derived: Option<(String, String, CaliberSource)>,
+    }
+
+    /// FR-015, FR-025 and FR-026 for one row: checks the four entry cells,
+    /// snaps them, and fills a blank caliber in from the cartridge. Returns
+    /// the row to parse; the error is a row error's message.
+    fn settle_row(
+        snapping: &Snapping,
+        raw: &RawImportRow,
+    ) -> Result<(RawImportRow, Settled), String> {
+        let mut row = raw.clone();
+        let mut settled = Settled::default();
+        for field in [EntryField::Make, EntryField::Model, EntryField::Cartridge] {
+            let Some(text) = cell(raw, field) else {
+                continue;
+            };
+            check_entry_text(field, text).map_err(|m| format!("{}: {m}", field.column()))?;
+            let snapped = snapping.snap(field, text);
+            if snapped != text {
+                settled.snapped.push((field, text.to_owned(), snapped.clone()));
+            }
+            set_cell(&mut row, field, snapped);
+        }
+
+        match cell(raw, EntryField::Caliber) {
+            Some(text) => {
+                check_entry_text(EntryField::Caliber, text).map_err(|m| format!("caliber: {m}"))?;
+                let snapped = snapping.snap(EntryField::Caliber, text);
+                if snapped != text {
+                    settled.snapped.push((EntryField::Caliber, text.to_owned(), snapped.clone()));
+                }
+                set_cell(&mut row, EntryField::Caliber, snapped);
+            }
+            None => {
+                let cartridge = row.cartridge.clone();
+                let derived = cartridge.as_deref().and_then(derive_caliber);
+                let (Some(cartridge), Some(derived)) = (cartridge, derived) else {
+                    let reason = match &row.cartridge {
+                        Some(cartridge) => format!(
+                            "; it couldn't be worked out from the cartridge \"{cartridge}\""
+                        ),
+                        None => String::new(),
+                    };
+                    return Err(format!("caliber: Caliber is required{reason}."));
+                };
+                let caliber = snapping.snap(EntryField::Caliber, &derived.caliber);
+                set_cell(&mut row, EntryField::Caliber, caliber.clone());
+                settled.derived = Some((cartridge, caliber, derived.source));
+            }
+        }
+        Ok((row, settled))
+    }
+
+    /// Adds `settled` to the report; called for imported and conflict rows
+    /// only.
+    fn report(
+        settled: Settled,
+        row: usize,
+        snapped_values: &mut Vec<SnappedValue>,
+        derived_calibers: &mut Vec<DerivedCaliberReport>,
+    ) {
+        for (field, sheet_value, recorded_value) in settled.snapped {
+            snapped_values.push(SnappedValue { row, field, sheet_value, recorded_value });
+        }
+        if let Some((cartridge, caliber, source)) = settled.derived {
+            derived_calibers.push(DerivedCaliberReport { row, cartridge, caliber, source });
+        }
+    }
+
     /// Parses and validates one raw spreadsheet row into a `FirearmInput`,
     /// resolving `firearm_type`/`insurance_policy_name` by lookup — a
     /// human-readable `Err` message per FR-020, never a panic/abort of the
@@ -349,6 +522,7 @@ pub mod ops {
     fn parse_row(conn: &Connection, raw: &RawImportRow) -> Result<FirearmInput, String> {
         let make = raw.make.clone().ok_or("Missing required field: make")?;
         let model = raw.model.clone().ok_or("Missing required field: model")?;
+        // `settle_row` has already filled a blank caliber in or failed the row.
         let caliber = raw.caliber.clone().ok_or("Missing required field: caliber")?;
         let type_name = raw.firearm_type.clone().ok_or("Missing required field: firearm_type")?;
 
@@ -361,6 +535,26 @@ pub mod ops {
             .optional()
             .map_err(|e| format!("Database error resolving firearm type: {e}"))?
             .ok_or_else(|| format!("Unknown firearm type: {type_name}"))?;
+
+        // FR-024: by name, ignoring letter case and surrounding whitespace;
+        // blank = none.
+        let action_type_id = match &raw.action_type {
+            None => None,
+            Some(name) => {
+                let id: i64 = conn
+                    .query_row(
+                        "SELECT id FROM action_types WHERE name = :name COLLATE NOCASE",
+                        named_params! { ":name": name.trim() },
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| format!("Database error resolving action type: {e}"))?
+                    .ok_or_else(|| format!("action_type: unknown action type {name:?}"))?;
+                firearm_ops::check_action_allowed(conn, firearm_type_id, Some(id))
+                    .map_err(|e| format!("action_type: {}", e.message))?;
+                Some(id)
+            }
+        };
 
         let status = match raw.status.as_deref().map(str::to_lowercase).as_deref() {
             None | Some("") | Some("active") => FirearmStatus::Active,
@@ -439,8 +633,8 @@ pub mod ops {
             original_make: raw.original_make.clone(),
             original_model: raw.original_model.clone(),
             original_serial_number: raw.original_serial_number.clone(),
-            cartridge: None,
-            action_type_id: None,
+            cartridge: raw.cartridge.clone(),
+            action_type_id,
         };
 
         validate_firearm_input(&input, None).map_err(|e| row_message(&e))?;
@@ -476,6 +670,7 @@ pub mod ops {
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
         let raw_rows = read_spreadsheet(file_path, format)?;
+        let snapping = Snapping::new(conn, &raw_rows)?;
         let total = raw_rows.len();
         let session_id = format!("import-{}", chrono::Utc::now().timestamp_micros());
 
@@ -484,6 +679,8 @@ pub mod ops {
         let mut conflicts = Vec::new();
         let mut pending = Vec::new();
         let mut warnings = Vec::new();
+        let mut derived_calibers = Vec::new();
+        let mut snapped_values = Vec::new();
 
         for (index, raw) in raw_rows.iter().enumerate() {
             if is_cancelled() {
@@ -494,9 +691,11 @@ pub mod ops {
                 ));
             }
             let row_number = index + 1;
-            match parse_row(conn, raw) {
+            let prepared = settle_row(&snapping, raw)
+                .and_then(|(row, settled)| parse_row(conn, &row).map(|input| (input, settled)));
+            match prepared {
                 Err(message) => row_errors.push(RowError { row: row_number, message }),
-                Ok(input) => {
+                Ok((input, settled)) => {
                     let existing = crate::services::import_matching::find_match(
                         conn,
                         &input.make,
@@ -526,11 +725,18 @@ pub mod ops {
                                 existing_firearm_id,
                                 new_input: input,
                             });
+                            report(settled, row_number, &mut snapped_values, &mut derived_calibers);
                         }
                         None => match firearm_ops::create_firearm(conn, &input, true) {
                             Ok(created) => {
                                 imported_count += 1;
                                 record_imported(imported_count as u64);
+                                report(
+                                    settled,
+                                    row_number,
+                                    &mut snapped_values,
+                                    &mut derived_calibers,
+                                );
                                 if let Some(message) = original_marks_warning(conn, &created)? {
                                     warnings.push(RowError { row: row_number, message });
                                 }
@@ -564,6 +770,8 @@ pub mod ops {
             row_errors,
             conflicts,
             warnings,
+            derived_calibers,
+            snapped_values,
         })
     }
 

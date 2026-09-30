@@ -29,7 +29,10 @@ impl SpreadsheetFormat {
 /// Column order per contracts/spreadsheet-format.md. `photo_filenames` is
 /// export-only (ignored on import, FR-019). specs/002-firearm-identification
 /// adds seven columns after `condition` and before `photo_filenames`
-/// (contracts/spreadsheet-format.md's "New columns").
+/// (contracts/spreadsheet-format.md's "New columns");
+/// specs/004-cartridges-action-types adds `cartridge` and `action_type`
+/// directly after `caliber` (FR-022). Import finds columns by header, not by
+/// position, so this order is the export's only.
 pub const COLUMNS: &[&str] = &[
     "make",
     "model",
@@ -37,6 +40,8 @@ pub const COLUMNS: &[&str] = &[
     "serial_number",
     "no_serial_attested",
     "caliber",
+    "cartridge",
+    "action_type",
     "firearm_type",
     "notes",
     "accessories",
@@ -77,6 +82,11 @@ pub struct FirearmExportRow {
     pub serial_number: String,
     pub no_serial_attested: String,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-022: the recorded cartridge, or
+    /// blank.
+    pub cartridge: String,
+    /// The action's name (`Bolt action`), or blank.
+    pub action_type: String,
     pub firearm_type: String,
     pub notes: String,
     pub accessories: String,
@@ -112,7 +122,7 @@ pub struct FirearmExportRow {
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 34] {
+    fn as_fields(&self) -> [&str; 36] {
         [
             &self.make,
             &self.model,
@@ -120,6 +130,8 @@ impl FirearmExportRow {
             &self.serial_number,
             &self.no_serial_attested,
             &self.caliber,
+            &self.cartridge,
+            &self.action_type,
             &self.firearm_type,
             &self.notes,
             &self.accessories,
@@ -164,6 +176,8 @@ pub struct RawImportRow {
     pub serial_number: Option<String>,
     pub no_serial_attested: Option<String>,
     pub caliber: Option<String>,
+    pub cartridge: Option<String>,
+    pub action_type: Option<String>,
     pub firearm_type: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
@@ -198,42 +212,84 @@ fn non_blank(value: &str) -> Option<String> {
     if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
 }
 
-fn row_from_cells(cells: &[String]) -> RawImportRow {
-    let cell = |index: usize| cells.get(index).map(String::as_str).unwrap_or("");
-    RawImportRow {
-        make: non_blank(cell(0)),
-        model: non_blank(cell(1)),
-        nickname: non_blank(cell(2)),
-        serial_number: non_blank(cell(3)),
-        no_serial_attested: non_blank(cell(4)),
-        caliber: non_blank(cell(5)),
-        firearm_type: non_blank(cell(6)),
-        notes: non_blank(cell(7)),
-        accessories: non_blank(cell(8)),
-        status: non_blank(cell(9)),
-        estimated_value: non_blank(cell(10)),
-        acquisition_source: non_blank(cell(11)),
-        acquisition_date: non_blank(cell(12)),
-        acquisition_price: non_blank(cell(13)),
-        disposition_type: non_blank(cell(14)),
-        disposition_recipient: non_blank(cell(15)),
-        disposition_date: non_blank(cell(16)),
-        disposition_price: non_blank(cell(17)),
-        insurance_policy_name: non_blank(cell(18)),
-        scheduled_coverage_amount: non_blank(cell(19)),
-        barrel_length_in: non_blank(cell(20)),
-        overall_length_in: non_blank(cell(21)),
-        weight_oz: non_blank(cell(22)),
-        capacity: non_blank(cell(23)),
-        finish: non_blank(cell(24)),
-        condition: non_blank(cell(25)),
-        origin: non_blank(cell(26)),
-        year_of_manufacture: non_blank(cell(27)),
-        country_of_manufacture: non_blank(cell(28)),
-        importer_name: non_blank(cell(29)),
-        original_make: non_blank(cell(30)),
-        original_model: non_blank(cell(31)),
-        original_serial_number: non_blank(cell(32)),
+/// Which `COLUMNS` entry each column of the file is, by header (research.md
+/// §12): trimmed and in any letter case. A header that is not in `COLUMNS`
+/// maps to `None` and its cells are ignored; a `COLUMNS` entry the file does
+/// not have reads as blank on every row.
+struct HeaderMap(Vec<Option<usize>>);
+
+impl HeaderMap {
+    /// Fails, naming the column, when two headers are the same known column
+    /// (contracts/spreadsheet-format.md "Columns are read by header").
+    fn from_headers<'a>(headers: impl Iterator<Item = &'a str>) -> Result<Self, CommandError> {
+        let mut seen = [false; COLUMNS.len()];
+        let mut map = Vec::new();
+        for (index, header) in headers.enumerate() {
+            // A byte-order mark starts some spreadsheets' first header.
+            let header = header.trim_start_matches('\u{feff}').trim().to_lowercase();
+            let column = COLUMNS.iter().position(|known| *known == header);
+            if let Some(column) = column
+                && std::mem::replace(&mut seen[column], true)
+            {
+                return Err(CommandError::new(
+                    "VALIDATION_ERROR",
+                    format!("The import file has two \"{}\" columns.", COLUMNS[column]),
+                ));
+            }
+            debug_assert_eq!(map.len(), index);
+            map.push(column);
+        }
+        Ok(Self(map))
+    }
+
+    fn row(&self, cells: &[String]) -> RawImportRow {
+        let mut by_column: [Option<String>; COLUMNS.len()] = std::array::from_fn(|_| None);
+        for (cell, column) in cells.iter().zip(&self.0) {
+            if let Some(column) = column {
+                by_column[*column] = non_blank(cell);
+            }
+        }
+        let mut take = |name: &str| {
+            let column = COLUMNS.iter().position(|known| *known == name).expect("a known column");
+            by_column[column].take()
+        };
+        RawImportRow {
+            make: take("make"),
+            model: take("model"),
+            nickname: take("nickname"),
+            serial_number: take("serial_number"),
+            no_serial_attested: take("no_serial_attested"),
+            caliber: take("caliber"),
+            cartridge: take("cartridge"),
+            action_type: take("action_type"),
+            firearm_type: take("firearm_type"),
+            notes: take("notes"),
+            accessories: take("accessories"),
+            status: take("status"),
+            estimated_value: take("estimated_value"),
+            acquisition_source: take("acquisition_source"),
+            acquisition_date: take("acquisition_date"),
+            acquisition_price: take("acquisition_price"),
+            disposition_type: take("disposition_type"),
+            disposition_recipient: take("disposition_recipient"),
+            disposition_date: take("disposition_date"),
+            disposition_price: take("disposition_price"),
+            insurance_policy_name: take("insurance_policy_name"),
+            scheduled_coverage_amount: take("scheduled_coverage_amount"),
+            barrel_length_in: take("barrel_length_in"),
+            overall_length_in: take("overall_length_in"),
+            weight_oz: take("weight_oz"),
+            capacity: take("capacity"),
+            finish: take("finish"),
+            condition: take("condition"),
+            origin: take("origin"),
+            year_of_manufacture: take("year_of_manufacture"),
+            country_of_manufacture: take("country_of_manufacture"),
+            importer_name: take("importer_name"),
+            original_make: take("original_make"),
+            original_model: take("original_model"),
+            original_serial_number: take("original_serial_number"),
+        }
     }
 }
 
@@ -396,13 +452,18 @@ fn read_csv(path: &Path) -> Result<Vec<RawImportRow>, CommandError> {
         CommandError::new("VALIDATION_ERROR", format!("Could not read the import file: {e}"))
     })?;
 
+    let headers = reader.headers().map_err(|e| {
+        CommandError::new("VALIDATION_ERROR", format!("Could not read the import file: {e}"))
+    })?;
+    let map = HeaderMap::from_headers(headers.iter())?;
+
     let mut rows = Vec::new();
     for record in reader.records() {
         let record = record.map_err(|e| {
             CommandError::new("VALIDATION_ERROR", format!("Could not parse a row: {e}"))
         })?;
         let cells: Vec<String> = record.iter().map(str::to_string).collect();
-        rows.push(row_from_cells(&cells));
+        rows.push(map.row(&cells));
     }
     Ok(rows)
 }
@@ -420,13 +481,17 @@ fn read_xlsx(path: &Path) -> Result<Vec<RawImportRow>, CommandError> {
         CommandError::new("VALIDATION_ERROR", format!("Could not read the sheet: {e}"))
     })?;
 
+    let mut sheet_rows = range.rows();
+    let Some(header_row) = sheet_rows.next() else {
+        return Ok(Vec::new());
+    };
+    let headers: Vec<String> = header_row.iter().map(|cell| cell.to_string()).collect();
+    let map = HeaderMap::from_headers(headers.iter().map(String::as_str))?;
+
     let mut rows = Vec::new();
-    for (row_index, row) in range.rows().enumerate() {
-        if row_index == 0 {
-            continue; // header row
-        }
+    for row in sheet_rows {
         let cells: Vec<String> = row.iter().map(|cell| cell.to_string()).collect();
-        rows.push(row_from_cells(&cells));
+        rows.push(map.row(&cells));
     }
     Ok(rows)
 }
