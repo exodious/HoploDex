@@ -17,6 +17,7 @@
     "tuner:build": "vite build --config tools/plate-tuner/vite.config.ts",
     "icons": "node tools/icons/make-icons.mjs",
     "tauri": "tauri",
+    "bundle:linux": "scripts/build-appimage.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node e2e/run-e2e.mjs",
@@ -48,7 +49,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@tauri-apps/cli": "^2.3.1",
+    "@tauri-apps/cli": "^2.12.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.6.1",

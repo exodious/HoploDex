@@ -228,7 +228,33 @@ npm run build                                              # tsc typecheck + vit
 cargo build --manifest-path src-tauri/Cargo.toml            # backend, debug profile
 npm run tauri dev                                           # run the full app in dev mode (hot reload)
 npm run tauri build                                         # production installer/bundle for this OS
+npm run bundle:linux                                        # the same on Linux, with a working AppImage (below)
 ```
+
+### Linux AppImage
+
+On Linux, build the bundles with `npm run bundle:linux` (in the dev
+container: `scripts/dev-container.sh npm run bundle:linux`), not
+`npm run tauri build`. Arguments go through to `tauri build`, so
+`npm run bundle:linux -- --bundles appimage` builds only the AppImage.
+
+A plain `tauri build` AppImage carries the build machine's display-stack
+libraries (`libwayland-*`, `libxkbcommon`, `libxcb-*`, `libXau`, `libXdmcp`)
+and puts them ahead of the host's. On a host with a newer Mesa than the build
+machine (Arch and CachyOS, Fedora 44), WebKitGTK then can't create an EGL
+display: the window opens grey, and the terminal shows
+`Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...`
+([tauri-apps/tauri#15976](https://github.com/tauri-apps/tauri/issues/15976)).
+`scripts/build-appimage.sh` sets `LINUXDEPLOY_EXCLUDED_LIBRARIES` so
+linuxdeploy leaves those libraries out and the host's are used, then extracts
+the AppImage and fails if any are still inside. Only the linuxdeploy that
+Tauri CLI 2.12 and later downloads reads that variable. The `.deb` and `.rpm`
+use the system's libraries anyway.
+
+To check an AppImage on a machine with a newer Mesa without a desktop session
+or your real data, run it under `xvfb-run` with throwaway `HOME` and `XDG_*`
+directories and no session D-Bus. The broken build aborts at once with the EGL error, and the
+fixed one shows the chooser.
 
 ## Test
 
