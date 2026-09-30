@@ -251,6 +251,24 @@ describe("Combobox", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("lets the wheel scroll the list inside a modal dialog", async () => {
+    // A modal dialog's scroll lock cancels wheel and touch moves aimed outside
+    // the dialog, and the list is portaled outside it.
+    const user = userEvent.setup();
+    render(
+      <Dialog open onOpenChange={() => {}} title="Add firearm">
+        <Harness load={load} />
+      </Dialog>,
+    );
+    await user.click(input());
+    const list = await screen.findByRole("listbox");
+    for (const type of ["wheel", "touchmove"]) {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      list.querySelector("li")!.dispatchEvent(event);
+      expect(event.defaultPrevented, type).toBe(false);
+    }
+  });
+
   it("closes on Tab keeping the text, and reports that the field was left", async () => {
     const user = userEvent.setup();
     const onLeave = vi.fn();

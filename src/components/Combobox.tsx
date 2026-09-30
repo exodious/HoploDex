@@ -34,6 +34,17 @@ export interface ComboboxProps extends Omit<
   note?: string;
 }
 
+/** A modal dialog's scroll lock (react-remove-scroll) cancels wheel and touch
+ * moves at the document unless they start inside the dialog, and the list is
+ * portaled outside it, so the list would not scroll. The browser's own
+ * scrolling of the list is all that is wanted: stop these events before they
+ * reach the document. */
+function letListScroll(list: HTMLElement | null) {
+  for (const type of ["wheel", "touchmove"]) {
+    list?.addEventListener(type, (event) => event.stopPropagation(), { passive: true });
+  }
+}
+
 /** How long typing must pause before the suggestion count is announced. */
 export const COMBOBOX_ANNOUNCE_MS = 500;
 
@@ -251,6 +262,7 @@ export function Combobox({
           {/* A press on the list must not move focus out of the input. */}
           <ul
             id={listId}
+            ref={letListScroll}
             role="listbox"
             aria-label={props.label}
             className="hd-combobox__list"
