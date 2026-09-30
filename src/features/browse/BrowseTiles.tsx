@@ -3,6 +3,7 @@ import { FirearmName } from "../app/FirearmName";
 import { GroupHeading } from "./BrowseList";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
+import { caliberText } from "./types";
 import type { VisibleGroup } from "./types";
 
 export interface BrowseTilesProps {
@@ -40,7 +41,7 @@ export function BrowseTiles({ groups, grouped, onSelect }: BrowseTilesProps) {
                       <FirearmName firearm={firearm} />
                     </span>
                     <span className="hd-tile__meta">
-                      {firearm.caliber}
+                      <span>{caliberText(firearm)}</span>
                       <span aria-hidden> · </span>
                       {firearm.serialNumber ? (
                         <span className="hd-serial">{firearm.serialNumber}</span>

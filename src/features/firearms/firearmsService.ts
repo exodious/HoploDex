@@ -1,10 +1,12 @@
 import { invoke } from "../../services/tauriClient";
 import type {
   DisposeFirearmInput,
+  EntryFieldName,
   Firearm,
   FirearmDetail,
   FirearmInput,
   ReverseDispositionInput,
+  SettleEntryOutput,
 } from "./types";
 
 /** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009). */
@@ -34,4 +36,10 @@ export function deleteFirearm(id: number, confirmed: boolean): Promise<{ deleted
 
 export function getFirearm(id: number): Promise<FirearmDetail> {
   return invoke<FirearmDetail>("get_firearm", { id });
+}
+
+/** specs/004-cartridges-action-types: what an entered value becomes, and for
+ * a cartridge the caliber it derives (contracts/tauri-commands.md). */
+export function settleEntry(field: EntryFieldName, text: string): Promise<SettleEntryOutput> {
+  return invoke<SettleEntryOutput>("settle_entry", { input: { field, text } });
 }

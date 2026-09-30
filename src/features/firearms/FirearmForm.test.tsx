@@ -1,12 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
 import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
 import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
-import type { Firearm } from "./types";
+import type { DerivedCaliber, Firearm } from "./types";
+
+// specs/004-cartridges-action-types: the form settles an entry through the
+// backend (`settle_entry`); here a stand-in derives a few known calibers.
+const settleEntry = vi.fn();
+vi.mock("./firearmsService", () => ({
+  settleEntry: (field: string, text: string) => settleEntry(field, text),
+}));
+
+const DERIVED: Record<string, DerivedCaliber> = {
+  "9x19mm Parabellum": { caliber: "9mm", source: "catalog" },
+  "9mm Luger": { caliber: "9mm", source: "catalog" },
+  ".45 ACP": { caliber: ".45", source: "catalog" },
+  ".30 Custom Improved": { caliber: ".30", source: "guess" },
+  "6.5x47 Wildcat": { caliber: "6.5mm", source: "guess" },
+};
+
+beforeEach(() => {
+  settleEntry.mockReset();
+  settleEntry.mockImplementation(async (field: string, text: string) => ({
+    value: text.trim(),
+    changedBy: null,
+    derivedCaliber: field === "cartridge" ? (DERIVED[text.trim()] ?? null) : null,
+  }));
+});
 
 /** The "Origin and year of manufacture" disclosure's button. Closed, its
  * name also carries the summary line, so match on the title alone. */
@@ -518,7 +542,7 @@ describe("FirearmForm focusField (FR-038, US1 Acceptance Scenario 15)", () => {
 
 // specs/002-firearm-identification contracts/ui-identification.md §1-§3
 describe("FirearmForm origin control (US1)", () => {
-  it("offers Domestic/Imported/Re-imported/Not specified with their one-line descriptions", () => {
+  it("offers Domestic/Imported/Re-imported/Unspecified with their one-line descriptions", () => {
     renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
     expect(
@@ -533,13 +557,13 @@ describe("FirearmForm origin control (US1)", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("radio", { name: /^Not specified Leave this if you're not sure\.$/ }),
+      screen.getByRole("radio", { name: /^Unspecified Leave this if you're not sure\.$/ }),
     ).toBeInTheDocument();
   });
 
-  it("starts a new record on Not specified", () => {
+  it("starts a new record on Unspecified", () => {
     renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
-    expect(screen.getByRole("radio", { name: /^Not specified/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^Unspecified/ })).toBeChecked();
   });
 
   it("selecting Imported reveals Country of manufacture and Importer, both optional", async () => {
@@ -564,7 +588,7 @@ describe("FirearmForm origin control (US1)", () => {
     expect(screen.getByText("Country of manufacture: United States")).toBeInTheDocument();
   });
 
-  it("shows neither field for Domestic or Not specified", async () => {
+  it("shows neither field for Domestic or Unspecified", async () => {
     const user = userEvent.setup();
     renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
@@ -572,7 +596,7 @@ describe("FirearmForm origin control (US1)", () => {
     expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Importer")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("radio", { name: /^Not specified/ }));
+    await user.click(screen.getByRole("radio", { name: /^Unspecified/ }));
     expect(screen.queryByLabelText("Country of manufacture")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Importer")).not.toBeInTheDocument();
   });
@@ -1115,5 +1139,251 @@ describe("FirearmForm resuming pending changes (FR-039)", () => {
     expect(screen.getByLabelText(/^Model/)).toHaveValue("92FS");
     expect(screen.getByLabelText(/^Caliber/)).toHaveValue("9mm");
     expect(getDirtyForm()?.label).toBe("Beretta 92FS (edit)");
+  });
+});
+
+// specs/004-cartridges-action-types User Story 1: the cartridge, and the
+// caliber it fills in (contracts/ui-entry.md §3, research.md §8).
+describe("FirearmForm cartridge and caliber (US1)", () => {
+  const cartridgeField = () => screen.getByLabelText("Cartridge");
+  const caliberField = () => screen.getByLabelText("Caliber");
+
+  async function enterCartridge(user: ReturnType<typeof userEvent.setup>, text: string) {
+    await user.clear(cartridgeField());
+    await user.type(cartridgeField(), text);
+    await user.tab();
+  }
+
+  const saved = {
+    id: 7,
+    make: "Glock",
+    model: "17",
+    serialNumber: "G17-1",
+    noSerialAttested: false,
+    caliber: "9mm",
+    cartridge: "9x19mm Parabellum",
+    firearmTypeId: 1,
+    actionTypeId: null,
+    status: "active",
+  } as Firearm;
+
+  it("puts Cartridge left of Caliber in one row, then Serial number on its own at half width", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    const cartridge = cartridgeField();
+    expect(cartridge).not.toBeRequired();
+    expect(cartridge).toHaveAttribute("placeholder", "e.g. 9x19mm Parabellum");
+    expect(cartridge).toHaveAccessibleDescription(
+      "Optional. The exact round it's chambered for, e.g. 9x19mm Parabellum.",
+    );
+    expect(caliberField()).toBeRequired();
+    expect(caliberField()).toHaveAttribute("placeholder", "e.g. 9mm");
+
+    const row = cartridge.closest(".hd-form-grid--2");
+    expect(row).not.toBeNull();
+    expect(row).toContainElement(caliberField());
+    expect(
+      cartridge.compareDocumentPosition(caliberField()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const serial = screen.getByLabelText("Serial number");
+    expect(row).not.toContainElement(serial);
+    expect(serial.closest(".hd-field")).toHaveClass("hd-field--half");
+  });
+
+  it("fills Caliber from a built-in cartridge when Cartridge is left (US1-1)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.type(cartridgeField(), "9x19mm Parabellum");
+    await user.tab();
+
+    await waitFor(() => expect(caliberField()).toHaveValue("9mm"));
+    expect(settleEntry).toHaveBeenCalledWith("cartridge", "9x19mm Parabellum");
+    expect(screen.getByText("From the cartridge.")).toBeInTheDocument();
+    expect(screen.queryByText("Guess")).not.toBeInTheDocument();
+  });
+
+  it("marks a guessed caliber with a Guess tag described by its hint (US1-2)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await enterCartridge(user, ".30 Custom Improved");
+
+    await waitFor(() => expect(caliberField()).toHaveValue(".30"));
+    const tag = screen.getByText("Guess");
+    expect(tag).toHaveAccessibleDescription("Guessed from the cartridge. Check it before saving.");
+    expect(caliberField()).toHaveAccessibleDescription(
+      "Guessed from the cartridge. Check it before saving.",
+    );
+  });
+
+  it("empties Caliber and asks for it when no bore can be read (US1-4)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await enterCartridge(user, "9x19mm Parabellum");
+    await waitFor(() => expect(caliberField()).toHaveValue("9mm"));
+    await enterCartridge(user, "Wildcat Special");
+
+    await waitFor(() => expect(caliberField()).toHaveValue(""));
+    expect(
+      screen.getByText(
+        "We couldn't work out a caliber from \u201cWildcat Special\u201d. Enter it.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Make"), "Custom");
+    await user.type(screen.getByLabelText("Model"), "Rifle");
+    await selectFirearmType(user);
+    await user.type(screen.getByLabelText("Serial number"), "W-1");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(screen.getByText("Enter the caliber.")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("keeps a caliber the user typed when the cartridge changes again (US1-3)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await enterCartridge(user, ".30 Custom Improved");
+    await waitFor(() => expect(caliberField()).toHaveValue(".30"));
+    await user.clear(caliberField());
+    await user.type(caliberField(), ".308");
+    await enterCartridge(user, "9x19mm Parabellum");
+
+    await waitFor(() => expect(settleEntry).toHaveBeenCalledTimes(2));
+    expect(caliberField()).toHaveValue(".308");
+    expect(screen.queryByText("Guess")).not.toBeInTheDocument();
+  });
+
+  it("offers the new cartridge's caliber on a saved firearm instead of replacing it (US1-7)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={saved} onSubmit={vi.fn()} />);
+
+    await enterCartridge(user, ".45 ACP");
+
+    expect(await screen.findByText("The cartridge suggests \u201c.45\u201d.")).toBeInTheDocument();
+    expect(caliberField()).toHaveValue("9mm");
+
+    await user.click(screen.getByRole("button", { name: "Use .45" }));
+    expect(caliberField()).toHaveValue(".45");
+    expect(screen.queryByText("The cartridge suggests \u201c.45\u201d.")).not.toBeInTheDocument();
+  });
+
+  it("does not settle an untouched cartridge, or one typed back to its saved value", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={saved} onSubmit={vi.fn()} />);
+
+    await user.click(cartridgeField());
+    await user.tab();
+    await enterCartridge(user, "9x19mm Parabellum");
+
+    expect(settleEntry).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Make", "Make"],
+    ["Model", "Model"],
+    ["Cartridge", "Cartridge"],
+    ["Caliber", "Caliber"],
+  ])("shows FR-015's rules for %s when it is left, without truncating", (label, name) => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    const field = screen.getByLabelText(label);
+
+    const long = "x".repeat(101);
+    fireEvent.change(field, { target: { value: long } });
+    fireEvent.blur(field);
+    expect(screen.getByText(`${name} can be at most 100 characters.`)).toBeInTheDocument();
+    expect(field).toHaveValue(long);
+
+    fireEvent.change(field, { target: { value: "Bad\u0007value" } });
+    fireEvent.blur(field);
+    expect(screen.getByText(`${name} can't contain control characters.`)).toBeInTheDocument();
+
+    // 100 characters, counted as characters: fine.
+    fireEvent.change(field, { target: { value: "\u{1F52B}".repeat(100) } });
+    fireEvent.blur(field);
+    expect(screen.queryByText(`${name} can be at most 100 characters.`)).not.toBeInTheDocument();
+  });
+
+  it("sends the cartridge trimmed, or null when blank", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[0][0].cartridge).toBeNull();
+
+    await user.type(cartridgeField(), "  9x19mm Parabellum ");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[1][0].cartridge).toBe("9x19mm Parabellum");
+    expect(onSubmit.mock.calls[1][0].caliber).toBe("9mm");
+  });
+
+  it("keeps a saved firearm's cartridge", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm initialValues={saved} onSubmit={onSubmit} />);
+
+    expect(cartridgeField()).toHaveValue("9x19mm Parabellum");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      cartridge: "9x19mm Parabellum",
+      caliber: "9mm",
+    });
+  });
+});
+
+describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
+  afterEach(() => setResumedDraft(null));
+
+  it("is version 2", () => {
+    expect(FORM_VERSION).toBe(2);
+  });
+
+  it("discards a version 1 draft", () => {
+    setResumedDraft({
+      formVersion: 1,
+      kind: "firearm",
+      mode: "add",
+      targetId: null,
+      label: "New firearm",
+      values: { make: "Old draft", caliber: ".22" },
+    });
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    expect(screen.getByLabelText("Make")).toHaveValue("");
+    expect(screen.getByLabelText("Caliber")).toHaveValue("");
+  });
+
+  it("restores a guessed caliber, still derived, from a version 2 draft", async () => {
+    const user = userEvent.setup();
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "add",
+      targetId: null,
+      label: "New firearm",
+      values: {
+        make: "Custom",
+        cartridge: ".30 Custom Improved",
+        caliber: ".30",
+        caliberMode: "derived",
+        caliberSource: "guess",
+      },
+    });
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(screen.getByLabelText("Caliber")).toHaveValue(".30");
+    expect(screen.getByText("Guess")).toBeInTheDocument();
+
+    // Still derived: another cartridge fills it again.
+    await user.clear(screen.getByLabelText("Cartridge"));
+    await user.type(screen.getByLabelText("Cartridge"), "9x19mm Parabellum");
+    await user.tab();
+    await waitFor(() => expect(screen.getByLabelText("Caliber")).toHaveValue("9mm"));
   });
 });

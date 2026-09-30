@@ -4,6 +4,7 @@ use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
+use crate::services::entry_text::{EntryField, check_entry_text};
 
 text_enum!(FirearmStatus {
     Active => "active",
@@ -360,18 +361,34 @@ fn checked_measure(
 
 /// Validation rules from data-model.md's "Validation rules" section,
 /// enforced here (not just at the DB level) so import validation (FR-020)
-/// can produce per-row human-readable errors too.
-pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> {
+/// can produce per-row human-readable errors too. `stored` is the record an
+/// update replaces: specs/004-cartridges-action-types FR-015's entry rules
+/// then apply only to a make, model, cartridge or caliber whose trimmed value
+/// differs from the stored one, so an existing value over the cap stays
+/// valid until that field is edited (spec Assumptions). Create and import
+/// pass `None` and check all four.
+pub fn validate_firearm_input(
+    input: &FirearmInput,
+    stored: Option<&Firearm>,
+) -> Result<(), CommandError> {
     let mut errors: HashMap<String, String> = HashMap::new();
 
-    if input.make.trim().is_empty() {
-        errors.insert("make".into(), "Make is required.".into());
-    }
-    if input.model.trim().is_empty() {
-        errors.insert("model".into(), "Model is required.".into());
-    }
-    if input.caliber.trim().is_empty() {
-        errors.insert("caliber".into(), "Caliber is required.".into());
+    for field in EntryField::ALL {
+        let (value, stored_value) = match field {
+            EntryField::Make => (input.make.as_str(), stored.map(|f| f.make.as_str())),
+            EntryField::Model => (input.model.as_str(), stored.map(|f| f.model.as_str())),
+            EntryField::Cartridge => (
+                input.cartridge.as_deref().unwrap_or(""),
+                stored.map(|f| f.cartridge.as_deref().unwrap_or("")),
+            ),
+            EntryField::Caliber => (input.caliber.as_str(), stored.map(|f| f.caliber.as_str())),
+        };
+        if stored_value.is_some_and(|stored| stored.trim() == value.trim()) {
+            continue;
+        }
+        if let Err(message) = check_entry_text(field, value) {
+            errors.insert(field.column().into(), message);
+        }
     }
 
     checked_amount("estimatedValue", "Estimated value", input.estimated_value, &mut errors);

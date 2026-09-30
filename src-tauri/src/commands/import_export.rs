@@ -443,7 +443,7 @@ pub mod ops {
             action_type_id: None,
         };
 
-        validate_firearm_input(&input).map_err(|e| row_message(&e))?;
+        validate_firearm_input(&input, None).map_err(|e| row_message(&e))?;
         Ok(input)
     }
 

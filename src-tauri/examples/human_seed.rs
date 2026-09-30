@@ -538,6 +538,9 @@ pub fn seed(conn: &Connection, extra: usize) {
         capacity: Some(15),
         finish: text("Black nDLC"),
         condition: Some(Condition::Excellent),
+        // specs/004-cartridges-action-types: a built-in cartridge and its
+        // bore class.
+        cartridge: text("9x19mm Parabellum"),
         ..base("Glock", "19 Gen5", "BXKT482", "9mm", HANDGUN)
     });
     photos(
@@ -689,6 +692,18 @@ pub fn seed(conn: &Connection, extra: usize) {
     // Only the required fields: no value, so no insurance warning either.
     add(base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN));
 
+    // specs/004-cartridges-action-types: a muzzleloader records only its
+    // caliber (spec Edge Cases), and "7.62x39" finds the SKS (US1-9). No
+    // value, so the blanket's totals are unchanged.
+    add(FirearmInput {
+        notes: text("Percussion cap; patched round ball over 90 gr FFg."),
+        ..base("Thompson/Center", "Hawken", "TC-50H-1182", ".50", RIFLE)
+    });
+    add(FirearmInput {
+        cartridge: text("7.62x39mm"),
+        ..base("Norinco", "SKS", "NOR-2419907", ".30", RIFLE)
+    });
+
     add(FirearmInput {
         nickname: text("Ünïcödé Tëst"),
         notes: text("Accented text: crème brûlée, façade, señor, Zażółć gęślą jaźń."),
@@ -755,7 +770,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2015-07-04"),
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_000),
-        ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357 Magnum", HANDGUN)
+        cartridge: text(".357 Magnum"),
+        ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357", HANDGUN)
     });
     let ids =
         photos(s_and_w, &[seed_photo!("sw-686-cylinder.jpg"), seed_photo!("sw-686-side.jpg")]);
@@ -783,7 +799,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2009-06-01"),
         insurance_policy_id: Some(policies.vault),
         scheduled_coverage_amount: Some(2_000),
-        ..base("Colt", "1911 Government Model", "70S12345", ".45 ACP", HANDGUN)
+        cartridge: text(".45 ACP"),
+        ..base("Colt", "1911 Government Model", "70S12345", ".45", HANDGUN)
     });
     photos(
         colt,
@@ -845,7 +862,11 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2020-09-09"),
         insurance_policy_id: Some(policies.expired_rider),
         scheduled_coverage_amount: Some(700),
-        ..base("Savage", "110", "S0011223", ".308 Win", RIFLE)
+        // specs/004-cartridges-action-types US1-2: a wildcat, whose caliber
+        // the form guesses from its name.
+        notes: text("Rebarreled by a gunsmith to a wildcat of his own."),
+        cartridge: text(".30 Custom Improved"),
+        ..base("Savage", "110", "S0011223", ".30", RIFLE)
     });
 
     // -- specs/002-firearm-identification: origin, year, country, importer --
@@ -1018,7 +1039,10 @@ pub fn seed(conn: &Connection, extra: usize) {
     let patriot = add(FirearmInput {
         estimated_value: Some(450),
         acquisition_date: text("2021-06-06"),
-        ..base("Mossberg", "Patriot", "MP778899", ".308 Win", RIFLE)
+        // specs/004-cartridges-action-types US2-7: disposed, so its unique
+        // cartridge is still suggested.
+        cartridge: text("6.5 Patriot Wildcat"),
+        ..base("Mossberg", "Patriot", "MP778899", "6.5mm", RIFLE)
     });
     dispose(patriot, DispositionType::Traded, "Ridgeline Arms", "2025-06-30", 400);
 

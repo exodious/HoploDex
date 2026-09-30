@@ -1,0 +1,245 @@
+# HoploDex's built-in cartridge catalog (specs/004-cartridges-action-types
+# FR-002; research.md §1 and §2).
+#
+# This list was written for HoploDex and is licensed GPL-3.0-only, like the
+# rest of the source. No third-party dataset was copied: cartridge names are
+# standard designations, and the spellings SAAMI and C.I.P. publish were used
+# only as a reference for how a name is written, as with any reference book.
+#
+# One cartridge per line: rank<TAB>name<TAB>caliber<TAB>aliases
+#   rank     commonness in U.S. private collections, 1 = most common
+#   name     the spelling the catalog offers and snaps to
+#   caliber  the bore class (FR-004a), one of research.md §2's classes
+#   aliases  other names collectors write, separated by |. They narrow the
+#            suggestion list and derive the caliber, but are never snapped to.
+#            An alias covers its same-notation variants (".22 LR" also covers
+#            "22LR"), and none is spelled like a class.
+#
+# tests/cartridge_catalog_test.rs checks research.md §2's invariants.
+1	9x19mm Parabellum	9mm	9mm Luger|9mm Para|9mm NATO|9x19|9mm Parabellum
+2	.22 Long Rifle	.22	.22 LR
+3	.223 Remington	.22	.223 Rem
+4	5.56x45mm NATO	.22	5.56 NATO|5.56|5.56x45
+5	12 gauge	12 gauge	12 ga
+6	.45 ACP	.45	.45 Auto
+7	.380 ACP	9mm	.380 Auto|9mm Kurz|9mm Short|9x17mm
+8	.40 S&W	.40	.40 Smith & Wesson
+9	.308 Winchester	.30	.308 Win
+10	.38 Special	.357	.38 Spl
+11	.357 Magnum	.357	.357 Mag
+12	7.62x39mm	.30	7.62x39
+13	.30-06 Springfield	.30	.30-06
+14	20 gauge	20 gauge	20 ga
+15	.300 AAC Blackout	.30	.300 BLK|.300 Blackout|.300 AAC
+16	.22 WMR	.22	.22 Magnum|.22 Mag|.22 Winchester Magnum Rimfire
+17	6.5 Creedmoor	6.5mm	6.5 CM|6.5mm Creedmoor
+18	.243 Winchester	6mm	.243 Win
+19	.270 Winchester	.27	.270 Win
+20	.44 Magnum	.44	.44 Rem Mag|.44 Mag
+21	10mm Auto	.40	10mm
+22	.30-30 Winchester	.30	.30-30|.30 WCF
+23	.410 bore	.410 bore	.410|410 gauge
+24	9x18mm Makarov	9mm	9mm Makarov|9x18
+25	.45 Colt	.45	.45 Long Colt|.45 LC
+26	.22 Short	.22	
+27	.25 ACP	.25	.25 Auto|6.35mm Browning
+28	.32 ACP	.32	.32 Auto|7.65mm Browning
+29	.300 Winchester Magnum	.30	.300 Win Mag|.300 WM
+30	7.62x51mm NATO	.30	7.62 NATO|7.62x51
+31	7.62x54mmR	.30	7.62x54R|7.62 Russian
+32	.22 Hornet	.22	
+33	.17 HMR	.17	.17 Hornady Magnum Rimfire
+34	16 gauge	16 gauge	16 ga
+35	.45-70 Government	.45	.45-70
+36	7mm Remington Magnum	7mm	7mm Rem Mag|7mm Mag
+37	.44 Special	.44	.44 Spl
+38	.22-250 Remington	.22	.22-250
+39	28 gauge	28 gauge	28 ga
+40	5.7x28mm	.22	5.7x28
+41	.303 British	.30	.303 Brit
+42	8x57mm Mauser	8mm	8mm Mauser|8x57|7.92x57mm
+43	.357 SIG	.357	
+44	.38 Super	.357	.38 Super Auto
+45	.25-06 Remington	.25	.25-06
+46	7mm-08 Remington	7mm	7mm-08
+47	.30 Carbine	.30	.30 M1 Carbine
+48	6.5 Grendel	6.5mm	
+49	.204 Ruger	.20	
+50	.280 Remington	7mm	.280 Rem
+51	.45 GAP	.45	
+52	.22 Long	.22	
+53	.17 WSM	.17	.17 Winchester Super Magnum
+54	.338 Lapua Magnum	.338	.338 Lapua|.338 LM
+55	.300 WSM	.30	.300 Winchester Short Magnum
+56	6.5x55mm Swedish	6.5mm	6.5x55|6.5 Swede|6.5x55mm Mauser
+57	.338 Winchester Magnum	.338	.338 Win Mag
+58	10 gauge	10 gauge	10 ga
+59	.450 Bushmaster	.45	
+60	.300 PRC	.30	
+61	6.5 PRC	6.5mm	
+62	.224 Valkyrie	.22	
+63	.350 Legend	.35	
+64	.32 S&W Long	.32	.32 Long
+65	.327 Federal Magnum	.32	.327 Fed|.327 Magnum
+66	.454 Casull	.45	
+67	.460 S&W Magnum	.45	.460 S&W|.460 Mag
+68	.500 S&W Magnum	.50	.500 S&W|.500 Mag
+69	.50 BMG	.50	.50 Browning Machine Gun|12.7x99mm NATO
+70	7.62x25mm Tokarev	.30	7.62 Tokarev|7.62x25
+71	.35 Remington	.35	.35 Rem
+72	.35 Whelen	.35	
+73	.257 Roberts	.25	
+74	.222 Remington	.22	.222 Rem
+75	.220 Swift	.22	
+76	.270 WSM	.27	.270 Winchester Short Magnum
+77	6mm Creedmoor	6mm	
+78	6mm ARC	6mm	
+79	7mm PRC	7mm	
+80	.300 Weatherby Magnum	.30	.300 Wby Mag
+81	.375 H&H Magnum	.375	.375 H&H
+82	9x21mm	9mm	9x21|9x21 IMI
+83	6.8 SPC	.27	6.8mm Remington SPC|6.8x43mm
+84	.32-20 Winchester	.32	.32-20|.32 WCF
+85	.44-40 Winchester	.44	.44-40|.44 WCF
+86	.38-40 Winchester	.40	.38-40|.38 WCF
+87	.38 S&W	.357	
+88	.38 Short Colt	.357	
+89	.38 Long Colt	.357	
+90	.41 Remington Magnum	.41	.41 Magnum|.41 Rem Mag
+91	.45 Schofield	.45	
+92	.32 H&R Magnum	.32	.32 H&R Mag
+93	.50 Action Express	.50	.50 AE
+94	.50 Beowulf	.50	
+95	.458 SOCOM	.45	
+96	.458 Winchester Magnum	.45	.458 Win Mag
+97	.444 Marlin	.44	
+98	.308 Marlin Express	.30	
+99	.30-40 Krag	.30	.30 Army
+100	.300 Savage	.30	
+101	.32 Winchester Special	.32	.32 Win Spl
+102	.25-20 Winchester	.25	.25-20
+103	.218 Bee	.22	
+104	6.5x52mm Carcano	6.5mm	6.5 Carcano
+105	7.5x55mm Swiss	.30	7.5 Swiss|GP11
+106	7.7x58mm Arisaka	.30	7.7 Jap|7.7 Arisaka
+107	6.5x50mm Arisaka	6.5mm	6.5 Jap|6.5 Arisaka
+108	7.62x38mmR Nagant	.30	7.62 Nagant
+109	7.63x25mm Mauser	.30	.30 Mauser
+110	7x57mm Mauser	7mm	7mm Mauser|7x57|.275 Rigby
+111	8mm Lebel	8mm	8x50mmR Lebel
+112	7.65x53mm Argentine	.30	
+113	7.5x54mm French	.30	7.5 French|7.5 MAS
+114	7.35x51mm Carcano	.30	
+115	8x56mmR Steyr	8mm	8x56R|8mm Steyr
+116	8mm Nambu	8mm	8x22mm Nambu
+117	.455 Webley	.45	
+118	.577/.450 Martini-Henry	.45	
+119	9x23mm Winchester	9mm	9x23
+120	9mm Largo	9mm	9x23mm Largo
+121	9x23mm Steyr	9mm	9mm Steyr
+122	9mm Browning Long	9mm	
+123	9x25mm Dillon	9mm	
+124	.38 ACP	.357	
+125	.357 Maximum	.357	.357 Max
+126	.22 WRF	.22	.22 Remington Special
+127	.22 TCM	.22	
+128	.22 Nosler	.22	
+129	.22 Creedmoor	.22	
+130	.22 ARC	.22	
+131	.222 Remington Magnum	.22	.222 Rem Mag
+132	.223 WSSM	.22	
+133	.221 Remington Fireball	.22	.221 Fireball
+134	5.45x39mm	.22	5.45 Soviet|5.45x39
+135	.22 CB Cap	.22	.22 CB
+136	.22 BB Cap	.22	.22 BB
+137	.225 Winchester	.22	
+138	.219 Zipper	.22	
+139	.17 Hornet	.17	.17 Hornady Hornet
+140	.17 Mach 2	.17	.17 HM2
+141	.17 Remington	.17	.17 Rem
+142	.17 Remington Fireball	.17	.17 Fireball
+143	6mm Remington	6mm	.244 Remington
+144	6mm BR Norma	6mm	6mm BR
+145	6mm PPC	6mm	
+146	.240 Weatherby Magnum	6mm	.240 Wby
+147	6mm Lee Navy	6mm	.236 Navy
+148	.243 WSSM	6mm	
+149	.257 Weatherby Magnum	.25	.257 Wby
+150	.25-35 Winchester	.25	.25-35
+151	.250 Savage	.25	.250-3000 Savage
+152	.25 WSSM	.25	
+153	.25-45 Sharps	.25	
+154	.260 Remington	6.5mm	.260 Rem
+155	.264 Winchester Magnum	6.5mm	.264 Win Mag
+156	6.5-284 Norma	6.5mm	6.5-284
+157	6.5x47 Lapua	6.5mm	
+158	6.5-300 Weatherby Magnum	6.5mm	6.5-300 Wby
+159	6.5 Remington Magnum	6.5mm	6.5 Rem Mag
+160	6.5x54mm Mannlicher-Schönauer	6.5mm	6.5x54 MS
+161	6.5 Weatherby RPM	6.5mm	
+162	.26 Nosler	6.5mm	
+163	.270 Weatherby Magnum	.27	.270 Wby
+164	.277 SIG Fury	.27	6.8x51mm
+165	6.8 Western	.27	
+166	.27 Nosler	.27	
+167	7mm Weatherby Magnum	7mm	7mm Wby
+168	7mm WSM	7mm	7mm Winchester Short Magnum
+169	7x64mm Brenneke	7mm	7x64
+170	7mm STW	7mm	7mm Shooting Times Westerner
+171	.280 Ackley Improved	7mm	.280 AI
+172	.284 Winchester	7mm	.284 Win
+173	7x30 Waters	7mm	
+174	7mm Remington Ultra Magnum	7mm	7mm RUM
+175	7x65mmR	7mm	7x65R
+176	.28 Nosler	7mm	
+177	.300 H&H Magnum	.30	.300 H&H
+178	.300 Remington Ultra Magnum	.30	.300 RUM|.300 Ultra Mag
+179	.300 Norma Magnum	.30	.300 Norma Mag
+180	.30-378 Weatherby Magnum	.30	.30-378
+181	.30 Nosler	.30	
+182	.307 Winchester	.30	
+183	.30 Remington	.30	
+184	.303 Savage	.30	
+185	.30 TC	.30	.30 Thompson/Center
+186	.30 Luger	.30	
+187	.32 S&W	.32	.32 Smith & Wesson
+188	.32 Long Colt	.32	
+189	.32 NAA	.32	
+190	.32-40 Winchester	.32	.32-40
+191	.325 WSM	8mm	.325 Winchester Short Magnum
+192	8mm Remington Magnum	8mm	8mm Rem Mag
+193	8x68S	8mm	
+194	.338 Federal	.338	
+195	.338-06	.338	
+196	.338 Marlin Express	.338	
+197	.340 Weatherby Magnum	.338	.340 Wby
+198	.338 Norma Magnum	.338	
+199	.338 Ruger Compact Magnum	.338	.338 RCM
+200	.33 Nosler	.338	
+201	.358 Winchester	.35	.358 Win
+202	.356 Winchester	.35	
+203	.358 Norma Magnum	.35	
+204	9.3x62mm	9.3mm	9.3x62|9.3x62 Mauser
+205	9.3x74mmR	9.3mm	9.3x74R
+206	9.3x57mm	9.3mm	9.3x57
+207	.375 Ruger	.375	
+208	.375 Winchester	.375	.375 Win
+209	.376 Steyr	.375	
+210	.375 Weatherby Magnum	.375	.375 Wby
+211	.378 Weatherby Magnum	.375	.378 Wby
+212	.375 CheyTac	.375	
+213	.400 Cor-Bon	.40	
+214	.401 Winchester Self-Loading	.40	.401 WSL
+215	.41 Long Colt	.41	
+216	.41 Action Express	.41	.41 AE
+217	.44 S&W Russian	.44	.44 Russian
+218	.44 Henry	.44	.44 Henry Flat
+219	.45 Winchester Magnum	.45	.45 Win Mag
+220	.458 Lott	.45	
+221	.460 Weatherby Magnum	.45	.460 Wby
+222	.450 Marlin	.45	
+223	.450 Nitro Express	.45	.450 NE
+224	.45-90 Sharps	.45	.45-90
+225	.50-70 Government	.50	.50-70
+226	.500 Nitro Express	.50	.500 NE
+227	12.7x108mm	.50	

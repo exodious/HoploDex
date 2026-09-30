@@ -46,6 +46,7 @@ function firearmSummary(id: number, overrides: Partial<FirearmSummary> = {}): Fi
     nickname: null,
     serialNumber: `SN${id}`,
     caliber: ".357",
+    cartridge: null,
     firearmTypeName: "Handgun",
     status: "active",
     thumbnailPhotoId: null,

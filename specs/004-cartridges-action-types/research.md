@@ -542,6 +542,11 @@ function, `entry_key`, in `services/entry_text.rs`.
   call (§5), the catalog is in the binary (§1), and settled values exist only
   in the form until saved. Deleting a firearm already removes its row and FTS
   entry and reclaims the freed pages (`secure_delete`, `reclaim_freed_space`).
+  **Found in implementation**: FTS5 records a delete as a marker segment
+  beside the old entry, and both hold the deleted words until the index's
+  segments merge, so a deleted firearm's words stayed in the file. Deleting a
+  firearm now merges the index (`optimize`) before the vacuum
+  (`db::reclaim_deleted_firearm`), within the existing delete budget.
   `deletion_wipe_test.rs` extends its "the text is gone from the file's bytes"
   check to a unique custom cartridge, and a test asserts it is gone from
   `suggest_entries` right after the delete (US2-7) and still present after a

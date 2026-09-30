@@ -41,6 +41,7 @@ function summary(id: number, nickname: string | null): FirearmSummary {
     nickname,
     serialNumber: `SN${id}`,
     caliber: "9mm",
+    cartridge: null,
     firearmTypeName: "Handgun",
     status: "active",
     thumbnailPhotoId: null,

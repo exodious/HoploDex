@@ -58,6 +58,9 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
     // firearms_fts index and idx_firearms_original_serial carry the full
     // load a real 10,000-record collection would (T052).
     let origins = [None, Some("domestic"), Some("imported"), Some("reimported")];
+    // specs/004-cartridges-action-types: most records carry a cartridge, a
+    // few a unique custom one, and some none (SC-004).
+    let cartridges = [Some("9x19mm Parabellum"), Some(".45 ACP"), None, Some(".223 Remington")];
 
     let tx = conn.unchecked_transaction().unwrap();
     {
@@ -69,10 +72,10 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                     weight_tenths_oz, capacity, finish, condition,
                     status, origin, year_of_manufacture, country_of_manufacture,
                     importer_name, original_make, original_model, original_serial_number,
-                    created_at, updated_at
+                    cartridge, created_at, updated_at
                 ) VALUES (
                     ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, datetime('now'), datetime('now')
+                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, datetime('now'), datetime('now')
                 )",
             )
             .unwrap();
@@ -126,6 +129,11 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                 importer.as_ref().map(|_| "Fabrique Nationale"),
                 importer.as_ref().map(|_| "High Power"),
                 original_serial,
+                if i % 97 == 0 {
+                    Some(format!("Custom Wildcat {i}"))
+                } else {
+                    cartridges[i % cartridges.len()].map(str::to_owned)
+                },
             ])
             .unwrap();
         }
@@ -285,6 +293,45 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
     assert!(
         elapsed.as_millis() < BUDGET_MS,
         "create_firearm with original marks (FR-009 lookup) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+/// specs/004-cartridges-action-types SC-004 (research.md §11): grouping by
+/// cartridge within the 1s action budget, and a search by a cartridge
+/// within the 500ms search budget.
+#[test]
+fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+
+    let started = Instant::now();
+    let grouped = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Cartridge), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(grouped.groups.last().map(|g| g.key.as_str()), Some("Unspecified"));
+    assert!(grouped.groups.len() > 100, "the custom cartridges are groups of their own");
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "list_firearms (grouped by cartridge) took {}ms, over the 1000ms budget",
+        elapsed.as_millis()
+    );
+
+    let started = Instant::now();
+    let searched = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("Parabellum".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (cartridge search) took {}ms, over the {BUDGET_MS}ms budget",
         elapsed.as_millis()
     );
 }

@@ -3,7 +3,7 @@
 
 import type { FirearmStatus } from "../firearms/types";
 
-export type GroupBy = "type" | "caliber" | "make" | "origin";
+export type GroupBy = "type" | "caliber" | "cartridge" | "make" | "origin";
 
 export type InsuranceWarning = "none" | "uninsured" | "under_insured";
 
@@ -21,6 +21,8 @@ export interface FirearmSummary {
   nickname: string | null;
   serialNumber: string | null;
   caliber: string;
+  /** specs/004-cartridges-action-types FR-001: `null` = none recorded. */
+  cartridge: string | null;
   firearmTypeName: string;
   status: FirearmStatus;
   thumbnailPhotoId: number | null;
@@ -49,9 +51,16 @@ export interface ListFirearmsOutput {
 export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "type", label: "Type" },
   { value: "caliber", label: "Caliber" },
+  { value: "cartridge", label: "Cartridge" },
   { value: "make", label: "Make" },
   { value: "origin", label: "Origin" },
 ];
+
+/** specs/004-cartridges-action-types FR-027: where browsing shows the
+ * caliber, "9x19mm Parabellum (9mm)" with a cartridge, else the caliber. */
+export function caliberText(firearm: { cartridge: string | null; caliber: string }): string {
+  return firearm.cartridge ? `${firearm.cartridge} (${firearm.caliber})` : firearm.caliber;
+}
 
 /** Browse controls that persist while the user moves between pages. */
 export interface BrowseState {

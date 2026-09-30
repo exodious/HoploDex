@@ -368,3 +368,30 @@ fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500
         assert_eq!(search(&db.conn, query), 1, "searching {what} ({query:?}) among 500 records");
     }
 }
+
+/// specs/004-cartridges-action-types FR-008 / US1-9: the cartridge is
+/// searchable, a partly typed designation included.
+#[test]
+fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { cartridge: Some("7.62x39mm".into()), ..base_input() },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            cartridge: Some("Zyxwv Wildcat Special".into()),
+            serial_number: Some("WILD-1".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "7.62x39"), 1, "a partial cartridge designation");
+    assert_eq!(search(&db.conn, "7.62x39mm"), 1, "the whole cartridge");
+    assert_eq!(search(&db.conn, "Wildcat"), 1, "a word of a custom cartridge");
+}

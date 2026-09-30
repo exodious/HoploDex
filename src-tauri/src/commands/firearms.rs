@@ -5,7 +5,7 @@ use tauri::State;
 use crate::commands::CommandError;
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
-    DispositionType, Firearm, FirearmInput, FirearmStatus, validate_firearm_input,
+    DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::session::Session;
 
@@ -67,10 +67,19 @@ pub enum GroupBy {
     Caliber,
     Make,
     /// specs/002-firearm-identification US4-1: groups are returned in the
-    /// fixed order Domestic, Imported, Re-imported, Not specified, not
-    /// sorted alphabetically like the other keys (research.md §10).
+    /// fixed order Domestic, Imported, Re-imported, Unspecified, not sorted
+    /// alphabetically like the other keys (research.md §10; the empty group
+    /// renamed by specs/004-cartridges-action-types research.md §11).
     Origin,
+    /// specs/004-cartridges-action-types FR-008: keyed by the stored
+    /// cartridge text, so spellings already on record stay apart;
+    /// alphabetical, with the firearms that have none last.
+    Cartridge,
 }
+
+/// The group of firearms with no value for the grouping field, always last
+/// (specs/004-cartridges-action-types research.md §11: one term throughout).
+pub const UNSPECIFIED: &str = "Unspecified";
 
 /// Input for the `list_firearms` command (User Story 2), per
 /// contracts/tauri-commands.md.
@@ -104,6 +113,9 @@ pub struct FirearmSummary {
     /// Tells apart firearms sharing a make and model in browse views.
     pub serial_number: Option<String>,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-027: shown with the caliber as
+    /// "cartridge (caliber)".
+    pub cartridge: Option<String>,
     pub firearm_type_name: String,
     pub status: FirearmStatus,
     pub thumbnail_photo_id: Option<i64>,
@@ -382,7 +394,7 @@ pub mod ops {
         confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
-        validate_firearm_input(input)?;
+        validate_firearm_input(input, None)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
         conn.execute(
@@ -459,7 +471,17 @@ pub mod ops {
         confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
-        validate_firearm_input(input)?;
+        // A missing record is reported by the update below, after the
+        // checks, as before.
+        let stored = conn
+            .query_row(
+                "SELECT * FROM firearms WHERE id = :id",
+                named_params! { ":id": id },
+                Firearm::from_row,
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        validate_firearm_input(input, stored.as_ref())?;
         check_uniqueness(conn, Some(id), input)?;
         check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
         let updated = conn
@@ -671,8 +693,9 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No firearm was found with that id."));
         }
-        // Its photos and documents went with it: return their space (Constitution V).
-        crate::db::reclaim_freed_space(conn);
+        // Its photos, documents and search entry went with it: return their
+        // space and leave none of their content behind (Constitution V).
+        crate::db::reclaim_deleted_firearm(conn);
         Ok(DeleteResult { deleted: true })
     }
 
@@ -703,9 +726,17 @@ pub mod ops {
             })
             .unwrap_or_default();
 
+        let insurance = crate::services::insurance_status::load_context(conn)?;
+
+        // Only the columns a summary needs, read by position: at 10,000
+        // records, decoding every column and looking each up by name took
+        // most of the 500ms budget (Principle IV).
         let mut stmt = conn
             .prepare(
-                "SELECT f.*, ft.name AS firearm_type_name, ft.generic_thumbnail_key AS generic_thumbnail_key
+                "SELECT f.id, f.make, f.model, f.nickname, f.serial_number, f.caliber, f.cartridge,
+                        f.status, f.thumbnail_photo_id, f.estimated_value, f.insurance_policy_id,
+                        f.scheduled_coverage_amount, f.origin,
+                        ft.name, ft.generic_thumbnail_key
                  FROM firearms f
                  JOIN firearm_types ft ON ft.id = f.firearm_type_id
                  WHERE (:include_disposed = 1 OR f.status = 'active')
@@ -721,54 +752,53 @@ pub mod ops {
                     ":query": fts_query,
                 },
                 |row| {
-                    let firearm = Firearm::from_row(row)?;
-                    let firearm_type_name: String = row.get("firearm_type_name")?;
-                    let generic_thumbnail_key: String = row.get("generic_thumbnail_key")?;
-                    Ok((firearm, firearm_type_name, generic_thumbnail_key))
+                    let estimated_value = row.get(9)?;
+                    let insurance_policy_id = row.get(10)?;
+                    let scheduled_coverage_amount = row.get(11)?;
+                    let origin: Option<Origin> = row.get(12)?;
+                    let summary = FirearmSummary {
+                        id: row.get(0)?,
+                        make: row.get(1)?,
+                        model: row.get(2)?,
+                        nickname: row.get(3)?,
+                        serial_number: row.get(4)?,
+                        caliber: row.get(5)?,
+                        cartridge: row.get(6)?,
+                        status: row.get(7)?,
+                        thumbnail_photo_id: row.get(8)?,
+                        estimated_value,
+                        insurance_warning: crate::services::insurance_status::firearm_warning(
+                            estimated_value,
+                            insurance_policy_id,
+                            scheduled_coverage_amount,
+                            &insurance,
+                        ),
+                        insurance_policy_id,
+                        scheduled_coverage_amount,
+                        firearm_type_name: row.get(13)?,
+                        generic_thumbnail_key: row.get(14)?,
+                    };
+                    Ok((summary, origin))
                 },
             )
             .map_err(CommandError::from_db)?;
 
-        let insurance = crate::services::insurance_status::load_context(conn)?;
-
         let mut summaries = Vec::new();
         for row in rows {
-            let (firearm, firearm_type_name, generic_thumbnail_key) =
-                row.map_err(CommandError::from_db)?;
-            let insurance_warning = crate::services::insurance_status::firearm_warning(
-                firearm.estimated_value,
-                firearm.insurance_policy_id,
-                firearm.scheduled_coverage_amount,
-                &insurance,
-            );
-            summaries.push((
-                match input.group_by {
-                    Some(GroupBy::Type) => firearm_type_name.clone(),
-                    Some(GroupBy::Caliber) => firearm.caliber.clone(),
-                    Some(GroupBy::Make) => firearm.make.clone(),
-                    Some(GroupBy::Origin) => firearm
-                        .origin
-                        .map(|o| o.label().to_string())
-                        .unwrap_or_else(|| "Not specified".to_string()),
-                    None => "All".to_string(),
-                },
-                FirearmSummary {
-                    id: firearm.id,
-                    make: firearm.make,
-                    model: firearm.model,
-                    nickname: firearm.nickname,
-                    serial_number: firearm.serial_number,
-                    caliber: firearm.caliber,
-                    firearm_type_name,
-                    status: firearm.status,
-                    thumbnail_photo_id: firearm.thumbnail_photo_id,
-                    generic_thumbnail_key,
-                    estimated_value: firearm.estimated_value,
-                    insurance_warning,
-                    insurance_policy_id: firearm.insurance_policy_id,
-                    scheduled_coverage_amount: firearm.scheduled_coverage_amount,
-                },
-            ));
+            let (summary, origin) = row.map_err(CommandError::from_db)?;
+            let key = match input.group_by {
+                Some(GroupBy::Type) => summary.firearm_type_name.clone(),
+                Some(GroupBy::Caliber) => summary.caliber.clone(),
+                Some(GroupBy::Make) => summary.make.clone(),
+                Some(GroupBy::Origin) => {
+                    origin.map_or_else(|| UNSPECIFIED.to_string(), |o| o.label().to_string())
+                }
+                Some(GroupBy::Cartridge) => {
+                    summary.cartridge.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
+                }
+                None => "All".to_string(),
+            };
+            summaries.push((key, summary));
         }
 
         let mut groups: Vec<FirearmGroup> = Vec::new();
@@ -778,18 +808,24 @@ pub mod ops {
                 None => groups.push(FirearmGroup { key, firearms: vec![summary] }),
             }
         }
-        if input.group_by == Some(GroupBy::Origin) {
-            // specs/002-firearm-identification US4-1/research.md §10: a
-            // fixed order, not alphabetical, so "Not specified" is always
-            // last rather than sorting between "Imported" and
-            // "Re-imported".
-            const ORIGIN_ORDER: [&str; 4] =
-                ["Domestic", "Imported", "Re-imported", "Not specified"];
-            groups.sort_by_key(|g| {
-                ORIGIN_ORDER.iter().position(|o| *o == g.key).unwrap_or(ORIGIN_ORDER.len())
-            });
-        } else {
-            groups.sort_by(|a, b| a.key.cmp(&b.key));
+        match input.group_by {
+            Some(GroupBy::Origin) => {
+                // specs/002-firearm-identification US4-1/research.md §10: a
+                // fixed order, not alphabetical, so "Unspecified" is always
+                // last rather than sorting between "Imported" and
+                // "Re-imported".
+                const ORIGIN_ORDER: [&str; 4] =
+                    ["Domestic", "Imported", "Re-imported", UNSPECIFIED];
+                groups.sort_by_key(|g| {
+                    ORIGIN_ORDER.iter().position(|o| *o == g.key).unwrap_or(ORIGIN_ORDER.len())
+                });
+            }
+            // specs/004-cartridges-action-types research.md §11: firearms
+            // with no cartridge last, the rest alphabetical.
+            Some(GroupBy::Cartridge) => groups.sort_by(|a, b| {
+                (a.key == UNSPECIFIED, &a.key).cmp(&(b.key == UNSPECIFIED, &b.key))
+            }),
+            _ => groups.sort_by(|a, b| a.key.cmp(&b.key)),
         }
 
         Ok(ListFirearmsOutput { groups })

@@ -111,6 +111,29 @@ export interface ActionTypesOutput {
   allowedByFirearmType: Record<number, number[]>;
 }
 
+/** specs/004-cartridges-action-types FR-009: the four fields with
+ * suggestions and snapping. Mirrors `EntryField` in
+ * src-tauri/src/services/entry_text.rs. */
+export type EntryFieldName = "make" | "model" | "cartridge" | "caliber";
+
+/** The caliber a cartridge derives, and whether it was read from the
+ * catalog or guessed (FR-005). Mirrors `DerivedCaliber` in
+ * src-tauri/src/services/cartridges/mod.rs. */
+export interface DerivedCaliber {
+  caliber: string;
+  source: "catalog" | "guess";
+}
+
+/** `settle_entry`'s output (contracts/tauri-commands.md). */
+export interface SettleEntryOutput {
+  /** Trimmed; the snapped spelling if any. */
+  value: string;
+  /** `null`: kept as typed, apart from trimming. */
+  changedBy: "catalog" | "record" | null;
+  /** Cartridge only; `null` for a cartridge means no caliber could be read. */
+  derivedCaliber: DerivedCaliber | null;
+}
+
 export interface DisposeFirearmInput {
   dispositionType: DispositionType;
   recipient: string;
@@ -174,10 +197,14 @@ export const ORIGIN_OPTIONS: { value: Origin | ""; label: string; description: s
     label: "Re-imported",
     description: "Made in the U.S., exported, then brought back in",
   },
-  { value: "", label: "Not specified", description: "Leave this if you're not sure." },
+  { value: "", label: "Unspecified", description: "Leave this if you're not sure." },
 ];
 
+/** specs/004-cartridges-action-types research.md §11: the one term for a
+ * value that was not recorded, on every screen. */
+export const UNSPECIFIED = "Unspecified";
+
 export function originLabel(origin: Origin | null): string {
-  if (origin === null) return "Not specified";
+  if (origin === null) return UNSPECIFIED;
   return ORIGIN_OPTIONS.find((o) => o.value === origin)?.label ?? origin;
 }

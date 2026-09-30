@@ -232,6 +232,9 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         </div>
 
         <dl className="hd-titleblock">
+          {/* specs/004-cartridges-action-types FR-027: none recorded reads
+              as an unrecorded date does. */}
+          <TitleCell label="Cartridge">{firearm.cartridge ?? "—"}</TitleCell>
           <TitleCell label="Caliber">{firearm.caliber}</TitleCell>
           <TitleCell label="Status">
             {disposed

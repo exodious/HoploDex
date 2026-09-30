@@ -351,6 +351,25 @@ fn probe_first_page(
 /// zeroed the content, so a failure here is logged and not reported as a
 /// failed delete.
 pub fn reclaim_freed_space(conn: &Connection) {
+    reclaim(conn);
+}
+
+/// [`reclaim_freed_space`] after deleting a firearm, which also had an entry
+/// in the full-text index. FTS5 records a delete as a marker beside the old
+/// entry, both holding the deleted words, until its segments are merged; the
+/// merge (`optimize`) drops both, so no word of a deleted firearm stays in
+/// the file (specs/004-cartridges-action-types SC-005, research.md §14).
+/// Failures are logged, as in [`reclaim_freed_space`].
+pub fn reclaim_deleted_firearm(conn: &Connection) {
+    if let Err(err) =
+        conn.execute("INSERT INTO firearms_fts (firearms_fts) VALUES ('optimize')", [])
+    {
+        log::warn!("could not merge the search index after a delete: {err}");
+    }
+    reclaim(conn);
+}
+
+fn reclaim(conn: &Connection) {
     if let Err(err) = conn.execute_batch("VACUUM") {
         log::warn!("could not vacuum the database after a delete: {err}");
     }
