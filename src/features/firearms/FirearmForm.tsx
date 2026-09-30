@@ -543,7 +543,11 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       model: form.model.trim(),
       nickname: blankToNull(form.nickname),
       caliber: form.caliber.trim(),
+      // specs/004-cartridges-action-types: the form has no cartridge or
+      // action field yet (T030, T059), so an edit keeps the saved ones.
+      cartridge: initialValues?.cartridge ?? null,
       firearmTypeId: Number(form.firearmTypeId),
+      actionTypeId: initialValues?.actionTypeId ?? null,
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),

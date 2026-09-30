@@ -43,6 +43,8 @@ fn sample_input() -> FirearmInput {
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        cartridge: None,
+        action_type_id: None,
     }
 }
 

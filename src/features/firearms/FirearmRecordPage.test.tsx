@@ -27,6 +27,8 @@ const firearm: FirearmDetail = {
   noSerialAttested: false,
   caliber: ".357",
   firearmTypeId: 1,
+  cartridge: null,
+  actionTypeId: null,
   notes: null,
   accessories: null,
   status: "active",

@@ -387,8 +387,8 @@ pub mod ops {
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
         conn.execute(
             "INSERT INTO firearms (
-                make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
-                notes, accessories,
+                make, model, serial_number, no_serial_attested, caliber, cartridge, firearm_type_id,
+                action_type_id, nickname, notes, accessories,
                 barrel_length_hundredths, overall_length_hundredths, weight_tenths_oz,
                 capacity, finish, condition, status, estimated_value,
                 acquisition_source, acquisition_date, acquisition_price,
@@ -398,8 +398,8 @@ pub mod ops {
                 original_make, original_model, original_serial_number,
                 created_at, updated_at
             ) VALUES (
-                :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id, :nickname,
-                :notes, :accessories,
+                :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
+                :action_type_id, :nickname, :notes, :accessories,
                 :barrel_length_hundredths, :overall_length_hundredths, :weight_tenths_oz,
                 :capacity, :finish, :condition, :status, :estimated_value,
                 :acquisition_source, :acquisition_date, :acquisition_price,
@@ -415,7 +415,9 @@ pub mod ops {
                 ":serial_number": input.serial_number,
                 ":no_serial_attested": input.no_serial_attested,
                 ":caliber": input.caliber,
+                ":cartridge": input.cartridge,
                 ":firearm_type_id": input.firearm_type_id,
+                ":action_type_id": input.action_type_id,
                 ":nickname": input.nickname,
                 ":notes": input.notes,
                 ":accessories": input.accessories,
@@ -468,7 +470,9 @@ pub mod ops {
                     serial_number = :serial_number,
                     no_serial_attested = :no_serial_attested,
                     caliber = :caliber,
+                    cartridge = :cartridge,
                     firearm_type_id = :firearm_type_id,
+                    action_type_id = :action_type_id,
                     nickname = :nickname,
                     notes = :notes,
                     accessories = :accessories,
@@ -505,7 +509,9 @@ pub mod ops {
                     ":serial_number": input.serial_number,
                     ":no_serial_attested": input.no_serial_attested,
                     ":caliber": input.caliber,
+                    ":cartridge": input.cartridge,
                     ":firearm_type_id": input.firearm_type_id,
+                    ":action_type_id": input.action_type_id,
                     ":nickname": input.nickname,
                     ":notes": input.notes,
                     ":accessories": input.accessories,

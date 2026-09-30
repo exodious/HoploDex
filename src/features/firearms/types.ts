@@ -21,7 +21,12 @@ export interface Firearm {
   serialNumber: string | null;
   noSerialAttested: boolean;
   caliber: string;
+  /** specs/004-cartridges-action-types FR-001: the exact round; `null` = none. */
+  cartridge: string | null;
   firearmTypeId: number;
+  /** specs/004-cartridges-action-types FR-017: an id from `list_action_types`;
+   * `null` = not specified. */
+  actionTypeId: number | null;
   notes: string | null;
   accessories: string | null;
   /** FR-039: hundredths of an inch; format with `lib/measure`. */
@@ -90,6 +95,21 @@ export interface ReverseDispositionInput {
 
 /** All `Firearm` fields except `id`, `createdAt`, `updatedAt`, `thumbnailPhotoId`. */
 export type FirearmInput = Omit<Firearm, "id" | "createdAt" | "updatedAt" | "thumbnailPhotoId">;
+
+/** specs/004-cartridges-action-types FR-017/FR-018. Mirrors `ActionType` in
+ * src-tauri/src/models/action_type.rs. */
+export interface ActionType {
+  id: number;
+  name: string;
+}
+
+/** `list_action_types`' output: the actions in list order, and per firearm
+ * type id the allowed action ids. A type that is absent, or maps to `[]`,
+ * allows every action (FR-017). */
+export interface ActionTypesOutput {
+  actions: ActionType[];
+  allowedByFirearmType: Record<number, number[]>;
+}
 
 export interface DisposeFirearmInput {
   dispositionType: DispositionType;

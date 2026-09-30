@@ -37,6 +37,7 @@ macro_rules! text_enum {
     };
 }
 
+pub mod action_type;
 pub mod database;
 pub mod disposition_history;
 pub mod document_attachment;

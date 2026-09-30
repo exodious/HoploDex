@@ -74,6 +74,21 @@ const STEPS: &[(&str, &str)] = &[
     ),
     ("firearm_types update", "UPDATE firearm_types SET name = 'Big cannon' WHERE id = 9"),
     (
+        "action_types insert",
+        "INSERT INTO action_types (id, name, sort_order) VALUES (99, 'Gatling', 99)",
+    ),
+    ("action_types update", "UPDATE action_types SET name = 'Crank' WHERE id = 99"),
+    (
+        "firearm_type_actions insert",
+        "INSERT INTO firearm_type_actions (firearm_type_id, action_type_id) VALUES (9, 99)",
+    ),
+    (
+        "firearm_type_actions update",
+        "UPDATE firearm_type_actions SET action_type_id = 1 WHERE firearm_type_id = 9",
+    ),
+    ("firearm_type_actions delete", "DELETE FROM firearm_type_actions WHERE firearm_type_id = 9"),
+    ("action_types delete", "DELETE FROM action_types WHERE id = 99"),
+    (
         "insurance_policies insert",
         "INSERT INTO insurance_policies (id, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')",
     ),

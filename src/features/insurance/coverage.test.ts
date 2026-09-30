@@ -43,6 +43,8 @@ function firearm(overrides: Partial<Firearm> = {}): Firearm {
     noSerialAttested: false,
     caliber: ".357 Magnum",
     firearmTypeId: 1,
+    cartridge: null,
+    actionTypeId: null,
     notes: null,
     accessories: null,
     barrelLengthHundredths: null,

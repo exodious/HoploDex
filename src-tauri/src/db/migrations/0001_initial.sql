@@ -9,6 +9,23 @@ CREATE TABLE firearm_types (
     generic_thumbnail_key TEXT NOT NULL
 );
 
+-- specs/004-cartridges-action-types FR-017/FR-018 (data-model.md's "Entity:
+-- Action Type"): the fixed list of how a firearm operates, seeded in 0003
+-- with fixed ids and never changed at run time.
+CREATE TABLE action_types (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL UNIQUE
+);
+
+-- specs/004-cartridges-action-types FR-017/FR-018: which actions apply to
+-- which firearm type. A type with no rows here allows every action.
+CREATE TABLE firearm_type_actions (
+    firearm_type_id INTEGER NOT NULL REFERENCES firearm_types (id) ON DELETE CASCADE,
+    action_type_id INTEGER NOT NULL REFERENCES action_types (id),
+    PRIMARY KEY (firearm_type_id, action_type_id)
+) WITHOUT ROWID;
+
 CREATE TABLE insurance_policies (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -39,7 +56,15 @@ CREATE TABLE firearms (
     nickname TEXT,
     no_serial_attested INTEGER NOT NULL DEFAULT 0 CHECK (no_serial_attested IN (0, 1)),
     caliber TEXT NOT NULL,
+    -- specs/004-cartridges-action-types FR-001: the exact round, free text
+    -- (NULL = none). Stored on the record, never looked up in the catalog
+    -- (FR-004). The 100-character cap applies on entry only (FR-015), so it
+    -- has no CHECK: an existing longer value stays valid.
+    cartridge TEXT,
     firearm_type_id INTEGER NOT NULL REFERENCES firearm_types (id),
+    -- specs/004-cartridges-action-types FR-017: NULL = not specified. Must
+    -- be allowed for the type (the triggers below).
+    action_type_id INTEGER REFERENCES action_types (id),
     notes TEXT,
     accessories TEXT,
     -- FR-039: optional physical details. Lengths are stored in hundredths of
@@ -97,6 +122,9 @@ CREATE TABLE firearms (
 
 CREATE INDEX idx_firearms_type ON firearms (firearm_type_id);
 CREATE INDEX idx_firearms_caliber ON firearms (caliber);
+-- specs/004-cartridges-action-types research.md §5: covers suggest_entries'
+-- GROUP BY cartridge.
+CREATE INDEX idx_firearms_cartridge ON firearms (cartridge);
 CREATE INDEX idx_firearms_make ON firearms (make);
 CREATE INDEX idx_firearms_status ON firearms (status);
 CREATE INDEX idx_firearms_insurance_policy ON firearms (insurance_policy_id);
@@ -164,6 +192,33 @@ BEGIN
               AND year_of_manufacture <> NEW.year_of_manufacture
           )
     );
+END;
+
+-- specs/004-cartridges-action-types FR-017/SC-008 (data-model.md's "Rule:
+-- action allowed for type"): the backstop for `check_action_allowed` in the
+-- command layer. An action is allowed when the type maps no actions, or maps
+-- this one. Reaching it means a bug bypassed that layer, so `from_db` maps
+-- the raised ABORT to INTERNAL_ERROR.
+CREATE TRIGGER firearms_action_allowed_insert BEFORE INSERT ON firearms
+WHEN NEW.action_type_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'action type not allowed for this firearm type')
+    WHERE EXISTS (SELECT 1 FROM firearm_type_actions WHERE firearm_type_id = NEW.firearm_type_id)
+      AND NOT EXISTS (
+          SELECT 1 FROM firearm_type_actions
+          WHERE firearm_type_id = NEW.firearm_type_id AND action_type_id = NEW.action_type_id
+      );
+END;
+
+CREATE TRIGGER firearms_action_allowed_update BEFORE UPDATE OF action_type_id, firearm_type_id ON firearms
+WHEN NEW.action_type_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'action type not allowed for this firearm type')
+    WHERE EXISTS (SELECT 1 FROM firearm_type_actions WHERE firearm_type_id = NEW.firearm_type_id)
+      AND NOT EXISTS (
+          SELECT 1 FROM firearm_type_actions
+          WHERE firearm_type_id = NEW.firearm_type_id AND action_type_id = NEW.action_type_id
+      );
 END;
 
 -- specs/002-firearm-identification FR-009 (data-model.md's "Indexes and
@@ -336,6 +391,24 @@ CREATE TRIGGER firearm_types_marks_backup_due_after_update AFTER UPDATE ON firea
 BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
 
 CREATE TRIGGER firearm_types_marks_backup_due_after_delete AFTER DELETE ON firearm_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER action_types_marks_backup_due_after_insert AFTER INSERT ON action_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER action_types_marks_backup_due_after_update AFTER UPDATE ON action_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER action_types_marks_backup_due_after_delete AFTER DELETE ON action_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearm_type_actions_marks_backup_due_after_insert AFTER INSERT ON firearm_type_actions
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearm_type_actions_marks_backup_due_after_update AFTER UPDATE ON firearm_type_actions
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER firearm_type_actions_marks_backup_due_after_delete AFTER DELETE ON firearm_type_actions
 BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
 
 CREATE TRIGGER collection_settings_marks_backup_due_after_insert AFTER INSERT ON collection_settings

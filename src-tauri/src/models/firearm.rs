@@ -74,7 +74,13 @@ pub struct Firearm {
     pub serial_number: Option<String>,
     pub no_serial_attested: bool,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-001: the exact round; `None` =
+    /// none recorded.
+    pub cartridge: Option<String>,
     pub firearm_type_id: i64,
+    /// specs/004-cartridges-action-types FR-017: an `action_types` id; `None`
+    /// = not specified.
+    pub action_type_id: Option<i64>,
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
@@ -125,7 +131,9 @@ impl Firearm {
             serial_number: row.get("serial_number")?,
             no_serial_attested: row.get("no_serial_attested")?,
             caliber: row.get("caliber")?,
+            cartridge: row.get("cartridge")?,
             firearm_type_id: row.get("firearm_type_id")?,
+            action_type_id: row.get("action_type_id")?,
             nickname: row.get("nickname")?,
             notes: row.get("notes")?,
             accessories: row.get("accessories")?,
@@ -170,7 +178,15 @@ pub struct FirearmInput {
     pub serial_number: Option<String>,
     pub no_serial_attested: bool,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-001: the exact round; `None` =
+    /// none recorded.
+    #[serde(default)]
+    pub cartridge: Option<String>,
     pub firearm_type_id: i64,
+    /// specs/004-cartridges-action-types FR-017: an `action_types` id; `None`
+    /// = not specified.
+    #[serde(default)]
+    pub action_type_id: Option<i64>,
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
@@ -220,7 +236,9 @@ impl From<&Firearm> for FirearmInput {
             serial_number: firearm.serial_number.clone(),
             no_serial_attested: firearm.no_serial_attested,
             caliber: firearm.caliber.clone(),
+            cartridge: firearm.cartridge.clone(),
             firearm_type_id: firearm.firearm_type_id,
+            action_type_id: firearm.action_type_id,
             nickname: firearm.nickname.clone(),
             notes: firearm.notes.clone(),
             accessories: firearm.accessories.clone(),
@@ -255,12 +273,18 @@ impl From<&Firearm> for FirearmInput {
 impl FirearmInput {
     /// The input as it is stored: a blank nickname, serial number or finish
     /// becomes `None` and any other is trimmed (FR-031, FR-032, FR-039: blank
-    /// is not a value, and comparison ignores surrounding whitespace).
+    /// is not a value, and comparison ignores surrounding whitespace). Make,
+    /// model and caliber are trimmed and a blank cartridge becomes `None`
+    /// (specs/004-cartridges-action-types FR-015, research.md §9).
     pub fn normalized(&self) -> Self {
         let trimmed = |value: &Option<String>| {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
         };
         Self {
+            make: self.make.trim().to_owned(),
+            model: self.model.trim().to_owned(),
+            caliber: self.caliber.trim().to_owned(),
+            cartridge: trimmed(&self.cartridge),
             nickname: trimmed(&self.nickname),
             serial_number: trimmed(&self.serial_number),
             finish: trimmed(&self.finish),

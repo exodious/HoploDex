@@ -439,6 +439,8 @@ pub mod ops {
             original_make: raw.original_make.clone(),
             original_model: raw.original_model.clone(),
             original_serial_number: raw.original_serial_number.clone(),
+            cartridge: None,
+            action_type_id: None,
         };
 
         validate_firearm_input(&input).map_err(|e| row_message(&e))?;
