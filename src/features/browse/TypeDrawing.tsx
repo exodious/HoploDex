@@ -27,7 +27,9 @@ const FULL_BOX = "0 0 320 200";
 const CROP_MARGIN = 3;
 
 export function TypeDrawing({ typeKey, className, animate, crop }: TypeDrawingProps) {
-  const drawing = DRAWINGS[typeKey] ?? DRAWINGS.other;
+  // The key of the drawing in use, which is "other" for an unknown key.
+  const drawingKey = typeKey in DRAWINGS ? typeKey : "other";
+  const drawing = DRAWINGS[drawingKey];
   const [x0, y, x1] = drawing.axis;
   const ref = useRef<SVGSVGElement>(null);
   const [viewBox, setViewBox] = useState(FULL_BOX);
@@ -49,6 +51,7 @@ export function TypeDrawing({ typeKey, className, animate, crop }: TypeDrawingPr
     <svg
       ref={ref}
       viewBox={viewBox}
+      data-drawing={drawingKey}
       className={["hd-drawing", animate && "hd-drawing--animate", className]
         .filter(Boolean)
         .join(" ")}

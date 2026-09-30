@@ -25,7 +25,13 @@ import { FirearmForm } from "./FirearmForm";
 import type { FocusField } from "./FirearmForm";
 import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
-import { conditionLabel, dispositionLabel, firearmTypeOption, originLabel } from "./types";
+import {
+  caliberLabel,
+  conditionLabel,
+  dispositionLabel,
+  firearmTypeOption,
+  originLabel,
+} from "./types";
 import type {
   DisposeFirearmInput,
   Firearm,
@@ -52,6 +58,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     firearmsById,
     policiesById,
     actionTypes,
+    firearmTypes,
     summary: valueSummary,
     revision,
     refresh,
@@ -116,7 +123,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       ? policiesById.get(blanket.policyId)
       : undefined;
   const coveringPolicy = policy ?? blanketPolicy;
-  const type = firearmTypeOption(firearm.firearmTypeId);
+  const type = firearmTypeOption(firearmTypes.types, firearm.firearmTypeId);
   // FR-027: the action's name comes from the list the collection loaded.
   const actionName = actionTypes.actions.find((a) => a.id === firearm.actionTypeId)?.name;
   const disposed = firearm.status === "disposed";
@@ -244,8 +251,10 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
           {/* specs/004-cartridges-action-types FR-027: none recorded reads
               as an unrecorded date does. */}
           <TitleCell label="Cartridge">{firearm.cartridge ?? "—"}</TitleCell>
-          <TitleCell label="Caliber">{firearm.caliber}</TitleCell>
-          <TitleCell label="Action">{actionName ?? "—"}</TitleCell>
+          <TitleCell label={caliberLabel(type.label)}>{firearm.caliber}</TitleCell>
+          {/* specs/005-regulated-item-types FR-003: a type with no action
+              shows no Action cell. */}
+          {type.actionTypeApplies && <TitleCell label="Action">{actionName ?? "—"}</TitleCell>}
           <TitleCell label="Status">
             {disposed
               ? `${dispositionLabel(firearm.dispositionType)} ${formatDate(firearm.dispositionDate)}`

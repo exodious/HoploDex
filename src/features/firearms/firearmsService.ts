@@ -6,6 +6,7 @@ import type {
   Firearm,
   FirearmDetail,
   FirearmInput,
+  FirearmTypesOutput,
   ReverseDispositionInput,
   SettleEntryOutput,
   Suggestion,
@@ -44,6 +45,12 @@ export function getFirearm(id: number): Promise<FirearmDetail> {
  * which actions each firearm type allows. */
 export function listActionTypes(): Promise<ActionTypesOutput> {
   return invoke<ActionTypesOutput>("list_action_types");
+}
+
+/** specs/005-regulated-item-types FR-001/FR-003: the fixed firearm types, in
+ * id order, with the fields each omits. */
+export function listFirearmTypes(): Promise<FirearmTypesOutput> {
+  return invoke<FirearmTypesOutput>("list_firearm_types");
 }
 
 /** specs/004-cartridges-action-types: what an entered value becomes, and for

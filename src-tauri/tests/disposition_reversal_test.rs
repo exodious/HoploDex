@@ -262,6 +262,10 @@ fn restoring_into_an_original_marks_match_warns_and_only_proceeds_when_confirmed
             original_make: Some("FN".into()),
             original_model: Some("High Power".into()),
             original_serial_number: Some("FN-1".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..firearm("Ridgeline Arms", "Hi-Power", "RA-1")
         },
         false,
@@ -275,6 +279,10 @@ fn restoring_into_an_original_marks_match_warns_and_only_proceeds_when_confirmed
             original_make: Some("FN".into()),
             original_model: Some("High Power".into()),
             original_serial_number: Some("FN-1".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..firearm("Century Arms", "Clone", "CA-1")
         },
         false,

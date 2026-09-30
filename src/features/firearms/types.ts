@@ -63,6 +63,15 @@ export interface Firearm {
   originalMake: string | null;
   originalModel: string | null;
   originalSerialNumber: string | null;
+  /** specs/005-regulated-item-types FR-007: an id from
+   * `list_registration_classes`; `null` = no classification. */
+  registrationClassId: number | null;
+  /** FR-009: e.g. "Form 4". Only with a classification. */
+  registrationForm: string | null;
+  /** FR-009, FR-010: `YYYY-MM-DD`. Only with a classification. */
+  registrationApproved: string | null;
+  /** FR-009: e.g. "Smith Family Trust". Only with a classification. */
+  registeredTo: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -154,24 +163,81 @@ export interface DisposeFirearmInput {
   price: number;
 }
 
-/** Seeded per src-tauri/src/db/migrations/0003_seed_firearm_types.sql. No
- * management UI exists for this list in this feature (data-model.md).
- * `key` is the type's `generic_thumbnail_key`. */
-export const FIREARM_TYPE_OPTIONS = [
-  { value: "1", label: "Handgun", key: "handgun" },
-  { value: "2", label: "Rifle", key: "rifle" },
-  { value: "3", label: "Shotgun", key: "shotgun" },
-  { value: "4", label: "Other", key: "other" },
-];
+/** specs/005-regulated-item-types FR-001/FR-003. Mirrors `FirearmTypeInfo` in
+ * src-tauri/src/models/firearm_type.rs. A flag of `false` means the field
+ * doesn't apply to the type: the form doesn't offer it and no firearm of the
+ * type may hold a value. */
+export interface FirearmTypeInfo {
+  id: number;
+  name: string;
+  /** The type's drawing, a key of `DRAWINGS`. */
+  genericThumbnailKey: string;
+  actionTypeApplies: boolean;
+  barrelLengthApplies: boolean;
+  capacityApplies: boolean;
+}
 
-export function firearmTypeOption(firearmTypeId: number) {
-  return (
-    FIREARM_TYPE_OPTIONS.find((o) => o.value === String(firearmTypeId)) ?? {
-      value: String(firearmTypeId),
-      label: "Other",
-      key: "other",
-    }
-  );
+/** `list_firearm_types`' output: every type, in id order. */
+export interface FirearmTypesOutput {
+  types: FirearmTypeInfo[];
+}
+
+/** specs/005-regulated-item-types FR-007. Mirrors `RegistrationClass` in
+ * src-tauri/src/models/registration.rs. */
+export interface RegistrationClass {
+  id: number;
+  name: string;
+  /** `false`: no longer offered for new choices; a record holding it keeps it. */
+  offered: boolean;
+}
+
+/** `list_registration_classes`' output: every classification, in list order. */
+export interface RegistrationClassesOutput {
+  classes: RegistrationClass[];
+}
+
+/** A type as the form and the record page use it: its id as a select value,
+ * its name, its drawing key and which fields apply. */
+export interface FirearmTypeOption {
+  value: string;
+  label: string;
+  key: string;
+  actionTypeApplies: boolean;
+  barrelLengthApplies: boolean;
+  capacityApplies: boolean;
+}
+
+/** The type for an id, from the store's list (`useFirearmTypes`). An id the
+ * list doesn't hold, or a list that hasn't loaded, reads as "Other" with its
+ * drawing, and every field applies. */
+export function firearmTypeOption(
+  types: readonly FirearmTypeInfo[],
+  firearmTypeId: number,
+): FirearmTypeOption {
+  const type = types.find((t) => t.id === firearmTypeId);
+  return type
+    ? {
+        value: String(type.id),
+        label: type.name,
+        key: type.genericThumbnailKey,
+        actionTypeApplies: type.actionTypeApplies,
+        barrelLengthApplies: type.barrelLengthApplies,
+        capacityApplies: type.capacityApplies,
+      }
+    : {
+        value: String(firearmTypeId),
+        label: "Other",
+        key: "other",
+        actionTypeApplies: true,
+        barrelLengthApplies: true,
+        capacityApplies: true,
+      };
+}
+
+/** FR-002: a suppressor's caliber is the largest bore it is rated for. A
+ * display choice for the one seeded type, with no rule behind it. */
+export function caliberLabel(typeName: string): string {
+  return typeName === "Suppressor" ? "Caliber rating" : "Caliber";
 }
 
 export const DISPOSITION_TYPE_OPTIONS: { value: DispositionType; label: string }[] = [

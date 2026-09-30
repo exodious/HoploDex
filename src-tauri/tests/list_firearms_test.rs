@@ -43,6 +43,10 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         cartridge: None,
         action_type_id: None,
     }
@@ -439,4 +443,26 @@ fn group_by_action_type_deserializes_from_its_wire_name() {
     let input: ListFirearmsInput =
         serde_json::from_value(serde_json::json!({ "groupBy": "action_type" })).unwrap();
     assert_eq!(input.group_by, Some(GroupBy::ActionType));
+}
+
+// specs/005-regulated-item-types US1-4: a Suppressor groups under its own
+// type and shows its own drawing.
+
+#[test]
+fn a_suppressor_groups_under_suppressor_with_its_own_drawing() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &firearm("SilencerCo", "Omega 300", ".30", 5), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
+
+    let result = ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Type), ..Default::default() },
+    )
+    .unwrap();
+
+    let group = result.groups.iter().find(|g| g.key == "Suppressor").unwrap();
+    assert_eq!(group.firearms.len(), 1);
+    let summary = &group.firearms[0];
+    assert_eq!(summary.generic_thumbnail_key, "suppressor");
+    assert_eq!(summary.action_type_name, None);
 }

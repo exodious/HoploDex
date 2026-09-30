@@ -12,6 +12,7 @@ import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
+import { FIREARM_TYPES } from "../../test/collectionFixtures";
 
 const getFirearm = vi.fn();
 const listFirearms = vi.fn();
@@ -126,6 +127,10 @@ const detail: FirearmDetail = {
   originalMake: null,
   originalModel: null,
   originalSerialNumber: null,
+  registrationClassId: null,
+  registrationForm: null,
+  registrationApproved: null,
+  registeredTo: null,
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
@@ -142,6 +147,8 @@ const collection: CollectionState = {
   policiesById: new Map([[policy.id, policy]]),
   actionTypes: { actions: [], allowedByFirearmType: {} },
   actionTypesFailed: false,
+  firearmTypes: { types: FIREARM_TYPES },
+  firearmTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,

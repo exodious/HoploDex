@@ -385,6 +385,57 @@ pub mod ops {
         Err(CommandError::validation(messages.join(" "), errors))
     }
 
+    /// specs/005-regulated-item-types FR-003, FR-004, FR-022: an action, a
+    /// barrel length or a capacity may be set only when the firearm's type
+    /// says the field applies. One field error per offending field, "<Field>
+    /// doesn't apply to a <type>." The backend never clears a value itself.
+    /// Runs before `check_action_allowed`, because a type with no mapped
+    /// actions allows every action there. The `firearms_fields_apply_*`
+    /// triggers enforce the same rule, which only a bug would reach. Import
+    /// calls this for every row.
+    pub fn check_fields_apply(conn: &Connection, input: &FirearmInput) -> Result<(), CommandError> {
+        if input.action_type_id.is_none()
+            && input.barrel_length_hundredths.is_none()
+            && input.capacity.is_none()
+        {
+            return Ok(());
+        }
+        // An unknown type id is left to the foreign key, as before.
+        let Some((type_name, action, barrel, capacity)) = conn
+            .query_row(
+                "SELECT name, action_type_applies, barrel_length_applies, capacity_applies
+                 FROM firearm_types WHERE id = :id",
+                named_params! { ":id": input.firearm_type_id },
+                |row| Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(CommandError::from_db)?
+        else {
+            return Ok(());
+        };
+        let mut errors = std::collections::HashMap::new();
+        let mut check = |is_set: bool, applies: bool, field: &str, label: &str| {
+            if is_set && !applies {
+                errors
+                    .insert(field.to_string(), format!("{label} doesn't apply to a {type_name}."));
+            }
+        };
+        check(input.action_type_id.is_some(), action, "actionTypeId", "Action");
+        check(
+            input.barrel_length_hundredths.is_some(),
+            barrel,
+            "barrelLengthHundredths",
+            "Barrel length",
+        );
+        check(input.capacity.is_some(), capacity, "capacity", "Capacity");
+        if errors.is_empty() {
+            return Ok(());
+        }
+        let mut messages: Vec<_> = errors.values().cloned().collect();
+        messages.sort();
+        Err(CommandError::validation(messages.join(" "), errors))
+    }
+
     /// specs/004-cartridges-action-types FR-017, FR-019, SC-008: the action
     /// must name an action on the list and be allowed for the firearm's type.
     /// A type with no mapped actions (Other, or one added later) allows all
@@ -452,6 +503,7 @@ pub mod ops {
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input, None)?;
+        check_fields_apply(conn, input)?;
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
@@ -466,6 +518,7 @@ pub mod ops {
                 insurance_policy_id, scheduled_coverage_amount,
                 origin, year_of_manufacture, country_of_manufacture, importer_name,
                 original_make, original_model, original_serial_number,
+                registration_class_id, registration_form, registration_approved, registered_to,
                 created_at, updated_at
             ) VALUES (
                 :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
@@ -477,6 +530,7 @@ pub mod ops {
                 :insurance_policy_id, :scheduled_coverage_amount,
                 :origin, :year_of_manufacture, :country_of_manufacture, :importer_name,
                 :original_make, :original_model, :original_serial_number,
+                :registration_class_id, :registration_form, :registration_approved, :registered_to,
                 datetime('now'), datetime('now')
             )",
             named_params! {
@@ -515,6 +569,10 @@ pub mod ops {
                 ":original_make": input.original_make,
                 ":original_model": input.original_model,
                 ":original_serial_number": input.original_serial_number,
+                ":registration_class_id": input.registration_class_id,
+                ":registration_form": input.registration_form,
+                ":registration_approved": input.registration_approved,
+                ":registered_to": input.registered_to,
             },
         )
         .map_err(CommandError::from_db)?;
@@ -540,6 +598,7 @@ pub mod ops {
             .optional()
             .map_err(CommandError::from_db)?;
         validate_firearm_input(input, stored.as_ref())?;
+        check_fields_apply(conn, input)?;
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, Some(id), input)?;
         check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
@@ -581,6 +640,10 @@ pub mod ops {
                     original_make = :original_make,
                     original_model = :original_model,
                     original_serial_number = :original_serial_number,
+                    registration_class_id = :registration_class_id,
+                    registration_form = :registration_form,
+                    registration_approved = :registration_approved,
+                    registered_to = :registered_to,
                     updated_at = datetime('now')
                 WHERE id = :id",
                 named_params! {
@@ -620,6 +683,10 @@ pub mod ops {
                     ":original_make": input.original_make,
                     ":original_model": input.original_model,
                     ":original_serial_number": input.original_serial_number,
+                    ":registration_class_id": input.registration_class_id,
+                    ":registration_form": input.registration_form,
+                    ":registration_approved": input.registration_approved,
+                    ":registered_to": input.registered_to,
                 },
             )
             .map_err(CommandError::from_db)?;

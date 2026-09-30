@@ -1,6 +1,7 @@
 //! The entry commands of specs/004-cartridges-action-types:
 //! `suggest_entries`, `settle_entry` and `list_action_types`
-//! (contracts/tauri-commands.md).
+//! (contracts/tauri-commands.md), and of specs/005-regulated-item-types:
+//! `list_firearm_types`.
 
 use std::collections::BTreeMap;
 
@@ -10,6 +11,7 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::models::action_type::{ActionType, ActionTypesOutput};
+use crate::models::firearm_type::{FirearmTypeInfo, FirearmTypesOutput};
 use crate::services::cartridges::{DerivedCaliber, derive_caliber};
 use crate::services::entry_text::EntryField;
 pub use crate::services::suggestions::Suggestion;
@@ -130,6 +132,34 @@ pub mod ops {
         }
         Ok(ActionTypesOutput { actions, allowed_by_firearm_type })
     }
+
+    /// The fixed firearm types, by id, with the fields each omits (FR-001,
+    /// FR-003; research.md §3): the frontend reads the list instead of
+    /// copying it.
+    pub fn list_firearm_types(conn: &Connection) -> Result<FirearmTypesOutput, CommandError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, generic_thumbnail_key, action_type_applies,
+                        barrel_length_applies, capacity_applies
+                 FROM firearm_types ORDER BY id",
+            )
+            .map_err(CommandError::from_db)?;
+        let types = stmt
+            .query_map([], |row| {
+                Ok(FirearmTypeInfo {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    generic_thumbnail_key: row.get(2)?,
+                    action_type_applies: row.get(3)?,
+                    barrel_length_applies: row.get(4)?,
+                    capacity_applies: row.get(5)?,
+                })
+            })
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+        Ok(FirearmTypesOutput { types })
+    }
 }
 
 #[tauri::command]
@@ -153,4 +183,11 @@ pub async fn list_action_types(
     session: State<'_, Session>,
 ) -> Result<ActionTypesOutput, CommandError> {
     session.read(ops::list_action_types)
+}
+
+#[tauri::command]
+pub async fn list_firearm_types(
+    session: State<'_, Session>,
+) -> Result<FirearmTypesOutput, CommandError> {
+    session.read(ops::list_firearm_types)
 }

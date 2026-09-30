@@ -18,7 +18,7 @@ import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName, useActionTypes } from "../app/collectionStore";
+import { firearmName, useActionTypes, useFirearmTypes } from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
@@ -30,9 +30,10 @@ import { settleEntry } from "./firearmsService";
 import {
   CONDITION_OPTIONS,
   DISPOSITION_TYPE_OPTIONS,
-  FIREARM_TYPE_OPTIONS,
   ORIGIN_OPTIONS,
+  caliberLabel,
   conditionLabel,
+  firearmTypeOption,
   originLabel,
 } from "./types";
 import type {
@@ -44,6 +45,7 @@ import type {
   EntryFieldName,
   Firearm,
   FirearmInput,
+  FirearmTypeOption,
   Origin,
 } from "./types";
 import "./forms.css";
@@ -82,6 +84,62 @@ function actionsForType(actionTypes: ActionTypesOutput, firearmTypeId: string): 
  * the user should know why rather than see an empty choice. */
 const ACTION_LIST_FAILED =
   "The list of actions couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
+
+/** Under Type when `list_firearm_types` failed: it has nothing to offer, and
+ * the user should know why rather than see an empty choice. */
+const TYPE_LIST_FAILED =
+  "The list of types couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
+
+/** specs/005-regulated-item-types FR-002: the hint under a suppressor's
+ * caliber rating. */
+const CALIBER_RATING_HINT = "The largest bore the suppressor is rated for.";
+
+/** The fields a type omits (FR-003); with no type chosen, none. */
+type FieldRules = Pick<
+  FirearmTypeOption,
+  "actionTypeApplies" | "barrelLengthApplies" | "capacityApplies"
+>;
+
+const ALL_FIELDS_APPLY: FieldRules = {
+  actionTypeApplies: true,
+  barrelLengthApplies: true,
+  capacityApplies: true,
+};
+
+/** contracts/ui-registration.md §1: what changing to a type that omits a
+ * recorded field will clear at save, or "" when nothing is recorded there.
+ * The values stay in the form until then. */
+function clearedFieldsNote(
+  typeName: string,
+  rules: FieldRules,
+  form: FormState,
+  actionName: string | undefined,
+): string {
+  const names: string[] = [];
+  const values: string[] = [];
+  if (!rules.actionTypeApplies && form.actionTypeId !== "") {
+    names.push("action");
+    values.push(actionName ?? "the action");
+  }
+  if (!rules.barrelLengthApplies && form.barrelLength.trim() !== "") {
+    names.push("barrel length");
+    values.push(`${form.barrelLength.trim()} in`);
+  }
+  if (!rules.capacityApplies && form.capacity !== "") {
+    names.push("capacity");
+    values.push(`${form.capacity} ${form.capacity === "1" ? "round" : "rounds"}`);
+  }
+  if (names.length === 0) return "";
+  const join = (items: string[], last: string) =>
+    items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} ${last} ${items.at(-1)}`;
+  // The note names everything the type omits, not just what is recorded.
+  const omitted = [
+    !rules.actionTypeApplies && "action",
+    !rules.barrelLengthApplies && "barrel length",
+    !rules.capacityApplies && "capacity",
+  ].filter((name): name is string => name !== false);
+  return `A ${typeName} has no ${join(omitted, "or")}, so ${join(values, "and")} will be cleared when you save.`;
+}
 
 /** contracts/ui-entry.md §2: the note under a field that was snapped. */
 function snapNote(changedBy: "catalog" | "record", value: string): string {
@@ -199,16 +257,25 @@ const PHYSICAL_GROUP_FIELDS = [
   "condition",
 ] as const satisfies readonly (keyof FormState)[];
 
-function hasPhysicalGroupValue(form: FormState): boolean {
-  return PHYSICAL_GROUP_FIELDS.some((field) => form[field].trim() !== "");
+/** The group's fields the type in effect offers (FR-003). */
+function offeredPhysicalFields(rules: FieldRules) {
+  return PHYSICAL_GROUP_FIELDS.filter(
+    (field) =>
+      (field !== "barrelLength" || rules.barrelLengthApplies) &&
+      (field !== "capacity" || rules.capacityApplies),
+  );
+}
+
+function hasPhysicalGroupValue(form: FormState, rules: FieldRules): boolean {
+  return offeredPhysicalFields(rules).some((field) => form[field].trim() !== "");
 }
 
 /** The closed physical details group's read-back, in the record page's
  * units: "16.25 in barrel, 36 in overall. 2 lb 8.5 oz. 30 rounds." */
-function physicalGroupSummary(form: FormState): string {
+function physicalGroupSummary(form: FormState, rules: FieldRules): string {
   const sentences: string[] = [];
   const lengths = [
-    form.barrelLength && `${form.barrelLength} in barrel`,
+    rules.barrelLengthApplies && form.barrelLength && `${form.barrelLength} in barrel`,
     form.overallLength && `${form.overallLength} in overall`,
   ].filter(Boolean);
   if (lengths.length > 0) sentences.push(lengths.join(", "));
@@ -217,13 +284,15 @@ function physicalGroupSummary(form: FormState): string {
     form.weightOunces && `${form.weightOunces} oz`,
   ].filter(Boolean);
   if (weight.length > 0) sentences.push(weight.join(" "));
-  if (form.capacity !== "") {
+  if (rules.capacityApplies && form.capacity !== "") {
     sentences.push(`${form.capacity} ${form.capacity === "1" ? "round" : "rounds"}`);
   }
   if (form.finish.trim() !== "") sentences.push(`Finish: ${form.finish.trim()}`);
   if (form.condition !== "") sentences.push(`Condition: ${conditionLabel(form.condition)}`);
   if (sentences.length === 0) {
-    return "Optional: lengths, weight, capacity, finish and condition.";
+    return rules.barrelLengthApplies && rules.capacityApplies
+      ? "Optional: lengths, weight, capacity, finish and condition."
+      : "Optional: length, weight, finish and condition.";
   }
   return sentences
     .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`))
@@ -365,7 +434,11 @@ function blankToNull(value: string): string | null {
 /** Client-side mirror of the backend's validation (serial attestation,
  * FR-029; disposition completeness), plus amount and date formats, so the
  * user gets immediate feedback instead of a round-trip error. */
-function validate(form: FormState, disposed: boolean): Partial<Record<Field, string>> {
+function validate(
+  form: FormState,
+  disposed: boolean,
+  rules: FieldRules,
+): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (form.make.trim() === "") errors.make = "Enter the make.";
   if (form.model.trim() === "") errors.model = "Enter the model.";
@@ -388,6 +461,8 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     if (!parsed.ok) errors[field] = parsed.error;
   }
   for (const field of ["barrelLength", "overallLength"] as const) {
+    // A length the type omits is cleared at save, so it isn't checked.
+    if (field === "barrelLength" && !rules.barrelLengthApplies) continue;
     const parsed = parseInches(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
   }
@@ -396,7 +471,7 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
     if (weight.errors.pounds) errors.weightPounds = weight.errors.pounds;
     if (weight.errors.ounces) errors.weightOunces = weight.errors.ounces;
   }
-  if (form.capacity !== "" && !(Number(form.capacity) >= 1)) {
+  if (rules.capacityApplies && form.capacity !== "" && !(Number(form.capacity) >= 1)) {
     errors.capacity = "Capacity must be at least 1.";
   }
   const acquired = parseDateInput(form.acquisitionDate);
@@ -510,6 +585,14 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // cleared it, until an action is chosen or the type changes again.
   const [actionNote, setActionNote] = useState("");
   const actionTypes = useActionTypes();
+  const firearmTypes = useFirearmTypes();
+  // specs/005-regulated-item-types FR-003: the fields the type in effect
+  // omits; with no type chosen yet, none.
+  const rulesFor = (typeId: string): FieldRules =>
+    typeId === "" ? ALL_FIELDS_APPLY : firearmTypeOption(firearmTypes.types, Number(typeId));
+  // The note under Type once, announced when a change of type makes a
+  // recorded field be cleared at save (contracts/ui-registration.md §1).
+  const [typeAnnouncement, setTypeAnnouncement] = useState("");
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -522,7 +605,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
   const [showOriginGuide, setShowOriginGuide] = useState(false);
   const [originGroupOpen, setOriginGroupOpen] = useState(() => hasOriginGroupValue(form));
-  const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() => hasPhysicalGroupValue(form));
+  const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() =>
+    hasPhysicalGroupValue(form, rulesFor(form.firearmTypeId)),
+  );
   const originGuideButtonRef = useRef<HTMLButtonElement>(null);
   // specs/002-firearm-identification FR-010: set while the discard
   // confirmation is open, holding the origin the user picked and what it
@@ -549,7 +634,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     return () => clearTimeout(timer);
   }, [focusField]);
 
-  const clientErrors = validate(form, disposed);
+  const rules = rulesFor(form.firearmTypeId);
+  const clientErrors = validate(form, disposed, rules);
   const errorFor = (field: Field): string | undefined =>
     touched[field] || submitted
       ? (clientErrors[field] ?? serverError?.fieldErrors?.[SERVER_FIELD[field] ?? field])
@@ -678,19 +764,37 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     prompt: form.caliberPrompt || null,
     derivedFrom: null,
   };
-  const caliberHintText = caliberHint(caliberState);
+  const typeName = firearmTypeOption(firearmTypes.types, Number(form.firearmTypeId)).label;
+  const isSuppressor = form.firearmTypeId !== "" && typeName === "Suppressor";
+  const caliberHintText =
+    caliberHint(caliberState) ?? (isSuppressor ? CALIBER_RATING_HINT : undefined);
+  // What the type in effect will clear at save. Derived from the form, so it
+  // disappears when the type changes back or the values are removed.
+  const typeNote = clearedFieldsNote(
+    typeName,
+    rules,
+    form,
+    actionTypes.actions.find((action) => String(action.id) === form.actionTypeId)?.name,
+  );
   const caliberGuessed = form.caliberMode === "derived" && form.caliberSource === "guess";
 
   /** FR-019: an action the new type doesn't allow is cleared, with a note. An
    * allowed action is kept, silently. */
   function changeType(value: string) {
     const chosen = actionTypes.actions.find((action) => String(action.id) === form.actionTypeId);
+    const next = rulesFor(value);
+    // A type with no action keeps the value until save, with the note under
+    // Type (research.md §2); 004's clearing is for a type that has actions.
     const allowed = actionsForType(actionTypes, value);
-    const cleared = chosen !== undefined && !allowed.some((action) => action.id === chosen.id);
-    const typeLabel = FIREARM_TYPE_OPTIONS.find((option) => option.value === value)?.label;
+    const cleared =
+      next.actionTypeApplies &&
+      chosen !== undefined &&
+      !allowed.some((action) => action.id === chosen.id);
+    const typeLabel = firearmTypeOption(firearmTypes.types, Number(value)).label;
     setActionNote(
       cleared ? `${chosen.name} doesn't apply to a ${typeLabel}, so the action was cleared.` : "",
     );
+    setTypeAnnouncement(clearedFieldsNote(typeLabel, next, form, chosen?.name));
     setForm((prev) => ({
       ...prev,
       firearmTypeId: value,
@@ -774,7 +878,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
     // What the form holds now, after any settle above changed it.
     const form = latestForm.current;
-    const clientErrors = validate(form, disposed);
+    const rules = rulesFor(form.firearmTypeId);
+    const clientErrors = validate(form, disposed, rules);
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
@@ -800,15 +905,18 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       caliber: form.caliber.trim(),
       cartridge: blankToNull(form.cartridge),
       firearmTypeId: Number(form.firearmTypeId),
-      actionTypeId: form.actionTypeId === "" ? null : Number(form.actionTypeId),
+      actionTypeId:
+        form.actionTypeId === "" || !rules.actionTypeApplies ? null : Number(form.actionTypeId),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
       accessories: blankToNull(form.accessories),
-      barrelLengthHundredths: measure(parseInches, form.barrelLength),
+      barrelLengthHundredths: rules.barrelLengthApplies
+        ? measure(parseInches, form.barrelLength)
+        : null,
       overallLengthHundredths: measure(parseInches, form.overallLength),
       weightTenthsOz: weightTenths,
-      capacity: form.capacity === "" ? null : Number(form.capacity),
+      capacity: form.capacity === "" || !rules.capacityApplies ? null : Number(form.capacity),
       finish: blankToNull(form.finish),
       condition: form.condition === "" ? null : form.condition,
       estimatedValue: dollars(form.estimatedValue),
@@ -829,6 +937,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       originalMake: blankToNull(form.originalMake),
       originalModel: blankToNull(form.originalModel),
       originalSerialNumber: blankToNull(form.originalSerialNumber),
+      // Registration is edited by specs/005-regulated-item-types US2; until
+      // then a save keeps what the record holds.
+      registrationClassId: initialValues?.registrationClassId ?? null,
+      registrationForm: initialValues?.registrationForm ?? null,
+      registrationApproved: initialValues?.registrationApproved ?? null,
+      registeredTo: initialValues?.registeredTo ?? null,
     };
 
     return submitInput(input);
@@ -958,39 +1072,49 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 }}
                 error={errorFor("firearmTypeId")}
                 minCardWidth={140}
-                options={FIREARM_TYPE_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.label,
-                  art: <TypeDrawing typeKey={option.key} crop />,
+                options={firearmTypes.types.map((type) => ({
+                  value: String(type.id),
+                  label: type.name,
+                  art: <TypeDrawing typeKey={type.genericThumbnailKey} crop />,
                 }))}
+                hint={
+                  typeNote || (firearmTypes.failed && !errorFor("firearmTypeId"))
+                    ? typeNote || TYPE_LIST_FAILED
+                    : undefined
+                }
               />
+              <span className="hd-sr-only" role="status" aria-live="polite">
+                {typeNote ? typeAnnouncement : ""}
+              </span>
             </div>
 
             {/* contracts/ui-entry.md §4: chosen from the fixed list only, and
                 only from the actions the type allows. */}
-            <div data-field="actionTypeId">
-              <Select
-                label="Action"
-                fieldClassName="hd-field--third"
-                value={form.actionTypeId === "" ? NOT_RECORDED : form.actionTypeId}
-                onValueChange={(value) => {
-                  setActionNote("");
-                  update("actionTypeId", value === NOT_RECORDED ? "" : value);
-                }}
-                options={[
-                  { value: NOT_RECORDED, label: "Unspecified" },
-                  ...actionsForType(actionTypes, form.firearmTypeId).map((action) => ({
-                    value: String(action.id),
-                    label: action.name,
-                  })),
-                ]}
-                error={errorFor("actionTypeId")}
-                hint={actionNote || (actionTypes.failed ? ACTION_LIST_FAILED : undefined)}
-              />
-              <span className="hd-sr-only" role="status" aria-live="polite">
-                {actionNote}
-              </span>
-            </div>
+            {rules.actionTypeApplies && (
+              <div data-field="actionTypeId">
+                <Select
+                  label="Action"
+                  fieldClassName="hd-field--third"
+                  value={form.actionTypeId === "" ? NOT_RECORDED : form.actionTypeId}
+                  onValueChange={(value) => {
+                    setActionNote("");
+                    update("actionTypeId", value === NOT_RECORDED ? "" : value);
+                  }}
+                  options={[
+                    { value: NOT_RECORDED, label: "Unspecified" },
+                    ...actionsForType(actionTypes, form.firearmTypeId).map((action) => ({
+                      value: String(action.id),
+                      label: action.name,
+                    })),
+                  ]}
+                  error={errorFor("actionTypeId")}
+                  hint={actionNote || (actionTypes.failed ? ACTION_LIST_FAILED : undefined)}
+                />
+                <span className="hd-sr-only" role="status" aria-live="polite">
+                  {actionNote}
+                </span>
+              </div>
+            )}
 
             {/* specs/004-cartridges-action-types contracts/ui-entry.md §3: the
                 cartridge, then the caliber it fills in, to its right. */}
@@ -1013,7 +1137,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 <EntryField
                   field="caliber"
                   id="ff-caliber"
-                  label="Caliber"
+                  label={caliberLabel(typeName)}
                   required
                   value={form.caliber}
                   onValueChange={(text) => editEntry("caliber", text)}
@@ -1207,22 +1331,24 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             <Disclosure
               title="Physical details"
               headingLevel={3}
-              summary={physicalGroupOpen ? undefined : physicalGroupSummary(form)}
+              summary={physicalGroupOpen ? undefined : physicalGroupSummary(form, rules)}
               open={physicalGroupOpen}
               onOpenChange={setPhysicalGroupOpen}
             >
               <div className="hd-form-grid hd-form-grid--2">
                 <div className="hd-form-pair">
-                  <div data-field="barrelLength">
-                    <DecimalField
-                      label="Barrel length (in)"
-                      value={form.barrelLength}
-                      onValueChange={(text) => update("barrelLength", text)}
-                      onBlur={touch("barrelLength")}
-                      error={errorFor("barrelLength")}
-                      placeholder="e.g. 4.25"
-                    />
-                  </div>
+                  {rules.barrelLengthApplies && (
+                    <div data-field="barrelLength">
+                      <DecimalField
+                        label="Barrel length (in)"
+                        value={form.barrelLength}
+                        onValueChange={(text) => update("barrelLength", text)}
+                        onBlur={touch("barrelLength")}
+                        error={errorFor("barrelLength")}
+                        placeholder="e.g. 4.25"
+                      />
+                    </div>
+                  )}
                   <div data-field="overallLength">
                     <DecimalField
                       label="Overall length (in)"
@@ -1262,18 +1388,20 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 </div>
               </div>
               <div className="hd-form-grid hd-form-grid--4">
-                <div data-field="capacity">
-                  <TextField
-                    label="Capacity"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={form.capacity}
-                    onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
-                    onBlur={touch("capacity")}
-                    error={errorFor("capacity")}
-                    hint="Rounds in the magazine, cylinder or tube."
-                  />
-                </div>
+                {rules.capacityApplies && (
+                  <div data-field="capacity">
+                    <TextField
+                      label="Capacity"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={form.capacity}
+                      onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
+                      onBlur={touch("capacity")}
+                      error={errorFor("capacity")}
+                      hint="Rounds in the magazine, cylinder or tube."
+                    />
+                  </div>
+                )}
                 <div className="hd-form-span-2">
                   <TextField
                     label="Finish"

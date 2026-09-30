@@ -6,6 +6,12 @@
  * Each firearm is traced from a side-on photograph of a real model so its
  * proportions hold up. Muzzle-right puts the right side toward the viewer,
  * so only right-side features are drawn (ejection ports, not slide stops).
+ *
+ * The suppressor (specs/005-regulated-item-types FR-001, research.md §4) was
+ * drawn for this project, traced from side-on photographs of rifle
+ * suppressors for proportion (a tube about 6:1 in length to diameter,
+ * centred on the bore axis), with no brand marks. Like the rest of the
+ * source it is GPL-3.0-only.
  */
 
 export type Part =
@@ -216,6 +222,25 @@ export const DRAWINGS: Record<string, Drawing> = {
       { d: "M216 85.7H253C271 85.7 282 92 292 100C282 108 271 114.3 253 114.3H216Z", role: "part" },
       { d: "M225 86.6V113.4M228.5 86.6V113.4", role: "detail" },
       { d: "M216 83.5V116.5", role: "detail" },
+    ],
+    axis: [23, 100, 313],
+  },
+  // A rifle-caliber suppressor, mount end left: a threaded mount collar,
+  // wrench flats near the mount, a seam where the end cap seats, and a front
+  // cap with the bore opening.
+  suppressor: {
+    parts: [
+      { d: "M29 88.5H47V111.5H29Q27 111.5 27 109.5V90.5Q27 88.5 29 88.5Z", role: "part" },
+      { d: "M32 89V111M35 89V111M38 89V111M41 89V111", role: "detail" },
+      {
+        d: "M47 80.5H277Q280.5 80.5 282 84L284.5 88.5V111.5L282 116Q280.5 119.5 277 119.5H47Z",
+        role: "part",
+      },
+      { d: "M52 80.8V119.2M82 80.8V119.2", role: "detail" },
+      { d: "M52 87H82M52 113H82", role: "detail" },
+      { d: "M214 80.8V119.2", role: "detail" },
+      { d: "M284.5 88.5H297Q299 88.5 299 90.5V109.5Q299 111.5 297 111.5H284.5Z", role: "part" },
+      { d: "M297.4 94.2Q300.6 100 297.4 105.8Z", role: "open" },
     ],
     axis: [23, 100, 313],
   },

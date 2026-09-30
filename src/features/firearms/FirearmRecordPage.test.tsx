@@ -9,6 +9,7 @@ import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectio
 import { FirearmRecordPage } from "./FirearmRecordPage";
 import { ORIGIN_OPTIONS } from "./types";
 import type { FirearmDetail, Origin } from "./types";
+import { FIREARM_TYPES } from "../../test/collectionFixtures";
 
 const getFirearm = vi.fn();
 
@@ -56,6 +57,10 @@ const firearm: FirearmDetail = {
   originalMake: null,
   originalModel: null,
   originalSerialNumber: null,
+  registrationClassId: null,
+  registrationForm: null,
+  registrationApproved: null,
+  registeredTo: null,
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
@@ -75,6 +80,8 @@ const collection: CollectionState = {
     allowedByFirearmType: {},
   },
   actionTypesFailed: false,
+  firearmTypes: { types: FIREARM_TYPES },
+  firearmTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,
@@ -445,5 +452,40 @@ describe("FirearmRecordPage cartridge", () => {
     const cells = await titleCells();
     const acquired = cells.find(([label]) => label === "Acquired")![1];
     expect(cells).toContainEqual(["Cartridge", acquired]);
+  });
+});
+
+// specs/005-regulated-item-types US1-3 (contracts/ui-registration.md §4): a
+// Suppressor's caliber is a rating, and it has no action.
+describe("FirearmRecordPage title block by type", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("labels a Suppressor's caliber 'Caliber rating' and lists no Action, Barrel length or Capacity", async () => {
+    getFirearm.mockReset().mockResolvedValue({
+      ...firearm,
+      make: "SilencerCo",
+      model: "Omega 300",
+      caliber: ".30",
+      firearmTypeId: 5,
+    });
+    renderPage();
+
+    const rating = await screen.findByText("Caliber rating");
+    expect(rating.closest("div")).toHaveTextContent(".30");
+    expect(screen.queryByText("Caliber")).not.toBeInTheDocument();
+    expect(screen.queryByText("Action")).not.toBeInTheDocument();
+    expect(screen.queryByText("Barrel length")).not.toBeInTheDocument();
+    expect(screen.queryByText("Capacity")).not.toBeInTheDocument();
+  });
+
+  it("leaves a Rifle as it was", async () => {
+    getFirearm.mockReset().mockResolvedValue({ ...firearm, firearmTypeId: 2 });
+    renderPage();
+
+    expect(await screen.findByText("Caliber")).toBeInTheDocument();
+    expect(screen.getByText("Action")).toBeInTheDocument();
+    expect(screen.queryByText("Caliber rating")).not.toBeInTheDocument();
   });
 });

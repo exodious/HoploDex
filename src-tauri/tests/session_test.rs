@@ -49,7 +49,7 @@ fn an_installed_database_serves_reads_and_writes_until_taken() {
     session.install(OpenDatabase::new(conn, &path).unwrap());
 
     assert!(session.is_open());
-    assert_eq!(session.read(count_types).unwrap(), 4);
+    assert_eq!(session.read(count_types).unwrap(), 5);
     session
         .write(|conn| {
             conn.execute("UPDATE collection_settings SET idle_lock_minutes = 30", [])

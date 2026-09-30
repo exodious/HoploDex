@@ -292,6 +292,10 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
         original_make: Some("Distinctive Maker".into()),
         original_model: Some("Distinctive Model".into()),
         original_serial_number: Some("PERF-NEW-ORIGINAL".into()),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..firearm("Distinctive Make", "Distinctive Model", "PERF-NEW-MAIN")
     };
     let started = Instant::now();

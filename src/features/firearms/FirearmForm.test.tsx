@@ -1,14 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render as renderBase,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
+import { ACTION_TYPES, FIREARM_TYPES } from "../../test/collectionFixtures";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
 import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { DerivedCaliber, Firearm } from "./types";
+
+// specs/005-regulated-item-types: the form reads the firearm types from the
+// collection store, so every render gets the fixture's five seeded types
+// unless a test provides its own collection.
+const typesCollection = { firearmTypes: { types: FIREARM_TYPES } } as unknown as CollectionState;
+function render(ui: ReactElement) {
+  return renderBase(ui, {
+    wrapper: ({ children }) => (
+      <CollectionContext.Provider value={typesCollection}>{children}</CollectionContext.Provider>
+    ),
+  });
+}
 
 // specs/004-cartridges-action-types: the form settles an entry through the
 // backend (`settle_entry`) and lists suggestions (`suggest_entries`); here
@@ -1677,6 +1697,7 @@ describe("FirearmForm action (US3)", () => {
   // muzzleloader; Rifle (2) has all; Shotgun (3) has no Rolling block; Other
   // (4) maps none, which allows all.
   const collection = {
+    firearmTypes: { types: FIREARM_TYPES },
     actionTypes: {
       actions: ACTIONS,
       allowedByFirearmType: { 1: ids(5, 7, 12), 2: ids(), 3: ids(8) },
@@ -1684,7 +1705,9 @@ describe("FirearmForm action (US3)", () => {
   } as unknown as CollectionState;
 
   function renderForm(ui: ReactElement = <FirearmForm onSubmit={vi.fn()} />) {
-    return render(<CollectionContext.Provider value={collection}>{ui}</CollectionContext.Provider>);
+    return renderBase(
+      <CollectionContext.Provider value={collection}>{ui}</CollectionContext.Provider>,
+    );
   }
 
   const action = () => screen.getByRole("combobox", { name: "Action" });
@@ -1858,6 +1881,7 @@ describe("FirearmForm action (US3)", () => {
       <CollectionContext.Provider
         value={
           {
+            firearmTypes: { types: FIREARM_TYPES },
             actionTypes: { actions: [], allowedByFirearmType: {} },
             actionTypesFailed: true,
           } as unknown as CollectionState
@@ -1903,5 +1927,216 @@ describe("FirearmForm action (US3)", () => {
     await user.click(screen.getByRole("button", { name: /^Save/ }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0].actionTypeId).toBe(2);
+  });
+});
+
+// specs/005-regulated-item-types US1 (contracts/ui-registration.md §1): the
+// Type cards come from the store, and a type that omits the action, barrel
+// length or capacity hides those fields.
+describe("FirearmForm suppressor (US1)", () => {
+  const collection = {
+    firearmTypes: { types: FIREARM_TYPES },
+    actionTypes: { actions: ACTION_TYPES, allowedByFirearmType: {} },
+  } as unknown as CollectionState;
+
+  function renderForm(ui: ReactElement = <FirearmForm onSubmit={vi.fn()} />) {
+    return renderBase(
+      <CollectionContext.Provider value={collection}>{ui}</CollectionContext.Provider>,
+    );
+  }
+
+  const chooseType = (user: ReturnType<typeof userEvent.setup>, type: string) =>
+    user.click(screen.getByRole("radio", { name: type }));
+
+  /** A saved Rifle with an action, a barrel length and a capacity. */
+  const rifle = {
+    id: 7,
+    make: "Ruger",
+    model: "American",
+    serialNumber: "R-1",
+    noSerialAttested: false,
+    caliber: ".308",
+    cartridge: null,
+    firearmTypeId: 2,
+    actionTypeId: 3,
+    barrelLengthHundredths: 2000,
+    capacity: 5,
+    status: "active",
+  } as Firearm;
+
+  it("offers the types in id order, Suppressor last", () => {
+    renderForm();
+
+    const names = screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent);
+    expect(names).toEqual(["Handgun", "Rifle", "Shotgun", "Other", "Suppressor"]);
+  });
+
+  it("offers no Action, Barrel length or Capacity for a Suppressor, and says Caliber rating", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(screen.getByRole("combobox", { name: "Action" })).toBeInTheDocument();
+    await chooseType(user, "Suppressor");
+
+    expect(screen.queryByRole("combobox", { name: "Action" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Physical details/ }));
+    expect(screen.queryByLabelText(/^Barrel length/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Capacity")).not.toBeInTheDocument();
+    for (const label of ["Overall length (in)", "Weight (lb)", "Weight (oz)", "Finish"]) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByRole("combobox", { name: "Condition" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Caliber rating")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Caliber")).not.toBeInTheDocument();
+    expect(screen.getByText("The largest bore the suppressor is rated for.")).toBeInTheDocument();
+  });
+
+  it("leaves the hidden fields out of the closed summary", async () => {
+    const user = userEvent.setup();
+    // The Rifle's recorded values open the group; close it to read the summary.
+    renderForm(<FirearmForm initialValues={rifle} onSubmit={vi.fn()} />);
+    await chooseType(user, "Suppressor");
+    await user.click(screen.getByRole("button", { name: /^Physical details/ }));
+
+    const button = screen.getByRole("button", { name: /^Physical details/ });
+    expect(button).not.toHaveTextContent(/barrel|rounds/);
+    expect(button).toHaveTextContent("Optional: length, weight, finish and condition.");
+  });
+
+  it("names what will be cleared when a Rifle is changed to a Suppressor, and keeps it until save", async () => {
+    const user = userEvent.setup();
+    renderForm(<FirearmForm initialValues={rifle} onSubmit={vi.fn()} />);
+
+    await chooseType(user, "Suppressor");
+
+    const note =
+      "A Suppressor has no action, barrel length or capacity, so Bolt action, 20 in and 5 rounds will be cleared when you save.";
+    expect(screen.getAllByText(note).length).toBeGreaterThan(0);
+
+    // The values come back when the type changes back, and the note goes.
+    await chooseType(user, "Rifle");
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Action" })).toHaveTextContent("Bolt action");
+    expect(screen.getByLabelText(/^Barrel length/)).toHaveValue("20");
+    expect(screen.getByLabelText("Capacity")).toHaveValue("5");
+  });
+
+  it("names only the fields that hold a value", async () => {
+    const user = userEvent.setup();
+    renderForm(
+      <FirearmForm
+        initialValues={{ ...rifle, actionTypeId: null, capacity: null }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await chooseType(user, "Suppressor");
+
+    expect(
+      screen.getAllByText(
+        "A Suppressor has no action, barrel length or capacity, so 20 in will be cleared when you save.",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows no note when nothing is recorded in a field the type omits", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await chooseType(user, "Suppressor");
+
+    expect(screen.queryByText(/will be cleared when you save/)).not.toBeInTheDocument();
+  });
+
+  it("announces the note through the polite live region", async () => {
+    const user = userEvent.setup();
+    renderForm(<FirearmForm initialValues={rifle} onSubmit={vi.fn()} />);
+
+    await chooseType(user, "Suppressor");
+
+    const live = screen
+      .getAllByRole("status")
+      .find((el) => /will be cleared when you save/.test(el.textContent ?? ""));
+    expect(live).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("sends the action, barrel length and capacity as null for a Suppressor", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(<FirearmForm initialValues={rifle} onSubmit={onSubmit} />);
+
+    await chooseType(user, "Suppressor");
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      firearmTypeId: 5,
+      actionTypeId: null,
+      barrelLengthHundredths: null,
+      capacity: null,
+    });
+  });
+
+  it("does not check a barrel length the type omits", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(
+      <FirearmForm
+        initialValues={{ ...rifle, barrelLengthHundredths: null, capacity: null }}
+        onSubmit={onSubmit}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Physical details/ }));
+    await user.type(screen.getByLabelText(/^Barrel length/), "abc");
+    await chooseType(user, "Suppressor");
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].barrelLengthHundredths).toBeNull();
+  });
+
+  it("keeps a record's registration when it is saved", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(
+      <FirearmForm
+        initialValues={{
+          ...rifle,
+          registrationClassId: 2,
+          registrationForm: "Form 1",
+          registrationApproved: "2026-02-10",
+          registeredTo: "Smith Family Trust",
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      registrationClassId: 2,
+      registrationForm: "Form 1",
+      registrationApproved: "2026-02-10",
+      registeredTo: "Smith Family Trust",
+    });
+  });
+
+  it("says so under Type when the list couldn't be loaded", () => {
+    renderBase(
+      <CollectionContext.Provider
+        value={
+          {
+            firearmTypes: { types: [] },
+            firearmTypesFailed: true,
+            actionTypes: { actions: [], allowedByFirearmType: {} },
+          } as unknown as CollectionState
+        }
+      >
+        <FirearmForm onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+
+    expect(screen.getByText(/The list of types couldn't be loaded/)).toBeInTheDocument();
   });
 });

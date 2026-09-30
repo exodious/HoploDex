@@ -189,6 +189,7 @@ fn main() {
             hoplodex_lib::commands::entries::suggest_entries,
             hoplodex_lib::commands::entries::settle_entry,
             hoplodex_lib::commands::entries::list_action_types,
+            hoplodex_lib::commands::entries::list_firearm_types,
             hoplodex_lib::commands::insurance::list_insurance_policies,
             hoplodex_lib::commands::insurance::create_insurance_policy,
             hoplodex_lib::commands::insurance::update_insurance_policy,

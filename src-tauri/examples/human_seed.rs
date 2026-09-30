@@ -67,6 +67,7 @@ const HANDGUN: i64 = 1;
 const RIFLE: i64 = 2;
 const SHOTGUN: i64 = 3;
 const OTHER: i64 = 4;
+const SUPPRESSOR: i64 = 5;
 
 // Ids seeded by migration 0003_seed_firearm_types (specs/004-cartridges-action-types FR-018).
 const SEMI_AUTOMATIC: i64 = 1;
@@ -386,6 +387,10 @@ fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> F
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         cartridge: None,
         action_type_id: None,
     }
@@ -936,6 +941,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         original_make: text("Glock"),
         original_model: text("19"),
         original_serial_number: text("AWC442"),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..base("Ridgeline Arms", "Imported Glock 19", "RA-70019", "9mm", HANDGUN)
     });
 
@@ -1006,6 +1015,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         original_make: text("Fabrique Nationale"),
         original_model: text("High Power"),
         original_serial_number: text("FN-70044"),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power A", "RA-90001", "9mm", HANDGUN)
     };
     must(firearm_ops::create_firearm(conn, &original_marks_first, false), "original-marks demo 1");
@@ -1021,6 +1034,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         original_make: text("Fabrique Nationale"),
         original_model: text("High Power"),
         original_serial_number: text("FN-70044"),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power B", "RA-90002", "9mm", HANDGUN)
     };
     must(firearm_ops::create_firearm(conn, &original_marks_second, true), "original-marks demo 2");
@@ -1087,6 +1104,16 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2020-08-14"),
         cartridge: text(".38 Special"),
         ..base("S&W", "Model 60", "S&W-60-1", ".357", HANDGUN)
+    });
+    // specs/005-regulated-item-types US1: a Suppressor has no action, barrel
+    // length or capacity, and its caliber is a rating. No classification.
+    add(FirearmInput {
+        estimated_value: Some(900),
+        acquisition_date: text("2024-05-18"),
+        overall_length_hundredths: Some(780),
+        weight_tenths_oz: Some(130),
+        finish: text("Cerakote graphite black"),
+        ..base("SilencerCo", "Omega 300", "OM300-20418", ".30", SUPPRESSOR)
     });
     add(FirearmInput {
         estimated_value: Some(300),

@@ -1,14 +1,28 @@
--- Seeds both lookup lists: the initial FirearmType set per spec.md's
+-- Seeds the type, action and classification lists: the initial FirearmType set per spec.md's
 -- Assumptions and research.md §10 (generic per-type thumbnails), and
 -- specs/004-cartridges-action-types' action types with their mapping to the
--- seeded types (FR-018; research.md §10). The file keeps its name because
+-- seeded types (FR-018; research.md §10), and specs/005-regulated-item-types'
+-- Suppressor type and registration classifications. The file keeps its name because
 -- `schema_migrations` records it.
 
-INSERT INTO firearm_types (name, generic_thumbnail_key) VALUES
-    ('Handgun', 'handgun'),
-    ('Rifle', 'rifle'),
-    ('Shotgun', 'shotgun'),
-    ('Other', 'other');
+-- Fixed ids (005 research.md §4). Suppressor has no action, barrel length or
+-- capacity (FR-003): its three flags are 0.
+INSERT INTO firearm_types (id, name, generic_thumbnail_key, action_type_applies, barrel_length_applies, capacity_applies) VALUES
+    (1, 'Handgun', 'handgun', 1, 1, 1),
+    (2, 'Rifle', 'rifle', 1, 1, 1),
+    (3, 'Shotgun', 'shotgun', 1, 1, 1),
+    (4, 'Other', 'other', 1, 1, 1),
+    (5, 'Suppressor', 'suppressor', 0, 0, 0);
+
+-- FR-007: fixed ids, listed in `sort_order`, all offered. No rule about what
+-- is regulated lives here.
+INSERT INTO registration_classes (id, name, sort_order, offered) VALUES
+    (1, 'Suppressor', 1, 1),
+    (2, 'Short-barreled rifle', 2, 1),
+    (3, 'Short-barreled shotgun', 3, 1),
+    (4, 'Any other weapon', 4, 1),
+    (5, 'Machine gun', 5, 1),
+    (6, 'Destructive device', 6, 1);
 
 -- Fixed ids, so an id means the same action in every build; the list's
 -- order is `sort_order`.

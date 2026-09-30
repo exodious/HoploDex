@@ -15,6 +15,8 @@ export interface ChoiceCardsProps<T extends string> {
   onChange: (value: T) => void;
   options: ChoiceCard<T>[];
   error?: string;
+  /** A note under the cards, in the hint style of the other fields. */
+  hint?: string;
   required?: boolean;
   /** Minimum card width; cards wrap onto more rows below it. */
   minCardWidth?: number;
@@ -28,12 +30,14 @@ export function ChoiceCards<T extends string>({
   onChange,
   options,
   error,
+  hint,
   required,
   minCardWidth = 150,
 }: ChoiceCardsProps<T>) {
   const name = useId();
   const labelId = `${name}-label`;
   const errorId = `${name}-error`;
+  const hintId = `${name}-hint`;
   // A labelled radiogroup rather than a <fieldset>: WebKitGTK counts a
   // fieldset's legend twice when a dialog first sizes itself, leaving the
   // dialog too tall until something else changes its layout.
@@ -42,7 +46,7 @@ export function ChoiceCards<T extends string>({
       role="radiogroup"
       className="hd-choices"
       aria-labelledby={labelId}
-      aria-describedby={error ? errorId : undefined}
+      aria-describedby={[error && errorId, hint && hintId].filter(Boolean).join(" ") || undefined}
       aria-invalid={error ? true : undefined}
       aria-required={required || undefined}
     >
@@ -79,6 +83,11 @@ export function ChoiceCards<T extends string>({
           </label>
         ))}
       </div>
+      {hint && (
+        <p id={hintId} className="hd-field__hint">
+          {hint}
+        </p>
+      )}
       {error && (
         <p id={errorId} className="hd-field__error" role="alert">
           {error}

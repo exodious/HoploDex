@@ -358,3 +358,41 @@ fn the_fr_008_identity_clash_message_never_judges_legality() {
         assert!(!message.contains(word), "message should not judge legality: {message:?}");
     }
 }
+
+// specs/005-regulated-item-types US1-6, FR-005: a Suppressor is identified
+// like any firearm.
+
+fn suppressor(serial: &str) -> FirearmInput {
+    FirearmInput {
+        firearm_type_id: 5,
+        caliber: ".30".into(),
+        ..firearm("SilencerCo", "Omega 300", serial)
+    }
+}
+
+#[test]
+fn a_duplicate_suppressor_is_blocked_with_or_without_a_classification() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &suppressor("ABC123"), false).unwrap();
+
+    let err = ops::create_firearm(&db.conn, &suppressor("ABC123"), false)
+        .expect_err("a second active Omega 300 ABC123 must be blocked");
+    let message = blocked_message(&err);
+    assert!(message.contains("SilencerCo") && message.contains("ABC123"), "{message}");
+
+    let classified = FirearmInput { registration_class_id: Some(1), ..suppressor("ABC123") };
+    let err = ops::create_firearm(&db.conn, &classified, false)
+        .expect_err("a classification doesn't make it a different firearm");
+    blocked_message(&err);
+    assert_eq!(
+        db.conn.query_row("SELECT count(*) FROM firearms", [], |r| r.get::<_, i64>(0)).unwrap(),
+        1
+    );
+}
+
+#[test]
+fn a_suppressor_with_no_serial_attestation_saves() {
+    let db = TestDb::new();
+    let input = FirearmInput { firearm_type_id: 5, ..no_serial("Homemade", "Solvent trap") };
+    assert!(ops::create_firearm(&db.conn, &input, false).is_ok());
+}

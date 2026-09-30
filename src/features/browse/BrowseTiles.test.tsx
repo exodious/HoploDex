@@ -3,8 +3,16 @@ import { render, screen, within } from "@testing-library/react";
 import { BrowseTiles } from "./BrowseTiles";
 import type { FirearmSummary, VisibleGroup } from "./types";
 
-// The thumbnail talks to Tauri; it isn't under test.
-vi.mock("./FirearmThumbnail", () => ({ FirearmThumbnail: () => null }));
+// The thumbnail talks to Tauri; it isn't under test. A firearm with no photo
+// shows its type's drawing, as the real one does.
+vi.mock("./FirearmThumbnail", async () => {
+  const { TypeDrawing } = await import("./TypeDrawing");
+  return {
+    FirearmThumbnail: ({ genericThumbnailKey }: { genericThumbnailKey: string }) => (
+      <TypeDrawing typeKey={genericThumbnailKey} />
+    ),
+  };
+});
 
 function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
   return {
@@ -53,5 +61,29 @@ describe("BrowseTiles caliber line", () => {
     render(<BrowseTiles groups={groups} grouped={false} onSelect={vi.fn()} />);
 
     expect(screen.queryByText("Semi-automatic")).not.toBeInTheDocument();
+  });
+});
+
+// specs/005-regulated-item-types US1-4, FR-001: a Suppressor with no photo
+// shows its own drawing, not the generic "other" one.
+describe("BrowseTiles suppressor", () => {
+  it("shows the suppressor drawing for a Suppressor with no photo", () => {
+    const firearms = [
+      summary({
+        id: 1,
+        make: "SilencerCo",
+        model: "Omega 300",
+        caliber: ".30",
+        firearmTypeName: "Suppressor",
+        genericThumbnailKey: "suppressor",
+      }),
+    ];
+    const groups: VisibleGroup[] = [{ key: "All", firearms, total: 1 }];
+    const { container } = render(
+      <BrowseTiles groups={groups} grouped={false} onSelect={vi.fn()} />,
+    );
+
+    expect(container.querySelector('[data-drawing="suppressor"]')).not.toBeNull();
+    expect(container.querySelector('[data-drawing="other"]')).toBeNull();
   });
 });

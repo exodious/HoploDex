@@ -9,6 +9,7 @@ pub mod insurance_status;
 pub mod keyring;
 pub mod machine_settings;
 pub mod passphrase;
+pub mod registration;
 pub mod secure_delete;
 pub mod spreadsheet;
 pub mod suggestions;

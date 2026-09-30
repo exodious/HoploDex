@@ -24,6 +24,10 @@ fn with_original_marks(
         original_make: Some(original_make.into()),
         original_model: Some(original_model.into()),
         original_serial_number: Some(original_serial.into()),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..imported(make, model, serial)
     }
 }
@@ -165,6 +169,10 @@ fn editing_a_firearm_into_a_match_also_warns() {
         original_make: Some("FN".into()),
         original_model: Some("High Power".into()),
         original_serial_number: Some("FN-6".into()),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..FirearmInput::from(&other)
     };
     let err = ops::update_firearm(&db.conn, other.id, &edited, false)

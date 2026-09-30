@@ -42,6 +42,10 @@ fn base_input() -> FirearmInput {
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         cartridge: None,
         action_type_id: None,
     }
@@ -284,6 +288,10 @@ fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
             original_make: Some("Fabrique Nationale".into()),
             original_model: Some("High Power".into()),
             original_serial_number: Some("FN-99001".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..base_input()
         },
         false,
@@ -367,6 +375,10 @@ fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500
             original_make: Some("Zzyzx Arms".into()),
             original_model: Some("Model Zeta".into()),
             original_serial_number: Some("ZZ-999999".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..base_input()
         },
         false,

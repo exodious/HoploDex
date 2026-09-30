@@ -635,6 +635,11 @@ pub mod ops {
             original_serial_number: raw.original_serial_number.clone(),
             cartridge: raw.cartridge.clone(),
             action_type_id,
+            // Read from the sheet by specs/005-regulated-item-types US4.
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
         };
 
         validate_firearm_input(&input, None).map_err(|e| row_message(&e))?;

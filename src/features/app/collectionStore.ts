@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { FirearmSummary } from "../browse/types";
-import type { ActionTypesOutput } from "../firearms/types";
+import type { ActionTypesOutput, FirearmTypesOutput } from "../firearms/types";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
 
 /**
@@ -22,6 +22,12 @@ export interface CollectionState {
   /** The action list couldn't be loaded, so Action offers nothing to
    * choose; the form says so. The backend still checks every save. */
   actionTypesFailed: boolean;
+  /** specs/005-regulated-item-types FR-001/FR-003: the fixed firearm types
+   * and the fields each omits, loaded once per open database. */
+  firearmTypes: FirearmTypesOutput;
+  /** The type list couldn't be loaded, so Type offers nothing to choose;
+   * the form says so. The backend still checks every save. */
+  firearmTypesFailed: boolean;
   loaded: boolean;
   error: string | null;
   /** Increments after every refresh; views keyed on it refetch their own
@@ -49,6 +55,20 @@ export function useActionTypes(): ActionTypesOutput & { failed: boolean } {
   return {
     ...(collection?.actionTypes ?? NO_ACTION_TYPES),
     failed: collection?.actionTypesFailed ?? false,
+  };
+}
+
+/** Before the list has loaded, or outside a provider: no types to offer. */
+export const NO_FIREARM_TYPES: FirearmTypesOutput = { types: [] };
+
+/** The firearm types, for a view that may render on its own (as the tests
+ * do): empty without a provider, rather than an error. `failed` says the
+ * provider tried and couldn't load them. */
+export function useFirearmTypes(): FirearmTypesOutput & { failed: boolean } {
+  const collection = useContext(CollectionContext);
+  return {
+    ...(collection?.firearmTypes ?? NO_FIREARM_TYPES),
+    failed: collection?.firearmTypesFailed ?? false,
   };
 }
 

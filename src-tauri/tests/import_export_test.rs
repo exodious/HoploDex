@@ -660,6 +660,10 @@ mod identification_spreadsheet {
                 original_make: Some("FN".into()),
                 original_model: Some("High Power".into()),
                 original_serial_number: Some("FN-1".into()),
+                registration_class_id: None,
+                registration_form: None,
+                registration_approved: None,
+                registered_to: None,
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-1")
             },
             false,
@@ -771,6 +775,10 @@ mod identification_spreadsheet {
                 original_make: Some("FN".into()),
                 original_model: Some("High Power".into()),
                 original_serial_number: Some("FN-2".into()),
+                registration_class_id: None,
+                registration_form: None,
+                registration_approved: None,
+                registered_to: None,
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-2")
             },
             false,
@@ -939,6 +947,10 @@ mod identification_spreadsheet {
                 original_make: Some("FN".into()),
                 original_model: Some("High Power".into()),
                 original_serial_number: Some("FN-3".into()),
+                registration_class_id: None,
+                registration_form: None,
+                registration_approved: None,
+                registered_to: None,
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-3")
             },
             false,

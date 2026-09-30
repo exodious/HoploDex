@@ -9,6 +9,7 @@ import type { Navigation } from "../app/navigation";
 import * as insuranceService from "./insuranceService";
 import { PolicyPage } from "./PolicyPage";
 import type { InsurancePolicy } from "./types";
+import { FIREARM_TYPES } from "../../test/collectionFixtures";
 
 vi.mock("./insuranceService");
 
@@ -41,6 +42,8 @@ const collection: CollectionState = {
   policiesById: new Map([[policy.id, policy]]),
   actionTypes: { actions: [], allowedByFirearmType: {} },
   actionTypesFailed: false,
+  firearmTypes: { types: FIREARM_TYPES },
+  firearmTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,

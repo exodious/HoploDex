@@ -3,11 +3,11 @@ import type { ReactNode } from "react";
 import { CommandFailure } from "../../services/tauriClient";
 import * as browseService from "../browse/browseService";
 import type { FirearmSummary } from "../browse/types";
-import { listActionTypes } from "../firearms/firearmsService";
-import type { ActionTypesOutput } from "../firearms/types";
+import { listActionTypes, listFirearmTypes } from "../firearms/firearmsService";
+import type { ActionTypesOutput, FirearmTypesOutput } from "../firearms/types";
 import * as insuranceService from "../insurance/insuranceService";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
-import { CollectionContext, NO_ACTION_TYPES } from "./collectionStore";
+import { CollectionContext, NO_ACTION_TYPES, NO_FIREARM_TYPES } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
 
 export function CollectionProvider({ children }: { children: ReactNode }) {
@@ -16,6 +16,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   // policies but not with every refresh.
   const [actionTypes, setActionTypes] = useState<ActionTypesOutput>(NO_ACTION_TYPES);
   const [actionTypesFailed, setActionTypesFailed] = useState(false);
+  const [firearmTypes, setFirearmTypes] = useState<FirearmTypesOutput>(NO_FIREARM_TYPES);
+  const [firearmTypesFailed, setFirearmTypesFailed] = useState(false);
   const [summary, setSummary] = useState<ValueSummary | null>(null);
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -62,6 +64,19 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let current = true;
+    listFirearmTypes().then(
+      (list) => current && setFirearmTypes(list),
+      // Without it Type offers nothing and the form says so; the backend
+      // still checks every save.
+      () => current && setFirearmTypesFailed(true),
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
   const value = useMemo<CollectionState>(
     () => ({
       firearms,
@@ -71,12 +86,26 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       policiesById: new Map(policies.map((p) => [p.id, p])),
       actionTypes,
       actionTypesFailed,
+      firearmTypes,
+      firearmTypesFailed,
       loaded,
       error,
       revision,
       refresh,
     }),
-    [firearms, summary, policies, actionTypes, actionTypesFailed, loaded, error, revision, refresh],
+    [
+      firearms,
+      summary,
+      policies,
+      actionTypes,
+      actionTypesFailed,
+      firearmTypes,
+      firearmTypesFailed,
+      loaded,
+      error,
+      revision,
+      refresh,
+    ],
   );
 
   return <CollectionContext.Provider value={value}>{children}</CollectionContext.Provider>;
