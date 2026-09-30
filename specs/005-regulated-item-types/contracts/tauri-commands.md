@@ -154,7 +154,7 @@ The classification list (FR-007).
 ## `list_action_types`
 
 - **Shape unchanged.** The output now includes "Automatic or select-fire"
-  (id 13, second in list order), and `allowedByFirearmType` lists it for
+  (id 13, seventh in list order, after Break action), and `allowedByFirearmType` lists it for
   types 1–3. Suppressor (5) is absent from `allowedByFirearmType`, which by
   004's reading allows every action. The frontend must check
   `actionTypeApplies` from `list_firearm_types` first, as the backend does.

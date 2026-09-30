@@ -415,10 +415,13 @@ offers a grouping choice, so there is nothing else to carry it to.
 
 ## 13. "Automatic or select-fire" (FR-006)
 
-- **Decision**: seeded as action id **13** with `sort_order` 2, right after
-  Semi-automatic, which it is chosen instead of. The later actions' sort
-  orders move down one (ids unchanged, so an id still means the same action
-  in every build). It is mapped to Handgun, Rifle and Shotgun. Other has no
+- **Decision**: seeded as action id **13** with `sort_order` 7: after the
+  six common actions (Semi-automatic, Revolver, Bolt, Lever, Pump and Break
+  action) and before the single-shot and muzzleloading ones. Few collectors
+  own one, so it shouldn't sit above the actions most firearms have. The
+  sort orders from Falling block on move down one (ids unchanged, so an id
+  still means the same action in every build; the first six keep 004's
+  order). It is mapped to Handgun, Rifle and Shotgun. Other has no
   rows and allows everything. Suppressor omits the action (§2).
 - Nothing relates it to a classification (FR-008), and a test saves every
   combination.

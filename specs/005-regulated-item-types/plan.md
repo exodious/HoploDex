@@ -295,4 +295,4 @@ quickstart.md).*
   - `OriginGuide` is renamed `IdentificationGuide` (§12).
   - The export note counts a classification alone as registration details
     (§10).
-  - "Automatic or select-fire" sorts second, after Semi-automatic (§13).
+  - "Automatic or select-fire" sorts seventh, after the six common actions (§13).

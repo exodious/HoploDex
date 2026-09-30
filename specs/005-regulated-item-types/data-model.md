@@ -75,15 +75,15 @@ every action, and this trigger is what refuses one.
 
 ## Entity: Action Type (extended)
 
-One row is added (FR-006, research.md §13). Ids are unchanged, and the sort
-orders from Revolver on move down one:
+One row is added (FR-006, research.md §13), after the six common actions.
+Ids are unchanged, and the sort orders from Falling block on move down one:
 
 | id | name | sort_order |
 |---:|---|---:|
-| 1 | Semi-automatic | 1 |
-| **13** | **Automatic or select-fire** | **2** |
-| 2 | Revolver | 3 |
-| 3 … 12 | *(unchanged names)* | 4 … 13 |
+| 1 … 6 | Semi-automatic … Break action *(unchanged)* | 1 … 6 |
+| **13** | **Automatic or select-fire** | **7** |
+| 7 | Falling block | 8 |
+| 8 … 12 | *(unchanged names)* | 9 … 13 |
 
 `firearm_type_actions` gains `(1, 13)`, `(2, 13)` and `(3, 13)`. Other (4)
 and Suppressor (5) have no rows. For Other that still means every action is
