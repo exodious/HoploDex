@@ -13,6 +13,10 @@
 ### Session 2026-09-29
 
 - Q: Should full-auto or select-fire be recorded in this feature, and how? → A: Not in this feature. The action list describes how a firearm cycles, not its fire-control capability; machine guns are a candidate type for the regulated item types feature (#12), which extends the type→action mapping (FR-018).
+- Q: Which caliber does a catalog cartridge get when its name gives a finer designation than its bore class (e.g. `.308 Winchester`, `.300 AAC Blackout`, `.380 ACP`)? → A: The coarser bore class, for broader groups: every .30-class inch cartridge (.308, .300 BLK, .30-06, .30-30) is ".30", and `.380 ACP` is "9mm". A custom cartridge's guess maps its designation to that same class (FR-005).
+- Q: When editing a saved firearm and changing its cartridge, is the saved caliber re-derived? → A: No. A saved caliber counts as already edited and is left alone; the form offers the newly derived caliber as a suggestion the user can accept with one action (FR-006).
+- Q: On import, are same-notation variants that exist only within the sheet snapped to each other? → A: Yes, by majority: the spelling used by the most rows wins, and on a tie the one in the earliest row; catalog spellings and values on record still take precedence (FR-026).
+- Q: Where do cartridge and action type appear when browsing the collection? → A: The cartridge joins the caliber in the list's caliber cell and on tiles ("9x19mm Parabellum (9mm)", or the caliber alone when there is no cartridge); action type gets its own list column, not on tiles; a column is hidden while the list is grouped by it (FR-027).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -32,8 +36,10 @@ A collector adds a pistol chambered in 9x19mm Parabellum. Instead of typing "9mm
 4. **Given** the user types a cartridge whose name gives no recognizable bore size, e.g. "Wildcat Special", **When** they leave the cartridge field, **Then** the caliber field stays empty and the form asks them to enter a caliber; the record cannot be saved until a caliber is given.
 5. **Given** the user leaves the cartridge blank, **When** they enter a caliber and save, **Then** the record saves with a caliber and no cartridge, as records did before this feature.
 6. **Given** firearms chambered in 9x19mm Parabellum, 9x18mm Makarov and a firearm whose cartridge was recorded as just "9mm", **When** the user groups the collection by caliber, **Then** all three fall in the "9mm" group; **and When** they group by cartridge, **Then** each cartridge is its own group, and firearms with no cartridge are grouped as "Unspecified".
-7. **Given** a firearm recorded with a built-in cartridge, **When** a later version of the application changes that cartridge's built-in name or caliber, **Then** the saved record keeps the cartridge and caliber it was saved with.
-8. **Given** a firearm whose cartridge is "7.62x39mm", **When** the user searches for "7.62x39", **Then** that firearm is found.
+7. **Given** a saved firearm with cartridge "9x19mm Parabellum" and caliber "9mm", **When** the user edits it and changes the cartridge to ".45 ACP", **Then** the caliber stays "9mm" and the form offers ".45" as a suggested caliber; accepting it sets the caliber to ".45".
+8. **Given** a firearm recorded with a built-in cartridge, **When** a later version of the application changes that cartridge's built-in name or caliber, **Then** the saved record keeps the cartridge and caliber it was saved with.
+9. **Given** a firearm whose cartridge is "7.62x39mm", **When** the user searches for "7.62x39", **Then** that firearm is found.
+10. **Given** firearms with and without a cartridge, **When** the user browses the list or tiles, **Then** one with a cartridge shows e.g. "9x19mm Parabellum (9mm)" where the caliber is shown, and one without shows only its caliber (FR-027).
 
 ---
 
@@ -77,6 +83,7 @@ The collector records how a firearm operates by choosing its action (semi-automa
 5. **Given** a firearm with action "bolt action", **When** the user searches for "bolt", **Then** that firearm is found.
 6. **Given** the user leaves the action unset, **When** they save, **Then** the record saves normally with no action.
 7. **Given** the action choice, **When** the user tries to type a value that is not on the list, **Then** it cannot be entered: the action is chosen only from the fixed list.
+8. **Given** firearms with and without an action, **When** the user browses the list, **Then** the action type column shows each action's name or is blank, and the column is hidden while grouped by action type (FR-027).
 
 ---
 
@@ -95,8 +102,9 @@ The collector exports the collection and sees cartridge and action type columns 
 3. **Given** an import row with a custom cartridge ".30 Custom Improved" and a blank caliber, **When** it is imported, **Then** the caliber is filled by the same guess used in the form, and the report lists the row as guessed, showing the value used.
 4. **Given** an import row with a blank caliber and a cartridge whose caliber cannot be guessed, or with both blank, **When** it is imported, **Then** it is a row error saying a caliber is required.
 5. **Given** "Smith & Wesson" is on record, **When** an import row has make "smith and wesson", **Then** the imported record has "Smith & Wesson", and the import report counts the values changed this way and lists them.
-6. **Given** an import row with action type "BOLT ACTION", **When** it is imported, **Then** it matches "bolt action"; **and When** the action is "flintlockish" (not on the list) or is not allowed for the row's firearm type, **Then** the row is an error naming the problem.
-7. **Given** a spreadsheet exported before this feature, without `cartridge` or `action_type` columns, **When** it is imported, **Then** the rows import with no cartridge and no action.
+6. **Given** no make like "Springfield Armory" is on record, **When** a sheet has "springfield armory" in row 2 and "Springfield Armory" in rows 5 and 8, **Then** all three records get "Springfield Armory" and the report lists the change to row 2.
+7. **Given** an import row with action type "BOLT ACTION", **When** it is imported, **Then** it matches "bolt action"; **and When** the action is "flintlockish" (not on the list) or is not allowed for the row's firearm type, **Then** the row is an error naming the problem.
+8. **Given** a spreadsheet exported before this feature, without `cartridge` or `action_type` columns, **When** it is imported, **Then** the rows import with no cartridge and no action.
 
 ---
 
@@ -104,6 +112,7 @@ The collector exports the collection and sees cartridge and action type columns 
 
 - **A value in the built-in list and on record with different capitalization** (e.g. "9X19mm Parabellum" on record): the built-in spelling is shown once; newly entered variants snap to the built-in spelling; the existing record keeps its spelling until edited (no retroactive rewrite).
 - **Two spellings of the same value on record** with no built-in spelling (e.g. "Springfield Armory" on 3 firearms and "Springfield armory" on 1): suggestions show the most-used spelling, and new variants snap to it; on a tie, the spelling first recorded wins.
+- **Variants only within an import sheet** (nothing on record or in the catalog): they snap to the spelling most rows use, the earliest row on a tie (FR-026).
 - **Existing records that differ by notation** ("S&W" on some, "Smith & Wesson" on others) stay as they are; both appear in suggestions and as separate groups. Merging them is not part of this feature.
 - **Editing an existing record without touching a field** does not snap that field; only a field the user enters or changes is snapped.
 - **A snap the user doesn't want**: the user can see the change before saving. Because snapping only joins same-notation variants, the only way to keep a variant is a different notation; this is accepted.
@@ -130,8 +139,9 @@ The collector exports the collection and sees cartridge and action type columns 
 - **FR-002**: System MUST ship a built-in, read-only catalog of common cartridges. Each entry has a name, a caliber, zero or more aliases, and a commonness rank. The catalog is part of the application, not written to the user's database; a catalog entry that no firearm uses leaves nothing in the database.
 - **FR-003**: When the user picks a catalog cartridge, the system MUST copy the entry's name to the cartridge field and its caliber to the caliber field, unless the user has already edited the caliber field on this form (FR-006).
 - **FR-004**: A saved firearm MUST store its own cartridge and caliber text. Grouping, search, display, export and value summaries MUST use the stored values and MUST NOT depend on the catalog, so catalog changes in later versions never alter existing records.
-- **FR-005**: For a cartridge not in the catalog, the system MUST make a best-effort guess at its caliber and pre-fill the caliber field with it, visibly marked as a guess until the user accepts or edits it. The guess reads the bore designation at the start of the name: an inch-decimal (".30 Custom Improved" → ".30"), a metric diameter ("6.5x47 Wildcat" → "6.5mm"; "9mm" → "9mm"), or a gauge or bore ("16 gauge" → "16 gauge"); when that designation matches the caliber of a catalog cartridge, the catalog's spelling of that caliber is used. When no designation can be read, the caliber field is left empty and the user is asked for it; the guess MUST NOT invent a value.
-- **FR-006**: Once the user has edited the caliber field on a form, later changes to the cartridge on that form MUST NOT overwrite the caliber. Before that, each cartridge change re-derives the caliber (FR-003, FR-005). Clearing the caliber field returns it to being derived.
+- **FR-004a**: A catalog cartridge's caliber MUST be its bore class, not the finer designation in its name: cartridges of the same nominal bore share one caliber, so that grouping by caliber gathers them. For example `.308 Winchester`, `.300 AAC Blackout`, `.30-06 Springfield` and `.30-30 Winchester` are all ".30"; `9x19mm Parabellum`, `9x18mm Makarov` and `.380 ACP` are all "9mm". The class for each catalog entry is catalog data, settled with the catalog in planning.
+- **FR-005**: For a cartridge not in the catalog, the system MUST make a best-effort guess at its caliber and pre-fill the caliber field with it, visibly marked as a guess until the user accepts or edits it. The guess reads the bore designation at the start of the name: an inch-decimal (".30 Custom Improved" → ".30"), a metric diameter ("6.5x47 Wildcat" → "6.5mm"; "9mm" → "9mm"), or a gauge or bore ("16 gauge" → "16 gauge"); the designation is then mapped to its bore class (FR-004a): when it matches the leading designation, an alias or the caliber of a catalog cartridge, that cartridge's caliber is used (".308 Improved" → ".30", ".380 Custom" → "9mm"). When no designation can be read, the caliber field is left empty and the user is asked for it; the guess MUST NOT invent a value.
+- **FR-006**: Once the user has edited the caliber field on a form, later changes to the cartridge on that form MUST NOT overwrite the caliber. Before that, each cartridge change re-derives the caliber (FR-003, FR-005). Clearing the caliber field returns it to being derived. When editing a saved firearm, its saved caliber counts as already edited: a cartridge change MUST NOT overwrite it, and the form MUST instead offer the caliber the new cartridge derives as a suggestion the user can accept with one action (none is offered when it equals the saved caliber or none can be derived).
 - **FR-007**: The caliber guess MUST be verified against a test corpus of real cartridge names covering at least rimfire, centerfire pistol and rifle, inch and metric notation, shotgun gauges and bores, and names with no readable bore size (e.g. .22 LR, .300 BLK, 7.62x39, 9x19, .45 ACP, 12 gauge, .410 bore), with the expected caliber, or no guess, for each.
 - **FR-008**: Cartridge MUST be included in search (001 FR-013) and MUST be a grouping field (001 FR-012), with firearms that have no cartridge grouped as "Unspecified".
 
@@ -177,7 +187,11 @@ The collector exports the collection and sees cartridge and action type columns 
 - **FR-023**: On import, `cartridge` and `action_type` MUST be optional columns; a sheet without them imports with no cartridge and no action.
 - **FR-024**: On import, `action_type` MUST be matched against the fixed list ignoring letter case and surrounding whitespace. An unknown value, or one not allowed for the row's firearm type (FR-017), MUST be a row error (001 FR-020), as with `firearm_type`.
 - **FR-025**: On import, when `caliber` is blank and `cartridge` is given, the system MUST derive the caliber from the catalog, or failing that by the guess of FR-005, and MUST list every such row in the import report with the caliber used and whether it came from the catalog or was guessed. When no caliber can be derived, or both are blank, the row MUST be a row error. A caliber given in the sheet is always used as given (after FR-013).
-- **FR-026**: On import, make, model, cartridge and caliber MUST be checked against FR-015 (a violation is a row error) and snapped per FR-013 against the catalog and the values on record at the start of the import. The import report MUST count the values changed by snapping and list each change (row, field, value in the sheet, value recorded). Import matching of existing records (001 FR-026) MUST compare the snapped values.
+- **FR-026**: On import, make, model, cartridge and caliber MUST be checked against FR-015 (a violation is a row error) and snapped per FR-013 against the catalog and the values on record at the start of the import. Variants of a value that is neither in the catalog nor on record MUST also be snapped to each other within the sheet: the spelling used by the most rows wins, and on a tie the one in the earliest row. The import report MUST count the values changed by snapping and list each change (row, field, value in the sheet, value recorded). Import matching of existing records (001 FR-026) MUST compare the snapped values.
+
+**Display**
+
+- **FR-027**: The browse list's caliber cell and the browse tiles MUST show the cartridge with its caliber as "<cartridge> (<caliber>)", e.g. "9x19mm Parabellum (9mm)", or the caliber alone when there is no cartridge. The browse list MUST show action type in its own column (blank when none); tiles do not show it. As today with caliber, a column is hidden while the list is grouped by it (grouping by caliber or cartridge hides the caliber cell; grouping by action type hides the action column). The firearm record page MUST show cartridge, caliber and action type.
 
 ### Key Entities
 
@@ -203,7 +217,7 @@ The collector exports the collection and sees cartridge and action type columns 
 ## Assumptions
 
 - **Cartridge is optional.** Caliber alone remains a complete record (muzzleloaders, unknown chambering, records from older spreadsheets), and a required cartridge would make every existing sheet fail to import.
-- **Caliber spelling convention**: a caliber is written as its bore designation in the notation the cartridge uses: inch calibers with a leading dot and two or three digits as commonly written (".22", ".30", ".357", ".45"), metric calibers in millimetres ("9mm", "7.62mm", "6.5mm"), shotguns by gauge or bore ("12 gauge", ".410 bore"). The exact caliber for each catalog entry is catalog data, settled with the catalog in planning; e.g. whether ".300 AAC Blackout" and ".308 Winchester" are ".30" or ".300"/".308".
+- **Caliber spelling convention**: a caliber is a bore class (FR-004a), written as collectors commonly name it: inch classes with a leading dot (".22", ".30", ".357", ".45"), metric classes in millimetres ("9mm", "7.62mm", "6.5mm"), shotguns by gauge or bore ("12 gauge", ".410 bore"). A cartridge named in one notation may belong to a class named in the other where that is the common usage (".380 ACP" → "9mm"). The class for each catalog entry, e.g. whether "7.62x39mm" is "7.62mm" or ".30" and ".38 Special" is ".38" or ".357", is catalog data settled with the catalog in planning.
 - **Catalog size and content**: a few hundred of the cartridges most commonly found in U.S. private collections, including rimfire, handgun, rifle, shotgun gauges and common military surplus cartridges. Its data source must be recorded with a GPLv3-compatible license, or written for the project (constitution, Licensing).
 - **Snapping happens when a field is left or a suggestion picked**, not on every keystroke, so it never fights the user while typing.
 - **The length cap of 100 characters** is new: make, model and caliber had no cap before. No existing value is expected to exceed it; an existing record over the cap keeps its value but must be shortened if that field is edited.
