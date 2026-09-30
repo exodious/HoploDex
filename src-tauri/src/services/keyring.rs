@@ -1,9 +1,9 @@
 //! Passphrases saved in this computer's keyring, one per database, only when
 //! the user asks (FR-017–FR-019, research.md §10; data-model.md "Keyring:
-//! saved passphrase"). Each is the entry service `com.hoplodex.app`, user
-//! `passphrase:<database_id>`, keyed by the database's id rather than its
-//! path, so moving the file keeps it and a backup opened directly (which
-//! gets a new id) does not inherit it.
+//! saved passphrase"). Each is the entry service `io.github.exodious.HoploDex`
+//! (the bundle identifier), user `passphrase:<database_id>`, keyed by the
+//! database's id rather than its path, so moving the file keeps it and a
+//! backup opened directly (which gets a new id) does not inherit it.
 //!
 //! The pre-feature `sqlcipher-key` entry, which keys the developer's real
 //! database, is never read, written or deleted: every user name used here
@@ -14,10 +14,9 @@ use std::sync::OnceLock;
 use crate::commands::CommandError;
 use crate::services::passphrase::Passphrase;
 
-/// Fixed on purpose, not derived from the bundle identifier (now
-/// `io.github.exodious.HoploDex`): changing it would orphan every saved
+/// The bundle identifier. Changing it after release would orphan every saved
 /// passphrase.
-const SERVICE: &str = "com.hoplodex.app";
+const SERVICE: &str = "io.github.exodious.HoploDex";
 const USER_PREFIX: &str = "passphrase:";
 /// A user no database has (ids are hex digits), read to find out whether the
 /// keyring answers at all.

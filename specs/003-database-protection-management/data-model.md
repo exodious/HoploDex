@@ -114,7 +114,7 @@ journal may exist next to it only while a write is in progress.
 
 ## Machine-local: `machine.json` (per OS account, never inside a database)
 
-Location: the OS app config directory (`~/.config/com.hoplodex.app/machine.json`
+Location: the OS app config directory (`~/.config/io.github.exodious.HoploDex/machine.json`
 on Linux). Written atomically. Plain JSON: it holds paths, names and times,
 never collection data or secrets (research §11).
 
@@ -176,7 +176,7 @@ Rules:
 
 | Field | Value |
 |---|---|
-| Service | `com.hoplodex.app` |
+| Service | `io.github.exodious.HoploDex` |
 | User (account) | `passphrase:<database_id>` |
 | Secret | the passphrase, NFC-normalized (research §1) |
 

@@ -22,7 +22,7 @@ use hoplodex_lib::session::{Session, lifecycle};
 use support::{TEST_PASSPHRASE, TestEvents, passphrase, test_session};
 use tempfile::TempDir;
 
-const SERVICE: &str = "com.hoplodex.app";
+const SERVICE: &str = "io.github.exodious.HoploDex";
 const NEW_PASSPHRASE: &str = "a much longer passphrase of several words";
 
 /// keyring-core's in-memory store is one per process, shared by the tests
