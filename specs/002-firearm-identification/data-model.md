@@ -148,9 +148,9 @@ are written **as displayed** (FR-012):
 | `country_of_manufacture` | `'United States'` when `origin = 'reimported'`, otherwise the stored country |
 | `importer_name`, `original_make`, `original_model`, `original_serial_number` | the stored value |
 
-Because the default tokenizer splits "Re-imported" into `re` and `imported`,
-the search box's phrase-with-trailing-prefix query gives exactly the spec's
-behavior with no special handling: "imported" finds imported and
+Because the index is trigram-tokenized (issue #46), the search box's
+quoted-phrase query matches any run of text inside a value, which gives exactly
+the spec's behavior with no special handling: "imported" finds imported and
 re-imported, "re-imported" finds only re-imported, "domestic" finds only
 domestic, and a firearm with no origin has nothing to match on origin
 (research.md §6).

@@ -116,7 +116,7 @@ key reads `"Unspecified"`._
 - **Search semantics**: `query` also matches, as displayed, the origin label,
   year, country (including "United States" for a re-imported firearm),
   importer name, original make, original model and original serial number
-  (FR-012). Phrase-with-trailing-prefix semantics are unchanged, so
+  (FR-012). The phrase-match semantics (now trigram substring matching, issue #46) are unchanged for these, so
   "imported" finds imported and re-imported firearms, "re-imported" finds
   only re-imported ones, and "domestic" finds only domestic ones.
 - **Performance contract**: unchanged — within 500 ms at 10,000 records.

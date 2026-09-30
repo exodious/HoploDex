@@ -123,6 +123,31 @@ fn matches_a_partially_typed_last_word() {
     assert_eq!(search(&db.conn, "\""), 0, "a stray quote is not a syntax error");
 }
 
+/// Regression: typing "365" found nothing for a "P365 XL" because the word
+/// tokenizer only matched from the start of a word. Any run inside a value
+/// matches now, and one or two characters still work while typing.
+#[test]
+fn matches_text_from_the_middle_of_a_value() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { make: "Sig Sauer".into(), model: "P365 XL".into(), ..base_input() },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "365"), 1, "digits after a letter");
+    assert_eq!(search(&db.conn, "P365"), 1, "the whole word");
+    assert_eq!(search(&db.conn, "365 x"), 1, "a phrase starting mid-word");
+    assert_eq!(search(&db.conn, "911"), 1, "the middle of the serial number");
+    assert_eq!(search(&db.conn, "sig sa"), 1, "a phrase ending in a partial word");
+    assert_eq!(search(&db.conn, "366"), 0, "no false match");
+    assert_eq!(search(&db.conn, "XL"), 1, "two characters");
+    assert_eq!(search(&db.conn, "x"), 1, "one character");
+    assert_eq!(search(&db.conn, "%"), 0, "a LIKE wildcard is literal");
+    assert_eq!(search(&db.conn, "_"), 0, "a LIKE wildcard is literal");
+}
+
 /// FR-039 / US1 Acceptance Scenario 17: a word in a firearm's finish is found.
 #[test]
 fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {

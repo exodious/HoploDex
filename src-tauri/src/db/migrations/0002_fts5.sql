@@ -2,6 +2,11 @@
 -- "Virtual table: firearms_fts" section (FR-013, US2 Scenarios 3-4).
 -- specs/004-cartridges-action-types FR-008/FR-020 adds the cartridge and the
 -- action's name, looked up the way the type's name is.
+--
+-- The trigram tokenizer matches any run of three or more characters inside a
+-- value, so "365" finds the model "P365 XL" and "1911" finds serial "CO1911";
+-- the default word tokenizer only matched from the start of a word. A search
+-- of one or two characters can't use it (see `list_firearms`).
 
 CREATE VIRTUAL TABLE firearms_fts USING fts5(
     make,
@@ -23,7 +28,8 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
     cartridge,
     action_type_name,
     content = 'firearms',
-    content_rowid = 'id'
+    content_rowid = 'id',
+    tokenize = 'trigram remove_diacritics 1'
 );
 
 -- specs/002-firearm-identification FR-012: origin is indexed as its display

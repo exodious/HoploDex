@@ -197,11 +197,11 @@ not express "one record has a year and the other does not".
   `CASE` ("Domestic", "Imported", "Re-imported", `NULL`), and for the
   country, `'United States'` when `origin = 'reimported'` and the stored
   country otherwise. The year is written as text.
-- **Why the label gives the spec's behavior with no special code**: FTS5's
-  default tokenizer splits "Re-imported" into `re` and `imported`. The
-  search box sends its text as a quoted phrase with a trailing prefix `*`,
-  so "imported" (`imported*`) matches both "Imported" and "Re-imported",
-  "re-imported" (phrase `re imported*`) matches only Re-imported, and
+- **Why the label gives the spec's behavior with no special code**: The
+  index is trigram-tokenized (issue #46; it was FTS5's word tokenizer with
+  a trailing prefix `*` here). The search box sends its text as a quoted
+  phrase matched as contiguous text, so "imported" matches both "Imported"
+  and "Re-imported", "re-imported" matches only Re-imported, and
   "domestic" matches only Domestic, exactly as spec Clarifications and
   US1-4 require. A firearm with no origin writes `NULL`, so there is nothing
   to match.

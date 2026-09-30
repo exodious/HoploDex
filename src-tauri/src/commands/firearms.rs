@@ -767,23 +767,30 @@ pub mod ops {
         input: &ListFirearmsInput,
     ) -> Result<ListFirearmsOutput, CommandError> {
         let has_query = input.query.as_deref().is_some_and(|q| !q.trim().is_empty());
-        // FTS5 MATCH treats bare whitespace-separated tokens as an implicit
-        // AND; wrapping the whole query as a quoted phrase instead matches
-        // it as contiguous text, which is what a user searching "cracked
-        // handle" or a multi-word caliber value expects. `:has_query`
-        // short-circuits the MATCH subquery entirely when there's no query,
-        // since MATCH errors on an empty/absent search string. The trailing
-        // `*` makes the phrase's last word a prefix, so results appear while
-        // it's still being typed ("Rem" finds Remington); a query with no
-        // words at all can't take one, so it stays an exact phrase.
-        let fts_query = input
-            .query
-            .as_deref()
-            .map(|q| {
-                let phrase = format!("\"{}\"", q.trim().replace('"', "\"\""));
-                if q.chars().any(char::is_alphanumeric) { phrase + "*" } else { phrase }
-            })
-            .unwrap_or_default();
+        // The index is trigram-tokenized (0002_fts5.sql), so a quoted phrase
+        // matches as contiguous text anywhere inside a value: "365" finds
+        // "P365 XL", "cracked handle" finds those two words together.
+        // `:has_query` short-circuits the MATCH subquery entirely when there's
+        // no query, since MATCH errors on an empty/absent search string.
+        // Trigrams need three characters, and a shorter search matches
+        // nothing in the index, so one or two characters ("Co" while typing
+        // Colt) are looked up with LIKE over the same values instead. They
+        // are read from `firearms` and its joins, not the index's columns:
+        // the index is external-content, so its type, action, origin and
+        // country values only exist inside its triggers (0002_fts5.sql).
+        let trimmed = input.query.as_deref().map(str::trim).unwrap_or_default();
+        let short_query = trimmed.chars().count() < 3;
+        let fts_query = if short_query {
+            String::new()
+        } else {
+            format!("\"{}\"", trimmed.replace('"', "\"\""))
+        };
+        let like_query = if short_query {
+            let escaped = trimmed.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            format!("%{escaped}%")
+        } else {
+            String::new()
+        };
 
         let insurance = crate::services::insurance_status::load_context(conn)?;
 
@@ -800,7 +807,27 @@ pub mod ops {
                  JOIN firearm_types ft ON ft.id = f.firearm_type_id
                  LEFT JOIN action_types at ON at.id = f.action_type_id
                  WHERE (:include_disposed = 1 OR f.status = 'active')
-                   AND (:has_query = 0 OR f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
+                   AND (:has_query = 0
+                        OR (:short_query = 0 AND f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
+                        OR (:short_query = 1 AND (
+                            f.make LIKE :like ESCAPE '\\'
+                            OR f.model LIKE :like ESCAPE '\\'
+                            OR f.nickname LIKE :like ESCAPE '\\'
+                            OR f.serial_number LIKE :like ESCAPE '\\'
+                            OR f.caliber LIKE :like ESCAPE '\\'
+                            OR f.notes LIKE :like ESCAPE '\\'
+                            OR f.accessories LIKE :like ESCAPE '\\'
+                            OR f.finish LIKE :like ESCAPE '\\'
+                            OR f.year_of_manufacture LIKE :like ESCAPE '\\'
+                            OR f.importer_name LIKE :like ESCAPE '\\'
+                            OR f.original_make LIKE :like ESCAPE '\\'
+                            OR f.original_model LIKE :like ESCAPE '\\'
+                            OR f.original_serial_number LIKE :like ESCAPE '\\'
+                            OR f.cartridge LIKE :like ESCAPE '\\'
+                            OR ft.name LIKE :like ESCAPE '\\'
+                            OR at.name LIKE :like ESCAPE '\\'
+                            OR (CASE f.origin WHEN 'domestic' THEN 'Domestic' WHEN 'imported' THEN 'Imported' WHEN 'reimported' THEN 'Re-imported' END) LIKE :like ESCAPE '\\'
+                            OR (CASE WHEN f.origin = 'reimported' THEN 'United States' ELSE f.country_of_manufacture END) LIKE :like ESCAPE '\\')))
                  ORDER BY f.make, f.model",
             )
             .map_err(CommandError::from_db)?;
@@ -809,7 +836,9 @@ pub mod ops {
                 named_params! {
                     ":include_disposed": input.include_disposed,
                     ":has_query": has_query,
+                    ":short_query": short_query,
                     ":query": fts_query,
+                    ":like": like_query,
                 },
                 |row| {
                     let estimated_value = row.get(9)?;
