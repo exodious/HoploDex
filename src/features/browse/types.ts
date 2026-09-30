@@ -3,7 +3,7 @@
 
 import type { FirearmStatus } from "../firearms/types";
 
-export type GroupBy = "type" | "caliber" | "cartridge" | "make" | "origin";
+export type GroupBy = "type" | "action_type" | "caliber" | "cartridge" | "make" | "origin";
 
 export type InsuranceWarning = "none" | "uninsured" | "under_insured";
 
@@ -24,6 +24,9 @@ export interface FirearmSummary {
   /** specs/004-cartridges-action-types FR-001: `null` = none recorded. */
   cartridge: string | null;
   firearmTypeName: string;
+  /** specs/004-cartridges-action-types FR-020: the action's name; `null` =
+   * none recorded. */
+  actionTypeName: string | null;
   status: FirearmStatus;
   thumbnailPhotoId: number | null;
   genericThumbnailKey: string;
@@ -50,6 +53,7 @@ export interface ListFirearmsOutput {
 
 export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "type", label: "Type" },
+  { value: "action_type", label: "Action" },
   { value: "caliber", label: "Caliber" },
   { value: "cartridge", label: "Cartridge" },
   { value: "make", label: "Make" },

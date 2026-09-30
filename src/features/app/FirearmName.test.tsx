@@ -43,6 +43,7 @@ function summary(id: number, nickname: string | null): FirearmSummary {
     caliber: "9mm",
     cartridge: null,
     firearmTypeName: "Handgun",
+    actionTypeName: null,
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",

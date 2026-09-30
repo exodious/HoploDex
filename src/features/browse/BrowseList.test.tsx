@@ -17,6 +17,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     caliber: "9mm",
     cartridge: null,
     firearmTypeName: "Handgun",
+    actionTypeName: null,
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",
@@ -86,5 +87,53 @@ describe("BrowseList cartridge and caliber", () => {
     expect(GROUP_BY_OPTIONS.find((option) => option.value === "cartridge")?.label).toBe(
       "Cartridge",
     );
+  });
+});
+
+// specs/004-cartridges-action-types US3-8, contracts/ui-entry.md §6.
+describe("BrowseList action", () => {
+  const withActions = [
+    summary({ id: 1, model: "17", actionTypeName: "Semi-automatic" }),
+    summary({ id: 2, make: "Hawken", model: "Plains", actionTypeName: null }),
+  ];
+
+  function renderActions(groupBy: GroupBy | undefined) {
+    const groups: VisibleGroup[] = [{ key: "All", firearms: withActions, total: 2 }];
+    render(<BrowseList groups={groups} groupBy={groupBy} onSelect={vi.fn()} />);
+  }
+
+  it("shows an Action column after Type, with the name or blank", () => {
+    renderActions(undefined);
+
+    const headers = screen.getAllByRole("columnheader").map((header) => header.textContent);
+    expect(headers.indexOf("Action")).toBe(headers.indexOf("Type") + 1);
+    const glock = screen.getByRole("row", { name: /Glock 17/ });
+    expect(within(glock).getByText("Semi-automatic")).toBeInTheDocument();
+    const hawken = screen.getByRole("row", { name: /Hawken Plains/ });
+    const cells = within(hawken).getAllByRole("cell");
+    expect(cells[headers.indexOf("Action")]).toHaveTextContent("");
+  });
+
+  it("hides the Action column when grouped by action type, and only then", () => {
+    renderActions("action_type");
+    expect(screen.queryByRole("columnheader", { name: "Action" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Semi-automatic")).not.toBeInTheDocument();
+  });
+
+  it("keeps the Type column when grouped by action type", () => {
+    renderActions("action_type");
+    expect(screen.getByRole("columnheader", { name: "Type" })).toBeInTheDocument();
+  });
+
+  it("offers Group by in the order Type, Action, Caliber, Cartridge, Make, Origin", () => {
+    expect(GROUP_BY_OPTIONS.map((option) => option.label)).toEqual([
+      "Type",
+      "Action",
+      "Caliber",
+      "Cartridge",
+      "Make",
+      "Origin",
+    ]);
+    expect(GROUP_BY_OPTIONS.find((option) => option.label === "Action")?.value).toBe("action_type");
   });
 });

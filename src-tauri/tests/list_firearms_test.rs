@@ -382,3 +382,61 @@ fn group_by_cartridge_deserializes_from_its_wire_name() {
         serde_json::from_value(serde_json::json!({ "groupBy": "cartridge" })).unwrap();
     assert_eq!(input.group_by, Some(GroupBy::Cartridge));
 }
+
+// specs/004-cartridges-action-types US3-4: the action's name on each
+// summary, and grouping by it in the action list's order.
+
+fn acting(model: &str, firearm_type_id: i64, action_type_id: Option<i64>) -> FirearmInput {
+    FirearmInput { action_type_id, ..firearm("Maker", model, "9mm", firearm_type_id) }
+}
+
+#[test]
+fn summaries_carry_the_action_name_or_none() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &acting("Bolty", 2, Some(3)), false).unwrap();
+    ops::create_firearm(&db.conn, &acting("Plain", 2, None), false).unwrap();
+
+    let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
+    let all: Vec<_> = result.groups.iter().flat_map(|g| &g.firearms).collect();
+    let bolty = all.iter().find(|f| f.model == "Bolty").unwrap();
+    assert_eq!(bolty.action_type_name.as_deref(), Some("Bolt action"));
+    let plain = all.iter().find(|f| f.model == "Plain").unwrap();
+    assert_eq!(plain.action_type_name, None);
+
+    let json = serde_json::to_value(bolty).unwrap();
+    assert_eq!(json["actionTypeName"], "Bolt action");
+}
+
+#[test]
+fn group_by_action_type_follows_the_action_list_with_unspecified_last() {
+    let db = TestDb::new();
+    // Created out of list order, so alphabetical order would differ:
+    // Revolver (2), Semi-automatic (1), Bolt action (3), Break action (6).
+    for (model, type_id, action) in [
+        ("A", 1, Some(2)),
+        ("B", 1, Some(1)),
+        ("C", 2, Some(3)),
+        ("D", 3, Some(6)),
+        ("E", 1, None),
+        ("F", 1, Some(1)),
+        ("G", 4, None),
+    ] {
+        ops::create_firearm(&db.conn, &acting(model, type_id, action), false).unwrap();
+    }
+
+    let groups = group_keys(&db.conn, GroupBy::ActionType);
+    let keys: Vec<&str> = groups.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec!["Semi-automatic", "Revolver", "Bolt action", "Break action", "Unspecified"]
+    );
+    assert_eq!(groups[0].1, vec!["B", "F"]);
+    assert_eq!(groups.last().unwrap().1, vec!["E", "G"]);
+}
+
+#[test]
+fn group_by_action_type_deserializes_from_its_wire_name() {
+    let input: ListFirearmsInput =
+        serde_json::from_value(serde_json::json!({ "groupBy": "action_type" })).unwrap();
+    assert_eq!(input.group_by, Some(GroupBy::ActionType));
+}

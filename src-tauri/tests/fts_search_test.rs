@@ -395,3 +395,46 @@ fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
     assert_eq!(search(&db.conn, "7.62x39mm"), 1, "the whole cartridge");
     assert_eq!(search(&db.conn, "Wildcat"), 1, "a word of a custom cartridge");
 }
+
+/// specs/004-cartridges-action-types FR-020 / US3-5: the action's name is
+/// searchable, and follows the record when the action changes.
+#[test]
+fn matches_the_action_name_and_follows_a_change_of_action() {
+    let db = TestDb::new();
+    let bolt = ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            firearm_type_id: 2,
+            action_type_id: Some(3),
+            serial_number: Some("AC-1".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            firearm_type_id: 2,
+            action_type_id: Some(1),
+            serial_number: Some("AC-2".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "bolt"), 1, "a word of the action name");
+    assert_eq!(search(&db.conn, "Bolt action"), 1, "the whole action name");
+    assert_eq!(search(&db.conn, "semi"), 1, "a partly typed action name");
+
+    ops::update_firearm(
+        &db.conn,
+        bolt.id,
+        &FirearmInput { action_type_id: Some(4), ..FirearmInput::from(&bolt) },
+        false,
+    )
+    .unwrap();
+    assert_eq!(search(&db.conn, "bolt"), 0, "the old action's name no longer finds it");
+    assert_eq!(search(&db.conn, "lever"), 1, "the new one does");
+}

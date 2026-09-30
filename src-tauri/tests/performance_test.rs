@@ -64,6 +64,10 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
     // few a unique custom one, and some none (SC-004).
     let cartridges = [Some("9x19mm Parabellum"), Some(".45 ACP"), None, Some(".223 Remington")];
 
+    // Semi-automatic and Bolt action are allowed for every seeded type; a
+    // third of the records have none.
+    let actions = [Some(1), Some(3), None];
+
     let tx = conn.unchecked_transaction().unwrap();
     {
         let mut stmt = tx
@@ -74,10 +78,10 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                     weight_tenths_oz, capacity, finish, condition,
                     status, origin, year_of_manufacture, country_of_manufacture,
                     importer_name, original_make, original_model, original_serial_number,
-                    cartridge, created_at, updated_at
+                    cartridge, action_type_id, created_at, updated_at
                 ) VALUES (
                     ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, datetime('now'), datetime('now')
+                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, datetime('now'), datetime('now')
                 )",
             )
             .unwrap();
@@ -136,6 +140,7 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                 } else {
                     cartridges[i % cartridges.len()].map(str::to_owned)
                 },
+                actions[i % actions.len()],
             ])
             .unwrap();
         }
@@ -334,6 +339,45 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     assert!(
         elapsed.as_millis() < BUDGET_MS,
         "list_firearms (cartridge search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+/// specs/004-cartridges-action-types SC-004: grouping by action type within
+/// the 1s action budget, and a search by an action's name within the 500ms
+/// search budget.
+#[test]
+fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+
+    let started = Instant::now();
+    let grouped = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::ActionType), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    let keys: Vec<&str> = grouped.groups.iter().map(|g| g.key.as_str()).collect();
+    assert_eq!(keys, vec!["Semi-automatic", "Bolt action", "Unspecified"]);
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "list_firearms (grouped by action type) took {}ms, over the 1000ms budget",
+        elapsed.as_millis()
+    );
+
+    let started = Instant::now();
+    let searched = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("Bolt action".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (action search) took {}ms, over the {BUDGET_MS}ms budget",
         elapsed.as_millis()
     );
 }

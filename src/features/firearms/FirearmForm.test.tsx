@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
+import { CollectionContext } from "../app/collectionStore";
+import type { CollectionState } from "../app/collectionStore";
 import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
 import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
@@ -1648,5 +1650,235 @@ describe("FirearmForm suggestions and snapping (US2)", () => {
 
     expect(field("Make")).toHaveValue("smith and wesson Ltd");
     expect(noteText("Make")).toBe("");
+  });
+});
+
+// specs/004-cartridges-action-types US3, contracts/ui-entry.md §4: the
+// Action choice, filtered by the selected type.
+describe("FirearmForm action (US3)", () => {
+  const NAMES = [
+    "Semi-automatic",
+    "Revolver",
+    "Bolt action",
+    "Lever action",
+    "Pump action",
+    "Break action",
+    "Falling block",
+    "Rolling block",
+    "Single shot (other)",
+    "Flintlock",
+    "Percussion",
+    "Inline muzzleloader",
+  ];
+  const ACTIONS = NAMES.map((name, index) => ({ id: index + 1, name }));
+  const ids = (...except: number[]) =>
+    ACTIONS.map((action) => action.id).filter((id) => !except.includes(id));
+  // FR-018: Handgun (1) has no Pump action, Falling block or Inline
+  // muzzleloader; Rifle (2) has all; Shotgun (3) has no Rolling block; Other
+  // (4) maps none, which allows all.
+  const collection = {
+    actionTypes: {
+      actions: ACTIONS,
+      allowedByFirearmType: { 1: ids(5, 7, 12), 2: ids(), 3: ids(8) },
+    },
+  } as unknown as CollectionState;
+
+  function renderForm(ui: ReactElement = <FirearmForm onSubmit={vi.fn()} />) {
+    return render(<CollectionContext.Provider value={collection}>{ui}</CollectionContext.Provider>);
+  }
+
+  const action = () => screen.getByRole("combobox", { name: "Action" });
+  const chooseType = (user: ReturnType<typeof userEvent.setup>, type: string) =>
+    user.click(screen.getByRole("radio", { name: type }));
+  async function chooseAction(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(action());
+    await user.click(await screen.findByRole("option", { name }));
+  }
+  async function offered(user: ReturnType<typeof userEvent.setup>): Promise<string[]> {
+    await user.click(action());
+    const names = (await screen.findAllByRole("option")).map((option) => option.textContent ?? "");
+    await user.keyboard("{Escape}");
+    return names;
+  }
+  const NOTE = "Pump action doesn't apply to a Handgun, so the action was cleared.";
+
+  it("has an Action select, a third wide, directly after Type, starting Unspecified", () => {
+    renderForm();
+
+    expect(action()).toHaveTextContent("Unspecified");
+    expect(action().closest(".hd-field--third")).not.toBeNull();
+    const type = screen.getByRole("radiogroup", { name: /^Type/ });
+    expect(type.compareDocumentPosition(action()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const cartridge = screen.getByRole("combobox", { name: "Cartridge" });
+    expect(
+      action().compareDocumentPosition(cartridge) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("offers Unspecified, then only the actions the type allows, in list order", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await chooseType(user, "Handgun");
+    expect(await offered(user)).toEqual([
+      "Unspecified",
+      ...NAMES.filter(
+        (name) => !["Pump action", "Falling block", "Inline muzzleloader"].includes(name),
+      ),
+    ]);
+
+    await chooseType(user, "Shotgun");
+    expect(await offered(user)).toEqual([
+      "Unspecified",
+      ...NAMES.filter((name) => name !== "Rolling block"),
+    ]);
+
+    await chooseType(user, "Rifle");
+    expect(await offered(user)).toEqual(["Unspecified", ...NAMES]);
+  });
+
+  it("offers the whole list for a type that maps none, and before a type is chosen", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(await offered(user)).toEqual(["Unspecified", ...NAMES]);
+    await chooseType(user, "Other");
+    expect(await offered(user)).toEqual(["Unspecified", ...NAMES]);
+  });
+
+  it("takes no typed text: it is a choice, not a text field", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(action().tagName).toBe("BUTTON");
+    await user.click(action());
+    await user.keyboard("flintlockish");
+    await user.keyboard("{Escape}");
+    expect(action()).toHaveTextContent("Unspecified");
+  });
+
+  it("clears an action the new type disallows, saying so politely, once", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Rifle");
+    await chooseAction(user, "Pump action");
+    expect(action()).toHaveTextContent("Pump action");
+
+    await chooseType(user, "Handgun");
+
+    expect(action()).toHaveTextContent("Unspecified");
+    expect(screen.getAllByText(NOTE).length).toBeGreaterThan(0);
+    const live = screen.getAllByRole("status").find((status) => status.textContent === NOTE);
+    expect(live).toHaveAttribute("aria-live", "polite");
+    // It reads as the field's hint.
+    expect(action().getAttribute("aria-describedby")).toBeTruthy();
+    expect(
+      (action().getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .some((id) => document.getElementById(id)?.textContent === NOTE),
+    ).toBe(true);
+  });
+
+  it("removes the note when an action is chosen", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Rifle");
+    await chooseAction(user, "Pump action");
+    await chooseType(user, "Handgun");
+    expect(screen.getAllByText(NOTE).length).toBeGreaterThan(0);
+
+    await chooseAction(user, "Revolver");
+
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+  });
+
+  it("removes the note when the type changes again", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Rifle");
+    await chooseAction(user, "Pump action");
+    await chooseType(user, "Handgun");
+    expect(screen.getAllByText(NOTE).length).toBeGreaterThan(0);
+
+    await chooseType(user, "Rifle");
+
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+    expect(action()).toHaveTextContent("Unspecified");
+  });
+
+  it("keeps an action the new type allows, with no note", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Rifle");
+    await chooseAction(user, "Lever action");
+
+    await chooseType(user, "Handgun");
+
+    expect(action()).toHaveTextContent("Lever action");
+    expect(screen.queryByText(/so the action was cleared/)).not.toBeInTheDocument();
+  });
+
+  it("shows a backend actionTypeId error under Action", async () => {
+    const user = userEvent.setup();
+    const message = "Pump action doesn't apply to a Handgun.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { actionTypeId: message },
+      }),
+    );
+    renderForm(<FirearmForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(action()).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("saves the chosen action's id, or null for Unspecified", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(<FirearmForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].actionTypeId).toBeNull();
+
+    await chooseAction(user, "Revolver");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    expect(onSubmit.mock.calls[1][0].actionTypeId).toBe(2);
+  });
+
+  it("starts an edit on the saved action, and saves it unchanged", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(
+      <FirearmForm
+        initialValues={
+          {
+            id: 7,
+            make: "Colt",
+            model: "Python",
+            serialNumber: "V1",
+            noSerialAttested: false,
+            caliber: ".357",
+            cartridge: null,
+            firearmTypeId: 1,
+            actionTypeId: 2,
+            status: "active",
+          } as Firearm
+        }
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(action()).toHaveTextContent("Revolver");
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].actionTypeId).toBe(2);
   });
 });

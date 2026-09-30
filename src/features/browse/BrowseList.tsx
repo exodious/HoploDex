@@ -20,6 +20,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
   // carries the cartridge too, so it goes for either (FR-027).
   const showCaliber = groupBy !== "caliber" && groupBy !== "cartridge";
   const showType = groupBy !== "type";
+  const showAction = groupBy !== "action_type";
   return (
     <div className="hd-browse">
       {groups.map((group, index) => (
@@ -31,6 +32,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                 <th scope="col">Firearm</th>
                 {showCaliber && <th scope="col">Caliber</th>}
                 {showType && <th scope="col">Type</th>}
+                {showAction && <th scope="col">Action</th>}
                 <th scope="col" className="hd-table__num">
                   Est. value
                 </th>
@@ -81,6 +83,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                     </td>
                   )}
                   {showType && <td>{firearm.firearmTypeName}</td>}
+                  {showAction && <td>{firearm.actionTypeName}</td>}
                   <td className="hd-table__num hd-num">{formatDollars(firearm.estimatedValue)}</td>
                   <td>
                     <CoverageCell firearm={firearm} />

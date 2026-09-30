@@ -1,5 +1,6 @@
 import { invoke } from "../../services/tauriClient";
 import type {
+  ActionTypesOutput,
   DisposeFirearmInput,
   EntryFieldName,
   Firearm,
@@ -37,6 +38,12 @@ export function deleteFirearm(id: number, confirmed: boolean): Promise<{ deleted
 
 export function getFirearm(id: number): Promise<FirearmDetail> {
   return invoke<FirearmDetail>("get_firearm", { id });
+}
+
+/** specs/004-cartridges-action-types FR-017/FR-018: the fixed action list and
+ * which actions each firearm type allows. */
+export function listActionTypes(): Promise<ActionTypesOutput> {
+  return invoke<ActionTypesOutput>("list_action_types");
 }
 
 /** specs/004-cartridges-action-types: what an entered value becomes, and for

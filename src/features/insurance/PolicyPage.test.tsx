@@ -39,6 +39,7 @@ const collection: CollectionState = {
   summary: null,
   policies: [policy],
   policiesById: new Map([[policy.id, policy]]),
+  actionTypes: { actions: [], allowedByFirearmType: {} },
   loaded: true,
   error: null,
   revision: 1,

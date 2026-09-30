@@ -2,11 +2,14 @@
 //! `suggest_entries`, `settle_entry` and `list_action_types`
 //! (contracts/tauri-commands.md).
 
+use std::collections::BTreeMap;
+
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
+use crate::models::action_type::{ActionType, ActionTypesOutput};
 use crate::services::cartridges::{DerivedCaliber, derive_caliber};
 use crate::services::entry_text::EntryField;
 pub use crate::services::suggestions::Suggestion;
@@ -95,6 +98,38 @@ pub mod ops {
         };
         Ok(SettleEntryOutput { value, changed_by, derived_caliber })
     }
+
+    /// The fixed action list and which actions each firearm type allows
+    /// (FR-017, FR-018). A type with no mapped actions is left out, which
+    /// means every action is allowed.
+    pub fn list_action_types(conn: &Connection) -> Result<ActionTypesOutput, CommandError> {
+        let mut stmt = conn
+            .prepare("SELECT id, name FROM action_types ORDER BY sort_order")
+            .map_err(CommandError::from_db)?;
+        let actions = stmt
+            .query_map([], |row| Ok(ActionType { id: row.get(0)?, name: row.get(1)? }))
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.firearm_type_id, m.action_type_id
+                 FROM firearm_type_actions m
+                 JOIN action_types a ON a.id = m.action_type_id
+                 ORDER BY m.firearm_type_id, a.sort_order",
+            )
+            .map_err(CommandError::from_db)?;
+        let mut allowed_by_firearm_type: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+            .map_err(CommandError::from_db)?;
+        for row in rows {
+            let (firearm_type_id, action_type_id) = row.map_err(CommandError::from_db)?;
+            allowed_by_firearm_type.entry(firearm_type_id).or_default().push(action_type_id);
+        }
+        Ok(ActionTypesOutput { actions, allowed_by_firearm_type })
+    }
 }
 
 #[tauri::command]
@@ -111,4 +146,11 @@ pub async fn settle_entry(
     session: State<'_, Session>,
 ) -> Result<SettleEntryOutput, CommandError> {
     session.read(|conn| ops::settle_entry(conn, &input))
+}
+
+#[tauri::command]
+pub async fn list_action_types(
+    session: State<'_, Session>,
+) -> Result<ActionTypesOutput, CommandError> {
+    session.read(ops::list_action_types)
 }

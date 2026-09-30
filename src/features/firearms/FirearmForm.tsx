@@ -18,7 +18,7 @@ import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName } from "../app/collectionStore";
+import { firearmName, useActionTypes } from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
@@ -36,6 +36,8 @@ import {
   originLabel,
 } from "./types";
 import type {
+  ActionType,
+  ActionTypesOutput,
   Condition,
   DerivedCaliber,
   DispositionType,
@@ -64,6 +66,16 @@ const ENTRY_FIELDS: readonly EntryFieldName[] = ["make", "model", "cartridge", "
 
 function isEntryField(name: string | undefined): name is EntryFieldName {
   return ENTRY_FIELDS.some((field) => field === name);
+}
+
+/** specs/004-cartridges-action-types FR-017: the actions the Action choice
+ * offers for a firearm type, in list order. A type that maps none (Other, or
+ * none chosen yet) offers the whole list. */
+function actionsForType(actionTypes: ActionTypesOutput, firearmTypeId: string): ActionType[] {
+  const mapped =
+    firearmTypeId === "" ? undefined : actionTypes.allowedByFirearmType[Number(firearmTypeId)];
+  if (!mapped || mapped.length === 0) return actionTypes.actions;
+  return actionTypes.actions.filter((action) => mapped.includes(action.id));
 }
 
 /** contracts/ui-entry.md §2: the note under a field that was snapped. */
@@ -250,6 +262,9 @@ interface FormState {
   caliberPrompt: string;
   cartridge: string;
   firearmTypeId: string;
+  /** specs/004-cartridges-action-types FR-017: an action id; "" is
+   * Unspecified. */
+  actionTypeId: string;
   serialNumber: string;
   noSerialAttested: boolean;
   notes: string;
@@ -308,6 +323,7 @@ function toFormState(firearm?: Firearm): FormState {
     caliberPrompt: "",
     cartridge: firearm?.cartridge ?? "",
     firearmTypeId: firearm ? String(firearm.firearmTypeId) : "",
+    actionTypeId: firearm?.actionTypeId == null ? "" : String(firearm.actionTypeId),
     serialNumber: firearm?.serialNumber ?? "",
     noSerialAttested: firearm?.noSerialAttested ?? false,
     notes: firearm?.notes ?? "",
@@ -430,6 +446,7 @@ const FIELD_ORDER: Field[] = [
   "model",
   "nickname",
   "firearmTypeId",
+  "actionTypeId",
   "cartridge",
   "caliber",
   "serialNumber",
@@ -484,6 +501,10 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // contracts/ui-entry.md §2: the note under a field whose value was snapped,
   // until the field is edited again.
   const [entryNotes, setEntryNotes] = useState<Partial<Record<EntryFieldName, string>>>({});
+  // contracts/ui-entry.md §4: the note under Action after a change of type
+  // cleared it, until an action is chosen or the type changes again.
+  const [actionNote, setActionNote] = useState("");
+  const actionTypes = useActionTypes();
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -655,6 +676,23 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const caliberHintText = caliberHint(caliberState);
   const caliberGuessed = form.caliberMode === "derived" && form.caliberSource === "guess";
 
+  /** FR-019: an action the new type doesn't allow is cleared, with a note. An
+   * allowed action is kept, silently. */
+  function changeType(value: string) {
+    const chosen = actionTypes.actions.find((action) => String(action.id) === form.actionTypeId);
+    const allowed = actionsForType(actionTypes, value);
+    const cleared = chosen !== undefined && !allowed.some((action) => action.id === chosen.id);
+    const typeLabel = FIREARM_TYPE_OPTIONS.find((option) => option.value === value)?.label;
+    setActionNote(
+      cleared ? `${chosen.name} doesn't apply to a ${typeLabel}, so the action was cleared.` : "",
+    );
+    setForm((prev) => ({
+      ...prev,
+      firearmTypeId: value,
+      actionTypeId: cleared ? "" : prev.actionTypeId,
+    }));
+  }
+
   function handleOriginChange(next: Origin | "") {
     const discard = originDiscard(form.origin, next, form);
     if (discard) {
@@ -757,9 +795,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       caliber: form.caliber.trim(),
       cartridge: blankToNull(form.cartridge),
       firearmTypeId: Number(form.firearmTypeId),
-      // specs/004-cartridges-action-types: no action field yet (T059), so an
-      // edit keeps the saved one.
-      actionTypeId: initialValues?.actionTypeId ?? null,
+      actionTypeId: form.actionTypeId === "" ? null : Number(form.actionTypeId),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
@@ -912,7 +948,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 required
                 value={form.firearmTypeId}
                 onChange={(value) => {
-                  update("firearmTypeId", value);
+                  changeType(value);
                   touch("firearmTypeId")();
                 }}
                 error={errorFor("firearmTypeId")}
@@ -923,6 +959,32 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   art: <TypeDrawing typeKey={option.key} crop />,
                 }))}
               />
+            </div>
+
+            {/* contracts/ui-entry.md §4: chosen from the fixed list only, and
+                only from the actions the type allows. */}
+            <div data-field="actionTypeId">
+              <Select
+                label="Action"
+                fieldClassName="hd-field--third"
+                value={form.actionTypeId === "" ? NOT_RECORDED : form.actionTypeId}
+                onValueChange={(value) => {
+                  setActionNote("");
+                  update("actionTypeId", value === NOT_RECORDED ? "" : value);
+                }}
+                options={[
+                  { value: NOT_RECORDED, label: "Unspecified" },
+                  ...actionsForType(actionTypes, form.firearmTypeId).map((action) => ({
+                    value: String(action.id),
+                    label: action.name,
+                  })),
+                ]}
+                error={errorFor("actionTypeId")}
+                hint={actionNote || undefined}
+              />
+              <span className="hd-sr-only" role="status" aria-live="polite">
+                {actionNote}
+              </span>
             </div>
 
             {/* specs/004-cartridges-action-types contracts/ui-entry.md §3: the

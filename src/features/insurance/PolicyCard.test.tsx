@@ -48,6 +48,7 @@ function firearmSummary(id: number, overrides: Partial<FirearmSummary> = {}): Fi
     caliber: ".357",
     cartridge: null,
     firearmTypeName: "Handgun",
+    actionTypeName: null,
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",

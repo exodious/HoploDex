@@ -16,6 +16,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     caliber: "9mm",
     cartridge: null,
     firearmTypeName: "Handgun",
+    actionTypeName: null,
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",
@@ -43,5 +44,14 @@ describe("BrowseTiles caliber line", () => {
     const hawken = screen.getByRole("button", { name: /Hawken Plains/ });
     expect(within(hawken).getByText(".50")).toBeInTheDocument();
     expect(within(hawken).queryByText(/\(/)).not.toBeInTheDocument();
+  });
+
+  // specs/004-cartridges-action-types US3-8: tiles do not show the action.
+  it("does not show the action", () => {
+    const firearms = [summary({ id: 1, actionTypeName: "Semi-automatic" })];
+    const groups: VisibleGroup[] = [{ key: "All", firearms, total: 1 }];
+    render(<BrowseTiles groups={groups} grouped={false} onSelect={vi.fn()} />);
+
+    expect(screen.queryByText("Semi-automatic")).not.toBeInTheDocument();
   });
 });

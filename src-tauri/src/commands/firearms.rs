@@ -75,6 +75,9 @@ pub enum GroupBy {
     /// cartridge text, so spellings already on record stay apart;
     /// alphabetical, with the firearms that have none last.
     Cartridge,
+    /// specs/004-cartridges-action-types FR-020: keyed by the action's name,
+    /// in the action list's order, with the firearms that have none last.
+    ActionType,
 }
 
 /// The group of firearms with no value for the grouping field, always last
@@ -117,6 +120,9 @@ pub struct FirearmSummary {
     /// "cartridge (caliber)".
     pub cartridge: Option<String>,
     pub firearm_type_name: String,
+    /// specs/004-cartridges-action-types FR-020: the action's name, `None`
+    /// when not recorded.
+    pub action_type_name: Option<String>,
     pub status: FirearmStatus,
     pub thumbnail_photo_id: Option<i64>,
     pub generic_thumbnail_key: String,
@@ -379,6 +385,57 @@ pub mod ops {
         Err(CommandError::validation(messages.join(" "), errors))
     }
 
+    /// specs/004-cartridges-action-types FR-017, FR-019, SC-008: the action
+    /// must name an action on the list and be allowed for the firearm's type.
+    /// A type with no mapped actions (Other, or one added later) allows all
+    /// of them, and no action is always allowed. The same rule is enforced by
+    /// the `firearms_action_allowed_*` triggers, which only a bug would
+    /// reach. Import calls this for every row.
+    pub fn check_action_allowed(
+        conn: &Connection,
+        firearm_type_id: i64,
+        action_type_id: Option<i64>,
+    ) -> Result<(), CommandError> {
+        let Some(action_id) = action_type_id else {
+            return Ok(());
+        };
+        let refuse = |message: String| {
+            let errors =
+                std::collections::HashMap::from([("actionTypeId".to_string(), message.clone())]);
+            Err(CommandError::validation(message, errors))
+        };
+        let action_name: Option<String> = conn
+            .query_row(
+                "SELECT name FROM action_types WHERE id = :id",
+                named_params! { ":id": action_id },
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        let Some(action_name) = action_name else {
+            return refuse("Choose an action from the list.".to_string());
+        };
+        let (mapped, allowed): (bool, bool) = conn
+            .query_row(
+                "SELECT COUNT(*) > 0, COALESCE(SUM(action_type_id = :action), 0) > 0
+                 FROM firearm_type_actions WHERE firearm_type_id = :type",
+                named_params! { ":action": action_id, ":type": firearm_type_id },
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(CommandError::from_db)?;
+        if !mapped || allowed {
+            return Ok(());
+        }
+        let type_name: String = conn
+            .query_row(
+                "SELECT name FROM firearm_types WHERE id = :id",
+                named_params! { ":id": firearm_type_id },
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        refuse(format!("{action_name} doesn't apply to a {type_name}."))
+    }
+
     fn describe_firearm(conn: &Connection, id: i64) -> Result<Clash, CommandError> {
         conn.query_row(
             "SELECT make, model, nickname, serial_number FROM firearms WHERE id = :id",
@@ -395,6 +452,7 @@ pub mod ops {
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input, None)?;
+        check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
         conn.execute(
@@ -482,6 +540,7 @@ pub mod ops {
             .optional()
             .map_err(CommandError::from_db)?;
         validate_firearm_input(input, stored.as_ref())?;
+        check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, Some(id), input)?;
         check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
         let updated = conn
@@ -736,9 +795,10 @@ pub mod ops {
                 "SELECT f.id, f.make, f.model, f.nickname, f.serial_number, f.caliber, f.cartridge,
                         f.status, f.thumbnail_photo_id, f.estimated_value, f.insurance_policy_id,
                         f.scheduled_coverage_amount, f.origin,
-                        ft.name, ft.generic_thumbnail_key
+                        ft.name, ft.generic_thumbnail_key, at.name
                  FROM firearms f
                  JOIN firearm_types ft ON ft.id = f.firearm_type_id
+                 LEFT JOIN action_types at ON at.id = f.action_type_id
                  WHERE (:include_disposed = 1 OR f.status = 'active')
                    AND (:has_query = 0 OR f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
                  ORDER BY f.make, f.model",
@@ -777,6 +837,7 @@ pub mod ops {
                         scheduled_coverage_amount,
                         firearm_type_name: row.get(13)?,
                         generic_thumbnail_key: row.get(14)?,
+                        action_type_name: row.get(15)?,
                     };
                     Ok((summary, origin))
                 },
@@ -795,6 +856,9 @@ pub mod ops {
                 }
                 Some(GroupBy::Cartridge) => {
                     summary.cartridge.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
+                }
+                Some(GroupBy::ActionType) => {
+                    summary.action_type_name.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
                 }
                 None => "All".to_string(),
             };
@@ -825,6 +889,21 @@ pub mod ops {
             Some(GroupBy::Cartridge) => groups.sort_by(|a, b| {
                 (a.key == UNSPECIFIED, &a.key).cmp(&(b.key == UNSPECIFIED, &b.key))
             }),
+            // FR-020: the action list's order, not alphabetical; "Unspecified"
+            // is not on the list, so it sorts last.
+            Some(GroupBy::ActionType) => {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM action_types ORDER BY sort_order")
+                    .map_err(CommandError::from_db)?;
+                let order = stmt
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(CommandError::from_db)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(CommandError::from_db)?;
+                groups.sort_by_key(|g| {
+                    order.iter().position(|name| *name == g.key).unwrap_or(order.len())
+                });
+            }
             _ => groups.sort_by(|a, b| a.key.cmp(&b.key)),
         }
 

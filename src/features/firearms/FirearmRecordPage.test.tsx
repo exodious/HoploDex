@@ -67,6 +67,13 @@ const collection: CollectionState = {
   summary: null,
   policies: [],
   policiesById: new Map(),
+  actionTypes: {
+    actions: [
+      { id: 1, name: "Semi-automatic" },
+      { id: 3, name: "Bolt action" },
+    ],
+    allowedByFirearmType: {},
+  },
   loaded: true,
   error: null,
   revision: 1,
@@ -168,6 +175,41 @@ describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17
 
     await screen.findByText("No notes recorded.");
     expect(screen.queryByRole("region", { name: "Physical details" })).not.toBeInTheDocument();
+  });
+});
+
+// specs/004-cartridges-action-types FR-027, contracts/ui-entry.md §7.
+describe("FirearmRecordPage cartridge, caliber and action", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  /** The title block's value for `label`. */
+  const titleValue = (label: string) =>
+    screen.getByText(label, { selector: "dt" }).nextElementSibling;
+
+  it("shows Cartridge, Caliber and Action in that order, the action by name", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      cartridge: ".357 Magnum",
+      actionTypeId: 3,
+    });
+    renderPage();
+
+    await screen.findByText("No notes recorded.");
+    const labels = [...document.querySelectorAll(".hd-titleblock dt")].map((dt) => dt.textContent);
+    expect(labels.slice(0, 3)).toEqual(["Cartridge", "Caliber", "Action"]);
+    expect(titleValue("Cartridge")).toHaveTextContent(".357 Magnum");
+    expect(titleValue("Action")).toHaveTextContent("Bolt action");
+  });
+
+  it("shows an unrecorded cartridge and action as a dash", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    await screen.findByText("No notes recorded.");
+    expect(titleValue("Cartridge")).toHaveTextContent("—");
+    expect(titleValue("Action")).toHaveTextContent("—");
   });
 });
 

@@ -68,6 +68,14 @@ const RIFLE: i64 = 2;
 const SHOTGUN: i64 = 3;
 const OTHER: i64 = 4;
 
+// Ids seeded by migration 0003_seed_firearm_types (specs/004-cartridges-action-types FR-018).
+const SEMI_AUTOMATIC: i64 = 1;
+const REVOLVER: i64 = 2;
+const BOLT_ACTION: i64 = 3;
+const LEVER_ACTION: i64 = 4;
+const PUMP_ACTION: i64 = 5;
+const PERCUSSION: i64 = 11;
+
 /// A real photo from `seed-photos/`, whose README records where each came
 /// from and its licence, as the `(name, bytes, mime type)` that `photos`
 /// takes.
@@ -541,6 +549,9 @@ pub fn seed(conn: &Connection, extra: usize) {
         // specs/004-cartridges-action-types: a built-in cartridge and its
         // bore class.
         cartridge: text("9x19mm Parabellum"),
+        // specs/004-cartridges-action-types US3: an action allowed for each
+        // seeded type (Handgun, Rifle, Shotgun, Other), below.
+        action_type_id: Some(SEMI_AUTOMATIC),
         ..base("Glock", "19 Gen5", "BXKT482", "9mm", HANDGUN)
     });
     photos(
@@ -685,18 +696,23 @@ pub fn seed(conn: &Connection, extra: usize) {
         capacity: Some(6),
         finish: text("Blued"),
         condition: Some(Condition::Poor),
+        action_type_id: Some(PERCUSSION),
         ..base("Pedersoli", "1858 Remington Replica", "", ".44 black powder", OTHER)
     });
     photos(remington_replica, &[seed_photo!("remington-new-model-army.jpg")]);
 
     // Only the required fields: no value, so no insurance warning either.
-    add(base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN));
+    add(FirearmInput {
+        action_type_id: Some(PUMP_ACTION),
+        ..base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN)
+    });
 
     // specs/004-cartridges-action-types: a muzzleloader records only its
     // caliber (spec Edge Cases), and "7.62x39" finds the SKS (US1-9). No
     // value, so the blanket's totals are unchanged.
     add(FirearmInput {
         notes: text("Percussion cap; patched round ball over 90 gr FFg."),
+        action_type_id: Some(PERCUSSION),
         ..base("Thompson/Center", "Hawken", "TC-50H-1182", ".50", RIFLE)
     });
     add(FirearmInput {
@@ -715,6 +731,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     add(FirearmInput {
         estimated_value: Some(1_000),
         acquisition_date: text("2017-12-01"),
+        action_type_id: Some(LEVER_ACTION),
         ..base("Henry", "Big Boy", "BB0123456", ".44 Magnum", RIFLE)
     });
 
@@ -771,6 +788,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_000),
         cartridge: text(".357 Magnum"),
+        action_type_id: Some(REVOLVER),
         ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357", HANDGUN)
     });
     let ids =
@@ -784,6 +802,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2014-10-12"),
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_500),
+        action_type_id: Some(BOLT_ACTION),
         ..base("Winchester", "Model 70 Featherweight", "G2841175", ".270 Win", RIFLE)
     });
     photos(winchester, &[seed_photo!("winchester-model-70-featherweight.jpg")]);
@@ -814,6 +833,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2013-01-20"),
         insurance_policy_id: Some(policies.vault),
         scheduled_coverage_amount: Some(1_800),
+        action_type_id: Some(SEMI_AUTOMATIC),
         ..base("Browning", "Auto-5 Light Twelve", "1V12345", "12 gauge", SHOTGUN)
     });
 

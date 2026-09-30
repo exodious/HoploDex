@@ -48,7 +48,14 @@ function failureMessage(e: unknown, fallback: string): string {
 /** One firearm's full record (US1, US3, US4): identity plate, coverage,
  * photos, documents, acquisition and disposition history. */
 export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
-  const { firearmsById, policiesById, summary: valueSummary, revision, refresh } = useCollection();
+  const {
+    firearmsById,
+    policiesById,
+    actionTypes,
+    summary: valueSummary,
+    revision,
+    refresh,
+  } = useCollection();
   const { open, back } = useNavigation();
   const notify = useToast();
   const [firearm, setFirearm] = useState<FirearmDetail | null>(null);
@@ -110,6 +117,8 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       : undefined;
   const coveringPolicy = policy ?? blanketPolicy;
   const type = firearmTypeOption(firearm.firearmTypeId);
+  // FR-027: the action's name comes from the list the collection loaded.
+  const actionName = actionTypes.actions.find((a) => a.id === firearm.actionTypeId)?.name;
   const disposed = firearm.status === "disposed";
 
   async function afterChange(updated: Firearm, message: string) {
@@ -236,6 +245,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               as an unrecorded date does. */}
           <TitleCell label="Cartridge">{firearm.cartridge ?? "—"}</TitleCell>
           <TitleCell label="Caliber">{firearm.caliber}</TitleCell>
+          <TitleCell label="Action">{actionName ?? "—"}</TitleCell>
           <TitleCell label="Status">
             {disposed
               ? `${dispositionLabel(firearm.dispositionType)} ${formatDate(firearm.dispositionDate)}`
