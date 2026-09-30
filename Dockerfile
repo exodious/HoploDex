@@ -29,6 +29,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # System packages:
 # - Tauri/WebKitGTK build deps and rusqlite's bundled SQLCipher (perl, libssl)
+# - xdg-utils: the AppImage bundler copies /usr/bin/xdg-open into the bundle
+#   and fails `tauri build` without it
 # - E2E: WebKitWebDriver (webkit2gtk-driver), Xvfb + xauth for xvfb-run,
 #   iproute2 for `ss` (the harness clears stale driver ports)
 # - human testing: a session D-Bus and gnome-keyring for the real keyring
@@ -73,6 +75,7 @@ RUN apt-get update \
         webkit2gtk-driver \
         wget \
         xauth \
+        xdg-utils \
         xvfb \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*

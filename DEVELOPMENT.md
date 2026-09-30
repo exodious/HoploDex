@@ -108,7 +108,8 @@ your platform's package manager.
     libsoup-3.0-dev \
     libssl-dev \
     libayatana-appindicator3-dev \
-    librsvg2-dev
+    librsvg2-dev \
+    xdg-utils
   ```
 
   Arch:
@@ -123,7 +124,8 @@ your platform's package manager.
     appmenu-gtk-module \
     libappindicator-gtk3 \
     librsvg \
-    webkit2gtk-4.1
+    webkit2gtk-4.1 \
+    xdg-utils
   ```
 
 - **macOS**: Xcode Command Line Tools —
