@@ -9,7 +9,7 @@
 //!
 //! The sandbox (`--dir`) holds two databases, both protected by
 //! [`PASSPHRASE`], under `<dir>/HoploDex/`, and the `machine.json` that lists
-//! them under `<dir>/config/com.hoplodex.desktop/` (the app finds it through
+//! them under `<dir>/config/com.hoplodex.inventory/` (the app finds it through
 //! `XDG_CONFIG_HOME=<dir>/config`):
 //! - "Main collection": the full collection, with non-default backup and lock
 //!   settings, backed up (two backups, yesterday's and today's, in
@@ -55,7 +55,7 @@ mod sandbox;
 /// through `--print-passphrase`.
 pub const PASSPHRASE: &str = "human testing passphrase";
 
-const APP_IDENTIFIER: &str = "com.hoplodex.desktop";
+const APP_IDENTIFIER: &str = "com.hoplodex.inventory";
 pub const MAIN_NAME: &str = "Main collection";
 pub const SHARED_NAME: &str = "Shared collection";
 /// The computer that left "Shared collection" open.

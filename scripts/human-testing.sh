@@ -11,7 +11,7 @@
 #   HoploDex/Main collection.hoplodex     the full collection
 #   HoploDex/Shared collection.hoplodex   left open by "Workshop PC", with
 #                                         pending changes
-#   config/com.hoplodex.desktop/machine.json  the recent list naming both
+#   config/com.hoplodex.inventory/machine.json  the recent list naming both
 #   import-samples/                       spreadsheets to import
 # Both databases open with the passphrase this script prints. The app is
 # pointed at the sandbox through XDG_*_HOME and a user-dirs.dirs whose
