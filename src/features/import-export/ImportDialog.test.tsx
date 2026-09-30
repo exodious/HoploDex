@@ -186,10 +186,12 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
       screen.getByRole("button", { name: /Calibers filled in from the cartridge \(2\)/ }),
     );
 
-    const rows = screen.getAllByRole("listitem").map((item) => item.textContent);
+    const rows = screen
+      .getAllByRole("listitem")
+      .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
     expect(rows).toEqual([
-      "Row 4: 9x19mm Parabellum → 9mm (built-in)",
-      "Row 7: .30 Custom Improved → .30 (guessed)",
+      ["Row 4", "9x19mm Parabellum → 9mm (built-in)"],
+      ["Row 7", ".30 Custom Improved → .30 (guessed)"],
     ]);
   });
 
@@ -215,10 +217,12 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
       screen.getByRole("button", { name: /Spellings matched to existing values \(2\)/ }),
     );
 
-    const rows = screen.getAllByRole("listitem").map((item) => item.textContent);
+    const rows = screen
+      .getAllByRole("listitem")
+      .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
     expect(rows).toEqual([
-      "Row 2, make: “springfield armory” → “Springfield Armory”",
-      "Row 5, cartridge: “9X19mm Parabellum” → “9x19mm Parabellum”",
+      ["Row 2", "make: “springfield armory” → “Springfield Armory”"],
+      ["Row 5", "cartridge: “9X19mm Parabellum” → “9x19mm Parabellum”"],
     ]);
   });
 

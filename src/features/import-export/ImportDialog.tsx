@@ -35,7 +35,7 @@ function ReportDisclosure({
 }: {
   title: string;
   summary: string;
-  items: { key: string; text: string }[];
+  items: { key: string; row: number; text: string }[];
 }) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
@@ -51,7 +51,10 @@ function ReportDisclosure({
         <p className="hd-form-note">{summary}</p>
         <ul className="hd-row-errors hd-row-errors--info">
           {items.map((item) => (
-            <li key={item.key}>{item.text}</li>
+            <li key={item.key}>
+              <span className="hd-row-errors__row hd-num">Row {item.row}</span>
+              <span>{item.text}</span>
+            </li>
           ))}
         </ul>
       </Disclosure>
@@ -261,7 +264,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           summary="The cartridge named a caliber, so the blank one was filled in. “Guessed” is a best reading; check it."
           items={result.derivedCalibers.map((derived) => ({
             key: `${derived.row}`,
-            text: `Row ${derived.row}: ${derived.cartridge} → ${derived.caliber} (${
+            row: derived.row,
+            text: `${derived.cartridge} → ${derived.caliber} (${
               derived.source === "catalog" ? "built-in" : "guessed"
             })`,
           }))}
@@ -271,7 +275,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           summary="These differed only in letter case, spacing or separators, so they now match a spelling already in use."
           items={result.snappedValues.map((snapped) => ({
             key: `${snapped.row}-${snapped.field}`,
-            text: `Row ${snapped.row}, ${snapped.field}: “${snapped.sheetValue}” → “${snapped.recordedValue}”`,
+            row: snapped.row,
+            text: `${snapped.field}: “${snapped.sheetValue}” → “${snapped.recordedValue}”`,
           }))}
         />
 

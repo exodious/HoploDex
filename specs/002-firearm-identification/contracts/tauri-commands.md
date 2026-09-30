@@ -110,6 +110,9 @@ rule nor the warning considers.
   `"Domestic"`, `"Imported"`, `"Re-imported"` or `"Not specified"` (firearms
   with no origin), returned in that fixed order and only for origins present
   (research.md §10).
+
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-commands.md): the `"Not specified"` group
+key reads `"Unspecified"`._
 - **Search semantics**: `query` also matches, as displayed, the origin label,
   year, country (including "United States" for a re-imported firearm),
   importer name, original make, original model and original serial number

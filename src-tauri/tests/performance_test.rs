@@ -320,6 +320,8 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
+    // Printed for the pull request's performance note (`--nocapture`).
+    eprintln!("SC-004: list_firearms grouped by cartridge took {elapsed:?}");
     assert_eq!(grouped.groups.last().map(|g| g.key.as_str()), Some("Unspecified"));
     assert!(grouped.groups.len() > 100, "the custom cartridges are groups of their own");
     assert!(
@@ -335,6 +337,7 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
+    eprintln!("SC-004: list_firearms cartridge search took {elapsed:?}");
     assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -359,6 +362,7 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
+    eprintln!("SC-004: list_firearms grouped by action type took {elapsed:?}");
     let keys: Vec<&str> = grouped.groups.iter().map(|g| g.key.as_str()).collect();
     assert_eq!(keys, vec!["Semi-automatic", "Bolt action", "Unspecified"]);
     assert!(
@@ -374,6 +378,7 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
+    eprintln!("SC-004: list_firearms action search took {elapsed:?}");
     assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -404,6 +409,7 @@ fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models
         let started = Instant::now();
         let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
         let elapsed = started.elapsed();
+        eprintln!("SC-004: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
         assert!(!output.suggestions.is_empty());
         assert!(
             elapsed.as_millis() < 50,

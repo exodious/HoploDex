@@ -71,6 +71,17 @@ export function Combobox({
   const latestRequest = useRef(0);
   // Whether the pointer is what is about to focus the field.
   const pressed = useRef(false);
+  // Whether Tab was the last key pressed anywhere: it is what moves focus in
+  // from another control. Focus placed by a dialog opening arrives from the
+  // button that opened it too, so `relatedTarget` cannot tell the two apart.
+  const tabbed = useRef(false);
+  useEffect(() => {
+    const note = (event: globalThis.KeyboardEvent) => {
+      tabbed.current = event.key === "Tab";
+    };
+    document.addEventListener("keydown", note, true);
+    return () => document.removeEventListener("keydown", note, true);
+  }, []);
   // Popover anchors to the input's frame, which is as wide as the field.
   const anchor = useRef({
     getBoundingClientRect: () =>
@@ -174,8 +185,9 @@ export function Combobox({
     // Opens for a click or a Tab from another control. A dialog placing
     // focus here as it opens is not asking for a list: Escape should close
     // the dialog, and the first key or Down brings the list up.
-    if (pressed.current || event.relatedTarget) openList();
+    if (pressed.current || tabbed.current) openList();
     pressed.current = false;
+    tabbed.current = false;
   }
 
   function handleBlur(event: FocusEvent<HTMLInputElement>) {

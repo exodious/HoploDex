@@ -114,6 +114,25 @@ describe("Combobox", () => {
     expect(await screen.findByRole("listbox")).toBeVisible();
   });
 
+  it("stays closed when a dialog moves focus in from the button that opened it", async () => {
+    // The button had focus, so the field's focus event names it as related,
+    // yet nothing the user pressed asked for the list: Escape must close the
+    // dialog.
+    render(
+      <div>
+        <button type="button">Edit</button>
+        <Harness load={load} />
+      </div>,
+    );
+    screen.getByRole("button", { name: "Edit" }).focus();
+
+    act(() => input().focus());
+
+    expect(input()).toHaveFocus();
+    expect(load).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
   it("opens when Tab arrives from another control", async () => {
     const user = userEvent.setup();
     render(
