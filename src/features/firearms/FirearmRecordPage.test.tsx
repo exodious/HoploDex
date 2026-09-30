@@ -74,6 +74,7 @@ const collection: CollectionState = {
     ],
     allowedByFirearmType: {},
   },
+  actionTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,

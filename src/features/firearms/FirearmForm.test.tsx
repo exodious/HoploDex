@@ -1853,6 +1853,29 @@ describe("FirearmForm action (US3)", () => {
     expect(onSubmit.mock.calls[1][0].actionTypeId).toBe(2);
   });
 
+  it("says so under Action when the list couldn't be loaded", () => {
+    render(
+      <CollectionContext.Provider
+        value={
+          {
+            actionTypes: { actions: [], allowedByFirearmType: {} },
+            actionTypesFailed: true,
+          } as unknown as CollectionState
+        }
+      >
+        <FirearmForm onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+
+    expect(screen.getByText(/The list of actions couldn't be loaded/)).toBeInTheDocument();
+    expect(action()).toHaveTextContent("Unspecified");
+  });
+
+  it("shows no such message when the list loaded", () => {
+    renderForm();
+    expect(screen.queryByText(/couldn't be loaded/)).not.toBeInTheDocument();
+  });
+
   it("starts an edit on the saved action, and saves it unchanged", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);

@@ -15,6 +15,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   // The list is fixed at run time (FR-017), so it is fetched once, beside the
   // policies but not with every refresh.
   const [actionTypes, setActionTypes] = useState<ActionTypesOutput>(NO_ACTION_TYPES);
+  const [actionTypesFailed, setActionTypesFailed] = useState(false);
   const [summary, setSummary] = useState<ValueSummary | null>(null);
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -52,9 +53,9 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     let current = true;
     listActionTypes().then(
       (list) => current && setActionTypes(list),
-      // Only guidance for the form: without it Action offers just
-      // "Unspecified", and the backend still checks every save.
-      () => undefined,
+      // Without it Action offers just "Unspecified" and the form says so;
+      // the backend still checks every save.
+      () => current && setActionTypesFailed(true),
     );
     return () => {
       current = false;
@@ -69,12 +70,13 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       policies,
       policiesById: new Map(policies.map((p) => [p.id, p])),
       actionTypes,
+      actionTypesFailed,
       loaded,
       error,
       revision,
       refresh,
     }),
-    [firearms, summary, policies, actionTypes, loaded, error, revision, refresh],
+    [firearms, summary, policies, actionTypes, actionTypesFailed, loaded, error, revision, refresh],
   );
 
   return <CollectionContext.Provider value={value}>{children}</CollectionContext.Provider>;

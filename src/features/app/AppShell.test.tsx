@@ -141,6 +141,7 @@ const collection: CollectionState = {
   policies: [policy],
   policiesById: new Map([[policy.id, policy]]),
   actionTypes: { actions: [], allowedByFirearmType: {} },
+  actionTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,

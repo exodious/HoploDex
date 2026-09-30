@@ -78,6 +78,11 @@ function actionsForType(actionTypes: ActionTypesOutput, firearmTypeId: string): 
   return actionTypes.actions.filter((action) => mapped.includes(action.id));
 }
 
+/** Under Action when `list_action_types` failed: it has nothing to offer, and
+ * the user should know why rather than see an empty choice. */
+const ACTION_LIST_FAILED =
+  "The list of actions couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
+
 /** contracts/ui-entry.md §2: the note under a field that was snapped. */
 function snapNote(changedBy: "catalog" | "record", value: string): string {
   return changedBy === "catalog"
@@ -980,7 +985,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   })),
                 ]}
                 error={errorFor("actionTypeId")}
-                hint={actionNote || undefined}
+                hint={actionNote || (actionTypes.failed ? ACTION_LIST_FAILED : undefined)}
               />
               <span className="hd-sr-only" role="status" aria-live="polite">
                 {actionNote}
