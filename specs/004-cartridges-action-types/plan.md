@@ -33,7 +33,8 @@ column reading, because the new columns go after `caliber` and would shift
 every older sheet (research.md §12). The frontend gains a shared, hand-built
 WAI-ARIA `Combobox`, a pure caliber-derivation reducer, an Action select, two
 browse groupings, a combined "cartridge (caliber)" display and two import
-report sections.
+report sections. Origin's "Not specified" (002) becomes "Unspecified", the
+one term for an unrecorded value across the application.
 
 ## Technical Context
 
@@ -90,7 +91,7 @@ error codes
 |---|---|---|
 | I. Code Quality | Lint/static analysis, review, small single-purpose modules, no speculative abstraction | Backend logic is split by concern: `entry_text` (the key and entry rules), `cartridges` (catalog and derivation), `suggestions` (ranking and snapping), each small and pure over its inputs; `commands/entries.rs` is thin. The one new shared component (`Combobox`) has four users on day one. No dependency or layer is added. `clippy`/`rustfmt`/`eslint`/`prettier` run locally (CI stays disabled by the owner's choice, an existing documented deviation) |
 | II. Testing (NON-NEGOTIABLE) | Tests first, real persistence, one test per acceptance scenario, test isolation | Every acceptance scenario maps to a test in quickstart.md; suggestion, snapping and import tests run the real `ops` against a temporary SQLCipher database. The guess is tested against a fixture of expected results, not against itself. Tests use throwaway databases only; the seed tool keeps refusing the real data directory |
-| III. UX Consistency | One component set and pattern, WCAG 2.1 AA | One `Combobox` for all four fields, following the WAI-ARIA combobox pattern (keyboard-only operation, announced list, markers in accessible names). Snap notes, the Guess tag and the cleared-action note are hints under the field, like the rest of the form. The empty group is "Not specified", the term origin grouping already uses (research.md §11). Contract: [contracts/ui-entry.md](./contracts/ui-entry.md) |
+| III. UX Consistency | One component set and pattern, WCAG 2.1 AA | One `Combobox` for all four fields, following the WAI-ARIA combobox pattern (keyboard-only operation, announced list, markers in accessible names). Snap notes, the Guess tag and the cleared-action note are hints under the field, like the rest of the form. An unrecorded value is "Unspecified" everywhere, and origin's 002 label "Not specified" is renamed to match (research.md §11). Contract: [contracts/ui-entry.md](./contracts/ui-entry.md) |
 | IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | `suggest_entries` is a covered `GROUP BY` plus in-memory ranking, held to 50 ms at 10,000 rows by a performance test; stale responses are dropped rather than queued; grouping by the new fields reuses the list query; import adds one pre-pass over rows already in memory and keeps its progress events |
 | V. User Privacy | Local only, real deletion, no hidden copies | Nothing leaves the device. The catalog is static application data holding no user data. Suggestions read `firearms` at request time and keep nothing (FR-011); deleting a firearm removes its values through the existing delete + `secure_delete` + reclaim path, now tested for a cartridge (research.md §14) |
 | Security & Data Handling | Encryption at rest, vetted dependencies, no cipher change | New columns live in the encrypted database; no dependency is added; no key or cipher setting changes; three new commands are read-only and go through the session's gate |
@@ -125,7 +126,9 @@ The contracts and data model are **deltas** against 001 (and 002, 003 where
 they amended the same anchors). As in 002, the final task adds a one-line
 "amended by 004" pointer at each amended anchor in 001's documents (FR-001,
 FR-012, FR-013, FR-018 to FR-020, FR-026, the Firearm table, the spreadsheet
-columns, `FirearmSummary`).
+columns, `FirearmSummary`) and in 002's (the "Not specified" origin label:
+FR-001, FR-012, contracts/ui-identification.md §1, the `list_firearms` origin
+group).
 
 ### Source Code (repository root)
 
@@ -154,7 +157,8 @@ src-tauri/
 │   ├── commands/
 │   │   ├── entries.rs                # NEW: suggest_entries, settle_entry, list_action_types (+ ops)
 │   │   ├── firearms.rs               # entry-rule and action checks on create/update;
-│   │   │                             #  GroupBy::Cartridge/ActionType; FirearmSummary +2
+│   │   │                             #  GroupBy::Cartridge/ActionType; FirearmSummary +2;
+│   │   │                             #  origin's empty group "Not specified" → "Unspecified"
 │   │   ├── import_export.rs          # sheet pass, snapping, derivation, action parsing,
 │   │   │                             #  derivedCalibers/snappedValues; export +2 columns
 │   │   └── mod.rs                    # pub mod entries
@@ -168,7 +172,8 @@ src-tauri/
     ├── entry_suggestions_test.rs     # NEW: US2, SC-001, SC-003, SC-005 via ops
     ├── cartridge_test.rs             # NEW: US1 persistence, self-contained records
     ├── action_type_test.rs           # NEW: US3, mapping, trigger backstop (SC-008)
-    ├── list_firearms_test.rs         # + group by cartridge / action, summary fields
+    ├── list_firearms_test.rs         # + group by cartridge / action, summary fields;
+    │                                 #  origin's group renamed "Unspecified"
     ├── fts_search_test.rs            # + cartridge and action search
     ├── import_export_test.rs         # + US4, header-based reading, report lists
     ├── deletion_wipe_test.rs         # + a unique cartridge leaves no bytes behind
@@ -184,7 +189,8 @@ src/
 ├── features/
 │   ├── app/CollectionProvider.tsx    # loads list_action_types once per open database
 │   ├── firearms/
-│   │   ├── types.ts                  # cartridge, actionTypeId; ActionType types
+│   │   ├── types.ts                  # cartridge, actionTypeId; ActionType types;
+│   │   │                             #  ORIGIN_OPTIONS / originLabel: "Unspecified"
 │   │   ├── firearmsService.ts        # suggestEntries, settleEntry, listActionTypes
 │   │   ├── EntryField.tsx            # NEW: Combobox + suggest/settle + snap note
 │   │   ├── caliberDerivation.ts      # NEW: derived/edited reducer (research §8)
@@ -201,7 +207,8 @@ src/
 │   └── import-export/
 │       ├── types.ts                  # derivedCalibers, snappedValues
 │       └── ImportDialog.tsx          # two report sections
-└── **/*.test.tsx                     # FirearmForm, FirearmRecordPage, ImportDialog
+└── **/*.test.tsx                     # FirearmForm, FirearmRecordPage (incl. the renamed origin
+                                      #  label), ImportDialog
 
 e2e/
 ├── specs/us10-cartridges-actions.e2e.ts   # NEW: keyboard-only pick, caliber fill, group
@@ -238,8 +245,8 @@ quickstart.md).*
   merge gates. Still PASS.
 - **UX Consistency**: contracts/ui-entry.md specifies the combobox's roles,
   keys and announcements, so the WCAG baseline is checkable; all automatic
-  changes appear as hints under their field; the empty-group label matches
-  origin's. Still PASS.
+  changes appear as hints under their field; "Unspecified" is the one term
+  for an unrecorded value, origin included. Still PASS.
 - **Performance**: the per-keystroke command has an explicit 50 ms test budget
   at the worst case; grouping and search reuse indexed paths (research.md §5,
   §11). Still PASS.
@@ -249,13 +256,12 @@ quickstart.md).*
 
 **Result**: PASS. The design introduces no new violations.
 
-## Open points for the user
+## Decisions settled with the user (2026-09-29)
 
-- **Group label**: the spec's scenarios say "Unspecified"; the plan uses "Not
-  specified" to match origin grouping (research.md §11). The spec's wording
-  can be aligned when tasks are generated, or the plan changed if
-  "Unspecified" is preferred for both.
-- **SC-006 and snapping**: a collection that already holds two same-notation
-  spellings of one value will have them joined when exported and re-imported,
-  with each change reported (contracts/spreadsheet-format.md). SC-006's
-  exactness holds for collections without such pairs.
+- **"Unspecified"** is the one term for an unrecorded value: the cartridge and
+  action groups, the Action select's empty option, and origin's group, choice
+  card and display, which 002 called "Not specified" (spec Clarifications;
+  research.md §11).
+- **SC-006 is revised**: an export → import round trip merges same-notation
+  variants of one value, each merge reported; it is exact only for
+  collections without them (spec SC-006; contracts/spreadsheet-format.md).

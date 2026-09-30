@@ -17,6 +17,7 @@
 - Q: When editing a saved firearm and changing its cartridge, is the saved caliber re-derived? → A: No. A saved caliber counts as already edited and is left alone; the form offers the newly derived caliber as a suggestion the user can accept with one action (FR-006).
 - Q: On import, are same-notation variants that exist only within the sheet snapped to each other? → A: Yes, by majority: the spelling used by the most rows wins, and on a tie the one in the earliest row; catalog spellings and values on record still take precedence (FR-026).
 - Q: Where do cartridge and action type appear when browsing the collection? → A: The cartridge joins the caliber in the list's caliber cell and on tiles ("9x19mm Parabellum (9mm)", or the caliber alone when there is no cartridge); action type gets its own list column, not on tiles; a column is hidden while the list is grouped by it (FR-027).
+- Q: What is the empty group called, and does an export → import round trip keep same-notation variants apart? → A: "Unspecified", used consistently across the application, including origin's group, choice and display, which feature 002 called "Not specified". The round trip merges same-notation variants on import (FR-026), each merge reported; SC-006 is exact only for collections without them.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -210,7 +211,7 @@ The collector exports the collection and sees cartridge and action type columns 
 - **SC-003**: In a test collection seeded with case, spacing, separator and "&"/"and" variants of 20 makes and cartridges already on record, 100% of the variants entered through the form or import are recorded under the existing spelling, and 0 different-notation values (e.g. "9mm" vs "9x19") are changed.
 - **SC-004**: With 10,000 firearms, the suggestion list updates within 100 ms of each keystroke, and grouping and search by cartridge and action type meet the existing budgets (search within 500 ms, actions within 1 s).
 - **SC-005**: After deleting every firearm that uses a value, that value appears in no suggestion list and cannot be found anywhere in the database.
-- **SC-006**: Exporting a collection with cartridges and action types and importing the file into an empty database reproduces every cartridge, caliber and action exactly.
+- **SC-006**: Exporting a collection with cartridges and action types and importing the file into an empty database reproduces every cartridge, caliber and action, except that same-notation variants of one value (e.g. "Springfield Armory" and "Springfield armory", or a record spelling beside the catalog's) are merged on import per FR-026; a collection with no such variants is reproduced exactly, and every merge is listed in the import report (SC-007).
 - **SC-007**: Every import row whose caliber was derived, and every value changed by snapping, appears in the import report; no derived or snapped value is recorded silently.
 - **SC-008**: The action choice for a Handgun, Rifle or Shotgun offers only its mapped actions, and a firearm can never be saved with an action its type does not allow.
 
@@ -239,6 +240,8 @@ This feature extends `specs/001-firearms-inventory/`. It **amends**:
 - **Assumptions** ("Make, model, and caliber are treated as structured (non-free-form) fields … even though their specific values are user-entered"): still true, now with suggestions, snapping and an entry length cap (FR-009 to FR-015).
 - **Data model**: `firearms.caliber` stays; a cartridge column, an `ActionType` lookup with a type↔action mapping (seeded, like `FirearmType`) and a nullable action reference on `firearms` are added; the full-text index covers cartridge and action name; `FirearmSummary` carries cartridge and action type.
 - **Spreadsheet format**: the two new columns.
+
+It also amends `specs/002-firearm-identification/`: the origin choice, display and group that 002 labels "Not specified" are labelled "Unspecified", the one term this application uses for a value that was not recorded (002 FR-001, FR-012; contracts/ui-identification.md §1).
 
 It follows the precedent of `FirearmType`, which is seeded into the database because firearms refer to it; the cartridge catalog is deliberately different (not in the database, no reference from a firearm), per the recorded decision below.
 

@@ -80,15 +80,14 @@ Matching of existing records (001 FR-026) uses the snapped `make` and
 
 - `cartridge` is the recorded text; `action_type` is the action's name
   (`Bolt action`). Both blank when none.
-- Exporting a collection with cartridges and actions and importing the file
-  into an empty database reproduces every cartridge, caliber and action
-  exactly (SC-006): no exported caliber is blank, so none is derived, and a
-  value that is the only spelling of its key is left as it is.
-- **Where snapping meets the round trip**: a collection that already holds two
-  same-notation spellings of one value ("Springfield Armory" on three
-  firearms, "Springfield armory" on one; or "9X19mm Parabellum" beside the
-  catalog's "9x19mm Parabellum", spec Edge Cases) is re-imported with them
-  joined, by the sheet pass or the catalog, and every such change is listed in
-  the report (SC-007). SC-006's exactness is tested on a collection without
-  such pairs; a second test covers a collection with them and asserts the
-  report (research.md §12).
+- **Round trip (SC-006, as revised)**: exporting a collection with cartridges
+  and actions and importing the file into an empty database reproduces every
+  cartridge, caliber and action, except that same-notation variants of one
+  value are merged on import. No exported caliber is blank, so none is
+  derived, and a value that is the only spelling of its key is left as it is;
+  a collection holding two spellings of one value ("Springfield Armory" on
+  three firearms, "Springfield armory" on one; or "9X19mm Parabellum" beside
+  the catalog's "9x19mm Parabellum", spec Edge Cases) is re-imported with them
+  merged, by the sheet pass or the catalog, and each merge is listed in the
+  report (SC-007). One test checks exactness on a collection without such
+  pairs; a second checks the merge and its report (research.md §12).

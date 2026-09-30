@@ -125,12 +125,12 @@ half width (`hd-field--half`, as Nickname).
 
 - A `Select` labeled **Action**, optional, directly after **Type**, at a third
   of the form's width (`hd-field--third`, as other short choices). Its first
-  option is **Not specified**; then the actions allowed for the selected type,
+  option is **Unspecified**; then the actions allowed for the selected type,
   in list order (the whole list when the type maps none, or no type is chosen
   yet). The choices come from `list_action_types`. It cannot take typed text
   (US3-7).
 - **Changing Type** when the chosen action is not allowed for the new type:
-  the action returns to **Not specified**, and a note appears under Action:
+  the action returns to **Unspecified**, and a note appears under Action:
   "Lever action doesn't apply to a Handgun, so the action was cleared." It is
   announced politely once per type change, and removed when an action is
   chosen or the type changes again. An allowed action is kept, with no note.
@@ -151,7 +151,11 @@ half width (`hd-field--half`, as Nickname).
 
 - **Group by** gains **Cartridge** and **Action**, after **Caliber** and **Type**
   in the control's order: Type, Action, Caliber, Cartridge, Make, Origin.
-  Groups of firearms with none are headed **Not specified**, last.
+  Groups of firearms with none are headed **Unspecified**, last.
+- **One term** (research.md §11): origin's group, its choice card on the form
+  (002 ui-identification §1, "Unspecified — Leave this if you're not sure.")
+  and its record-page value change from "Not specified" to **Unspecified**, so
+  the application names an unrecorded value the same way everywhere.
 - **List view**: the **Caliber** column shows "9x19mm Parabellum (9mm)" when a
   cartridge is recorded, else "9mm". A new **Action** column follows **Type**,
   blank when none. The Caliber column is hidden when grouped by Caliber or

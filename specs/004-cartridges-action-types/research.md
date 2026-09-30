@@ -427,15 +427,20 @@ function, `entry_key`, in `services/entry_text.rs`.
 ## 11. Grouping, search and display (FR-008, FR-020, FR-027)
 
 - **Decision — grouping**: `GroupBy` gains `cartridge` and `action_type`.
-  Firearms with none go in a group labelled **"Not specified"**, which sorts
+  Firearms with none go in a group labelled **"Unspecified"**, which sorts
   last. Cartridge groups are otherwise alphabetical; action groups follow the
   action list's order (`sort_order`), like origin's fixed order (002 research
   §10).
-- **Note on the label**: the spec's scenarios call this group "Unspecified".
-  The existing origin grouping already names its empty group "Not specified",
-  and constitution III requires one term across screens, so the plan uses "Not
-  specified" and the tests assert it. This is a wording choice, not a change of
-  behavior; the spec's text can be aligned when tasks are generated.
+- **Decision — one term, "Unspecified"** (spec Clarifications): constitution
+  III requires one term across screens, and 002 used "Not specified" for
+  origin. This feature renames every use of it: origin's group key and fixed
+  order in `list_firearms` (`["Domestic", "Imported", "Re-imported",
+  "Unspecified"]`), the origin choice card in `ORIGIN_OPTIONS`, and
+  `originLabel(null)` on the record page. The Action select's empty option is
+  "Unspecified" too. The tests that assert the old label
+  (`list_firearms_test.rs`, `FirearmForm.test.tsx`,
+  `FirearmRecordPage.test.tsx`) change with it, and 002's documents get an
+  "amended by 004" pointer.
 - **Decision — search**: `firearms_fts` gains `cartridge` and
   `action_type_name` (the action's name, looked up in the FTS triggers the same
   way `firearm_type_name` is). Action names are fixed at run time, so the index

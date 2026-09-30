@@ -69,8 +69,10 @@ validated and stored (research.md §9).
   (so spelling variants already on record are separate groups, spec Edge
   Cases), groups sorted alphabetically; with `"action_type"` it is the
   action's name, groups in the action list's order. In both, firearms with
-  none form a group keyed **`"Not specified"`**, returned last
-  (research.md §11).
+  none form a group keyed **`"Unspecified"`**, returned last
+  (research.md §11). **Changed from 002:** with `"origin"`, the group for
+  firearms with no origin is keyed `"Unspecified"` (was `"Not specified"`),
+  still last.
 - **Search**: `query` also matches the cartridge text and the action's name
   (FR-008, FR-020), with the existing phrase-with-trailing-prefix semantics:
   "7.62x39" finds "7.62x39mm", "bolt" finds "Bolt action".
