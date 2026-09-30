@@ -93,6 +93,8 @@ FR-016; research.md §4–§5).
   };
   ```
 
+  _Amended by [spec 005](../../005-regulated-item-types/contracts/tauri-commands.md): `field` also takes `"registrationForm"` and `"registeredTo"`; see 005's command contract._
+
 - **Output**:
 
   ```ts
@@ -127,6 +129,8 @@ cartridge, the caliber it derives (FR-003, FR-005). Research.md §6–§7.
     text: string;
   };
   ```
+
+  _Amended by [spec 005](../../005-regulated-item-types/contracts/tauri-commands.md): `field` also takes `"registrationForm"` and `"registeredTo"`; see 005's command contract._
 
 - **Output**:
 
@@ -186,6 +190,8 @@ The fixed action list and its mapping to firearm types (FR-017, FR-018).
     recordedValue: string;
   }[];
   ```
+
+  _Amended by [spec 005](../../005-regulated-item-types/contracts/tauri-commands.md): a snapped value's `field` may also be `"registrationForm"` or `"registeredTo"`; see 005's command contract._
 
   Both list rows that were imported or became conflicts, never failed rows.
   The number of values changed by snapping is `snappedValues.length`

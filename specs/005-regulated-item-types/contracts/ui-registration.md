@@ -73,7 +73,8 @@ closed unless something is recorded, opened by a save error inside it.
    `hd-form-grid hd-form-grid--registration` row at the standard dialog
    widths:
    - **Form**: `EntryField` (`registrationForm`), `hd-field--third`, with
-     suggestions marked "Built-in" for the five form names.
+     suggestions marked "Built-in" for the three built-in form names
+     (Form 1, Form 4 and Form 5).
    - **Approved**: `DateField`, `hd-field--third`, with the hint "The date on
      the approved form (the tax stamp date)." Its `max` is today's local
      date, so the calendar can't pick a future date. A typed one gets the

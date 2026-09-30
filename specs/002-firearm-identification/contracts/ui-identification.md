@@ -172,7 +172,7 @@ warning never changes a row's outcome and is styled as information, not as
 an error. Nothing is shown when there are none.
 
 ## 8. The "How do I record this?" guide (FR-015, SC-007)
-_Amended by [spec 005](../005-regulated-item-types/spec.md): the guide is now `IdentificationGuide` with a "Registered items" section; see 005's contracts/ui-registration.md._
+_Amended by [spec 005](../../005-regulated-item-types/spec.md): the guide is now `IdentificationGuide` with a "Registered items" section; see 005's contracts/ui-registration.md._
 
 
 A shared `Dialog` titled **How to record where a firearm came from**,
