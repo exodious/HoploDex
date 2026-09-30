@@ -1,5 +1,12 @@
 -- FTS5 external-content index over firearms, per data-model.md's
 -- "Virtual table: firearms_fts" section (FR-013, US2 Scenarios 3-4).
+-- specs/004-cartridges-action-types FR-008/FR-020 adds the cartridge and the
+-- action's name, looked up the way the type's name is.
+--
+-- The trigram tokenizer matches any run of three or more characters inside a
+-- value, so "365" finds the model "P365 XL" and "1911" finds serial "CO1911";
+-- the default word tokenizer only matched from the start of a word. A search
+-- of one or two characters can't use it (see `list_firearms`).
 
 CREATE VIRTUAL TABLE firearms_fts USING fts5(
     make,
@@ -18,8 +25,11 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
     original_make,
     original_model,
     original_serial_number,
+    cartridge,
+    action_type_name,
     content = 'firearms',
-    content_rowid = 'id'
+    content_rowid = 'id',
+    tokenize = 'trigram remove_diacritics 1'
 );
 
 -- specs/002-firearm-identification FR-012: origin is indexed as its display
@@ -30,7 +40,8 @@ CREATE TRIGGER firearms_fts_after_insert AFTER INSERT ON firearms
 BEGIN
     INSERT INTO firearms_fts (
         rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
-        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number
+        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
+        cartridge, action_type_name
     )
     VALUES (
         new.id,
@@ -49,7 +60,9 @@ BEGIN
         new.importer_name,
         new.original_make,
         new.original_model,
-        new.original_serial_number
+        new.original_serial_number,
+        new.cartridge,
+        (SELECT name FROM action_types WHERE id = new.action_type_id)
     );
 END;
 
@@ -57,7 +70,8 @@ CREATE TRIGGER firearms_fts_after_delete AFTER DELETE ON firearms
 BEGIN
     INSERT INTO firearms_fts (
         firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
-        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number
+        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
+        cartridge, action_type_name
     )
     VALUES (
         'delete',
@@ -77,7 +91,9 @@ BEGIN
         old.importer_name,
         old.original_make,
         old.original_model,
-        old.original_serial_number
+        old.original_serial_number,
+        old.cartridge,
+        (SELECT name FROM action_types WHERE id = old.action_type_id)
     );
 END;
 
@@ -85,7 +101,8 @@ CREATE TRIGGER firearms_fts_after_update AFTER UPDATE ON firearms
 BEGIN
     INSERT INTO firearms_fts (
         firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
-        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number
+        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
+        cartridge, action_type_name
     )
     VALUES (
         'delete',
@@ -105,11 +122,14 @@ BEGIN
         old.importer_name,
         old.original_make,
         old.original_model,
-        old.original_serial_number
+        old.original_serial_number,
+        old.cartridge,
+        (SELECT name FROM action_types WHERE id = old.action_type_id)
     );
     INSERT INTO firearms_fts (
         rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
-        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number
+        origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
+        cartridge, action_type_name
     )
     VALUES (
         new.id,
@@ -128,6 +148,8 @@ BEGIN
         new.importer_name,
         new.original_make,
         new.original_model,
-        new.original_serial_number
+        new.original_serial_number,
+        new.cartridge,
+        (SELECT name FROM action_types WHERE id = new.action_type_id)
     );
 END;

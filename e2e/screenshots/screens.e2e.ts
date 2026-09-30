@@ -1,4 +1,16 @@
-import { $, back, browser, choose, clickButton, clickEl, fill, goTo, search } from "../support/ui";
+import path from "node:path";
+import {
+  $,
+  back,
+  browser,
+  choose,
+  clickButton,
+  clickEl,
+  fieldValue,
+  fill,
+  goTo,
+  search,
+} from "../support/ui";
 import {
   chooseMenuItem,
   requestQuit,
@@ -9,6 +21,7 @@ import {
   waitForChooser,
 } from "../support/ui";
 import { chooseTheme, shot } from "../support/screenshots";
+import { realClick, realKey } from "../support/realInput";
 
 /**
  * The standard screenshot set for pull requests that change the UI: the main
@@ -86,6 +99,49 @@ async function closeDialog() {
   );
   await $('[role="dialog"]').waitForExist({ reverse: true });
   await browser.pause(200);
+}
+
+/** Types `text` with real key presses into the focused field (an X keysym
+ * per character), since the suggestion lists answer to real input. */
+async function typeReal(text: string) {
+  const names: Record<string, string> = { " ": "space", ".": "period" };
+  for (const char of text) {
+    const upper = char !== char.toLowerCase();
+    await realKey(upper ? `Shift_L+${char.toLowerCase()}` : (names[char] ?? char));
+  }
+}
+
+/** Tab lands in Caliber and brings its list up, which the shots don't want.
+ * Escape closes the list only if it is up: with none, it would close the form. */
+async function closeListIfOpen() {
+  await browser.pause(600);
+  if (await $('[role="listbox"]').isDisplayed()) {
+    await realKey("Escape");
+    await $('[role="listbox"]').waitForExist({ reverse: true });
+  }
+}
+
+/** Closes the open form without saving, whether or not it asks first. */
+async function discardForm() {
+  await browser.execute(() =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+  await browser.pause(400);
+  if (await $('[role="alertdialog"]').isExisting()) await clickButton("Discard changes");
+  await $('[role="dialog"]').waitForExist({ reverse: true });
+  await browser.pause(200);
+}
+
+/** Scrolls a form field to the middle of the window, so its list or note is in view. */
+async function centerField(field: string) {
+  await browser.execute((name: string) => {
+    document
+      .querySelector(`[role="dialog"] [data-field="${name}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, field);
+  await browser.pause(300);
 }
 
 // The app starts at the chooser, listing the seeded databases. It has to be
@@ -182,6 +238,89 @@ for (const theme of ["Light", "Dark"] as const) {
       await openDialog("Add firearm");
       await shot(`08-add-firearm-${suffix}`, { fullPage: true });
       await closeDialog();
+    });
+
+    // specs/004-cartridges-action-types contracts/ui-entry.md §9.
+    it("suggestions, guesses and notes in the firearm form", async () => {
+      await choose("Cartridge");
+      await $("h2.hd-group__title").waitForExist();
+      await browser.pause(300);
+      await shot(`31-grouped-by-cartridge-${suffix}`);
+      await choose("Type");
+
+      await openDialog("Add firearm");
+      await realClick('[data-field="make"] input');
+      await typeReal("Gl");
+      await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
+      await centerField("make");
+      await shot(`28-make-suggestions-${suffix}`);
+      await realKey("Escape");
+      await $('[role="listbox"]').waitForExist({ reverse: true });
+
+      await realClick('[data-field="cartridge"] input');
+      await typeReal("9mm");
+      await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
+      await centerField("cartridge");
+      await shot(`29-cartridge-suggestions-${suffix}`);
+      await realKey("Escape");
+      await $('[role="listbox"]').waitForExist({ reverse: true });
+
+      // A custom cartridge whose bore can be read from its name: the caliber
+      // is filled in, marked as a guess.
+      await browser.execute(() => {
+        const input = document.querySelector<HTMLInputElement>('[data-field="cartridge"] input');
+        input?.select();
+      });
+      await typeReal(".30 Custom Improved");
+      await browser.waitUntil(
+        async () => (await fieldValue("Cartridge")) === ".30 Custom Improved",
+        {
+          timeoutMsg: "the cartridge text was not typed as sent",
+        },
+      );
+      await realKey("Escape");
+      await realKey("Tab");
+      await $(".hd-guess-tag").waitForExist({ timeout: 5000 });
+      await closeListIfOpen();
+      await centerField("caliber");
+      await shot(`30-caliber-guess-${suffix}`);
+      await discardForm();
+
+      // Changing the cartridge of a saved firearm suggests a caliber rather
+      // than replacing the one on record.
+      await openRecord("Savage 110");
+      await openDialog("Edit");
+      await realClick('[data-field="cartridge"] input');
+      await realKey("Control_L+a");
+      await typeReal("9x19mm Parabellum");
+      await realKey("Escape");
+      await realKey("Tab");
+      await $(".hd-caliber-suggestion").waitForExist({ timeout: 5000 });
+      await closeListIfOpen();
+      await centerField("caliber");
+      await shot(`32-caliber-suggestion-${suffix}`);
+      await discardForm();
+      await back();
+
+      // A type that doesn't allow the recorded action clears it, with a note.
+      await openRecord("Mossberg 500");
+      await openDialog("Edit");
+      await choose("Handgun");
+      await browser.waitUntil(
+        () =>
+          browser.execute(() =>
+            Boolean(
+              document
+                .querySelector('[role="dialog"] [data-field="actionTypeId"]')
+                ?.textContent?.includes("the action was cleared"),
+            ),
+          ),
+        { timeout: 5000, timeoutMsg: "the cleared-action note never appeared" },
+      );
+      await centerField("actionTypeId");
+      await shot(`33-action-cleared-${suffix}`);
+      await discardForm();
+      await back();
     });
 
     it("insurance", async () => {
@@ -306,3 +445,36 @@ for (const theme of ["Light", "Dark"] as const) {
     });
   });
 }
+
+// The import report is shot once: importing the sample again would only find
+// its rows already there. Both themes, with the report left open.
+describe("Screenshots: the import report", () => {
+  it("shows the derived calibers and matched spellings", async () => {
+    await goTo("Collection");
+    await chooseTheme("Light");
+    // The seed keeps its import samples beside the config directory.
+    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    await clickButton("Import");
+    await fill("Spreadsheet file", path.join(samples, "import-cartridges.csv"));
+    await clickButton("Import");
+    await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
+    for (const title of [
+      "Calibers filled in from the cartridge",
+      "Spellings matched to existing values",
+    ]) {
+      await browser.execute((wanted: string) => {
+        const trigger = [...document.querySelectorAll<HTMLElement>(".hd-disclosure__trigger")].find(
+          (t) => t.textContent?.includes(wanted),
+        );
+        if (trigger?.getAttribute("aria-expanded") === "false") trigger.click();
+      }, title);
+    }
+    await browser.pause(300);
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`34-import-report-${theme.toLowerCase()}`, { fullPage: true });
+    }
+    await closeDialog();
+    await chooseTheme("Light");
+  });
+});

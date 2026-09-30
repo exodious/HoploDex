@@ -64,6 +64,10 @@ _Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands
 code are added; the make/model/serial clash is accepted, not blocked, when
 both records have a year of manufacture and the years differ._
 
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-commands.md): `FirearmInput` gains `cartridge` and
+`actionTypeId`, checked against the entry rules and the type's allowed
+actions._
+
 ### `update_firearm`
 
 - **Input**: `id: number`, `FirearmInput` (partial or full; validation
@@ -74,6 +78,8 @@ both records have a year of manufacture and the years differ._
 
 _Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
 as `create_firearm`._
+
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-commands.md): as `create_firearm`._
 
 ### `dispose_firearm`
 
@@ -155,6 +161,10 @@ same transaction as the status change and history insert._
 _Amended by [spec 002](../../002-firearm-identification/contracts/tauri-commands.md):
 `groupBy` gains `"origin"`; `query` also matches origin, year, country,
 importer and original marks._
+
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-commands.md): `groupBy` gains `"cartridge"` and
+`"action_type"`; `FirearmSummary` carries `cartridge` and `actionType`; `query`
+also matches both._
 
 ## Insurance & valuation (User Story 3)
 
@@ -380,6 +390,10 @@ output gains `warnings: { row: number; message: string }[]` for the FR-009
 original-marks match (a row still imports); a row's main-marks match is not
 a conflict at all when both it and the existing record have a year of
 manufacture and the years differ._
+
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-commands.md): output gains `derivedCalibers` and
+`snappedValues` for the report, and a row is matched after its make and model
+are snapped._
 
 ### `resolve_import_conflicts`
 

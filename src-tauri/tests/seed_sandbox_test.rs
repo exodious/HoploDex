@@ -117,7 +117,7 @@ fn the_real_data_directory_and_anything_inside_it_are_refused() {
 #[test]
 fn the_real_config_directory_and_anything_inside_it_are_refused() {
     let env = Env::new();
-    assert!(env.check(&env.home().join(".config/com.hoplodex.app")).is_err());
+    assert!(env.check(&env.home().join(".config/io.github.exodious.HoploDex")).is_err());
 
     let custom = env.home().join("cfg");
     let env = env.with("XDG_CONFIG_HOME", &custom);

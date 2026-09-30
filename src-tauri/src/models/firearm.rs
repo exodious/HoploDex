@@ -4,6 +4,7 @@ use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
+use crate::services::entry_text::{EntryField, check_entry_text};
 
 text_enum!(FirearmStatus {
     Active => "active",
@@ -74,7 +75,13 @@ pub struct Firearm {
     pub serial_number: Option<String>,
     pub no_serial_attested: bool,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-001: the exact round; `None` =
+    /// none recorded.
+    pub cartridge: Option<String>,
     pub firearm_type_id: i64,
+    /// specs/004-cartridges-action-types FR-017: an `action_types` id; `None`
+    /// = not specified.
+    pub action_type_id: Option<i64>,
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
@@ -125,7 +132,9 @@ impl Firearm {
             serial_number: row.get("serial_number")?,
             no_serial_attested: row.get("no_serial_attested")?,
             caliber: row.get("caliber")?,
+            cartridge: row.get("cartridge")?,
             firearm_type_id: row.get("firearm_type_id")?,
+            action_type_id: row.get("action_type_id")?,
             nickname: row.get("nickname")?,
             notes: row.get("notes")?,
             accessories: row.get("accessories")?,
@@ -170,7 +179,15 @@ pub struct FirearmInput {
     pub serial_number: Option<String>,
     pub no_serial_attested: bool,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-001: the exact round; `None` =
+    /// none recorded.
+    #[serde(default)]
+    pub cartridge: Option<String>,
     pub firearm_type_id: i64,
+    /// specs/004-cartridges-action-types FR-017: an `action_types` id; `None`
+    /// = not specified.
+    #[serde(default)]
+    pub action_type_id: Option<i64>,
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
@@ -220,7 +237,9 @@ impl From<&Firearm> for FirearmInput {
             serial_number: firearm.serial_number.clone(),
             no_serial_attested: firearm.no_serial_attested,
             caliber: firearm.caliber.clone(),
+            cartridge: firearm.cartridge.clone(),
             firearm_type_id: firearm.firearm_type_id,
+            action_type_id: firearm.action_type_id,
             nickname: firearm.nickname.clone(),
             notes: firearm.notes.clone(),
             accessories: firearm.accessories.clone(),
@@ -255,12 +274,18 @@ impl From<&Firearm> for FirearmInput {
 impl FirearmInput {
     /// The input as it is stored: a blank nickname, serial number or finish
     /// becomes `None` and any other is trimmed (FR-031, FR-032, FR-039: blank
-    /// is not a value, and comparison ignores surrounding whitespace).
+    /// is not a value, and comparison ignores surrounding whitespace). Make,
+    /// model and caliber are trimmed and a blank cartridge becomes `None`
+    /// (specs/004-cartridges-action-types FR-015, research.md §9).
     pub fn normalized(&self) -> Self {
         let trimmed = |value: &Option<String>| {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
         };
         Self {
+            make: self.make.trim().to_owned(),
+            model: self.model.trim().to_owned(),
+            caliber: self.caliber.trim().to_owned(),
+            cartridge: trimmed(&self.cartridge),
             nickname: trimmed(&self.nickname),
             serial_number: trimmed(&self.serial_number),
             finish: trimmed(&self.finish),
@@ -336,18 +361,34 @@ fn checked_measure(
 
 /// Validation rules from data-model.md's "Validation rules" section,
 /// enforced here (not just at the DB level) so import validation (FR-020)
-/// can produce per-row human-readable errors too.
-pub fn validate_firearm_input(input: &FirearmInput) -> Result<(), CommandError> {
+/// can produce per-row human-readable errors too. `stored` is the record an
+/// update replaces: specs/004-cartridges-action-types FR-015's entry rules
+/// then apply only to a make, model, cartridge or caliber whose trimmed value
+/// differs from the stored one, so an existing value over the cap stays
+/// valid until that field is edited (spec Assumptions). Create and import
+/// pass `None` and check all four.
+pub fn validate_firearm_input(
+    input: &FirearmInput,
+    stored: Option<&Firearm>,
+) -> Result<(), CommandError> {
     let mut errors: HashMap<String, String> = HashMap::new();
 
-    if input.make.trim().is_empty() {
-        errors.insert("make".into(), "Make is required.".into());
-    }
-    if input.model.trim().is_empty() {
-        errors.insert("model".into(), "Model is required.".into());
-    }
-    if input.caliber.trim().is_empty() {
-        errors.insert("caliber".into(), "Caliber is required.".into());
+    for field in EntryField::ALL {
+        let (value, stored_value) = match field {
+            EntryField::Make => (input.make.as_str(), stored.map(|f| f.make.as_str())),
+            EntryField::Model => (input.model.as_str(), stored.map(|f| f.model.as_str())),
+            EntryField::Cartridge => (
+                input.cartridge.as_deref().unwrap_or(""),
+                stored.map(|f| f.cartridge.as_deref().unwrap_or("")),
+            ),
+            EntryField::Caliber => (input.caliber.as_str(), stored.map(|f| f.caliber.as_str())),
+        };
+        if stored_value.is_some_and(|stored| stored.trim() == value.trim()) {
+            continue;
+        }
+        if let Err(message) = check_entry_text(field, value) {
+            errors.insert(field.column().into(), message);
+        }
     }
 
     checked_amount("estimatedValue", "Estimated value", input.estimated_value, &mut errors);

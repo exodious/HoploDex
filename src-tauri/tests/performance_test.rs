@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops::{self as databases_ops, Unlock};
+use hoplodex_lib::commands::entries::{SuggestEntriesInput, ops as entry_ops};
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
@@ -26,6 +27,7 @@ use hoplodex_lib::models::database::{
 };
 use hoplodex_lib::models::firearm::{FirearmInput, Origin};
 use hoplodex_lib::services::backups;
+use hoplodex_lib::services::entry_text::EntryField;
 use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
@@ -58,6 +60,13 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
     // firearms_fts index and idx_firearms_original_serial carry the full
     // load a real 10,000-record collection would (T052).
     let origins = [None, Some("domestic"), Some("imported"), Some("reimported")];
+    // specs/004-cartridges-action-types: most records carry a cartridge, a
+    // few a unique custom one, and some none (SC-004).
+    let cartridges = [Some("9x19mm Parabellum"), Some(".45 ACP"), None, Some(".223 Remington")];
+
+    // Semi-automatic and Bolt action are allowed for every seeded type; a
+    // third of the records have none.
+    let actions = [Some(1), Some(3), None];
 
     let tx = conn.unchecked_transaction().unwrap();
     {
@@ -69,10 +78,10 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                     weight_tenths_oz, capacity, finish, condition,
                     status, origin, year_of_manufacture, country_of_manufacture,
                     importer_name, original_make, original_model, original_serial_number,
-                    created_at, updated_at
+                    cartridge, action_type_id, created_at, updated_at
                 ) VALUES (
                     ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, datetime('now'), datetime('now')
+                    'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, datetime('now'), datetime('now')
                 )",
             )
             .unwrap();
@@ -126,6 +135,12 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                 importer.as_ref().map(|_| "Fabrique Nationale"),
                 importer.as_ref().map(|_| "High Power"),
                 original_serial,
+                if i % 97 == 0 {
+                    Some(format!("Custom Wildcat {i}"))
+                } else {
+                    cartridges[i % cartridges.len()].map(str::to_owned)
+                },
+                actions[i % actions.len()],
             ])
             .unwrap();
         }
@@ -287,6 +302,121 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
         "create_firearm with original marks (FR-009 lookup) took {}ms, over the {BUDGET_MS}ms budget",
         elapsed.as_millis()
     );
+}
+
+/// specs/004-cartridges-action-types SC-004 (research.md §11): grouping by
+/// cartridge within the 1s action budget, and a search by a cartridge
+/// within the 500ms search budget.
+#[test]
+fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+
+    let started = Instant::now();
+    let grouped = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Cartridge), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    // Printed for the pull request's performance note (`--nocapture`).
+    eprintln!("SC-004: list_firearms grouped by cartridge took {elapsed:?}");
+    assert_eq!(grouped.groups.last().map(|g| g.key.as_str()), Some("Unspecified"));
+    assert!(grouped.groups.len() > 100, "the custom cartridges are groups of their own");
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "list_firearms (grouped by cartridge) took {}ms, over the 1000ms budget",
+        elapsed.as_millis()
+    );
+
+    let started = Instant::now();
+    let searched = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("Parabellum".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    eprintln!("SC-004: list_firearms cartridge search took {elapsed:?}");
+    assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (cartridge search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+/// specs/004-cartridges-action-types SC-004: grouping by action type within
+/// the 1s action budget, and a search by an action's name within the 500ms
+/// search budget.
+#[test]
+fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+
+    let started = Instant::now();
+    let grouped = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::ActionType), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    eprintln!("SC-004: list_firearms grouped by action type took {elapsed:?}");
+    let keys: Vec<&str> = grouped.groups.iter().map(|g| g.key.as_str()).collect();
+    assert_eq!(keys, vec!["Semi-automatic", "Bolt action", "Unspecified"]);
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "list_firearms (grouped by action type) took {}ms, over the 1000ms budget",
+        elapsed.as_millis()
+    );
+
+    let started = Instant::now();
+    let searched = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("Bolt action".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    eprintln!("SC-004: list_firearms action search took {elapsed:?}");
+    assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (action search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+}
+
+/// specs/004-cartridges-action-types SC-004 (research.md §5): the
+/// suggestion list for each field, computed per keystroke at 10,000
+/// firearms with 10,000 distinct models (the worst case), within 50ms: half
+/// of the 100ms budget, the rest being IPC and rendering.
+#[test]
+fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+
+    for (field, text, make) in [
+        (EntryField::Make, "sw", None),
+        (EntryField::Model, "model 12", Some("Ruger")),
+        (EntryField::Model, "", None),
+        (EntryField::Cartridge, "9", None),
+        (EntryField::Cartridge, "", None),
+        (EntryField::Caliber, ".2", None),
+    ] {
+        let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
+        let started = Instant::now();
+        let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
+        let elapsed = started.elapsed();
+        eprintln!("SC-004: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
+        assert!(!output.suggestions.is_empty());
+        assert!(
+            elapsed.as_millis() < 50,
+            "suggest_entries({field:?}, {text:?}) took {}ms at {RECORD_COUNT} records, over the 50ms budget",
+            elapsed.as_millis()
+        );
+    }
 }
 
 #[test]

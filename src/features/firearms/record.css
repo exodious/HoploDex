@@ -132,7 +132,7 @@
    so a partial last row never leaves a gap. */
 .hd-titleblock {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin: -1px 0 0 -1px;
 }
 

@@ -89,7 +89,7 @@ def run(how):
     env = dict(os.environ, GDK_BACKEND="x11", XDG_DATA_HOME=scratch + "/data",
                XDG_CACHE_HOME=scratch + "/cache", XDG_CONFIG_HOME=scratch + "/config")
     env.pop("WAYLAND_DISPLAY", None)
-    opened = scratch + "/cache/com.hoplodex.app/opened-documents"
+    opened = scratch + "/cache/io.github.exodious.HoploDex/opened-documents"
     planted = opened + "/7/receipt.pdf"
     app = subprocess.Popen([BINARY], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

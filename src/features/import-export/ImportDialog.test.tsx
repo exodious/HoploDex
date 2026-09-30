@@ -20,6 +20,8 @@ const result: ImportResult = {
   skippedCount: 0,
   rowErrors: [],
   warnings: [],
+  derivedCalibers: [],
+  snappedValues: [],
   conflicts: [
     {
       conflictId: "c1",
@@ -150,5 +152,97 @@ describe("ImportDialog warnings (US4-6, FR-009)", () => {
 
     expect(screen.queryByRole("heading", { name: "Warnings" })).not.toBeInTheDocument();
     expect(screen.queryByText("warnings")).not.toBeInTheDocument();
+  });
+});
+
+describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026, SC-007)", () => {
+  async function importWith(overrides: Partial<ImportResult>) {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockResolvedValue({
+      ...result,
+      conflicts: [],
+      ...overrides,
+    });
+    render(
+      <CollectionContext.Provider value={collection}>
+        <ImportDialog open onOpenChange={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    await user.type(screen.getByLabelText(/Spreadsheet file/), "/tmp/import.csv");
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByRole("button", { name: "Done" });
+    return user;
+  }
+
+  it("lists the calibers filled in from the cartridge in row order, saying which were guessed", async () => {
+    const user = await importWith({
+      derivedCalibers: [
+        { row: 4, cartridge: "9x19mm Parabellum", caliber: "9mm", source: "catalog" },
+        { row: 7, cartridge: ".30 Custom Improved", caliber: ".30", source: "guess" },
+      ],
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /Calibers filled in from the cartridge \(2\)/ }),
+    );
+
+    const rows = screen
+      .getAllByRole("listitem")
+      .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
+    expect(rows).toEqual([
+      ["Row 4", "9x19mm Parabellum → 9mm (built-in)"],
+      ["Row 7", ".30 Custom Improved → .30 (guessed)"],
+    ]);
+  });
+
+  it("lists the spellings matched to existing values", async () => {
+    const user = await importWith({
+      snappedValues: [
+        {
+          row: 2,
+          field: "make",
+          sheetValue: "springfield armory",
+          recordedValue: "Springfield Armory",
+        },
+        {
+          row: 5,
+          field: "cartridge",
+          sheetValue: "9X19mm Parabellum",
+          recordedValue: "9x19mm Parabellum",
+        },
+      ],
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /Spellings matched to existing values \(2\)/ }),
+    );
+
+    const rows = screen
+      .getAllByRole("listitem")
+      .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
+    expect(rows).toEqual([
+      ["Row 2", "make: “springfield armory” → “Springfield Armory”"],
+      ["Row 5", "cartridge: “9X19mm Parabellum” → “9x19mm Parabellum”"],
+    ]);
+  });
+
+  it("shows each section only when it has rows", async () => {
+    await importWith({
+      derivedCalibers: [
+        { row: 4, cartridge: "9x19mm Parabellum", caliber: "9mm", source: "catalog" },
+      ],
+    });
+
+    expect(
+      screen.getByRole("button", { name: /Calibers filled in from the cartridge \(1\)/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Spellings matched to existing values/)).not.toBeInTheDocument();
+  });
+
+  it("shows neither section when nothing was derived or matched", async () => {
+    await importWith({});
+
+    expect(screen.queryByText(/Calibers filled in from the cartridge/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Spellings matched to existing values/)).not.toBeInTheDocument();
   });
 });

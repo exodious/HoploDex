@@ -2,6 +2,7 @@ import { formatDollars } from "../../lib/money";
 import { FirearmName } from "../app/FirearmName";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
+import { caliberText } from "./types";
 import type { GroupBy, VisibleGroup } from "./types";
 
 export interface BrowseListProps {
@@ -15,9 +16,11 @@ export interface BrowseListProps {
  * firearms sharing a make and model stay distinguishable. */
 export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
   const grouped = groupBy !== undefined;
-  // A column repeating the group heading adds nothing.
-  const showCaliber = groupBy !== "caliber";
+  // A column repeating the group heading adds nothing. The Caliber cell
+  // carries the cartridge too, so it goes for either (FR-027).
+  const showCaliber = groupBy !== "caliber" && groupBy !== "cartridge";
   const showType = groupBy !== "type";
+  const showAction = groupBy !== "action_type";
   return (
     <div className="hd-browse">
       {groups.map((group, index) => (
@@ -29,6 +32,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                 <th scope="col">Firearm</th>
                 {showCaliber && <th scope="col">Caliber</th>}
                 {showType && <th scope="col">Type</th>}
+                {showAction && <th scope="col">Action</th>}
                 <th scope="col" className="hd-table__num">
                   Est. value
                 </th>
@@ -70,8 +74,16 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                       </div>
                     </div>
                   </td>
-                  {showCaliber && <td>{firearm.caliber}</td>}
+                  {showCaliber && (
+                    <td className="hd-table__caliber">
+                      {/* Truncated to fit; the full text stays in the row's name. */}
+                      <span className="hd-cell-truncate" title={caliberText(firearm)}>
+                        {caliberText(firearm)}
+                      </span>
+                    </td>
+                  )}
                   {showType && <td>{firearm.firearmTypeName}</td>}
+                  {showAction && <td>{firearm.actionTypeName}</td>}
                   <td className="hd-table__num hd-num">{formatDollars(firearm.estimatedValue)}</td>
                   <td>
                     <CoverageCell firearm={firearm} />

@@ -33,7 +33,8 @@ const SAMPLE_PDF_BASE64 = Buffer.from("%PDF-1.4 sample receipt contents").toStri
 // filesystem only run when the run is isolated, so they can never reach a
 // real user's data.
 const cacheHome = process.env.XDG_CACHE_HOME;
-const openedRoot = cacheHome && path.join(cacheHome, "com.hoplodex.app", "opened-documents");
+const openedRoot =
+  cacheHome && path.join(cacheHome, "io.github.exodious.HoploDex", "opened-documents");
 
 function filesUnder(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -145,7 +146,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     // run isolates its data under XDG_CACHE_HOME, check that copy directly.
     const cacheHome = process.env.XDG_CACHE_HOME;
     if (cacheHome) {
-      const openedRoot = path.join(cacheHome, "com.hoplodex.app", "opened-documents");
+      const openedRoot = path.join(cacheHome, "io.github.exodious.HoploDex", "opened-documents");
       const copies = fs
         .readdirSync(openedRoot)
         .map((dir) => path.join(openedRoot, dir, "receipt.pdf"))

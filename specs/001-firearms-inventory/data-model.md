@@ -25,6 +25,9 @@ users may add new types later (out of scope for this feature to expose a
 management UI beyond what's needed to satisfy FR-012's "at minimum type,
 caliber, make").
 
+_Amended by [spec 004](../004-cartridges-action-types/data-model.md): the seed also creates the `action_types`
+lookup and the type-to-action mapping for these types (`0003_seed_firearm_types.sql`)._
+
 ## Entity: Firearm
 
 Primary record; corresponds directly to the spec's **Firearm** entity.
@@ -35,6 +38,10 @@ columns added (`origin`, `year_of_manufacture`, `country_of_manufacture`,
 `original_serial_number`) — see that document's "Entity: Firearm
 (extended)". The identity-uniqueness backstop below also changes: see its
 "Indexes and triggers"._
+
+_Amended by [spec 004](../004-cartridges-action-types/data-model.md): a `cartridge` column and a nullable
+`action_type_id` reference to the new `action_types` lookup are added; `caliber`
+stays required and may be derived from the cartridge._
 
 | Field | Type | Notes / validation |
 |---|---|---|
@@ -272,6 +279,9 @@ External-content FTS5 table over `Firearm`, kept in sync via `AFTER INSERT
 `caliber`, `notes`, `accessories`, `finish` (FR-039), and the joined `FirearmType.name`.
 Satisfies FR-013 (search across all recorded information including
 free-form notes) and US2 Acceptance Scenarios 3–4.
+
+_Amended by [spec 004](../004-cartridges-action-types/data-model.md): the index also covers `cartridge` and the
+joined `action_types.name`._
 
 ## Entity relationships (summary)
 

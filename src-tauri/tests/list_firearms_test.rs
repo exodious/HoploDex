@@ -43,6 +43,8 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        cartridge: None,
+        action_type_id: None,
     }
 }
 
@@ -212,8 +214,10 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
 }
 
 // specs/002-firearm-identification US4-1: grouping by origin, in a fixed
-// order (Domestic, Imported, Re-imported, Not specified) rather than
+// order (Domestic, Imported, Re-imported, Unspecified) rather than
 // alphabetically, with only the origins actually present in the result.
+// specs/004-cartridges-action-types research.md §11 renamed "Not specified"
+// to "Unspecified".
 
 #[test]
 fn group_by_origin_returns_groups_in_a_fixed_order_with_only_present_origins() {
@@ -245,7 +249,7 @@ fn group_by_origin_returns_groups_in_a_fixed_order_with_only_present_origins() {
     .unwrap();
 
     let keys: Vec<_> = result.groups.iter().map(|g| g.key.as_str()).collect();
-    assert_eq!(keys, vec!["Domestic", "Imported", "Re-imported", "Not specified"]);
+    assert_eq!(keys, vec!["Domestic", "Imported", "Re-imported", "Unspecified"]);
 }
 
 #[test]
@@ -266,5 +270,173 @@ fn group_by_origin_omits_origins_with_no_firearms() {
     .unwrap();
 
     let keys: Vec<_> = result.groups.iter().map(|g| g.key.as_str()).collect();
-    assert_eq!(keys, vec!["Domestic", "Not specified"]);
+    assert_eq!(keys, vec!["Domestic", "Unspecified"]);
+}
+
+// specs/004-cartridges-action-types US1-6, FR-008 and FR-027: the cartridge
+// on each summary, and grouping by it.
+
+fn chambered(make: &str, model: &str, cartridge: Option<&str>, caliber: &str) -> FirearmInput {
+    FirearmInput { cartridge: cartridge.map(str::to_owned), ..firearm(make, model, caliber, 1) }
+}
+
+fn group_keys(conn: &rusqlite::Connection, group_by: GroupBy) -> Vec<(String, Vec<String>)> {
+    ops::list_firearms(conn, &ListFirearmsInput { group_by: Some(group_by), ..Default::default() })
+        .unwrap()
+        .groups
+        .into_iter()
+        .map(|group| {
+            let mut models: Vec<String> = group.firearms.into_iter().map(|f| f.model).collect();
+            models.sort();
+            (group.key, models)
+        })
+        .collect()
+}
+
+#[test]
+fn summaries_carry_the_cartridge() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &chambered("Glock", "17", Some("9x19mm Parabellum"), "9mm"),
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(&db.conn, &chambered("Thompson", "Hawken", None, ".50"), false).unwrap();
+
+    let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
+    let all: Vec<_> = result.groups.iter().flat_map(|g| &g.firearms).collect();
+    let glock = all.iter().find(|f| f.make == "Glock").unwrap();
+    assert_eq!(glock.cartridge.as_deref(), Some("9x19mm Parabellum"));
+    let hawken = all.iter().find(|f| f.make == "Thompson").unwrap();
+    assert_eq!(hawken.cartridge, None);
+}
+
+#[test]
+fn group_by_cartridge_keys_by_the_stored_text_with_unspecified_last() {
+    let db = TestDb::new();
+    for (model, cartridge, caliber) in [
+        ("A", Some("9x19mm Parabellum"), "9mm"),
+        ("B", Some("9X19mm Parabellum"), "9mm"),
+        ("C", Some(".45 ACP"), ".45"),
+        ("D", None, ".50"),
+        ("E", Some("9x19mm Parabellum"), "9mm"),
+        ("F", Some("Zulu Wildcat"), ".30"),
+        ("G", None, "12 gauge"),
+    ] {
+        ops::create_firearm(&db.conn, &chambered("Maker", model, cartridge, caliber), false)
+            .unwrap();
+    }
+
+    let groups = group_keys(&db.conn, GroupBy::Cartridge);
+    let keys: Vec<&str> = groups.iter().map(|(key, _)| key.as_str()).collect();
+    // Spelling variants already on record stay separate groups (spec Edge
+    // Cases); the rest are alphabetical, and firearms with none come last.
+    assert_eq!(
+        keys,
+        vec![".45 ACP", "9X19mm Parabellum", "9x19mm Parabellum", "Zulu Wildcat", "Unspecified"]
+    );
+    let parabellum = groups.iter().find(|(key, _)| key == "9x19mm Parabellum").unwrap();
+    assert_eq!(parabellum.1, vec!["A", "E"]);
+    assert_eq!(groups.last().unwrap().1, vec!["D", "G"]);
+}
+
+#[test]
+fn group_by_caliber_gathers_every_cartridge_of_the_bore_class() {
+    // US1-6: 9x19mm Parabellum, 9x18mm Makarov and a cartridge recorded as
+    // just "9mm" all fall in the "9mm" group.
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &chambered("Glock", "17", Some("9x19mm Parabellum"), "9mm"),
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &chambered("Makarov", "PM", Some("9x18mm Makarov"), "9mm"),
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(&db.conn, &chambered("Hi-Point", "C9", Some("9mm"), "9mm"), false).unwrap();
+    ops::create_firearm(&db.conn, &chambered("Colt", "1911", Some(".45 ACP"), ".45"), false)
+        .unwrap();
+
+    let groups = group_keys(&db.conn, GroupBy::Caliber);
+    assert_eq!(
+        groups,
+        vec![
+            (".45".to_string(), vec!["1911".to_string()]),
+            ("9mm".to_string(), vec!["17".to_string(), "C9".to_string(), "PM".to_string()]),
+        ]
+    );
+
+    let by_cartridge = group_keys(&db.conn, GroupBy::Cartridge);
+    let keys: Vec<&str> = by_cartridge.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(keys, vec![".45 ACP", "9mm", "9x18mm Makarov", "9x19mm Parabellum"]);
+}
+
+#[test]
+fn group_by_cartridge_deserializes_from_its_wire_name() {
+    let input: ListFirearmsInput =
+        serde_json::from_value(serde_json::json!({ "groupBy": "cartridge" })).unwrap();
+    assert_eq!(input.group_by, Some(GroupBy::Cartridge));
+}
+
+// specs/004-cartridges-action-types US3-4: the action's name on each
+// summary, and grouping by it in the action list's order.
+
+fn acting(model: &str, firearm_type_id: i64, action_type_id: Option<i64>) -> FirearmInput {
+    FirearmInput { action_type_id, ..firearm("Maker", model, "9mm", firearm_type_id) }
+}
+
+#[test]
+fn summaries_carry_the_action_name_or_none() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &acting("Bolty", 2, Some(3)), false).unwrap();
+    ops::create_firearm(&db.conn, &acting("Plain", 2, None), false).unwrap();
+
+    let result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
+    let all: Vec<_> = result.groups.iter().flat_map(|g| &g.firearms).collect();
+    let bolty = all.iter().find(|f| f.model == "Bolty").unwrap();
+    assert_eq!(bolty.action_type_name.as_deref(), Some("Bolt action"));
+    let plain = all.iter().find(|f| f.model == "Plain").unwrap();
+    assert_eq!(plain.action_type_name, None);
+
+    let json = serde_json::to_value(bolty).unwrap();
+    assert_eq!(json["actionTypeName"], "Bolt action");
+}
+
+#[test]
+fn group_by_action_type_follows_the_action_list_with_unspecified_last() {
+    let db = TestDb::new();
+    // Created out of list order, so alphabetical order would differ:
+    // Revolver (2), Semi-automatic (1), Bolt action (3), Break action (6).
+    for (model, type_id, action) in [
+        ("A", 1, Some(2)),
+        ("B", 1, Some(1)),
+        ("C", 2, Some(3)),
+        ("D", 3, Some(6)),
+        ("E", 1, None),
+        ("F", 1, Some(1)),
+        ("G", 4, None),
+    ] {
+        ops::create_firearm(&db.conn, &acting(model, type_id, action), false).unwrap();
+    }
+
+    let groups = group_keys(&db.conn, GroupBy::ActionType);
+    let keys: Vec<&str> = groups.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec!["Semi-automatic", "Revolver", "Bolt action", "Break action", "Unspecified"]
+    );
+    assert_eq!(groups[0].1, vec!["B", "F"]);
+    assert_eq!(groups.last().unwrap().1, vec!["E", "G"]);
+}
+
+#[test]
+fn group_by_action_type_deserializes_from_its_wire_name() {
+    let input: ListFirearmsInput =
+        serde_json::from_value(serde_json::json!({ "groupBy": "action_type" })).unwrap();
+    assert_eq!(input.group_by, Some(GroupBy::ActionType));
 }

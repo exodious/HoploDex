@@ -48,6 +48,10 @@ seven columns (`origin`, `year_of_manufacture`, `country_of_manufacture`,
 `original_serial_number`) are inserted after `condition` and before
 `photo_filenames`._
 
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/spreadsheet-format.md):
+`cartridge` and `action_type` are inserted directly after `caliber`, and import
+reads columns by header._
+
 ## Amounts (FR-037)
 
 `estimated_value`, `acquisition_price`, `disposition_price` and

@@ -1,6 +1,8 @@
 pub mod attachments;
 pub mod backups;
+pub mod cartridges;
 pub mod disk_space;
+pub mod entry_text;
 pub mod file_swap;
 pub mod import_matching;
 pub mod insurance_status;
@@ -9,4 +11,5 @@ pub mod machine_settings;
 pub mod passphrase;
 pub mod secure_delete;
 pub mod spreadsheet;
+pub mod suggestions;
 pub mod valuation;

@@ -9,7 +9,7 @@
 //!
 //! The sandbox (`--dir`) holds two databases, both protected by
 //! [`PASSPHRASE`], under `<dir>/HoploDex/`, and the `machine.json` that lists
-//! them under `<dir>/config/com.hoplodex.app/` (the app finds it through
+//! them under `<dir>/config/io.github.exodious.HoploDex/` (the app finds it through
 //! `XDG_CONFIG_HOME=<dir>/config`):
 //! - "Main collection": the full collection, with non-default backup and lock
 //!   settings, backed up (two backups, yesterday's and today's, in
@@ -55,7 +55,7 @@ mod sandbox;
 /// through `--print-passphrase`.
 pub const PASSPHRASE: &str = "human testing passphrase";
 
-const APP_IDENTIFIER: &str = "com.hoplodex.app";
+const APP_IDENTIFIER: &str = "io.github.exodious.HoploDex";
 pub const MAIN_NAME: &str = "Main collection";
 pub const SHARED_NAME: &str = "Shared collection";
 /// The computer that left "Shared collection" open.
@@ -67,6 +67,14 @@ const HANDGUN: i64 = 1;
 const RIFLE: i64 = 2;
 const SHOTGUN: i64 = 3;
 const OTHER: i64 = 4;
+
+// Ids seeded by migration 0003_seed_firearm_types (specs/004-cartridges-action-types FR-018).
+const SEMI_AUTOMATIC: i64 = 1;
+const REVOLVER: i64 = 2;
+const BOLT_ACTION: i64 = 3;
+const LEVER_ACTION: i64 = 4;
+const PUMP_ACTION: i64 = 5;
+const PERCUSSION: i64 = 11;
 
 /// A real photo from `seed-photos/`, whose README records where each came
 /// from and its licence, as the `(name, bytes, mime type)` that `photos`
@@ -378,6 +386,8 @@ fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> F
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        cartridge: None,
+        action_type_id: None,
     }
 }
 
@@ -536,6 +546,12 @@ pub fn seed(conn: &Connection, extra: usize) {
         capacity: Some(15),
         finish: text("Black nDLC"),
         condition: Some(Condition::Excellent),
+        // specs/004-cartridges-action-types: a built-in cartridge and its
+        // bore class.
+        cartridge: text("9x19mm Parabellum"),
+        // specs/004-cartridges-action-types US3: an action allowed for each
+        // seeded type (Handgun, Rifle, Shotgun, Other), below.
+        action_type_id: Some(SEMI_AUTOMATIC),
         ..base("Glock", "19 Gen5", "BXKT482", "9mm", HANDGUN)
     });
     photos(
@@ -680,12 +696,29 @@ pub fn seed(conn: &Connection, extra: usize) {
         capacity: Some(6),
         finish: text("Blued"),
         condition: Some(Condition::Poor),
+        action_type_id: Some(PERCUSSION),
         ..base("Pedersoli", "1858 Remington Replica", "", ".44 black powder", OTHER)
     });
     photos(remington_replica, &[seed_photo!("remington-new-model-army.jpg")]);
 
     // Only the required fields: no value, so no insurance warning either.
-    add(base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN));
+    add(FirearmInput {
+        action_type_id: Some(PUMP_ACTION),
+        ..base("Mossberg", "500", "V0123456", "12 gauge", SHOTGUN)
+    });
+
+    // specs/004-cartridges-action-types: a muzzleloader records only its
+    // caliber (spec Edge Cases), and "7.62x39" finds the SKS (US1-9). No
+    // value, so the blanket's totals are unchanged.
+    add(FirearmInput {
+        notes: text("Percussion cap; patched round ball over 90 gr FFg."),
+        action_type_id: Some(PERCUSSION),
+        ..base("Thompson/Center", "Hawken", "TC-50H-1182", ".50", RIFLE)
+    });
+    add(FirearmInput {
+        cartridge: text("7.62x39mm"),
+        ..base("Norinco", "SKS", "NOR-2419907", ".30", RIFLE)
+    });
 
     add(FirearmInput {
         nickname: text("Ünïcödé Tëst"),
@@ -698,6 +731,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     add(FirearmInput {
         estimated_value: Some(1_000),
         acquisition_date: text("2017-12-01"),
+        action_type_id: Some(LEVER_ACTION),
         ..base("Henry", "Big Boy", "BB0123456", ".44 Magnum", RIFLE)
     });
 
@@ -753,7 +787,9 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2015-07-04"),
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_000),
-        ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357 Magnum", HANDGUN)
+        cartridge: text(".357 Magnum"),
+        action_type_id: Some(REVOLVER),
+        ..base("Smith & Wesson", "Model 686 Plus", "CFK1290", ".357", HANDGUN)
     });
     let ids =
         photos(s_and_w, &[seed_photo!("sw-686-cylinder.jpg"), seed_photo!("sw-686-side.jpg")]);
@@ -766,6 +802,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2014-10-12"),
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_500),
+        action_type_id: Some(BOLT_ACTION),
         ..base("Winchester", "Model 70 Featherweight", "G2841175", ".270 Win", RIFLE)
     });
     photos(winchester, &[seed_photo!("winchester-model-70-featherweight.jpg")]);
@@ -781,7 +818,8 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2009-06-01"),
         insurance_policy_id: Some(policies.vault),
         scheduled_coverage_amount: Some(2_000),
-        ..base("Colt", "1911 Government Model", "70S12345", ".45 ACP", HANDGUN)
+        cartridge: text(".45 ACP"),
+        ..base("Colt", "1911 Government Model", "70S12345", ".45", HANDGUN)
     });
     photos(
         colt,
@@ -795,6 +833,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2013-01-20"),
         insurance_policy_id: Some(policies.vault),
         scheduled_coverage_amount: Some(1_800),
+        action_type_id: Some(SEMI_AUTOMATIC),
         ..base("Browning", "Auto-5 Light Twelve", "1V12345", "12 gauge", SHOTGUN)
     });
 
@@ -843,7 +882,11 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2020-09-09"),
         insurance_policy_id: Some(policies.expired_rider),
         scheduled_coverage_amount: Some(700),
-        ..base("Savage", "110", "S0011223", ".308 Win", RIFLE)
+        // specs/004-cartridges-action-types US1-2: a wildcat, whose caliber
+        // the form guesses from its name.
+        notes: text("Rebarreled by a gunsmith to a wildcat of his own."),
+        cartridge: text(".30 Custom Improved"),
+        ..base("Savage", "110", "S0011223", ".30", RIFLE)
     });
 
     // -- specs/002-firearm-identification: origin, year, country, importer --
@@ -1016,7 +1059,10 @@ pub fn seed(conn: &Connection, extra: usize) {
     let patriot = add(FirearmInput {
         estimated_value: Some(450),
         acquisition_date: text("2021-06-06"),
-        ..base("Mossberg", "Patriot", "MP778899", ".308 Win", RIFLE)
+        // specs/004-cartridges-action-types US2-7: disposed, so its unique
+        // cartridge is still suggested.
+        cartridge: text("6.5 Patriot Wildcat"),
+        ..base("Mossberg", "Patriot", "MP778899", "6.5mm", RIFLE)
     });
     dispose(patriot, DispositionType::Traded, "Ridgeline Arms", "2025-06-30", 400);
 
@@ -1026,6 +1072,49 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Remington", "Model 700 (cracked receiver)", "RR700-2231", ".30-06", RIFLE)
     });
     dispose(cracked, DispositionType::Destroyed, "County buyback program", "2025-02-11", 0);
+
+    // -- specs/004-cartridges-action-types US2: suggestion and snapping data -
+    //
+    // Typing "sw", "smith w" or "s&w" in Make lists "Smith & Wesson" (on
+    // several firearms above) and "S&W" (on one, a different notation that
+    // is kept as typed); "Springfield armory" is a variant of the three
+    // "Springfield Armory" firearms, and snaps to that spelling. With make
+    // "Ruger" on the form, Model lists "10/22" and "Mini-14" before Marlin's
+    // "336".
+
+    add(FirearmInput {
+        estimated_value: Some(475),
+        acquisition_date: text("2020-08-14"),
+        cartridge: text(".38 Special"),
+        ..base("S&W", "Model 60", "S&W-60-1", ".357", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(300),
+        acquisition_date: text("2019-02-02"),
+        ..base("Ruger", "10/22", "0013-99001", ".22", RIFLE)
+    });
+    add(FirearmInput {
+        estimated_value: Some(900),
+        acquisition_date: text("2021-10-09"),
+        cartridge: text(".223 Remington"),
+        ..base("Ruger", "Mini-14", "580-11234", ".22", RIFLE)
+    });
+    add(FirearmInput {
+        estimated_value: Some(550),
+        acquisition_date: text("2022-03-12"),
+        cartridge: text("9x19mm Parabellum"),
+        ..base("Springfield Armory", "XD-M Elite", "XM-330021", "9mm", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(520),
+        acquisition_date: text("2023-01-21"),
+        ..base("Springfield Armory", "Hellcat", "HC-778812", "9mm", HANDGUN)
+    });
+    add(FirearmInput {
+        estimated_value: Some(1100),
+        acquisition_date: text("2023-05-05"),
+        ..base("Springfield armory", "Saint Victor", "SV-556677", ".223", RIFLE)
+    });
 
     // -- Generated filler for scrolling, grouping and search ----------------
 
@@ -1164,6 +1253,19 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         writer.write_record(COLUMNS).expect("write the header");
         for record in rows {
             writer.write_record(record).expect("write a row");
+        }
+        writer.flush().expect("flush an import sample");
+    };
+    // specs/004-cartridges-action-types FR-023: a sheet exported before
+    // `cartridge` and `action_type` existed, so its header lacks both.
+    let write_without_new_columns = |name: &str, rows: Vec<Vec<String>>| {
+        let kept: Vec<usize> = (0..COLUMNS.len())
+            .filter(|&index| !matches!(COLUMNS[index], "cartridge" | "action_type"))
+            .collect();
+        let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
+        writer.write_record(kept.iter().map(|&index| COLUMNS[index])).expect("write the header");
+        for record in rows {
+            writer.write_record(kept.iter().map(|&index| &record[index])).expect("write a row");
         }
         writer.flush().expect("flush an import sample");
     };
@@ -1453,6 +1555,96 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("original_serial_number", "FN-70044"),
             ]),
         ],
+    );
+
+    // specs/004-cartridges-action-types US4: the report's "Calibers filled in
+    // from the cartridge" and "Spellings matched to existing values"
+    // sections, and the action and entry-rule row errors. Import it into the
+    // seeded collection, which has "Smith & Wesson" on several firearms.
+    write(
+        "import-cartridges.csv",
+        vec![
+            // A blank caliber beside a catalog cartridge: filled in as 9mm
+            // (built-in).
+            row(&[
+                ("make", "Sig Sauer"),
+                ("model", "P365"),
+                ("serial_number", "C-001"),
+                ("no_serial_attested", "FALSE"),
+                ("cartridge", "9x19mm Parabellum"),
+                ("action_type", "Semi-automatic"),
+                ("firearm_type", "Handgun"),
+            ]),
+            // A custom cartridge whose bore can be guessed: filled in as .30
+            // (guessed).
+            row(&[
+                ("make", "Thompson/Center"),
+                ("model", "Contender"),
+                ("serial_number", "C-002"),
+                ("no_serial_attested", "FALSE"),
+                ("cartridge", ".30 Custom Improved"),
+                ("action_type", "Single shot (other)"),
+                ("firearm_type", "Rifle"),
+            ]),
+            // A same-notation variant of a make on record, and of the
+            // catalog's cartridge name: both are matched to the spelling in
+            // use and listed. The action is matched ignoring letter case.
+            row(&[
+                ("make", "smith and wesson"),
+                ("model", "Model 15"),
+                ("serial_number", "C-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("cartridge", "9X19mm PARABELLUM"),
+                ("action_type", "REVOLVER"),
+                ("firearm_type", "Handgun"),
+            ]),
+            // A custom cartridge with no readable bore and no caliber: a
+            // row error.
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "One-Off"),
+                ("serial_number", "C-004"),
+                ("no_serial_attested", "FALSE"),
+                ("cartridge", "Wildcat Special"),
+                ("firearm_type", "Rifle"),
+            ]),
+            // An action that isn't on the list: a row error.
+            row(&[
+                ("make", "Pedersoli"),
+                ("model", "Kentucky"),
+                ("serial_number", "C-005"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".45"),
+                ("action_type", "flintlockish"),
+                ("firearm_type", "Rifle"),
+            ]),
+            // An action the firearm's type doesn't have: a row error.
+            row(&[
+                ("make", "Mossberg"),
+                ("model", "Handgun Pump"),
+                ("serial_number", "C-006"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "12 gauge"),
+                ("action_type", "Pump action"),
+                ("firearm_type", "Handgun"),
+            ]),
+        ],
+    );
+
+    // A sheet exported before this feature: no `cartridge` or `action_type`
+    // column, and every later column still lands in its own field.
+    write_without_new_columns(
+        "import-before-cartridges.csv",
+        vec![row(&[
+            ("make", "Ruger"),
+            ("model", "10/22"),
+            ("serial_number", "L-001"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".22 LR"),
+            ("firearm_type", "Rifle"),
+            ("notes", "From a sheet exported before cartridges and actions were recorded."),
+        ])],
     );
 
     dir.to_path_buf()

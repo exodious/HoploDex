@@ -48,6 +48,9 @@ one-line description (not a tooltip):
 - A new record starts on **Not specified**; existing records show their
   stored value, and one with none shows **Not specified** with nothing else
   offered (US1-1, US1-8).
+
+_Amended by [spec 004](../../004-cartridges-action-types/contracts/ui-entry.md): the card, the display and the
+group labelled **Not specified** here read **Unspecified**._
 - Below the cards, aligned with their left edge, is a button **How do I
   record this?** that opens the guide (§8). It is in the tab order right
   after the origin cards.

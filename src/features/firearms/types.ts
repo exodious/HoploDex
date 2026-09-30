@@ -21,7 +21,12 @@ export interface Firearm {
   serialNumber: string | null;
   noSerialAttested: boolean;
   caliber: string;
+  /** specs/004-cartridges-action-types FR-001: the exact round; `null` = none. */
+  cartridge: string | null;
   firearmTypeId: number;
+  /** specs/004-cartridges-action-types FR-017: an id from `list_action_types`;
+   * `null` = not specified. */
+  actionTypeId: number | null;
   notes: string | null;
   accessories: string | null;
   /** FR-039: hundredths of an inch; format with `lib/measure`. */
@@ -91,6 +96,57 @@ export interface ReverseDispositionInput {
 /** All `Firearm` fields except `id`, `createdAt`, `updatedAt`, `thumbnailPhotoId`. */
 export type FirearmInput = Omit<Firearm, "id" | "createdAt" | "updatedAt" | "thumbnailPhotoId">;
 
+/** specs/004-cartridges-action-types FR-017/FR-018. Mirrors `ActionType` in
+ * src-tauri/src/models/action_type.rs. */
+export interface ActionType {
+  id: number;
+  name: string;
+}
+
+/** `list_action_types`' output: the actions in list order, and per firearm
+ * type id the allowed action ids. A type that is absent, or maps to `[]`,
+ * allows every action (FR-017). */
+export interface ActionTypesOutput {
+  actions: ActionType[];
+  allowedByFirearmType: Record<number, number[]>;
+}
+
+/** specs/004-cartridges-action-types FR-009: the four fields with
+ * suggestions and snapping. Mirrors `EntryField` in
+ * src-tauri/src/services/entry_text.rs. */
+export type EntryFieldName = "make" | "model" | "cartridge" | "caliber";
+
+/** The caliber a cartridge derives, and whether it was read from the
+ * catalog or guessed (FR-005). Mirrors `DerivedCaliber` in
+ * src-tauri/src/services/cartridges/mod.rs. */
+export interface DerivedCaliber {
+  caliber: string;
+  source: "catalog" | "guess";
+}
+
+/** One row of `suggest_entries`' list (contracts/tauri-commands.md). Mirrors
+ * `Suggestion` in src-tauri/src/services/suggestions.rs. */
+export interface Suggestion {
+  /** The display spelling: the catalog's when it has one. */
+  value: string;
+  /** Built in (FR-016). */
+  inCatalog: boolean;
+  /** Firearms on record, active and disposed; 0 = catalog only. */
+  useCount: number;
+  /** Catalog cartridges only: the bore class, as a hint. */
+  caliber: string | null;
+}
+
+/** `settle_entry`'s output (contracts/tauri-commands.md). */
+export interface SettleEntryOutput {
+  /** Trimmed; the snapped spelling if any. */
+  value: string;
+  /** `null`: kept as typed, apart from trimming. */
+  changedBy: "catalog" | "record" | null;
+  /** Cartridge only; `null` for a cartridge means no caliber could be read. */
+  derivedCaliber: DerivedCaliber | null;
+}
+
 export interface DisposeFirearmInput {
   dispositionType: DispositionType;
   recipient: string;
@@ -154,10 +210,14 @@ export const ORIGIN_OPTIONS: { value: Origin | ""; label: string; description: s
     label: "Re-imported",
     description: "Made in the U.S., exported, then brought back in",
   },
-  { value: "", label: "Not specified", description: "Leave this if you're not sure." },
+  { value: "", label: "Unspecified", description: "Leave this if you're not sure." },
 ];
 
+/** specs/004-cartridges-action-types research.md §11: the one term for a
+ * value that was not recorded, on every screen. */
+export const UNSPECIFIED = "Unspecified";
+
 export function originLabel(origin: Origin | null): string {
-  if (origin === null) return "Not specified";
+  if (origin === null) return UNSPECIFIED;
   return ORIGIN_OPTIONS.find((o) => o.value === origin)?.label ?? origin;
 }

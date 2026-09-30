@@ -557,7 +557,7 @@ the backup's.
 **Decision**: keep the existing `keyring` 4.1 crate, with the platform stores
 it already bundles (Secret Service over `zbus` on Linux, Keychain on macOS,
 Credential Manager on Windows). Each saved passphrase is one entry: service
-`com.hoplodex.app`, user `passphrase:<database_id>`. It is keyed by the
+`io.github.exodious.HoploDex`, user `passphrase:<database_id>`. It is keyed by the
 database's id rather than its path, so moving or renaming the file keeps it,
 and a backup opened directly (§9) does not inherit it. The id is cached in
 the recent-list entry so a saved passphrase can be found before the database
@@ -595,7 +595,7 @@ keyring off, and only the app (and `keyring_test`) give it a real one.
 ## §11 Machine-local settings
 
 **Decision**: one JSON file, `machine.json`, in the OS app **config**
-directory (`~/.config/com.hoplodex.app/` on Linux), written atomically
+directory (`~/.config/io.github.exodious.HoploDex/` on Linux), written atomically
 (write to a temporary file, flush, rename). Contents (data-model.md): the
 machine id (§6), the recent-databases list (path, name, last opened, cached
 database id and resolved backup folder, whether a passphrase is saved, and

@@ -5,7 +5,7 @@ use tauri::State;
 use crate::commands::CommandError;
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
-    DispositionType, Firearm, FirearmInput, FirearmStatus, validate_firearm_input,
+    DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::session::Session;
 
@@ -67,10 +67,22 @@ pub enum GroupBy {
     Caliber,
     Make,
     /// specs/002-firearm-identification US4-1: groups are returned in the
-    /// fixed order Domestic, Imported, Re-imported, Not specified, not
-    /// sorted alphabetically like the other keys (research.md §10).
+    /// fixed order Domestic, Imported, Re-imported, Unspecified, not sorted
+    /// alphabetically like the other keys (research.md §10; the empty group
+    /// renamed by specs/004-cartridges-action-types research.md §11).
     Origin,
+    /// specs/004-cartridges-action-types FR-008: keyed by the stored
+    /// cartridge text, so spellings already on record stay apart;
+    /// alphabetical, with the firearms that have none last.
+    Cartridge,
+    /// specs/004-cartridges-action-types FR-020: keyed by the action's name,
+    /// in the action list's order, with the firearms that have none last.
+    ActionType,
 }
+
+/// The group of firearms with no value for the grouping field, always last
+/// (specs/004-cartridges-action-types research.md §11: one term throughout).
+pub const UNSPECIFIED: &str = "Unspecified";
 
 /// Input for the `list_firearms` command (User Story 2), per
 /// contracts/tauri-commands.md.
@@ -104,7 +116,13 @@ pub struct FirearmSummary {
     /// Tells apart firearms sharing a make and model in browse views.
     pub serial_number: Option<String>,
     pub caliber: String,
+    /// specs/004-cartridges-action-types FR-027: shown with the caliber as
+    /// "cartridge (caliber)".
+    pub cartridge: Option<String>,
     pub firearm_type_name: String,
+    /// specs/004-cartridges-action-types FR-020: the action's name, `None`
+    /// when not recorded.
+    pub action_type_name: Option<String>,
     pub status: FirearmStatus,
     pub thumbnail_photo_id: Option<i64>,
     pub generic_thumbnail_key: String,
@@ -367,6 +385,57 @@ pub mod ops {
         Err(CommandError::validation(messages.join(" "), errors))
     }
 
+    /// specs/004-cartridges-action-types FR-017, FR-019, SC-008: the action
+    /// must name an action on the list and be allowed for the firearm's type.
+    /// A type with no mapped actions (Other, or one added later) allows all
+    /// of them, and no action is always allowed. The same rule is enforced by
+    /// the `firearms_action_allowed_*` triggers, which only a bug would
+    /// reach. Import calls this for every row.
+    pub fn check_action_allowed(
+        conn: &Connection,
+        firearm_type_id: i64,
+        action_type_id: Option<i64>,
+    ) -> Result<(), CommandError> {
+        let Some(action_id) = action_type_id else {
+            return Ok(());
+        };
+        let refuse = |message: String| {
+            let errors =
+                std::collections::HashMap::from([("actionTypeId".to_string(), message.clone())]);
+            Err(CommandError::validation(message, errors))
+        };
+        let action_name: Option<String> = conn
+            .query_row(
+                "SELECT name FROM action_types WHERE id = :id",
+                named_params! { ":id": action_id },
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        let Some(action_name) = action_name else {
+            return refuse("Choose an action from the list.".to_string());
+        };
+        let (mapped, allowed): (bool, bool) = conn
+            .query_row(
+                "SELECT COUNT(*) > 0, COALESCE(SUM(action_type_id = :action), 0) > 0
+                 FROM firearm_type_actions WHERE firearm_type_id = :type",
+                named_params! { ":action": action_id, ":type": firearm_type_id },
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(CommandError::from_db)?;
+        if !mapped || allowed {
+            return Ok(());
+        }
+        let type_name: String = conn
+            .query_row(
+                "SELECT name FROM firearm_types WHERE id = :id",
+                named_params! { ":id": firearm_type_id },
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        refuse(format!("{action_name} doesn't apply to a {type_name}."))
+    }
+
     fn describe_firearm(conn: &Connection, id: i64) -> Result<Clash, CommandError> {
         conn.query_row(
             "SELECT make, model, nickname, serial_number FROM firearms WHERE id = :id",
@@ -382,13 +451,14 @@ pub mod ops {
         confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
-        validate_firearm_input(input)?;
+        validate_firearm_input(input, None)?;
+        check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
         conn.execute(
             "INSERT INTO firearms (
-                make, model, serial_number, no_serial_attested, caliber, firearm_type_id, nickname,
-                notes, accessories,
+                make, model, serial_number, no_serial_attested, caliber, cartridge, firearm_type_id,
+                action_type_id, nickname, notes, accessories,
                 barrel_length_hundredths, overall_length_hundredths, weight_tenths_oz,
                 capacity, finish, condition, status, estimated_value,
                 acquisition_source, acquisition_date, acquisition_price,
@@ -398,8 +468,8 @@ pub mod ops {
                 original_make, original_model, original_serial_number,
                 created_at, updated_at
             ) VALUES (
-                :make, :model, :serial_number, :no_serial_attested, :caliber, :firearm_type_id, :nickname,
-                :notes, :accessories,
+                :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
+                :action_type_id, :nickname, :notes, :accessories,
                 :barrel_length_hundredths, :overall_length_hundredths, :weight_tenths_oz,
                 :capacity, :finish, :condition, :status, :estimated_value,
                 :acquisition_source, :acquisition_date, :acquisition_price,
@@ -415,7 +485,9 @@ pub mod ops {
                 ":serial_number": input.serial_number,
                 ":no_serial_attested": input.no_serial_attested,
                 ":caliber": input.caliber,
+                ":cartridge": input.cartridge,
                 ":firearm_type_id": input.firearm_type_id,
+                ":action_type_id": input.action_type_id,
                 ":nickname": input.nickname,
                 ":notes": input.notes,
                 ":accessories": input.accessories,
@@ -457,7 +529,18 @@ pub mod ops {
         confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
-        validate_firearm_input(input)?;
+        // A missing record is reported by the update below, after the
+        // checks, as before.
+        let stored = conn
+            .query_row(
+                "SELECT * FROM firearms WHERE id = :id",
+                named_params! { ":id": id },
+                Firearm::from_row,
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        validate_firearm_input(input, stored.as_ref())?;
+        check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, Some(id), input)?;
         check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
         let updated = conn
@@ -468,7 +551,9 @@ pub mod ops {
                     serial_number = :serial_number,
                     no_serial_attested = :no_serial_attested,
                     caliber = :caliber,
+                    cartridge = :cartridge,
                     firearm_type_id = :firearm_type_id,
+                    action_type_id = :action_type_id,
                     nickname = :nickname,
                     notes = :notes,
                     accessories = :accessories,
@@ -505,7 +590,9 @@ pub mod ops {
                     ":serial_number": input.serial_number,
                     ":no_serial_attested": input.no_serial_attested,
                     ":caliber": input.caliber,
+                    ":cartridge": input.cartridge,
                     ":firearm_type_id": input.firearm_type_id,
+                    ":action_type_id": input.action_type_id,
                     ":nickname": input.nickname,
                     ":notes": input.notes,
                     ":accessories": input.accessories,
@@ -665,8 +752,9 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No firearm was found with that id."));
         }
-        // Its photos and documents went with it: return their space (Constitution V).
-        crate::db::reclaim_freed_space(conn);
+        // Its photos, documents and search entry went with it: return their
+        // space and leave none of their content behind (Constitution V).
+        crate::db::reclaim_deleted_firearm(conn);
         Ok(DeleteResult { deleted: true })
     }
 
@@ -679,31 +767,67 @@ pub mod ops {
         input: &ListFirearmsInput,
     ) -> Result<ListFirearmsOutput, CommandError> {
         let has_query = input.query.as_deref().is_some_and(|q| !q.trim().is_empty());
-        // FTS5 MATCH treats bare whitespace-separated tokens as an implicit
-        // AND; wrapping the whole query as a quoted phrase instead matches
-        // it as contiguous text, which is what a user searching "cracked
-        // handle" or a multi-word caliber value expects. `:has_query`
-        // short-circuits the MATCH subquery entirely when there's no query,
-        // since MATCH errors on an empty/absent search string. The trailing
-        // `*` makes the phrase's last word a prefix, so results appear while
-        // it's still being typed ("Rem" finds Remington); a query with no
-        // words at all can't take one, so it stays an exact phrase.
-        let fts_query = input
-            .query
-            .as_deref()
-            .map(|q| {
-                let phrase = format!("\"{}\"", q.trim().replace('"', "\"\""));
-                if q.chars().any(char::is_alphanumeric) { phrase + "*" } else { phrase }
-            })
-            .unwrap_or_default();
+        // The index is trigram-tokenized (0002_fts5.sql), so a quoted phrase
+        // matches as contiguous text anywhere inside a value: "365" finds
+        // "P365 XL", "cracked handle" finds those two words together.
+        // `:has_query` short-circuits the MATCH subquery entirely when there's
+        // no query, since MATCH errors on an empty/absent search string.
+        // Trigrams need three characters, and a shorter search matches
+        // nothing in the index, so one or two characters ("Co" while typing
+        // Colt) are looked up with LIKE over the same values instead. They
+        // are read from `firearms` and its joins, not the index's columns:
+        // the index is external-content, so its type, action, origin and
+        // country values only exist inside its triggers (0002_fts5.sql).
+        let trimmed = input.query.as_deref().map(str::trim).unwrap_or_default();
+        let short_query = trimmed.chars().count() < 3;
+        let fts_query = if short_query {
+            String::new()
+        } else {
+            format!("\"{}\"", trimmed.replace('"', "\"\""))
+        };
+        let like_query = if short_query {
+            let escaped = trimmed.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            format!("%{escaped}%")
+        } else {
+            String::new()
+        };
 
+        let insurance = crate::services::insurance_status::load_context(conn)?;
+
+        // Only the columns a summary needs, read by position: at 10,000
+        // records, decoding every column and looking each up by name took
+        // most of the 500ms budget (Principle IV).
         let mut stmt = conn
             .prepare(
-                "SELECT f.*, ft.name AS firearm_type_name, ft.generic_thumbnail_key AS generic_thumbnail_key
+                "SELECT f.id, f.make, f.model, f.nickname, f.serial_number, f.caliber, f.cartridge,
+                        f.status, f.thumbnail_photo_id, f.estimated_value, f.insurance_policy_id,
+                        f.scheduled_coverage_amount, f.origin,
+                        ft.name, ft.generic_thumbnail_key, at.name
                  FROM firearms f
                  JOIN firearm_types ft ON ft.id = f.firearm_type_id
+                 LEFT JOIN action_types at ON at.id = f.action_type_id
                  WHERE (:include_disposed = 1 OR f.status = 'active')
-                   AND (:has_query = 0 OR f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
+                   AND (:has_query = 0
+                        OR (:short_query = 0 AND f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
+                        OR (:short_query = 1 AND (
+                            f.make LIKE :like ESCAPE '\\'
+                            OR f.model LIKE :like ESCAPE '\\'
+                            OR f.nickname LIKE :like ESCAPE '\\'
+                            OR f.serial_number LIKE :like ESCAPE '\\'
+                            OR f.caliber LIKE :like ESCAPE '\\'
+                            OR f.notes LIKE :like ESCAPE '\\'
+                            OR f.accessories LIKE :like ESCAPE '\\'
+                            OR f.finish LIKE :like ESCAPE '\\'
+                            OR f.year_of_manufacture LIKE :like ESCAPE '\\'
+                            OR f.importer_name LIKE :like ESCAPE '\\'
+                            OR f.original_make LIKE :like ESCAPE '\\'
+                            OR f.original_model LIKE :like ESCAPE '\\'
+                            OR f.original_serial_number LIKE :like ESCAPE '\\'
+                            OR f.cartridge LIKE :like ESCAPE '\\'
+                            OR ft.name LIKE :like ESCAPE '\\'
+                            OR at.name LIKE :like ESCAPE '\\'
+                            OR (CASE f.origin WHEN 'domestic' THEN 'Domestic' WHEN 'imported' THEN 'Imported' WHEN 'reimported' THEN 'Re-imported' END) LIKE :like ESCAPE '\\'
+                            OR (CASE WHEN f.origin = 'reimported' THEN 'United States' ELSE f.country_of_manufacture END) LIKE :like ESCAPE '\\')))
                  ORDER BY f.make, f.model",
             )
             .map_err(CommandError::from_db)?;
@@ -712,57 +836,62 @@ pub mod ops {
                 named_params! {
                     ":include_disposed": input.include_disposed,
                     ":has_query": has_query,
+                    ":short_query": short_query,
                     ":query": fts_query,
+                    ":like": like_query,
                 },
                 |row| {
-                    let firearm = Firearm::from_row(row)?;
-                    let firearm_type_name: String = row.get("firearm_type_name")?;
-                    let generic_thumbnail_key: String = row.get("generic_thumbnail_key")?;
-                    Ok((firearm, firearm_type_name, generic_thumbnail_key))
+                    let estimated_value = row.get(9)?;
+                    let insurance_policy_id = row.get(10)?;
+                    let scheduled_coverage_amount = row.get(11)?;
+                    let origin: Option<Origin> = row.get(12)?;
+                    let summary = FirearmSummary {
+                        id: row.get(0)?,
+                        make: row.get(1)?,
+                        model: row.get(2)?,
+                        nickname: row.get(3)?,
+                        serial_number: row.get(4)?,
+                        caliber: row.get(5)?,
+                        cartridge: row.get(6)?,
+                        status: row.get(7)?,
+                        thumbnail_photo_id: row.get(8)?,
+                        estimated_value,
+                        insurance_warning: crate::services::insurance_status::firearm_warning(
+                            estimated_value,
+                            insurance_policy_id,
+                            scheduled_coverage_amount,
+                            &insurance,
+                        ),
+                        insurance_policy_id,
+                        scheduled_coverage_amount,
+                        firearm_type_name: row.get(13)?,
+                        generic_thumbnail_key: row.get(14)?,
+                        action_type_name: row.get(15)?,
+                    };
+                    Ok((summary, origin))
                 },
             )
             .map_err(CommandError::from_db)?;
 
-        let insurance = crate::services::insurance_status::load_context(conn)?;
-
         let mut summaries = Vec::new();
         for row in rows {
-            let (firearm, firearm_type_name, generic_thumbnail_key) =
-                row.map_err(CommandError::from_db)?;
-            let insurance_warning = crate::services::insurance_status::firearm_warning(
-                firearm.estimated_value,
-                firearm.insurance_policy_id,
-                firearm.scheduled_coverage_amount,
-                &insurance,
-            );
-            summaries.push((
-                match input.group_by {
-                    Some(GroupBy::Type) => firearm_type_name.clone(),
-                    Some(GroupBy::Caliber) => firearm.caliber.clone(),
-                    Some(GroupBy::Make) => firearm.make.clone(),
-                    Some(GroupBy::Origin) => firearm
-                        .origin
-                        .map(|o| o.label().to_string())
-                        .unwrap_or_else(|| "Not specified".to_string()),
-                    None => "All".to_string(),
-                },
-                FirearmSummary {
-                    id: firearm.id,
-                    make: firearm.make,
-                    model: firearm.model,
-                    nickname: firearm.nickname,
-                    serial_number: firearm.serial_number,
-                    caliber: firearm.caliber,
-                    firearm_type_name,
-                    status: firearm.status,
-                    thumbnail_photo_id: firearm.thumbnail_photo_id,
-                    generic_thumbnail_key,
-                    estimated_value: firearm.estimated_value,
-                    insurance_warning,
-                    insurance_policy_id: firearm.insurance_policy_id,
-                    scheduled_coverage_amount: firearm.scheduled_coverage_amount,
-                },
-            ));
+            let (summary, origin) = row.map_err(CommandError::from_db)?;
+            let key = match input.group_by {
+                Some(GroupBy::Type) => summary.firearm_type_name.clone(),
+                Some(GroupBy::Caliber) => summary.caliber.clone(),
+                Some(GroupBy::Make) => summary.make.clone(),
+                Some(GroupBy::Origin) => {
+                    origin.map_or_else(|| UNSPECIFIED.to_string(), |o| o.label().to_string())
+                }
+                Some(GroupBy::Cartridge) => {
+                    summary.cartridge.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
+                }
+                Some(GroupBy::ActionType) => {
+                    summary.action_type_name.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
+                }
+                None => "All".to_string(),
+            };
+            summaries.push((key, summary));
         }
 
         let mut groups: Vec<FirearmGroup> = Vec::new();
@@ -772,18 +901,39 @@ pub mod ops {
                 None => groups.push(FirearmGroup { key, firearms: vec![summary] }),
             }
         }
-        if input.group_by == Some(GroupBy::Origin) {
-            // specs/002-firearm-identification US4-1/research.md §10: a
-            // fixed order, not alphabetical, so "Not specified" is always
-            // last rather than sorting between "Imported" and
-            // "Re-imported".
-            const ORIGIN_ORDER: [&str; 4] =
-                ["Domestic", "Imported", "Re-imported", "Not specified"];
-            groups.sort_by_key(|g| {
-                ORIGIN_ORDER.iter().position(|o| *o == g.key).unwrap_or(ORIGIN_ORDER.len())
-            });
-        } else {
-            groups.sort_by(|a, b| a.key.cmp(&b.key));
+        match input.group_by {
+            Some(GroupBy::Origin) => {
+                // specs/002-firearm-identification US4-1/research.md §10: a
+                // fixed order, not alphabetical, so "Unspecified" is always
+                // last rather than sorting between "Imported" and
+                // "Re-imported".
+                const ORIGIN_ORDER: [&str; 4] =
+                    ["Domestic", "Imported", "Re-imported", UNSPECIFIED];
+                groups.sort_by_key(|g| {
+                    ORIGIN_ORDER.iter().position(|o| *o == g.key).unwrap_or(ORIGIN_ORDER.len())
+                });
+            }
+            // specs/004-cartridges-action-types research.md §11: firearms
+            // with no cartridge last, the rest alphabetical.
+            Some(GroupBy::Cartridge) => groups.sort_by(|a, b| {
+                (a.key == UNSPECIFIED, &a.key).cmp(&(b.key == UNSPECIFIED, &b.key))
+            }),
+            // FR-020: the action list's order, not alphabetical; "Unspecified"
+            // is not on the list, so it sorts last.
+            Some(GroupBy::ActionType) => {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM action_types ORDER BY sort_order")
+                    .map_err(CommandError::from_db)?;
+                let order = stmt
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(CommandError::from_db)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(CommandError::from_db)?;
+                groups.sort_by_key(|g| {
+                    order.iter().position(|name| *name == g.key).unwrap_or(order.len())
+                });
+            }
+            _ => groups.sort_by(|a, b| a.key.cmp(&b.key)),
         }
 
         Ok(ListFirearmsOutput { groups })

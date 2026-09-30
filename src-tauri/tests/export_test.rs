@@ -47,6 +47,8 @@ fn firearm_with_photo(make: &str) -> FirearmInput {
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        cartridge: None,
+        action_type_id: None,
     }
 }
 
@@ -210,4 +212,30 @@ fn blank_physical_details_are_exported_as_blank_cells() {
         let cell = record.get(headers.iter().position(|h| h == name).unwrap()).unwrap();
         assert_eq!(cell, "", "{name}");
     }
+}
+
+#[test]
+fn the_export_header_is_the_36_columns_with_cartridge_and_action_type_after_caliber() {
+    let db = TestDb::new();
+    let dest = TempDir::new().unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
+    let result = import_export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        "header",
+        SpreadsheetFormat::Csv,
+        &[created.id],
+        &mut |_, _| {},
+    )
+    .unwrap();
+
+    let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
+    let headers: Vec<_> = reader.headers().unwrap().iter().map(str::to_owned).collect();
+    assert_eq!(headers, hoplodex_lib::services::spreadsheet::COLUMNS);
+    assert_eq!(headers.len(), 36);
+    let caliber_at = headers.iter().position(|h| h == "caliber").unwrap();
+    assert_eq!(headers[caliber_at + 1], "cartridge");
+    assert_eq!(headers[caliber_at + 2], "action_type");
+    assert_eq!(headers[caliber_at + 3], "firearm_type");
 }

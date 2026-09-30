@@ -8,6 +8,7 @@ import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
 import { peekResumedDraft, setResumedDraft } from "../session/usePendingDraft";
 import type { Draft } from "../databases/types";
+import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
@@ -63,7 +64,9 @@ const summary: FirearmSummary = {
   nickname: null,
   serialNumber: "V1",
   caliber: ".357",
+  cartridge: null,
   firearmTypeName: "Handgun",
+  actionTypeName: null,
   status: "active",
   thumbnailPhotoId: null,
   genericThumbnailKey: "handgun",
@@ -94,6 +97,8 @@ const detail: FirearmDetail = {
   noSerialAttested: false,
   caliber: ".357",
   firearmTypeId: 1,
+  cartridge: null,
+  actionTypeId: null,
   notes: null,
   accessories: null,
   status: "active",
@@ -135,6 +140,8 @@ const collection: CollectionState = {
   summary: null,
   policies: [policy],
   policiesById: new Map([[policy.id, policy]]),
+  actionTypes: { actions: [], allowedByFirearmType: {} },
+  actionTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,
@@ -403,8 +410,14 @@ describe("Resumed pending changes open where their form is (FR-039)", () => {
     originalSerialNumber: "",
   };
 
+  /** Each form keeps drafts of its own version; the firearm form's is
+   * `FIREARM_FORM_VERSION`, the others' 1. */
   function resume(draft: Omit<Draft, "formVersion" | "label">) {
-    setResumedDraft({ formVersion: 1, label: "Colt Python", ...draft });
+    const formVersion =
+      draft.kind === "firearm" && (draft.mode === "add" || draft.mode === "edit")
+        ? FIREARM_FORM_VERSION
+        : 1;
+    setResumedDraft({ formVersion, label: "Colt Python", ...draft });
   }
 
   it("an edit reopens the firearm's edit form with the changes", async () => {

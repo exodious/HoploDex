@@ -27,6 +27,8 @@ const firearm: FirearmDetail = {
   noSerialAttested: false,
   caliber: ".357",
   firearmTypeId: 1,
+  cartridge: null,
+  actionTypeId: null,
   notes: null,
   accessories: null,
   status: "active",
@@ -65,6 +67,14 @@ const collection: CollectionState = {
   summary: null,
   policies: [],
   policiesById: new Map(),
+  actionTypes: {
+    actions: [
+      { id: 1, name: "Semi-automatic" },
+      { id: 3, name: "Bolt action" },
+    ],
+    allowedByFirearmType: {},
+  },
+  actionTypesFailed: false,
   loaded: true,
   error: null,
   revision: 1,
@@ -169,6 +179,41 @@ describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17
   });
 });
 
+// specs/004-cartridges-action-types FR-027, contracts/ui-entry.md §7.
+describe("FirearmRecordPage cartridge, caliber and action", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  /** The title block's value for `label`. */
+  const titleValue = (label: string) =>
+    screen.getByText(label, { selector: "dt" }).nextElementSibling;
+
+  it("shows Cartridge, Caliber and Action in that order, the action by name", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      cartridge: ".357 Magnum",
+      actionTypeId: 3,
+    });
+    renderPage();
+
+    await screen.findByText("No notes recorded.");
+    const labels = [...document.querySelectorAll(".hd-titleblock dt")].map((dt) => dt.textContent);
+    expect(labels.slice(0, 3)).toEqual(["Cartridge", "Caliber", "Action"]);
+    expect(titleValue("Cartridge")).toHaveTextContent(".357 Magnum");
+    expect(titleValue("Action")).toHaveTextContent("Bolt action");
+  });
+
+  it("shows an unrecorded cartridge and action as a dash", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    await screen.findByText("No notes recorded.");
+    expect(titleValue("Cartridge")).toHaveTextContent("—");
+    expect(titleValue("Action")).toHaveTextContent("—");
+  });
+});
+
 // specs/002-firearm-identification contracts/ui-identification.md §5, FR-013, US1-3
 describe("FirearmRecordPage identification (US1)", () => {
   beforeEach(() => {
@@ -204,12 +249,12 @@ describe("FirearmRecordPage identification (US1)", () => {
     expect(within(panel).getByText("United States")).toBeInTheDocument();
   });
 
-  it("shows Origin: Not specified and no importer or country row when there is no origin", async () => {
+  it("shows Origin: Unspecified and no importer or country row when there is no origin", async () => {
     getFirearm.mockResolvedValue(firearm);
     renderPage();
 
     const panel = await screen.findByRole("region", { name: "Identification" });
-    expect(within(panel).getByText("Not specified")).toBeInTheDocument();
+    expect(within(panel).getByText("Unspecified")).toBeInTheDocument();
     expect(within(panel).queryByText("Country of manufacture")).not.toBeInTheDocument();
     expect(within(panel).queryByText("Importer")).not.toBeInTheDocument();
   });
@@ -364,4 +409,41 @@ describe("FirearmRecordPage pinned strip (FR-041, US1/AC18)", () => {
       expect(openDialogTitle()).toBe(fromHeading);
     },
   );
+});
+
+// specs/004-cartridges-action-types FR-027, contracts/ui-entry.md §7.
+describe("FirearmRecordPage cartridge", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  /** The title block's cells, as label and value pairs, in order. */
+  async function titleCells(): Promise<[string, string][]> {
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    const block = document.querySelector(".hd-titleblock")!;
+    return Array.from(block.querySelectorAll(".hd-titleblock__cell")).map((cell) => [
+      cell.querySelector("dt")!.textContent ?? "",
+      cell.querySelector("dd")!.textContent ?? "",
+    ]);
+  }
+
+  it("shows the cartridge before the caliber in the title block", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, cartridge: ".357 Magnum", caliber: ".357" });
+    renderPage();
+
+    const cells = await titleCells();
+    const labels = cells.map(([label]) => label);
+    expect(labels.indexOf("Cartridge")).toBe(labels.indexOf("Caliber") - 1);
+    expect(cells).toContainEqual(["Cartridge", ".357 Magnum"]);
+    expect(cells).toContainEqual(["Caliber", ".357"]);
+  });
+
+  it("shows an unrecorded cartridge the way it shows an unrecorded acquisition date", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, cartridge: null, acquisitionDate: null });
+    renderPage();
+
+    const cells = await titleCells();
+    const acquired = cells.find(([label]) => label === "Acquired")![1];
+    expect(cells).toContainEqual(["Cartridge", acquired]);
+  });
 });

@@ -42,6 +42,8 @@ fn base_input() -> FirearmInput {
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        cartridge: None,
+        action_type_id: None,
     }
 }
 
@@ -119,6 +121,31 @@ fn matches_a_partially_typed_last_word() {
     assert_eq!(search(&db.conn, "minor pit"), 1, "phrase ending in a partial word");
     assert_eq!(search(&db.conn, "pitting minor"), 0, "earlier words still form a phrase");
     assert_eq!(search(&db.conn, "\""), 0, "a stray quote is not a syntax error");
+}
+
+/// Regression: typing "365" found nothing for a "P365 XL" because the word
+/// tokenizer only matched from the start of a word. Any run inside a value
+/// matches now, and one or two characters still work while typing.
+#[test]
+fn matches_text_from_the_middle_of_a_value() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { make: "Sig Sauer".into(), model: "P365 XL".into(), ..base_input() },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "365"), 1, "digits after a letter");
+    assert_eq!(search(&db.conn, "P365"), 1, "the whole word");
+    assert_eq!(search(&db.conn, "365 x"), 1, "a phrase starting mid-word");
+    assert_eq!(search(&db.conn, "911"), 1, "the middle of the serial number");
+    assert_eq!(search(&db.conn, "sig sa"), 1, "a phrase ending in a partial word");
+    assert_eq!(search(&db.conn, "366"), 0, "no false match");
+    assert_eq!(search(&db.conn, "XL"), 1, "two characters");
+    assert_eq!(search(&db.conn, "x"), 1, "one character");
+    assert_eq!(search(&db.conn, "%"), 0, "a LIKE wildcard is literal");
+    assert_eq!(search(&db.conn, "_"), 0, "a LIKE wildcard is literal");
 }
 
 /// FR-039 / US1 Acceptance Scenario 17: a word in a firearm's finish is found.
@@ -365,4 +392,74 @@ fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500
     ] {
         assert_eq!(search(&db.conn, query), 1, "searching {what} ({query:?}) among 500 records");
     }
+}
+
+/// specs/004-cartridges-action-types FR-008 / US1-9: the cartridge is
+/// searchable, a partly typed designation included.
+#[test]
+fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { cartridge: Some("7.62x39mm".into()), ..base_input() },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            cartridge: Some("Zyxwv Wildcat Special".into()),
+            serial_number: Some("WILD-1".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "7.62x39"), 1, "a partial cartridge designation");
+    assert_eq!(search(&db.conn, "7.62x39mm"), 1, "the whole cartridge");
+    assert_eq!(search(&db.conn, "Wildcat"), 1, "a word of a custom cartridge");
+}
+
+/// specs/004-cartridges-action-types FR-020 / US3-5: the action's name is
+/// searchable, and follows the record when the action changes.
+#[test]
+fn matches_the_action_name_and_follows_a_change_of_action() {
+    let db = TestDb::new();
+    let bolt = ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            firearm_type_id: 2,
+            action_type_id: Some(3),
+            serial_number: Some("AC-1".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            firearm_type_id: 2,
+            action_type_id: Some(1),
+            serial_number: Some("AC-2".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "bolt"), 1, "a word of the action name");
+    assert_eq!(search(&db.conn, "Bolt action"), 1, "the whole action name");
+    assert_eq!(search(&db.conn, "semi"), 1, "a partly typed action name");
+
+    ops::update_firearm(
+        &db.conn,
+        bolt.id,
+        &FirearmInput { action_type_id: Some(4), ..FirearmInput::from(&bolt) },
+        false,
+    )
+    .unwrap();
+    assert_eq!(search(&db.conn, "bolt"), 0, "the old action's name no longer finds it");
+    assert_eq!(search(&db.conn, "lever"), 1, "the new one does");
 }

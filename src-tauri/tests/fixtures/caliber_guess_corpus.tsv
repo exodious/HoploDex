@@ -1,0 +1,108 @@
+# FR-007 / SC-002 caliber-guess corpus (specs/004-cartridges-action-types
+# research.md §7). Each line is: name<TAB>expected caliber<TAB>catalog|guess,
+# or name<TAB>none when no caliber may be read. The expected results are
+# written by hand from the catalog and research.md §7's rules, not generated
+# by the code under test. A line whose name is empty or only spaces is a
+# blank cartridge.
+#
+# Catalog names and aliases (research.md §7 step 1).
+.22 Long Rifle	.22	catalog
+.22 LR	.22	catalog
+22LR	.22	catalog
+.22 Short	.22	catalog
+.22 WMR	.22	catalog
+.17 HMR	.17	catalog
+.300 BLK	.30	catalog
+.300 AAC Blackout	.30	catalog
+.308 Winchester	.30	catalog
+.30-06 Springfield	.30	catalog
+30-06	.30	catalog
+7.62x39	.30	catalog
+7.62x39mm	.30	catalog
+7.62x54R	.30	catalog
+.303 British	.30	catalog
+9x19	9mm	catalog
+9 x 19	9mm	catalog
+9×19	9mm	catalog
+9mm Luger	9mm	catalog
+9x19mm Parabellum	9mm	catalog
+9 X 19MM PARABELLUM	9mm	catalog
+.380 ACP	9mm	catalog
+9x18mm Makarov	9mm	catalog
+.45 ACP	.45	catalog
+.45 Colt	.45	catalog
+.40 S&W	.40	catalog
+10mm Auto	.40	catalog
+.357 SIG	.357	catalog
+.38 Special	.357	catalog
+.357 Magnum	.357	catalog
+.44 Magnum	.44	catalog
+.32 ACP	.32	catalog
+7.65mm Browning	.32	catalog
+5.56x45mm NATO	.22	catalog
+5.56	.22	catalog
+.223 Remington	.22	catalog
+6.5 Creedmoor	6.5mm	catalog
+.243 Winchester	6mm	catalog
+.270 Winchester	.27	catalog
+8mm Mauser	8mm	catalog
+9.3x62mm	9.3mm	catalog
+.375 H&H Magnum	.375	catalog
+.50 BMG	.50	catalog
+12 gauge	12 gauge	catalog
+12ga	12 gauge	catalog
+12 GA	12 gauge	catalog
+16 gauge	16 gauge	catalog
+20 gauge	20 gauge	catalog
+28 gauge	28 gauge	catalog
+10 gauge	10 gauge	catalog
+.410 bore	.410 bore	catalog
+.410	.410 bore	catalog
+410	.410 bore	catalog
+#
+# Guesses (research.md §7 steps 2 and 3): the leading designation, mapped to
+# its class.
+.308 Improved	.30	guess
+.30 Custom Improved	.30	guess
+7,62x39	.30	guess
+7.62 Custom	.30	guess
+6.5x47 Wildcat	6.5mm	guess
+6.5 Creedmoor Ackley	6.5mm	guess
+6.5mm Wildcat	6.5mm	guess
+9mm	9mm	guess
+9 mm	9mm	guess
+.380 Custom	9mm	guess
+45-70 Wildcat	.45	guess
+.45-70 Wildcat	.45	guess
+30-06 AI	.30	guess
+22 Hornet Improved	.22	guess
+.17 HMR Custom	.17	guess
+5.56 Custom	.22	guess
+.38 Wildcat	.357	guess
+.257 Wildcat	.25	guess
+.243 Ackley Improved	6mm	guess
+7mm-08 Ackley	7mm	guess
+6mm Dasher	6mm	guess
+8x68S Custom	8mm	guess
+7x61 Sharpe & Hart	7mm	guess
+9.3x64 Brenneke	9.3mm	guess
+.458 Wildcat	.45	guess
+.500 Custom	.50	guess
+12ga 3in	12 gauge	guess
+10 ga Magnum	10 gauge	guess
+16 Gauge Wildcat	16 gauge	guess
+.410 Bore Custom	.410 bore	guess
+# Read, but no class: the designation itself (research.md §7 step 3c).
+.19 Calhoon	.19	guess
+14 gauge	14 gauge	guess
+.318 Westley Richards	.318	guess
+#
+# No readable bore: no guess, never a made-up value (SC-002).
+Wildcat Special	none
+Hornet	none
+16 Special	none
+Magnum Research	none
+Remington .223	none
+20 Custom	none
+	none
+   	none

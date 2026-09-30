@@ -18,11 +18,15 @@ import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName } from "../app/collectionStore";
+import { firearmName, useActionTypes } from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { OriginGuide } from "./OriginGuide";
+import { caliberHint, caliberReducer } from "./caliberDerivation";
+import type { CaliberAction, CaliberMode, CaliberState } from "./caliberDerivation";
+import { EntryField } from "./EntryField";
+import { settleEntry } from "./firearmsService";
 import {
   CONDITION_OPTIONS,
   DISPOSITION_TYPE_OPTIONS,
@@ -31,7 +35,17 @@ import {
   conditionLabel,
   originLabel,
 } from "./types";
-import type { Condition, DispositionType, Firearm, FirearmInput, Origin } from "./types";
+import type {
+  ActionType,
+  ActionTypesOutput,
+  Condition,
+  DerivedCaliber,
+  DispositionType,
+  EntryFieldName,
+  Firearm,
+  FirearmInput,
+  Origin,
+} from "./types";
 import "./forms.css";
 
 /** specs/002-firearm-identification research.md §7: not four digits, or
@@ -43,6 +57,47 @@ function yearOfManufactureError(text: string): string | undefined {
   if (text.length !== 4 || !Number.isInteger(year) || year < 1400 || year > currentYear) {
     return `Year of manufacture must be a four-digit year from 1400 to ${currentYear}.`;
   }
+  return undefined;
+}
+
+/** The four fields with suggestions and snapping (specs/004-cartridges-action-types
+ * FR-009). */
+const ENTRY_FIELDS: readonly EntryFieldName[] = ["make", "model", "cartridge", "caliber"];
+
+function isEntryField(name: string | undefined): name is EntryFieldName {
+  return ENTRY_FIELDS.some((field) => field === name);
+}
+
+/** specs/004-cartridges-action-types FR-017: the actions the Action choice
+ * offers for a firearm type, in list order. A type that maps none (Other, or
+ * none chosen yet) offers the whole list. */
+function actionsForType(actionTypes: ActionTypesOutput, firearmTypeId: string): ActionType[] {
+  const mapped =
+    firearmTypeId === "" ? undefined : actionTypes.allowedByFirearmType[Number(firearmTypeId)];
+  if (!mapped || mapped.length === 0) return actionTypes.actions;
+  return actionTypes.actions.filter((action) => mapped.includes(action.id));
+}
+
+/** Under Action when `list_action_types` failed: it has nothing to offer, and
+ * the user should know why rather than see an empty choice. */
+const ACTION_LIST_FAILED =
+  "The list of actions couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
+
+/** contracts/ui-entry.md §2: the note under a field that was snapped. */
+function snapNote(changedBy: "catalog" | "record", value: string): string {
+  return changedBy === "catalog"
+    ? `Changed to the built-in spelling “${value}”.`
+    : `Changed to “${value}”, as already in your collection.`;
+}
+
+/** specs/004-cartridges-action-types FR-015, mirrored from the backend's
+ * `check_entry_text` for an immediate message: once trimmed, at most 100
+ * characters (counted as characters, not UTF-16 units) and no control
+ * characters. The backend stays the authority. */
+function entryTextError(label: string, text: string): string | undefined {
+  const trimmed = text.trim();
+  if (Array.from(trimmed).length > 100) return `${label} can be at most 100 characters.`;
+  if (/\p{Cc}/u.test(trimmed)) return `${label} can't contain control characters.`;
   return undefined;
 }
 
@@ -193,15 +248,28 @@ export interface FirearmFormProps {
 }
 
 /** The version of this form's kept drafts (research.md §16). Raise it when
- * `FormState` changes shape, so older drafts are only discarded. */
-export const FORM_VERSION = 1;
+ * `FormState` changes shape, so older drafts are only discarded. 2: the
+ * cartridge and the caliber's state (specs/004-cartridges-action-types
+ * research.md §8). */
+export const FORM_VERSION = 2;
 
 interface FormState {
   make: string;
   model: string;
   nickname: string;
   caliber: string;
+  /** specs/004-cartridges-action-types: the caliber's state beside its
+   * text (research.md §8), as strings so a kept draft carries them;
+   * "" is none. */
+  caliberMode: CaliberMode;
+  caliberSource: "" | DerivedCaliber["source"];
+  caliberSuggestion: string;
+  caliberPrompt: string;
+  cartridge: string;
   firearmTypeId: string;
+  /** specs/004-cartridges-action-types FR-017: an action id; "" is
+   * Unspecified. */
+  actionTypeId: string;
   serialNumber: string;
   noSerialAttested: boolean;
   notes: string;
@@ -253,7 +321,14 @@ function toFormState(firearm?: Firearm): FormState {
     model: firearm?.model ?? "",
     nickname: firearm?.nickname ?? "",
     caliber: firearm?.caliber ?? "",
+    // FR-006: a saved firearm's caliber counts as already edited.
+    caliberMode: firearm ? "edited" : "derived",
+    caliberSource: "",
+    caliberSuggestion: "",
+    caliberPrompt: "",
+    cartridge: firearm?.cartridge ?? "",
     firearmTypeId: firearm ? String(firearm.firearmTypeId) : "",
+    actionTypeId: firearm?.actionTypeId == null ? "" : String(firearm.actionTypeId),
     serialNumber: firearm?.serialNumber ?? "",
     noSerialAttested: firearm?.noSerialAttested ?? false,
     notes: firearm?.notes ?? "",
@@ -296,6 +371,15 @@ function validate(form: FormState, disposed: boolean): Partial<Record<Field, str
   if (form.model.trim() === "") errors.model = "Enter the model.";
   if (form.firearmTypeId === "") errors.firearmTypeId = "Choose a type.";
   if (form.caliber.trim() === "") errors.caliber = "Enter the caliber.";
+  for (const [field, label] of [
+    ["make", "Make"],
+    ["model", "Model"],
+    ["cartridge", "Cartridge"],
+    ["caliber", "Caliber"],
+  ] as const) {
+    const problem = entryTextError(label, form[field]);
+    if (problem) errors[field] = problem;
+  }
   if (form.serialNumber.trim() === "" && !form.noSerialAttested) {
     errors.serialNumber = "Enter a serial number, or confirm this firearm has none.";
   }
@@ -367,6 +451,8 @@ const FIELD_ORDER: Field[] = [
   "model",
   "nickname",
   "firearmTypeId",
+  "actionTypeId",
+  "cartridge",
   "caliber",
   "serialNumber",
   "yearOfManufacture",
@@ -402,6 +488,28 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   );
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues));
+  // specs/004-cartridges-action-types: the latest form, for a settle
+  // response to check the field still holds what was sent.
+  const latestForm = useRef(form);
+  latestForm.current = form;
+  // What each entry field was last settled to (a saved value counts as
+  // settled, FR-014), the cartridge and caliber it derived, so a caliber left
+  // empty is derived again at once, and the settles still in flight.
+  const lastSettled = useRef<Record<EntryFieldName, string>>({
+    make: (initialValues?.make ?? "").trim(),
+    model: (initialValues?.model ?? "").trim(),
+    cartridge: (initialValues?.cartridge ?? "").trim(),
+    caliber: (initialValues?.caliber ?? "").trim(),
+  });
+  const derivedFrom = useRef<CaliberState["derivedFrom"]>(null);
+  const settling = useRef(new Set<Promise<boolean>>());
+  // contracts/ui-entry.md §2: the note under a field whose value was snapped,
+  // until the field is edited again.
+  const [entryNotes, setEntryNotes] = useState<Partial<Record<EntryFieldName, string>>>({});
+  // contracts/ui-entry.md §4: the note under Action after a change of type
+  // cleared it, until an action is chosen or the type changes again.
+  const [actionNote, setActionNote] = useState("");
+  const actionTypes = useActionTypes();
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -454,6 +562,140 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   function update<K extends Field>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  /** Runs the caliber reducer (research.md §8) over the form's caliber
+   * fields. `derivedFrom` is set before a cartridge action, so this only
+   * reads it. */
+  function applyCaliber(action: CaliberAction) {
+    setForm((prev) => {
+      const next = caliberReducer(
+        {
+          caliber: prev.caliber,
+          mode: prev.caliberMode,
+          source: prev.caliberSource || null,
+          suggestion: prev.caliberSuggestion || null,
+          prompt: prev.caliberPrompt || null,
+          derivedFrom: derivedFrom.current,
+        },
+        action,
+      );
+      return {
+        ...prev,
+        caliber: next.caliber,
+        caliberMode: next.mode,
+        caliberSource: next.source ?? "",
+        caliberSuggestion: next.suggestion ?? "",
+        caliberPrompt: next.prompt ?? "",
+      };
+    });
+  }
+
+  /** contracts/ui-entry.md §2–§3: settles one of the four fields, when it
+   * was left or a suggestion was picked. Only text that changed since it was
+   * last settled and, editing, differs from the saved value is sent (FR-014);
+   * the answer is applied only if the field still holds what was sent.
+   * Resolves whether the value was changed by snapping. A cartridge also
+   * gets the caliber it derives. */
+  function settle(field: EntryFieldName): Promise<boolean> {
+    const text = latestForm.current[field];
+    const trimmed = text.trim();
+    if (trimmed === lastSettled.current[field]) return Promise.resolve(false);
+    const previous = lastSettled.current[field];
+    lastSettled.current[field] = trimmed;
+    if (trimmed === "" || (initialValues && trimmed === (initialValues[field] ?? "").trim())) {
+      // Cleared, or typed back to the saved value (never settled, FR-014): a
+      // derived caliber empties, an edited one loses its suggestion.
+      if (field === "cartridge") {
+        derivedFrom.current = null;
+        if (trimmed === "" || latestForm.current.caliberMode === "edited") {
+          applyCaliber({ type: "cartridgeCleared" });
+        }
+      }
+      return Promise.resolve(false);
+    }
+    const run = (async () => {
+      let settled;
+      try {
+        settled = await settleEntry(field, text);
+      } catch {
+        // Only guidance: saving still checks the field. Leaving it again
+        // tries once more.
+        lastSettled.current[field] = previous;
+        return false;
+      }
+      if (latestForm.current[field] !== text) return false;
+      if (field === "cartridge") {
+        derivedFrom.current = { cartridge: settled.value, derived: settled.derivedCaliber };
+        applyCaliber({
+          type: "cartridgeSettled",
+          cartridge: settled.value,
+          derived: settled.derivedCaliber,
+        });
+      }
+      if (settled.changedBy === null) return false;
+      lastSettled.current[field] = settled.value.trim();
+      const note = snapNote(settled.changedBy, settled.value);
+      flushSync(() => {
+        setEntryNotes((notes) => ({ ...notes, [field]: note }));
+        if (field === "caliber") {
+          applyCaliber({ type: "caliberTyped", caliber: settled.value });
+        } else {
+          update(field, settled.value);
+        }
+      });
+      return true;
+    })();
+    settling.current.add(run);
+    void run.finally(() => settling.current.delete(run));
+    return run;
+  }
+
+  /** The user typed in an entry field: its note goes (§2). */
+  function editEntry(field: EntryFieldName, text: string) {
+    setEntryNotes((notes) => (notes[field] ? { ...notes, [field]: undefined } : notes));
+    if (field === "caliber") applyCaliber({ type: "caliberTyped", caliber: text });
+    else update(field, text);
+  }
+
+  /** The user picked a suggestion: the field takes it and settles at once. */
+  function pickEntry(field: EntryFieldName, value: string) {
+    flushSync(() => editEntry(field, value));
+    void settle(field);
+  }
+
+  function leaveEntry(field: EntryFieldName) {
+    touch(field)();
+    if (field === "caliber") applyCaliber({ type: "caliberLeft" });
+    void settle(field);
+  }
+
+  const caliberState: CaliberState = {
+    caliber: form.caliber,
+    mode: form.caliberMode,
+    source: form.caliberSource || null,
+    suggestion: form.caliberSuggestion || null,
+    prompt: form.caliberPrompt || null,
+    derivedFrom: null,
+  };
+  const caliberHintText = caliberHint(caliberState);
+  const caliberGuessed = form.caliberMode === "derived" && form.caliberSource === "guess";
+
+  /** FR-019: an action the new type doesn't allow is cleared, with a note. An
+   * allowed action is kept, silently. */
+  function changeType(value: string) {
+    const chosen = actionTypes.actions.find((action) => String(action.id) === form.actionTypeId);
+    const allowed = actionsForType(actionTypes, value);
+    const cleared = chosen !== undefined && !allowed.some((action) => action.id === chosen.id);
+    const typeLabel = FIREARM_TYPE_OPTIONS.find((option) => option.value === value)?.label;
+    setActionNote(
+      cleared ? `${chosen.name} doesn't apply to a ${typeLabel}, so the action was cleared.` : "",
+    );
+    setForm((prev) => ({
+      ...prev,
+      firearmTypeId: value,
+      actionTypeId: cleared ? "" : prev.actionTypeId,
+    }));
   }
 
   function handleOriginChange(next: Origin | "") {
@@ -520,6 +762,19 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   /** Validates and saves; resolves whether it was saved. */
   async function save(): Promise<boolean> {
+    // contracts/ui-entry.md §2: wait for any settle in flight, then settle
+    // the field that has focus (Enter pressed inside it). If that changes its
+    // value the note shows and nothing is saved: the user reviews the
+    // change, then saves again.
+    if (settling.current.size > 0) await Promise.all([...settling.current]);
+    const focused = formRef.current?.contains(document.activeElement)
+      ? document.activeElement?.closest<HTMLElement>("[data-field]")?.dataset.field
+      : undefined;
+    if (isEntryField(focused) && (await settle(focused))) return false;
+
+    // What the form holds now, after any settle above changed it.
+    const form = latestForm.current;
+    const clientErrors = validate(form, disposed);
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
@@ -543,7 +798,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       model: form.model.trim(),
       nickname: blankToNull(form.nickname),
       caliber: form.caliber.trim(),
+      cartridge: blankToNull(form.cartridge),
       firearmTypeId: Number(form.firearmTypeId),
+      actionTypeId: form.actionTypeId === "" ? null : Number(form.actionTypeId),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
@@ -647,24 +904,31 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             </h3>
             <div className="hd-form-grid hd-form-grid--2">
               <div data-field="make">
-                <TextField
+                <EntryField
+                  field="make"
                   label="Make"
                   required
                   value={form.make}
-                  onChange={(e) => update("make", e.target.value)}
-                  onBlur={touch("make")}
+                  onValueChange={(text) => editEntry("make", text)}
+                  onPick={(value) => pickEntry("make", value)}
+                  onLeave={() => leaveEntry("make")}
+                  note={entryNotes.make}
                   error={errorFor("make")}
                   placeholder="e.g. Smith & Wesson"
                   autoFocus={!initialValues}
                 />
               </div>
               <div data-field="model">
-                <TextField
+                <EntryField
+                  field="model"
                   label="Model"
                   required
+                  make={form.make}
                   value={form.model}
-                  onChange={(e) => update("model", e.target.value)}
-                  onBlur={touch("model")}
+                  onValueChange={(text) => editEntry("model", text)}
+                  onPick={(value) => pickEntry("model", value)}
+                  onLeave={() => leaveEntry("model")}
+                  note={entryNotes.model}
                   error={errorFor("model")}
                   placeholder="e.g. Model 29"
                 />
@@ -689,7 +953,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 required
                 value={form.firearmTypeId}
                 onChange={(value) => {
-                  update("firearmTypeId", value);
+                  changeType(value);
                   touch("firearmTypeId")();
                 }}
                 error={errorFor("firearmTypeId")}
@@ -702,41 +966,110 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               />
             </div>
 
+            {/* contracts/ui-entry.md §4: chosen from the fixed list only, and
+                only from the actions the type allows. */}
+            <div data-field="actionTypeId">
+              <Select
+                label="Action"
+                fieldClassName="hd-field--third"
+                value={form.actionTypeId === "" ? NOT_RECORDED : form.actionTypeId}
+                onValueChange={(value) => {
+                  setActionNote("");
+                  update("actionTypeId", value === NOT_RECORDED ? "" : value);
+                }}
+                options={[
+                  { value: NOT_RECORDED, label: "Unspecified" },
+                  ...actionsForType(actionTypes, form.firearmTypeId).map((action) => ({
+                    value: String(action.id),
+                    label: action.name,
+                  })),
+                ]}
+                error={errorFor("actionTypeId")}
+                hint={actionNote || (actionTypes.failed ? ACTION_LIST_FAILED : undefined)}
+              />
+              <span className="hd-sr-only" role="status" aria-live="polite">
+                {actionNote}
+              </span>
+            </div>
+
+            {/* specs/004-cartridges-action-types contracts/ui-entry.md §3: the
+                cartridge, then the caliber it fills in, to its right. */}
             <div className="hd-form-grid hd-form-grid--2">
-              <div data-field="caliber">
-                <TextField
+              <div data-field="cartridge">
+                <EntryField
+                  field="cartridge"
+                  label="Cartridge"
+                  value={form.cartridge}
+                  onValueChange={(text) => editEntry("cartridge", text)}
+                  onPick={(value) => pickEntry("cartridge", value)}
+                  onLeave={() => leaveEntry("cartridge")}
+                  note={entryNotes.cartridge}
+                  error={errorFor("cartridge")}
+                  hint="Optional. The exact round it's chambered for, e.g. 9x19mm Parabellum."
+                  placeholder="e.g. 9x19mm Parabellum"
+                />
+              </div>
+              <div data-field="caliber" className="hd-form-stack">
+                <EntryField
+                  field="caliber"
+                  id="ff-caliber"
                   label="Caliber"
                   required
                   value={form.caliber}
-                  onChange={(e) => update("caliber", e.target.value)}
-                  onBlur={touch("caliber")}
+                  onValueChange={(text) => editEntry("caliber", text)}
+                  onPick={(value) => pickEntry("caliber", value)}
+                  onLeave={() => leaveEntry("caliber")}
+                  note={entryNotes.caliber}
                   error={errorFor("caliber")}
-                  placeholder="e.g. .357 Magnum"
+                  hint={caliberHintText}
+                  placeholder="e.g. 9mm"
+                  trailing={
+                    caliberGuessed && (
+                      // FR-005: marked as a guess in words, not by color alone.
+                      <span className="hd-guess-tag" aria-describedby="ff-caliber-hint">
+                        Guess
+                      </span>
+                    )
+                  }
                 />
+                {form.caliberSuggestion && (
+                  <p className="hd-caliber-suggestion">
+                    <span>The cartridge suggests “{form.caliberSuggestion}”.</span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => applyCaliber({ type: "suggestionUsed" })}
+                    >
+                      Use {form.caliberSuggestion}
+                    </Button>
+                  </p>
+                )}
               </div>
-              <div data-field="serialNumber" className="hd-form-stack">
-                <TextField
-                  label="Serial number"
-                  required={!form.noSerialAttested}
-                  className="hd-serial"
-                  value={form.noSerialAttested ? "" : form.serialNumber}
-                  onChange={(e) => update("serialNumber", e.target.value)}
-                  onBlur={touch("serialNumber")}
-                  error={errorFor("serialNumber")}
-                  disabled={form.noSerialAttested}
-                  placeholder={form.noSerialAttested ? "None" : undefined}
-                  spellCheck={false}
-                />
-                <Checkbox
-                  label="This firearm has no serial number"
-                  hint="Only for firearms not required to have one: made before October 22, 1968, or homemade."
-                  checked={form.noSerialAttested}
-                  onCheckedChange={(checked) => {
-                    update("noSerialAttested", checked);
-                    touch("serialNumber")();
-                  }}
-                />
-              </div>
+            </div>
+
+            <div data-field="serialNumber" className="hd-form-stack">
+              <TextField
+                label="Serial number"
+                required={!form.noSerialAttested}
+                className="hd-serial"
+                fieldClassName="hd-field--half"
+                value={form.noSerialAttested ? "" : form.serialNumber}
+                onChange={(e) => update("serialNumber", e.target.value)}
+                onBlur={touch("serialNumber")}
+                error={errorFor("serialNumber")}
+                disabled={form.noSerialAttested}
+                placeholder={form.noSerialAttested ? "None" : undefined}
+                spellCheck={false}
+              />
+              <Checkbox
+                label="This firearm has no serial number"
+                hint="Only for firearms not required to have one: made before October 22, 1968, or homemade."
+                checked={form.noSerialAttested}
+                onCheckedChange={(checked) => {
+                  update("noSerialAttested", checked);
+                  touch("serialNumber")();
+                }}
+              />
             </div>
 
             <Disclosure

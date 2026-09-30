@@ -1173,3 +1173,51 @@
   margin: var(--space-1) calc(-1 * var(--space-1));
   background: var(--rule);
 }
+
+/* ── Combobox (suggestion list) ──────────────────────────────────────── */
+
+.hd-combobox__popover {
+  /* As wide as the field it is anchored to. */
+  width: var(--radix-popover-trigger-width);
+  padding: var(--space-1);
+}
+
+/* Eight rows, then it scrolls (contracts/ui-entry.md §1). */
+.hd-combobox__list {
+  --combobox-row: 36px;
+  max-height: calc(8 * var(--combobox-row));
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.hd-combobox__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--combobox-row);
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.hd-combobox__option[aria-selected="true"] {
+  background: var(--niter-wash);
+}
+
+.hd-combobox__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The source and count: secondary, at the row's end. */
+.hd-combobox__marker {
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+}

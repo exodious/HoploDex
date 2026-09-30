@@ -25,6 +25,8 @@ export { DecimalField } from "./DecimalField";
 export type { DecimalFieldProps } from "./DecimalField";
 export { DateField } from "./DateField";
 export type { DateFieldProps } from "./DateField";
+export { Combobox } from "./Combobox";
+export type { ComboboxOption, ComboboxProps } from "./Combobox";
 export { Checkbox } from "./Checkbox";
 export type { CheckboxProps } from "./Checkbox";
 export { Select } from "./Select";

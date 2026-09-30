@@ -108,7 +108,8 @@ your platform's package manager.
     libsoup-3.0-dev \
     libssl-dev \
     libayatana-appindicator3-dev \
-    librsvg2-dev
+    librsvg2-dev \
+    xdg-utils
   ```
 
   Arch:
@@ -123,7 +124,8 @@ your platform's package manager.
     appmenu-gtk-module \
     libappindicator-gtk3 \
     librsvg \
-    webkit2gtk-4.1
+    webkit2gtk-4.1 \
+    xdg-utils
   ```
 
 - **macOS**: Xcode Command Line Tools —
@@ -226,7 +228,33 @@ npm run build                                              # tsc typecheck + vit
 cargo build --manifest-path src-tauri/Cargo.toml            # backend, debug profile
 npm run tauri dev                                           # run the full app in dev mode (hot reload)
 npm run tauri build                                         # production installer/bundle for this OS
+npm run bundle:linux                                        # the same on Linux, with a working AppImage (below)
 ```
+
+### Linux AppImage
+
+On Linux, build the bundles with `npm run bundle:linux` (in the dev
+container: `scripts/dev-container.sh npm run bundle:linux`), not
+`npm run tauri build`. Arguments go through to `tauri build`, so
+`npm run bundle:linux -- --bundles appimage` builds only the AppImage.
+
+A plain `tauri build` AppImage carries the build machine's display-stack
+libraries (`libwayland-*`, `libxkbcommon`, `libxcb-*`, `libXau`, `libXdmcp`)
+and puts them ahead of the host's. On a host with a newer Mesa than the build
+machine (Arch and CachyOS, Fedora 44), WebKitGTK then can't create an EGL
+display: the window opens grey, and the terminal shows
+`Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...`
+([tauri-apps/tauri#15976](https://github.com/tauri-apps/tauri/issues/15976)).
+`scripts/build-appimage.sh` sets `LINUXDEPLOY_EXCLUDED_LIBRARIES` so
+linuxdeploy leaves those libraries out and the host's are used, then extracts
+the AppImage and fails if any are still inside. Only the linuxdeploy that
+Tauri CLI 2.12 and later downloads reads that variable. The `.deb` and `.rpm`
+use the system's libraries anyway.
+
+To check an AppImage on a machine with a newer Mesa without a desktop session
+or your real data, run it under `xvfb-run` with throwaway `HOME` and `XDG_*`
+directories and no session D-Bus. The broken build aborts at once with the EGL error, and the
+fixed one shows the chooser.
 
 ## Test
 
@@ -299,9 +327,10 @@ Your real application data is more than one file. It is every `.hoplodex`
 database you have created or opened, wherever you keep it, and its backups
 (in `HoploDex backups` next to it, or the folder you chose);
 `machine.json`, with the recent-databases list, in the app's config
-directory (`~/.config/com.hoplodex.app/` on Linux); the suggested
+directory (`~/.config/io.github.exodious.HoploDex/` on Linux); the suggested
 `<Documents>/HoploDex` folder; and each saved passphrase, a
-`passphrase:<database id>` entry under `com.hoplodex.app` in the OS keyring.
+`passphrase:<database id>` entry under `io.github.exodious.HoploDex` in the
+OS keyring.
 The database from before the passphrase model,
 `~/.local/share/com.hoplodex.app/hoplodex.db`, and its key in the keyring
 count too; nothing reads them any more. None of the tooling here touches any

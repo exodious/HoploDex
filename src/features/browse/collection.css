@@ -145,6 +145,16 @@
   border-bottom: 0;
 }
 
+/* specs/004-cartridges-action-types FR-027: a long cartridge is cut short
+   with an ellipsis; the whole text stays in the row's name and the title. */
+.hd-cell-truncate {
+  display: block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hd-table__num {
   text-align: right !important;
   white-space: nowrap;
