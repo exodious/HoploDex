@@ -40,7 +40,7 @@ fn the_first_load_makes_a_machine_id_that_stays_the_same() {
 #[test]
 fn a_missing_config_directory_is_created() {
     let config = TempDir::new().unwrap();
-    let nested = config.path().join("a").join("com.hoplodex.inventory");
+    let nested = config.path().join("a").join("io.github.exodious.HoploDex");
 
     let settings = MachineSettings::load(&nested).unwrap();
 

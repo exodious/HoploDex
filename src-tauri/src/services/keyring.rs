@@ -15,7 +15,8 @@ use crate::commands::CommandError;
 use crate::services::passphrase::Passphrase;
 
 /// Fixed on purpose, not derived from the bundle identifier (now
-/// `com.hoplodex.inventory`): changing it would orphan every saved passphrase.
+/// `io.github.exodious.HoploDex`): changing it would orphan every saved
+/// passphrase.
 const SERVICE: &str = "com.hoplodex.app";
 const USER_PREFIX: &str = "passphrase:";
 /// A user no database has (ids are hex digits), read to find out whether the
