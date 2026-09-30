@@ -517,3 +517,15 @@ fn grouping_by_registration_follows_the_list_and_the_alphabet_with_unspecified_l
     let json = serde_json::to_value(&as_groups[0].firearms[0]).unwrap();
     assert_eq!(json["registeredAs"], "Suppressor");
 }
+
+#[test]
+fn group_by_action_puts_automatic_after_break_action_and_before_falling_block() {
+    // 005 US3: id 13 sorts seventh in the action list.
+    let db = TestDb::new();
+    for (model, action) in [("A", 7), ("B", 13), ("C", 6)] {
+        ops::create_firearm(&db.conn, &acting(model, 2, Some(action)), false).unwrap();
+    }
+    let groups = group_keys(&db.conn, GroupBy::ActionType);
+    let keys: Vec<&str> = groups.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(keys, vec!["Break action", "Automatic or select-fire", "Falling block"]);
+}

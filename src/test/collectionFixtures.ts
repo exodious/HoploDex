@@ -37,18 +37,20 @@ export const REGISTRATION_CLASSES: RegistrationClass[] = [
   "Destructive device",
 ].map((name, index) => ({ id: index + 1, name, offered: true }));
 
-/** 004's twelve actions with their real ids, in list order. */
+/** 004's twelve actions and 005's "Automatic or select-fire" (id 13), with
+ * their real ids, in list order: id 13 sits seventh. */
 export const ACTION_TYPES: ActionType[] = [
-  "Semi-automatic",
-  "Revolver",
-  "Bolt action",
-  "Lever action",
-  "Pump action",
-  "Break action",
-  "Falling block",
-  "Rolling block",
-  "Single shot (other)",
-  "Flintlock",
-  "Percussion",
-  "Inline muzzleloader",
-].map((name, index) => ({ id: index + 1, name }));
+  [1, "Semi-automatic"],
+  [2, "Revolver"],
+  [3, "Bolt action"],
+  [4, "Lever action"],
+  [5, "Pump action"],
+  [6, "Break action"],
+  [13, "Automatic or select-fire"],
+  [7, "Falling block"],
+  [8, "Rolling block"],
+  [9, "Single shot (other)"],
+  [10, "Flintlock"],
+  [11, "Percussion"],
+  [12, "Inline muzzleloader"],
+].map(([id, name]) => ({ id: id as number, name: name as string }));

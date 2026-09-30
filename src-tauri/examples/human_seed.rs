@@ -72,6 +72,9 @@ const SUPPRESSOR: i64 = 5;
 const REGISTERED_SUPPRESSOR: i64 = 1;
 const REGISTERED_SBR: i64 = 2;
 const REGISTERED_SBS: i64 = 3;
+const REGISTERED_MACHINE_GUN: i64 = 5;
+/// 005 US3: "Automatic or select-fire", unrelated to any classification.
+const ACTION_AUTOMATIC: i64 = 13;
 
 // Ids seeded by migration 0003_seed_firearm_types (specs/004-cartridges-action-types FR-018).
 const SEMI_AUTOMATIC: i64 = 1;
@@ -1160,6 +1163,18 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2023-07-29"),
         barrel_length_hundredths: Some(1050),
         ..base("Ruger", "Mini Thirty", "580-90021", ".30", RIFLE)
+    });
+    // A select-fire rifle registered as a Machine gun (US3): the action and
+    // the classification are entered separately.
+    add(FirearmInput {
+        estimated_value: Some(14500),
+        acquisition_date: text("2025-09-12"),
+        action_type_id: Some(ACTION_AUTOMATIC),
+        registration_class_id: Some(REGISTERED_MACHINE_GUN),
+        registration_form: text("Form 3"),
+        registration_approved: text("2025-12-02"),
+        registered_to: text("Alex Rivera"),
+        ..base("Colt", "M16A1", "CM-3317902", ".223", RIFLE)
     });
     // A classification with no approved date yet.
     add(FirearmInput {

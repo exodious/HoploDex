@@ -476,6 +476,25 @@ fn matches_the_action_name_and_follows_a_change_of_action() {
     assert_eq!(search(&db.conn, "lever"), 1, "the new one does");
 }
 
+/// specs/005-regulated-item-types US3: the new action's name is searchable.
+#[test]
+fn matches_the_automatic_or_select_fire_action() {
+    let db = TestDb::new();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            firearm_type_id: 2,
+            action_type_id: Some(13),
+            serial_number: Some("SF-1".into()),
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    assert_eq!(search(&db.conn, "select-fire"), 1);
+    assert_eq!(search(&db.conn, "automatic"), 1);
+}
+
 /// specs/005-regulated-item-types US2-11, FR-017: the classification, form
 /// and "Registered to" are searched; the approved date is not.
 #[test]

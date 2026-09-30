@@ -33,14 +33,17 @@ INSERT INTO action_types (id, name, sort_order) VALUES
     (4, 'Lever action', 4),
     (5, 'Pump action', 5),
     (6, 'Break action', 6),
-    (7, 'Falling block', 7),
-    (8, 'Rolling block', 8),
-    (9, 'Single shot (other)', 9),
-    (10, 'Flintlock', 10),
-    (11, 'Percussion', 11),
-    (12, 'Inline muzzleloader', 12);
+    (13, 'Automatic or select-fire', 7),
+    (7, 'Falling block', 8),
+    (8, 'Rolling block', 9),
+    (9, 'Single shot (other)', 10),
+    (10, 'Flintlock', 11),
+    (11, 'Percussion', 12),
+    (12, 'Inline muzzleloader', 13);
 
--- FR-018's table. Other (4) has no rows, so it allows every action (FR-017).
+-- FR-018's table, plus 005 US3's id 13 (Handgun, Rifle and Shotgun all allow
+-- it: the exclusions below name the ids they refuse, so it is included).
+-- Other (4) has no rows, so it allows every action (FR-017).
 -- Handgun (1): all but Pump action, Falling block and Inline muzzleloader.
 INSERT INTO firearm_type_actions (firearm_type_id, action_type_id)
 SELECT 1, id FROM action_types WHERE id NOT IN (5, 7, 12);

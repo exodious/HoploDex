@@ -1694,21 +1694,9 @@ describe("FirearmForm suggestions and snapping (US2)", () => {
 // specs/004-cartridges-action-types US3, contracts/ui-entry.md §4: the
 // Action choice, filtered by the selected type.
 describe("FirearmForm action (US3)", () => {
-  const NAMES = [
-    "Semi-automatic",
-    "Revolver",
-    "Bolt action",
-    "Lever action",
-    "Pump action",
-    "Break action",
-    "Falling block",
-    "Rolling block",
-    "Single shot (other)",
-    "Flintlock",
-    "Percussion",
-    "Inline muzzleloader",
-  ];
-  const ACTIONS = NAMES.map((name, index) => ({ id: index + 1, name }));
+  // In list order, with 005's "Automatic or select-fire" (id 13) seventh.
+  const ACTIONS = ACTION_TYPES;
+  const NAMES = ACTIONS.map((action) => action.name);
   const ids = (...except: number[]) =>
     ACTIONS.map((action) => action.id).filter((id) => !except.includes(id));
   // FR-018: Handgun (1) has no Pump action, Falling block or Inline
@@ -1785,6 +1773,20 @@ describe("FirearmForm action (US3)", () => {
     expect(await offered(user)).toEqual(["Unspecified", ...NAMES]);
     await chooseType(user, "Other");
     expect(await offered(user)).toEqual(["Unspecified", ...NAMES]);
+  });
+
+  it("offers Automatic or select-fire for Handgun, Rifle, Shotgun and Other, with no classification prompt", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    for (const type of ["Handgun", "Rifle", "Shotgun", "Other"]) {
+      await chooseType(user, type);
+      expect(await offered(user)).toContain("Automatic or select-fire");
+    }
+    await chooseAction(user, "Automatic or select-fire");
+    expect(action()).toHaveTextContent("Automatic or select-fire");
+    expect(screen.queryByText(/classification|regist/i, { selector: "[role=alert]" })).toBeNull();
+    expect(screen.queryByRole("status", { name: /classification/i })).toBeNull();
   });
 
   it("takes no typed text: it is a choice, not a text field", async () => {

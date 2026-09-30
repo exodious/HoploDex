@@ -23,6 +23,9 @@ const PUMP_ACTION: i64 = 5;
 const FALLING_BLOCK: i64 = 7;
 const ROLLING_BLOCK: i64 = 8;
 const INLINE_MUZZLELOADER: i64 = 12;
+const AUTOMATIC: i64 = 13;
+const SUPPRESSOR: i64 = 5;
+const MACHINE_GUN: i64 = 5;
 
 fn with_action(firearm_type_id: i64, action_type_id: Option<i64>, serial: &str) -> FirearmInput {
     FirearmInput { firearm_type_id, action_type_id, ..firearm("Maker", "Model", serial) }
@@ -47,6 +50,7 @@ fn the_action_list_is_in_fr_018_order() {
             "Lever action",
             "Pump action",
             "Break action",
+            "Automatic or select-fire",
             "Falling block",
             "Rolling block",
             "Single shot (other)",
@@ -55,8 +59,9 @@ fn the_action_list_is_in_fr_018_order() {
             "Inline muzzleloader",
         ]
     );
+    // 005 US3: id 13 sits seventh; ids 7-12 keep their ids, only their order moves.
     let action_ids: Vec<i64> = output.actions.iter().map(|a| a.id).collect();
-    assert_eq!(action_ids, (1..=12).collect::<Vec<i64>>());
+    assert_eq!(action_ids, vec![1, 2, 3, 4, 5, 6, 13, 7, 8, 9, 10, 11, 12]);
 }
 
 #[test]
@@ -66,22 +71,24 @@ fn the_seeded_types_map_to_their_allowed_actions_in_list_order() {
     let output = entry_ops::list_action_types(&db.conn).unwrap();
     let allowed = &output.allowed_by_firearm_type;
 
-    let mut handgun = (1..=12).collect::<Vec<i64>>();
+    let list_order: Vec<i64> = vec![1, 2, 3, 4, 5, 6, 13, 7, 8, 9, 10, 11, 12];
+    let mut handgun = list_order.clone();
     handgun.retain(|id| ![PUMP_ACTION, FALLING_BLOCK, INLINE_MUZZLELOADER].contains(id));
-    assert_eq!(handgun.len(), 9);
+    assert_eq!(handgun.len(), 10);
     assert_eq!(allowed[&HANDGUN], handgun);
 
-    assert_eq!(allowed[&RIFLE], (1..=12).collect::<Vec<i64>>());
+    assert_eq!(allowed[&RIFLE], list_order);
 
-    let mut shotgun = (1..=12).collect::<Vec<i64>>();
+    let mut shotgun = list_order.clone();
     shotgun.retain(|id| *id != ROLLING_BLOCK);
-    assert_eq!(shotgun.len(), 11);
+    assert_eq!(shotgun.len(), 12);
     assert_eq!(allowed[&SHOTGUN], shotgun);
 
     assert!(
         allowed.get(&OTHER).is_none_or(|list| list.is_empty()),
         "Other maps nothing, which allows every action"
     );
+    assert!(!allowed.contains_key(&SUPPRESSOR), "a Suppressor has no action list");
 }
 
 #[test]
@@ -109,7 +116,7 @@ fn a_type_added_later_allows_every_action_and_a_renamed_type_keeps_its_mapping()
         Some("Pump action doesn't apply to a Pistol.")
     );
     let output = entry_ops::list_action_types(&db.conn).unwrap();
-    assert_eq!(output.allowed_by_firearm_type[&HANDGUN].len(), 9);
+    assert_eq!(output.allowed_by_firearm_type[&HANDGUN].len(), 10);
 }
 
 #[test]
@@ -174,7 +181,7 @@ fn mapped_oddities_save_and_disallowed_actions_are_field_errors() {
 #[test]
 fn an_unknown_action_id_is_choose_an_action_from_the_list() {
     let db = TestDb::new();
-    for unknown in [0, 13, 9_999, -1] {
+    for unknown in [0, 14, 9_999, -1] {
         let err = ops::create_firearm(&db.conn, &with_action(RIFLE, Some(unknown), "U-1"), false)
             .unwrap_err();
         assert_eq!(err.code, "VALIDATION_ERROR");
@@ -275,4 +282,48 @@ fn the_trigger_backstop_refuses_raw_writes_that_break_the_rule() {
     // A type that maps nothing accepts anything, and NULL is always fine.
     db.conn.execute("UPDATE firearms SET firearm_type_id = ?1 WHERE id = ?2", [OTHER, id]).unwrap();
     db.conn.execute("UPDATE firearms SET action_type_id = NULL WHERE id = ?1", [id]).unwrap();
+}
+
+#[test]
+fn automatic_or_select_fire_saves_with_or_without_a_classification() {
+    // 005 US3-1, US3-2: the action is unrelated to any classification.
+    let db = TestDb::new();
+    for (type_id, serial) in [(HANDGUN, "AU-1"), (RIFLE, "AU-2"), (SHOTGUN, "AU-3"), (OTHER, "AU-4")]
+    {
+        let plain =
+            ops::create_firearm(&db.conn, &with_action(type_id, Some(AUTOMATIC), serial), false)
+                .unwrap();
+        assert_eq!(plain.action_type_id, Some(AUTOMATIC));
+        assert_eq!(plain.registration_class_id, None);
+
+        let registered = FirearmInput {
+            registration_class_id: Some(MACHINE_GUN),
+            ..with_action(type_id, Some(AUTOMATIC), &format!("{serial}-R"))
+        };
+        let saved = ops::create_firearm(&db.conn, &registered, false).unwrap();
+        assert_eq!(saved.action_type_id, Some(AUTOMATIC));
+        assert_eq!(saved.registration_class_id, Some(MACHINE_GUN));
+    }
+}
+
+#[test]
+fn a_machine_gun_rifle_may_have_a_semi_automatic_action() {
+    // 005 US3-3, FR-008: nothing ties the classification to the action.
+    let db = TestDb::new();
+    let input = FirearmInput {
+        registration_class_id: Some(MACHINE_GUN),
+        ..with_action(RIFLE, Some(SEMI_AUTOMATIC), "MG-1")
+    };
+    let saved = ops::create_firearm(&db.conn, &input, false).unwrap();
+    assert_eq!(saved.action_type_id, Some(SEMI_AUTOMATIC));
+}
+
+#[test]
+fn a_suppressor_refuses_the_automatic_action() {
+    let db = TestDb::new();
+    let err =
+        ops::create_firearm(&db.conn, &with_action(SUPPRESSOR, Some(AUTOMATIC), "S-1"), false)
+            .unwrap_err();
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert!(field_error(&err, "actionTypeId").is_some());
 }
