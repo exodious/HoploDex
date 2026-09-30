@@ -14,6 +14,8 @@ use std::sync::OnceLock;
 use crate::commands::CommandError;
 use crate::services::passphrase::Passphrase;
 
+/// Fixed on purpose, not derived from the bundle identifier (now
+/// `com.hoplodex.desktop`): changing it would orphan every saved passphrase.
 const SERVICE: &str = "com.hoplodex.app";
 const USER_PREFIX: &str = "passphrase:";
 /// A user no database has (ids are hex digits), read to find out whether the

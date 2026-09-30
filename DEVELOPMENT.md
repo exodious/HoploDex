@@ -301,7 +301,7 @@ Your real application data is more than one file. It is every `.hoplodex`
 database you have created or opened, wherever you keep it, and its backups
 (in `HoploDex backups` next to it, or the folder you chose);
 `machine.json`, with the recent-databases list, in the app's config
-directory (`~/.config/com.hoplodex.app/` on Linux); the suggested
+directory (`~/.config/com.hoplodex.desktop/` on Linux); the suggested
 `<Documents>/HoploDex` folder; and each saved passphrase, a
 `passphrase:<database id>` entry under `com.hoplodex.app` in the OS keyring.
 The database from before the passphrase model,
