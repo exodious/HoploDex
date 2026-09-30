@@ -43,7 +43,7 @@ validated and stored (research.md §9).
     `update_firearm`, only for a field whose trimmed value differs from the
     stored one (spec Assumptions: an existing over-long value stays valid
     until that field is edited).
-  - `actionTypeId`: "Lever action doesn't apply to a Handgun." when the
+  - `actionTypeId`: "Pump action doesn't apply to a Handgun." when the
     firearm's type has mapped actions and this is not one of them (FR-017,
     FR-019); "Choose an action from the list." when the id names no action.
 - **Not done here**: snapping and caliber derivation. The values given are the

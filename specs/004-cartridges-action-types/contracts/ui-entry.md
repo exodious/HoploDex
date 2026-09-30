@@ -123,6 +123,9 @@ half width (`hd-field--half`, as Nickname).
 
 ## 4. Action (US3, FR-017 to FR-019)
 
+- The field is the spec's *action type* (FR-017); the form, the browse
+  column, the Group by control and the record page label it **Action**, and
+  the spreadsheet column is `action_type` (FR-022).
 - A `Select` labeled **Action**, optional, directly after **Type**, at a third
   of the form's width (`hd-field--third`, as other short choices). Its first
   option is **Unspecified**; then the actions allowed for the selected type,
@@ -131,7 +134,7 @@ half width (`hd-field--half`, as Nickname).
   (US3-7).
 - **Changing Type** when the chosen action is not allowed for the new type:
   the action returns to **Unspecified**, and a note appears under Action:
-  "Lever action doesn't apply to a Handgun, so the action was cleared." It is
+  "Pump action doesn't apply to a Handgun, so the action was cleared." It is
   announced politely once per type change, and removed when an action is
   chosen or the type changes again. An allowed action is kept, with no note.
 - The backend's `actionTypeId` field error, if it ever arrives, shows under

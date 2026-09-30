@@ -492,7 +492,7 @@ function, `entry_key`, in `services/entry_text.rs`.
 - **Decision — `action_type` cells**: matched against `action_types.name`
   ignoring letter case and surrounding whitespace. Unknown: "action_type:
   unknown action type "flintlockish"". Not allowed for the row's type:
-  "action_type: Lever action doesn't apply to a Handgun." Both are row errors
+  "action_type: Pump action doesn't apply to a Handgun." Both are row errors
   (FR-024), like an unknown `firearm_type`.
 - **Decision — the report**: `ImportResult` gains `derivedCalibers` (row,
   cartridge, caliber, `catalog` or `guess`) and `snappedValues` (row, field,

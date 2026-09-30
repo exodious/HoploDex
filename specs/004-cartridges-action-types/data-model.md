@@ -84,7 +84,7 @@ Seeded from FR-018's table for Handgun (1), Rifle (2) and Shotgun (3):
 - **Handgun**: every action except Pump action, Falling block and Inline
   muzzleloader (9 rows).
 - **Rifle**: all 12.
-- **Shotgun**: every action except Falling block and Rolling block (10 rows).
+- **Shotgun**: every action except Rolling block (11 rows).
 - **Other** (4), and any type added later: **no rows**, which means every
   action is allowed (FR-017).
 
@@ -96,7 +96,7 @@ that action. Enforced by:
 
 1. **The command layer** (`check_action_allowed`), on create, update and each
    import row: a `VALIDATION_ERROR` with a field error on `actionTypeId`,
-   "Lever action doesn't apply to a Handgun." Import reports it as a row
+   "Pump action doesn't apply to a Handgun." Import reports it as a row
    error on `action_type`.
 2. **A trigger pair** on `firearms`, the backstop (research.md §10):
 
@@ -193,7 +193,7 @@ chosen `actionTypeId`. These are part of a pending-changes draft's
 | Make, model, caliber non-empty after trim (001, unchanged) | command, form | "Make is required." etc. |
 | Make, model, cartridge, caliber ≤ 100 characters after trim (FR-015) | command (create: all; update: changed fields; import: all), form | "Make can be at most 100 characters." |
 | No control characters in those four (FR-015) | same | "Make can't contain control characters." |
-| `actionTypeId` names an action (FK) and is allowed for the type (FR-017) | command, trigger | "Lever action doesn't apply to a Handgun." |
+| `actionTypeId` names an action (FK) and is allowed for the type (FR-017) | command, trigger | "Pump action doesn't apply to a Handgun." |
 | Import: `caliber` blank and no caliber can be derived (FR-025) | import | "caliber: Caliber is required; it couldn't be worked out from the cartridge "…"." or "caliber: Caliber is required." |
 | Import: `action_type` unknown (FR-024) | import | "action_type: unknown action type "…"" |
 | Import: a header names a column twice (research.md §12) | import (file) | `VALIDATION_ERROR`, "The import file has two "caliber" columns." |
