@@ -21,6 +21,7 @@ import type {
   ImportConflict,
   ImportResult,
   RowError,
+  SnappedValue,
   SpreadsheetFormat,
 } from "./types";
 import "./importExport.css";
@@ -85,6 +86,12 @@ function count(n: number, one: string, many: string) {
  * FR-019). Failed rows are reported individually without discarding the
  * rest (FR-020); rows matching an existing record are resolved one by one
  * or all at once (FR-026). */
+/** Fields the report names by label rather than by column (contracts/ui-registration.md §9). */
+const SNAPPED_FIELD_LABELS: Partial<Record<SnappedValue["field"], string>> = {
+  registrationForm: "Form",
+  registeredTo: "Registered to",
+};
+
 export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   return (
     <Dialog
@@ -276,7 +283,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           items={result.snappedValues.map((snapped) => ({
             key: `${snapped.row}-${snapped.field}`,
             row: snapped.row,
-            text: `${snapped.field}: “${snapped.sheetValue}” → “${snapped.recordedValue}”`,
+            text: `${SNAPPED_FIELD_LABELS[snapped.field] ?? snapped.field}: “${snapped.sheetValue}” → “${snapped.recordedValue}”`,
           }))}
         />
 

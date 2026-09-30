@@ -245,6 +245,17 @@ pub mod ops {
                     .map_err(CommandError::from_db)?,
                 None => None,
             };
+            let registered_as: Option<String> = match firearm.registration_class_id {
+                Some(class_id) => conn
+                    .query_row(
+                        "SELECT name FROM registration_classes WHERE id = :id",
+                        named_params! { ":id": class_id },
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(CommandError::from_db)?,
+                None => None,
+            };
             let insurance_policy_name: Option<String> = match firearm.insurance_policy_id {
                 Some(policy_id) => conn
                     .query_row(
@@ -312,6 +323,10 @@ pub mod ops {
                 original_make: firearm.original_make.unwrap_or_default(),
                 original_model: firearm.original_model.unwrap_or_default(),
                 original_serial_number: firearm.original_serial_number.unwrap_or_default(),
+                registered_as: registered_as.unwrap_or_default(),
+                registration_form: firearm.registration_form.unwrap_or_default(),
+                registration_approved: firearm.registration_approved.unwrap_or_default(),
+                registered_to: firearm.registered_to.unwrap_or_default(),
                 photo_filenames: photo_filenames.join(";"),
             });
 
@@ -372,6 +387,20 @@ pub mod ops {
         }
     }
 
+    /// The spreadsheet column a validation field error is about, where the
+    /// field is named differently over IPC (contracts/spreadsheet-format.md
+    /// "Row errors"); any other field is shown as it is.
+    fn sheet_column(field: &str) -> &str {
+        match field {
+            "actionTypeId" => "action_type",
+            "barrelLengthHundredths" => "barrel_length_in",
+            "registrationApproved" => "registration_approved",
+            "registrationForm" => "registration_form",
+            "registeredTo" => "registered_to",
+            other => other,
+        }
+    }
+
     /// The reason shown for a failing row: every per-field message (the
     /// summary line alone says nothing about which field is wrong), in a
     /// stable order.
@@ -383,7 +412,7 @@ pub mod ops {
         messages.sort();
         messages
             .iter()
-            .map(|(field, message)| format!("{field}: {message}"))
+            .map(|(field, message)| format!("{}: {message}", sheet_column(field)))
             .collect::<Vec<_>>()
             .join("; ")
     }
@@ -428,8 +457,8 @@ pub mod ops {
             EntryField::Model => raw.model.as_deref(),
             EntryField::Cartridge => raw.cartridge.as_deref(),
             EntryField::Caliber => raw.caliber.as_deref(),
-            // The sheet's registration columns are read by User Story 4.
-            EntryField::RegistrationForm | EntryField::RegisteredTo => None,
+            EntryField::RegistrationForm => raw.registration_form.as_deref(),
+            EntryField::RegisteredTo => raw.registered_to.as_deref(),
         }
     }
 
@@ -439,7 +468,8 @@ pub mod ops {
             EntryField::Model => &mut raw.model,
             EntryField::Cartridge => &mut raw.cartridge,
             EntryField::Caliber => &mut raw.caliber,
-            EntryField::RegistrationForm | EntryField::RegisteredTo => return,
+            EntryField::RegistrationForm => &mut raw.registration_form,
+            EntryField::RegisteredTo => &mut raw.registered_to,
         };
         *slot = Some(value);
     }
@@ -452,7 +482,7 @@ pub mod ops {
         derived: Option<(String, String, CaliberSource)>,
     }
 
-    /// FR-015, FR-025 and FR-026 for one row: checks the four entry cells,
+    /// FR-015, FR-025, FR-026 and (005) FR-021 for one row: checks the entry cells,
     /// snaps them, and fills a blank caliber in from the cartridge. Returns
     /// the row to parse; the error is a row error's message.
     fn settle_row(
@@ -461,7 +491,13 @@ pub mod ops {
     ) -> Result<(RawImportRow, Settled), String> {
         let mut row = raw.clone();
         let mut settled = Settled::default();
-        for field in [EntryField::Make, EntryField::Model, EntryField::Cartridge] {
+        for field in [
+            EntryField::Make,
+            EntryField::Model,
+            EntryField::Cartridge,
+            EntryField::RegistrationForm,
+            EntryField::RegisteredTo,
+        ] {
             let Some(text) = cell(raw, field) else {
                 continue;
             };
@@ -553,10 +589,35 @@ pub mod ops {
                     .optional()
                     .map_err(|e| format!("Database error resolving action type: {e}"))?
                     .ok_or_else(|| format!("action_type: unknown action type {name:?}"))?;
-                firearm_ops::check_action_allowed(conn, firearm_type_id, Some(id))
-                    .map_err(|e| format!("action_type: {}", e.message))?;
                 Some(id)
             }
+        };
+
+        // specs/005-regulated-item-types FR-021: by name among every
+        // classification, offered or not, ignoring letter case and
+        // surrounding whitespace; blank = none.
+        let registration_class_id = match &raw.registered_as {
+            None => {
+                if raw.registration_form.is_some()
+                    || raw.registration_approved.is_some()
+                    || raw.registered_to.is_some()
+                {
+                    return Err(
+                        "registered_as: Registration details need a classification.".to_string()
+                    );
+                }
+                None
+            }
+            Some(name) => Some(
+                conn.query_row(
+                    "SELECT id FROM registration_classes WHERE name = :name COLLATE NOCASE",
+                    named_params! { ":name": name.trim() },
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(|e| format!("Database error resolving classification: {e}"))?
+                .ok_or_else(|| format!("registered_as: unknown classification {name:?}"))?,
+            ),
         };
 
         let status = match raw.status.as_deref().map(str::to_lowercase).as_deref() {
@@ -638,13 +699,19 @@ pub mod ops {
             original_serial_number: raw.original_serial_number.clone(),
             cartridge: raw.cartridge.clone(),
             action_type_id,
-            // Read from the sheet by specs/005-regulated-item-types US4.
-            registration_class_id: None,
-            registration_form: None,
-            registration_approved: None,
-            registered_to: None,
+            registration_class_id,
+            registration_form: raw.registration_form.clone(),
+            // Read as `acquisition_date` is: the cell as text, then
+            // `validate_firearm_input`'s `checked_date`.
+            registration_approved: raw.registration_approved.clone(),
+            registered_to: raw.registered_to.clone(),
         };
 
+        // FR-022: fields the type doesn't have come first, so a Suppressor
+        // row with an action is never reported as "allowed".
+        firearm_ops::check_fields_apply(conn, &input).map_err(|e| row_message(&e))?;
+        firearm_ops::check_action_allowed(conn, firearm_type_id, action_type_id)
+            .map_err(|e| format!("action_type: {}", e.message))?;
         validate_firearm_input(&input, None).map_err(|e| row_message(&e))?;
         Ok(input)
     }

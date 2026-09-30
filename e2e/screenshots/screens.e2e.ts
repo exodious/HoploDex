@@ -10,7 +10,9 @@ import {
   fieldValue,
   fill,
   goTo,
+  openPhysicalGroup,
   search,
+  selectOption,
 } from "../support/ui";
 import {
   chooseMenuItem,
@@ -21,7 +23,7 @@ import {
   unlock,
   waitForChooser,
 } from "../support/ui";
-import { chooseTheme, shot } from "../support/screenshots";
+import { SCREENSHOT_WINDOW, chooseTheme, shot } from "../support/screenshots";
 import { realClick, realKey } from "../support/realInput";
 
 /**
@@ -142,6 +144,36 @@ async function centerField(field: string) {
       .querySelector(`[role="dialog"] [data-field="${name}"]`)
       ?.scrollIntoView({ block: "center" });
   }, field);
+  await browser.pause(300);
+}
+
+/** Opens or closes a folded form group (a heading holding a button with
+ * `aria-expanded`) in the open dialog, by its title. */
+async function setGroup(title: string, open: boolean) {
+  await browser.execute(
+    (wanted: string, want: boolean) => {
+      const button = [
+        ...document.querySelectorAll<HTMLElement>('[role="dialog"] button[aria-expanded]'),
+      ].find((b) => b.textContent?.trim().startsWith(wanted));
+      if (button && (button.getAttribute("aria-expanded") === "true") !== want) button.click();
+    },
+    title,
+    open,
+  );
+  await browser.pause(400);
+}
+
+/** Opens the "Group by" menu (it opens on pointer down, which a plain click
+ * doesn't send) and leaves it open. */
+async function openGroupMenu() {
+  const trigger = await $('button[aria-haspopup="menu"][aria-label^="Group by"]');
+  await trigger.waitForExist();
+  await browser.execute((element: HTMLElement) => {
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+    );
+  }, trigger);
+  await $('[role="menu"]').waitForExist({ timeout: 5000 });
   await browser.pause(300);
 }
 
@@ -322,6 +354,109 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`33-action-cleared-${suffix}`);
       await discardForm();
       await back();
+    });
+
+    // specs/005-regulated-item-types contracts/ui-registration.md §10. The
+    // export dialog's registration note is in 13-export below: the seeded
+    // collection has registered firearms, so its note names them.
+    it("a suppressor and a registration in the firearm form", async () => {
+      // Type Suppressor: Caliber rating, no Action, Physical details open
+      // without barrel length or capacity; at the default and minimum width.
+      await openRecord("SilencerCo Omega 300");
+      await openDialog("Edit");
+      await openPhysicalGroup();
+      await shot(`35-suppressor-form-${suffix}`, { fullPage: true });
+      await browser.setWindowSize(800, 1400);
+      await browser.pause(500);
+      await shot(`36-suppressor-form-minimum-width-${suffix}`);
+      await browser.setWindowSize(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
+      await browser.pause(500);
+
+      // Registration section: closed with its prompt, then open with only
+      // "Registered as".
+      await setGroup("Registration", false);
+      await centerField("registrationClassId");
+      await shot(`38-registration-closed-${suffix}`);
+      await setGroup("Registration", true);
+      await centerField("registrationClassId");
+      await shot(`39-registration-open-empty-${suffix}`);
+      await discardForm();
+      await back();
+
+      // A type change that clears recorded values says so before saving.
+      await openRecord("Mossberg 500");
+      await openDialog("Edit");
+      await choose("Suppressor");
+      await browser.pause(400);
+      await centerField("firearmTypeId");
+      await shot(`37-type-change-clearing-note-${suffix}`);
+      await discardForm();
+      await back();
+
+      // A registered record: closed with a summary, open with every detail
+      // and the Form list showing the built-in names, and the question before
+      // the classification is cleared.
+      await openRecord("Dead Air Sandman-K");
+      await shot(`41-registration-panel-${suffix}`, { fullPage: true });
+      await openDialog("Edit");
+      await setGroup("Registration", false);
+      await centerField("registrationClassId");
+      await shot(`40-registration-closed-summary-${suffix}`);
+      await setGroup("Registration", true);
+      await centerField("registrationForm");
+      await realClick('[data-field="registrationForm"] input');
+      await realKey("Control_L+a");
+      await typeReal("F");
+      await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
+      await centerField("registrationForm");
+      await shot(`42-registration-open-details-${suffix}`);
+      await realKey("Escape");
+      await $('[role="listbox"]').waitForExist({ reverse: true });
+      await selectOption("Registered as", "Unspecified");
+      await $('[role="alertdialog"]').waitForExist();
+      await browser.pause(300);
+      await shot(`43-clear-classification-${suffix}`);
+      await clickButton("Keep them");
+      await $('[role="alertdialog"]').waitForExist({ reverse: true });
+
+      // The guide at "Registered items", from the form's own link.
+      await clickButton("How to record registrations");
+      await browser.pause(500);
+      await shot(`44-registered-items-guide-${suffix}`);
+      // Only the guide closes: the form under it stays open.
+      await browser.execute(() =>
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        ),
+      );
+      await browser.pause(500);
+      await discardForm();
+      await back();
+    });
+
+    it("grouping by registration, and the suppressor drawing", async () => {
+      await openGroupMenu();
+      await shot(`45-grouping-menu-${suffix}`);
+      await browser.execute(() => {
+        [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
+          .find((m) => (m.textContent ?? "").trim() === "Registered as")
+          ?.click();
+      });
+      await $("h2.hd-group__title").waitForExist();
+      await browser.pause(400);
+      await shot(`46-grouped-by-registered-as-${suffix}`);
+      await groupBy("Type");
+
+      await choose("Tiles");
+      await $(".hd-tile__name").waitForExist();
+      await browser.execute(() => {
+        [...document.querySelectorAll<HTMLElement>(".hd-tile__name")]
+          .find((t) => t.textContent?.includes("Omega 300"))
+          ?.scrollIntoView({ block: "center" });
+      });
+      await browser.pause(400);
+      await shot(`47-suppressor-tiles-${suffix}`);
+      await choose("List");
     });
 
     it("insurance", async () => {

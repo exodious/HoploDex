@@ -288,7 +288,8 @@ fn the_trigger_backstop_refuses_raw_writes_that_break_the_rule() {
 fn automatic_or_select_fire_saves_with_or_without_a_classification() {
     // 005 US3-1, US3-2: the action is unrelated to any classification.
     let db = TestDb::new();
-    for (type_id, serial) in [(HANDGUN, "AU-1"), (RIFLE, "AU-2"), (SHOTGUN, "AU-3"), (OTHER, "AU-4")]
+    for (type_id, serial) in
+        [(HANDGUN, "AU-1"), (RIFLE, "AU-2"), (SHOTGUN, "AU-3"), (OTHER, "AU-4")]
     {
         let plain =
             ops::create_firearm(&db.conn, &with_action(type_id, Some(AUTOMATIC), serial), false)

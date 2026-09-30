@@ -186,9 +186,15 @@ fn the_import_samples_use_every_spreadsheet_column() {
 
     // Import reads columns by header (specs/004-cartridges-action-types
     // FR-023), so one sample may be shaped like a sheet exported before
-    // `cartridge` and `action_type` existed. No other header is allowed.
+    // `cartridge` and `action_type` existed, and one like a sheet exported
+    // before the four registration columns of specs/005-regulated-item-types
+    // (US4-7). No other header is allowed.
+    const REGISTRATION: [&str; 4] =
+        ["registered_as", "registration_form", "registration_approved", "registered_to"];
     let before_004: Vec<&str> =
         COLUMNS.iter().copied().filter(|c| !matches!(*c, "cartridge" | "action_type")).collect();
+    let before_005: Vec<&str> =
+        COLUMNS.iter().copied().filter(|c| !REGISTRATION.contains(c)).collect();
     let mut used: BTreeSet<String> = BTreeSet::new();
     let mut files = 0;
     for entry in std::fs::read_dir(dir.path()).unwrap() {
@@ -200,7 +206,7 @@ fn the_import_samples_use_every_spreadsheet_column() {
         let mut reader = csv::Reader::from_path(&path).unwrap();
         let headers: Vec<String> = reader.headers().unwrap().iter().map(str::to_owned).collect();
         assert!(
-            headers == COLUMNS || headers == before_004,
+            headers == COLUMNS || headers == before_004 || headers == before_005,
             "{} does not have the export's columns",
             path.display()
         );
@@ -262,4 +268,16 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
 
     let legacy = import("import-before-cartridges.csv");
     assert_eq!(legacy.imported_count, 1, "{:?}", legacy.row_errors);
+
+    // specs/005-regulated-item-types US4: the registration samples.
+    let registrations = import("import-registrations.csv");
+    assert_eq!(registrations.imported_count, 3, "{:?}", registrations.row_errors);
+    assert!(!registrations.snapped_values.is_empty(), "{:?}", registrations.snapped_values);
+
+    let errors = import("import-registration-errors.csv");
+    assert_eq!(errors.imported_count, 0, "{:?}", errors.row_errors);
+    assert_eq!(errors.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(), [1, 2, 3, 4]);
+
+    let before = import("import-before-registrations.csv");
+    assert_eq!(before.imported_count, 1, "{:?}", before.row_errors);
 }

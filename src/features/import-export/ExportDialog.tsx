@@ -47,6 +47,7 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   const [scope, setScope] = useState<"all" | "filtered">("all");
   const [folder, setFolder] = useState("");
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
+  const [filteredRegistered, setFilteredRegistered] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,10 +62,25 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
     if (!filterActive) return;
     browseService
       .listFirearms(filter)
-      .then((r) => setFilteredCount(r.groups.reduce((n, g) => n + g.firearms.length, 0)))
-      .catch(() => setFilteredCount(null));
+      .then((r) => {
+        const found = r.groups.flatMap((g) => g.firearms);
+        setFilteredCount(found.length);
+        setFilteredRegistered(found.some((f) => f.registeredAs));
+      })
+      .catch(() => {
+        setFilteredCount(null);
+        // Unknown: say so rather than leave the disclosure out (FR-020).
+        setFilteredRegistered(true);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterActive, query, browse.includeDisposed]);
+
+  // FR-020: registration details leave the database too, so the note names
+  // them whenever a firearm in the chosen scope has a classification.
+  const includesRegistration =
+    filterActive && scope === "filtered"
+      ? filteredRegistered
+      : firearms.some((f) => f.registeredAs);
 
   async function chooseFolder() {
     const selected = await withIdlePaused(() =>
@@ -208,7 +224,8 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
               "the folder you choose"
             )}
             , unencrypted and outside HoploDex’s encrypted database. Anyone who can open that folder
-            can read these records, including serial numbers and values.
+            can read these records, including serial numbers
+            {includesRegistration ? ", values and registration details." : " and values."}
           </span>
         </p>
 

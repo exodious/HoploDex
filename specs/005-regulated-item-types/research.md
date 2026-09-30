@@ -215,7 +215,7 @@ Sources: [Brown v. ATF (Wikipedia)](https://en.wikipedia.org/wiki/Brown_v._ATF),
 - **Decision**: `EntryField` gains `RegistrationForm` and `RegisteredTo`.
   `FieldVocabulary::load`, `snap`, `suggest`, `SheetSpellings` and
   `snap_for_import` then work for them unchanged. The built-in form names
-  (Form 1, Form 3, Form 4, Form 5, Form 10) are a `const` slice in a new
+  (Form 1, Form 4, Form 5) are a `const` slice in a new
   `services::registration` module. `known_spelling` and `suggest` treat them
   as the catalog for `RegistrationForm`: they are offered with the "built-in"
   marker and snapped to first (`ChangedBy::Catalog`). "Registered to" has no

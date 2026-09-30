@@ -49,6 +49,8 @@ CREATE TABLE action_types (
 ```
 
 A fixed list shipped with the application (FR-017): seeded with fixed ids,
+_Amended by [spec 005](../005-regulated-item-types/spec.md): adds "Automatic or select-fire" to the seed and its mapping._
+
 never changed at run time, no command writes it. `name` is what the user sees,
 what export writes, what import matches (ignoring case and surrounding
 whitespace), and what search indexes. `sort_order` orders the choice and the

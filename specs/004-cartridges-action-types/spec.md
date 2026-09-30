@@ -162,7 +162,9 @@ The collector exports the collection and sees cartridge and action type columns 
 **Action type**
 
 - **FR-017**: System MUST allow the user to record an optional **action type** on a firearm, chosen from a fixed list that ships with the application; the user cannot add, rename or remove actions, and new actions arrive only with application updates. The choices offered MUST be only those mapped to the firearm's type (FR-018); a type with no mapping (the "Other" type and any type the user adds) MUST offer the whole list.
+  _Amended by [spec 005](../005-regulated-item-types/spec.md): a type may have no action at all (Suppressor)._
 - **FR-018**: The shipped action list and its mapping to the seeded firearm types MUST be:
+  _Amended by [spec 005](../005-regulated-item-types/spec.md): the list gains "Automatic or select-fire", allowed for Handgun, Rifle, Shotgun and Other._
 
   | Action type | Handgun | Rifle | Shotgun |
   |-------------|:-------:|:-----:|:-------:|
@@ -180,6 +182,7 @@ The collector exports the collection and sees cartridge and action type columns 
   | Inline muzzleloader | | ✓ | ✓ |
 
   Automatic and select-fire are not recorded in this feature: the list describes how a firearm cycles, not its fire-control capability, and machine guns are a candidate type for the regulated item types feature (#12), which extends this mapping. Until then, a select-fire firearm records the action it cycles with (e.g. semi-automatic) and the capability goes in notes.
+  _Amended by [spec 005](../005-regulated-item-types/spec.md): now recorded as an action; see 005 FR-006._
 - **FR-019**: When the user changes a firearm's type and its current action is not allowed for the new type, the system MUST clear the action and show a notice saying so on the form before saving. An action allowed for the new type MUST be kept.
 - **FR-020**: Action type MUST be a grouping field (001 FR-012), with firearms that have none grouped as "Unspecified", and MUST be included in search (001 FR-013) by its name.
 - **FR-021**: Firearms recorded before this feature have no action type and no cartridge; they MUST need no change to remain valid and editable.
@@ -189,6 +192,7 @@ The collector exports the collection and sees cartridge and action type columns 
 - **FR-022**: The spreadsheet export MUST add a `cartridge` column (the recorded text, blank when none) and an `action_type` column (the action's name, blank when none), placed after `caliber`.
 - **FR-023**: On import, `cartridge` and `action_type` MUST be optional columns; a sheet without them imports with no cartridge and no action.
 - **FR-024**: On import, `action_type` MUST be matched against the fixed list ignoring letter case and surrounding whitespace. An unknown value, or one not allowed for the row's firearm type (FR-017), MUST be a row error (001 FR-020), as with `firearm_type`.
+  _Amended by [spec 005](../005-regulated-item-types/spec.md): import checks that the type has an action before it checks the action is allowed._
 - **FR-025**: On import, when `caliber` is blank and `cartridge` is given, the system MUST derive the caliber from the catalog, or failing that by the guess of FR-005, and MUST list every such row in the import report with the caliber used and whether it came from the catalog or was guessed. When no caliber can be derived, or both are blank, the row MUST be a row error. A caliber given in the sheet is always used as given (after FR-013).
 - **FR-026**: On import, make, model, cartridge and caliber MUST be checked against FR-015 (a violation is a row error) and snapped per FR-013 against the catalog and the values on record at the start of the import. Variants of a value that is neither in the catalog nor on record MUST also be snapped to each other within the sheet: the spelling used by the most rows wins, and on a tie the one in the earliest row. The import report MUST count the values changed by snapping and list each change (row, field, value in the sheet, value recorded). Import matching of existing records (001 FR-026) MUST compare the snapped values.
 

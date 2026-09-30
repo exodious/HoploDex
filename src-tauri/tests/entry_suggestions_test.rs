@@ -528,11 +528,7 @@ fn form_suggests_the_built_in_names_first_then_those_on_record() {
     let db = TestDb::new();
     for typed in ["F", "Form"] {
         let found = suggest(&db, EntryField::RegistrationForm, typed);
-        assert_eq!(
-            values(&found),
-            ["Form 4", "Form 1", "Form 3", "Form 5", "Form 10"],
-            "typed {typed:?}"
-        );
+        assert_eq!(values(&found), ["Form 4", "Form 1", "Form 5"], "typed {typed:?}");
         assert!(found.iter().all(|s| s.in_catalog && s.use_count == 0));
     }
     // As everywhere (004 research.md §4), a value in use ranks above one
@@ -540,10 +536,7 @@ fn form_suggests_the_built_in_names_first_then_those_on_record() {
     registered(&db, Some("Form 4 eFiled"), None);
     registered(&db, Some("eForm 4"), None);
     let found = suggest(&db, EntryField::RegistrationForm, "Form");
-    assert_eq!(
-        values(&found),
-        ["Form 4 eFiled", "Form 4", "Form 1", "Form 3", "Form 5", "Form 10"]
-    );
+    assert_eq!(values(&found), ["Form 4 eFiled", "Form 4", "Form 1", "Form 5"]);
     assert!(!found[0].in_catalog);
     assert!(found[1..].iter().all(|s| s.in_catalog));
     // A form on record matches from the start of any of its words.

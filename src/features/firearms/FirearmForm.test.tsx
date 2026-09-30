@@ -2356,9 +2356,9 @@ describe("FirearmForm registration (US2)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("marks the five built-in form names in Form's suggestions", async () => {
+  it("marks the three built-in form names in Form's suggestions", async () => {
     suggestEntries.mockResolvedValue(
-      ["Form 4", "Form 1", "Form 3", "Form 5", "Form 10"].map((value) => ({
+      ["Form 4", "Form 1", "Form 5"].map((value) => ({
         value,
         inCatalog: true,
         useCount: 0,
@@ -2374,9 +2374,7 @@ describe("FirearmForm registration (US2)", () => {
     expect(options.map((option) => option.textContent)).toEqual([
       "Form 4 Built-in",
       "Form 1 Built-in",
-      "Form 3 Built-in",
       "Form 5 Built-in",
-      "Form 10 Built-in",
     ]);
     expect(suggestEntries).toHaveBeenCalledWith("registrationForm", "Form 4", undefined);
   });

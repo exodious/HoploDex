@@ -151,6 +151,7 @@ same transaction as the status change and history insert._
   (`insurancePolicyId`, `scheduledCoverageAmount`; both null when the
   firearm is unscheduled), and computed insurance-warning
   flags (for SC-004's "always visibly flagged" requirement).
+  _Amended by [spec 005](../005-regulated-item-types/spec.md): the summary also carries `registeredAs`; see 005's command contract._
 - **Search semantics**: `query` matches as a phrase whose last word may be
   partial (`"cracked han"` finds "cracked handle"), so results can update
   as the user types.

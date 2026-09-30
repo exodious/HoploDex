@@ -183,12 +183,11 @@ catalog (spec Key Entities):
 |---:|---|
 | 1 | Form 4 |
 | 2 | Form 1 |
-| 3 | Form 3 |
-| 4 | Form 5 |
-| 5 | Form 10 |
+| 3 | Form 5 |
 
 Ranked by how often an owner records each (a transfer to an individual, then
-making, then the dealer and tax-exempt transfers), so that a bare "F" or
+making, then inheritance and other Form 5 uses; Forms 2, 3 and 10 are for
+licensed dealers and manufacturers and are not offered), so that a bare "F" or
 "Form" suggests Form 4 first. Nothing from it is stored. Picking one copies
 its text into `firearms.registration_form`.
 

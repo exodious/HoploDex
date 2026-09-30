@@ -1171,7 +1171,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2025-09-12"),
         action_type_id: Some(ACTION_AUTOMATIC),
         registration_class_id: Some(REGISTERED_MACHINE_GUN),
-        registration_form: text("Form 3"),
+        registration_form: text("Form 4"),
         registration_approved: text("2025-12-02"),
         registered_to: text("Alex Rivera"),
         ..base("Colt", "M16A1", "CM-3317902", ".223", RIFLE)
@@ -1377,10 +1377,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     };
     // specs/004-cartridges-action-types FR-023: a sheet exported before
     // `cartridge` and `action_type` existed, so its header lacks both.
-    let write_without_new_columns = |name: &str, rows: Vec<Vec<String>>| {
-        let kept: Vec<usize> = (0..COLUMNS.len())
-            .filter(|&index| !matches!(COLUMNS[index], "cartridge" | "action_type"))
-            .collect();
+    let write_without = |name: &str, dropped: &[&str], rows: Vec<Vec<String>>| {
+        let kept: Vec<usize> =
+            (0..COLUMNS.len()).filter(|&index| !dropped.contains(&COLUMNS[index])).collect();
         let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
         writer.write_record(kept.iter().map(|&index| COLUMNS[index])).expect("write the header");
         for record in rows {
@@ -1753,8 +1752,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
 
     // A sheet exported before this feature: no `cartridge` or `action_type`
     // column, and every later column still lands in its own field.
-    write_without_new_columns(
+    write_without(
         "import-before-cartridges.csv",
+        &["cartridge", "action_type"],
         vec![row(&[
             ("make", "Ruger"),
             ("model", "10/22"),
@@ -1763,6 +1763,117 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
             ("caliber", ".22 LR"),
             ("firearm_type", "Rifle"),
             ("notes", "From a sheet exported before cartridges and actions were recorded."),
+        ])],
+    );
+
+    // specs/005-regulated-item-types US4: a round-trip sheet, as export
+    // writes it: a suppressor and two registered firearms, one of them with a
+    // same-notation variant of a form on record ("FORM 4") that import
+    // matches and lists under "Spellings matched to existing values".
+    write(
+        "import-registrations.csv",
+        vec![
+            row(&[
+                ("make", "Dead Air"),
+                ("model", "Sandman-S"),
+                ("serial_number", "R-001"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".30"),
+                ("firearm_type", "Suppressor"),
+                ("registered_as", "Suppressor"),
+                ("registration_form", "Form 4"),
+                ("registration_approved", "2024-03-05"),
+                ("registered_to", "Sean Example"),
+            ]),
+            row(&[
+                ("make", "Ruger"),
+                ("model", "Mini-14 Tactical"),
+                ("serial_number", "R-002"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "5.56mm"),
+                ("firearm_type", "Rifle"),
+                ("registered_as", "short-barreled rifle"),
+                ("registration_form", "FORM 1"),
+                ("registered_to", "Example Arms Trust"),
+            ]),
+            row(&[
+                ("make", "Colt"),
+                ("model", "M16A1"),
+                ("serial_number", "R-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "5.56mm"),
+                ("action_type", "Automatic or select-fire"),
+                ("firearm_type", "Rifle"),
+                ("registered_as", "Machine gun"),
+                ("registration_form", "Form 4"),
+                ("registration_approved", "1985-06-01"),
+            ]),
+        ],
+    );
+
+    // Row errors: an unknown classification, details with no classification,
+    // a future approved date, and a Suppressor row with an action, a barrel
+    // length and a capacity (all three reported on the one row).
+    write(
+        "import-registration-errors.csv",
+        vec![
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Short Barrel"),
+                ("serial_number", "E-001"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "12 gauge"),
+                ("firearm_type", "Shotgun"),
+                ("registered_as", "Short barrel shotgun"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "No Classification"),
+                ("serial_number", "E-002"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("registration_form", "Form 4"),
+                ("registered_to", "Sean Example"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Future Approval"),
+                ("serial_number", "E-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("registered_as", "Suppressor"),
+                ("registration_approved", "2999-01-01"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Silencer With Action"),
+                ("serial_number", "E-004"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("action_type", "Semi-automatic"),
+                ("barrel_length_in", "4"),
+                ("capacity", "10"),
+                ("firearm_type", "Suppressor"),
+                ("registered_as", "Suppressor"),
+            ]),
+        ],
+    );
+
+    // A sheet exported before this feature: none of the four registration
+    // columns, and the row imports with no classification.
+    write_without(
+        "import-before-registrations.csv",
+        &["registered_as", "registration_form", "registration_approved", "registered_to"],
+        vec![row(&[
+            ("make", "Savage"),
+            ("model", "Model 110"),
+            ("serial_number", "P-001"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".308"),
+            ("firearm_type", "Rifle"),
+            ("notes", "From a sheet exported before registrations were recorded."),
         ])],
     );
 
