@@ -24,7 +24,7 @@ pub struct SuggestEntriesInput {
     pub field: EntryField,
     /// May be empty; over 100 characters matches nothing.
     pub text: String,
-    /// Model only: the make on the form, whose models rank first.
+    /// Model only: the make on the form; only its models are offered (FR-012).
     #[serde(default)]
     pub make: Option<String>,
 }

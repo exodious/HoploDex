@@ -372,7 +372,6 @@ fn catalog_index() -> &'static CatalogIndex {
 /// One row before it is ordered. It borrows its text, so only the rows that
 /// make the cut are copied.
 struct Ranked<'a> {
-    with_make: bool,
     tier: u8,
     use_count: i64,
     rank: u32,
@@ -389,16 +388,21 @@ fn best(current: Option<u8>, tier: Option<u8>) -> Option<u8> {
 }
 
 /// The ranked suggestions for `text` in the field (research.md §4): at most
-/// [`MAX_SUGGESTIONS`], best first. `make` is the make on the form, for
-/// ranking a model. Text over [`MAX_ENTRY_CHARS`] characters matches
+/// [`MAX_SUGGESTIONS`], best first. `make` is the make on the form: for a
+/// model, only models recorded with that make are offered, so a make that
+/// isn't on record offers none; a blank make offers them all. Text over [`MAX_ENTRY_CHARS`] characters matches
 /// nothing.
 pub fn suggest(vocabulary: &FieldVocabulary, text: &str, make: Option<&str>) -> Vec<Suggestion> {
     if text.chars().count() > MAX_ENTRY_CHARS {
         return Vec::new();
     }
     let typed = Typed::new(text);
-    let make_id = make.map(words_key).and_then(|key| vocabulary.make_ids.get(&key).copied());
-    let with_make = |group: &Group| make_id.is_some_and(|id| group.makes.contains(&id));
+    // Model only: the entered make's id, or `Some(None)` when the make is on
+    // no record, which no model can match.
+    let make_filter = (vocabulary.field == EntryField::Model)
+        .then(|| make.map(words_key).filter(|key| !key.is_empty()))
+        .flatten()
+        .map(|key| vocabulary.make_ids.get(&key).copied());
 
     let mut ranked: Vec<Ranked> = Vec::new();
     let mut consumed: HashSet<String> = HashSet::new();
@@ -411,15 +415,7 @@ pub fn suggest(vocabulary: &FieldVocabulary, text: &str, make: Option<&str>) -> 
             let use_count = vocabulary.groups.get(key).map_or(0, |group| group.use_count);
             consumed.insert(key.to_owned());
             let Some(tier) = tier else { return };
-            ranked.push(Ranked {
-                with_make: false,
-                tier,
-                use_count,
-                rank,
-                value: name,
-                caliber,
-                in_catalog: true,
-            });
+            ranked.push(Ranked { tier, use_count, rank, value: name, caliber, in_catalog: true });
         };
     match vocabulary.field {
         EntryField::Cartridge => {
@@ -461,9 +457,13 @@ pub fn suggest(vocabulary: &FieldVocabulary, text: &str, make: Option<&str>) -> 
         if consumed.contains(key) {
             continue;
         }
+        if let Some(make_id) = make_filter
+            && !make_id.is_some_and(|id| group.makes.contains(&id))
+        {
+            continue;
+        }
         let Some(tier) = text_tier(&typed, key, &group.words) else { continue };
         ranked.push(Ranked {
-            with_make: with_make(group),
             tier,
             use_count: group.use_count,
             rank: u32::MAX,
@@ -474,8 +474,8 @@ pub fn suggest(vocabulary: &FieldVocabulary, text: &str, make: Option<&str>) -> 
     }
 
     ranked.sort_by(|a, b| {
-        (Reverse(a.with_make), a.tier, a.use_count == 0, Reverse(a.use_count), a.rank)
-            .cmp(&(Reverse(b.with_make), b.tier, b.use_count == 0, Reverse(b.use_count), b.rank))
+        (a.tier, a.use_count == 0, Reverse(a.use_count), a.rank)
+            .cmp(&(b.tier, b.use_count == 0, Reverse(b.use_count), b.rank))
             .then_with(|| a.value.cmp(b.value))
     });
     ranked

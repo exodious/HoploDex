@@ -89,7 +89,7 @@ FR-016; research.md §4–§5).
   type SuggestEntriesInput = {
     field: "make" | "model" | "cartridge" | "caliber";
     text: string;           // what is typed so far; may be empty
-    make?: string | null;   // model only: the make on the form, ranked first
+    make?: string | null;   // model only: the make on the form; only its models are offered (blank: all)
   };
   ```
 

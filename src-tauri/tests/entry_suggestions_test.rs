@@ -363,20 +363,56 @@ fn a_value_saved_only_as_a_pending_draft_is_not_suggested() {
 }
 
 #[test]
-fn models_recorded_with_the_make_on_the_form_come_first() {
-    // US2-9.
+fn models_are_offered_only_for_the_make_on_the_form() {
+    // US2-9, US2-11.
     let db = TestDb::new();
     record(&db, "Marlin", "336", None, ".30");
     record(&db, "Marlin", "336", None, ".30");
     record(&db, "Ruger", "10/22", None, ".22");
     record(&db, "Ruger", "Mini-14", None, ".22");
+    record(&db, "Sig Sauer", "P365 XL", None, "9mm");
 
     let with_ruger = suggest_with(&db, EntryField::Model, "", Some("Ruger"));
-    assert_eq!(values(&with_ruger), ["10/22", "Mini-14", "336"]);
-    let variant = suggest_with(&db, EntryField::Model, "", Some("RUGER"));
-    assert_eq!(values(&variant), ["10/22", "Mini-14", "336"], "the make is compared by key");
-    let without = suggest(&db, EntryField::Model, "");
-    assert_eq!(values(&without), ["336", "10/22", "Mini-14"]);
+    assert_eq!(values(&with_ruger), ["10/22", "Mini-14"]);
+    let variant = suggest_with(&db, EntryField::Model, "", Some("  RUGER "));
+    assert_eq!(values(&variant), ["10/22", "Mini-14"], "the make is compared by key");
+    // Typing narrows within the make.
+    let typed = suggest_with(&db, EntryField::Model, "mini", Some("Ruger"));
+    assert_eq!(values(&typed), ["Mini-14"]);
+    assert!(suggest_with(&db, EntryField::Model, "p3", Some("Ruger")).is_empty());
+
+    // A make that is on no record has no models to offer.
+    assert!(suggest_with(&db, EntryField::Model, "", Some("Glock")).is_empty());
+    assert!(suggest_with(&db, EntryField::Model, "p365", Some("Glock")).is_empty());
+
+    // No make yet (or only spaces): every model, most used first.
+    for make in [None, Some(""), Some("  ")] {
+        let all = suggest_with(&db, EntryField::Model, "", make);
+        assert_eq!(values(&all), ["336", "10/22", "Mini-14", "P365 XL"], "{make:?}");
+    }
+}
+
+#[test]
+fn a_model_shared_by_two_makes_is_offered_for_each() {
+    let db = TestDb::new();
+    record(&db, "Colt", "Python", None, ".357");
+    record(&db, "Other", "Python", None, ".357");
+    record(&db, "Colt", "Cobra", None, ".38");
+
+    let colt = suggest_with(&db, EntryField::Model, "", Some("Colt"));
+    assert_eq!(values(&colt), ["Python", "Cobra"]);
+    let other = suggest_with(&db, EntryField::Model, "", Some("Other"));
+    assert_eq!(values(&other), ["Python"]);
+}
+
+#[test]
+fn a_make_is_ignored_for_the_other_fields() {
+    let db = TestDb::new();
+    record(&db, "Ruger", "10/22", Some("Wildcat Special"), ".22");
+    let plain = suggest(&db, EntryField::Cartridge, "wild");
+    let with_make = suggest_with(&db, EntryField::Cartridge, "wild", Some("Glock"));
+    assert_eq!(values(&with_make), values(&plain));
+    assert_eq!(values(&plain), ["Wildcat Special"]);
 }
 
 /// The 25 most common cartridges, each findable by some 1 to 4 characters of

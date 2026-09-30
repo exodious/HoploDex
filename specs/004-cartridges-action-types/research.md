@@ -203,8 +203,12 @@ function, `entry_key`, in `services/entry_text.rs`.
     after the rare cartridges whose names merely begin with "9mm" (9mm
     Largo, 9mm Browning Long). Found while writing T035.
   A candidate takes its best tier.
-- **Decision — order**: for **model**, candidates recorded with the make on the
-  form (compared by key) come first, then the rest (US2-9). Then by tier; then
+- **Decision — model and make**: for **model**, a candidate is offered only if
+  it is recorded with the make on the form (compared by key), so a make on no
+  record offers none (US2-9, US2-11); a blank make (after trimming) offers every
+  candidate. This replaces ranking that make's models first over all the rest,
+  which offered another make's models (a P365 XL for Ruger).
+- **Decision — order**: by tier; then
   candidates on record (use count > 0) before catalog-only; on record by use
   count, descending; catalog-only by rank; last, alphabetically by display
   spelling so the order is total and tests are stable.

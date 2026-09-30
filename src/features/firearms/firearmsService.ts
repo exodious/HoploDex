@@ -53,8 +53,9 @@ export function settleEntry(field: EntryFieldName, text: string): Promise<Settle
 }
 
 /** The ranked suggestions for what is typed so far, best first, at most 20.
- * `make` is the make on the form, for ranking a model (contracts/
- * tauri-commands.md). Nothing is kept between calls (FR-011). */
+ * `make` is the make on the form, which limits a model's list to that make's
+ * models (contracts/tauri-commands.md). Nothing is kept between calls
+ * (FR-011). */
 export async function suggestEntries(
   field: EntryFieldName,
   text: string,

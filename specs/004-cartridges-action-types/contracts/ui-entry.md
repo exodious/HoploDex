@@ -47,7 +47,7 @@ spec Assumptions).
   so Escape still closes the dialog; the first key or Down brings the list up. Each keystroke asks
   `suggest_entries`; a response for anything but the field's current text is
   dropped.
-- For **Model**, the request carries the make currently on the form.
+- For **Model**, the request carries the make currently on the form, and the list holds only that make's models (all models while it is blank).
 - With no matches it closes. There is never an "Add …" row: typing on is how
   a new value is entered.
 

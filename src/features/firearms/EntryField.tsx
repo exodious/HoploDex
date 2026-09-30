@@ -8,7 +8,7 @@ export interface EntryFieldProps extends Omit<
   "loadOptions" | "onInputChange" | "onPick" | "onBlurSettle"
 > {
   field: EntryFieldName;
-  /** Model only: the make on the form, whose models the list ranks first. */
+  /** Model only: the make on the form, whose models the list is limited to. */
   make?: string;
   onValueChange: (text: string) => void;
   onPick: (value: string) => void;
