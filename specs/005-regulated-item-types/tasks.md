@@ -355,3 +355,10 @@ Each story adds value without breaking the previous ones; stop at any checkpoint
 - [Story] label maps a task to its user story for traceability
 - Verify tests fail before implementing
 - Commit after each task or logical group; never touch the real databases
+
+---
+
+## Phase 8: Convergence
+
+- [ ] T075 [P] Add a one-line "Amended by 005 (`specs/005-regulated-item-types/`)" pointer beside each `field: "make" | "model" | "cartridge" | "caliber"` union in `specs/004-cartridges-action-types/contracts/tauri-commands.md` (`SuggestEntriesInput`, `SettleEntryInput` and `ImportResult.snappedValues`), saying the union gains `"registrationForm"` and `"registeredTo"` (see 005's contracts/tauri-commands.md) per plan: amendment pointers, "the `EntryField` list" in 004's documents (partial)
+- [ ] T076 [P] In `specs/005-regulated-item-types/contracts/ui-registration.md` §2, change "suggestions marked "Built-in" for the five form names" to the three built-in form names (Form 1, Form 4, Form 5), matching the spec's clarification and `BUILT_IN_FORMS` in `src-tauri/src/services/registration.rs`, per spec Clarifications (built-in form names) and FR-009 (partial)
