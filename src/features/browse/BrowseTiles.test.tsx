@@ -25,6 +25,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     cartridge: null,
     firearmTypeName: "Handgun",
     actionTypeName: null,
+    registeredAs: null,
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",

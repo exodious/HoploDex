@@ -466,3 +466,54 @@ fn a_suppressor_groups_under_suppressor_with_its_own_drawing() {
     assert_eq!(summary.generic_thumbnail_key, "suppressor");
     assert_eq!(summary.action_type_name, None);
 }
+
+/// specs/005-regulated-item-types US2-9, US2-10, FR-016.
+#[test]
+fn grouping_by_registration_follows_the_list_and_the_alphabet_with_unspecified_last() {
+    let db = TestDb::new();
+    let add = |serial: &str, class: Option<i64>, to: Option<&str>| {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                serial_number: Some(serial.into()),
+                registration_class_id: class,
+                registered_to: to.map(str::to_owned),
+                ..firearm("Make", &format!("M{serial}"), "9mm", 1)
+            },
+            false,
+        )
+        .unwrap();
+    };
+    add("1", Some(5), Some("Zed Trust"));
+    add("2", None, None);
+    add("3", Some(1), Some("Adams LLC"));
+    add("4", Some(1), None);
+    add("5", Some(2), Some("Zed Trust"));
+    add("6", None, None);
+
+    let grouped = |by| {
+        ops::list_firearms(
+            &db.conn,
+            &ListFirearmsInput { group_by: Some(by), ..Default::default() },
+        )
+        .unwrap()
+        .groups
+    };
+    let as_groups = grouped(GroupBy::RegisteredAs);
+    let keys: Vec<(&str, usize)> =
+        as_groups.iter().map(|g| (g.key.as_str(), g.firearms.len())).collect();
+    assert_eq!(
+        keys,
+        [("Suppressor", 2), ("Short-barreled rifle", 1), ("Machine gun", 1), ("Unspecified", 2)]
+    );
+    assert_eq!(as_groups[0].firearms[0].registered_as.as_deref(), Some("Suppressor"));
+    assert_eq!(as_groups[3].firearms[0].registered_as, None);
+
+    let to_groups = grouped(GroupBy::RegisteredTo);
+    let keys: Vec<(&str, usize)> =
+        to_groups.iter().map(|g| (g.key.as_str(), g.firearms.len())).collect();
+    // Unspecified holds every firearm with no "Registered to", classified or not.
+    assert_eq!(keys, [("Adams LLC", 1), ("Zed Trust", 2), ("Unspecified", 3)]);
+    let json = serde_json::to_value(&as_groups[0].firearms[0]).unwrap();
+    assert_eq!(json["registeredAs"], "Suppressor");
+}

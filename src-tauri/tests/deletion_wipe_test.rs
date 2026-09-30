@@ -201,6 +201,46 @@ fn deleting_a_firearm_wipes_its_custom_cartridge() {
     assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
 }
 
+/// specs/005-regulated-item-types SC-007, constitution V: a "Registered to"
+/// value and a form used by one firearm are gone from the file, the index
+/// included, once it is deleted.
+#[test]
+fn deleting_a_firearm_wipes_its_registration_details() {
+    const OWNER: &str = "Zqxjv Holdings";
+    const FORM: &str = "Vkbnq Form";
+    const INDEX_TOKENS: [&str; 6] = ["zqx", "qxj", "xjv", "vkb", "kbn", "bnq"];
+    let contains = |haystack: &[u8], needle: &str| {
+        haystack.windows(needle.len()).any(|window| window == needle.as_bytes())
+    };
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let created = firearm_ops::create_firearm(
+        &db.conn,
+        &hoplodex_lib::models::firearm::FirearmInput {
+            registration_class_id: Some(1),
+            registration_form: Some(FORM.into()),
+            registered_to: Some(OWNER.into()),
+            ..firearm("Glock", "19", "W-8")
+        },
+        false,
+    )
+    .unwrap();
+    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-9"), false).unwrap();
+    let before = decrypted_export(&db.conn, scratch.path());
+    assert!(contains(&before, OWNER));
+    assert!(contains(&before, FORM));
+
+    firearm_ops::delete_firearm(&db.conn, created.id, true).unwrap();
+
+    let after = decrypted_export(&db.conn, scratch.path());
+    assert!(!contains(&after, OWNER), "Registered to is still in the database");
+    assert!(!contains(&after, FORM), "the form is still in the database");
+    for token in INDEX_TOKENS {
+        assert!(!contains(&after, token), "the index kept {token:?}");
+    }
+    assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
+}
+
 #[test]
 fn deleting_one_attachment_leaves_the_others_intact() {
     let db = TestDb::new();

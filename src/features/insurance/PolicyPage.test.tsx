@@ -44,6 +44,8 @@ const collection: CollectionState = {
   actionTypesFailed: false,
   firearmTypes: { types: FIREARM_TYPES },
   firearmTypesFailed: false,
+  registrationClasses: { classes: [] },
+  registrationClassesFailed: false,
   loaded: true,
   error: null,
   revision: 1,

@@ -18,6 +18,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     cartridge: null,
     firearmTypeName: "Handgun",
     actionTypeName: null,
+    registeredAs: null,
     status: "active",
     thumbnailPhotoId: null,
     genericThumbnailKey: "handgun",
@@ -125,7 +126,7 @@ describe("BrowseList action", () => {
     expect(screen.getByRole("columnheader", { name: "Type" })).toBeInTheDocument();
   });
 
-  it("offers Group by in the order Type, Action, Caliber, Cartridge, Make, Origin", () => {
+  it("offers Group by in the order Type, Action, Caliber, Cartridge, Make, Origin, Registered as, Registered to", () => {
     expect(GROUP_BY_OPTIONS.map((option) => option.label)).toEqual([
       "Type",
       "Action",
@@ -133,6 +134,8 @@ describe("BrowseList action", () => {
       "Cartridge",
       "Make",
       "Origin",
+      "Registered as",
+      "Registered to",
     ]);
     expect(GROUP_BY_OPTIONS.find((option) => option.label === "Action")?.value).toBe("action_type");
   });

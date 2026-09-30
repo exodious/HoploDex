@@ -327,6 +327,7 @@ impl FirearmInput {
             original_model: trimmed(&self.original_model),
             original_serial_number: trimmed(&self.original_serial_number),
             registration_form: trimmed(&self.registration_form),
+            registration_approved: trimmed(&self.registration_approved),
             registered_to: trimmed(&self.registered_to),
             ..self.clone()
         }
@@ -416,12 +417,20 @@ pub fn validate_firearm_input(
                 stored.map(|f| f.cartridge.as_deref().unwrap_or("")),
             ),
             EntryField::Caliber => (input.caliber.as_str(), stored.map(|f| f.caliber.as_str())),
+            EntryField::RegistrationForm => (
+                input.registration_form.as_deref().unwrap_or(""),
+                stored.map(|f| f.registration_form.as_deref().unwrap_or("")),
+            ),
+            EntryField::RegisteredTo => (
+                input.registered_to.as_deref().unwrap_or(""),
+                stored.map(|f| f.registered_to.as_deref().unwrap_or("")),
+            ),
         };
         if stored_value.is_some_and(|stored| stored.trim() == value.trim()) {
             continue;
         }
         if let Err(message) = check_entry_text(field, value) {
-            errors.insert(field.column().into(), message);
+            errors.insert(field.ipc_name().into(), message);
         }
     }
 
@@ -580,6 +589,29 @@ pub fn validate_firearm_input(
                 field.into(),
                 format!("{label} applies only to an imported or re-imported firearm."),
             );
+        }
+    }
+
+    // specs/005-regulated-item-types FR-009, FR-010: registration details
+    // need a classification, and the approved date is not in the future.
+    // Only the classification's existence is checked by the command.
+    checked_date(
+        "registrationApproved",
+        "Approved date",
+        &input.registration_approved,
+        today,
+        &mut errors,
+    );
+    if input.registration_class_id.is_none() {
+        for (field, blank) in [
+            ("registrationForm", is_blank(&input.registration_form)),
+            ("registrationApproved", is_blank(&input.registration_approved)),
+            ("registeredTo", is_blank(&input.registered_to)),
+        ] {
+            if !blank {
+                errors
+                    .insert(field.into(), "Choose what the firearm is registered as first.".into());
+            }
         }
     }
 

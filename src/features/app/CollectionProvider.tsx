@@ -3,11 +3,24 @@ import type { ReactNode } from "react";
 import { CommandFailure } from "../../services/tauriClient";
 import * as browseService from "../browse/browseService";
 import type { FirearmSummary } from "../browse/types";
-import { listActionTypes, listFirearmTypes } from "../firearms/firearmsService";
-import type { ActionTypesOutput, FirearmTypesOutput } from "../firearms/types";
+import {
+  listActionTypes,
+  listFirearmTypes,
+  listRegistrationClasses,
+} from "../firearms/firearmsService";
+import type {
+  ActionTypesOutput,
+  FirearmTypesOutput,
+  RegistrationClassesOutput,
+} from "../firearms/types";
 import * as insuranceService from "../insurance/insuranceService";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
-import { CollectionContext, NO_ACTION_TYPES, NO_FIREARM_TYPES } from "./collectionStore";
+import {
+  CollectionContext,
+  NO_ACTION_TYPES,
+  NO_FIREARM_TYPES,
+  NO_REGISTRATION_CLASSES,
+} from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
 
 export function CollectionProvider({ children }: { children: ReactNode }) {
@@ -18,6 +31,9 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   const [actionTypesFailed, setActionTypesFailed] = useState(false);
   const [firearmTypes, setFirearmTypes] = useState<FirearmTypesOutput>(NO_FIREARM_TYPES);
   const [firearmTypesFailed, setFirearmTypesFailed] = useState(false);
+  const [registrationClasses, setRegistrationClasses] =
+    useState<RegistrationClassesOutput>(NO_REGISTRATION_CLASSES);
+  const [registrationClassesFailed, setRegistrationClassesFailed] = useState(false);
   const [summary, setSummary] = useState<ValueSummary | null>(null);
   const [policies, setPolicies] = useState<InsurancePolicy[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -77,6 +93,19 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let current = true;
+    listRegistrationClasses().then(
+      (list) => current && setRegistrationClasses(list),
+      // Without it Registered as offers only Unspecified and the form says
+      // so; the backend still checks every save.
+      () => current && setRegistrationClassesFailed(true),
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
   const value = useMemo<CollectionState>(
     () => ({
       firearms,
@@ -88,6 +117,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       actionTypesFailed,
       firearmTypes,
       firearmTypesFailed,
+      registrationClasses,
+      registrationClassesFailed,
       loaded,
       error,
       revision,
@@ -101,6 +132,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       actionTypesFailed,
       firearmTypes,
       firearmTypesFailed,
+      registrationClasses,
+      registrationClassesFailed,
       loaded,
       error,
       revision,

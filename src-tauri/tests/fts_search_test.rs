@@ -475,3 +475,68 @@ fn matches_the_action_name_and_follows_a_change_of_action() {
     assert_eq!(search(&db.conn, "bolt"), 0, "the old action's name no longer finds it");
     assert_eq!(search(&db.conn, "lever"), 1, "the new one does");
 }
+
+/// specs/005-regulated-item-types US2-11, FR-017: the classification, form
+/// and "Registered to" are searched; the approved date is not.
+#[test]
+fn registration_is_found_by_classification_form_and_registered_to() {
+    let db = TestDb::new();
+    let add = |serial: &str, class: i64, form: Option<&str>, to: Option<&str>| {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                serial_number: Some(serial.into()),
+                registration_class_id: Some(class),
+                registration_form: form.map(str::to_owned),
+                registration_approved: Some("2026-02-10".into()),
+                registered_to: to.map(str::to_owned),
+                ..base_input()
+            },
+            false,
+        )
+        .unwrap()
+    };
+    let trust = add("RG-1", 1, Some("Form 4"), Some("Smith Family Trust"));
+    add("RG-2", 2, Some("Form 10"), Some("QZ Holdings"));
+    add("RG-3", 3, Some("Form 1"), None);
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput { serial_number: Some("PLAIN".into()), ..base_input() },
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "smith family"), 1);
+    assert_eq!(search(&db.conn, "form 1"), 2, "Form 1 and Form 10");
+    assert_eq!(search(&db.conn, "short-barreled"), 2, "rifle and shotgun");
+    assert_eq!(search(&db.conn, "short-barreled rifle"), 1);
+    // One and two characters go through the LIKE branch.
+    assert_eq!(search(&db.conn, "qz"), 1);
+    assert_eq!(search(&db.conn, "q"), 1);
+    assert_eq!(search(&db.conn, "2026-02-10"), 0, "the approved date is not searched");
+
+    ops::update_firearm(
+        &db.conn,
+        trust.id,
+        &FirearmInput { registered_to: Some("Jones Estate".into()), ..FirearmInput::from(&trust) },
+        false,
+    )
+    .unwrap();
+    assert_eq!(search(&db.conn, "smith family"), 0);
+    assert_eq!(search(&db.conn, "jones estate"), 1);
+    ops::update_firearm(
+        &db.conn,
+        trust.id,
+        &FirearmInput {
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
+            ..FirearmInput::from(&trust)
+        },
+        false,
+    )
+    .unwrap();
+    assert_eq!(search(&db.conn, "jones estate"), 0);
+    assert_eq!(search(&db.conn, "form 4"), 0);
+}

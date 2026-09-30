@@ -3,7 +3,15 @@
 
 import type { FirearmStatus } from "../firearms/types";
 
-export type GroupBy = "type" | "action_type" | "caliber" | "cartridge" | "make" | "origin";
+export type GroupBy =
+  | "type"
+  | "action_type"
+  | "caliber"
+  | "cartridge"
+  | "make"
+  | "origin"
+  | "registered_as"
+  | "registered_to";
 
 export type InsuranceWarning = "none" | "uninsured" | "under_insured";
 
@@ -27,6 +35,9 @@ export interface FirearmSummary {
   /** specs/004-cartridges-action-types FR-020: the action's name; `null` =
    * none recorded. */
   actionTypeName: string | null;
+  /** specs/005-regulated-item-types FR-016: the classification's name;
+   * `null` = none. */
+  registeredAs: string | null;
   status: FirearmStatus;
   thumbnailPhotoId: number | null;
   genericThumbnailKey: string;
@@ -51,13 +62,26 @@ export interface ListFirearmsOutput {
   groups: FirearmGroup[];
 }
 
-export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
-  { value: "type", label: "Type" },
-  { value: "action_type", label: "Action" },
-  { value: "caliber", label: "Caliber" },
-  { value: "cartridge", label: "Cartridge" },
-  { value: "make", label: "Make" },
-  { value: "origin", label: "Origin" },
+/** Which heading the grouping menu puts an option under (specs/005
+ * contracts/ui-registration.md §6). */
+export type GroupBySection = "firearm" | "maker" | "registration";
+
+export const GROUP_BY_OPTIONS: { value: GroupBy; label: string; section: GroupBySection }[] = [
+  { value: "type", label: "Type", section: "firearm" },
+  { value: "action_type", label: "Action", section: "firearm" },
+  { value: "caliber", label: "Caliber", section: "firearm" },
+  { value: "cartridge", label: "Cartridge", section: "firearm" },
+  { value: "make", label: "Make", section: "maker" },
+  { value: "origin", label: "Origin", section: "maker" },
+  { value: "registered_as", label: "Registered as", section: "registration" },
+  { value: "registered_to", label: "Registered to", section: "registration" },
+];
+
+/** The fixed headings of the grouping menu, in order. */
+export const GROUP_BY_SECTIONS: { section: GroupBySection; heading: string }[] = [
+  { section: "firearm", heading: "The firearm" },
+  { section: "maker", heading: "Its maker" },
+  { section: "registration", heading: "Registration" },
 ];
 
 /** specs/004-cartridges-action-types FR-027: where browsing shows the

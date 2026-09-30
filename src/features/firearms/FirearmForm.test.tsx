@@ -10,7 +10,7 @@ import {
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
-import { ACTION_TYPES, FIREARM_TYPES } from "../../test/collectionFixtures";
+import { ACTION_TYPES, FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
@@ -21,7 +21,10 @@ import type { DerivedCaliber, Firearm } from "./types";
 // specs/005-regulated-item-types: the form reads the firearm types from the
 // collection store, so every render gets the fixture's five seeded types
 // unless a test provides its own collection.
-const typesCollection = { firearmTypes: { types: FIREARM_TYPES } } as unknown as CollectionState;
+const typesCollection = {
+  firearmTypes: { types: FIREARM_TYPES },
+  registrationClasses: { classes: REGISTRATION_CLASSES },
+} as unknown as CollectionState;
 function render(ui: ReactElement) {
   return renderBase(ui, {
     wrapper: ({ children }) => (
@@ -737,7 +740,9 @@ describe("FirearmForm origin control (US1)", () => {
 
     await user.click(screen.getByRole("button", { name: "How do I record this?" }));
     expect(
-      screen.getByRole("dialog", { name: "How to record where a firearm came from" }),
+      screen.getByRole("dialog", {
+        name: "How to record where a firearm came from and how it's registered",
+      }),
     ).toBeInTheDocument();
   });
 });
@@ -1375,8 +1380,8 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
 describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
   afterEach(() => setResumedDraft(null));
 
-  it("is version 2", () => {
-    expect(FORM_VERSION).toBe(2);
+  it("is version 3", () => {
+    expect(FORM_VERSION).toBe(3);
   });
 
   it("discards a version 1 draft", () => {
@@ -1393,7 +1398,20 @@ describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
     expect(screen.getByLabelText("Caliber")).toHaveValue("");
   });
 
-  it("restores a guessed caliber, still derived, from a version 2 draft", async () => {
+  it("discards a version 2 draft", () => {
+    setResumedDraft({
+      formVersion: 2,
+      kind: "firearm",
+      mode: "add",
+      targetId: null,
+      label: "New firearm",
+      values: { make: "Old draft", caliber: ".22" },
+    });
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    expect(screen.getByLabelText("Make")).toHaveValue("");
+  });
+
+  it("restores a guessed caliber, still derived, from a current draft", async () => {
     const user = userEvent.setup();
     setResumedDraft({
       formVersion: FORM_VERSION,
@@ -2138,5 +2156,486 @@ describe("FirearmForm suppressor (US1)", () => {
     );
 
     expect(screen.getByText(/The list of types couldn't be loaded/)).toBeInTheDocument();
+  });
+});
+
+// specs/005-regulated-item-types User Story 2 (contracts/ui-registration.md
+// §2, §3): an optional classification with a form, an approved date and
+// "Registered to", and nothing on the form that judges legal status.
+describe("FirearmForm registration (US2)", () => {
+  const offered = REGISTRATION_CLASSES;
+  const collection = (classes = offered) =>
+    ({
+      firearmTypes: { types: FIREARM_TYPES },
+      actionTypes: { actions: ACTION_TYPES, allowedByFirearmType: {} },
+      registrationClasses: { classes },
+    }) as unknown as CollectionState;
+
+  function renderForm(ui: ReactElement = <FirearmForm onSubmit={vi.fn()} />, classes = offered) {
+    return renderBase(
+      <CollectionContext.Provider value={collection(classes)}>{ui}</CollectionContext.Provider>,
+    );
+  }
+
+  const registrationButton = () => screen.getByRole("button", { name: /^Registration/ });
+  const openRegistration = async (user: ReturnType<typeof userEvent.setup>) => {
+    if (registrationButton().getAttribute("aria-expanded") === "false") {
+      await user.click(registrationButton());
+    }
+  };
+  const chooseClass = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole("combobox", { name: "Registered as" }));
+    await user.click(await screen.findByRole("option", { name }));
+  };
+
+  const suppressor = {
+    id: 9,
+    make: "SilencerCo",
+    model: "Omega 300",
+    serialNumber: "OM-1",
+    noSerialAttested: false,
+    caliber: ".30",
+    cartridge: null,
+    firearmTypeId: 5,
+    actionTypeId: null,
+    status: "active",
+    registrationClassId: 1,
+    registrationForm: "Form 4",
+    registrationApproved: "2026-02-10",
+    registeredTo: "Smith Family Trust",
+  } as Firearm;
+
+  const plainRifle = {
+    id: 10,
+    make: "Ruger",
+    model: "American",
+    serialNumber: "R-1",
+    noSerialAttested: false,
+    caliber: ".308",
+    cartridge: null,
+    firearmTypeId: 2,
+    actionTypeId: 1,
+    barrelLengthHundredths: 1050,
+    status: "active",
+    registrationClassId: null,
+  } as Firearm;
+
+  it("puts the Registration section after Origin and before Physical details", () => {
+    renderForm();
+
+    const buttons = screen
+      .getAllByRole("button", { name: /^(Origin and year|Registration|Physical details)/ })
+      .map((button) => button.textContent);
+    expect(buttons[0]).toMatch(/^Origin and year of manufacture/);
+    expect(buttons[1]).toMatch(/^Registration/);
+    expect(buttons[2]).toMatch(/^Physical details/);
+  });
+
+  it("starts closed and says what it holds when nothing is recorded", () => {
+    renderForm();
+
+    expect(registrationButton()).toHaveAttribute("aria-expanded", "false");
+    expect(registrationButton()).toHaveTextContent(
+      "Optional: what the firearm is registered as, and the approval.",
+    );
+  });
+
+  it("reads back everything recorded when closed, leaving out what is missing", async () => {
+    const user = userEvent.setup();
+    renderForm(<FirearmForm initialValues={suppressor} onSubmit={vi.fn()} />);
+
+    expect(registrationButton()).toHaveAttribute("aria-expanded", "true");
+    await user.click(registrationButton());
+    expect(registrationButton()).toHaveTextContent(
+      "Registered as Suppressor. Form 4, approved Feb 10, 2026. Registered to Smith Family Trust.",
+    );
+  });
+
+  it("leaves out the parts that aren't recorded from the summary", async () => {
+    const user = userEvent.setup();
+    renderForm(
+      <FirearmForm
+        initialValues={{
+          ...suppressor,
+          registrationForm: null,
+          registrationApproved: "2026-02-10",
+          registeredTo: null,
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+    await user.click(registrationButton());
+
+    expect(registrationButton()).toHaveTextContent(
+      "Registered as Suppressor. Approved Feb 10, 2026.",
+    );
+    expect(registrationButton()).not.toHaveTextContent("Registered to");
+  });
+
+  it("opens itself when a save fails on a field inside it", async () => {
+    const user = userEvent.setup();
+    const message = "Approved date can't be in the future.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { registrationApproved: message },
+      }),
+    );
+    renderForm(
+      <FirearmForm
+        initialValues={{ ...suppressor, registrationApproved: null }}
+        onSubmit={onSubmit}
+      />,
+    );
+    await user.click(registrationButton());
+    expect(registrationButton()).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+
+    await waitFor(() => expect(registrationButton()).toHaveAttribute("aria-expanded", "true"));
+    expect(screen.getByText(message)).toBeInTheDocument();
+  });
+
+  it("opens with the standing note and a link to the guide's Registered items", async () => {
+    const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    renderForm();
+    await openRegistration(user);
+
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "HoploDex records what you enter here. It doesn't decide what is regulated or needs registering, and the law changes.",
+    );
+    await user.click(screen.getByRole("button", { name: "How to record registrations" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { name: "Registered items" });
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it("offers Unspecified, then the six classifications in list order", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await openRegistration(user);
+
+    await user.click(screen.getByRole("combobox", { name: "Registered as" }));
+
+    const names = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    expect(names).toEqual([
+      "Unspecified",
+      "Suppressor",
+      "Short-barreled rifle",
+      "Short-barreled shotgun",
+      "Any other weapon",
+      "Machine gun",
+      "Destructive device",
+    ]);
+  });
+
+  it("shows Form, Approved and Registered to only once a classification is chosen", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await openRegistration(user);
+    expect(screen.queryByLabelText("Form")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Approved")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Registered to")).not.toBeInTheDocument();
+
+    await chooseClass(user, "Suppressor");
+
+    for (const label of ["Form", "Approved", "Registered to"]) {
+      const input = screen.getByLabelText(label);
+      expect(input).toBeInTheDocument();
+      expect(input).not.toBeRequired();
+    }
+    expect(screen.getByText("The date on the approved form (the tax stamp date).")).toBeVisible();
+    expect(screen.getByText("A person, trust or company, as named on the form.")).toBeVisible();
+    expect(
+      within(screen.getByRole("group", { name: "Registration" })).queryByText("*"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks the five built-in form names in Form's suggestions", async () => {
+    suggestEntries.mockResolvedValue(
+      ["Form 4", "Form 1", "Form 3", "Form 5", "Form 10"].map((value) => ({
+        value,
+        inCatalog: true,
+        useCount: 0,
+        caliber: null,
+      })),
+    );
+    const user = userEvent.setup();
+    renderForm(<FirearmForm initialValues={suppressor} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByLabelText("Form"));
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "Form 4 Built-in",
+      "Form 1 Built-in",
+      "Form 3 Built-in",
+      "Form 5 Built-in",
+      "Form 10 Built-in",
+    ]);
+    expect(suggestEntries).toHaveBeenCalledWith("registrationForm", "Form 4", undefined);
+  });
+
+  it("settles Form and Registered to and shows the note", async () => {
+    settleEntry.mockImplementation(async (field: string, text: string) => ({
+      value: field === "registeredTo" ? "Smith Family Trust" : text.trim(),
+      changedBy: field === "registeredTo" ? "record" : null,
+      derivedCaliber: null,
+    }));
+    const user = userEvent.setup();
+    renderForm(
+      <FirearmForm initialValues={{ ...suppressor, registeredTo: null }} onSubmit={vi.fn()} />,
+    );
+
+    await user.type(screen.getByLabelText("Registered to"), "smith family trust");
+    await user.tab();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Registered to")).toHaveValue("Smith Family Trust"),
+    );
+    expect(settleEntry).toHaveBeenCalledWith("registeredTo", "smith family trust");
+    expect(
+      screen.getAllByText("Changed to “Smith Family Trust”, as already in your collection.").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("blocks a future approved date with the field's message", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(<FirearmForm initialValues={suppressor} onSubmit={onSubmit} />);
+    const approved = screen.getByLabelText("Approved");
+    await user.clear(approved);
+    await user.type(approved, "2999-01-01");
+
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+
+    expect(await screen.findByText("Approved date can't be in the future.")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("saves the classification and its details, with nothing derived", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(
+      <FirearmForm
+        initialValues={{
+          ...suppressor,
+          registrationClassId: null,
+          registrationForm: null,
+          registrationApproved: null,
+          registeredTo: null,
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+    await openRegistration(user);
+    await chooseClass(user, "Short-barreled rifle");
+    await user.type(screen.getByLabelText("Form"), "Form 1");
+    await user.type(screen.getByLabelText("Approved"), "2026-02-10");
+    await user.type(screen.getByLabelText("Registered to"), "Alex Rivera");
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      registrationClassId: 2,
+      registrationForm: "Form 1",
+      registrationApproved: "2026-02-10",
+      registeredTo: "Alex Rivera",
+    });
+  });
+
+  it("asks before Unspecified discards details, naming only what is recorded", async () => {
+    const user = userEvent.setup();
+    renderForm(
+      <FirearmForm
+        initialValues={{ ...suppressor, registrationApproved: null }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await chooseClass(user, "Unspecified");
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Discard the registration details?",
+    });
+    expect(dialog).toHaveTextContent(
+      "Clearing what the firearm is registered as will discard the form “Form 4” and Registered to “Smith Family Trust”. They can't be recovered once saved.",
+    );
+    expect(within(dialog).getByRole("button", { name: "Discard details" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Keep them" })).toBeInTheDocument();
+  });
+
+  it("names all three parts when all are recorded", async () => {
+    const user = userEvent.setup();
+    renderForm(<FirearmForm initialValues={suppressor} onSubmit={vi.fn()} />);
+
+    await chooseClass(user, "Unspecified");
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent(
+      "will discard the form “Form 4”, the approved date and Registered to “Smith Family Trust”. They can't be recovered once saved.",
+    );
+  });
+
+  it("keeps the classification on Keep them and clears all four on Discard details", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderForm(<FirearmForm initialValues={suppressor} onSubmit={onSubmit} />);
+
+    await chooseClass(user, "Unspecified");
+    await user.click(await screen.findByRole("button", { name: "Keep them" }));
+    expect(screen.getByRole("combobox", { name: "Registered as" })).toHaveTextContent("Suppressor");
+    expect(screen.getByLabelText("Form")).toHaveValue("Form 4");
+
+    await chooseClass(user, "Unspecified");
+    await user.click(await screen.findByRole("button", { name: "Discard details" }));
+    expect(screen.getByRole("combobox", { name: "Registered as" })).toHaveTextContent(
+      "Unspecified",
+    );
+    expect(screen.queryByLabelText("Form")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      registrationClassId: null,
+      registrationForm: null,
+      registrationApproved: null,
+      registeredTo: null,
+    });
+  });
+
+  it("keeps the details, with no question, when another classification is chosen", async () => {
+    const user = userEvent.setup();
+    renderForm(<FirearmForm initialValues={suppressor} onSubmit={vi.fn()} />);
+
+    await chooseClass(user, "Machine gun");
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Registered as" })).toHaveTextContent(
+      "Machine gun",
+    );
+    expect(screen.getByLabelText("Form")).toHaveValue("Form 4");
+    expect(screen.getByLabelText("Registered to")).toHaveValue("Smith Family Trust");
+  });
+
+  it("clears at once when Unspecified is chosen with no details recorded", async () => {
+    const user = userEvent.setup();
+    renderForm(
+      <FirearmForm
+        initialValues={{
+          ...suppressor,
+          registrationForm: null,
+          registrationApproved: null,
+          registeredTo: null,
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await chooseClass(user, "Unspecified");
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Registered as" })).toHaveTextContent(
+      "Unspecified",
+    );
+  });
+
+  it("offers a classification that is no longer offered to the record holding it, in its place", async () => {
+    const user = userEvent.setup();
+    const classes = offered.map((item) => (item.id === 5 ? { ...item, offered: false } : item));
+    const { unmount } = renderForm(
+      <FirearmForm initialValues={{ ...suppressor, registrationClassId: 5 }} onSubmit={vi.fn()} />,
+      classes,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Registered as" }));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Unspecified",
+      "Suppressor",
+      "Short-barreled rifle",
+      "Short-barreled shotgun",
+      "Any other weapon",
+      "Machine gun",
+      "Destructive device",
+    ]);
+    unmount();
+
+    // Another record is not offered it.
+    renderForm(<FirearmForm initialValues={plainRifle} onSubmit={vi.fn()} />, classes);
+    await openRegistration(user);
+    await user.click(screen.getByRole("combobox", { name: "Registered as" }));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).not.toContain(
+      "Machine gun",
+    );
+  });
+
+  it("says so when the classifications couldn't be loaded", async () => {
+    const user = userEvent.setup();
+    renderBase(
+      <CollectionContext.Provider
+        value={
+          {
+            firearmTypes: { types: FIREARM_TYPES },
+            registrationClasses: { classes: [] },
+            registrationClassesFailed: true,
+          } as unknown as CollectionState
+        }
+      >
+        <FirearmForm onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    await openRegistration(user);
+
+    expect(screen.getByText(/The list of classifications couldn't be loaded/)).toBeInTheDocument();
+  });
+
+  // FR-014, SC-002, US2-8: nothing on the form judges legal status.
+  describe.each([
+    ["a Rifle with a 10.5 in barrel and no classification", plainRifle],
+    [
+      "a Suppressor with no classification",
+      {
+        ...suppressor,
+        registrationClassId: null,
+        registrationForm: null,
+        registrationApproved: null,
+        registeredTo: null,
+      },
+    ],
+    [
+      "a Rifle registered as Machine gun with a Semi-automatic action",
+      { ...plainRifle, registrationClassId: 5, actionTypeId: 1 },
+    ],
+  ])("for %s", (_name, record) => {
+    it("shows no regulatory text outside the Registration section's own labels and note", async () => {
+      const user = userEvent.setup();
+      const { container } = renderForm(
+        <FirearmForm initialValues={record as Firearm} onSubmit={vi.fn()} />,
+      );
+      // Open every folded section, so all of the form's text is rendered.
+      for (const button of screen.getAllByRole("button", { expanded: false })) {
+        if (/^(Origin|Physical|Registration)/.test(button.textContent ?? "")) {
+          await user.click(button);
+        }
+      }
+
+      // The form body: the footer's "Required" key belongs to the form itself.
+      const text = container.querySelector(".hd-dialog__body")?.textContent ?? "";
+      const withoutOwn = text
+        .replace(
+          "HoploDex records what you enter here. It doesn't decide what is regulated or needs registering, and the law changes.",
+          "",
+        )
+        .replace("Registered as", "")
+        .replace("Registered to", "")
+        .replace("How to record registrations", "")
+        .replace("Optional: what the firearm is registered as, and the approval.", "");
+      expect(withoutOwn).not.toMatch(/regulat|\bNFA\b|pending|unregistered|compliant/i);
+      expect(withoutOwn).not.toMatch(/register/i);
+      // Nothing inside the Registration section is marked required.
+      const section = screen.getByRole("group", { name: "Registration" });
+      expect(section.textContent ?? "").not.toMatch(/required/i);
+    });
   });
 });

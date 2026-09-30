@@ -428,6 +428,8 @@ pub mod ops {
             EntryField::Model => raw.model.as_deref(),
             EntryField::Cartridge => raw.cartridge.as_deref(),
             EntryField::Caliber => raw.caliber.as_deref(),
+            // The sheet's registration columns are read by User Story 4.
+            EntryField::RegistrationForm | EntryField::RegisteredTo => None,
         }
     }
 
@@ -437,6 +439,7 @@ pub mod ops {
             EntryField::Model => &mut raw.model,
             EntryField::Cartridge => &mut raw.cartridge,
             EntryField::Caliber => &mut raw.caliber,
+            EntryField::RegistrationForm | EntryField::RegisteredTo => return,
         };
         *slot = Some(value);
     }

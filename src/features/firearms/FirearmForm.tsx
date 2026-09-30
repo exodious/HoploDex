@@ -14,15 +14,27 @@ import {
   TextArea,
   TextField,
 } from "../../components";
-import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
+import {
+  dispositionOrderError,
+  formatDate,
+  futureDateError,
+  parseDateInput,
+  todayIso,
+} from "../../lib/dates";
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName, useActionTypes, useFirearmTypes } from "../app/collectionStore";
+import {
+  firearmName,
+  useActionTypes,
+  useFirearmTypes,
+  useRegistrationClasses,
+} from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
-import { OriginGuide } from "./OriginGuide";
+import { IdentificationGuide } from "./IdentificationGuide";
+import type { GuidePart } from "./IdentificationGuide";
 import { caliberHint, caliberReducer } from "./caliberDerivation";
 import type { CaliberAction, CaliberMode, CaliberState } from "./caliberDerivation";
 import { EntryField } from "./EntryField";
@@ -62,9 +74,16 @@ function yearOfManufactureError(text: string): string | undefined {
   return undefined;
 }
 
-/** The four fields with suggestions and snapping (specs/004-cartridges-action-types
- * FR-009). */
-const ENTRY_FIELDS: readonly EntryFieldName[] = ["make", "model", "cartridge", "caliber"];
+/** The fields with suggestions and snapping (specs/004-cartridges-action-types
+ * FR-009; specs/005-regulated-item-types research.md §7). */
+const ENTRY_FIELDS: readonly EntryFieldName[] = [
+  "make",
+  "model",
+  "cartridge",
+  "caliber",
+  "registrationForm",
+  "registeredTo",
+];
 
 function isEntryField(name: string | undefined): name is EntryFieldName {
   return ENTRY_FIELDS.some((field) => field === name);
@@ -89,6 +108,11 @@ const ACTION_LIST_FAILED =
  * the user should know why rather than see an empty choice. */
 const TYPE_LIST_FAILED =
   "The list of types couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
+
+/** Under Registered as when `list_registration_classes` failed: it has
+ * nothing to offer, and the user should know why. */
+const REGISTRATION_LIST_FAILED =
+  "The list of classifications couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
 
 /** specs/005-regulated-item-types FR-002: the hint under a suppressor's
  * caliber rating. */
@@ -244,6 +268,61 @@ function originGroupSummary(form: FormState): string {
     .join(" ");
 }
 
+/** specs/005-regulated-item-types FR-007, FR-009: the fields folded into the
+ * Registration group, which starts closed unless one is recorded and opens
+ * itself when an error lands on one of them. */
+const REGISTRATION_GROUP_FIELDS = [
+  "registrationClassId",
+  "registrationForm",
+  "registrationApproved",
+  "registeredTo",
+] as const satisfies readonly (keyof FormState)[];
+
+function hasRegistrationValue(form: FormState): boolean {
+  return REGISTRATION_GROUP_FIELDS.some((field) => form[field].trim() !== "");
+}
+
+/** The recorded details (not the classification), in the order the form
+ * shows them. */
+function registrationDetailsSummary(form: FormState): string[] {
+  const formName = form.registrationForm.trim();
+  const approved = form.registrationApproved.trim();
+  const parts: string[] = [];
+  if (formName && approved) parts.push(`${formName}, approved ${formatDate(approved)}`);
+  else if (formName) parts.push(formName);
+  else if (approved) parts.push(`Approved ${formatDate(approved)}`);
+  const to = form.registeredTo.trim();
+  if (to) parts.push(`Registered to ${to}`);
+  return parts;
+}
+
+/** What the closed group says it holds: the recorded parts read back,
+ * leaving out what is missing (contracts/ui-registration.md §2). */
+function registrationGroupSummary(form: FormState, className: string | undefined): string {
+  const sentences: string[] = [];
+  if (form.registrationClassId !== "" && className) sentences.push(`Registered as ${className}`);
+  sentences.push(...registrationDetailsSummary(form));
+  if (sentences.length === 0)
+    return "Optional: what the firearm is registered as, and the approval.";
+  return sentences
+    .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`))
+    .join(" ");
+}
+
+/** The question before Unspecified discards details (FR-012): names only the
+ * parts that have a value. */
+function discardRegistrationDescription(form: FormState): string {
+  const items: string[] = [];
+  if (form.registrationForm.trim()) items.push(`the form “${form.registrationForm.trim()}”`);
+  if (form.registrationApproved.trim()) items.push("the approved date");
+  if (form.registeredTo.trim()) items.push(`Registered to “${form.registeredTo.trim()}”`);
+  const list =
+    items.length < 2
+      ? items.join("")
+      : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  return `Clearing what the firearm is registered as will discard ${list}. They can't be recovered once saved.`;
+}
+
 /** FR-039: the physical details, folded into their own group on the same
  * rules as the origin group (optional, closed unless recorded, opened by an
  * error inside it). */
@@ -300,7 +379,7 @@ function physicalGroupSummary(form: FormState, rules: FieldRules): string {
 }
 
 /** A field the form can open on, for the record page's "Add" links. */
-export type FocusField = "notes" | "accessories";
+export type FocusField = "notes" | "accessories" | "registration";
 
 /** How long the section stays highlighted after the form opens on a field. */
 const HIGHLIGHT_MS = 1800;
@@ -319,8 +398,9 @@ export interface FirearmFormProps {
 /** The version of this form's kept drafts (research.md §16). Raise it when
  * `FormState` changes shape, so older drafts are only discarded. 2: the
  * cartridge and the caliber's state (specs/004-cartridges-action-types
- * research.md §8). */
-export const FORM_VERSION = 2;
+ * research.md §8). 3: the registration classification and details
+ * (specs/005-regulated-item-types). */
+export const FORM_VERSION = 3;
 
 interface FormState {
   make: string;
@@ -365,6 +445,12 @@ interface FormState {
   originalMake: string;
   originalModel: string;
   originalSerialNumber: string;
+  /** specs/005-regulated-item-types FR-007: a classification id; "" is
+   * Unspecified. */
+  registrationClassId: string;
+  registrationForm: string;
+  registrationApproved: string;
+  registeredTo: string;
 }
 
 type Field = keyof FormState;
@@ -423,6 +509,11 @@ function toFormState(firearm?: Firearm): FormState {
     originalMake: firearm?.originalMake ?? "",
     originalModel: firearm?.originalModel ?? "",
     originalSerialNumber: firearm?.originalSerialNumber ?? "",
+    registrationClassId:
+      firearm?.registrationClassId == null ? "" : String(firearm.registrationClassId),
+    registrationForm: firearm?.registrationForm ?? "",
+    registrationApproved: firearm?.registrationApproved ?? "",
+    registeredTo: firearm?.registeredTo ?? "",
   };
 }
 
@@ -449,6 +540,8 @@ function validate(
     ["model", "Model"],
     ["cartridge", "Cartridge"],
     ["caliber", "Caliber"],
+    ["registrationForm", "Form"],
+    ["registeredTo", "Registered to"],
   ] as const) {
     const problem = entryTextError(label, form[field]);
     if (problem) errors[field] = problem;
@@ -479,6 +572,14 @@ function validate(
   else {
     const future = futureDateError(acquired.iso, "Acquisition date");
     if (future) errors.acquisitionDate = future;
+  }
+
+  // FR-010: the approved date is a date and not in the future.
+  const approved = parseDateInput(form.registrationApproved);
+  if (!approved.ok) errors.registrationApproved = approved.error;
+  else {
+    const future = futureDateError(approved.iso, "Approved date");
+    if (future) errors.registrationApproved = future;
   }
 
   const yearError = yearOfManufactureError(form.yearOfManufacture);
@@ -531,6 +632,10 @@ const FIELD_ORDER: Field[] = [
   "caliber",
   "serialNumber",
   "yearOfManufacture",
+  "registrationClassId",
+  "registrationForm",
+  "registrationApproved",
+  "registeredTo",
   "barrelLength",
   "overallLength",
   "weightPounds",
@@ -575,6 +680,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     model: (initialValues?.model ?? "").trim(),
     cartridge: (initialValues?.cartridge ?? "").trim(),
     caliber: (initialValues?.caliber ?? "").trim(),
+    registrationForm: (initialValues?.registrationForm ?? "").trim(),
+    registeredTo: (initialValues?.registeredTo ?? "").trim(),
   });
   const derivedFrom = useRef<CaliberState["derivedFrom"]>(null);
   const settling = useRef(new Set<Promise<boolean>>());
@@ -586,6 +693,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const [actionNote, setActionNote] = useState("");
   const actionTypes = useActionTypes();
   const firearmTypes = useFirearmTypes();
+  const registrationClasses = useRegistrationClasses();
   // specs/005-regulated-item-types FR-003: the fields the type in effect
   // omits; with no type chosen yet, none.
   const rulesFor = (typeId: string): FieldRules =>
@@ -603,12 +711,21 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   // Motion-free under prefers-reduced-motion: still marked, so the user can
   // see where to type, but neither animated nor smooth-scrolled.
   const [highlight, setHighlight] = useState<"animated" | "static" | null>(null);
-  const [showOriginGuide, setShowOriginGuide] = useState(false);
+  // Which part the guide is open at, or null while it is closed.
+  const [guidePart, setGuidePart] = useState<GuidePart | null>(null);
   const [originGroupOpen, setOriginGroupOpen] = useState(() => hasOriginGroupValue(form));
+  const [registrationGroupOpen, setRegistrationGroupOpen] = useState(
+    () => focusField === "registration" || hasRegistrationValue(form),
+  );
+  const registrationClassRef = useRef<HTMLDivElement>(null);
+  // specs/005-regulated-item-types FR-012: set while the question about
+  // discarding the registration details is open.
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() =>
     hasPhysicalGroupValue(form, rulesFor(form.firearmTypeId)),
   );
   const originGuideButtonRef = useRef<HTMLButtonElement>(null);
+  const registrationGuideButtonRef = useRef<HTMLButtonElement>(null);
   // specs/002-firearm-identification FR-010: set while the discard
   // confirmation is open, holding the origin the user picked and what it
   // would discard.
@@ -624,8 +741,18 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   } | null>(null);
 
   useEffect(() => {
+    if (focusField !== "registration") return;
+    // From the record page's Registration panel: the section is open, and
+    // Registered as is focused.
+    const field = registrationClassRef.current?.querySelector<HTMLElement>("button");
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+  }, [focusField]);
+
+  useEffect(() => {
     const field = focusField === "notes" ? notesRef.current : accessoriesRef.current;
-    if (!focusField || !field) return;
+    if (!focusField || focusField === "registration" || !field) return;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     field.focus({ preventScroll: true });
     field.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
@@ -802,6 +929,29 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     }));
   }
 
+  /** FR-012: Unspecified with details recorded asks first; another
+   * classification keeps the details; Unspecified with none clears at once. */
+  function changeRegistrationClass(value: string) {
+    if (value !== NOT_RECORDED) {
+      update("registrationClassId", value);
+      return;
+    }
+    if (registrationDetailsSummary(form).length > 0) setConfirmingClear(true);
+    else update("registrationClassId", "");
+  }
+
+  function discardRegistration() {
+    setEntryNotes((notes) => ({ ...notes, registrationForm: undefined, registeredTo: undefined }));
+    setForm((prev) => ({
+      ...prev,
+      registrationClassId: "",
+      registrationForm: "",
+      registrationApproved: "",
+      registeredTo: "",
+    }));
+    setConfirmingClear(false);
+  }
+
   function handleOriginChange(next: Origin | "") {
     const discard = originDiscard(form.origin, next, form);
     if (discard) {
@@ -889,6 +1039,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       if ((PHYSICAL_GROUP_FIELDS as readonly Field[]).includes(firstInvalid)) {
         flushSync(() => setPhysicalGroupOpen(true));
       }
+      if ((REGISTRATION_GROUP_FIELDS as readonly Field[]).includes(firstInvalid)) {
+        flushSync(() => setRegistrationGroupOpen(true));
+      }
       formRef.current
         ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea, button)`)
         ?.focus();
@@ -937,12 +1090,13 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       originalMake: blankToNull(form.originalMake),
       originalModel: blankToNull(form.originalModel),
       originalSerialNumber: blankToNull(form.originalSerialNumber),
-      // Registration is edited by specs/005-regulated-item-types US2; until
-      // then a save keeps what the record holds.
-      registrationClassId: initialValues?.registrationClassId ?? null,
-      registrationForm: initialValues?.registrationForm ?? null,
-      registrationApproved: initialValues?.registrationApproved ?? null,
-      registeredTo: initialValues?.registeredTo ?? null,
+      // Details never outlive their classification (FR-009).
+      registrationClassId:
+        form.registrationClassId === "" ? null : Number(form.registrationClassId),
+      registrationForm: form.registrationClassId === "" ? null : blankToNull(form.registrationForm),
+      registrationApproved:
+        form.registrationClassId === "" ? null : isoDate(form.registrationApproved),
+      registeredTo: form.registrationClassId === "" ? null : blankToNull(form.registeredTo),
     };
 
     return submitInput(input);
@@ -955,6 +1109,15 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     if (!fieldErrors) return;
     if (PHYSICAL_GROUP_FIELDS.some((field) => fieldErrors[SERVER_FIELD[field] ?? field])) {
       flushSync(() => setPhysicalGroupOpen(true));
+    }
+  }
+
+  /** A save rejected on a field inside the Registration group opens it. */
+  function revealRegistrationGroupFor(error: CommandFailure) {
+    const fieldErrors = error.fieldErrors;
+    if (!fieldErrors) return;
+    if (REGISTRATION_GROUP_FIELDS.some((field) => fieldErrors[SERVER_FIELD[field] ?? field])) {
+      flushSync(() => setRegistrationGroupOpen(true));
     }
   }
 
@@ -993,6 +1156,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
           flushSync(() => setServerError(error));
           revealOriginGroupFor(error);
           revealPhysicalGroupFor(error);
+          revealRegistrationGroupFor(error);
         }
         return false;
       }
@@ -1233,7 +1397,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setShowOriginGuide(true)}
+                    onClick={() => setGuidePart("origin")}
                   >
                     How do I record this?
                   </Button>
@@ -1322,6 +1486,102 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       </div>
                     </div>
                   </fieldset>
+                </div>
+              )}
+            </Disclosure>
+          </section>
+
+          <section className="hd-form-section hd-form-section--folded">
+            <Disclosure
+              title="Registration"
+              headingLevel={3}
+              summary={
+                registrationGroupOpen
+                  ? undefined
+                  : registrationGroupSummary(
+                      form,
+                      registrationClasses.classes.find(
+                        (item) => String(item.id) === form.registrationClassId,
+                      )?.name,
+                    )
+              }
+              open={registrationGroupOpen}
+              onOpenChange={setRegistrationGroupOpen}
+            >
+              {/* FR-014: a record of what the owner enters; nothing here
+                  decides what is regulated. */}
+              <p className="hd-form-note" role="note">
+                HoploDex records what you enter here. It doesn't decide what is regulated or needs
+                registering, and the law changes.
+              </p>
+              <Button
+                ref={registrationGuideButtonRef}
+                className="hd-origin-guide__trigger"
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setGuidePart("registration")}
+              >
+                How to record registrations
+              </Button>
+              <div data-field="registrationClassId" ref={registrationClassRef}>
+                <Select
+                  label="Registered as"
+                  fieldClassName="hd-field--third"
+                  value={form.registrationClassId === "" ? NOT_RECORDED : form.registrationClassId}
+                  onValueChange={changeRegistrationClass}
+                  options={[
+                    { value: NOT_RECORDED, label: "Unspecified" },
+                    ...registrationClasses.classes
+                      .filter(
+                        (item) => item.offered || String(item.id) === form.registrationClassId,
+                      )
+                      .map((item) => ({ value: String(item.id), label: item.name })),
+                  ]}
+                  error={errorFor("registrationClassId")}
+                  hint={registrationClasses.failed ? REGISTRATION_LIST_FAILED : undefined}
+                />
+              </div>
+              {form.registrationClassId !== "" && (
+                <div className="hd-form-grid hd-form-grid--registration">
+                  <div data-field="registrationForm">
+                    <EntryField
+                      field="registrationForm"
+                      label="Form"
+                      value={form.registrationForm}
+                      onValueChange={(text) => editEntry("registrationForm", text)}
+                      onPick={(value) => pickEntry("registrationForm", value)}
+                      onLeave={() => leaveEntry("registrationForm")}
+                      note={entryNotes.registrationForm}
+                      error={errorFor("registrationForm")}
+                      placeholder="e.g. Form 4"
+                    />
+                  </div>
+                  <div data-field="registrationApproved">
+                    <DateField
+                      label="Approved"
+                      value={form.registrationApproved}
+                      max={todayIso()}
+                      onValueChange={(text) => update("registrationApproved", text)}
+                      onBlur={touch("registrationApproved")}
+                      error={errorFor("registrationApproved")}
+                      hint="The date on the approved form (the tax stamp date)."
+                    />
+                  </div>
+                  <div data-field="registeredTo" className="hd-form-span-3">
+                    <EntryField
+                      field="registeredTo"
+                      label="Registered to"
+                      value={form.registeredTo}
+                      onValueChange={(text) => editEntry("registeredTo", text)}
+                      onPick={(value) => pickEntry("registeredTo", value)}
+                      onLeave={() => leaveEntry("registeredTo")}
+                      note={entryNotes.registeredTo}
+                      error={errorFor("registeredTo")}
+                      hint="A person, trust or company, as named on the form."
+                      placeholder="e.g. Smith Family Trust"
+                    />
+                  </div>
                 </div>
               )}
             </Disclosure>
@@ -1573,7 +1833,21 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
         </footer>
       </form>
 
-      <OriginGuide open={showOriginGuide} onOpenChange={setShowOriginGuide} />
+      <IdentificationGuide
+        open={guidePart !== null}
+        onOpenChange={(open) => !open && setGuidePart(null)}
+        part={guidePart ?? "origin"}
+      />
+
+      <ConfirmDialog
+        open={confirmingClear}
+        onOpenChange={setConfirmingClear}
+        title="Discard the registration details?"
+        description={discardRegistrationDescription(form)}
+        confirmLabel="Discard details"
+        cancelLabel="Keep them"
+        onConfirm={discardRegistration}
+      />
 
       <ConfirmDialog
         open={pendingOrigin !== null}

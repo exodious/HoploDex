@@ -1168,6 +1168,35 @@
   color: var(--ink-2);
 }
 
+.hd-menu__radio {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 50%;
+}
+
+.hd-menu__item--radio[data-state="checked"] .hd-menu__radio {
+  border-color: var(--niter);
+}
+
+.hd-menu__radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--niter);
+}
+
+.hd-menu__heading {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
 .hd-menu__separator {
   height: 1px;
   margin: var(--space-1) calc(-1 * var(--space-1));

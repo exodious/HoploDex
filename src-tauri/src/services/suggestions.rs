@@ -16,6 +16,7 @@ use serde::Serialize;
 
 use crate::services::cartridges::catalog;
 use crate::services::entry_text::{EntryField, MAX_ENTRY_CHARS, check_entry_text, words};
+use crate::services::registration::BUILT_IN_FORMS;
 
 /// The most suggestions one call returns (research.md §4).
 pub const MAX_SUGGESTIONS: usize = 20;
@@ -156,7 +157,10 @@ fn known_spelling<'a>(vocabulary: &'a FieldVocabulary, key: &str) -> Option<(&'a
     let from_catalog = match vocabulary.field {
         EntryField::Cartridge => catalog().entry_by_name_key(key).map(|entry| entry.name.as_str()),
         EntryField::Caliber => catalog().class_by_key(key).map(|class| class.spelling.as_str()),
-        EntryField::Make | EntryField::Model => None,
+        EntryField::RegistrationForm => {
+            BUILT_IN_FORMS.iter().copied().find(|name| words_key(name) == key)
+        }
+        EntryField::Make | EntryField::Model | EntryField::RegisteredTo => None,
     };
     if let Some(spelling) = from_catalog {
         return Some((spelling, ChangedBy::Catalog));
@@ -450,7 +454,16 @@ pub fn suggest(vocabulary: &FieldVocabulary, text: &str, make: Option<&str>) -> 
                 );
             }
         }
-        EntryField::Make | EntryField::Model => {}
+        // The built-in form names, in rank order (data-model.md "Built-in
+        // Form Name"); only the typed text decides which are offered.
+        EntryField::RegistrationForm => {
+            for (index, name) in BUILT_IN_FORMS.iter().copied().enumerate() {
+                let key = words_key(name);
+                let tier = text_tier(&typed, &key, &words(name));
+                offer(name, &key, index as u32 + 1, None, tier);
+            }
+        }
+        EntryField::Make | EntryField::Model | EntryField::RegisteredTo => {}
     }
 
     for (key, group) in &vocabulary.groups {

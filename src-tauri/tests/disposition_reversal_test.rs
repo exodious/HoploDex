@@ -320,3 +320,36 @@ fn the_history_choice_is_required_on_the_wire() {
         serde_json::from_str(r#"{"history":"discard","nickname":null}"#).unwrap();
     assert!(matches!(discard.history, HistoryChoice::Discard));
 }
+
+/// specs/005-regulated-item-types FR-013: disposing of a registered firearm
+/// and reversing it leaves the classification and details as they were.
+#[test]
+fn registration_is_unchanged_after_disposal_and_after_reversal() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            registration_class_id: Some(1),
+            registration_form: Some("Form 4".into()),
+            registration_approved: Some("2026-02-10".into()),
+            registered_to: Some("Smith Family Trust".into()),
+            ..firearm("SilencerCo", "Omega", "REG1")
+        },
+        false,
+    )
+    .unwrap();
+    let registration = |f: &hoplodex_lib::models::Firearm| {
+        (
+            f.registration_class_id,
+            f.registration_form.clone(),
+            f.registration_approved.clone(),
+            f.registered_to.clone(),
+        )
+    };
+    let before = registration(&created);
+    dispose(&db, created.id, "Jane Doe", "2026-03-01");
+    assert_eq!(registration(&ops::get_firearm(&db.conn, created.id).unwrap()), before);
+    let restored =
+        ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep)).unwrap();
+    assert_eq!(registration(&restored), before);
+}

@@ -4,6 +4,7 @@ import {
   back,
   browser,
   choose,
+  groupBy,
   clickButton,
   clickEl,
   fieldValue,
@@ -242,11 +243,11 @@ for (const theme of ["Light", "Dark"] as const) {
 
     // specs/004-cartridges-action-types contracts/ui-entry.md §9.
     it("suggestions, guesses and notes in the firearm form", async () => {
-      await choose("Cartridge");
+      await groupBy("Cartridge");
       await $("h2.hd-group__title").waitForExist();
       await browser.pause(300);
       await shot(`31-grouped-by-cartridge-${suffix}`);
-      await choose("Type");
+      await groupBy("Type");
 
       await openDialog("Add firearm");
       await realClick('[data-field="make"] input');

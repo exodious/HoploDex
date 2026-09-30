@@ -59,6 +59,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     policiesById,
     actionTypes,
     firearmTypes,
+    registrationClasses,
     summary: valueSummary,
     revision,
     refresh,
@@ -303,6 +304,31 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 <Fact label="Maker">{firearm.originalMake}</Fact>
                 <Fact label="Model">{firearm.originalModel}</Fact>
                 <Fact label="Serial number">{firearm.originalSerialNumber}</Fact>
+              </dl>
+            </section>
+          )}
+
+          {firearm.registrationClassId != null && (
+            <section className="hd-panel" aria-labelledby="registration-title">
+              <header className="hd-panel__head">
+                <h2 className="hd-panel__title" id="registration-title">
+                  Registration
+                </h2>
+                <button type="button" className="hd-link" onClick={() => editField("registration")}>
+                  Edit
+                </button>
+              </header>
+              <dl className="hd-facts">
+                <Fact label="Registered as">
+                  {registrationClasses.classes.find(
+                    (item) => item.id === firearm.registrationClassId,
+                  )?.name ?? "—"}
+                </Fact>
+                {firearm.registrationForm && <Fact label="Form">{firearm.registrationForm}</Fact>}
+                {firearm.registrationApproved && (
+                  <Fact label="Approved">{formatDate(firearm.registrationApproved)}</Fact>
+                )}
+                {firearm.registeredTo && <Fact label="Registered to">{firearm.registeredTo}</Fact>}
               </dl>
             </section>
           )}

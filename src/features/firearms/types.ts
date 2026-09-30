@@ -120,10 +120,11 @@ export interface ActionTypesOutput {
   allowedByFirearmType: Record<number, number[]>;
 }
 
-/** specs/004-cartridges-action-types FR-009: the four fields with
- * suggestions and snapping. Mirrors `EntryField` in
- * src-tauri/src/services/entry_text.rs. */
-export type EntryFieldName = "make" | "model" | "cartridge" | "caliber";
+/** specs/004-cartridges-action-types FR-009 and specs/005-regulated-item-types
+ * research.md §7: the six fields with suggestions and snapping. Mirrors
+ * `EntryField::ipc_name` in src-tauri/src/services/entry_text.rs. */
+export type EntryFieldName =
+  "make" | "model" | "cartridge" | "caliber" | "registrationForm" | "registeredTo";
 
 /** The caliber a cartridge derives, and whether it was read from the
  * catalog or guessed (FR-005). Mirrors `DerivedCaliber` in

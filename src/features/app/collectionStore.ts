@@ -1,6 +1,10 @@
 import { createContext, useContext } from "react";
 import type { FirearmSummary } from "../browse/types";
-import type { ActionTypesOutput, FirearmTypesOutput } from "../firearms/types";
+import type {
+  ActionTypesOutput,
+  FirearmTypesOutput,
+  RegistrationClassesOutput,
+} from "../firearms/types";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
 
 /**
@@ -28,6 +32,12 @@ export interface CollectionState {
   /** The type list couldn't be loaded, so Type offers nothing to choose;
    * the form says so. The backend still checks every save. */
   firearmTypesFailed: boolean;
+  /** specs/005-regulated-item-types FR-007: the fixed registration
+   * classifications, loaded once per open database. */
+  registrationClasses: RegistrationClassesOutput;
+  /** The list couldn't be loaded, so Registered as offers only Unspecified;
+   * the form says so. The backend still checks every save. */
+  registrationClassesFailed: boolean;
   loaded: boolean;
   error: string | null;
   /** Increments after every refresh; views keyed on it refetch their own
@@ -69,6 +79,19 @@ export function useFirearmTypes(): FirearmTypesOutput & { failed: boolean } {
   return {
     ...(collection?.firearmTypes ?? NO_FIREARM_TYPES),
     failed: collection?.firearmTypesFailed ?? false,
+  };
+}
+
+/** Before the list has loaded, or outside a provider: none to offer. */
+export const NO_REGISTRATION_CLASSES: RegistrationClassesOutput = { classes: [] };
+
+/** The registration classifications, for a view that may render on its own:
+ * empty without a provider, rather than an error. */
+export function useRegistrationClasses(): RegistrationClassesOutput & { failed: boolean } {
+  const collection = useContext(CollectionContext);
+  return {
+    ...(collection?.registrationClasses ?? NO_REGISTRATION_CLASSES),
+    failed: collection?.registrationClassesFailed ?? false,
   };
 }
 

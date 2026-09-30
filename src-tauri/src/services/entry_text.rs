@@ -12,27 +12,49 @@ use unicode_normalization::UnicodeNormalization;
 /// FR-015: the longest value, in characters, the four fields accept.
 pub const MAX_ENTRY_CHARS: usize = 100;
 
-/// The four fields with suggestions and snapping (FR-009).
+/// The six fields with suggestions and snapping (FR-009; specs/005-regulated-item-types
+/// research.md §7 adds the registration form and "Registered to").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum EntryField {
     Make,
     Model,
     Cartridge,
     Caliber,
+    RegistrationForm,
+    RegisteredTo,
 }
 
 impl EntryField {
-    pub const ALL: [EntryField; 4] = [Self::Make, Self::Model, Self::Cartridge, Self::Caliber];
+    pub const ALL: [EntryField; 6] = [
+        Self::Make,
+        Self::Model,
+        Self::Cartridge,
+        Self::Caliber,
+        Self::RegistrationForm,
+        Self::RegisteredTo,
+    ];
 
-    /// The `firearms` column, which is also the IPC field name and the
-    /// spreadsheet column.
+    /// The `firearms` column, which is also the spreadsheet column. The IPC
+    /// name is [`Self::ipc_name`].
     pub fn column(&self) -> &'static str {
         match self {
             Self::Make => "make",
             Self::Model => "model",
             Self::Cartridge => "cartridge",
             Self::Caliber => "caliber",
+            Self::RegistrationForm => "registration_form",
+            Self::RegisteredTo => "registered_to",
+        }
+    }
+
+    /// The field's name over IPC: a `FieldErrors` key and the `field` of the
+    /// entry commands.
+    pub fn ipc_name(&self) -> &'static str {
+        match self {
+            Self::RegistrationForm => "registrationForm",
+            Self::RegisteredTo => "registeredTo",
+            other => other.column(),
         }
     }
 
@@ -43,12 +65,14 @@ impl EntryField {
             Self::Model => "Model",
             Self::Cartridge => "Cartridge",
             Self::Caliber => "Caliber",
+            Self::RegistrationForm => "Form",
+            Self::RegisteredTo => "Registered to",
         }
     }
 
-    /// Cartridge is optional (FR-001); the other three are required.
+    /// Make, model and caliber are required; the rest are optional (FR-001).
     pub fn required(&self) -> bool {
-        !matches!(self, Self::Cartridge)
+        matches!(self, Self::Make | Self::Model | Self::Caliber)
     }
 }
 

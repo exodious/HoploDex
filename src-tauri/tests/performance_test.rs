@@ -718,3 +718,75 @@ fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budget
         "one save's take-over check took {per_write:?} on average over {WRITES} saves"
     );
 }
+
+/// specs/005-regulated-item-types SC-006 (research.md §7, §8): with a share
+/// of the collection registered, grouping by the classification and by
+/// "Registered to" stays within the 1s action budget, a search for a
+/// "Registered to" value within the 500ms search budget, and the form and
+/// "Registered to" suggestions within 50ms.
+#[test]
+fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_records() {
+    let _alone = one_at_a_time();
+    let db = TestDb::new();
+    seed_10k_firearms(&db.conn);
+    db.conn
+        .execute_batch(
+            "UPDATE firearms SET
+                 registration_class_id = 1 + (id % 6),
+                 registration_form = CASE id % 5 WHEN 0 THEN 'Form 4' WHEN 1 THEN 'Form 1'
+                                     WHEN 2 THEN 'eForm 4' ELSE NULL END,
+                 registration_approved = '2026-02-10',
+                 registered_to = CASE WHEN id % 50 = 0 THEN 'Smith Family Trust'
+                                      ELSE 'Owner ' || (id % 400) END
+             WHERE id % 4 = 0",
+        )
+        .unwrap();
+
+    for group_by in [GroupBy::RegisteredAs, GroupBy::RegisteredTo] {
+        let started = Instant::now();
+        let result = firearm_ops::list_firearms(
+            &db.conn,
+            &ListFirearmsInput { group_by: Some(group_by), ..Default::default() },
+        )
+        .unwrap();
+        let elapsed = started.elapsed();
+        assert!(result.groups.len() > 1);
+        assert!(
+            elapsed.as_millis() < BUDGET_MS,
+            "list_firearms grouped by {group_by:?} took {}ms, over the {BUDGET_MS}ms budget",
+            elapsed.as_millis()
+        );
+    }
+
+    let started = Instant::now();
+    let found = firearm_ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { query: Some("smith family".into()), ..Default::default() },
+    )
+    .unwrap();
+    let elapsed = started.elapsed();
+    assert!(found.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 10);
+    assert!(
+        elapsed.as_millis() < BUDGET_MS,
+        "list_firearms (registered to search) took {}ms, over the {BUDGET_MS}ms budget",
+        elapsed.as_millis()
+    );
+
+    for (field, text) in [
+        (EntryField::RegistrationForm, "F"),
+        (EntryField::RegistrationForm, ""),
+        (EntryField::RegisteredTo, "own"),
+        (EntryField::RegisteredTo, ""),
+    ] {
+        let input = SuggestEntriesInput { field, text: text.into(), make: None };
+        let started = Instant::now();
+        let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
+        let elapsed = started.elapsed();
+        assert!(!output.suggestions.is_empty());
+        assert!(
+            elapsed.as_millis() < 50,
+            "suggest_entries({field:?}, {text:?}) took {}ms at {RECORD_COUNT} records, over the 50ms budget",
+            elapsed.as_millis()
+        );
+    }
+}
