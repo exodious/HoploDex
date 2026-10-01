@@ -29,6 +29,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use chrono::{Duration, Local};
+use hoplodex_lib::commands::accessories::{ReverseAccessoryDispositionInput, ops as accessory_ops};
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{
@@ -37,6 +38,7 @@ use hoplodex_lib::commands::firearms::{
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
+use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
@@ -84,6 +86,25 @@ const BOLT_ACTION: i64 = 3;
 const LEVER_ACTION: i64 = 4;
 const PUMP_ACTION: i64 = 5;
 const PERCUSSION: i64 = 11;
+
+// Ids seeded by migration 0003_seed_firearm_types (specs/006-accessory-links
+// FR-002): the accessory kinds.
+const KIND_OPTIC: i64 = 1;
+const KIND_LIGHT: i64 = 2;
+const KIND_MAGAZINE: i64 = 3;
+const KIND_STOCK: i64 = 4;
+const KIND_UPPER: i64 = 5;
+const KIND_BARREL: i64 = 6;
+const KIND_MUZZLE: i64 = 7;
+const KIND_CONVERSION: i64 = 8;
+const KIND_MOUNT: i64 = 9;
+const KIND_SLING: i64 = 10;
+const KIND_CASE: i64 = 11;
+const KIND_OTHER: i64 = 12;
+
+/// What the unscheduled active accessories may add to the blanket policy's
+/// total: the blanket limit leaves room for them (`seed_accessories` checks).
+const ACCESSORY_BLANKET_ALLOWANCE: i64 = 3_000;
 
 /// A real photo from `seed-photos/`, whose README records where each came
 /// from and its licence, as the `(name, bytes, mime type)` that `photos`
@@ -512,7 +533,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     let policies = seed_policies(conn);
     let extras = generated_firearms(extra);
     let extras_value: i64 = extras.iter().filter_map(|f| f.estimated_value).sum();
-    seed_blanket(conn, 12_000 + extras_value);
+    seed_blanket(conn, 12_000 + extras_value + ACCESSORY_BLANKET_ALLOWANCE);
 
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
@@ -1258,6 +1279,250 @@ pub fn seed(conn: &Connection, extra: usize) {
     for input in extras {
         add(input);
     }
+
+    seed_accessories(conn, &policies);
+}
+
+/// specs/006-accessory-links: one accessory of every kind, some with every
+/// field and some with almost none, a pair of magazines as one record, one
+/// scheduled under a policy, photos and a document, and disposed accessories
+/// with retained history covering every disposition type. Mounts are added
+/// by the mount stories' part of the seed.
+fn seed_accessories(conn: &Connection, policies: &Policies) {
+    let bare = |kind: i64| AccessoryInput {
+        accessory_kind_id: kind,
+        make: None,
+        model: None,
+        serial_number: None,
+        caliber: None,
+        cartridge: None,
+        notes: None,
+        status: FirearmStatus::Active,
+        estimated_value: None,
+        acquisition_source: None,
+        acquisition_date: None,
+        acquisition_price: None,
+        disposition_type: None,
+        disposition_recipient: None,
+        disposition_date: None,
+        disposition_price: None,
+        insurance_policy_id: None,
+        scheduled_coverage_amount: None,
+    };
+    let add = |input: AccessoryInput| {
+        let label = format!("{:?} {:?}", input.make, input.model);
+        must(accessory_ops::create_accessory(conn, &input), &label).id
+    };
+    let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
+        let input = DisposeFirearmInput {
+            disposition_type: kind,
+            recipient: recipient.into(),
+            date: date.into(),
+            price,
+        };
+        must(accessory_ops::dispose_accessory(conn, id, &input), "an accessory disposition");
+    };
+    let reacquire = |id: i64| {
+        must(
+            accessory_ops::reverse_accessory_disposition(
+                conn,
+                id,
+                &ReverseAccessoryDispositionInput { history: HistoryChoice::Keep },
+            ),
+            "reversing an accessory disposition",
+        );
+    };
+    let photo = |id: i64, name: &str, hue: u32| {
+        let bytes = gradient_image(1200, 800, hue, true);
+        must(photo_ops::add_photo(conn, RecordRef::Accessory(id), &bytes, name, "image/jpeg"), name)
+            .id
+    };
+
+    // -- Active: one of every kind -------------------------------------------
+
+    // Every field, scheduled under the Collector Schedule, with two photos
+    // (the second chosen as its thumbnail) and a receipt.
+    let scope = add(AccessoryInput {
+        make: text("Leupold"),
+        model: text("VX-5HD 3-15x44"),
+        serial_number: text("LP-5HD-30211"),
+        notes: text("Illuminated reticle; zeroed at 100 yards with 168 gr match."),
+        estimated_value: Some(1_000),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2024-03-16"),
+        acquisition_price: Some(1_100),
+        insurance_policy_id: Some(policies.collector),
+        scheduled_coverage_amount: Some(1_200),
+        ..bare(KIND_OPTIC)
+    });
+    let scope_photos = [photo(scope, "scope-front.jpg", 200), photo(scope, "scope-side.jpg", 20)];
+    must(
+        photo_ops::set_thumbnail_photo(conn, RecordRef::Accessory(scope), scope_photos[1]),
+        "choosing an accessory thumbnail",
+    );
+    must(
+        document_ops::add_document(
+            conn,
+            RecordRef::Accessory(scope),
+            &simple_pdf(&["Ridgeline Arms", "Sales receipt", "Leupold VX-5HD 3-15x44 - 1,100.00"]),
+            "receipt-leupold.pdf",
+            "application/pdf",
+        ),
+        "an accessory receipt",
+    );
+    add(AccessoryInput {
+        make: text("Streamlight"),
+        model: text("TLR-7 Sub"),
+        serial_number: text("TL7-004418"),
+        estimated_value: Some(140),
+        acquisition_date: text("2023-11-02"),
+        acquisition_price: Some(130),
+        ..bare(KIND_LIGHT)
+    });
+    // A pair of magazines kept together is one record, with the count in its
+    // model and the value of both (FR-001).
+    let magazines = add(AccessoryInput {
+        caliber: text("9mm"),
+        cartridge: text("9x19mm Parabellum"),
+        notes: text("The two original magazines that came with the pistol."),
+        estimated_value: Some(180),
+        acquisition_source: text("Estate sale"),
+        acquisition_date: text("2020-08-22"),
+        make: text("Walther"),
+        model: text("P38 magazines, pair"),
+        ..bare(KIND_MAGAZINE)
+    });
+    photo(magazines, "p38-magazines.jpg", 120);
+    add(AccessoryInput {
+        make: text("Magpul"),
+        model: text("MOE SL stock"),
+        estimated_value: Some(90),
+        ..bare(KIND_STOCK)
+    });
+    add(AccessoryInput {
+        make: text("Aero Precision"),
+        model: text("M4E1 upper receiver"),
+        serial_number: text("AP-U-70213"),
+        caliber: text(".223"),
+        cartridge: text(".223 Remington"),
+        estimated_value: Some(350),
+        acquisition_date: text("2022-05-14"),
+        ..bare(KIND_UPPER)
+    });
+    add(AccessoryInput {
+        make: text("Criterion"),
+        model: text("Hybrid 16 in barrel"),
+        serial_number: text("CB-1160"),
+        caliber: text(".223"),
+        estimated_value: Some(200),
+        ..bare(KIND_BARREL)
+    });
+    add(AccessoryInput {
+        make: text("SureFire"),
+        model: text("SOCOM flash hider"),
+        estimated_value: Some(120),
+        acquisition_price: Some(110),
+        ..bare(KIND_MUZZLE)
+    });
+    add(AccessoryInput {
+        make: text("CMMG"),
+        model: text("Banshee .22 LR conversion kit"),
+        caliber: text(".22"),
+        cartridge: text(".22 Long Rifle"),
+        estimated_value: Some(300),
+        ..bare(KIND_CONVERSION)
+    });
+    add(AccessoryInput {
+        make: text("Geissele"),
+        model: text("Super Precision 30 mm mount"),
+        estimated_value: Some(150),
+        ..bare(KIND_MOUNT)
+    });
+    // A model and no make, then a make and no model, then only a value.
+    add(AccessoryInput {
+        model: text("Two-point sling"),
+        estimated_value: Some(40),
+        ..bare(KIND_SLING)
+    });
+    add(AccessoryInput { make: text("Pelican"), ..bare(KIND_CASE) });
+    add(AccessoryInput {
+        notes: text("Box of spare springs, pins and a cleaning rod."),
+        estimated_value: Some(25),
+        ..bare(KIND_OTHER)
+    });
+
+    // -- Disposed, each type once; two keep their earlier dispositions ------
+
+    let red_dot = add(AccessoryInput {
+        make: text("Vortex"),
+        model: text("Strikefire II"),
+        estimated_value: Some(150),
+        acquisition_date: text("2021-02-10"),
+        ..bare(KIND_OPTIC)
+    });
+    dispose(red_dot, DispositionType::Sold, "Dave Rossi", "2022-06-01", 120);
+    reacquire(red_dot);
+    dispose(red_dot, DispositionType::Traded, "Ridgeline Arms", "2024-09-14", 110);
+
+    let sling = add(AccessoryInput {
+        make: text("Blue Force Gear"),
+        model: text("Vickers sling"),
+        estimated_value: Some(45),
+        acquisition_date: text("2019-12-12"),
+        ..bare(KIND_SLING)
+    });
+    dispose(sling, DispositionType::Gifted, "Nephew Tom", "2024-12-25", 0);
+
+    let barrel = add(AccessoryInput {
+        make: text("Faxon"),
+        model: text("Match barrel"),
+        serial_number: text("FX-88341"),
+        estimated_value: Some(220),
+        acquisition_date: text("2020-06-30"),
+        ..bare(KIND_BARREL)
+    });
+    dispose(barrel, DispositionType::LostStolen, "Lost in transit, claim 23-4471", "2023-03-09", 0);
+    reacquire(barrel);
+    dispose(barrel, DispositionType::Sold, "Kestrel Outfitters", "2025-04-18", 190);
+
+    let muzzle = add(AccessoryInput {
+        make: text("Noveske"),
+        model: text("KX3 flash hider"),
+        estimated_value: Some(0),
+        acquisition_date: text("2018-01-20"),
+        ..bare(KIND_MUZZLE)
+    });
+    dispose(muzzle, DispositionType::Destroyed, "Cracked at the weld; scrapped", "2024-05-05", 0);
+
+    let case = add(AccessoryInput {
+        make: text("Plano"),
+        model: text("Field locker"),
+        estimated_value: Some(60),
+        acquisition_date: text("2017-09-01"),
+        ..bare(KIND_CASE)
+    });
+    dispose(
+        case,
+        DispositionType::LostStolen,
+        "Stolen from a truck, report 24-9921",
+        "2024-02-02",
+        0,
+    );
+
+    // The blanket policy's limit leaves room for what is unscheduled.
+    let unscheduled: i64 = must(
+        conn.query_row(
+            "SELECT COALESCE(SUM(estimated_value), 0) FROM accessories
+             WHERE status = 'active' AND insurance_policy_id IS NULL",
+            [],
+            |row| row.get(0),
+        ),
+        "the unscheduled accessories' value",
+    );
+    assert!(
+        unscheduled <= ACCESSORY_BLANKET_ALLOWANCE,
+        "raise ACCESSORY_BLANKET_ALLOWANCE to at least {unscheduled}"
+    );
 }
 
 /// Deterministic filler: plain, valued, unscheduled firearms with distinct
