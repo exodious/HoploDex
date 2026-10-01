@@ -4,6 +4,9 @@
 //! at that scale, backed by the FTS5 index and indexed columns from
 //! data-model.md — no mocks, a real temporary SQLCipher database.
 //!
+//! Feature 006 adds every row of research.md §22 at 10,000 firearms and
+//! 10,000 accessories with 5,000 mounts (FR-026, SC-007).
+//!
 //! Feature 003 adds opening a database, key derivation included, to the 1s
 //! action budget (SC-003), the first progress event of a backup, a
 //! passphrase change, a restore and a move of backups to the 100ms feedback
@@ -16,16 +19,23 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use hoplodex_lib::commands::accessories::ops as accessory_ops;
+use hoplodex_lib::commands::accessories::{
+    AccessoryGroupBy, ListAccessoriesInput, ListAccessoriesOutput,
+};
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops::{self as databases_ops, Unlock};
 use hoplodex_lib::commands::entries::{SuggestEntriesInput, ops as entry_ops};
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
-use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput};
+use hoplodex_lib::commands::firearms::{DisposeInput, GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
+use hoplodex_lib::commands::mounts::ops as mount_ops;
+use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::database::{
     BackupLocationInput, BackupOutcome, BackupSettingsInput, CloseReason, ExistingBackupsChoice,
 };
 use hoplodex_lib::models::firearm::{FirearmInput, Origin};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::entry_text::EntryField;
 use hoplodex_lib::services::insurance_status::InsuranceWarning;
@@ -34,6 +44,7 @@ use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::valuation::get_value_summary;
 use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::{Connection, params};
+use serde_json::json;
 use support::{TEST_PASSPHRASE, TestDb, TestEvents, firearm, passphrase, policy};
 use tempfile::TempDir;
 
@@ -792,5 +803,362 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
             "suggest_entries({field:?}, {text:?}) took {}ms at {RECORD_COUNT} records, over the 50ms budget",
             elapsed.as_millis()
         );
+    }
+}
+
+// --- Feature 006: accessories and mounts ----------------------------------------
+
+const ACCESSORY_COUNT: usize = 10_000;
+/// Chains of five accessories, one on the next, each chain on its own
+/// firearm: 996 chains and the dispose family below make 5,000 mounts.
+const CHAINS: usize = 996;
+const CHAIN_DEPTH: usize = 5;
+
+/// A seeded database for specs/006-accessory-links FR-026 and SC-007 (research.md
+/// §22): 10,000 firearms and 10,000 accessories with 5,000 mounts, including
+/// chains five deep.
+struct MountedScale {
+    db: TestDb,
+    firearms: Vec<i64>,
+    accessories: Vec<i64>,
+}
+
+impl MountedScale {
+    fn new() -> Self {
+        let db = TestDb::new();
+        let firearms = seed_10k_firearms(&db.conn);
+        let accessories = seed_10k_accessories(&db.conn);
+        let scale = Self { db, firearms, accessories };
+        scale.seed_mounts();
+        scale
+    }
+
+    fn firearm(&self, index: usize) -> RecordRef {
+        RecordRef::Firearm(self.firearms[index])
+    }
+
+    fn accessory(&self, index: usize) -> RecordRef {
+        RecordRef::Accessory(self.accessories[index])
+    }
+
+    /// Accessory `5c + d` is on accessory `5c + d - 1` (the first on firearm
+    /// `c`). Firearm `CHAINS` carries the dispose family: four branches of
+    /// five accessories, 20 records below it.
+    fn seed_mounts(&self) {
+        let tx = self.db.conn.unchecked_transaction().unwrap();
+        {
+            let mut on_firearm = tx
+                .prepare("INSERT INTO mounts (item_accessory_id, host_firearm_id) VALUES (?1, ?2)")
+                .unwrap();
+            let mut on_accessory = tx
+                .prepare(
+                    "INSERT INTO mounts (item_accessory_id, host_accessory_id) VALUES (?1, ?2)",
+                )
+                .unwrap();
+            let branches = (0..CHAINS).map(|c| (c, c)).chain((0..4).map(|b| (CHAINS + b, CHAINS)));
+            for (branch, firearm_index) in branches {
+                let chain = &self.accessories[branch * CHAIN_DEPTH..(branch + 1) * CHAIN_DEPTH];
+                on_firearm.execute(params![chain[0], self.firearms[firearm_index]]).unwrap();
+                for pair in chain.windows(2) {
+                    on_accessory.execute(params![pair[1], pair[0]]).unwrap();
+                }
+            }
+        }
+        tx.commit().unwrap();
+        let mounts: i64 =
+            self.db.conn.query_row("SELECT count(*) FROM mounts", [], |row| row.get(0)).unwrap();
+        assert_eq!(mounts, 5_000);
+    }
+}
+
+fn seed_10k_accessories(conn: &Connection) -> Vec<i64> {
+    let makes = ["Leupold", "Trijicon", "SureFire", "Magpul", "Vortex", "Walther", "Midwest"];
+    let calibers = [Some("9mm"), Some(".223"), None, Some(".308")];
+    let cartridges = [Some("9x19mm Parabellum"), None, Some(".223 Remington")];
+    let tx = conn.unchecked_transaction().unwrap();
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO accessories (
+                    uid, accessory_kind_id, make, model, serial_number, caliber, cartridge,
+                    notes, status, estimated_value, acquisition_source, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active', ?9, ?10,
+                           datetime('now'), datetime('now'))",
+            )
+            .unwrap();
+        for i in 0..ACCESSORY_COUNT {
+            stmt.execute(params![
+                support::uid(),
+                1 + (i % 12) as i64,
+                // A tenth carry no make and no model: the kind names them.
+                (i % 10 != 9).then(|| makes[i % makes.len()]),
+                (i % 10 != 9).then(|| format!("Acc Model {i}")),
+                (i % 4 != 0).then(|| format!("ACC-{i}")),
+                calibers[i % calibers.len()],
+                cartridges[i % cartridges.len()],
+                if i == ACCESSORY_COUNT / 2 {
+                    "a uniquely findable note accxyzzy"
+                } else {
+                    "routine accessory notes"
+                },
+                (i % 3 == 0).then_some(100 + (i % 900) as i64),
+                "Gun show",
+            ])
+            .unwrap();
+        }
+    }
+    tx.commit().unwrap();
+    let mut ids_stmt = conn.prepare("SELECT id FROM accessories ORDER BY id").unwrap();
+    let ids: Vec<i64> =
+        ids_stmt.query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(ids.len(), ACCESSORY_COUNT);
+    ids
+}
+
+/// Runs `run`, prints its time for the pull request's performance note
+/// (`--nocapture`), and holds it to `budget_ms`.
+fn within<T>(what: &str, budget_ms: u128, run: impl FnOnce() -> T) -> T {
+    let started = Instant::now();
+    let result = run();
+    let elapsed = started.elapsed();
+    eprintln!("SC-007: {what} took {elapsed:?} (budget {budget_ms}ms)");
+    assert!(
+        elapsed.as_millis() < budget_ms,
+        "{what} took {}ms at {RECORD_COUNT} firearms and {ACCESSORY_COUNT} accessories; budget \
+         is {budget_ms}ms",
+        elapsed.as_millis()
+    );
+    result
+}
+
+fn count(output: &ListAccessoriesOutput) -> usize {
+    output.groups.iter().map(|g| g.accessories.len()).sum()
+}
+
+fn accessory_input(kind: i64, make: &str, model: &str) -> AccessoryInput {
+    let mut input: AccessoryInput =
+        serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
+    input.make = Some(make.into());
+    input.model = Some(model.into());
+    input
+}
+
+/// The actions of FR-026 (research.md §22): each within the 1s budget.
+#[test]
+fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_records() {
+    let _alone = one_at_a_time();
+    let scale = MountedScale::new();
+    let conn = &scale.db.conn;
+
+    // Opening a record with its chain and the list mounted on it.
+    let head = scale.firearm(0).id();
+    let detail = within("get_firearm with 5 mounted below", 1_000, || {
+        firearm_ops::get_firearm_detail(conn, head).unwrap()
+    });
+    assert_eq!(detail.mount.mounted.len(), CHAIN_DEPTH);
+    let tail = scale.accessory(CHAIN_DEPTH - 1).id();
+    let detail = within("get_accessory with a chain of 5", 1_000, || {
+        accessory_ops::get_accessory(conn, tail).unwrap()
+    });
+    assert_eq!(detail.mount.chain.len(), CHAIN_DEPTH);
+
+    // Moving the first accessory of a chain moves the four below it too, and
+    // taking it off again leaves them on it.
+    let moving = scale.accessory(5 * 10);
+    let moved = within("mount_record moving a subtree", 1_000, || {
+        let input = json!({ "item": moving, "host": scale.firearm(7_000) });
+        mount_ops::mount_record(conn, &serde_json::from_value(input).unwrap()).unwrap()
+    });
+    assert_eq!(moved.host.map(|h| h.record), Some(scale.firearm(7_000)));
+    let detail = firearm_ops::get_firearm_detail(conn, scale.firearm(7_000).id()).unwrap();
+    assert_eq!(detail.mount.mounted.len(), CHAIN_DEPTH);
+    within("mount_record unmounting", 1_000, || {
+        let input = json!({ "item": moving, "host": null });
+        mount_ops::mount_record(conn, &serde_json::from_value(input).unwrap()).unwrap()
+    });
+    let detail = accessory_ops::get_accessory(conn, moving.id()).unwrap();
+    assert!(detail.mount.chain.is_empty());
+    assert_eq!(detail.mount.mounted.len(), CHAIN_DEPTH - 1);
+
+    // Creating and updating with a host chosen on the form.
+    let deepest = scale.accessory(CHAIN_DEPTH - 1);
+    let created = within("create_firearm with mountedOn", 1_000, || {
+        let input = FirearmInput {
+            mounted_on: Some(deepest),
+            ..firearm("Mounted Make", "Mounted Model", "PERF-MOUNTED")
+        };
+        firearm_ops::create_firearm(conn, &input, false).unwrap()
+    });
+    let plain =
+        firearm_ops::create_firearm(conn, &firearm("Plain", "Plain", "PERF-PLAIN"), false).unwrap();
+    within("update_firearm with mountedOn", 1_000, || {
+        let input = FirearmInput {
+            mounted_on: Some(RecordRef::Firearm(created.id)),
+            ..firearm("Plain", "Plain", "PERF-PLAIN")
+        };
+        firearm_ops::update_firearm(conn, plain.id, &input, false).unwrap()
+    });
+    let new_accessory = within("create_accessory with mountedOn", 1_000, || {
+        let input = AccessoryInput {
+            mounted_on: Some(scale.firearm(8_000)),
+            ..accessory_input(1, "Leupold", "New Optic")
+        };
+        accessory_ops::create_accessory(conn, &input).unwrap()
+    });
+    within("update_accessory with mountedOn", 1_000, || {
+        let input = AccessoryInput {
+            mounted_on: Some(scale.accessory(9_000)),
+            ..accessory_input(1, "Leupold", "New Optic")
+        };
+        accessory_ops::update_accessory(conn, new_accessory.id, &input).unwrap()
+    });
+
+    // Disposing of a host with 20 records below, all disposed with it.
+    let host = scale.firearm(CHAINS).id();
+    let below = firearm_ops::get_firearm_detail(conn, host).unwrap().mount.mounted;
+    assert_eq!(below.len(), 20);
+    let with: Vec<_> =
+        below.iter().map(|m| json!({ "record": m.label.record, "price": 10 })).collect();
+    let dispose: DisposeInput = serde_json::from_value(json!({
+        "dispositionType": "sold", "recipient": "Jane Doe", "date": "2025-06-15",
+        "price": 400, "withMounted": with,
+    }))
+    .unwrap();
+    within("dispose_firearm with 20 records below", 1_000, || {
+        firearm_ops::dispose_firearm(conn, host, &dispose).unwrap()
+    });
+    let disposed: i64 = conn
+        .query_row("SELECT count(*) FROM accessories WHERE status = 'disposed'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(disposed, 20);
+}
+
+/// The browse and search operations of FR-026 (research.md §22): each within
+/// the 500ms budget.
+#[test]
+fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_10k_records() {
+    let _alone = one_at_a_time();
+    let scale = MountedScale::new();
+    let conn = &scale.db.conn;
+
+    let all = within("list_accessories (no filter)", BUDGET_MS, || {
+        accessory_ops::list_accessories(conn, &ListAccessoriesInput::default()).unwrap()
+    });
+    assert_eq!(count(&all), ACCESSORY_COUNT);
+
+    // The three-character threshold: FTS5 above it, LIKE at one or two.
+    for (query, expected) in [("accxyzzy", Some(1)), ("Leupold", None), ("Acc Model 4242", None)] {
+        let found = within(&format!("list_accessories search {query:?}"), BUDGET_MS, || {
+            accessory_ops::list_accessories(
+                conn,
+                &ListAccessoriesInput { query: Some(query.into()), ..Default::default() },
+            )
+            .unwrap()
+        });
+        assert!(count(&found) >= 1, "{query:?} should match");
+        if let Some(expected) = expected {
+            assert_eq!(count(&found), expected);
+        }
+    }
+    let short = within("list_accessories search \"ac\" (LIKE)", BUDGET_MS, || {
+        accessory_ops::list_accessories(
+            conn,
+            &ListAccessoriesInput { query: Some("ac".into()), ..Default::default() },
+        )
+        .unwrap()
+    });
+    assert!(count(&short) > 1_000);
+
+    for group_by in [
+        AccessoryGroupBy::Kind,
+        AccessoryGroupBy::Make,
+        AccessoryGroupBy::Caliber,
+        AccessoryGroupBy::Cartridge,
+        AccessoryGroupBy::MountedOn,
+    ] {
+        let grouped =
+            within(&format!("list_accessories grouped by {group_by:?}"), BUDGET_MS, || {
+                accessory_ops::list_accessories(
+                    conn,
+                    &ListAccessoriesInput { group_by: Some(group_by), ..Default::default() },
+                )
+                .unwrap()
+            });
+        assert_eq!(count(&grouped), ACCESSORY_COUNT);
+        if group_by == AccessoryGroupBy::MountedOn {
+            // One group for each host (996 firearms, and the accessories
+            // that carry others) and "Not mounted" last.
+            assert!(grouped.groups.len() > 4_000, "{} groups", grouped.groups.len());
+            assert_eq!(grouped.groups.last().map(|g| g.key.as_str()), Some("Not mounted"));
+        }
+    }
+
+    // The collection page with each firearm's host and count of mounted records.
+    let firearms = within("list_firearms with mountedOn and mountedCount", BUDGET_MS, || {
+        firearm_ops::list_firearms(conn, &ListFirearmsInput::default()).unwrap()
+    });
+    let rows: Vec<_> = firearms.groups.iter().flat_map(|g| &g.firearms).collect();
+    assert_eq!(rows.len(), RECORD_COUNT);
+    let head = rows.iter().find(|f| f.id == scale.firearm(0).id()).unwrap();
+    assert_eq!(head.mounted_count, CHAIN_DEPTH);
+    let grouped = within("list_firearms grouped, with mount details", BUDGET_MS, || {
+        firearm_ops::list_firearms(
+            conn,
+            &ListFirearmsInput { group_by: Some(GroupBy::Caliber), ..Default::default() },
+        )
+        .unwrap()
+    });
+    assert!(grouped.groups.len() > 1);
+
+    // The choices for a host and for an item, with and without a query.
+    for (what, input) in [
+        (
+            "hosts for an accessory",
+            json!({ "role": "host", "record": scale.accessory(5), "query": "" }),
+        ),
+        (
+            "hosts for an accessory, searched",
+            json!({ "role": "host", "record": scale.accessory(5), "query": "Model 12" }),
+        ),
+        ("hosts for a new record", json!({ "role": "host", "query": "Glock" })),
+        ("items for a firearm", json!({ "role": "item", "record": scale.firearm(3), "query": "" })),
+        (
+            "items for a firearm, searched",
+            json!({ "role": "item", "record": scale.firearm(3), "query": "PERF-47" }),
+        ),
+        (
+            "items for an accessory, short query",
+            json!({ "role": "item", "record": scale.accessory(2), "query": "a" }),
+        ),
+    ] {
+        let found = within(&format!("list_mount_candidates, {what}"), BUDGET_MS, || {
+            mount_ops::list_mount_candidates(conn, &serde_json::from_value(input).unwrap()).unwrap()
+        });
+        assert!(!found.candidates.is_empty(), "{what} found nothing");
+        assert!(found.candidates.len() <= 50);
+    }
+}
+
+/// research.md §22: the suggestion lists now read both tables, still within
+/// the 50ms of SC-004.
+#[test]
+fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_records() {
+    let _alone = one_at_a_time();
+    let scale = MountedScale::new();
+
+    for (field, text, make) in [
+        (EntryField::Make, "le", None),
+        (EntryField::Make, "", None),
+        (EntryField::Model, "acc model 12", Some("Leupold")),
+        (EntryField::Model, "", None),
+        (EntryField::Cartridge, "9", None),
+        (EntryField::Cartridge, "", None),
+        (EntryField::Caliber, ".2", None),
+    ] {
+        let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
+        let output = within(&format!("suggest_entries({field:?}, {text:?})"), 50, || {
+            entry_ops::suggest_entries(&scale.db.conn, &input).unwrap()
+        });
+        assert!(!output.suggestions.is_empty());
     }
 }

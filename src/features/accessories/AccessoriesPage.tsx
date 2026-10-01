@@ -32,6 +32,33 @@ export interface AccessoriesPageProps {
   onBrowseChange: (next: AccessoryBrowseState) => void;
 }
 
+/** Rows rendered per step; more mount as the end of the list nears, so
+ * 10,000 accessories stay responsive as the collection page's firearms do
+ * (constitution Principle IV; research.md §22). */
+const RENDER_STEP = 150;
+
+/** A group as rendered: possibly only its first rows (progressive
+ * rendering), with `total` still counting all of them. */
+interface VisibleGroup extends AccessoryGroup {
+  total: number;
+}
+
+/** The first `limit` rows across the groups, in order. */
+function truncateGroups(groups: AccessoryGroup[], limit: number): VisibleGroup[] {
+  const out: VisibleGroup[] = [];
+  let remaining = limit;
+  for (const group of groups) {
+    if (remaining <= 0) break;
+    out.push({
+      ...group,
+      accessories: group.accessories.slice(0, remaining),
+      total: group.accessories.length,
+    });
+    remaining -= group.accessories.length;
+  }
+  return out;
+}
+
 /** The grouping menu's choices (FR-017), in order. */
 const GROUP_BY_OPTIONS: GroupByOption<AccessoryGroupBy>[] = [
   { value: "kind", label: "Kind" },
@@ -55,7 +82,9 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
   const [groups, setGroups] = useState<AccessoryGroup[] | null>(null);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [renderLimit, setRenderLimit] = useState(RENDER_STEP);
   const searchRef = useRef<HTMLInputElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const query = useDebounced(browse.query.trim(), SEARCH_DEBOUNCE_MS);
 
@@ -90,11 +119,37 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     };
   }, [query, browse.groupBy, browse.includeDisposed, revision]);
 
+  useEffect(() => {
+    setRenderLimit(RENDER_STEP);
+  }, [query, browse.groupBy, browse.includeDisposed]);
+
   useSearchShortcut(searchRef);
 
   const activeCount = accessories.filter((a) => a.status === "active").length;
   const disposedCount = accessories.length - activeCount;
   const shown = useMemo(() => groups?.flatMap((group) => group.accessories) ?? [], [groups]);
+  const visibleGroups = useMemo(
+    () => truncateGroups(groups ?? [], renderLimit),
+    [groups, renderLimit],
+  );
+
+  // Mount the next batch of rows as the end of the list scrolls into view.
+  const total = shown.length;
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || renderLimit >= total || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRenderLimit((limit) => limit + RENDER_STEP);
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [renderLimit, total]);
+
   const grouped = browse.groupBy !== undefined;
   const openRecord = (id: number) => open({ page: "accessory", id, from: "accessories" });
 
@@ -197,10 +252,11 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
 
       {shown.length > 0 &&
         (browse.view === "list" ? (
-          <AccessoryList groups={groups ?? []} groupBy={browse.groupBy} onSelect={openRecord} />
+          <AccessoryList groups={visibleGroups} groupBy={browse.groupBy} onSelect={openRecord} />
         ) : (
-          <AccessoryTiles groups={groups ?? []} grouped={grouped} onSelect={openRecord} />
+          <AccessoryTiles groups={visibleGroups} grouped={grouped} onSelect={openRecord} />
         ))}
+      {renderLimit < total && <div ref={sentinelRef} className="hd-browse__more" />}
     </>
   );
 }
@@ -239,7 +295,7 @@ function PageHeader({
 }
 
 interface LayoutProps {
-  groups: AccessoryGroup[];
+  groups: VisibleGroup[];
   onSelect: (id: number) => void;
 }
 
@@ -266,7 +322,7 @@ function sharedHostNames(groups: AccessoryGroup[]): Set<string> {
 /** A group's heading and its count. Grouped by Mounted on, a host's heading is
  * its name as a link, with its serial number in muted text when another host
  * has the same name. */
-function AccessoryGroupHeading({ group, shared }: { group: AccessoryGroup; shared: Set<string> }) {
+function AccessoryGroupHeading({ group, shared }: { group: VisibleGroup; shared: Set<string> }) {
   const { host } = group;
   return (
     <h2 className="hd-group__title">
@@ -276,7 +332,7 @@ function AccessoryGroupHeading({ group, shared }: { group: AccessoryGroup; share
           <span className="hd-serial">{host.serialNumber}</span>
         </span>
       )}
-      <span className="hd-group__count hd-num">{group.accessories.length}</span>
+      <span className="hd-group__count hd-num">{group.total}</span>
     </h2>
   );
 }

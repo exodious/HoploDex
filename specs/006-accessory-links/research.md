@@ -342,10 +342,10 @@ in §1, because every later decision feeds it.
     `host: RecordLabel`. Groups are sorted by the host's name, then by kind
     and id for a stable order.
   - **Group building** uses a `HashMap` from key to group index.
-    `list_firearms` currently finds the group with a linear search for each
+    `list_firearms` used to find the group with a linear search for each
     row. That is fine for its few groups, but grouping 10,000 accessories by
-    host could produce thousands of groups. `list_firearms` gets the same
-    change, which is harmless.
+    host could produce thousands of groups. `list_firearms` has the same
+    map, which is harmless.
 - **Rationale**: FR-016 to FR-018 and US4. Mirroring `list_firearms` keeps
   the two pages' behaviors identical (constitution III). The collection
   page's search is unchanged: `firearms_fts` gains nothing from mounts

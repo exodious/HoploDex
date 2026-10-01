@@ -273,6 +273,20 @@ npx vitest run src/features/firearms/FirearmForm.test.tsx                       
 npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                       # one E2E spec
 ```
 
+The performance budgets (search 500 ms, actions 1 s, suggestions 50 ms at
+10,000 records) are timed only in a release build. Run them one at a time so
+that none is timed while another seeds, and read the timings with
+`--nocapture`:
+
+```bash
+CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.toml \
+  --release --test performance_test -- --nocapture --test-threads=1
+```
+
+`panic=unwind` is needed because `cargo test --release` builds the library
+for the tests with unwinding and for the binary with the profile's
+`panic = "abort"`, and the two then fail to link.
+
 `npm run test:e2e` builds a release binary with `cargo build --release
 --features custom-protocol,mock-keyring` and drives it via `tauri-driver`.
 That binary embeds whatever is in `dist/`, so **run `npm run build` first**

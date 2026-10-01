@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
+import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectionObserver";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
@@ -872,5 +873,37 @@ describe("AccessoriesPage search and grouping (US4)", () => {
       groupBy: "caliber",
       includeDisposed: true,
     });
+  });
+  // constitution IV, research.md §22: as the collection page, only the first
+  // rows mount, the rest as the end of the list nears.
+  describe("with thousands of accessories", () => {
+    beforeEach(() => stubIntersectionObserver());
+    afterEach(() => vi.unstubAllGlobals());
+
+    const many = Array.from({ length: 400 }, (_, i) =>
+      summary({ id: 100 + i, make: "Make", model: `Model ${i}` }),
+    );
+
+    it.each(["list", "tile"] as const)(
+      "mounts a batch of rows at a time in the %s view, and the count is still the whole group",
+      async (view) => {
+        renderPage({ view, groupBy: "kind" }, { all: many, active: many });
+        await screen.findByText("Make Model 0 · Optic");
+
+        const rows = () =>
+          view === "list"
+            ? screen.getAllByRole("row").length - 1
+            : screen.getAllByRole("listitem").length;
+        expect(rows()).toBe(150);
+        expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("All400");
+
+        scrollAnchorTo(500);
+        await waitFor(() => expect(rows()).toBe(300));
+        scrollAnchorTo(500);
+        scrollAnchorTo(500);
+        await waitFor(() => expect(rows()).toBe(400));
+        expect(screen.getByText("Make Model 399 · Optic")).toBeInTheDocument();
+      },
+    );
   });
 });
