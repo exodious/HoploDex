@@ -20,6 +20,19 @@ A session prompt that works: *"Do step N of docs/test-speed-plan.md."*
 Steps 1–2 (Rust) and 3–7 (E2E) are independent tracks, and either can go
 first. Within a track, do the steps in order unless a step says otherwise.
 
+**Issue #29 (one embedded WebDriver on every platform) sits inside the E2E
+track.** It replaces `tauri-driver` with a WebDriver server compiled into E2E
+builds, which rewrites the driver, port and relaunch parts of step 5. The
+E2E order is therefore:
+
+1. Steps 3 and 4. Neither depends on the driver, and step 3 creates the E2E
+   Cargo feature #29 reuses.
+2. #29's Linux trial.
+3. Steps 5, 6 and 7.
+
+If #29's trial fails, do step 5 as written. Run `gh issue view 29` before
+starting step 5 to see where it stands.
+
 ## Status
 
 | Step | What | Est. saving | Depends on | State |
@@ -28,7 +41,7 @@ first. Within a track, do the steps in order unless a step says otherwise.
 | 2 | cargo-nextest | −55 s Rust | 1 | todo |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | todo |
 | 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | todo |
-| 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended | todo |
+| 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled | todo |
 | 6 | Split the long E2E spec files | balance for 5 | 5 | todo |
 | 7 | Faster release profile for E2E builds | −50 s per rebuild | – | todo |
 | 8 | Test-level policy for new features (SDD) | stops E2E growth | – | todo |
@@ -241,6 +254,11 @@ E2E-only environment variable behind `#[cfg(feature = "mock-keyring")]`),
      today. Reusing it for this is a misnomer, so the clean choice is a new
      `e2e` feature that implies `mock-keyring`. Then update the build in
      `wdio.conf.ts` and `runSeed`, and the feature list in DEVELOPMENT.md.
+   - Issue #29 also needs an E2E-only feature, to gate its embedded WebDriver
+     server, which must never reach a shipped build. Make this the one
+     feature both use: name it for E2E builds generally, not for the idle
+     clock. If #29 has already landed, reuse its feature instead of adding
+     another.
 2. Set the variable for us9 in `wdio.conf.ts`'s `beforeSession` (only when the
    spec is us9, like the `-no-keyring` rule), and cut the test's 90 s
    `waitUntil` and 150 s `.timeout()` to fit.
@@ -309,6 +327,21 @@ by roughly max(longest spec, total ÷ N).
 **Read.** `e2e/wdio.conf.ts`, `e2e/run-e2e.mjs`, `e2e/support/realInput.ts`
 and `e2e/scripts/x11-input.py` (how real input finds the display and
 window), DEVELOPMENT.md "Test" and "Test isolation".
+
+**First, check issue #29** (`gh issue view 29`). This step is written for
+`tauri-driver`. If #29 has replaced it with the embedded WebDriver server:
+- **Point 2 becomes simpler.** Each worker launches its own app with its own
+  `TAURI_WEBDRIVER_PORT` and points `config.port` at it. There is no
+  tauri-driver, no native port and no `findNativeDriver`.
+- **Relaunching moves to the harness.** Relaunches (`reloadSession()` in us4
+  and us7) go through whatever #29 settled on, `@wdio/tauri-service` or a
+  harness helper, and that relaunch must reuse the worker's port and display.
+- **The rest still applies:** one build in `onPrepare`, a display per worker
+  (the app still renders under X, and `realInput.ts` still needs it),
+  `maxInstances`, and the isolation check.
+
+If #29 is still open and untried, ask the user whether to wait for it or go
+ahead with `tauri-driver`, which means rewriting point 2 later.
 
 **Do.**
 1. **One build, before any worker.** Move `cargo build --release ...` out of
