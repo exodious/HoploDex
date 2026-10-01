@@ -52,6 +52,16 @@ export const PLATE_ENTRIES: PlateEntry[] = [
     lengthMm: 1010,
     barCm: 30,
   },
+  // A rifle suppressor: its 38 mm (1.5 in) tube at the drawing's
+  // proportions makes it about 250 mm overall. The year is Hiram Percy
+  // Maxim's patent, the first silencer sold commercially.
+  {
+    key: "suppressor",
+    title: "Suppressor.",
+    caption: "Steel tube, stacked baffles. 1909.",
+    lengthMm: 250,
+    barCm: 10,
+  },
   // A .308-class rifle cartridge: 71 mm overall. The year is the 8 mm
   // Lebel's, the first military cartridge to pair a drawn brass case and
   // smokeless powder with a jacketed bullet.
@@ -134,6 +144,12 @@ export function drawingBounds(key: keyof typeof DRAWINGS): [number, number, numb
         case "C":
           xs.push(next());
           ys.push(next());
+          xs.push(next());
+          ys.push(next());
+          x = next();
+          y = next();
+          break;
+        case "S":
           xs.push(next());
           ys.push(next());
           x = next();
