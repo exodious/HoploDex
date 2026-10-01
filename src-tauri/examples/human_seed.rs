@@ -47,7 +47,7 @@ use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups::{self, BackupJob, resolve_folder as backup_folder};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::services::spreadsheet::{ACCESSORY_COLUMNS, FIREARM_COLUMNS};
 use rusqlite::Connection;
 
 #[path = "support/sandbox.rs"]
@@ -1755,9 +1755,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
 
     let row = |cells: &[(&str, &str)]| -> Vec<String> {
         for (name, _) in cells {
-            assert!(COLUMNS.contains(name), "unknown spreadsheet column {name}");
+            assert!(FIREARM_COLUMNS.contains(name), "unknown spreadsheet column {name}");
         }
-        COLUMNS
+        FIREARM_COLUMNS
             .iter()
             .map(|column| {
                 cells.iter().find(|(name, _)| name == column).map_or("", |(_, v)| *v).to_owned()
@@ -1766,7 +1766,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     };
     let write = |name: &str, rows: Vec<Vec<String>>| {
         let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
-        writer.write_record(COLUMNS).expect("write the header");
+        writer.write_record(FIREARM_COLUMNS).expect("write the header");
         for record in rows {
             writer.write_record(record).expect("write a row");
         }
@@ -1775,10 +1775,13 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     // specs/004-cartridges-action-types FR-023: a sheet exported before
     // `cartridge` and `action_type` existed, so its header lacks both.
     let write_without = |name: &str, dropped: &[&str], rows: Vec<Vec<String>>| {
-        let kept: Vec<usize> =
-            (0..COLUMNS.len()).filter(|&index| !dropped.contains(&COLUMNS[index])).collect();
+        let kept: Vec<usize> = (0..FIREARM_COLUMNS.len())
+            .filter(|&index| !dropped.contains(&FIREARM_COLUMNS[index]))
+            .collect();
         let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
-        writer.write_record(kept.iter().map(|&index| COLUMNS[index])).expect("write the header");
+        writer
+            .write_record(kept.iter().map(|&index| FIREARM_COLUMNS[index]))
+            .expect("write the header");
         for record in rows {
             writer.write_record(kept.iter().map(|&index| &record[index])).expect("write a row");
         }
@@ -2285,7 +2288,245 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         ])],
     );
 
+    write_accessory_import_samples(dir, &row);
+
+    // specs/006-accessory-links US5-7: a sheet exported before this feature
+    // has neither `record_id` nor `mounted_on`, and imports as it always did.
+    write_without(
+        "import-before-accessories.csv",
+        &["record_id", "mounted_on"],
+        vec![row(&[
+            ("make", "Remington"),
+            ("model", "870 Express"),
+            ("serial_number", "A-001"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", "12 gauge"),
+            ("firearm_type", "Shotgun"),
+            ("notes", "From a sheet exported before accessories were recorded."),
+        ])],
+    );
+
     dir.to_path_buf()
+}
+
+/// Builds a sample row from named cells.
+type RowBuilder = dyn Fn(&[(&str, &str)]) -> Vec<String>;
+
+/// Record identifiers the accessory samples name each other by. They are
+/// fixed so a sample's rows can be mounted on one another; they exist in no
+/// seeded database, so no sample matches a seeded record by identifier.
+mod sample_ids {
+    pub const RIFLE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c01";
+    pub const SUPPRESSOR: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c02";
+    pub const OPTIC: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c11";
+    pub const MAGAZINE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c12";
+    pub const BARREL: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c13";
+    pub const SLING: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c14";
+    pub const UPPER: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c15";
+    pub const RAIL: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c16";
+    /// Held by no record anywhere.
+    pub const NOBODY: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7cff";
+    pub const WARN_A: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c21";
+    pub const WARN_DISPOSED: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c22";
+    pub const WARN_LOOP_1: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c23";
+    pub const WARN_LOOP_2: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c24";
+    pub const WARN_ITEM: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c25";
+    pub const ERROR_TWICE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c31";
+}
+
+/// specs/006-accessory-links US5: the accessory table and the record
+/// identifier and mount columns of both tables.
+/// - `import-mounts-firearms.csv` + `import-accessories.csv`: pick the two
+///   files together. A rifle, an optic on it, a suppressor on an upper, and
+///   more; every accessory column but `photo_filenames` is filled.
+/// - `import-collection.xlsx`: both tables as the two sheets of one workbook.
+/// - `import-accessory-mount-warnings.csv`: each of the four mount warnings
+///   and a disposed record that can't be mounted.
+/// - `import-accessory-errors.csv`: accessory row errors.
+fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
+    use sample_ids as id;
+
+    let row = |cells: &[(&str, &str)]| -> Vec<String> {
+        for (name, _) in cells {
+            assert!(ACCESSORY_COLUMNS.contains(name), "unknown spreadsheet column {name}");
+        }
+        ACCESSORY_COLUMNS
+            .iter()
+            .map(|column| {
+                cells.iter().find(|(name, _)| name == column).map_or("", |(_, v)| *v).to_owned()
+            })
+            .collect()
+    };
+    let write = |name: &str, columns: &[&str], rows: &[Vec<String>]| {
+        let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
+        writer.write_record(columns).expect("write the header");
+        for record in rows {
+            writer.write_record(record).expect("write a row");
+        }
+        writer.flush().expect("flush an import sample");
+    };
+
+    let firearms = vec![
+        firearm_row(&[
+            ("record_id", id::RIFLE),
+            ("make", "Daniel Defense"),
+            ("model", "DDM4 V7"),
+            ("serial_number", "DD-70011"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", "5.56mm"),
+            ("firearm_type", "Rifle"),
+            ("estimated_value", "1800"),
+        ]),
+        // A firearm on an accessory (an upper) of the accessory file.
+        firearm_row(&[
+            ("record_id", id::SUPPRESSOR),
+            ("make", "Dead Air"),
+            ("model", "Wolfman"),
+            ("serial_number", "DA-60021"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".30"),
+            ("firearm_type", "Suppressor"),
+            ("estimated_value", "950"),
+            ("mounted_on", id::UPPER),
+        ]),
+    ];
+    write("import-mounts-firearms.csv", FIREARM_COLUMNS, &firearms);
+
+    let accessories = vec![
+        // Every column but photo_filenames, on an optic mounted on the rifle.
+        row(&[
+            ("record_id", id::OPTIC),
+            ("kind", "Optic"),
+            ("make", "Leupold"),
+            ("model", "VX-5HD"),
+            ("serial_number", "OP-5521"),
+            ("caliber", ".308 Winchester"),
+            ("cartridge", ".308 Winchester"),
+            ("notes", "Mounted for the match season."),
+            ("status", "active"),
+            ("estimated_value", "1100"),
+            ("acquisition_source", "Online"),
+            ("acquisition_date", "2023-05-01"),
+            ("acquisition_price", "1000"),
+            ("insurance_policy_name", "Vault Schedule"),
+            ("scheduled_coverage_amount", "900"),
+            ("mounted_on", id::RIFLE),
+        ]),
+        // A blank caliber, worked out from the cartridge and listed in the
+        // report.
+        row(&[
+            ("record_id", id::MAGAZINE),
+            ("kind", "Magazine"),
+            ("make", "Magpul"),
+            ("model", "PMAG"),
+            ("cartridge", "9x19mm Parabellum"),
+            ("estimated_value", "20"),
+        ]),
+        row(&[("record_id", id::BARREL), ("kind", "Barrel"), ("make", "Criterion")]),
+        // A disposed accessory, with its disposition.
+        row(&[
+            ("record_id", id::SLING),
+            ("kind", "Sling"),
+            ("make", "Blue Force Gear"),
+            ("status", "disposed"),
+            ("disposition_type", "sold"),
+            ("disposition_recipient", "Sam Example"),
+            ("disposition_date", "2025-07-01"),
+            ("disposition_price", "15"),
+        ]),
+        row(&[
+            ("record_id", id::UPPER),
+            ("kind", "Upper receiver"),
+            ("make", "Daniel Defense"),
+            ("model", "DDM4 Upper"),
+            ("estimated_value", "700"),
+        ]),
+        // An accessory on an accessory.
+        row(&[
+            ("record_id", id::RAIL),
+            ("kind", "Mount or rail"),
+            ("make", "ADM"),
+            ("mounted_on", id::OPTIC),
+        ]),
+        // No identifier: gets a new one. The kind is matched ignoring case.
+        row(&[("kind", "case"), ("make", "Pelican"), ("model", "1750")]),
+    ];
+    write("import-accessories.csv", ACCESSORY_COLUMNS, &accessories);
+
+    // Both tables in one workbook (FR-022), the accessory sheet mounted on
+    // the firearm sheet and the reverse.
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    for (name, columns, rows) in
+        [("Firearms", FIREARM_COLUMNS, &firearms), ("Accessories", ACCESSORY_COLUMNS, &accessories)]
+    {
+        let sheet = workbook.add_worksheet();
+        sheet.set_name(name).expect("name a sheet");
+        for (c, header) in columns.iter().enumerate() {
+            sheet.write_string(0, c as u16, *header).expect("write a header");
+        }
+        for (r, record) in rows.iter().enumerate() {
+            for (c, cell) in record.iter().enumerate() {
+                sheet.write_string((r + 1) as u32, c as u16, cell).expect("write a cell");
+            }
+        }
+    }
+    workbook.save(dir.join("import-collection.xlsx")).expect("save the sample workbook");
+
+    // Each mount warning, in the report's Warnings (FR-023). Every row
+    // imports, unmounted.
+    let disposed = [
+        ("status", "disposed"),
+        ("disposition_type", "gifted"),
+        ("disposition_recipient", "Sam Example"),
+        ("disposition_date", "2025-07-01"),
+    ];
+    let mut host_gone = vec![("record_id", id::WARN_DISPOSED), ("kind", "Sling")];
+    host_gone.extend_from_slice(&disposed);
+    let mut item_gone = vec![("record_id", id::WARN_ITEM), ("kind", "Optic")];
+    item_gone.extend_from_slice(&disposed);
+    item_gone.push(("mounted_on", id::WARN_A));
+    write(
+        "import-accessory-mount-warnings.csv",
+        ACCESSORY_COLUMNS,
+        &[
+            // No record has this identifier.
+            row(&[("record_id", id::WARN_A), ("kind", "Optic"), ("mounted_on", id::NOBODY)]),
+            row(&host_gone),
+            // Its host is disposed.
+            row(&[("kind", "Optic"), ("mounted_on", id::WARN_DISPOSED)]),
+            // Not an identifier at all.
+            row(&[("kind", "Optic"), ("mounted_on", "not-a-record-id")]),
+            // Two rows mounted on each other: the later is left unmounted.
+            row(&[
+                ("record_id", id::WARN_LOOP_1),
+                ("kind", "Light or laser"),
+                ("mounted_on", id::WARN_LOOP_2),
+            ]),
+            row(&[
+                ("record_id", id::WARN_LOOP_2),
+                ("kind", "Light or laser"),
+                ("mounted_on", id::WARN_LOOP_1),
+            ]),
+            // A disposed record is never mounted.
+            row(&item_gone),
+        ],
+    );
+
+    write(
+        "import-accessory-errors.csv",
+        ACCESSORY_COLUMNS,
+        &[
+            row(&[("make", "No Kind Given")]),
+            row(&[("kind", "Frobnicator"), ("make", "Unknown Kind")]),
+            row(&[("kind", "Optic"), ("make", "Fractional"), ("estimated_value", "12.50")]),
+            row(&[("kind", "Optic"), ("make", "Bad Date"), ("acquisition_date", "next week")]),
+            row(&[("record_id", "xyz"), ("kind", "Optic"), ("make", "Bad Record ID")]),
+            row(&[("record_id", id::ERROR_TWICE), ("kind", "Optic"), ("make", "First Use")]),
+            row(&[("record_id", id::ERROR_TWICE), ("kind", "Optic"), ("make", "Second Use")]),
+            row(&[("kind", "Optic"), ("make", "Disposed Without Details"), ("status", "disposed")]),
+            row(&[("kind", "Optic"), ("make", "Good Row Among The Bad")]),
+        ],
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -71,6 +71,21 @@ impl MountGraph {
         Ok(graph)
     }
 
+    /// Records in this graph that `item` is now on `host` (or on nothing),
+    /// after the mount was saved, so a run of mounts (an import's) checks
+    /// each against the ones before it without loading the table again.
+    pub fn place(&mut self, item: RecordRef, host: Option<RecordRef>) {
+        if let Some(old) = self.host_of.remove(&item)
+            && let Some(items) = self.items_of.get_mut(&old)
+        {
+            items.retain(|i| *i != item);
+        }
+        if let Some(host) = host {
+            self.host_of.insert(item, host);
+            self.items_of.entry(host).or_default().push(item);
+        }
+    }
+
     /// What the item is mounted on directly.
     pub fn host_of(&self, item: RecordRef) -> Option<RecordRef> {
         self.host_of.get(&item).copied()

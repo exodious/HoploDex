@@ -32,9 +32,12 @@ impl SpreadsheetFormat {
 /// (contracts/spreadsheet-format.md's "New columns");
 /// specs/004-cartridges-action-types adds `cartridge` and `action_type`
 /// directly after `caliber` (FR-022); specs/005-regulated-item-types adds
-/// four registration columns after `original_serial_number` (FR-019). Import finds columns by header, not by
-/// position, so this order is the export's only.
-pub const COLUMNS: &[&str] = &[
+/// four registration columns after `original_serial_number` (FR-019);
+/// specs/006-accessory-links puts `record_id` first and `mounted_on` before
+/// `photo_filenames`. Import finds columns by header, not by position, so
+/// this order is the export's only.
+pub const FIREARM_COLUMNS: &[&str] = &[
+    "record_id",
     "make",
     "model",
     "nickname",
@@ -74,6 +77,34 @@ pub const COLUMNS: &[&str] = &[
     "registration_form",
     "registration_approved",
     "registered_to",
+    "mounted_on",
+    "photo_filenames",
+];
+
+/// The accessory table's columns, in export order
+/// (specs/006-accessory-links contracts/spreadsheet-format.md "Accessory
+/// table: columns"). Read by header on import, like the firearm table's.
+pub const ACCESSORY_COLUMNS: &[&str] = &[
+    "record_id",
+    "kind",
+    "make",
+    "model",
+    "serial_number",
+    "caliber",
+    "cartridge",
+    "notes",
+    "status",
+    "estimated_value",
+    "acquisition_source",
+    "acquisition_date",
+    "acquisition_price",
+    "disposition_type",
+    "disposition_recipient",
+    "disposition_date",
+    "disposition_price",
+    "insurance_policy_name",
+    "scheduled_coverage_amount",
+    "mounted_on",
     "photo_filenames",
 ];
 
@@ -81,6 +112,9 @@ pub const COLUMNS: &[&str] = &[
 /// string for an absent value), per contracts/spreadsheet-format.md.
 #[derive(Debug, Clone, Default)]
 pub struct FirearmExportRow {
+    /// specs/006-accessory-links FR-019: the record's identifier, never
+    /// blank.
+    pub record_id: String,
     pub make: String,
     pub model: String,
     pub nickname: String,
@@ -130,12 +164,16 @@ pub struct FirearmExportRow {
     pub registration_form: String,
     pub registration_approved: String,
     pub registered_to: String,
+    /// The direct host's identifier, a firearm's or an accessory's, or blank
+    /// (FR-023).
+    pub mounted_on: String,
     pub photo_filenames: String,
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 40] {
+    fn as_fields(&self) -> [&str; 42] {
         [
+            &self.record_id,
             &self.make,
             &self.model,
             &self.nickname,
@@ -175,6 +213,63 @@ impl FirearmExportRow {
             &self.registration_form,
             &self.registration_approved,
             &self.registered_to,
+            &self.mounted_on,
+            &self.photo_filenames,
+        ]
+    }
+}
+
+/// One exported accessory row, every cell display text
+/// (contracts/spreadsheet-format.md "Accessory table: columns").
+#[derive(Debug, Clone, Default)]
+pub struct AccessoryExportRow {
+    pub record_id: String,
+    /// The kind's name, e.g. `Optic`.
+    pub kind: String,
+    pub make: String,
+    pub model: String,
+    pub serial_number: String,
+    pub caliber: String,
+    pub cartridge: String,
+    pub notes: String,
+    pub status: String,
+    pub estimated_value: String,
+    pub acquisition_source: String,
+    pub acquisition_date: String,
+    pub acquisition_price: String,
+    pub disposition_type: String,
+    pub disposition_recipient: String,
+    pub disposition_date: String,
+    pub disposition_price: String,
+    pub insurance_policy_name: String,
+    pub scheduled_coverage_amount: String,
+    pub mounted_on: String,
+    pub photo_filenames: String,
+}
+
+impl AccessoryExportRow {
+    fn as_fields(&self) -> [&str; 21] {
+        [
+            &self.record_id,
+            &self.kind,
+            &self.make,
+            &self.model,
+            &self.serial_number,
+            &self.caliber,
+            &self.cartridge,
+            &self.notes,
+            &self.status,
+            &self.estimated_value,
+            &self.acquisition_source,
+            &self.acquisition_date,
+            &self.acquisition_price,
+            &self.disposition_type,
+            &self.disposition_recipient,
+            &self.disposition_date,
+            &self.disposition_price,
+            &self.insurance_policy_name,
+            &self.scheduled_coverage_amount,
+            &self.mounted_on,
             &self.photo_filenames,
         ]
     }
@@ -186,6 +281,9 @@ impl FirearmExportRow {
 /// import per FR-019.
 #[derive(Debug, Clone, Default)]
 pub struct RawImportRow {
+    /// specs/006-accessory-links FR-022: the identifier cell, as found
+    /// (trimmed, `None` when blank or the column is absent).
+    pub record_id: Option<String>,
     pub make: Option<String>,
     pub model: Option<String>,
     pub nickname: Option<String>,
@@ -225,6 +323,33 @@ pub struct RawImportRow {
     pub registration_form: Option<String>,
     pub registration_approved: Option<String>,
     pub registered_to: Option<String>,
+    /// The host's identifier cell (FR-023), as found.
+    pub mounted_on: Option<String>,
+}
+
+/// One raw accessory row, as [`RawImportRow`] is one raw firearm row.
+#[derive(Debug, Clone, Default)]
+pub struct RawAccessoryRow {
+    pub record_id: Option<String>,
+    pub kind: Option<String>,
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+    pub caliber: Option<String>,
+    pub cartridge: Option<String>,
+    pub notes: Option<String>,
+    pub status: Option<String>,
+    pub estimated_value: Option<String>,
+    pub acquisition_source: Option<String>,
+    pub acquisition_date: Option<String>,
+    pub acquisition_price: Option<String>,
+    pub disposition_type: Option<String>,
+    pub disposition_recipient: Option<String>,
+    pub disposition_date: Option<String>,
+    pub disposition_price: Option<String>,
+    pub insurance_policy_name: Option<String>,
+    pub scheduled_coverage_amount: Option<String>,
+    pub mounted_on: Option<String>,
 }
 
 fn non_blank(value: &str) -> Option<String> {
@@ -232,48 +357,77 @@ fn non_blank(value: &str) -> Option<String> {
     if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
 }
 
-/// Which `COLUMNS` entry each column of the file is, by header (research.md
-/// §12): trimmed and in any letter case. A header that is not in `COLUMNS`
-/// maps to `None` and its cells are ignored; a `COLUMNS` entry the file does
-/// not have reads as blank on every row.
-struct HeaderMap(Vec<Option<usize>>);
+/// Which column of a table each column of the file is, by header
+/// (research.md §12): trimmed and in any letter case. A header that is not a
+/// known column maps to `None` and its cells are ignored; a known column the
+/// file does not have reads as blank on every row.
+struct HeaderMap {
+    columns: &'static [&'static str],
+    /// For each column of the file, its index in `columns`.
+    map: Vec<Option<usize>>,
+}
+
+/// A header cell as compared: a byte-order mark starts some spreadsheets'
+/// first header.
+fn header_name(header: &str) -> String {
+    header.trim_start_matches('\u{feff}').trim().to_lowercase()
+}
 
 impl HeaderMap {
     /// Fails, naming the column, when two headers are the same known column
     /// (contracts/spreadsheet-format.md "Columns are read by header").
-    fn from_headers<'a>(headers: impl Iterator<Item = &'a str>) -> Result<Self, CommandError> {
-        let mut seen = [false; COLUMNS.len()];
+    fn new<'a>(
+        columns: &'static [&'static str],
+        headers: impl Iterator<Item = &'a str>,
+    ) -> Result<Self, CommandError> {
+        let mut seen = vec![false; columns.len()];
         let mut map = Vec::new();
-        for (index, header) in headers.enumerate() {
-            // A byte-order mark starts some spreadsheets' first header.
-            let header = header.trim_start_matches('\u{feff}').trim().to_lowercase();
-            let column = COLUMNS.iter().position(|known| *known == header);
+        for header in headers {
+            let header = header_name(header);
+            let column = columns.iter().position(|known| *known == header);
             if let Some(column) = column
                 && std::mem::replace(&mut seen[column], true)
             {
                 return Err(CommandError::new(
                     "VALIDATION_ERROR",
-                    format!("The import file has two \"{}\" columns.", COLUMNS[column]),
+                    format!("The import file has two \"{}\" columns.", columns[column]),
                 ));
             }
-            debug_assert_eq!(map.len(), index);
             map.push(column);
         }
-        Ok(Self(map))
+        Ok(Self { columns, map })
     }
 
-    fn row(&self, cells: &[String]) -> RawImportRow {
-        let mut by_column: [Option<String>; COLUMNS.len()] = std::array::from_fn(|_| None);
-        for (cell, column) in cells.iter().zip(&self.0) {
+    /// The row's cells by position in `columns`, blank cells as `None`.
+    fn cells(&self, cells: &[String]) -> Cells {
+        let mut by_column: Vec<Option<String>> = vec![None; self.columns.len()];
+        for (cell, column) in cells.iter().zip(&self.map) {
             if let Some(column) = column {
                 by_column[*column] = non_blank(cell);
             }
         }
-        let mut take = |name: &str| {
-            let column = COLUMNS.iter().position(|known| *known == name).expect("a known column");
-            by_column[column].take()
-        };
+        Cells { columns: self.columns, by_column }
+    }
+}
+
+/// One row's cells, taken out by column name.
+struct Cells {
+    columns: &'static [&'static str],
+    by_column: Vec<Option<String>>,
+}
+
+impl Cells {
+    fn take(&mut self, name: &str) -> Option<String> {
+        let column = self.columns.iter().position(|known| *known == name).expect("a known column");
+        self.by_column[column].take()
+    }
+}
+
+impl RawImportRow {
+    fn from_cells(mut cells: Cells) -> Self {
+        let mut take = |name: &str| cells.take(name);
         RawImportRow {
+            record_id: take("record_id"),
             make: take("make"),
             model: take("model"),
             nickname: take("nickname"),
@@ -313,6 +467,35 @@ impl HeaderMap {
             registration_form: take("registration_form"),
             registration_approved: take("registration_approved"),
             registered_to: take("registered_to"),
+            mounted_on: take("mounted_on"),
+        }
+    }
+}
+
+impl RawAccessoryRow {
+    fn from_cells(mut cells: Cells) -> Self {
+        let mut take = |name: &str| cells.take(name);
+        RawAccessoryRow {
+            record_id: take("record_id"),
+            kind: take("kind"),
+            make: take("make"),
+            model: take("model"),
+            serial_number: take("serial_number"),
+            caliber: take("caliber"),
+            cartridge: take("cartridge"),
+            notes: take("notes"),
+            status: take("status"),
+            estimated_value: take("estimated_value"),
+            acquisition_source: take("acquisition_source"),
+            acquisition_date: take("acquisition_date"),
+            acquisition_price: take("acquisition_price"),
+            disposition_type: take("disposition_type"),
+            disposition_recipient: take("disposition_recipient"),
+            disposition_date: take("disposition_date"),
+            disposition_price: take("disposition_price"),
+            insurance_policy_name: take("insurance_policy_name"),
+            scheduled_coverage_amount: take("scheduled_coverage_amount"),
+            mounted_on: take("mounted_on"),
         }
     }
 }
@@ -413,109 +596,235 @@ pub fn parse_scaled_decimal(
     Ok(Some(scaled))
 }
 
-pub fn write_spreadsheet(
+fn export_error(what: &str, e: impl std::fmt::Display) -> CommandError {
+    CommandError::new("INTERNAL_ERROR", format!("{what}: {e}"))
+}
+
+fn write_csv_table<const N: usize>(
     path: &Path,
-    format: SpreadsheetFormat,
-    rows: &[FirearmExportRow],
+    columns: &[&str],
+    rows: impl Iterator<Item = [String; N]>,
 ) -> Result<(), CommandError> {
-    match format {
-        SpreadsheetFormat::Csv => write_csv(path, rows),
-        SpreadsheetFormat::Xlsx => write_xlsx(path, rows),
-    }
-}
-
-fn write_csv(path: &Path, rows: &[FirearmExportRow]) -> Result<(), CommandError> {
-    let mut writer = csv::Writer::from_path(path).map_err(|e| {
-        CommandError::new("INTERNAL_ERROR", format!("Could not create the export file: {e}"))
-    })?;
-    writer.write_record(COLUMNS).map_err(|e| {
-        CommandError::new("INTERNAL_ERROR", format!("Failed writing export header: {e}"))
-    })?;
+    let mut writer = csv::Writer::from_path(path)
+        .map_err(|e| export_error("Could not create the export file", e))?;
+    writer.write_record(columns).map_err(|e| export_error("Failed writing export header", e))?;
     for row in rows {
-        writer.write_record(row.as_fields()).map_err(|e| {
-            CommandError::new("INTERNAL_ERROR", format!("Failed writing export row: {e}"))
-        })?;
+        writer.write_record(&row).map_err(|e| export_error("Failed writing export row", e))?;
     }
-    writer.flush().map_err(|e| {
-        CommandError::new("INTERNAL_ERROR", format!("Failed saving the export file: {e}"))
-    })
+    writer.flush().map_err(|e| export_error("Failed saving the export file", e))
 }
 
-fn write_xlsx(path: &Path, rows: &[FirearmExportRow]) -> Result<(), CommandError> {
-    let mut workbook = Workbook::new();
+/// Writes the firearm table as a CSV file.
+pub fn write_firearm_csv(path: &Path, rows: &[FirearmExportRow]) -> Result<(), CommandError> {
+    write_csv_table(
+        path,
+        FIREARM_COLUMNS,
+        rows.iter().map(|row| row.as_fields().map(str::to_owned)),
+    )
+}
+
+/// Writes the accessory table as a CSV file.
+pub fn write_accessory_csv(path: &Path, rows: &[AccessoryExportRow]) -> Result<(), CommandError> {
+    write_csv_table(
+        path,
+        ACCESSORY_COLUMNS,
+        rows.iter().map(|row| row.as_fields().map(str::to_owned)),
+    )
+}
+
+fn write_sheet<'a>(
+    workbook: &mut Workbook,
+    name: &str,
+    columns: &[&str],
+    rows: impl Iterator<Item = Vec<&'a str>>,
+) -> Result<(), CommandError> {
     let sheet = workbook.add_worksheet();
-    for (col, header) in COLUMNS.iter().enumerate() {
-        sheet.write_string(0, col as u16, *header).map_err(|e| {
-            CommandError::new("INTERNAL_ERROR", format!("Failed writing export header: {e}"))
-        })?;
+    sheet.set_name(name).map_err(|e| export_error("Failed naming a sheet", e))?;
+    for (col, header) in columns.iter().enumerate() {
+        sheet
+            .write_string(0, col as u16, *header)
+            .map_err(|e| export_error("Failed writing export header", e))?;
     }
-    for (row_index, row) in rows.iter().enumerate() {
-        for (col, value) in row.as_fields().iter().enumerate() {
-            sheet.write_string((row_index + 1) as u32, col as u16, *value).map_err(|e| {
-                CommandError::new("INTERNAL_ERROR", format!("Failed writing export row: {e}"))
-            })?;
+    for (row_index, row) in rows.enumerate() {
+        for (col, value) in row.iter().enumerate() {
+            sheet
+                .write_string((row_index + 1) as u32, col as u16, *value)
+                .map_err(|e| export_error("Failed writing export row", e))?;
         }
     }
-    workbook.save(path).map_err(|e| {
-        CommandError::new("INTERNAL_ERROR", format!("Failed saving the export file: {e}"))
-    })
+    Ok(())
 }
 
+/// Writes one workbook: the "Firearms" sheet, and the "Accessories" sheet
+/// when `accessories` is given (contracts/spreadsheet-format.md "Two
+/// tables").
+pub fn write_workbook(
+    path: &Path,
+    firearms: &[FirearmExportRow],
+    accessories: Option<&[AccessoryExportRow]>,
+) -> Result<(), CommandError> {
+    let mut workbook = Workbook::new();
+    write_sheet(
+        &mut workbook,
+        "Firearms",
+        FIREARM_COLUMNS,
+        firearms.iter().map(|row| row.as_fields().to_vec()),
+    )?;
+    if let Some(accessories) = accessories {
+        write_sheet(
+            &mut workbook,
+            "Accessories",
+            ACCESSORY_COLUMNS,
+            accessories.iter().map(|row| row.as_fields().to_vec()),
+        )?;
+    }
+    workbook.save(path).map_err(|e| export_error("Failed saving the export file", e))
+}
+
+/// The rows of one recognised table.
+#[derive(Debug)]
+pub enum TableRows {
+    Firearms(Vec<RawImportRow>),
+    Accessories(Vec<RawAccessoryRow>),
+}
+
+impl TableRows {
+    pub fn kind(&self) -> TableKind {
+        match self {
+            Self::Firearms(_) => TableKind::Firearms,
+            Self::Accessories(_) => TableKind::Accessories,
+        }
+    }
+}
+
+/// Which table a sheet is (contracts/spreadsheet-format.md "Recognising a
+/// table on import").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableKind {
+    Firearms,
+    Accessories,
+}
+
+/// A recognised table and where it was read from, as the stop messages name
+/// it: the file, and the sheet of a workbook that holds several.
+#[derive(Debug)]
+pub struct ReadTable {
+    pub source: String,
+    pub rows: TableRows,
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned())
+}
+
+/// FR-022: the header row decides. `firearm_type` without `kind` is the
+/// firearm table, `kind` without `firearm_type` the accessory table; both or
+/// neither is not a table, and stops the import naming `source`.
+fn recognise(headers: &[String], source: &str) -> Result<TableKind, CommandError> {
+    let names: Vec<String> = headers.iter().map(|h| header_name(h)).collect();
+    let has = |wanted: &str| names.iter().any(|name| name == wanted);
+    match (has("firearm_type"), has("kind")) {
+        (true, false) => Ok(TableKind::Firearms),
+        (false, true) => Ok(TableKind::Accessories),
+        _ => Err(CommandError::new(
+            "VALIDATION_ERROR",
+            format!(
+                "{source}: this isn't a HoploDex firearm or accessory table. \
+                 Its header needs a firearm_type or a kind column."
+            ),
+        )),
+    }
+}
+
+/// Reads and recognises every non-blank sheet of the file, without saving
+/// anything. A sheet with no header row is ignored.
 pub fn read_spreadsheet(
     path: &Path,
     format: SpreadsheetFormat,
-) -> Result<Vec<RawImportRow>, CommandError> {
+) -> Result<Vec<ReadTable>, CommandError> {
     match format {
         SpreadsheetFormat::Csv => read_csv(path),
         SpreadsheetFormat::Xlsx => read_xlsx(path),
     }
 }
 
-fn read_csv(path: &Path) -> Result<Vec<RawImportRow>, CommandError> {
-    let mut reader = csv::ReaderBuilder::new().has_headers(true).from_path(path).map_err(|e| {
-        CommandError::new("VALIDATION_ERROR", format!("Could not read the import file: {e}"))
-    })?;
-
-    let headers = reader.headers().map_err(|e| {
-        CommandError::new("VALIDATION_ERROR", format!("Could not read the import file: {e}"))
-    })?;
-    let map = HeaderMap::from_headers(headers.iter())?;
-
-    let mut rows = Vec::new();
-    for record in reader.records() {
-        let record = record.map_err(|e| {
-            CommandError::new("VALIDATION_ERROR", format!("Could not parse a row: {e}"))
-        })?;
-        let cells: Vec<String> = record.iter().map(str::to_string).collect();
-        rows.push(map.row(&cells));
-    }
-    Ok(rows)
+/// One sheet's header and data rows, as text.
+fn read_table(
+    headers: &[String],
+    data: impl Iterator<Item = Vec<String>>,
+    source: String,
+) -> Result<ReadTable, CommandError> {
+    let header_refs = || headers.iter().map(String::as_str);
+    let rows = match recognise(headers, &source)? {
+        TableKind::Firearms => {
+            let map = HeaderMap::new(FIREARM_COLUMNS, header_refs())?;
+            TableRows::Firearms(
+                data.map(|cells| RawImportRow::from_cells(map.cells(&cells))).collect(),
+            )
+        }
+        TableKind::Accessories => {
+            let map = HeaderMap::new(ACCESSORY_COLUMNS, header_refs())?;
+            TableRows::Accessories(
+                data.map(|cells| RawAccessoryRow::from_cells(map.cells(&cells))).collect(),
+            )
+        }
+    };
+    Ok(ReadTable { source, rows })
 }
 
-fn read_xlsx(path: &Path) -> Result<Vec<RawImportRow>, CommandError> {
-    let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(path).map_err(|e| {
-        CommandError::new("VALIDATION_ERROR", format!("Could not read the import file: {e}"))
-    })?;
-    let sheet_name = workbook
-        .sheet_names()
-        .first()
-        .cloned()
-        .ok_or_else(|| CommandError::new("VALIDATION_ERROR", "The workbook has no sheets."))?;
-    let range = workbook.worksheet_range(&sheet_name).map_err(|e| {
-        CommandError::new("VALIDATION_ERROR", format!("Could not read the sheet: {e}"))
-    })?;
+fn is_blank_header(headers: &[String]) -> bool {
+    headers.iter().all(|h| h.trim().is_empty())
+}
 
-    let mut sheet_rows = range.rows();
-    let Some(header_row) = sheet_rows.next() else {
-        return Ok(Vec::new());
+fn read_csv(path: &Path) -> Result<Vec<ReadTable>, CommandError> {
+    let source = file_name(path);
+    let unreadable = |e: csv::Error| {
+        CommandError::new("VALIDATION_ERROR", format!("{source}: could not read the file: {e}"))
     };
-    let headers: Vec<String> = header_row.iter().map(|cell| cell.to_string()).collect();
-    let map = HeaderMap::from_headers(headers.iter().map(String::as_str))?;
-
-    let mut rows = Vec::new();
-    for row in sheet_rows {
-        let cells: Vec<String> = row.iter().map(|cell| cell.to_string()).collect();
-        rows.push(map.row(&cells));
+    let mut reader =
+        csv::ReaderBuilder::new().has_headers(true).from_path(path).map_err(unreadable)?;
+    let headers: Vec<String> =
+        reader.headers().map_err(unreadable)?.iter().map(str::to_string).collect();
+    if is_blank_header(&headers) {
+        return Ok(Vec::new());
     }
-    Ok(rows)
+    let mut data = Vec::new();
+    for record in reader.records() {
+        let record = record.map_err(|e| {
+            CommandError::new("VALIDATION_ERROR", format!("{source}: could not parse a row: {e}"))
+        })?;
+        data.push(record.iter().map(str::to_string).collect::<Vec<_>>());
+    }
+    Ok(vec![read_table(&headers, data.into_iter(), source)?])
+}
+
+fn read_xlsx(path: &Path) -> Result<Vec<ReadTable>, CommandError> {
+    let file = file_name(path);
+    let unreadable = |e: &dyn std::fmt::Display| {
+        CommandError::new("VALIDATION_ERROR", format!("{file}: could not read the file: {e}"))
+    };
+    let mut workbook: calamine::Xlsx<_> =
+        calamine::open_workbook(path).map_err(|e| unreadable(&e))?;
+    // Every sheet's text, blank sheets dropped, before any is recognised.
+    let mut sheets: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+    for name in workbook.sheet_names() {
+        let range = workbook.worksheet_range(&name).map_err(|e| unreadable(&e))?;
+        let mut rows = range.rows().map(|row| row.iter().map(|c| c.to_string()).collect());
+        let Some(headers) = rows.next().filter(|h: &Vec<String>| !is_blank_header(h)) else {
+            continue;
+        };
+        let mut all = vec![headers];
+        all.extend(rows);
+        sheets.push((name, all));
+    }
+    let several = sheets.len() > 1;
+    sheets
+        .into_iter()
+        .map(|(name, mut rows)| {
+            let headers = rows.remove(0);
+            let source = if several { format!("{file}, sheet \"{name}\"") } else { file.clone() };
+            read_table(&headers, rows.into_iter(), source)
+        })
+        .collect()
 }

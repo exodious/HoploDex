@@ -7,7 +7,7 @@ use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::services::spreadsheet::FIREARM_COLUMNS;
 use hoplodex_lib::session::clock::Clock;
 use hoplodex_lib::session::{Session, SessionEvents};
 use rusqlite::Connection;
@@ -229,9 +229,9 @@ pub fn sample_png_bytes() -> Vec<u8> {
 #[allow(dead_code)]
 pub fn csv_row(cells: &[(&str, &str)]) -> String {
     for (name, _) in cells {
-        assert!(COLUMNS.contains(name), "unknown spreadsheet column {name}");
+        assert!(FIREARM_COLUMNS.contains(name), "unknown spreadsheet column {name}");
     }
-    COLUMNS
+    FIREARM_COLUMNS
         .iter()
         .map(|column| {
             cells.iter().rev().find(|(name, _)| name == column).map_or("", |(_, value)| value)
@@ -261,7 +261,7 @@ pub fn csv_firearm(make: &str, model: &str, serial: &str, extra: &[(&str, &str)]
 /// The export header plus `rows`, newline-terminated — a whole import file.
 #[allow(dead_code)]
 pub fn csv_file(rows: &[String]) -> String {
-    let mut lines = vec![COLUMNS.join(",")];
+    let mut lines = vec![FIREARM_COLUMNS.join(",")];
     lines.extend_from_slice(rows);
     lines.join("\n") + "\n"
 }
@@ -342,4 +342,26 @@ pub fn policy(name: &str, start: &str, end: &str, limit: Option<i64>) -> Insuran
 #[allow(dead_code)]
 pub fn date(iso: &str) -> chrono::NaiveDate {
     chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").unwrap()
+}
+
+/// One file for `import_collection` (specs/006-accessory-links: it takes
+/// one or two files).
+#[allow(dead_code)]
+pub fn import_files(
+    path: impl AsRef<std::path::Path>,
+    format: hoplodex_lib::services::spreadsheet::SpreadsheetFormat,
+) -> [hoplodex_lib::commands::import_export::ImportFile; 1] {
+    [hoplodex_lib::commands::import_export::ImportFile {
+        file_path: path.as_ref().to_path_buf(),
+        format,
+    }]
+}
+
+/// The record set of an export of these firearms alone.
+#[allow(dead_code)]
+pub fn firearm_records(ids: &[i64]) -> hoplodex_lib::commands::import_export::ExportRecords {
+    hoplodex_lib::commands::import_export::ExportRecords {
+        firearm_ids: ids.to_vec(),
+        accessory_ids: Vec::new(),
+    }
 }

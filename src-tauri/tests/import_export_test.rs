@@ -32,8 +32,7 @@ fn scenario_2_imports_new_records_from_a_spreadsheet() {
     let mut progress_calls = Vec::new();
     let result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |done, total| progress_calls.push((done, total)),
     )
@@ -64,8 +63,7 @@ fn scenario_3_reports_a_failing_row_without_discarding_successful_ones() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |_, _| {},
     )
@@ -93,8 +91,7 @@ fn rejects_an_unknown_firearm_type_with_a_row_error() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |_, _| {},
     )
@@ -113,8 +110,7 @@ fn import_one_row(row: String) -> hoplodex_lib::commands::import_export::ImportR
     let path = write_csv(&dir, &csv_file(&[row]));
     import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |_, _| {},
     )
@@ -250,8 +246,7 @@ fn import_into(
     let path = write_csv(&dir, &csv_file(rows));
     import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -269,7 +264,7 @@ fn rider(db: &TestDb) -> i64 {
 
 #[test]
 fn there_is_no_coverage_kind_column() {
-    assert!(!hoplodex_lib::services::spreadsheet::COLUMNS.contains(&"coverage_kind"));
+    assert!(!hoplodex_lib::services::spreadsheet::FIREARM_COLUMNS.contains(&"coverage_kind"));
 }
 
 #[test]
@@ -380,7 +375,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
         dest.path(),
         "backup",
         SpreadsheetFormat::Csv,
-        &[created.id, plain.id],
+        &support::firearm_records(&[created.id, plain.id]),
         &mut |_, _| {},
     )
     .unwrap();
@@ -389,8 +384,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &exported.spreadsheet_path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -476,7 +470,7 @@ fn import_accepts_a_numeric_xlsx_cell() {
         ("caliber", "9mm"),
         ("firearm_type", "Handgun"),
     ];
-    for (col, name) in hoplodex_lib::services::spreadsheet::COLUMNS.iter().enumerate() {
+    for (col, name) in hoplodex_lib::services::spreadsheet::FIREARM_COLUMNS.iter().enumerate() {
         sheet.write_string(0, col as u16, *name).unwrap();
         if let Some((_, value)) = values.iter().find(|(n, _)| n == name) {
             sheet.write_string(1, col as u16, *value).unwrap();
@@ -489,8 +483,7 @@ fn import_accepts_a_numeric_xlsx_cell() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Xlsx,
+        &support::import_files(&path, SpreadsheetFormat::Xlsx),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -516,7 +509,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
         dest.path(),
         "amounts",
         SpreadsheetFormat::Csv,
-        &[id],
+        &support::firearm_records(&[id]),
         &mut |_, _| {},
     )
     .unwrap();
@@ -531,8 +524,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     let db2 = TestDb::new();
     let reimported = import_export_ops::import_collection(
         &db2.conn,
-        &result.spreadsheet_path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&result.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -672,7 +664,7 @@ fn an_export_re_imports_with_all_six_intact() {
             dest.path(),
             "detail",
             format,
-            &[created.id],
+            &support::firearm_records(&[created.id]),
             &mut |_, _| {},
         )
         .unwrap();
@@ -680,8 +672,7 @@ fn an_export_re_imports_with_all_six_intact() {
         let db2 = TestDb::new();
         let reimported = import_export_ops::import_collection(
             &db2.conn,
-            &result.spreadsheet_path,
-            format,
+            &support::import_files(&result.spreadsheet_path, format),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -735,7 +726,7 @@ mod identification_spreadsheet {
             dest.path(),
             "identification",
             SpreadsheetFormat::Csv,
-            &[created.id],
+            &support::firearm_records(&[created.id]),
             &mut |_, _| {},
         )
         .unwrap();
@@ -791,7 +782,7 @@ mod identification_spreadsheet {
             dest.path(),
             "reimported",
             SpreadsheetFormat::Csv,
-            &[created.id],
+            &support::firearm_records(&[created.id]),
             &mut |_, _| {},
         )
         .unwrap();
@@ -857,7 +848,7 @@ mod identification_spreadsheet {
             dest.path(),
             "roundtrip",
             SpreadsheetFormat::Csv,
-            &[domestic.id, imported.id, unspecified.id],
+            &support::firearm_records(&[domestic.id, imported.id, unspecified.id]),
             &mut |_, _| {},
         )
         .unwrap();
@@ -865,8 +856,7 @@ mod identification_spreadsheet {
         let db2 = TestDb::new();
         let result = import_export_ops::import_collection(
             &db2.conn,
-            &exported.spreadsheet_path,
-            SpreadsheetFormat::Csv,
+            &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1060,8 +1050,7 @@ fn a_stopped_import_keeps_the_rows_imported_before_it() {
 
     let stopped = import_export_ops::import_collection_stoppable(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &store,
         // Asked to stop once three rows are done.
         &mut |done, _| cancelled.set(done == 3),
@@ -1105,7 +1094,7 @@ fn a_stopped_export_removes_its_partial_output() {
         dest.path(),
         "stopped",
         SpreadsheetFormat::Csv,
-        &ids,
+        &support::firearm_records(&ids),
         &mut |done, _| cancelled.set(done == 2),
         &|| cancelled.get(),
     )
@@ -1132,7 +1121,7 @@ fn a_stopped_export_leaves_a_photos_folder_it_did_not_make() {
         dest.path(),
         "stopped",
         SpreadsheetFormat::Csv,
-        &[id],
+        &support::firearm_records(&[id]),
         &mut |_, _| {},
         &|| true,
     )
@@ -1151,7 +1140,7 @@ mod cartridge_spreadsheet {
     use hoplodex_lib::models::firearm::{Firearm, FirearmInput};
     use hoplodex_lib::services::cartridges::CaliberSource;
     use hoplodex_lib::services::entry_text::EntryField;
-    use hoplodex_lib::services::spreadsheet::COLUMNS;
+    use hoplodex_lib::services::spreadsheet::FIREARM_COLUMNS;
 
     const HANDGUN: i64 = 1;
     const RIFLE: i64 = 2;
@@ -1163,8 +1152,7 @@ mod cartridge_spreadsheet {
         let path = write_csv(&dir, text);
         import_export_ops::import_collection(
             &db.conn,
-            &path,
-            SpreadsheetFormat::Csv,
+            &support::import_files(&path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1203,7 +1191,7 @@ mod cartridge_spreadsheet {
             dest.path(),
             "backup",
             SpreadsheetFormat::Csv,
-            &ids,
+            &support::firearm_records(&ids),
             &mut |_, _| {},
         )
         .unwrap()
@@ -1213,8 +1201,7 @@ mod cartridge_spreadsheet {
     fn reimport(path: &std::path::Path, into: &TestDb) -> ImportResult {
         import_export_ops::import_collection(
             &into.conn,
-            path,
-            SpreadsheetFormat::Csv,
+            &support::import_files(path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1228,10 +1215,10 @@ mod cartridge_spreadsheet {
 
     #[test]
     fn the_header_puts_cartridge_and_action_type_directly_after_caliber() {
-        assert_eq!(COLUMNS.len(), 40);
-        let caliber_at = COLUMNS.iter().position(|c| *c == "caliber").unwrap();
+        assert_eq!(FIREARM_COLUMNS.len(), 42);
+        let caliber_at = FIREARM_COLUMNS.iter().position(|c| *c == "caliber").unwrap();
         assert_eq!(
-            &COLUMNS[caliber_at + 1..caliber_at + 4],
+            &FIREARM_COLUMNS[caliber_at + 1..caliber_at + 4],
             ["cartridge", "action_type", "firearm_type"]
         );
     }
@@ -1254,7 +1241,7 @@ mod cartridge_spreadsheet {
         let mut reader = csv::Reader::from_path(path).unwrap();
         let headers = reader.headers().unwrap().clone();
         let at = |name: &str| headers.iter().position(|h| h == name).unwrap();
-        assert_eq!(headers.iter().count(), 40);
+        assert_eq!(headers.iter().count(), 42);
         assert_eq!(at("cartridge"), at("caliber") + 1);
         assert_eq!(at("action_type"), at("caliber") + 2);
         let rows: Vec<_> = reader.records().map(Result::unwrap).collect();
@@ -1513,16 +1500,15 @@ mod cartridge_spreadsheet {
         );
         let result = import_export_ops::import_collection(
             &db.conn,
-            &path,
-            SpreadsheetFormat::Csv,
+            &support::import_files(&path, SpreadsheetFormat::Csv),
             &store,
             &mut |_, _| {},
         )
         .unwrap();
         assert_eq!(result.imported_count, 0);
         assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
-        assert_eq!(result.conflicts[0].make, "Smith & Wesson");
-        assert_eq!(result.conflicts[0].model, "Model 10");
+        assert_eq!(result.conflicts[0].make.as_deref(), Some("Smith & Wesson"));
+        assert_eq!(result.conflicts[0].model.as_deref(), Some("Model 10"));
         // The conflict row is listed too.
         assert!(result.snapped_values.iter().any(|s| s.field == EntryField::Make));
         assert!(result.snapped_values.iter().any(|s| s.field == EntryField::Cartridge));
@@ -1617,9 +1603,12 @@ mod cartridge_spreadsheet {
     #[test]
     fn a_sheet_without_the_two_new_columns_imports_with_neither_and_later_columns_in_place() {
         let db = TestDb::new();
-        let legacy: Vec<_> =
-            COLUMNS.iter().copied().filter(|c| *c != "cartridge" && *c != "action_type").collect();
-        assert_eq!(legacy.len(), 38);
+        let legacy: Vec<_> = FIREARM_COLUMNS
+            .iter()
+            .copied()
+            .filter(|c| *c != "cartridge" && *c != "action_type")
+            .collect();
+        assert_eq!(legacy.len(), 40);
         let row = legacy
             .iter()
             .map(|c| match *c {
@@ -1668,8 +1657,7 @@ mod cartridge_spreadsheet {
         );
         let error = import_export_ops::import_collection(
             &db.conn,
-            &path,
-            SpreadsheetFormat::Csv,
+            &support::import_files(&path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1715,7 +1703,7 @@ mod registration_spreadsheet {
     use hoplodex_lib::commands::import_export::ImportResult;
     use hoplodex_lib::models::firearm::{Firearm, FirearmInput};
     use hoplodex_lib::services::entry_text::EntryField;
-    use hoplodex_lib::services::spreadsheet::COLUMNS;
+    use hoplodex_lib::services::spreadsheet::FIREARM_COLUMNS;
 
     const SUPPRESSOR_TYPE: i64 = 5;
 
@@ -1728,8 +1716,7 @@ mod registration_spreadsheet {
     fn reimport(path: &std::path::Path, into: &TestDb) -> ImportResult {
         import_export_ops::import_collection(
             &into.conn,
-            path,
-            SpreadsheetFormat::Csv,
+            &support::import_files(path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1753,7 +1740,7 @@ mod registration_spreadsheet {
             dest.path(),
             "backup",
             SpreadsheetFormat::Csv,
-            &ids,
+            &support::firearm_records(&ids),
             &mut |_, _| {},
         )
         .unwrap()
@@ -1783,16 +1770,16 @@ mod registration_spreadsheet {
 
     #[test]
     fn the_header_puts_the_four_registration_columns_after_the_original_marks() {
-        assert_eq!(COLUMNS.len(), 40);
-        let at = COLUMNS.iter().position(|c| *c == "original_serial_number").unwrap();
+        assert_eq!(FIREARM_COLUMNS.len(), 42);
+        let at = FIREARM_COLUMNS.iter().position(|c| *c == "original_serial_number").unwrap();
         assert_eq!(
-            &COLUMNS[at + 1..at + 6],
+            &FIREARM_COLUMNS[at + 1..at + 6],
             [
                 "registered_as",
                 "registration_form",
                 "registration_approved",
                 "registered_to",
-                "photo_filenames"
+                "mounted_on"
             ]
         );
     }
@@ -2111,7 +2098,7 @@ mod registration_spreadsheet {
     #[test]
     fn a_sheet_without_the_four_columns_imports_with_no_classification() {
         let db = TestDb::new();
-        let header: Vec<_> = COLUMNS
+        let header: Vec<_> = FIREARM_COLUMNS
             .iter()
             .filter(|c| {
                 !["registered_as", "registration_form", "registration_approved", "registered_to"]

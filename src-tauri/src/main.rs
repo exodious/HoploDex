@@ -221,6 +221,7 @@ fn main() {
             hoplodex_lib::commands::documents::add_document_from_path,
             hoplodex_lib::commands::documents::open_document,
             hoplodex_lib::commands::documents::delete_document,
+            hoplodex_lib::commands::import_export::get_export_scope,
             hoplodex_lib::commands::import_export::export_collection,
             hoplodex_lib::commands::import_export::import_collection,
             hoplodex_lib::commands::import_export::resolve_import_conflicts,

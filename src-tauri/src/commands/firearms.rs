@@ -565,6 +565,19 @@ pub mod ops {
         input: &FirearmInput,
         confirmed_warnings: bool,
     ) -> Result<Firearm, CommandError> {
+        create_firearm_with_uid(conn, input, confirmed_warnings, None)
+    }
+
+    /// [`create_firearm`], keeping `uid` as the record's identifier instead
+    /// of generating one. Import passes the row's `record_id`, already
+    /// parsed and checked unused (specs/006-accessory-links research.md
+    /// §17); every other caller goes through `create_firearm`.
+    pub fn create_firearm_with_uid(
+        conn: &Connection,
+        input: &FirearmInput,
+        confirmed_warnings: bool,
+        uid: Option<&str>,
+    ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input, None)?;
         check_fields_apply(conn, input)?;
@@ -602,7 +615,7 @@ pub mod ops {
                 )",
                 named_params! {
                     // FR-019: set here and never in an UPDATE.
-                    ":uid": crate::services::record_id::generate(),
+                    ":uid": uid.map_or_else(crate::services::record_id::generate, str::to_owned),
                     ":make": input.make,
                     ":model": input.model,
                     ":serial_number": input.serial_number,

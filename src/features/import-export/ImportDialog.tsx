@@ -15,11 +15,13 @@ import {
 } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
+import { accessoryNameText } from "../mounts/recordNames";
 import * as importExportService from "./importExportService";
 import type {
   ConflictAction,
   ImportConflict,
   ImportResult,
+  ImportTable,
   RowError,
   SnappedValue,
   SpreadsheetFormat,
@@ -36,7 +38,7 @@ function ReportDisclosure({
 }: {
   title: string;
   summary: string;
-  items: { key: string; row: number; text: string }[];
+  items: { key: string; place: string; text: string }[];
 }) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
@@ -53,7 +55,7 @@ function ReportDisclosure({
         <ul className="hd-row-errors hd-row-errors--info">
           {items.map((item) => (
             <li key={item.key}>
-              <span className="hd-row-errors__row hd-num">Row {item.row}</span>
+              <span className="hd-row-errors__row hd-num">{item.place}</span>
               <span>{item.text}</span>
             </li>
           ))}
@@ -73,6 +75,38 @@ const CONFLICT_OPTIONS: { value: ConflictAction; label: string }[] = [
   { value: "overwrite", label: "Replace existing" },
   { value: "duplicate", label: "Add as new" },
 ];
+
+const TABLE_NAMES: Record<ImportTable, string> = {
+  firearms: "Firearms",
+  accessories: "Accessories",
+};
+
+/** "Accessories, row 4": every report entry names its table (FR-022). */
+function place(entry: { table: ImportTable; row: number }): string {
+  return `${TABLE_NAMES[entry.table]}, row ${entry.row}`;
+}
+
+/** A conflict's record as the report names it: an accessory by its name
+ * (FR-005), a firearm by make and model. */
+function conflictName(conflict: ImportConflict): string {
+  if (conflict.table === "accessories") {
+    return accessoryNameText(conflict.make, conflict.model, conflict.kindName ?? "Accessory");
+  }
+  return `${conflict.make ?? ""} ${conflict.model ?? ""}`.trim();
+}
+
+function conflictKey(entry: { table: ImportTable; row: number }): string {
+  return `${entry.table}-${entry.row}`;
+}
+
+/** The conflicts heading's nouns: "row matches a firearm", and so on. */
+function conflictNouns(conflicts: ImportConflict[]): [string, string] {
+  const accessories = conflicts.filter((c) => c.table === "accessories").length;
+  if (accessories === 0) return ["row matches a firearm", "rows match firearms"];
+  if (accessories === conflicts.length)
+    return ["row matches an accessory", "rows match accessories"];
+  return ["row matches a record", "rows match records"];
+}
 
 function formatForPath(filePath: string): SpreadsheetFormat {
   return filePath.toLowerCase().endsWith(".xlsx") ? "xlsx" : "csv";
@@ -98,7 +132,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       open={open}
       onOpenChange={onOpenChange}
       title="Import from a spreadsheet"
-      description="Adds firearm records from a CSV or Excel file with the same columns as an export. Photos aren't imported; add them to each record afterwards."
+      description="Adds firearm and accessory records from CSV or Excel files with the same columns as an export. Photos aren't imported; add them to each record afterwards."
       size="lg"
       bare
     >
@@ -110,7 +144,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
 function ImportFlow({ onClose }: { onClose: () => void }) {
   const { refresh } = useCollection();
   const notify = useToast();
-  const [filePath, setFilePath] = useState("");
+  // The files picked (one, or the firearm and accessory files together), and
+  // a path typed by hand, which counts as one more.
+  const [files, setFiles] = useState<string[]>([]);
+  const [typedPath, setTypedPath] = useState("");
   const [fileError, setFileError] = useState<string | undefined>();
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -124,20 +161,29 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   async function chooseFile() {
     const selected = await withIdlePaused(() =>
       openDialog({
-        multiple: false,
+        multiple: true,
         title: "Import spreadsheet",
         filters: [{ name: "Spreadsheet", extensions: ["csv", "xlsx"] }],
       }),
     );
-    if (typeof selected === "string") {
-      setFilePath(selected);
-      setFileError(undefined);
-    }
+    const picked = (Array.isArray(selected) ? selected : selected ? [selected] : []).filter(
+      (path): path is string => typeof path === "string",
+    );
+    if (picked.length === 0) return;
+    // A second pick adds to the first; a third file replaces the selection
+    // (ui-accessories.md §11).
+    setFiles((current) => {
+      const added = picked.filter((path) => !current.includes(path));
+      return current.length + added.length <= 2 ? [...current, ...added] : picked.slice(0, 2);
+    });
+    setFileError(undefined);
   }
+
+  const chosenFiles = [...files, ...(typedPath.trim() ? [typedPath.trim()] : [])];
 
   async function handleImport(event: FormEvent) {
     event.preventDefault();
-    if (!filePath.trim()) {
+    if (chosenFiles.length === 0) {
       setFileError("Choose the spreadsheet to import.");
       return;
     }
@@ -145,8 +191,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     setImporting(true);
     try {
       const imported = await importExportService.importCollection({
-        filePath: filePath.trim(),
-        format: formatForPath(filePath.trim()),
+        files: chosenFiles.map((filePath) => ({ filePath, format: formatForPath(filePath) })),
       });
       setResult(imported);
       await refresh();
@@ -171,12 +216,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       setResolvedCount((so_far) => (so_far ?? 0) + resolved.resolvedCount);
       // A decision the backend couldn't apply leaves its row open to be
       // decided again; everything else is done.
-      const stillOpen = new Set(resolved.unresolved.map((u) => u.row));
+      const stillOpen = new Set(resolved.unresolved.map(conflictKey));
       setResult({
         ...result,
-        conflicts: result.conflicts.filter((c) => stillOpen.has(c.row)),
+        conflicts: result.conflicts.filter((c) => stillOpen.has(conflictKey(c))),
         // specs/002-firearm-identification FR-009: a resolved overwrite or
-        // duplicate can add its own original-marks warning.
+        // duplicate can add its own original-marks warning, and
+        // specs/006-accessory-links FR-023 a mount it couldn't make.
         warnings: [...result.warnings, ...resolved.warnings],
       });
       setUnresolved(resolved.unresolved);
@@ -201,20 +247,37 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           <TextField
             label="Spreadsheet file"
             required
-            value={filePath}
+            value={typedPath}
             onChange={(e) => {
-              setFilePath(e.target.value);
+              setTypedPath(e.target.value);
               setFileError(undefined);
             }}
             error={fileError}
             spellCheck={false}
-            hint="Rows that match a firearm you already have (same make, model, and serial number) are held for you to decide on."
+            hint="Choose one file, or the firearm and accessory files together. Rows that match a record you already have are held for you to decide on."
             trailing={
               <button type="button" className="hd-input__text-action" onClick={chooseFile}>
                 Choose…
               </button>
             }
           />
+          {files.length > 0 && (
+            <ul className="hd-io-files" aria-label="Files to import">
+              {files.map((path) => (
+                <li key={path}>
+                  <span className="hd-io-files__path">{path}</span>
+                  <button
+                    type="button"
+                    className="hd-input__text-action"
+                    aria-label={`Remove ${path}`}
+                    onClick={() => setFiles((current) => current.filter((p) => p !== path))}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {importing && (
             <ProgressBar
               eventName="import_collection:progress"
@@ -270,8 +333,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           title="Calibers filled in from the cartridge"
           summary="The cartridge named a caliber, so the blank one was filled in. “Guessed” is a best reading; check it."
           items={result.derivedCalibers.map((derived) => ({
-            key: `${derived.row}`,
-            row: derived.row,
+            key: place(derived),
+            place: place(derived),
             text: `${derived.cartridge} → ${derived.caliber} (${
               derived.source === "catalog" ? "built-in" : "guessed"
             })`,
@@ -281,8 +344,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           title="Spellings matched to existing values"
           summary="These differed only in letter case, spacing or separators, so they now match a spelling already in use."
           items={result.snappedValues.map((snapped) => ({
-            key: `${snapped.row}-${snapped.field}`,
-            row: snapped.row,
+            key: `${place(snapped)}-${snapped.field}`,
+            place: place(snapped),
             text: `${SNAPPED_FIELD_LABELS[snapped.field] ?? snapped.field}: “${snapped.sheetValue}” → “${snapped.recordedValue}”`,
           }))}
         />
@@ -297,8 +360,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             </p>
             <ul className="hd-row-errors">
               {result.rowErrors.map((rowError) => (
-                <li key={rowError.row}>
-                  <span className="hd-row-errors__row hd-num">Row {rowError.row}</span>
+                <li key={`${place(rowError)}-${rowError.message}`}>
+                  <span className="hd-row-errors__row hd-num">{place(rowError)}</span>
                   <span>{rowError.message}</span>
                 </li>
               ))}
@@ -312,13 +375,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               Warnings
             </h3>
             <p className="hd-form-note">
-              These rows imported, but share original maker's marks with a firearm already in your
-              collection.
+              These rows imported, with a note: a firearm shares original maker's marks with one in
+              your collection, or a mount couldn’t be made and the record was left unmounted.
             </p>
             <ul className="hd-row-errors hd-row-errors--info">
               {result.warnings.map((warning) => (
-                <li key={`${warning.row}-${warning.message}`}>
-                  <span className="hd-row-errors__row hd-num">Row {warning.row}</span>
+                <li key={`${place(warning)}-${warning.message}`}>
+                  <span className="hd-row-errors__row hd-num">{place(warning)}</span>
                   <span>{warning.message}</span>
                 </li>
               ))}
@@ -334,8 +397,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             <p className="hd-form-note">These rows are still waiting. Choose again below.</p>
             <ul className="hd-row-errors">
               {unresolved.map((item) => (
-                <li key={`${item.row}-${item.message}`}>
-                  <span className="hd-row-errors__row hd-num">Row {item.row}</span>
+                <li key={`${place(item)}-${item.message}`}>
+                  <span className="hd-row-errors__row hd-num">{place(item)}</span>
                   <span>{item.message}</span>
                 </li>
               ))}
@@ -346,12 +409,12 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
         {conflicts.length > 0 && (
           <section className="hd-io-section" aria-labelledby="conflicts-title">
             <h3 className="hd-io-section__title" id="conflicts-title">
-              {count(conflicts.length, "row matches a firearm", "rows match firearms")} already in
-              your collection
+              {count(conflicts.length, ...conflictNouns(conflicts))} already in your collection
             </h3>
             <p className="hd-form-note">
-              Same make, model, and serial number. Choose what to do with each one. A firearm can’t
-              be added as new while an active one has the same make, model, and serial number.
+              Same record ID, or for a firearm the same make, model, and serial number. Choose what
+              to do with each one. A firearm can’t be added as new while an active one has the same
+              make, model, and serial number.
             </p>
             <div className="hd-bulk">
               <span className="hd-bulk__label">
@@ -385,18 +448,16 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               <thead>
                 <tr>
                   <th scope="col">Row</th>
-                  <th scope="col">Firearm</th>
+                  <th scope="col">Record</th>
                   <th scope="col">Decision</th>
                 </tr>
               </thead>
               <tbody>
                 {conflicts.map((conflict) => (
                   <tr key={conflict.conflictId}>
-                    <td className="hd-num">{conflict.row}</td>
+                    <td className="hd-num">{place(conflict)}</td>
                     <td>
-                      <span className="hd-conflicts__name">
-                        {conflict.make} {conflict.model}
-                      </span>
+                      <span className="hd-conflicts__name">{conflictName(conflict)}</span>
                       {conflict.serialNumber && (
                         <span className="hd-serial hd-conflicts__serial">
                           {conflict.serialNumber}
@@ -405,7 +466,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
                     </td>
                     <td>
                       <SegmentedControl<ConflictAction>
-                        label={`Row ${conflict.row}: ${conflict.make} ${conflict.model}`}
+                        label={`${place(conflict)}: ${conflictName(conflict)}`}
                         hideLabel
                         size="sm"
                         value={choices[conflict.conflictId] ?? ""}

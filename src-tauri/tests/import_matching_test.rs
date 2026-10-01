@@ -9,6 +9,7 @@ use hoplodex_lib::commands::firearms::{DisposeInput, ops as firearm_ops};
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::{ConflictResolution, ImportSessionStore};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
+use hoplodex_lib::models::record::RecordRef;
 use support::{TestDb, csv_file, csv_firearm};
 use tempfile::TempDir;
 
@@ -88,7 +89,7 @@ fn a_matching_make_model_serial_produces_a_conflict_not_a_silent_overwrite() {
 
     assert_eq!(result.imported_count, 0, "a matching row must not be silently inserted");
     assert_eq!(result.conflicts.len(), 1);
-    assert_eq!(result.conflicts[0].existing_firearm_id, existing.id);
+    assert_eq!(result.conflicts[0].existing_record, RecordRef::Firearm(existing.id));
 
     // The original record must be untouched until resolved.
     let unchanged = firearm_ops::get_firearm(&db.conn, existing.id).unwrap();
@@ -351,7 +352,7 @@ fn matching_ignores_letter_case_and_surrounding_whitespace() {
 
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.conflicts.len(), 1);
-    assert_eq!(result.conflicts[0].existing_firearm_id, existing.id);
+    assert_eq!(result.conflicts[0].existing_record, RecordRef::Firearm(existing.id));
 }
 
 #[test]
@@ -364,7 +365,7 @@ fn a_disposed_and_an_active_match_conflict_with_the_active_one() {
 
     let result = import_glock(&db, &store, &[csv_firearm("Glock", "19", "ABC123", &[])]);
 
-    assert_eq!(result.conflicts[0].existing_firearm_id, current.id);
+    assert_eq!(result.conflicts[0].existing_record, RecordRef::Firearm(current.id));
     assert!(!result.conflicts[0].duplicate_allowed);
 }
 

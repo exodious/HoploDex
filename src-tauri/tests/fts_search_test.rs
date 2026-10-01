@@ -560,3 +560,52 @@ fn registration_is_found_by_classification_form_and_registered_to() {
     assert_eq!(search(&db.conn, "jones estate"), 0);
     assert_eq!(search(&db.conn, "form 4"), 0);
 }
+
+/// specs/006-accessory-links US4-6, FR-018: the collection page's search is
+/// unchanged. A mounted accessory's text is not part of its host's index; the
+/// firearm's own free-text `accessories` field still is, and the two are
+/// separate (FR-007).
+#[test]
+fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_own_free_text() {
+    use hoplodex_lib::commands::accessories::ops as accessory_ops;
+    use hoplodex_lib::commands::mounts::ops as mount_ops;
+    use hoplodex_lib::models::accessory::AccessoryInput;
+    use hoplodex_lib::models::record::RecordRef;
+
+    let db = TestDb::new();
+    let rifle = ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            make: "Ruger".into(),
+            model: "Mini-14".into(),
+            serial_number: Some("RU-1".into()),
+            accessories: Some("Harris bipod; padded sling".into()),
+            firearm_type_id: 2,
+            ..base_input()
+        },
+        false,
+    )
+    .unwrap();
+    let mut optic: AccessoryInput =
+        serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "status": "active" }))
+            .unwrap();
+    optic.make = Some("Trijicon".into());
+    optic.model = Some("Accupoint".into());
+    optic.serial_number = Some("TJ-7788".into());
+    let optic = accessory_ops::create_accessory(&db.conn, &optic).unwrap();
+    mount_ops::mount_record(
+        &db.conn,
+        &serde_json::from_value(serde_json::json!({
+            "item": RecordRef::Accessory(optic.id),
+            "host": RecordRef::Firearm(rifle.id),
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(search(&db.conn, "Accupoint"), 0, "the Optic's model finds nothing here");
+    assert_eq!(search(&db.conn, "TJ-7788"), 0, "nor does its serial number");
+    assert_eq!(search(&db.conn, "Trijicon"), 0);
+    assert_eq!(search(&db.conn, "bipod"), 1, "the firearm's own free-text accessories do");
+    assert_eq!(search(&db.conn, "Mini-14"), 1);
+}

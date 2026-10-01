@@ -2,12 +2,14 @@
 //! the accessory commands. Each `#[tauri::command]` is thin and calls the
 //! matching function in `ops`, which takes a `&Connection`.
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
-use crate::commands::firearms::{DeleteResult, DisposeInput, HistoryChoice};
+use crate::commands::firearms::{DeleteResult, DisposeInput, HistoryChoice, UNSPECIFIED};
 use crate::models::accessory::{Accessory, AccessoryInput, validate_accessory_input};
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::FirearmStatus;
@@ -35,11 +37,34 @@ pub struct AccessoryDetail {
     pub mount: MountDetail,
 }
 
-/// Input for `list_accessories`. The search text and the grouping are User
-/// Story 4's; an input that carries them is read without them until then.
+/// Grouping key for `list_accessories`, per contracts/tauri-commands.md
+/// "Group order" (FR-017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessoryGroupBy {
+    /// The kind list's order.
+    Kind,
+    /// Alphabetical, "Unspecified" last.
+    Make,
+    /// Alphabetical, "Unspecified" last.
+    Caliber,
+    /// Alphabetical, "Unspecified" last.
+    Cartridge,
+    /// One group per host record, sorted by its name, "Not mounted" last.
+    MountedOn,
+}
+
+/// The group of accessories that sit on no host, always last (FR-017).
+pub const NOT_MOUNTED: &str = "Not mounted";
+
+/// Input for `list_accessories` (FR-016 to FR-018).
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAccessoriesInput {
+    /// Free text over every accessory text field (FR-018): three or more
+    /// characters through `accessories_fts`, one or two through `LIKE`.
+    pub query: Option<String>,
+    pub group_by: Option<AccessoryGroupBy>,
     #[serde(default)]
     pub include_disposed: bool,
 }
@@ -136,6 +161,17 @@ pub mod ops {
         conn: &Connection,
         input: &AccessoryInput,
     ) -> Result<Accessory, CommandError> {
+        create_accessory_with_uid(conn, input, None)
+    }
+
+    /// [`create_accessory`], keeping `uid` as the record's identifier
+    /// instead of generating one. Import passes the row's `record_id`,
+    /// already parsed and checked unused (research.md §17).
+    pub fn create_accessory_with_uid(
+        conn: &Connection,
+        input: &AccessoryInput,
+        uid: Option<&str>,
+    ) -> Result<Accessory, CommandError> {
         let input = &input.normalized();
         validate(conn, input, None)?;
         // The row and its mount stand or fall together (research.md §8).
@@ -154,7 +190,7 @@ pub mod ops {
                 )",
                 named_params! {
                     // FR-019: set here and never in an UPDATE.
-                    ":uid": crate::services::record_id::generate(),
+                    ":uid": uid.map_or_else(crate::services::record_id::generate, str::to_owned),
                     ":accessory_kind_id": input.accessory_kind_id,
                     ":make": input.make,
                     ":model": input.model,
@@ -404,12 +440,35 @@ pub mod ops {
         Ok(DeleteResult { deleted: true })
     }
 
-    /// The plain list (FR-016): one group "All" ordered by make, model, then
-    /// the kind's place in the kind list. Disposed accessories only on request.
+    /// The list (FR-016 to FR-018): searched, then grouped as asked. Within a
+    /// group the order is make, model, then the kind's place in the kind
+    /// list. Disposed accessories only on request.
     pub fn list_accessories(
         conn: &Connection,
         input: &ListAccessoriesInput,
     ) -> Result<ListAccessoriesOutput, CommandError> {
+        // The index is trigram-tokenized (0002_fts5.sql): a quoted phrase
+        // matches as contiguous text anywhere inside a value, as
+        // `list_firearms` quotes it. A search of one or two characters
+        // matches nothing in the index, so it is looked up with LIKE over
+        // the same eight values (the kind's name is joined, not stored).
+        // `:has_query` short-circuits the MATCH subquery when there is no
+        // query, since MATCH errors on an empty search string.
+        let trimmed = input.query.as_deref().map(str::trim).unwrap_or_default();
+        let has_query = !trimmed.is_empty();
+        let short_query = trimmed.chars().count() < 3;
+        let fts_query = if short_query {
+            String::new()
+        } else {
+            format!("\"{}\"", trimmed.replace('"', "\"\""))
+        };
+        let like_query = if short_query {
+            let escaped = trimmed.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            format!("%{escaped}%")
+        } else {
+            String::new()
+        };
+
         let insurance = crate::services::insurance_status::load_context(conn)?;
 
         // Only the columns a summary needs, read by position (as
@@ -419,42 +478,65 @@ pub mod ops {
                 "SELECT a.id, a.accessory_kind_id, k.name, k.generic_thumbnail_key,
                         a.make, a.model, a.serial_number, a.caliber, a.cartridge, a.status,
                         a.thumbnail_photo_id, a.estimated_value, a.insurance_policy_id,
-                        a.scheduled_coverage_amount
+                        a.scheduled_coverage_amount, k.sort_order
                  FROM accessories a
                  JOIN accessory_kinds k ON k.id = a.accessory_kind_id
                  WHERE (:include_disposed = 1 OR a.status = 'active')
+                   AND (:has_query = 0
+                        OR (:short_query = 0 AND a.id IN
+                              (SELECT rowid FROM accessories_fts WHERE accessories_fts MATCH :query))
+                        OR (:short_query = 1 AND (
+                            k.name LIKE :like ESCAPE '\\'
+                            OR a.make LIKE :like ESCAPE '\\'
+                            OR a.model LIKE :like ESCAPE '\\'
+                            OR a.serial_number LIKE :like ESCAPE '\\'
+                            OR a.caliber LIKE :like ESCAPE '\\'
+                            OR a.cartridge LIKE :like ESCAPE '\\'
+                            OR a.acquisition_source LIKE :like ESCAPE '\\'
+                            OR a.notes LIKE :like ESCAPE '\\')))
                  ORDER BY a.make, a.model, k.sort_order, a.id",
             )
             .map_err(CommandError::from_db)?;
-        let mut accessories = stmt
-            .query_map(named_params! { ":include_disposed": input.include_disposed }, |row| {
-                let estimated_value = row.get(11)?;
-                let insurance_policy_id = row.get(12)?;
-                let scheduled_coverage_amount = row.get(13)?;
-                Ok(AccessorySummary {
-                    id: row.get(0)?,
-                    accessory_kind_id: row.get(1)?,
-                    kind_name: row.get(2)?,
-                    generic_thumbnail_key: row.get(3)?,
-                    make: row.get(4)?,
-                    model: row.get(5)?,
-                    serial_number: row.get(6)?,
-                    caliber: row.get(7)?,
-                    cartridge: row.get(8)?,
-                    status: row.get(9)?,
-                    thumbnail_photo_id: row.get(10)?,
-                    estimated_value,
-                    insurance_warning: crate::services::insurance_status::record_warning(
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":include_disposed": input.include_disposed,
+                    ":has_query": has_query,
+                    ":short_query": short_query,
+                    ":query": fts_query,
+                    ":like": like_query,
+                },
+                |row| {
+                    let estimated_value = row.get(11)?;
+                    let insurance_policy_id = row.get(12)?;
+                    let scheduled_coverage_amount = row.get(13)?;
+                    let summary = AccessorySummary {
+                        id: row.get(0)?,
+                        accessory_kind_id: row.get(1)?,
+                        kind_name: row.get(2)?,
+                        generic_thumbnail_key: row.get(3)?,
+                        make: row.get(4)?,
+                        model: row.get(5)?,
+                        serial_number: row.get(6)?,
+                        caliber: row.get(7)?,
+                        cartridge: row.get(8)?,
+                        status: row.get(9)?,
+                        thumbnail_photo_id: row.get(10)?,
                         estimated_value,
+                        insurance_warning: crate::services::insurance_status::record_warning(
+                            estimated_value,
+                            insurance_policy_id,
+                            scheduled_coverage_amount,
+                            &insurance,
+                        ),
                         insurance_policy_id,
                         scheduled_coverage_amount,
-                        &insurance,
-                    ),
-                    insurance_policy_id,
-                    scheduled_coverage_amount,
-                    mounted_on: None,
-                })
-            })
+                        mounted_on: None,
+                    };
+                    let kind_order: i64 = row.get(14)?;
+                    Ok((summary, kind_order))
+                },
+            )
             .map_err(CommandError::from_db)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(CommandError::from_db)?;
@@ -462,20 +544,165 @@ pub mod ops {
         // FR-013: the direct host's label, from the whole graph once and one
         // label query per table (research.md §5, §22).
         let graph = MountGraph::load(conn)?;
-        let hosts: Vec<RecordRef> = accessories
+        let hosts: Vec<RecordRef> = rows
             .iter()
-            .filter_map(|summary| graph.host_of(RecordRef::Accessory(summary.id)))
+            .filter_map(|(summary, _)| graph.host_of(RecordRef::Accessory(summary.id)))
             .collect();
         let host_labels = mounts::labels(conn, &hosts)?;
-        for summary in &mut accessories {
+
+        // The group each accessory belongs to (research.md §12): a map from
+        // key to group index, not a search of the groups for every row.
+        // "Mounted on" is keyed by the host's `RecordRef`, never its name,
+        // because two hosts can share one.
+        let mut groups: Vec<AccessoryGroup> = Vec::new();
+        let mut order: Vec<GroupOrder> = Vec::new();
+        let mut group_index: HashMap<GroupKey, usize> = HashMap::new();
+        for (mut summary, kind_order) in rows {
             summary.mounted_on = graph
                 .host_of(RecordRef::Accessory(summary.id))
                 .and_then(|host| host_labels.get(&host).cloned());
+            let unspecified = |text: &Option<String>| {
+                text.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)
+            };
+            let (key, heading, host, rank) = match input.group_by {
+                None => (GroupKey::All, "All".to_string(), None, GroupOrder::First),
+                Some(AccessoryGroupBy::Kind) => (
+                    GroupKey::Text(summary.kind_name.clone()),
+                    summary.kind_name.clone(),
+                    None,
+                    GroupOrder::Kind(kind_order),
+                ),
+                Some(
+                    by @ (AccessoryGroupBy::Make
+                    | AccessoryGroupBy::Caliber
+                    | AccessoryGroupBy::Cartridge),
+                ) => {
+                    let value = unspecified(match by {
+                        AccessoryGroupBy::Make => &summary.make,
+                        AccessoryGroupBy::Caliber => &summary.caliber,
+                        _ => &summary.cartridge,
+                    });
+                    match value {
+                        Some(text) => (
+                            GroupKey::Text(text.clone()),
+                            text.clone(),
+                            None,
+                            GroupOrder::Text(text.into()),
+                        ),
+                        None => (
+                            GroupKey::Text(UNSPECIFIED.to_string()),
+                            UNSPECIFIED.to_string(),
+                            None,
+                            GroupOrder::Last,
+                        ),
+                    }
+                }
+                Some(AccessoryGroupBy::MountedOn) => match &summary.mounted_on {
+                    Some(label) => {
+                        let name = record_name(label);
+                        (
+                            GroupKey::Host(label.record),
+                            name.clone(),
+                            Some(label.clone()),
+                            GroupOrder::Host(
+                                name.into(),
+                                label.record.kind() as u8,
+                                label.record.id(),
+                            ),
+                        )
+                    }
+                    None => (GroupKey::NotMounted, NOT_MOUNTED.to_string(), None, GroupOrder::Last),
+                },
+            };
+            let index = *group_index.entry(key).or_insert_with(|| {
+                groups.push(AccessoryGroup { key: heading, host, accessories: Vec::new() });
+                order.push(rank);
+                groups.len() - 1
+            });
+            groups[index].accessories.push(summary);
         }
 
-        Ok(ListAccessoriesOutput {
-            groups: vec![AccessoryGroup { key: "All".to_string(), host: None, accessories }],
-        })
+        // Stable sort of the groups by their rank; the accessories within a
+        // group keep the query's make, model, kind order.
+        let mut ranked: Vec<(GroupOrder, AccessoryGroup)> = order.into_iter().zip(groups).collect();
+        ranked.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(ListAccessoriesOutput { groups: ranked.into_iter().map(|(_, group)| group).collect() })
+    }
+
+    /// The identity of a group while the rows are being sorted into groups.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    enum GroupKey {
+        All,
+        Text(String),
+        Host(RecordRef),
+        NotMounted,
+    }
+
+    /// Where a group goes in the output (contracts/tauri-commands.md "Group
+    /// order"). Variants of one grouping never mix, so the derived order
+    /// between variants only has to put `Last` after the rest.
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum GroupOrder {
+        First,
+        /// The kind list's position.
+        Kind(i64),
+        /// Alphabetical: case-insensitively, then as written.
+        Text(CaseFolded),
+        /// By the host's name, then the host's kind (firearm first) and id.
+        Host(CaseFolded, u8, i64),
+        Last,
+    }
+
+    /// Text that sorts case-insensitively and falls back to the exact text,
+    /// so spellings that differ only in case keep a stable order.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct CaseFolded(String, String);
+
+    impl From<String> for CaseFolded {
+        fn from(text: String) -> Self {
+            Self(text.to_lowercase(), text)
+        }
+    }
+
+    impl Ord for CaseFolded {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.cmp_key().cmp(&other.cmp_key())
+        }
+    }
+
+    impl PartialOrd for CaseFolded {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl CaseFolded {
+        fn cmp_key(&self) -> (&str, &str) {
+            (&self.0, &self.1)
+        }
+    }
+
+    /// A record's name as the Accessories page shows it (FR-005): a firearm
+    /// "{make} {model} “{nickname}”", an accessory "{make} {model} · {kind}"
+    /// with the kind alone when make and model are both blank.
+    fn record_name(label: &RecordLabel) -> String {
+        let make_model = [label.make.as_deref(), label.model.as_deref()]
+            .into_iter()
+            .flatten()
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        match label.record {
+            RecordRef::Accessory(_) if make_model.is_empty() => label.type_name.clone(),
+            RecordRef::Accessory(_) => format!("{make_model} · {}", label.type_name),
+            RecordRef::Firearm(_) => match label.nickname.as_deref() {
+                Some(nickname) if !nickname.is_empty() => {
+                    format!("{make_model} \u{201C}{nickname}\u{201D}")
+                }
+                _ => make_model,
+            },
+        }
     }
 }
 

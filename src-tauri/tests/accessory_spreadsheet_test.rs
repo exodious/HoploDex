@@ -240,7 +240,10 @@ fn sample_collection(db: &TestDb) -> (usize, usize) {
     );
     new_accessory(db, &accessory_with(STOCK, json!({ "make": "Magpul", "model": "CTR" })));
     new_accessory(db, &accessory_with(BARREL, json!({ "make": "Criterion", "model": "Hybrid" })));
-    new_accessory(db, &accessory_with(MUZZLE, json!({ "make": "Surefire", "model": "Brake" })));
+    new_accessory(
+        db,
+        &accessory_with(MUZZLE, json!({ "make": "Griffin Armament", "model": "Brake" })),
+    );
     new_accessory(db, &accessory_with(CONVERSION_KIT, json!({ "make": "Advantage Arms" })));
     new_accessory(db, &mounted(accessory_with(MOUNT_OR_RAIL, json!({ "make": "ADM" })), optic));
     new_accessory(db, &accessory_with(SLING, json!({ "make": "Blue Force Gear" })));

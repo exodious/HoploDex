@@ -172,7 +172,7 @@ describe("User Story 5 - Export and Import Records", () => {
     await importFile(csvPath);
     expect(await tally("added")).toBe(1);
     expect(await tally("failed")).toBe(1);
-    await expect($(".hd-row-errors").$("li*=Row 1")).toExist();
+    await expect($(".hd-row-errors").$("li*=Firearms, row 1")).toExist();
     await clickButton("Done");
 
     await search("ImportE2ESig");

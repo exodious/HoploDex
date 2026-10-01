@@ -354,13 +354,16 @@ input: { files: { filePath: string; format: "csv" | "xlsx" }[] }   // 1 or 2 fil
   - a file or sheet's header is neither table's;
   - more than two files are given.
 - **`ImportResult`**:
-  - `RowError`, the warnings and `SnappedValue` gain
-    `table: "firearms" | "accessories"`. `row` is numbered within its
-    table.
+  - `RowError`, the warnings, `SnappedValue` and `DerivedCaliberReport`
+    gain `table: "firearms" | "accessories"`. `row` is numbered within its
+    table. `ResolveResult.unresolved` and `warnings` are `RowError`s, so
+    they carry it too.
   - `ImportConflict` gains `table` and
     `existingRecord: RecordRef`, replacing `existingFirearmId`. For an
     accessory conflict, `duplicateAllowed` is always `true`, and `make`,
-    `model` and `serialNumber` may be `null`; it gains `kindName`.
+    `model` and `serialNumber` may be `null`; it gains `kindName` (the
+    accessory's kind name, `null` for a firearm). A conflict's id is
+    `{session}-{table}-row-{n}`.
   - `importedCount`, `updatedCount` and `skippedCount` count both tables.
     `importedAccessoryCount` is added.
 - **Mount warnings** (FR-023) arrive in `warnings`, each naming its row and

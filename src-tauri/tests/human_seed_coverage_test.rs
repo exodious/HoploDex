@@ -23,7 +23,7 @@ mod support;
 use hoplodex_lib::db;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::services::spreadsheet::{ACCESSORY_COLUMNS, FIREARM_COLUMNS};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -188,16 +188,30 @@ fn the_import_samples_use_every_spreadsheet_column() {
 
     // Import reads columns by header (specs/004-cartridges-action-types
     // FR-023), so one sample may be shaped like a sheet exported before
-    // `cartridge` and `action_type` existed, and one like a sheet exported
+    // `cartridge` and `action_type` existed, one like a sheet exported
     // before the four registration columns of specs/005-regulated-item-types
-    // (US4-7). No other header is allowed.
+    // (US4-7), and one like a sheet exported before `record_id` and
+    // `mounted_on` (specs/006-accessory-links US5-7). A sheet is the firearm
+    // table or the accessory table by its header (FR-022). No other header
+    // is allowed.
     const REGISTRATION: [&str; 4] =
         ["registered_as", "registration_form", "registration_approved", "registered_to"];
-    let before_004: Vec<&str> =
-        COLUMNS.iter().copied().filter(|c| !matches!(*c, "cartridge" | "action_type")).collect();
-    let before_005: Vec<&str> =
-        COLUMNS.iter().copied().filter(|c| !REGISTRATION.contains(c)).collect();
-    let mut used: BTreeSet<String> = BTreeSet::new();
+    let firearm_headers: Vec<Vec<&str>> = vec![
+        FIREARM_COLUMNS.to_vec(),
+        FIREARM_COLUMNS
+            .iter()
+            .copied()
+            .filter(|c| !matches!(*c, "cartridge" | "action_type"))
+            .collect(),
+        FIREARM_COLUMNS.iter().copied().filter(|c| !REGISTRATION.contains(c)).collect(),
+        FIREARM_COLUMNS
+            .iter()
+            .copied()
+            .filter(|c| !matches!(*c, "record_id" | "mounted_on"))
+            .collect(),
+    ];
+    let mut firearm_used: BTreeSet<String> = BTreeSet::new();
+    let mut accessory_used: BTreeSet<String> = BTreeSet::new();
     let mut files = 0;
     for entry in std::fs::read_dir(dir.path()).unwrap() {
         let path = entry.unwrap().path();
@@ -207,11 +221,13 @@ fn the_import_samples_use_every_spreadsheet_column() {
         files += 1;
         let mut reader = csv::Reader::from_path(&path).unwrap();
         let headers: Vec<String> = reader.headers().unwrap().iter().map(str::to_owned).collect();
+        let is_accessory_table = headers == ACCESSORY_COLUMNS;
         assert!(
-            headers == COLUMNS || headers == before_004 || headers == before_005,
-            "{} does not have the export's columns",
+            is_accessory_table || firearm_headers.iter().any(|known| &headers == known),
+            "{} does not have either table's columns",
             path.display()
         );
+        let used = if is_accessory_table { &mut accessory_used } else { &mut firearm_used };
         for record in reader.records() {
             for (header, cell) in headers.iter().zip(record.unwrap().iter()) {
                 if !cell.trim().is_empty() {
@@ -222,15 +238,20 @@ fn the_import_samples_use_every_spreadsheet_column() {
     }
     assert!(files > 0, "no import samples were written");
 
-    let blank: Vec<_> = COLUMNS
-        .iter()
-        .filter(|name| !used.contains(**name) && !NOT_IMPORTED.contains(name))
-        .copied()
-        .collect();
-    assert!(
-        blank.is_empty(),
-        "no import sample in examples/human_seed.rs fills these spreadsheet columns: {blank:?}"
-    );
+    for (table, columns, used) in [
+        ("firearm", FIREARM_COLUMNS, &firearm_used),
+        ("accessory", ACCESSORY_COLUMNS, &accessory_used),
+    ] {
+        let blank: Vec<_> = columns
+            .iter()
+            .filter(|name| !used.contains(**name) && !NOT_IMPORTED.contains(name))
+            .copied()
+            .collect();
+        assert!(
+            blank.is_empty(),
+            "no import sample in examples/human_seed.rs fills these {table} table columns: {blank:?}"
+        );
+    }
 }
 
 /// The cartridge import sample does what its comments in the seed say, so a
@@ -254,8 +275,7 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
     let import = |name: &str| {
         import_export_ops::import_collection(
             &db.conn,
-            &dir.path().join(name),
-            SpreadsheetFormat::Csv,
+            &support::import_files(dir.path().join(name), SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -287,5 +307,82 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
     assert!(errors.derived_calibers.is_empty());
 
     let before = import("import-before-registrations.csv");
+    assert_eq!(before.imported_count, 1, "{:?}", before.row_errors);
+}
+
+/// The accessory import samples do what their comments in the seed say
+/// (specs/006-accessory-links US5), so a person trying File > Import sees
+/// the pair of tables, the workbook, each mount warning and the row errors.
+#[test]
+fn the_accessory_import_samples_show_each_part_of_the_report() {
+    use hoplodex_lib::commands::import_export::ops as import_export_ops;
+    use hoplodex_lib::commands::import_export::{ImportFile, ImportSessionStore};
+    use hoplodex_lib::commands::insurance::ops as insurance;
+    use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+
+    let dir = TempDir::new().unwrap();
+    human_seed::write_import_samples(dir.path());
+    let fresh = || {
+        let db = support::TestDb::new();
+        insurance::create_policy(
+            &db.conn,
+            &support::policy("Vault Schedule", "2020-01-01", "2099-01-01", None),
+        )
+        .unwrap();
+        db
+    };
+    let file = |name: &str| {
+        let path = dir.path().join(name);
+        let format =
+            if name.ends_with(".xlsx") { SpreadsheetFormat::Xlsx } else { SpreadsheetFormat::Csv };
+        ImportFile { file_path: path, format }
+    };
+    let import = |db: &support::TestDb, names: &[&str]| {
+        let files: Vec<ImportFile> = names.iter().map(|name| file(name)).collect();
+        import_export_ops::import_collection(
+            &db.conn,
+            &files,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap()
+    };
+    let count = |db: &support::TestDb, sql: &str| -> i64 {
+        db.conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    };
+
+    // The two files together, and the same two tables as one workbook.
+    for names in [
+        vec!["import-mounts-firearms.csv", "import-accessories.csv"],
+        vec!["import-collection.xlsx"],
+    ] {
+        let db = fresh();
+        let result = import(&db, &names);
+        assert!(result.row_errors.is_empty(), "{names:?}: {:?}", result.row_errors);
+        assert!(result.warnings.is_empty(), "{names:?}: {:?}", result.warnings);
+        assert_eq!((result.imported_count, result.imported_accessory_count), (9, 7), "{names:?}");
+        // The optic on the rifle, the rail on the optic, the suppressor on the upper.
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM mounts"), 3, "{names:?}");
+        assert_eq!(result.derived_calibers.len(), 1, "{names:?}");
+    }
+
+    let db = fresh();
+    let warnings = import(&db, &["import-accessory-mount-warnings.csv"]);
+    assert_eq!(warnings.imported_count, 7, "{:?}", warnings.row_errors);
+    assert_eq!(
+        warnings.warnings.iter().map(|w| w.row).collect::<Vec<_>>(),
+        [1, 3, 4, 6, 7],
+        "{:?}",
+        warnings.warnings
+    );
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM mounts"), 1, "only the loop's first row mounts");
+
+    let db = fresh();
+    let errors = import(&db, &["import-accessory-errors.csv"]);
+    assert_eq!(errors.imported_count, 2, "{:?}", errors.row_errors);
+    assert_eq!(errors.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 7, 8]);
+
+    let db = fresh();
+    let before = import(&db, &["import-before-accessories.csv"]);
     assert_eq!(before.imported_count, 1, "{:?}", before.row_errors);
 }

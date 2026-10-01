@@ -2,6 +2,7 @@
 // User Story 5.
 
 import type { ListFirearmsInput } from "../browse/types";
+import type { RecordRef } from "../mounts/types";
 
 export type SpreadsheetFormat = "csv" | "xlsx";
 
@@ -12,37 +13,74 @@ export interface ExportCollectionInput {
   filter?: ListFirearmsInput;
 }
 
+/** `get_export_scope`'s input (specs/006-accessory-links FR-020). */
+export interface GetExportScopeInput {
+  scope: "all" | "filtered";
+  filter?: ListFirearmsInput;
+}
+
+/** What an export of a scope writes, and what it must disclose (FR-020,
+ * FR-021). */
+export interface ExportScope {
+  firearmCount: number;
+  accessoryCount: number;
+  /** 005 FR-020: a firearm in the scope has a classification. */
+  includesRegistration: boolean;
+  /** FR-021: the scope holds an accessory. */
+  includesAccessories: boolean;
+}
+
 export interface ExportResult {
   spreadsheetPath: string;
+  /** The second CSV file; null for a workbook, and when no accessory is
+   * exported. */
+  accessorySpreadsheetPath: string | null;
   photosFolderPath: string;
   exportedFirearmCount: number;
+  exportedAccessoryCount: number;
+  /** Firearm and accessory photos together. */
   exportedPhotoCount: number;
 }
 
-export interface ImportCollectionInput {
+/** One file of an import: a CSV file or a workbook (FR-022). */
+export interface ImportFile {
   filePath: string;
   format: SpreadsheetFormat;
 }
 
+export interface ImportCollectionInput {
+  /** One file, or two: the firearm table and the accessory table. */
+  files: ImportFile[];
+}
+
+/** Which table a report entry's row is in; `row` counts within it. */
+export type ImportTable = "firearms" | "accessories";
+
 export interface RowError {
+  table: ImportTable;
   row: number;
   message: string;
 }
 
 export interface ImportConflict {
   conflictId: string;
+  table: ImportTable;
   row: number;
-  existingFirearmId: number;
-  /** False where FR-032 would block a duplicate record (FR-026). */
+  existingRecord: RecordRef;
+  /** False where FR-032 would block a duplicate record (FR-026); always
+   * true for an accessory. */
   duplicateAllowed: boolean;
-  make: string;
-  model: string;
+  make: string | null;
+  model: string | null;
   serialNumber: string | null;
+  /** An accessory's kind; null for a firearm. */
+  kindName: string | null;
 }
 
 /** specs/004-cartridges-action-types FR-025: a blank caliber worked out from
  * the row's cartridge. */
 export interface DerivedCaliber {
+  table: ImportTable;
   row: number;
   /** As recorded (after snapping). */
   cartridge: string;
@@ -53,6 +91,7 @@ export interface DerivedCaliber {
 
 /** FR-026, SC-007: a value changed to the spelling already in use. */
 export interface SnappedValue {
+  table: ImportTable;
   row: number;
   field: "make" | "model" | "cartridge" | "caliber" | "registrationForm" | "registeredTo";
   /** As in the sheet, trimmed. */
@@ -62,13 +101,17 @@ export interface SnappedValue {
 
 export interface ImportResult {
   sessionId: string;
+  /** Both tables' rows. */
   importedCount: number;
+  /** The accessory rows among `importedCount`. */
+  importedAccessoryCount: number;
   updatedCount: number;
   skippedCount: number;
   rowErrors: RowError[];
   conflicts: ImportConflict[];
   /** specs/002-firearm-identification FR-009: rows whose original marks
-   * match another active firearm's, imported anyway (US4-6). */
+   * match another active firearm's, imported anyway (US4-6); and
+   * specs/006-accessory-links FR-023: mounts that couldn't be made. */
   warnings: RowError[];
   /** Rows imported or awaiting a decision, never failed ones. */
   derivedCalibers: DerivedCaliber[];

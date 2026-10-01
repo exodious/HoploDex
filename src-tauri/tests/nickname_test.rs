@@ -8,6 +8,7 @@ use hoplodex_lib::commands::firearms::{DisposeInput, ListFirearmsInput, ops};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, csv_file, csv_firearm, firearm};
 use tempfile::TempDir;
@@ -200,8 +201,7 @@ fn import(db: &TestDb, rows: &[String]) -> hoplodex_lib::commands::import_export
     std::fs::write(&path, csv_file(rows)).unwrap();
     import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -220,20 +220,22 @@ fn the_nickname_round_trips_through_export_and_import() {
         dest.path(),
         "backup",
         SpreadsheetFormat::Csv,
-        &[created.id],
+        &support::firearm_records(&[created.id]),
         &mut |_, _| {},
     )
     .unwrap();
     let text = std::fs::read_to_string(&exported.spreadsheet_path).unwrap();
     let header = text.lines().next().unwrap();
-    assert!(header.starts_with("make,model,nickname,"), "nickname follows model: {header}");
+    assert!(
+        header.starts_with("record_id,make,model,nickname,"),
+        "nickname follows model: {header}"
+    );
     assert!(text.contains("Old Faithful"));
 
     let target = TestDb::new();
     let result = import_export_ops::import_collection(
         &target.conn,
-        &exported.spreadsheet_path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -289,5 +291,5 @@ fn nickname_plays_no_part_in_import_matching() {
 
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.conflicts.len(), 1);
-    assert_eq!(result.conflicts[0].existing_firearm_id, existing.id);
+    assert_eq!(result.conflicts[0].existing_record, RecordRef::Firearm(existing.id));
 }
