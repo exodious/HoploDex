@@ -320,6 +320,34 @@ e2e/
   Neither copy lives inside `firearms/`.
 - **The E2E spec** is numbered `us12`, continuing the series.
 
+### Close-out (at pull request time)
+
+The final phase of tasks.md includes updating the related issues, as part
+of opening the pull request:
+
+- **#53** (record identifiers): comment with what 006 settled and what is
+  left. **Settled**:
+  - `uid` on `firearms` and `accessories`, with the format (a lowercase v4
+    UUID, `services::record_id`), set at creation and fixed by trigger;
+  - the spreadsheet's `record_id` column and identifier-first matching;
+  - a created record keeps the row's identifier, a duplicate gets a new
+    one (a data point for #31);
+  - the tests and seed for those two tables.
+
+  **Left**:
+  - `insurance_policies.uid` (required, for #54);
+  - `photos.uid` and `document_attachments.uid` (for #30);
+  - whether `disposition_history` needs one;
+  - confirming the lookup tables need none;
+  - whether cross-table uniqueness matters beyond firearms and
+    accessories;
+  - the acceptance tests and seed for those tables.
+
+  Update the issue body's "To decide" list to match.
+- **#50**: link the pull request.
+- **#55**: note the FR-003 decision it came from, if anything changed
+  during implementation.
+
 ## Complexity Tracking
 
 *No entries. The Constitution Check above shows no violations requiring
