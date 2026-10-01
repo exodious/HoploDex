@@ -146,7 +146,7 @@ fn the_twelve_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
 fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_the_command() {
     // FR-002: the row is never removed; the command accepts any kind that exists.
     let db = TestDb::new();
-    let held = ops::create_accessory(&db.conn, &accessory(CONVERSION_KIT)).unwrap();
+    let held = ops::create_accessory(&db.conn, &accessory(CONVERSION_KIT), None).unwrap();
 
     db.conn.execute("UPDATE accessory_kinds SET offered = 0 WHERE id = 8", []).unwrap();
 
@@ -165,7 +165,7 @@ fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_th
     assert_eq!(detail(&db, held.id)["notes"], "Edited");
 
     // And a new one may still be created with it.
-    assert!(ops::create_accessory(&db.conn, &accessory(CONVERSION_KIT)).is_ok());
+    assert!(ops::create_accessory(&db.conn, &accessory(CONVERSION_KIT), None).is_ok());
 }
 
 // --- Saving and reopening (US1-3 to US1-5, FR-001) ------------------------------
@@ -174,7 +174,7 @@ fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_th
 fn an_accessory_with_only_a_kind_saves_and_reopens_with_every_optional_field_empty() {
     // US1-5.
     let mut db = TestDb::new();
-    let created = ops::create_accessory(&db.conn, &accessory(SLING)).unwrap();
+    let created = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
     db.reopen();
 
     let shown = detail(&db, created.id);
@@ -219,7 +219,7 @@ fn an_optic_saves_and_every_value_comes_back() {
     input.acquisition_date = Some("2025-11-02".into());
     input.notes = Some("Zeroed at 100 yards.".into());
 
-    let created = ops::create_accessory(&db.conn, &input).unwrap();
+    let created = ops::create_accessory(&db.conn, &input, None).unwrap();
     db.reopen();
     let shown = detail(&db, created.id);
 
@@ -243,7 +243,7 @@ fn a_pair_of_magazines_saves_as_one_record() {
     input.model = Some("P38 magazines, pair".into());
     input.estimated_value = Some(180);
 
-    let created = ops::create_accessory(&db.conn, &input).unwrap();
+    let created = ops::create_accessory(&db.conn, &input, None).unwrap();
 
     let shown = detail(&db, created.id);
     assert_eq!(shown["model"], "P38 magazines, pair");
@@ -254,7 +254,7 @@ fn a_pair_of_magazines_saves_as_one_record() {
 #[test]
 fn editing_saves_the_new_values() {
     let db = TestDb::new();
-    let created = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
+    let created = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let mut edited = accessory(MAGAZINE);
     edited.make = Some("Magpul".into());
     edited.estimated_value = Some(25);
@@ -285,7 +285,7 @@ fn getting_or_updating_an_accessory_that_does_not_exist_is_not_found() {
 fn a_missing_or_unknown_kind_fails_on_the_kind_field_with_the_exact_message() {
     let db = TestDb::new();
     for kind in [0, 99, -1] {
-        let err = ops::create_accessory(&db.conn, &accessory(kind)).unwrap_err();
+        let err = ops::create_accessory(&db.conn, &accessory(kind), None).unwrap_err();
         assert_eq!(err.code, "VALIDATION_ERROR", "kind {kind}");
         let errors = err.field_errors.as_ref().expect("field errors");
         assert_eq!(errors.len(), 1, "kind {kind}: only the kind is wrong: {errors:?}");
@@ -293,7 +293,7 @@ fn a_missing_or_unknown_kind_fails_on_the_kind_field_with_the_exact_message() {
     }
     assert_eq!(count(&db, "accessories"), 0);
 
-    let held = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
+    let held = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let err = ops::update_accessory(&db.conn, held.id, &accessory(99)).unwrap_err();
     assert_field_error(err, "accessoryKindId", "Choose a kind.");
     assert_eq!(detail(&db, held.id)["accessoryKindId"], OPTIC);
@@ -309,8 +309,8 @@ fn two_accessories_with_the_same_make_model_and_serial_number_both_save() {
     input.model = Some("VX-5HD".into());
     input.serial_number = Some("SN-1".into());
 
-    let first = ops::create_accessory(&db.conn, &input).unwrap();
-    let second = ops::create_accessory(&db.conn, &input).unwrap();
+    let first = ops::create_accessory(&db.conn, &input, None).unwrap();
+    let second = ops::create_accessory(&db.conn, &input, None).unwrap();
 
     assert_ne!(first.id, second.id);
     assert_eq!(count(&db, "accessories"), 2);
@@ -326,7 +326,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     let mut make = accessory(OPTIC);
     make.make = Some(too_long.clone());
     assert_field_error(
-        ops::create_accessory(&db.conn, &make).unwrap_err(),
+        ops::create_accessory(&db.conn, &make, None).unwrap_err(),
         "make",
         "Make can be at most 100 characters.",
     );
@@ -334,7 +334,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     let mut model = accessory(OPTIC);
     model.model = Some(too_long.clone());
     assert_field_error(
-        ops::create_accessory(&db.conn, &model).unwrap_err(),
+        ops::create_accessory(&db.conn, &model, None).unwrap_err(),
         "model",
         "Model can be at most 100 characters.",
     );
@@ -342,7 +342,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     let mut caliber = accessory(OPTIC);
     caliber.caliber = Some(too_long.clone());
     assert_field_error(
-        ops::create_accessory(&db.conn, &caliber).unwrap_err(),
+        ops::create_accessory(&db.conn, &caliber, None).unwrap_err(),
         "caliber",
         "Caliber can be at most 100 characters.",
     );
@@ -350,7 +350,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     let mut cartridge = accessory(OPTIC);
     cartridge.cartridge = Some(too_long);
     assert_field_error(
-        ops::create_accessory(&db.conn, &cartridge).unwrap_err(),
+        ops::create_accessory(&db.conn, &cartridge, None).unwrap_err(),
         "cartridge",
         "Cartridge can be at most 100 characters.",
     );
@@ -358,7 +358,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     let mut control = accessory(OPTIC);
     control.make = Some("Leu\u{7}pold".into());
     control.model = Some("VX\u{0}5".into());
-    let err = ops::create_accessory(&db.conn, &control).unwrap_err();
+    let err = ops::create_accessory(&db.conn, &control, None).unwrap_err();
     assert_eq!(
         field_error(&err, "make").as_deref(),
         Some("Make can't contain control characters.")
@@ -371,7 +371,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     // Exactly 100 characters, counted after trimming, is fine.
     let mut limit = accessory(OPTIC);
     limit.make = Some(format!("  {}  ", "a".repeat(100)));
-    assert!(ops::create_accessory(&db.conn, &limit).is_ok());
+    assert!(ops::create_accessory(&db.conn, &limit, None).is_ok());
     assert_eq!(count(&db, "accessories"), 1, "the refused ones saved nothing");
 }
 
@@ -384,7 +384,7 @@ fn a_blank_make_or_model_is_accepted_and_stored_as_null() {
     input.caliber = Some(" ".into());
     input.cartridge = Some("".into());
 
-    let created = ops::create_accessory(&db.conn, &input).unwrap();
+    let created = ops::create_accessory(&db.conn, &input, None).unwrap();
 
     let shown = detail(&db, created.id);
     for field in ["make", "model", "caliber", "cartridge"] {
@@ -428,7 +428,7 @@ fn serial_number_acquisition_source_and_notes_are_only_trimmed_and_blank_is_null
     input.serial_number = Some("  SN 1\t".into());
     input.acquisition_source = Some("  Gun show  ".into());
     input.notes = Some("  A note  ".into());
-    let created = ops::create_accessory(&db.conn, &input).unwrap();
+    let created = ops::create_accessory(&db.conn, &input, None).unwrap();
     let shown = detail(&db, created.id);
     assert_eq!(shown["serialNumber"], "SN 1");
     assert_eq!(shown["acquisitionSource"], "Gun show");
@@ -438,7 +438,7 @@ fn serial_number_acquisition_source_and_notes_are_only_trimmed_and_blank_is_null
     blank.serial_number = Some("   ".into());
     blank.acquisition_source = Some("".into());
     blank.notes = Some("\n".into());
-    let created = ops::create_accessory(&db.conn, &blank).unwrap();
+    let created = ops::create_accessory(&db.conn, &blank, None).unwrap();
     let shown = detail(&db, created.id);
     for field in ["serialNumber", "acquisitionSource", "notes"] {
         assert_eq!(shown[field], Value::Null, "{field}");
@@ -448,7 +448,7 @@ fn serial_number_acquisition_source_and_notes_are_only_trimmed_and_blank_is_null
     let mut free = accessory(OPTIC);
     free.serial_number = Some(format!("S{}\u{7}", "9".repeat(150)));
     free.acquisition_source = Some("s".repeat(150));
-    assert!(ops::create_accessory(&db.conn, &free).is_ok());
+    assert!(ops::create_accessory(&db.conn, &free, None).is_ok());
 }
 
 // --- The firearm's amount, date, disposition and insurance rules (data-model.md) -----
@@ -461,7 +461,7 @@ fn an_acquisition_date_of_tomorrow_and_a_negative_amount_fail_with_the_firearms_
     input.estimated_value = Some(-1);
     input.acquisition_price = Some(-5);
 
-    let err = ops::create_accessory(&db.conn, &input).unwrap_err();
+    let err = ops::create_accessory(&db.conn, &input, None).unwrap_err();
 
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert_eq!(
@@ -480,14 +480,14 @@ fn an_acquisition_date_of_tomorrow_and_a_negative_amount_fail_with_the_firearms_
     // Today is allowed.
     let mut today_input = accessory(OPTIC);
     today_input.acquisition_date = Some(iso(today()));
-    assert!(ops::create_accessory(&db.conn, &today_input).is_ok());
+    assert!(ops::create_accessory(&db.conn, &today_input, None).is_ok());
 }
 
 #[test]
 fn a_disposed_accessory_needs_a_type_a_recipient_and_a_date() {
     let db = TestDb::new();
 
-    let err = ops::create_accessory(&db.conn, &disposed_accessory(OPTIC)).unwrap_err();
+    let err = ops::create_accessory(&db.conn, &disposed_accessory(OPTIC), None).unwrap_err();
 
     assert_eq!(err.code, "VALIDATION_ERROR");
     for field in ["dispositionType", "dispositionRecipient", "dispositionDate"] {
@@ -505,7 +505,7 @@ fn disposition_details_on_an_active_accessory_are_refused() {
     let mut input = accessory(OPTIC);
     input.disposition_recipient = Some("Jane".into());
 
-    let err = ops::create_accessory(&db.conn, &input).unwrap_err();
+    let err = ops::create_accessory(&db.conn, &input, None).unwrap_err();
 
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(field_error(&err, "status").is_some(), "{err:?}");
@@ -516,7 +516,7 @@ fn a_disposition_date_before_the_acquisition_date_is_refused() {
     let db = TestDb::new();
     let mut input = accessory(OPTIC);
     input.acquisition_date = Some("2025-06-01".into());
-    let created = ops::create_accessory(&db.conn, &input).unwrap();
+    let created = ops::create_accessory(&db.conn, &input, None).unwrap();
 
     let err = ops::dispose_accessory(
         &db.conn,
@@ -551,7 +551,7 @@ fn a_policy_without_an_amount_and_an_amount_without_a_policy_both_fail() {
     let mut no_amount = accessory(OPTIC);
     no_amount.insurance_policy_id = Some(policy.id);
     assert_field_error(
-        ops::create_accessory(&db.conn, &no_amount).unwrap_err(),
+        ops::create_accessory(&db.conn, &no_amount, None).unwrap_err(),
         "scheduledCoverageAmount",
         "Enter the amount scheduled on the policy.",
     );
@@ -559,7 +559,7 @@ fn a_policy_without_an_amount_and_an_amount_without_a_policy_both_fail() {
     let mut no_policy = accessory(OPTIC);
     no_policy.scheduled_coverage_amount = Some(500);
     assert_field_error(
-        ops::create_accessory(&db.conn, &no_policy).unwrap_err(),
+        ops::create_accessory(&db.conn, &no_policy, None).unwrap_err(),
         "insurancePolicyId",
         "Choose the policy this amount is scheduled on.",
     );
@@ -567,7 +567,7 @@ fn a_policy_without_an_amount_and_an_amount_without_a_policy_both_fail() {
     let mut both = accessory(OPTIC);
     both.insurance_policy_id = Some(policy.id);
     both.scheduled_coverage_amount = Some(500);
-    assert!(ops::create_accessory(&db.conn, &both).is_ok());
+    assert!(ops::create_accessory(&db.conn, &both, None).is_ok());
 }
 
 // --- Dispose, restore, delete (US1-9, US1-10, FR-006) ----------------------------------
@@ -576,8 +576,8 @@ fn a_policy_without_an_amount_and_an_amount_without_a_policy_both_fail() {
 fn a_disposed_accessory_leaves_the_default_list_and_is_listed_with_include_disposed() {
     // US1-9.
     let db = TestDb::new();
-    let kept = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
-    let gone = ops::create_accessory(&db.conn, &accessory(SLING)).unwrap();
+    let kept = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
+    let gone = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
 
     let disposed = dispose(&db, gone.id);
 
@@ -598,7 +598,7 @@ fn a_disposed_accessory_leaves_the_default_list_and_is_listed_with_include_dispo
 #[test]
 fn disposing_an_accessory_with_a_missing_field_changes_nothing() {
     let db = TestDb::new();
-    let created = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
+    let created = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
 
     let err = ops::dispose_accessory(
         &db.conn,
@@ -622,8 +622,8 @@ fn disposing_an_accessory_with_a_missing_field_changes_nothing() {
 fn reversing_with_keep_retains_a_history_entry_and_with_discard_none() {
     // US1-9, FR-006.
     let db = TestDb::new();
-    let kept = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
-    let discarded = ops::create_accessory(&db.conn, &accessory(SLING)).unwrap();
+    let kept = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
+    let discarded = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
     dispose(&db, kept.id);
     dispose(&db, discarded.id);
 
@@ -653,9 +653,9 @@ fn restoring_does_not_recheck_identity_so_a_duplicate_of_an_active_one_comes_bac
     input.make = Some("Leupold".into());
     input.model = Some("VX".into());
     input.serial_number = Some("SN-1".into());
-    let first = ops::create_accessory(&db.conn, &input).unwrap();
+    let first = ops::create_accessory(&db.conn, &input, None).unwrap();
     dispose(&db, first.id);
-    let second = ops::create_accessory(&db.conn, &input).unwrap();
+    let second = ops::create_accessory(&db.conn, &input, None).unwrap();
 
     let restored = reverse(&db, first.id, "keep");
 
@@ -668,7 +668,7 @@ fn restoring_does_not_recheck_identity_so_a_duplicate_of_an_active_one_comes_bac
 fn deleting_needs_confirmation_and_then_removes_the_row() {
     // US1-10.
     let db = TestDb::new();
-    let created = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
+    let created = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
 
     let unconfirmed = ops::delete_accessory(&db.conn, created.id, false);
     assert!(unconfirmed.is_err(), "delete without confirmation must be blocked");
@@ -692,12 +692,12 @@ fn a_firearms_free_text_accessories_stays_unchanged_and_creates_no_accessory() {
     let db = TestDb::new();
     let mut input = support::firearm("Ruger", "10/22", "R-1");
     input.accessories = Some("Leupold scope".into());
-    let firearm = firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap();
 
-    ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
+    ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let mut other = accessory(MAGAZINE);
     other.make = Some("Leupold".into());
-    ops::create_accessory(&db.conn, &other).unwrap();
+    ops::create_accessory(&db.conn, &other, None).unwrap();
 
     let after = firearm_ops::get_firearm(&db.conn, firearm.id).unwrap();
     assert_eq!(after.accessories.as_deref(), Some("Leupold scope"));
@@ -709,7 +709,7 @@ fn a_firearms_free_text_accessories_stays_unchanged_and_creates_no_accessory() {
 #[test]
 fn the_identifier_is_never_serialized_by_an_accessory_or_its_detail() {
     let db = TestDb::new();
-    let created = ops::create_accessory(&db.conn, &accessory(OPTIC)).unwrap();
+    let created = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
 
     let plain = serde_json::to_value(&created).unwrap();
     let full = serde_json::to_value(ops::get_accessory(&db.conn, created.id).unwrap()).unwrap();

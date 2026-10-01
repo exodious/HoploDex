@@ -2,7 +2,7 @@
 // User Story 5.
 
 import type { ListFirearmsInput } from "../browse/types";
-import type { RecordRef } from "../mounts/types";
+import type { MountedEntry, RecordRef } from "../mounts/types";
 
 export type SpreadsheetFormat = "csv" | "xlsx";
 
@@ -75,6 +75,10 @@ export interface ImportConflict {
   serialNumber: string | null;
   /** An accessory's kind; null for a firearm. */
   kindName: string | null;
+  /** Issue #56: everything mounted on the record when the row would dispose
+   * of it while it is active, so replacing it can ask which go with it.
+   * Empty otherwise. */
+  mounted: MountedEntry[];
 }
 
 /** specs/004-cartridges-action-types FR-025: a blank caliber worked out from
@@ -124,6 +128,10 @@ export type ConflictAction = "skip" | "overwrite" | "duplicate";
 export interface ConflictResolution {
   conflictId: string;
   action: ConflictAction;
+  /** For an `overwrite` that disposes of the record: the records of its
+   * `mounted` list to dispose of with it, with the row's type, recipient and
+   * date and no price. The rest are kept (issue #56). */
+  withMounted?: RecordRef[];
 }
 
 export interface ResolveImportConflictsInput {

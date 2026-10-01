@@ -117,7 +117,12 @@ impl World {
     fn add_firearm(&self, serial: &str) -> Result<(), CommandError> {
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Colt", "Python", serial), false)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", serial),
+                    false,
+                    None,
+                )
             })
             .map(|_| ())
     }

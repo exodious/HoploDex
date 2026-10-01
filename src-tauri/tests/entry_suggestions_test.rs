@@ -28,6 +28,7 @@ fn record(db: &TestDb, make: &str, model: &str, cartridge: Option<&str>, caliber
             ..firearm(make, model, &format!("S-{count}"))
         },
         false,
+        None,
     )
     .unwrap()
     .id
@@ -520,6 +521,7 @@ fn registered(db: &TestDb, form: Option<&str>, to: Option<&str>) -> i64 {
             ..firearm("Make", "Model", &format!("R-{count}"))
         },
         false,
+        None,
     )
     .unwrap()
     .id
@@ -599,7 +601,7 @@ fn accessory_record(
     input.model = Some(model.into());
     input.cartridge = cartridge.map(str::to_owned);
     input.caliber = caliber.map(str::to_owned);
-    accessory_ops::create_accessory(&db.conn, &input).unwrap().id
+    accessory_ops::create_accessory(&db.conn, &input, None).unwrap().id
 }
 
 #[test]

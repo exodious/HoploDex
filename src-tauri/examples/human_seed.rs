@@ -348,7 +348,7 @@ fn database_id(conn: &Connection) -> String {
 fn seed_shared(conn: &Connection) -> i64 {
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
-        must(firearm_ops::create_firearm(conn, &input, false), &label).id
+        must(firearm_ops::create_firearm(conn, &input, false, None), &label).id
     };
     let beretta = add(FirearmInput {
         estimated_value: Some(650),
@@ -538,7 +538,7 @@ pub fn seed(conn: &Connection, extra: usize) {
 
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
-        must(firearm_ops::create_firearm(conn, &input, false), &label).id
+        must(firearm_ops::create_firearm(conn, &input, false, None), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
         let input = DisposeInput {
@@ -1065,7 +1065,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power A", "RA-90001", "9mm", HANDGUN)
     };
-    must(firearm_ops::create_firearm(conn, &original_marks_first, false), "original-marks demo 1");
+    must(
+        firearm_ops::create_firearm(conn, &original_marks_first, false, None),
+        "original-marks demo 1",
+    );
     let original_marks_second = FirearmInput {
         notes: text(
             "Original-marks warning demo, firearm 2 of 2 (shares firearm 1's original marks).",
@@ -1084,7 +1087,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power B", "RA-90002", "9mm", HANDGUN)
     };
-    must(firearm_ops::create_firearm(conn, &original_marks_second, true), "original-marks demo 2");
+    must(
+        firearm_ops::create_firearm(conn, &original_marks_second, true, None),
+        "original-marks demo 2",
+    );
 
     // -- Disposed ------------------------------------------------------------
 
@@ -1320,7 +1326,7 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
     let bare = bare_accessory;
     let add = |input: AccessoryInput| {
         let label = format!("{:?} {:?}", input.make, input.model);
-        must(accessory_ops::create_accessory(conn, &input), &label).id
+        must(accessory_ops::create_accessory(conn, &input, None), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
         let input = DisposeInput {
@@ -1544,11 +1550,11 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
 fn seed_mounts(conn: &Connection) {
     let add_firearm = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
-        RecordRef::Firearm(must(firearm_ops::create_firearm(conn, &input, false), &label).id)
+        RecordRef::Firearm(must(firearm_ops::create_firearm(conn, &input, false, None), &label).id)
     };
     let add_accessory = |input: AccessoryInput| {
         let label = format!("{:?} {:?}", input.make, input.model);
-        RecordRef::Accessory(must(accessory_ops::create_accessory(conn, &input), &label).id)
+        RecordRef::Accessory(must(accessory_ops::create_accessory(conn, &input, None), &label).id)
     };
     let accessory = |kind: i64, make: &str, model: &str, host: RecordRef| AccessoryInput {
         make: text(make),
@@ -2289,6 +2295,28 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     );
 
     write_accessory_import_samples(dir, &row);
+
+    // Issue #56: a row matching the seeded "Stripped lower" by make, model
+    // and serial number marks it sold, so choosing "Replace existing" asks
+    // which of the records mounted on it (an upper carrying a scope, which
+    // carries a red dot, and a light) go with it.
+    write(
+        "import-dispose-receiver.csv",
+        vec![row(&[
+            ("make", "LaRue Tactical"),
+            ("model", "PredatAR lower"),
+            ("nickname", "Stripped lower"),
+            ("serial_number", "LT-L-30915"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".223"),
+            ("firearm_type", "Rifle"),
+            ("status", "disposed"),
+            ("disposition_type", "sold"),
+            ("disposition_recipient", "Kestrel Outfitters"),
+            ("disposition_date", "2025-09-12"),
+            ("disposition_price", "400"),
+        ])],
+    );
 
     // specs/006-accessory-links US5-7: a sheet exported before this feature
     // has neither `record_id` nor `mounted_on`, and imports as it always did.

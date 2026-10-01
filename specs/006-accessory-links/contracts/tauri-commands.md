@@ -17,7 +17,8 @@ command is registered in `main.rs`'s `generate_handler!`.
   `assign_firearm_coverage` (content only), `get_value_summary`,
   `get_policy_deletion_impact`, `delete_insurance_policy` (content only),
   `export_collection`, `import_collection`, `resolve_import_conflicts`,
-  `suggest_entries` (content only), `stage_pending_changes` (content only);
+  `suggest_entries` and `settle_entry` (content only),
+  `stage_pending_changes` (content only);
 - the shapes `Firearm`, `FirearmInput` and `FirearmSummary`.
 
 **Added**:
@@ -381,6 +382,10 @@ input: { files: { filePath: string; format: "csv" | "xlsx" }[] }   // 1 or 2 fil
     `model` and `serialNumber` may be `null`; it gains `kindName` (the
     accessory's kind name, `null` for a firearm). A conflict's id is
     `{session}-{table}-row-{n}`.
+  - `ImportConflict` gains `mounted: MountedEntry[]` (issue #56): when the
+    row marks the record disposed and the record is active, everything
+    below it, depth-first, as the dispose dialog lists it, read after this
+    import's own mounts are made. Empty otherwise.
   - `importedCount`, `updatedCount` and `skippedCount` count both tables.
     `importedAccessoryCount` is added.
 - **Mount warnings** (FR-023) arrive in `warnings`, each naming its row and
@@ -394,9 +399,19 @@ input: { files: { filePath: string; format: "csv" | "xlsx" }[] }   // 1 or 2 fil
 
 ### `resolve_import_conflicts`
 
-The input is unchanged. An `overwrite` or `duplicate` applies the row's
-mount by the same rules, and its warnings arrive in `warnings`
-(research.md §18).
+An `overwrite` or `duplicate` applies the row's mount by the same rules,
+and its warnings arrive in `warnings` (research.md §18).
+
+`ConflictResolution` gains `withMounted?: RecordRef[]` (issue #56). An
+`overwrite` whose row marks the record disposed takes the steps of
+`dispose_*` with `withMounted` (FR-014): the listed records, which must be
+in the conflict's `mounted` list, are disposed of with it, taking the row's
+disposition type, recipient and date and no price; the rest are kept, and
+every mount involving a disposed record ends. Absent means none. A listed
+record no longer below the record, or one that fails its own checks (a
+disposition date before its acquisition date), leaves the conflict open in
+`unresolved` with the same message as `dispose_*`'s `withMounted` error,
+and nothing is changed.
 
 ## Entries (amended content)
 

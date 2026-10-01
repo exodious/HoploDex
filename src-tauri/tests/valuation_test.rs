@@ -27,10 +27,10 @@ fn scenario_5_total_updates_immediately_after_every_mutation() {
     let initial = get_value_summary(&db.conn).unwrap();
     assert_eq!(initial.collection_total, 0);
 
-    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50000), false).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50000), false, None).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 50000);
 
-    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30000), false).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30000), false, None).unwrap();
     assert_eq!(get_value_summary(&db.conn).unwrap().collection_total, 80000);
 
     firearm_ops::update_firearm(&db.conn, a.id, &valued("Glock", 60000), false).unwrap();
@@ -70,11 +70,12 @@ fn scenario_6_breaks_down_into_the_blanket_policy_scheduled_firearms_and_uninsur
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
 
-    let scheduled = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let scheduled =
+        firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, scheduled.id, Some(rider.id), Some(40_000))
         .unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000), false).unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Ruger", 40_000), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000), false, None).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Ruger", 40_000), false, None).unwrap();
 
     let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
 
@@ -100,8 +101,8 @@ fn scenario_6_breaks_down_into_the_blanket_policy_scheduled_firearms_and_uninsur
 #[test]
 fn with_no_blanket_policy_in_force_unscheduled_firearms_are_the_uninsured_group() {
     let db = TestDb::new();
-    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
-    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000), false).unwrap();
+    let a = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
+    let b = firearm_ops::create_firearm(&db.conn, &valued("Sig", 30_000), false, None).unwrap();
 
     let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
 
@@ -117,7 +118,7 @@ fn with_no_blanket_policy_in_force_unscheduled_firearms_are_the_uninsured_group(
 fn scenario_13_entering_a_blanket_policy_moves_the_firearms_out_of_uninsured_without_editing_them()
 {
     let db = TestDb::new();
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     assert_eq!(get_value_summary_as_of(&db.conn, date(TODAY)).unwrap().uninsured.len(), 1);
 
     insurance_ops::create_policy(
@@ -139,7 +140,7 @@ fn a_policy_with_scheduled_firearms_reports_its_expiry_state() {
         &policy("Old rider", "2025-01-01", "2026-05-01", None),
     )
     .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(expired.id), Some(90_000)).unwrap();
 
     let summary = get_value_summary_as_of(&db.conn, date(TODAY)).unwrap();
@@ -158,7 +159,7 @@ fn disposed_firearms_leave_every_part_of_the_summary() {
     let rider =
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
-    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(rider.id), Some(50_000)).unwrap();
     firearm_ops::dispose_firearm(
         &db.conn,
@@ -199,7 +200,9 @@ fn accessory_json(model: &str, value: Option<i64>) -> Value {
 }
 
 fn create_accessory(db: &TestDb, model: &str, value: Option<i64>) -> i64 {
-    accessory_ops::create_accessory(&db.conn, &parse(accessory_json(model, value))).unwrap().id
+    accessory_ops::create_accessory(&db.conn, &parse(accessory_json(model, value)), None)
+        .unwrap()
+        .id
 }
 
 fn dispose_accessory(db: &TestDb, id: i64) {
@@ -219,7 +222,7 @@ fn dispose_accessory(db: &TestDb, id: i64) {
 #[test]
 fn the_collection_total_is_the_firearms_subtotal_plus_the_accessories_subtotal() {
     let db = TestDb::new();
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     create_accessory(&db, "VX-5HD", Some(1000));
     create_accessory(&db, "Aimpoint", Some(180));
     create_accessory(&db, "No value", None);
@@ -282,9 +285,9 @@ fn the_blanket_total_includes_unscheduled_active_accessories_with_a_count_of_eac
     let rider =
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2026-01-01", "2026-12-31", None))
             .unwrap();
-    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     let scheduled_firearm =
-        firearm_ops::create_firearm(&db.conn, &valued("Sig", 9_000), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &valued("Sig", 9_000), false, None).unwrap();
     insurance_ops::assign_firearm_coverage(
         &db.conn,
         scheduled_firearm.id,
@@ -365,7 +368,8 @@ fn a_scheduled_accessory_is_listed_under_its_policy_by_record_and_checked_agains
 #[test]
 fn an_accessory_with_no_policy_in_force_is_uninsured_by_record() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false).unwrap();
+    let firearm =
+        firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
     let accessory = create_accessory(&db, "VX-5HD", Some(1000));
     create_accessory(&db, "No value", None);
 

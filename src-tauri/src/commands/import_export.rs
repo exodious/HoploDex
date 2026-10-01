@@ -8,13 +8,14 @@ use tauri::{Emitter, State};
 
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
-use crate::commands::firearms::{ListFirearmsInput, ops as firearm_ops};
+use crate::commands::firearms::{DisposeWith, Disposition, ListFirearmsInput, ops as firearm_ops};
+use crate::commands::mounts::ops as mount_ops;
 use crate::models::accessory::{AccessoryInput, validate_accessory_input};
 use crate::models::database::OperationKind;
 use crate::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
-use crate::models::record::{RecordKind, RecordLabel, RecordRef};
+use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
 use crate::services::cartridges::{CaliberSource, derive_caliber};
 use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::mounts::{self, MountGraph};
@@ -106,6 +107,11 @@ pub struct ImportConflict {
     pub serial_number: Option<String>,
     /// An accessory row's kind name; `None` for a firearm.
     pub kind_name: Option<String>,
+    /// Issue #56: when the row would dispose of an active record that has
+    /// records mounted on it, everything below that record, as the dispose
+    /// dialog lists it, so replacing it can ask which go with it. Empty
+    /// otherwise.
+    pub mounted: Vec<MountedEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,6 +171,11 @@ pub struct SnappedValue {
 pub struct ConflictResolution {
     pub conflict_id: String,
     pub action: String,
+    /// Issue #56: for an `overwrite` that disposes of the record, the
+    /// records of its `mounted` list to dispose of with it, taking the row's
+    /// type, recipient and date and no price. The rest are kept (FR-014).
+    #[serde(default)]
+    pub with_mounted: Vec<RecordRef>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -192,6 +203,36 @@ pub struct ImportFile {
 enum PendingInput {
     Firearm(Box<FirearmInput>),
     Accessory(Box<AccessoryInput>),
+}
+
+impl PendingInput {
+    /// The row's disposition, when it marks the record disposed and has the
+    /// type, recipient and date a disposed record needs. A row without them
+    /// fails its own save.
+    fn disposition(&self) -> Option<Disposition<'_>> {
+        let (status, disposition_type, recipient, date) = match self {
+            PendingInput::Firearm(input) => (
+                input.status,
+                input.disposition_type,
+                &input.disposition_recipient,
+                &input.disposition_date,
+            ),
+            PendingInput::Accessory(input) => (
+                input.status,
+                input.disposition_type,
+                &input.disposition_recipient,
+                &input.disposition_date,
+            ),
+        };
+        if status != FirearmStatus::Disposed {
+            return None;
+        }
+        Some(Disposition {
+            disposition_type: disposition_type?,
+            recipient: recipient.as_deref()?,
+            date: date.as_deref()?,
+        })
+    }
 }
 
 struct PendingConflict {
@@ -770,7 +811,8 @@ pub mod ops {
 
     /// The reason shown for a failing row: every per-field message (the
     /// summary line alone says nothing about which field is wrong), in a
-    /// stable order.
+    /// stable order. A record disposed of with the row's names itself
+    /// (`withMounted`, issue #56), so it gets no column.
     fn row_message(error: &CommandError) -> String {
         let Some(fields) = &error.field_errors else {
             return error.message.clone();
@@ -779,7 +821,10 @@ pub mod ops {
         messages.sort();
         messages
             .iter()
-            .map(|(field, message)| format!("{}: {message}", sheet_column(field)))
+            .map(|(field, message)| match field.as_str() {
+                "withMounted" => message.to_string(),
+                _ => format!("{}: {message}", sheet_column(field)),
+            })
             .collect::<Vec<_>>()
             .join("; ")
     }
@@ -1395,7 +1440,7 @@ pub mod ops {
                 },
             });
         }
-        match firearm_ops::create_firearm_with_uid(conn, &input, true, uid.as_deref()) {
+        match firearm_ops::create_firearm(conn, &input, true, uid.as_deref()) {
             Ok(created) => {
                 let warning = original_marks_warning(conn, &created)?;
                 Ok(Imported {
@@ -1441,7 +1486,7 @@ pub mod ops {
                 },
             });
         }
-        match accessory_ops::create_accessory_with_uid(conn, &input, uid.as_deref()) {
+        match accessory_ops::create_accessory(conn, &input, uid.as_deref()) {
             Ok(created) => Ok(Imported {
                 uid,
                 settled,
@@ -1569,6 +1614,46 @@ pub mod ops {
         Ok(())
     }
 
+    /// Issue #56: fills in `mounted` for each conflict whose row would
+    /// dispose of the record, once this import's own mounts are made, so
+    /// the list is what replacing it would find.
+    fn list_mounted(
+        conn: &Connection,
+        conflicts: &mut [ImportConflict],
+        pending: &[PendingConflict],
+    ) -> Result<(), CommandError> {
+        if !pending.iter().any(|p| p.new_input.disposition().is_some()) {
+            return Ok(());
+        }
+        let graph = MountGraph::load(conn)?;
+        for (conflict, pending) in conflicts.iter_mut().zip(pending) {
+            debug_assert_eq!(conflict.conflict_id, pending.conflict_id);
+            if pending.new_input.disposition().is_some() {
+                conflict.mounted = mounts::mounted_entries(conn, &graph, pending.existing)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// An `overwrite`: a row that disposes of the record takes the dispose
+    /// dialog's steps, unmounting it and everything on it and disposing of
+    /// the records chosen with it (FR-014, issue #56). `save` saves the
+    /// row.
+    fn replace<T>(
+        conn: &Connection,
+        existing: RecordRef,
+        new_input: &PendingInput,
+        with_mounted: &[RecordRef],
+        save: impl FnOnce() -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let Some(disposition) = new_input.disposition() else {
+            return save();
+        };
+        let with: Vec<DisposeWith> =
+            with_mounted.iter().map(|&record| DisposeWith { record, price: None }).collect();
+        mount_ops::dispose_chain(conn, existing, disposition, &with, save)
+    }
+
     /// The report being built, and what a landed row adds to it.
     struct Run {
         session_id: String,
@@ -1658,6 +1743,7 @@ pub mod ops {
                         model,
                         serial_number,
                         kind_name,
+                        mounted: Vec::new(),
                     });
                     self.pending.push(PendingConflict {
                         conflict_id,
@@ -1807,6 +1893,7 @@ pub mod ops {
         }
 
         resolve_mounts(conn, &run.mount_requests, &run.outcomes, &mut run.warnings)?;
+        list_mounted(conn, &mut run.conflicts, &run.pending)?;
 
         if !run.pending.is_empty() {
             store.pending.lock().expect("import session mutex poisoned").insert(
@@ -1878,8 +1965,8 @@ pub mod ops {
             .remove(session_id)
             .unwrap_or_else(|| ImportSession { pending: Vec::new(), outcomes: HashMap::new() });
 
-        let explicit: HashMap<&str, &str> =
-            resolutions.iter().map(|r| (r.conflict_id.as_str(), r.action.as_str())).collect();
+        let explicit: HashMap<&str, &ConflictResolution> =
+            resolutions.iter().map(|r| (r.conflict_id.as_str(), r)).collect();
 
         let mut resolved_count = 0;
         let mut unresolved = Vec::new();
@@ -1887,11 +1974,9 @@ pub mod ops {
         let mut warnings = Vec::new();
         let mut mount_requests = Vec::new();
         for conflict in pending {
-            let action = explicit
-                .get(conflict.conflict_id.as_str())
-                .copied()
-                .or(apply_to_remaining)
-                .unwrap_or("skip");
+            let chosen = explicit.get(conflict.conflict_id.as_str());
+            let action = chosen.map(|r| r.action.as_str()).or(apply_to_remaining).unwrap_or("skip");
+            let with_mounted = chosen.map_or(&[][..], |r| &r.with_mounted[..]);
             // "skip", or an unrecognized action, leaves the existing record
             // untouched — never saved, so it never carries a warning.
             if action != "overwrite" && action != "duplicate" {
@@ -1903,9 +1988,15 @@ pub mod ops {
                 match (&conflict.new_input, conflict.existing) {
                     (PendingInput::Firearm(input), RecordRef::Firearm(id)) => {
                         let saved = if overwrite {
-                            firearm_ops::update_firearm(conn, id, input, true)
+                            replace(
+                                conn,
+                                conflict.existing,
+                                &conflict.new_input,
+                                with_mounted,
+                                || firearm_ops::update_firearm(conn, id, input, true),
+                            )
                         } else {
-                            firearm_ops::create_firearm(conn, input, true)
+                            firearm_ops::create_firearm(conn, input, true, None)
                         };
                         saved.and_then(|saved| {
                             let message = original_marks_warning(conn, &saved)?;
@@ -1914,9 +2005,15 @@ pub mod ops {
                     }
                     (PendingInput::Accessory(input), RecordRef::Accessory(id)) => {
                         let saved = if overwrite {
-                            accessory_ops::update_accessory(conn, id, input)
+                            replace(
+                                conn,
+                                conflict.existing,
+                                &conflict.new_input,
+                                with_mounted,
+                                || accessory_ops::update_accessory(conn, id, input),
+                            )
                         } else {
-                            accessory_ops::create_accessory(conn, input)
+                            accessory_ops::create_accessory(conn, input, None)
                         };
                         saved.map(|saved| (RecordRef::Accessory(saved.id), None))
                     }

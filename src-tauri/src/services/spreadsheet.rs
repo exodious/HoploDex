@@ -376,10 +376,13 @@ fn header_name(header: &str) -> String {
 
 impl HeaderMap {
     /// Fails, naming the column, when two headers are the same known column
-    /// (contracts/spreadsheet-format.md "Columns are read by header").
+    /// (contracts/spreadsheet-format.md "Columns are read by header"), and
+    /// naming `source` (the file, and the sheet of a workbook that holds
+    /// several), since one import can take two files (specs/006 FR-022).
     fn new<'a>(
         columns: &'static [&'static str],
         headers: impl Iterator<Item = &'a str>,
+        source: &str,
     ) -> Result<Self, CommandError> {
         let mut seen = vec![false; columns.len()];
         let mut map = Vec::new();
@@ -391,7 +394,7 @@ impl HeaderMap {
             {
                 return Err(CommandError::new(
                     "VALIDATION_ERROR",
-                    format!("The import file has two \"{}\" columns.", columns[column]),
+                    format!("{source}: the header has two \"{}\" columns.", columns[column]),
                 ));
             }
             map.push(column);
@@ -786,13 +789,13 @@ fn read_table(
     let header_refs = || headers.iter().map(String::as_str);
     let rows = match recognise(headers, &source)? {
         TableKind::Firearms => {
-            let map = HeaderMap::new(FIREARM_COLUMNS, header_refs())?;
+            let map = HeaderMap::new(FIREARM_COLUMNS, header_refs(), &source)?;
             TableRows::Firearms(
                 data.map(|cells| RawImportRow::from_cells(map.cells(&cells))).collect(),
             )
         }
         TableKind::Accessories => {
-            let map = HeaderMap::new(ACCESSORY_COLUMNS, header_refs())?;
+            let map = HeaderMap::new(ACCESSORY_COLUMNS, header_refs(), &source)?;
             TableRows::Accessories(
                 data.map(|cells| RawAccessoryRow::from_cells(map.cells(&cells))).collect(),
             )

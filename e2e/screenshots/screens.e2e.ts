@@ -838,3 +838,33 @@ describe("Screenshots: the import report with mount warnings", () => {
     await chooseTheme("Light");
   });
 });
+
+// Issue #56: replacing a record with a row that marks it disposed asks which
+// of the records mounted on it go with it. The seeded "Stripped lower"
+// carries an upper (with a scope that carries a red dot, and a light). The
+// confirmation is shot with the upper chosen to go, then cancelled, so the
+// seed is left as it was.
+describe("Screenshots: replacing a record with a disposed row", () => {
+  it("asks about each record mounted on it", async () => {
+    await goTo("Collection");
+    await chooseTheme("Light");
+    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    await clickButton("Import");
+    await fill("Spreadsheet file", path.join(samples, "import-dispose-receiver.csv"));
+    await clickButton("Import");
+    await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
+    await choose("Replace existing");
+    await clickButton("Apply decisions");
+    await $('[role="alertdialog"]').waitForExist();
+    await choose("Dispose with it");
+    await browser.pause(300);
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`65-import-replace-disposed-${theme.toLowerCase()}`);
+    }
+    await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await closeDialog();
+    await chooseTheme("Light");
+  });
+});

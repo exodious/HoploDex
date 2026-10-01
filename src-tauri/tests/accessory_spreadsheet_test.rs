@@ -20,7 +20,7 @@
 //!   `DerivedCaliberReport` carrying `table` ("firearms" | "accessories"),
 //!   `ImportConflict` carrying `existingRecord` and `kindName`, and
 //!   `ImportResult::imported_accessory_count`;
-//! - `resolve_import_conflicts` unchanged.
+//! - `resolve_import_conflicts` unchanged, except `withMounted` (issue #56).
 
 mod sheets;
 mod support;
@@ -83,11 +83,11 @@ fn accessory_with(kind: i64, fields: Value) -> AccessoryInput {
 }
 
 fn new_firearm(db: &TestDb, input: &FirearmInput) -> RecordRef {
-    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, input, false).unwrap().id)
+    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, input, false, None).unwrap().id)
 }
 
 fn new_accessory(db: &TestDb, input: &AccessoryInput) -> RecordRef {
-    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, input).unwrap().id)
+    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, input, None).unwrap().id)
 }
 
 fn mounted(input: AccessoryInput, host: RecordRef) -> AccessoryInput {
@@ -369,8 +369,11 @@ fn resolve_one(
     conflict_id: &str,
     action: &str,
 ) -> ResolveResult {
-    let resolutions =
-        [ConflictResolution { conflict_id: conflict_id.into(), action: action.into() }];
+    let resolutions = [ConflictResolution {
+        conflict_id: conflict_id.into(),
+        action: action.into(),
+        with_mounted: Vec::new(),
+    }];
     import_export_ops::resolve_import_conflicts(
         &db.conn,
         store,
@@ -778,6 +781,265 @@ fn a_single_conflict_is_resolved_on_its_own_and_the_rest_are_left() {
     );
 
     assert_eq!(mount_of(&db.conn, optic), Some(uid_of(&db.conn, rifle)));
+}
+
+// --- Replacing a record with a disposed row (FR-014, issue #56) ------------------------------------------
+
+/// A Rifle carrying an Optic (which carries a Light) and a Sling, and a
+/// firearm table whose one row, matching the Rifle, marks it sold.
+struct DisposedRowFixture {
+    rifle: RecordRef,
+    optic: RecordRef,
+    light: RecordRef,
+    sling: RecordRef,
+    _dir: TempDir,
+    path: PathBuf,
+}
+
+fn disposed_row_fixture(db: &TestDb, optic_acquired: Option<&str>) -> DisposedRowFixture {
+    let rifle = new_firearm(db, &support::firearm("Ruger", "Precision", "R1"));
+    let mut optic_fields = json!({ "make": "Leupold" });
+    if let Some(date) = optic_acquired {
+        optic_fields["acquisitionDate"] = json!(date);
+    }
+    let optic = new_accessory(db, &mounted(accessory_with(OPTIC, optic_fields), rifle));
+    let light = new_accessory(
+        db,
+        &mounted(accessory_with(LIGHT_OR_LASER, json!({ "make": "SureFire" })), optic),
+    );
+    let sling = new_accessory(db, &mounted(accessory(SLING), rifle));
+    let dir = TempDir::new().unwrap();
+    let rifle_uid = uid_of(&db.conn, rifle);
+    let path = sheets::csv_in(
+        dir.path(),
+        "firearms.csv",
+        &firearm_table(&[firearm_cells(
+            "Ruger",
+            "Precision",
+            "R1",
+            &[
+                ("record_id", &rifle_uid),
+                ("status", "disposed"),
+                ("disposition_type", "sold"),
+                ("disposition_recipient", "Jane Doe"),
+                ("disposition_date", "2025-06-15"),
+                ("disposition_price", "1200"),
+            ],
+        )]),
+    );
+    DisposedRowFixture { rifle, optic, light, sling, _dir: dir, path }
+}
+
+fn replace_with(
+    db: &TestDb,
+    store: &ImportSessionStore,
+    result: &ImportResult,
+    with_mounted: Vec<RecordRef>,
+) -> ResolveResult {
+    let resolutions = [ConflictResolution {
+        conflict_id: result.conflicts[0].conflict_id.clone(),
+        action: "overwrite".into(),
+        with_mounted,
+    }];
+    import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        store,
+        &result.session_id,
+        &resolutions,
+        None,
+    )
+    .unwrap()
+}
+
+/// `(status, disposition type, recipient, date, price)` of a record.
+fn disposition_of(
+    conn: &Connection,
+    record: RecordRef,
+) -> (String, Option<String>, Option<String>, Option<String>, Option<i64>) {
+    conn.query_row(
+        &format!(
+            "SELECT status, disposition_type, disposition_recipient, disposition_date,
+                    disposition_price FROM {} WHERE id = ?1",
+            record.table()
+        ),
+        [record.id()],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_disposed_row_matching_an_active_host_lists_everything_mounted_on_it() {
+    let db = TestDb::new();
+    let fixture = disposed_row_fixture(&db, None);
+
+    let result = import(&db, &ImportSessionStore::new(), &[&fixture.path]);
+
+    assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
+    let conflict = &conflicts_json(&result)[0];
+    let listed: Vec<(Value, Value, Value)> = conflict["mounted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            (entry["label"]["record"].clone(), entry["host"].clone(), entry["depth"].clone())
+        })
+        .collect();
+    let json_of = |record: RecordRef| serde_json::to_value(record).unwrap();
+    assert_eq!(
+        listed,
+        vec![
+            (json_of(fixture.optic), json_of(fixture.rifle), json!(1)),
+            (json_of(fixture.light), json_of(fixture.optic), json!(2)),
+            (json_of(fixture.sling), json_of(fixture.rifle), json!(1)),
+        ],
+        "depth-first, as the dispose dialog lists it"
+    );
+}
+
+#[test]
+fn a_row_that_keeps_the_record_active_or_a_host_with_nothing_on_it_lists_nothing() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &support::firearm("Ruger", "Precision", "R1"));
+    new_accessory(&db, &mounted(accessory(SLING), rifle));
+    let bare = new_firearm(&db, &support::firearm("Glock", "19", "G1"));
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(
+        dir.path(),
+        "firearms.csv",
+        &firearm_table(&[
+            firearm_cells("Ruger", "Precision", "R1", &[("notes", "Still mine")]),
+            firearm_cells(
+                "Glock",
+                "19",
+                "G1",
+                &[
+                    ("status", "disposed"),
+                    ("disposition_type", "sold"),
+                    ("disposition_recipient", "Jane Doe"),
+                    ("disposition_date", "2025-06-15"),
+                ],
+            ),
+        ]),
+    );
+
+    let result = import(&db, &ImportSessionStore::new(), &[&path]);
+
+    assert_eq!(result.conflicts.len(), 2, "{:?}", result.row_errors);
+    assert!(result.conflicts.iter().all(|c| c.mounted.is_empty()));
+    let _ = bare;
+}
+
+#[test]
+fn replacing_disposes_of_the_records_chosen_with_it_and_unmounts_the_kept_ones() {
+    let db = TestDb::new();
+    let fixture = disposed_row_fixture(&db, None);
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&fixture.path]);
+
+    let resolved = replace_with(&db, &store, &result, vec![fixture.optic]);
+
+    assert_eq!(resolved.resolved_count, 1, "{:?}", resolved.unresolved);
+    assert!(resolved.unresolved.is_empty());
+    let sold = |price: Option<i64>| {
+        (
+            "disposed".to_owned(),
+            Some("sold".to_owned()),
+            Some("Jane Doe".to_owned()),
+            Some("2025-06-15".to_owned()),
+            price,
+        )
+    };
+    assert_eq!(disposition_of(&db.conn, fixture.rifle), sold(Some(1200)), "the row's own values");
+    assert_eq!(
+        disposition_of(&db.conn, fixture.optic),
+        sold(None),
+        "the row's type, recipient and date, and no price"
+    );
+    assert_eq!(disposition_of(&db.conn, fixture.light).0, "active");
+    assert_eq!(disposition_of(&db.conn, fixture.sling).0, "active");
+    assert_eq!(count(&db.conn, "mounts"), 0, "every mount involving a disposed record ends");
+}
+
+#[test]
+fn replacing_without_a_choice_keeps_every_mounted_record_and_unmounts_it() {
+    let db = TestDb::new();
+    let fixture = disposed_row_fixture(&db, None);
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&fixture.path]);
+
+    let resolved = resolve(&db, &store, &result, "overwrite");
+
+    assert_eq!(resolved.resolved_count, 1, "{:?}", resolved.unresolved);
+    assert_eq!(disposition_of(&db.conn, fixture.rifle).0, "disposed");
+    for kept in [fixture.optic, fixture.light, fixture.sling] {
+        assert_eq!(disposition_of(&db.conn, kept).0, "active");
+    }
+    assert_eq!(mount_of(&db.conn, fixture.optic), None);
+    assert_eq!(mount_of(&db.conn, fixture.sling), None);
+    assert_eq!(
+        mount_of(&db.conn, fixture.light),
+        Some(uid_of(&db.conn, fixture.optic)),
+        "a kept record on a kept record stays mounted"
+    );
+}
+
+#[test]
+fn a_record_chosen_with_it_that_fails_its_own_checks_leaves_the_conflict_open_and_changes_nothing()
+{
+    let db = TestDb::new();
+    // Acquired after the row's disposition date.
+    let fixture = disposed_row_fixture(&db, Some("2025-07-01"));
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&fixture.path]);
+
+    let resolved = replace_with(&db, &store, &result, vec![fixture.optic]);
+
+    assert_eq!(resolved.resolved_count, 0);
+    assert_eq!(
+        sheets::entries(&resolved.unresolved),
+        vec![(
+            "firearms".to_owned(),
+            1,
+            "Leupold · Optic: Disposition date can't be earlier than the acquisition date."
+                .to_owned()
+        )]
+    );
+    assert_eq!(disposition_of(&db.conn, fixture.rifle).0, "active");
+    assert_eq!(disposition_of(&db.conn, fixture.optic).0, "active");
+    assert_eq!(count(&db.conn, "mounts"), 3, "the mounts are untouched");
+
+    // The conflict is still open, so keeping the Optic instead goes through.
+    let resolved = replace_with(&db, &store, &result, vec![]);
+    assert_eq!(resolved.resolved_count, 1, "{:?}", resolved.unresolved);
+    assert_eq!(disposition_of(&db.conn, fixture.rifle).0, "disposed");
+}
+
+#[test]
+fn a_record_chosen_that_is_no_longer_below_the_host_leaves_the_conflict_open() {
+    let db = TestDb::new();
+    let fixture = disposed_row_fixture(&db, None);
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&fixture.path]);
+    mount_ops::mount_record(
+        &db.conn,
+        &serde_json::from_value(json!({ "item": fixture.sling, "host": null })).unwrap(),
+    )
+    .unwrap();
+
+    let resolved = replace_with(&db, &store, &result, vec![fixture.sling]);
+
+    assert_eq!(resolved.resolved_count, 0);
+    assert_eq!(
+        sheets::entries(&resolved.unresolved),
+        vec![(
+            "firearms".to_owned(),
+            1,
+            "What is mounted has changed. Close the dialog and try again.".to_owned()
+        )]
+    );
+    assert_eq!(disposition_of(&db.conn, fixture.rifle).0, "active");
+    assert_eq!(disposition_of(&db.conn, fixture.sling).0, "active");
 }
 
 // --- Mount warnings (FR-023, US5-5) ---------------------------------------------------------------------
@@ -1508,6 +1770,54 @@ fn a_header_with_neither_stops_the_import_naming_the_file() {
     assert_eq!(
         err.message,
         "neither.csv: this isn't a HoploDex firearm or accessory table. Its header needs a firearm_type or a kind column."
+    );
+}
+
+/// Issue #56: one import can take two files, so the error says which one
+/// has the duplicate column.
+#[test]
+fn a_duplicate_column_in_the_second_file_stops_the_import_naming_that_file() {
+    let db = TestDb::new();
+    let dir = TempDir::new().unwrap();
+    let firearms = sheets::csv_in(
+        dir.path(),
+        "firearms.csv",
+        &firearm_table(&[firearm_cells("Glock", "19", "G1", &[])]),
+    );
+    let accessories = sheets::csv_in(
+        dir.path(),
+        "accessories.csv",
+        &sheets::table_with(&["kind", "make", "Make"], &[&["Optic", "Leupold", "Leupold"]]),
+    );
+
+    let err = import_err(&db, &[&firearms, &accessories]);
+
+    assert_stopped_with(&err, &db);
+    assert_eq!(err.message, "accessories.csv: the header has two \"make\" columns.");
+}
+
+#[test]
+fn a_duplicate_column_in_a_workbook_sheet_names_the_file_and_the_sheet() {
+    let db = TestDb::new();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("book.xlsx");
+    sheets::write_workbook(
+        &path,
+        &[
+            ("Firearms", &firearm_table(&[firearm_cells("Glock", "19", "G1", &[])])),
+            (
+                "Accessories",
+                &sheets::table_with(&["kind", "notes", "notes"], &[&["Optic", "a", "b"]]),
+            ),
+        ],
+    );
+
+    let err = import_err(&db, &[&path]);
+
+    assert_stopped_with(&err, &db);
+    assert_eq!(
+        err.message,
+        "book.xlsx, sheet \"Accessories\": the header has two \"notes\" columns."
     );
 }
 

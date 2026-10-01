@@ -355,9 +355,13 @@ fn an_unknown_policy_name_is_a_row_error() {
 fn a_scheduled_firearm_survives_an_export_and_re_import() {
     let db = TestDb::new();
     let policy_id = rider(&db);
-    let created =
-        firearm_ops::create_firearm(&db.conn, &support::firearm("Colt", "Python", "V1"), false)
-            .unwrap();
+    let created = firearm_ops::create_firearm(
+        &db.conn,
+        &support::firearm("Colt", "Python", "V1"),
+        false,
+        None,
+    )
+    .unwrap();
     hoplodex_lib::commands::insurance::ops::assign_firearm_coverage(
         &db.conn,
         created.id,
@@ -366,7 +370,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     )
     .unwrap();
     let plain =
-        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false)
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false, None)
             .unwrap();
 
     let dest = TempDir::new().unwrap();
@@ -500,7 +504,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     let mut input = support::firearm("Glock", "19", "A1");
     input.estimated_value = Some(1250);
     input.acquisition_price = Some(1000000);
-    firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap();
     let id =
         firearm_ops::list_firearms(&db.conn, &Default::default()).unwrap().groups[0].firearms[0].id;
 
@@ -656,7 +660,7 @@ fn an_export_re_imports_with_all_six_intact() {
     input.capacity = Some(15);
     input.finish = Some("Cerakote".into());
     input.condition = Some(Condition::NewInBox);
-    let created = firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    let created = firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap();
 
     for format in [SpreadsheetFormat::Csv, SpreadsheetFormat::Xlsx] {
         let result = import_export_ops::export_collection(
@@ -718,6 +722,7 @@ mod identification_spreadsheet {
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-1")
             },
             false,
+            None,
         )
         .unwrap();
 
@@ -774,6 +779,7 @@ mod identification_spreadsheet {
                 ..support::firearm("Inland", "M1 Carbine", "IN-1")
             },
             false,
+            None,
         )
         .unwrap();
 
@@ -815,6 +821,7 @@ mod identification_spreadsheet {
                 ..support::firearm("Colt", "1911", "C-1")
             },
             false,
+            None,
         )
         .unwrap();
         let imported = firearm_ops::create_firearm(
@@ -834,12 +841,14 @@ mod identification_spreadsheet {
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-2")
             },
             false,
+            None,
         )
         .unwrap();
         let unspecified = firearm_ops::create_firearm(
             &db.conn,
             &support::firearm("Ruger", "10/22", "RU-1"),
             false,
+            None,
         )
         .unwrap();
 
@@ -975,6 +984,7 @@ mod identification_spreadsheet {
                 ..support::firearm("Colt", "1873", "SAA-1")
             },
             false,
+            None,
         )
         .unwrap();
 
@@ -1005,6 +1015,7 @@ mod identification_spreadsheet {
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-3")
             },
             false,
+            None,
         )
         .unwrap();
 
@@ -1082,9 +1093,14 @@ fn a_stopped_export_removes_its_partial_output() {
     let ids: Vec<i64> = ["A1", "A2", "A3"]
         .iter()
         .map(|serial| {
-            firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", serial), false)
-                .unwrap()
-                .id
+            firearm_ops::create_firearm(
+                &db.conn,
+                &support::firearm("Glock", "19", serial),
+                false,
+                None,
+            )
+            .unwrap()
+            .id
         })
         .collect();
     let cancelled = std::cell::Cell::new(false);
@@ -1112,9 +1128,10 @@ fn a_stopped_export_leaves_a_photos_folder_it_did_not_make() {
     let existing = dest.path().join("stopped_photos");
     std::fs::create_dir(&existing).unwrap();
     std::fs::write(existing.join("mine.jpg"), b"not HoploDex's").unwrap();
-    let id = firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false)
-        .unwrap()
-        .id;
+    let id =
+        firearm_ops::create_firearm(&db.conn, &support::firearm("Glock", "19", "A1"), false, None)
+            .unwrap()
+            .id;
 
     let stopped = import_export_ops::export_collection_stoppable(
         &db.conn,
@@ -1171,7 +1188,7 @@ mod cartridge_spreadsheet {
     }
 
     fn record(db: &TestDb, input: FirearmInput) {
-        firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap();
     }
 
     fn on_record(db: &TestDb, make: &str, serial: &str, cartridge: Option<&str>) {
@@ -1516,6 +1533,7 @@ mod cartridge_spreadsheet {
         let resolution = hoplodex_lib::commands::import_export::ConflictResolution {
             conflict_id: result.conflicts[0].conflict_id.clone(),
             action: "overwrite".into(),
+            with_mounted: Vec::new(),
         };
         import_export_ops::resolve_import_conflicts(
             &db.conn,
@@ -1663,7 +1681,7 @@ mod cartridge_spreadsheet {
         )
         .unwrap_err();
         assert_eq!(error.code, "VALIDATION_ERROR");
-        assert_eq!(error.message, "The import file has two \"caliber\" columns.");
+        assert_eq!(error.message, "import.csv: the header has two \"caliber\" columns.");
         assert_eq!(all_firearms(&db).len(), 0);
     }
 
@@ -1730,7 +1748,7 @@ mod registration_spreadsheet {
     }
 
     fn record(db: &TestDb, input: FirearmInput) {
-        firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap();
     }
 
     fn export_all(db: &TestDb, dest: &TempDir) -> std::path::PathBuf {

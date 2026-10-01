@@ -78,7 +78,7 @@ fn uid_in_database(conn: &Connection, id: i64) -> String {
 }
 
 fn create(db: &TestDb, serial: &str) -> Firearm {
-    ops::create_firearm(&db.conn, &support::firearm("Glock", "19", serial), false).unwrap()
+    ops::create_firearm(&db.conn, &support::firearm("Glock", "19", serial), false, None).unwrap()
 }
 
 fn dispose_input() -> DisposeInput {
@@ -228,7 +228,7 @@ fn plain_accessory() -> AccessoryInput {
 }
 
 fn create_accessory(db: &TestDb) -> Accessory {
-    accessory_ops::create_accessory(&db.conn, &plain_accessory()).unwrap()
+    accessory_ops::create_accessory(&db.conn, &plain_accessory(), None).unwrap()
 }
 
 /// Inserts an accessory row with `uid` by raw SQL.

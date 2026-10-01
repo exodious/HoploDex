@@ -473,26 +473,40 @@ pub fn label(conn: &Connection, record: RecordRef) -> Result<Option<RecordLabel>
 pub fn detail(conn: &Connection, record: RecordRef) -> Result<MountDetail, CommandError> {
     let graph = MountGraph::load(conn)?;
     let chain = graph.chain(record);
-    let below = graph.below(record);
-    if chain.is_empty() && below.is_empty() {
-        return Ok(MountDetail::default());
+    let mounted = mounted_entries(conn, &graph, record)?;
+    if chain.is_empty() {
+        return Ok(MountDetail { chain: Vec::new(), mounted });
     }
-    let wanted: Vec<RecordRef> =
-        chain.iter().copied().chain(below.iter().map(|(r, _, _)| *r)).collect();
-    let labels = labels(conn, &wanted)?;
-    let acquired = acquisition_dates(conn, &below.iter().map(|(r, _, _)| *r).collect::<Vec<_>>())?;
+    let labels = labels(conn, &chain)?;
     Ok(MountDetail {
         chain: chain.iter().filter_map(|r| labels.get(r).cloned()).collect(),
-        mounted: below
-            .iter()
-            .filter_map(|(r, host, depth)| {
-                labels.get(r).map(|label| MountedEntry {
-                    label: label.clone(),
-                    host: *host,
-                    depth: *depth,
-                    acquisition_date: acquired.get(r).cloned(),
-                })
-            })
-            .collect(),
+        mounted,
     })
+}
+
+/// Everything below `record` in `graph`, depth-first, as the Mounted list
+/// and the dispose choices show it: empty when nothing is mounted on it.
+pub fn mounted_entries(
+    conn: &Connection,
+    graph: &MountGraph,
+    record: RecordRef,
+) -> Result<Vec<MountedEntry>, CommandError> {
+    let below = graph.below(record);
+    if below.is_empty() {
+        return Ok(Vec::new());
+    }
+    let records: Vec<RecordRef> = below.iter().map(|(r, _, _)| *r).collect();
+    let labels = labels(conn, &records)?;
+    let acquired = acquisition_dates(conn, &records)?;
+    Ok(below
+        .iter()
+        .filter_map(|(r, host, depth)| {
+            labels.get(r).map(|label| MountedEntry {
+                label: label.clone(),
+                host: *host,
+                depth: *depth,
+                acquisition_date: acquired.get(r).cloned(),
+            })
+        })
+        .collect())
 }

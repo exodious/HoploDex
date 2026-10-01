@@ -98,8 +98,13 @@ impl World {
         let serial = db::random_hex(4).unwrap();
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Glock", "19", &serial), false)
-                    .map(|created| created.id)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Glock", "19", &serial),
+                    false,
+                    None,
+                )
+                .map(|created| created.id)
             })
             .unwrap()
     }

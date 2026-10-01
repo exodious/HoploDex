@@ -182,8 +182,10 @@ to 005. As in earlier features, the final task adds a one-line "amended by
   Firearm, Photo, DocumentAttachment and DispositionHistory tables; the
   spreadsheet columns and import matching; and the IPC anchors listed in
   contracts/tauri-commands.md.
-- **003's**: FR-010, FR-039 and the pending-changes table.
-- **004's**: the suggestion sources (FR-009 to FR-013).
+- **003's**: FR-010, FR-039, the pending-changes table and the
+  `stage_pending_changes` command.
+- **004's**: the suggestion sources (FR-009 to FR-013) and the
+  `suggest_entries` and `settle_entry` commands.
 - **005's**: the clarification and edge case on suppressor links, and the
   Assumption "No links between records".
 

@@ -98,6 +98,18 @@
   justify-self: stretch;
 }
 
+/* The Mounted group's choices (MountedChoices), in the dispose dialog and
+   the import's Replace confirmation (§7, issue #56). */
+.hd-dispose-mounted {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.hd-dispose-mounted__note {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
 /* The delete confirmation's list of records that stay behind (§8). */
 .hd-mounted-stay {
   margin: var(--space-2) 0 0;

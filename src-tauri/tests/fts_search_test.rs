@@ -64,7 +64,7 @@ fn search(conn: &rusqlite::Connection, query: &str) -> usize {
 #[test]
 fn matches_structured_fields() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false, None).unwrap();
 
     assert_eq!(search(&db.conn, "Colt"), 1, "should match make");
     assert_eq!(search(&db.conn, "1911"), 1, "should match model");
@@ -75,7 +75,7 @@ fn matches_structured_fields() {
 #[test]
 fn matches_free_form_notes_and_accessories() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false, None).unwrap();
 
     assert_eq!(search(&db.conn, "grandfather"), 1, "should match free-form notes");
     assert_eq!(search(&db.conn, "holster"), 1, "should match accessories");
@@ -84,7 +84,7 @@ fn matches_free_form_notes_and_accessories() {
 #[test]
 fn matches_the_joined_firearm_type_name() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false, None).unwrap();
 
     assert_eq!(search(&db.conn, "Handgun"), 1, "should match firearm_type.name via the join");
 }
@@ -92,7 +92,7 @@ fn matches_the_joined_firearm_type_name() {
 #[test]
 fn stays_in_sync_after_update_and_delete() {
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &base_input(), false).unwrap();
+    let created = ops::create_firearm(&db.conn, &base_input(), false, None).unwrap();
 
     let mut edited = base_input();
     edited.notes = Some("re-blued and refinished".into());
@@ -108,7 +108,7 @@ fn stays_in_sync_after_update_and_delete() {
 #[test]
 fn no_match_returns_an_empty_result() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false, None).unwrap();
 
     assert_eq!(search(&db.conn, "nonexistentxyz"), 0);
 }
@@ -119,7 +119,7 @@ fn no_match_returns_an_empty_result() {
 #[test]
 fn matches_a_partially_typed_last_word() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &base_input(), false).unwrap();
+    ops::create_firearm(&db.conn, &base_input(), false, None).unwrap();
 
     assert_eq!(search(&db.conn, "Col"), 1, "prefix of make");
     assert_eq!(search(&db.conn, "CO19"), 1, "prefix of serial number");
@@ -138,6 +138,7 @@ fn matches_text_from_the_middle_of_a_value() {
         &db.conn,
         &FirearmInput { make: "Sig Sauer".into(), model: "P365 XL".into(), ..base_input() },
         false,
+        None,
     )
     .unwrap();
 
@@ -161,6 +162,7 @@ fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
         &db.conn,
         &FirearmInput { finish: Some("Cerakote flat dark earth".into()), ..base_input() },
         false,
+        None,
     )
     .unwrap();
     assert_eq!(search(&db.conn, "Cerakote"), 1, "should match finish");
@@ -191,6 +193,7 @@ fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_non
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
     ops::create_firearm(
@@ -201,6 +204,7 @@ fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_non
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
     ops::create_firearm(
@@ -211,12 +215,14 @@ fn searching_imported_finds_both_imported_and_reimported_but_not_domestic_or_non
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
     ops::create_firearm(
         &db.conn,
         &FirearmInput { serial_number: Some("ORI-4".into()), origin: None, ..base_input() },
         false,
+        None,
     )
     .unwrap();
 
@@ -241,6 +247,7 @@ fn searching_year_importer_and_country_finds_the_firearm() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -263,6 +270,7 @@ fn searching_country_for_a_reimported_firearm_finds_united_states() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -296,6 +304,7 @@ fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -325,6 +334,7 @@ fn every_origin_is_found_by_searching_its_own_label() {
                 ..base_input()
             },
             false,
+            None,
         )
         .unwrap();
     }
@@ -359,6 +369,7 @@ fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500
                 ..base_input()
             },
             false,
+            None,
         )
         .unwrap();
     }
@@ -383,6 +394,7 @@ fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -416,6 +428,7 @@ fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
         &db.conn,
         &FirearmInput { cartridge: Some("7.62x39mm".into()), ..base_input() },
         false,
+        None,
     )
     .unwrap();
     ops::create_firearm(
@@ -426,6 +439,7 @@ fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -448,6 +462,7 @@ fn matches_the_action_name_and_follows_a_change_of_action() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
     ops::create_firearm(
@@ -459,6 +474,7 @@ fn matches_the_action_name_and_follows_a_change_of_action() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -490,6 +506,7 @@ fn matches_the_automatic_or_select_fire_action() {
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
     assert_eq!(search(&db.conn, "select-fire"), 1);
@@ -513,6 +530,7 @@ fn registration_is_found_by_classification_form_and_registered_to() {
                 ..base_input()
             },
             false,
+            None,
         )
         .unwrap()
     };
@@ -523,6 +541,7 @@ fn registration_is_found_by_classification_form_and_registered_to() {
         &db.conn,
         &FirearmInput { serial_number: Some("PLAIN".into()), ..base_input() },
         false,
+        None,
     )
     .unwrap();
 
@@ -584,6 +603,7 @@ fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_
             ..base_input()
         },
         false,
+        None,
     )
     .unwrap();
     let mut optic: AccessoryInput =
@@ -592,7 +612,7 @@ fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_
     optic.make = Some("Trijicon".into());
     optic.model = Some("Accupoint".into());
     optic.serial_number = Some("TJ-7788".into());
-    let optic = accessory_ops::create_accessory(&db.conn, &optic).unwrap();
+    let optic = accessory_ops::create_accessory(&db.conn, &optic, None).unwrap();
     mount_ops::mount_record(
         &db.conn,
         &serde_json::from_value(serde_json::json!({

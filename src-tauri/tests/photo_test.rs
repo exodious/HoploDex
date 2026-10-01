@@ -61,7 +61,7 @@ fn sample_firearm() -> FirearmInput {
 #[test]
 fn scenario_1_first_photo_becomes_the_thumbnail() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
 
     let photo = photo_ops::add_photo(
         &db.conn,
@@ -80,7 +80,7 @@ fn scenario_1_first_photo_becomes_the_thumbnail() {
 #[test]
 fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let first = photo_ops::add_photo(
         &db.conn,
         RecordRef::Firearm(firearm.id),
@@ -115,7 +115,7 @@ fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
 #[test]
 fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let first = photo_ops::add_photo(
         &db.conn,
         RecordRef::Firearm(firearm.id),
@@ -152,7 +152,7 @@ fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic()
 #[test]
 fn delete_photo_requires_confirmation() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let photo = photo_ops::add_photo(
         &db.conn,
         RecordRef::Firearm(firearm.id),
@@ -168,7 +168,7 @@ fn delete_photo_requires_confirmation() {
 #[test]
 fn rejects_an_unsupported_mime_type() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
 
     let err = photo_ops::add_photo(
         &db.conn,
@@ -184,7 +184,7 @@ fn rejects_an_unsupported_mime_type() {
 #[test]
 fn adds_a_photo_dropped_as_a_file_path() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Range Day.PNG");
     std::fs::write(&path, sample_png_bytes()).unwrap();
@@ -202,7 +202,7 @@ fn adds_a_photo_dropped_as_a_file_path() {
 #[test]
 fn a_dropped_path_that_is_not_a_photo_is_rejected() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("receipt.pdf");
     std::fs::write(&path, b"%PDF-1.4").unwrap();
@@ -216,7 +216,7 @@ fn a_dropped_path_that_is_not_a_photo_is_rejected() {
 #[test]
 fn a_dropped_path_that_no_longer_exists_is_reported() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
     let err = photo_ops::add_photo_from_path(
@@ -251,7 +251,7 @@ fn sample_accessory(serial: &str) -> Value {
 }
 
 fn create_accessory(db: &TestDb, serial: &str) -> i64 {
-    accessory_ops::create_accessory(&db.conn, &parse(sample_accessory(serial))).unwrap().id
+    accessory_ops::create_accessory(&db.conn, &parse(sample_accessory(serial)), None).unwrap().id
 }
 
 fn accessory_thumbnail(db: &TestDb, id: i64) -> Option<i64> {
@@ -319,7 +319,7 @@ fn an_accessorys_thumbnail_can_be_switched_and_the_result_is_the_photo_id() {
 #[test]
 fn photos_are_listed_by_owner_and_only_that_owners() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let accessory = create_accessory(&db, "A-1");
     assert_eq!(firearm.id, accessory, "both tables start at 1, which is the point of this test");
     let other = create_accessory(&db, "A-2");
@@ -360,7 +360,7 @@ fn photos_are_listed_by_owner_and_only_that_owners() {
 #[test]
 fn naming_a_photo_with_the_wrong_owner_is_not_found() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let accessory = create_accessory(&db, "A-1");
     let other = create_accessory(&db, "A-2");
     let firearm_photo = photo_ops::add_photo(
@@ -415,7 +415,7 @@ fn deleting_an_accessorys_thumbnail_falls_back_to_the_next_oldest_then_to_generi
 #[test]
 fn a_photo_row_needs_exactly_one_owner() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let accessory = create_accessory(&db, "A-1");
     let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
         db.conn.execute(
@@ -440,7 +440,7 @@ fn a_photo_row_needs_exactly_one_owner() {
 #[test]
 fn deleting_an_accessory_deletes_its_photos_and_only_its_photos() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let gone = create_accessory(&db, "A-1");
     let kept = create_accessory(&db, "A-2");
     for owner in

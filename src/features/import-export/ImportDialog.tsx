@@ -15,6 +15,9 @@ import {
 } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
+import { MountedChoices } from "../mounts/MountedChoices";
+import { mountedStatements } from "../mounts/mountedStatements";
+import { recordKey } from "../mounts/recordKey";
 import { accessoryNameText } from "../mounts/recordNames";
 import * as importExportService from "./importExportService";
 import type {
@@ -155,6 +158,10 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [choices, setChoices] = useState<Record<string, ConflictAction>>({});
   const [resolving, setResolving] = useState(false);
   const [confirmingReplace, setConfirmingReplace] = useState(false);
+  // Issue #56: for each conflict whose row disposes of a record with records
+  // mounted on it, the ones to dispose of with it, by `recordKey`. The rest
+  // are kept (FR-014).
+  const [disposeWith, setDisposeWith] = useState<Record<string, Record<string, string>>>({});
   const [resolvedCount, setResolvedCount] = useState<number | null>(null);
   const [unresolved, setUnresolved] = useState<RowError[]>([]);
 
@@ -211,6 +218,12 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
         resolutions: conflicts.map((c) => ({
           conflictId: c.conflictId,
           action: choices[c.conflictId],
+          ...(choices[c.conflictId] === "overwrite" &&
+            c.mounted.length > 0 && {
+              withMounted: c.mounted
+                .map((entry) => entry.label.record)
+                .filter((record) => recordKey(record) in (disposeWith[c.conflictId] ?? {})),
+            }),
         })),
       });
       setResolvedCount((so_far) => (so_far ?? 0) + resolved.resolvedCount);
@@ -227,6 +240,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       });
       setUnresolved(resolved.unresolved);
       setChoices({});
+      setDisposeWith({});
       await refresh();
       notify(`Resolved ${count(resolved.resolvedCount, "matching row", "matching rows")}.`);
     } catch (e) {
@@ -307,6 +321,11 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const conflicts = result.conflicts;
   const undecided = conflicts.filter((c) => !choices[c.conflictId]);
   const replacing = conflicts.filter((c) => choices[c.conflictId] === "overwrite").length;
+  // Rows that dispose of a record with records mounted on it ask, on
+  // replacing, which go with it (issue #56).
+  const disposing = conflicts.filter(
+    (c) => choices[c.conflictId] === "overwrite" && c.mounted.length > 0,
+  );
 
   return (
     <>
@@ -530,7 +549,33 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
         description="Their details will be overwritten with the spreadsheet's values. Their photos and documents are kept."
         confirmLabel="Replace records"
         onConfirm={() => applyChoices(conflicts)}
-      />
+      >
+        {disposing.length > 0 && (
+          <div className="hd-io-disposing">
+            <p className="hd-form-note">
+              {disposing.length === 1
+                ? "This row marks its record disposed. Records disposed with it take the row's type, recipient and date, with no price."
+                : "These rows mark their records disposed. Records disposed with one take its row's type, recipient and date, with no price."}
+            </p>
+            {disposing.map((conflict) => {
+              const name = conflictName(conflict);
+              const chosen = disposeWith[conflict.conflictId] ?? {};
+              return (
+                <MountedChoices
+                  key={conflict.conflictId}
+                  title={`Mounted on ${name} (${place(conflict)})`}
+                  mounted={conflict.mounted}
+                  disposeWith={chosen}
+                  onChange={(next) =>
+                    setDisposeWith((current) => ({ ...current, [conflict.conflictId]: next }))
+                  }
+                  statements={mountedStatements(name, conflict.mounted, chosen)}
+                />
+              );
+            })}
+          </div>
+        )}
+      </ConfirmDialog>
     </>
   );
 }

@@ -11,7 +11,7 @@ use tauri::State;
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
 use crate::commands::firearms::ops as firearm_ops;
-use crate::commands::firearms::{DisposeInput, DisposeWith};
+use crate::commands::firearms::{DisposeInput, DisposeWith, Disposition};
 use crate::models::record::{RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
@@ -117,20 +117,38 @@ pub mod ops {
         host: RecordRef,
         input: &DisposeInput,
     ) -> Result<(), CommandError> {
+        let disposition = input.disposition();
+        dispose_chain(conn, host, disposition, &input.with_mounted, || {
+            save_disposed(conn, host, disposition, Some(input.price))
+        })
+    }
+
+    /// [`dispose_with_mounted`]'s steps, with the host saved as disposed by
+    /// `save_host`, so an import row that replaces an active record with a
+    /// disposed one saves its own input and disposes of the records chosen
+    /// with it, as the dispose dialog does (issue #56). The listed records
+    /// take `disposition`, each with its own price.
+    pub fn dispose_chain<T>(
+        conn: &Connection,
+        host: RecordRef,
+        disposition: Disposition<'_>,
+        with_mounted: &[DisposeWith],
+        save_host: impl FnOnce() -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
         mounts::atomically(conn, || {
-            let listed = checked_listing(conn, host, &input.with_mounted)?;
+            let listed = checked_listing(conn, host, with_mounted)?;
             mounts::clear_mounts(conn, host)?;
             for with in &listed {
                 mounts::clear_mounts(conn, with.record)?;
             }
             // The host first, so what is wrong with its own input is
             // reported as its own and not blamed on a record below it.
-            save_disposed(conn, host, input, Some(input.price))?;
+            let saved = save_host()?;
             for with in listed {
-                save_disposed(conn, with.record, input, with.price)
+                save_disposed(conn, with.record, disposition, with.price)
                     .map_err(|err| name_the_failed_record(conn, with.record, err))?;
             }
-            Ok(())
+            Ok(saved)
         })
     }
 
@@ -190,13 +208,15 @@ pub mod ops {
     fn save_disposed(
         conn: &Connection,
         record: RecordRef,
-        input: &DisposeInput,
+        disposition: Disposition<'_>,
         price: Option<i64>,
     ) -> Result<(), CommandError> {
         match record {
-            RecordRef::Firearm(id) => firearm_ops::save_disposed(conn, id, input, price).map(drop),
+            RecordRef::Firearm(id) => {
+                firearm_ops::save_disposed(conn, id, disposition, price).map(drop)
+            }
             RecordRef::Accessory(id) => {
-                accessory_ops::save_disposed(conn, id, input, price).map(drop)
+                accessory_ops::save_disposed(conn, id, disposition, price).map(drop)
             }
         }
     }

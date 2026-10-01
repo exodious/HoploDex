@@ -83,7 +83,7 @@ fn the_search_can_see_the_marker_while_it_is_stored() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-0"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-0"), false, None).unwrap();
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -109,7 +109,7 @@ fn deleting_a_document_wipes_its_bytes_and_returns_the_space() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-1"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-1"), false, None).unwrap();
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -130,7 +130,7 @@ fn deleting_a_photo_wipes_its_bytes_and_returns_the_space() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-2"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-2"), false, None).unwrap();
     let photo = photo_ops::add_photo(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -151,7 +151,7 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-3"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-3"), false, None).unwrap();
     photo_ops::add_photo(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -197,9 +197,10 @@ fn deleting_a_firearm_wipes_its_custom_cartridge() {
             ..firearm("Glock", "19", "W-6")
         },
         false,
+        None,
     )
     .unwrap();
-    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-7"), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-7"), false, None).unwrap();
     // Guard: the search sees the text and its index tokens while stored.
     let before = decrypted_export(&db.conn, scratch.path());
     assert!(contains(&before, CARTRIDGE));
@@ -240,9 +241,10 @@ fn deleting_a_firearm_wipes_its_registration_details() {
             ..firearm("Glock", "19", "W-8")
         },
         false,
+        None,
     )
     .unwrap();
-    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-9"), false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-9"), false, None).unwrap();
     let before = decrypted_export(&db.conn, scratch.path());
     assert!(contains(&before, OWNER));
     assert!(contains(&before, FORM));
@@ -262,7 +264,7 @@ fn deleting_a_firearm_wipes_its_registration_details() {
 fn deleting_one_attachment_leaves_the_others_intact() {
     let db = TestDb::new();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-4"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-4"), false, None).unwrap();
     let keep = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -290,7 +292,7 @@ fn deleting_one_attachment_leaves_the_others_intact() {
 fn an_unconfirmed_delete_changes_nothing() {
     let db = TestDb::new();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-5"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-5"), false, None).unwrap();
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -325,7 +327,7 @@ fn create_accessory(db: &TestDb, make: &str, serial: &str, notes: &str) -> i64 {
         "notes": notes,
         "status": "active",
     });
-    accessory_ops::create_accessory(&db.conn, &parse(input)).unwrap().id
+    accessory_ops::create_accessory(&db.conn, &parse(input), None).unwrap().id
 }
 
 fn contains(haystack: &[u8], needle: &str) -> bool {
@@ -439,9 +441,10 @@ fn deleting_an_accessory_host_unmounts_what_was_on_it_and_wipes_its_values() {
     let scratch = tempfile::TempDir::new().unwrap();
     let host = create_accessory(&db, "Pelican", SERIAL, NOTES);
     let optic = create_accessory(&db, "Leupold", "ON-1", "rides on the host");
-    let rifle = firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "Precision", "R-1"), false)
-        .unwrap()
-        .id;
+    let rifle =
+        firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "Precision", "R-1"), false, None)
+            .unwrap()
+            .id;
     let doomed = RecordRef::Accessory(host);
     for item in [RecordRef::Accessory(optic), RecordRef::Firearm(rifle)] {
         let input = json!({ "item": item, "host": doomed });

@@ -89,7 +89,12 @@ impl World {
         let serial = db::random_hex(4).unwrap();
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Colt", "Python", &serial), false)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", &serial),
+                    false,
+                    None,
+                )
             })
             .unwrap();
     }
@@ -917,6 +922,7 @@ impl World {
                 let id = accessories::create_accessory(
                     conn,
                     &serde_json::from_value(input.clone()).unwrap(),
+                    None,
                 )?
                 .id;
                 photos::add_photo(
@@ -1006,8 +1012,13 @@ impl World {
     fn add_firearm(&self, serial: &str) -> i64 {
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Colt", "Python", serial), false)
-                    .map(|firearm| firearm.id)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", serial),
+                    false,
+                    None,
+                )
+                .map(|firearm| firearm.id)
             })
             .unwrap()
     }

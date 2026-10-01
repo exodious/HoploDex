@@ -73,8 +73,10 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
 
-    let f1 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
-    let f2 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false).unwrap();
+    let f1 =
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false, None).unwrap();
+    let f2 =
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false, None).unwrap();
     hoplodex_lib::commands::photos::ops::add_photo(
         &db.conn,
         RecordRef::Firearm(f1.id),
@@ -118,7 +120,8 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
 fn exports_as_xlsx_when_requested() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
-    let f1 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
+    let f1 =
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false, None).unwrap();
 
     let result = import_export_ops::export_collection(
         &db.conn,
@@ -155,6 +158,7 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
             ..firearm_with_photo("Glock")
         },
         false,
+        None,
     )
     .unwrap();
 
@@ -213,7 +217,8 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
 fn blank_physical_details_are_exported_as_blank_cells() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
-    let created = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false).unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false, None).unwrap();
     let result = import_export_ops::export_collection(
         &db.conn,
         dest.path(),
@@ -240,7 +245,7 @@ fn the_export_header_is_the_42_columns_with_cartridge_and_action_type_after_cali
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false, None).unwrap();
     let result = import_export_ops::export_collection(
         &db.conn,
         dest.path(),
@@ -280,9 +285,11 @@ fn export_writes_the_registration_columns_and_blanks_what_a_suppressor_lacks() {
             ..firearm_with_photo("Omega")
         },
         false,
+        None,
     )
     .unwrap();
-    let plain = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
+    let plain =
+        firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false, None).unwrap();
 
     let result = import_export_ops::export_collection(
         &db.conn,
@@ -407,11 +414,11 @@ fn on(input: AccessoryInput, host: RecordRef) -> AccessoryInput {
 }
 
 fn new_firearm(db: &TestDb, input: &FirearmInput) -> RecordRef {
-    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, input, false).unwrap().id)
+    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, input, false, None).unwrap().id)
 }
 
 fn new_accessory(db: &TestDb, input: &AccessoryInput) -> RecordRef {
-    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, input).unwrap().id)
+    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, input, None).unwrap().id)
 }
 
 fn firearm_on(input: FirearmInput, host: RecordRef) -> FirearmInput {

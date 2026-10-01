@@ -265,6 +265,13 @@ own deletion wording is unchanged.
 - **The import report** names each row's table ("Accessories, row 4") and
   lists mount warnings with the other warnings. The conflict list shows an
   accessory conflict by its `RecordName`.
+- **Replacing a record with a disposed row** (issue #56): the Replace
+  confirmation adds, for each row being replaced whose conflict has a
+  `mounted` list, a group titled "Mounted on {name} ({Table}, row {n})"
+  with §7's list and choices (Keep | Dispose with it, Keep by default) and
+  statements, but no price fields. A note above the groups says the
+  records disposed with it take the row's type, recipient and date, with
+  no price. Confirming sends each row's chosen records as `withMounted`.
 
 ## 12. Accessory record page (US1, FR-007a, FR-013)
 
@@ -304,4 +311,6 @@ and dark:
 - the collection list and tiles with "Mounted on" and "3 mounted";
 - the value summary with the accessories subtotal;
 - the export dialog with the accessories disclosure;
-- the import report with a mount warning.
+- the import report with a mount warning;
+- the import's Replace confirmation for a row that disposes of a record
+  with records mounted on it, one set to "Dispose with it" (issue #56).

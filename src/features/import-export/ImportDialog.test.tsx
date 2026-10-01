@@ -7,6 +7,7 @@ import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { ImportDialog } from "./ImportDialog";
 import * as importExportService from "./importExportService";
+import type { RecordLabel } from "../mounts/types";
 import type { ImportResult } from "./types";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
@@ -32,6 +33,7 @@ const result: ImportResult = {
       row: 2,
       existingRecord: { kind: "firearm", id: 10 },
       kindName: null,
+      mounted: [],
       duplicateAllowed: false,
       make: "Glock",
       model: "19",
@@ -43,6 +45,7 @@ const result: ImportResult = {
       row: 3,
       existingRecord: { kind: "firearm", id: 11 },
       kindName: null,
+      mounted: [],
       duplicateAllowed: true,
       make: "Glock",
       model: "26",
@@ -547,6 +550,7 @@ describe("ImportDialog files and the two tables (US5)", () => {
           model: "VX-5HD",
           serialNumber: null,
           kindName: "Optic",
+          mounted: [],
         },
       ],
     });
@@ -571,5 +575,131 @@ describe("ImportDialog files and the two tables (US5)", () => {
         resolutions: [{ conflictId: "c9", action: "skip" }],
       }),
     );
+  });
+});
+
+describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-014)", () => {
+  const label = (
+    id: number,
+    kind: "firearm" | "accessory",
+    make: string,
+    model: string,
+    typeName: string,
+  ): RecordLabel => ({
+    record: { kind, id },
+    make,
+    model,
+    nickname: null,
+    typeName,
+    serialNumber: null,
+    status: "active",
+  });
+  const rifle = { kind: "firearm", id: 10 } as const;
+  const optic = label(12, "accessory", "Leupold", "Mark 5HD", "Optic");
+  const cap = label(15, "accessory", "Leupold", "Flip cap", "Other");
+  const sling = label(16, "accessory", "Magpul", "MS1", "Sling");
+  const OPTIC = "Leupold Mark 5HD · Optic";
+  const CAP = "Leupold Flip cap · Other";
+  const SLING = "Magpul MS1 · Sling";
+
+  /** Row 2 marks the Ruger disposed, which carries an optic (with a cap on it)
+   * and a sling; row 3 matches a Glock with nothing mounted. */
+  const disposing: ImportResult = {
+    ...result,
+    conflicts: [
+      {
+        ...result.conflicts[0],
+        make: "Ruger",
+        model: "Precision",
+        mounted: [
+          { label: optic, host: rifle, depth: 1 },
+          { label: cap, host: optic.record, depth: 2 },
+          { label: sling, host: rifle, depth: 1 },
+        ],
+      },
+      result.conflicts[1],
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(importExportService.importCollection).mockResolvedValue(disposing);
+    vi.mocked(importExportService.resolveImportConflicts).mockReset();
+    vi.mocked(importExportService.resolveImportConflicts).mockResolvedValue({
+      resolvedCount: 2,
+      unresolved: [],
+      warnings: [],
+    });
+  });
+
+  async function replaceBoth(user: ReturnType<typeof userEvent.setup>) {
+    await importTheFile(user);
+    for (const name of ["Firearms, row 2: Ruger Precision", "Firearms, row 3: Glock 26"]) {
+      const group = screen.getByRole("radiogroup", { name });
+      await user.click(within(group).getByRole("radio", { name: "Replace existing" }));
+    }
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+    return screen.findByRole("alertdialog");
+  }
+
+  it("lists what is mounted on the record, each kept by default, and only for that row", async () => {
+    const user = userEvent.setup();
+    const confirm = await replaceBoth(user);
+
+    const group = within(confirm).getByRole("group", {
+      name: "Mounted on Ruger Precision (Firearms, row 2)",
+    });
+    for (const name of [OPTIC, CAP, SLING]) {
+      const choice = within(group).getByRole("radiogroup", { name });
+      expect(within(choice).getByRole("radio", { name: "Keep" })).toBeChecked();
+    }
+    expect(within(confirm).getAllByRole("group")).toHaveLength(1);
+    expect(group).toHaveTextContent("Kept records mounted on Ruger Precision will be unmounted.");
+    expect(group).toHaveTextContent("Records kept with what they are mounted on stay mounted.");
+    // No price: the row has none for a record disposed with it.
+    expect(within(confirm).queryByLabelText(/Price for/)).not.toBeInTheDocument();
+  });
+
+  it("sends the records chosen to go with it, and none for a row without any", async () => {
+    const user = userEvent.setup();
+    const confirm = await replaceBoth(user);
+    const group = within(confirm).getByRole("group", {
+      name: "Mounted on Ruger Precision (Firearms, row 2)",
+    });
+
+    await user.click(
+      within(within(group).getByRole("radiogroup", { name: OPTIC })).getByRole("radio", {
+        name: "Dispose with it",
+      }),
+    );
+    expect(group).toHaveTextContent(
+      "Kept records mounted on a record disposed with it will be unmounted.",
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Replace records" }));
+
+    expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith({
+      importSessionId: "import-1",
+      resolutions: [
+        { conflictId: "c1", action: "overwrite", withMounted: [optic.record] },
+        { conflictId: "c2", action: "overwrite" },
+      ],
+    });
+  });
+
+  it("asks nothing more when the rows being replaced dispose of nothing that carries records", async () => {
+    vi.mocked(importExportService.importCollection).mockResolvedValue(result);
+    const user = userEvent.setup();
+    await importTheFile(user);
+    const group = screen.getByRole("radiogroup", { name: "Firearms, row 2: Glock 19" });
+    await user.click(within(group).getByRole("radio", { name: "Replace existing" }));
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Firearms, row 3: Glock 26" })).getByRole(
+        "radio",
+        { name: "Keep existing" },
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+
+    const confirm = await screen.findByRole("alertdialog");
+    expect(within(confirm).queryByRole("group")).not.toBeInTheDocument();
   });
 });

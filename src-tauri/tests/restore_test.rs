@@ -92,6 +92,7 @@ impl World {
                     conn,
                     &support::firearm("Colt", "Python", serial),
                     false,
+                    None,
                 )?;
                 photos::add_photo(
                     conn,

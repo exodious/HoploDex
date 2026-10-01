@@ -222,6 +222,8 @@ type ExistingBackupsOutcome =
 - **Input**: `{ draft: Draft | null }` → **Output**: `null`
 - Keeps the draft in backend memory only (research §16). `null` clears it. Validated: `VALIDATION_ERROR` with `fieldErrors.values` over 1 MiB, `fieldErrors.mode` for a kind and mode that don't go together (`coverage`, `dispose` and `restore` are firearm-only), `fieldErrors.targetId` when a target is missing (or given for an add), `fieldErrors.label` over 200 characters.
 
+  _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#pending-changes-amended-content): `Draft.kind` also takes `"accessory"`, with the same modes as `"firearm"`, so `coverage`, `dispose` and `restore` are no longer firearm-only (006 FR-027)._
+
 ### `dismiss_note`
 - **Input**: `{ note: "diskEncryption" | "openedBackup" | "restored" }` → **Output**: `null`
 - `diskEncryption` sets `app_state.disk_encryption_note_dismissed` (housekeeping, FR-008). The other two are session-only.

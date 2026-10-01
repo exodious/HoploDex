@@ -41,9 +41,9 @@ fn blocked_message(err: &CommandError) -> String {
 #[test]
 fn scenario_10_a_duplicate_is_blocked_and_names_the_existing_record() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
 
-    let err = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false)
+    let err = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None)
         .expect_err("a second active Glock 19 ABC123 must be blocked");
 
     let message = blocked_message(&err);
@@ -55,18 +55,18 @@ fn scenario_10_a_duplicate_is_blocked_and_names_the_existing_record() {
 #[test]
 fn the_same_serial_on_a_different_make_or_model_is_not_a_duplicate() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
 
-    assert!(ops::create_firearm(&db.conn, &firearm("Glock", "26", "ABC123"), false).is_ok());
-    assert!(ops::create_firearm(&db.conn, &firearm("Sig", "19", "ABC123"), false).is_ok());
+    assert!(ops::create_firearm(&db.conn, &firearm("Glock", "26", "ABC123"), false, None).is_ok());
+    assert!(ops::create_firearm(&db.conn, &firearm("Sig", "19", "ABC123"), false, None).is_ok());
 }
 
 #[test]
 fn comparison_ignores_letter_case_and_surrounding_whitespace() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
 
-    let err = ops::create_firearm(&db.conn, &firearm(" glock ", "19 ", "  abc123"), false)
+    let err = ops::create_firearm(&db.conn, &firearm(" glock ", "19 ", "  abc123"), false, None)
         .expect_err("case and padding don't make it a different firearm");
     blocked_message(&err);
 }
@@ -74,21 +74,22 @@ fn comparison_ignores_letter_case_and_surrounding_whitespace() {
 #[test]
 fn scenario_10_a_disposed_match_never_blocks_so_a_firearm_can_be_reacquired() {
     let db = TestDb::new();
-    let first = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    let first =
+        ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
     dispose(&db, first.id);
 
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false)
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None)
         .expect("reacquisition is a new record");
 }
 
 #[test]
 fn scenario_11_a_no_serial_firearm_is_never_compared_with_the_others() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Colt", "1911", "12345"), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Colt", "1911", "12345"), false, None).unwrap();
 
     // Same make and model as an active firearm, but no serial to compare.
-    ops::create_firearm(&db.conn, &no_serial("Colt", "1911"), false).unwrap();
-    ops::create_firearm(&db.conn, &no_serial("Colt", "1911"), false).unwrap();
+    ops::create_firearm(&db.conn, &no_serial("Colt", "1911"), false, None).unwrap();
+    ops::create_firearm(&db.conn, &no_serial("Colt", "1911"), false, None).unwrap();
 }
 
 #[test]
@@ -96,7 +97,8 @@ fn scenario_11_a_firearm_with_no_serial_number_cannot_also_record_one() {
     let db = TestDb::new();
     let both = FirearmInput { no_serial_attested: true, ..firearm("Colt", "1911", "12345") };
 
-    let err = ops::create_firearm(&db.conn, &both, false).expect_err("attested and serial-bearing");
+    let err =
+        ops::create_firearm(&db.conn, &both, false, None).expect_err("attested and serial-bearing");
 
     assert!(blocked_message(&err).contains("can't also have one"));
 }
@@ -106,7 +108,7 @@ fn a_blank_serial_number_is_stored_as_none() {
     let db = TestDb::new();
     let blank = FirearmInput { serial_number: Some("  ".into()), ..no_serial("Colt", "1911") };
 
-    let saved = ops::create_firearm(&db.conn, &blank, false).unwrap();
+    let saved = ops::create_firearm(&db.conn, &blank, false, None).unwrap();
 
     assert_eq!(saved.serial_number, None);
 }
@@ -114,15 +116,15 @@ fn a_blank_serial_number_is_stored_as_none() {
 #[test]
 fn records_with_no_serial_number_are_never_compared() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &no_serial("Homemade", "AR-15"), false).unwrap();
-    ops::create_firearm(&db.conn, &no_serial("Homemade", "AR-15"), false).unwrap();
+    ops::create_firearm(&db.conn, &no_serial("Homemade", "AR-15"), false, None).unwrap();
+    ops::create_firearm(&db.conn, &no_serial("Homemade", "AR-15"), false, None).unwrap();
 }
 
 #[test]
 fn the_rule_is_re_checked_on_edit_but_a_record_never_clashes_with_itself() {
     let db = TestDb::new();
-    let a = ops::create_firearm(&db.conn, &firearm("Glock", "19", "AAA"), false).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "BBB"), false).unwrap();
+    let a = ops::create_firearm(&db.conn, &firearm("Glock", "19", "AAA"), false, None).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "BBB"), false, None).unwrap();
 
     // Saving A unchanged (or with other edits) is fine.
     let mut same = firearm("Glock", "19", "AAA");
@@ -142,9 +144,10 @@ fn the_rule_is_re_checked_on_edit_but_a_record_never_clashes_with_itself() {
 #[test]
 fn editing_a_disposed_record_is_not_checked_against_active_ones() {
     let db = TestDb::new();
-    let first = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    let first =
+        ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
     dispose(&db, first.id);
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
 
     // The disposed record is history; correcting a note on it can't clash.
     let mut corrected = ops::get_firearm(&db.conn, first.id).unwrap();
@@ -164,8 +167,8 @@ fn editing_a_disposed_record_is_not_checked_against_active_ones() {
 #[test]
 fn the_database_refuses_a_duplicate_even_if_the_app_check_is_bypassed() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
-    let other = ops::create_firearm(&db.conn, &firearm("Glock", "19", "XYZ"), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
+    let other = ops::create_firearm(&db.conn, &firearm("Glock", "19", "XYZ"), false, None).unwrap();
 
     let backstop =
         db.conn.execute("UPDATE firearms SET serial_number = 'abc123' WHERE id = ?1", [other.id]);
@@ -183,9 +186,9 @@ fn with_year(make: &str, model: &str, serial: &str, year: Option<i64>) -> Firear
 #[test]
 fn a_duplicate_with_no_year_on_either_record_is_blocked_and_points_to_the_year() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-1", None), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-1", None), false, None).unwrap();
 
-    let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-1", None), false)
+    let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-1", None), false, None)
         .expect_err("no year on either record still blocks (US3-1)");
     let message = blocked_message(&err);
     assert!(message.contains("Colt") && message.contains("SAA-1"), "{message}");
@@ -198,28 +201,32 @@ fn a_duplicate_with_no_year_on_either_record_is_blocked_and_points_to_the_year()
 #[test]
 fn a_duplicate_with_different_years_on_each_record_is_accepted() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-2", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-2", Some(1943)), false, None)
+        .unwrap();
 
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-2", Some(1944)), false)
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-2", Some(1944)), false, None)
         .expect("both records have a year and the years differ (FR-008)");
 }
 
 #[test]
 fn a_duplicate_with_the_same_year_on_both_records_is_blocked() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-3", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-3", Some(1943)), false, None)
+        .unwrap();
 
-    let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-3", Some(1943)), false)
-        .expect_err("the same year on both does not distinguish them");
+    let err =
+        ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-3", Some(1943)), false, None)
+            .expect_err("the same year on both does not distinguish them");
     blocked_message(&err);
 }
 
 #[test]
 fn a_duplicate_with_a_year_missing_on_one_record_is_blocked() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-4", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-4", Some(1943)), false, None)
+        .unwrap();
 
-    let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-4", None), false)
+    let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-4", None), false, None)
         .expect_err("a missing year on one side still blocks (FR-008)");
     blocked_message(&err);
 }
@@ -244,9 +251,9 @@ fn the_same_rule_applies_to_a_pre_1968_domestic_pair() {
         ..firearm("Smith & Wesson", "Model 10", "S-100")
     };
 
-    ops::create_firearm(&db.conn, &smith_1955, false).unwrap();
-    ops::create_firearm(&db.conn, &smith_1962, false).expect("differing years are accepted");
-    let err = ops::create_firearm(&db.conn, &smith_no_year, false)
+    ops::create_firearm(&db.conn, &smith_1955, false, None).unwrap();
+    ops::create_firearm(&db.conn, &smith_1962, false, None).expect("differing years are accepted");
+    let err = ops::create_firearm(&db.conn, &smith_no_year, false, None)
         .expect_err("a third record with no year still clashes with the others");
     blocked_message(&err);
 }
@@ -255,9 +262,10 @@ fn the_same_rule_applies_to_a_pre_1968_domestic_pair() {
 fn editing_a_second_firearms_year_to_match_the_first_is_blocked() {
     // US3-4a
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-5", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-5", Some(1943)), false, None)
+        .unwrap();
     let second =
-        ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-5", Some(1944)), false)
+        ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-5", Some(1944)), false, None)
             .unwrap();
 
     let err = ops::update_firearm(
@@ -275,7 +283,8 @@ fn the_database_backstop_allows_a_pair_distinguished_by_year() {
     // T028: the raw-SQL backstop applies the same year exception the
     // command layer does.
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-6", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-6", Some(1943)), false, None)
+        .unwrap();
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
@@ -290,7 +299,7 @@ fn the_database_backstop_allows_a_pair_distinguished_by_year() {
 #[test]
 fn the_database_backstop_blocks_a_null_year_pair_bypassing_the_command_layer() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-7", None), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-7", None), false, None).unwrap();
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
@@ -305,7 +314,8 @@ fn the_database_backstop_blocks_a_null_year_pair_bypassing_the_command_layer() {
 #[test]
 fn the_database_backstop_blocks_an_equal_year_pair_bypassing_the_command_layer() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-8", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-8", Some(1943)), false, None)
+        .unwrap();
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
@@ -320,7 +330,8 @@ fn the_database_backstop_blocks_an_equal_year_pair_bypassing_the_command_layer()
 #[test]
 fn the_database_backstop_blocks_a_year_no_year_pair_bypassing_the_command_layer() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-9", Some(1943)), false).unwrap();
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-9", Some(1943)), false, None)
+        .unwrap();
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
@@ -335,7 +346,8 @@ fn the_database_backstop_blocks_a_year_no_year_pair_bypassing_the_command_layer(
 #[test]
 fn the_database_refuses_a_record_with_both_a_serial_number_and_the_attestation() {
     let db = TestDb::new();
-    let firearm = ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false).unwrap();
+    let firearm =
+        ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
 
     let backstop =
         db.conn.execute("UPDATE firearms SET no_serial_attested = 1 WHERE id = ?1", [firearm.id]);
@@ -348,12 +360,16 @@ fn the_database_refuses_a_record_with_both_a_serial_number_and_the_attestation()
 #[test]
 fn the_fr_008_identity_clash_message_never_judges_legality() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "WORDING-CHECK-1", None), false)
+    ops::create_firearm(&db.conn, &with_year("Colt", "1873", "WORDING-CHECK-1", None), false, None)
         .unwrap();
 
-    let err =
-        ops::create_firearm(&db.conn, &with_year("Colt", "1873", "WORDING-CHECK-1", None), false)
-            .expect_err("blocked");
+    let err = ops::create_firearm(
+        &db.conn,
+        &with_year("Colt", "1873", "WORDING-CHECK-1", None),
+        false,
+        None,
+    )
+    .expect_err("blocked");
     let message = blocked_message(&err).to_lowercase();
     for word in ["legal", "illegal", "lawful", "unlawful", "permitted", "prohibited"] {
         assert!(!message.contains(word), "message should not judge legality: {message:?}");
@@ -374,15 +390,15 @@ fn suppressor(serial: &str) -> FirearmInput {
 #[test]
 fn a_duplicate_suppressor_is_blocked_with_or_without_a_classification() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &suppressor("ABC123"), false).unwrap();
+    ops::create_firearm(&db.conn, &suppressor("ABC123"), false, None).unwrap();
 
-    let err = ops::create_firearm(&db.conn, &suppressor("ABC123"), false)
+    let err = ops::create_firearm(&db.conn, &suppressor("ABC123"), false, None)
         .expect_err("a second active Omega 300 ABC123 must be blocked");
     let message = blocked_message(&err);
     assert!(message.contains("SilencerCo") && message.contains("ABC123"), "{message}");
 
     let classified = FirearmInput { registration_class_id: Some(1), ..suppressor("ABC123") };
-    let err = ops::create_firearm(&db.conn, &classified, false)
+    let err = ops::create_firearm(&db.conn, &classified, false, None)
         .expect_err("a classification doesn't make it a different firearm");
     blocked_message(&err);
     assert_eq!(
@@ -395,5 +411,5 @@ fn a_duplicate_suppressor_is_blocked_with_or_without_a_classification() {
 fn a_suppressor_with_no_serial_attestation_saves() {
     let db = TestDb::new();
     let input = FirearmInput { firearm_type_id: 5, ..no_serial("Homemade", "Solvent trap") };
-    assert!(ops::create_firearm(&db.conn, &input, false).is_ok());
+    assert!(ops::create_firearm(&db.conn, &input, false, None).is_ok());
 }

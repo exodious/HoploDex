@@ -311,7 +311,7 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
         ..firearm("Distinctive Make", "Distinctive Model", "PERF-NEW-MAIN")
     };
     let started = Instant::now();
-    firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap();
     let elapsed = started.elapsed();
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -991,10 +991,11 @@ fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_re
             mounted_on: Some(deepest),
             ..firearm("Mounted Make", "Mounted Model", "PERF-MOUNTED")
         };
-        firearm_ops::create_firearm(conn, &input, false).unwrap()
+        firearm_ops::create_firearm(conn, &input, false, None).unwrap()
     });
     let plain =
-        firearm_ops::create_firearm(conn, &firearm("Plain", "Plain", "PERF-PLAIN"), false).unwrap();
+        firearm_ops::create_firearm(conn, &firearm("Plain", "Plain", "PERF-PLAIN"), false, None)
+            .unwrap();
     within("update_firearm with mountedOn", 1_000, || {
         let input = FirearmInput {
             mounted_on: Some(RecordRef::Firearm(created.id)),
@@ -1007,7 +1008,7 @@ fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_re
             mounted_on: Some(scale.firearm(8_000)),
             ..accessory_input(1, "Leupold", "New Optic")
         };
-        accessory_ops::create_accessory(conn, &input).unwrap()
+        accessory_ops::create_accessory(conn, &input, None).unwrap()
     });
     within("update_accessory with mountedOn", 1_000, || {
         let input = AccessoryInput {

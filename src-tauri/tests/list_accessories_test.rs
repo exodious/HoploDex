@@ -34,7 +34,7 @@ fn accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
 }
 
 fn create(db: &TestDb, input: &AccessoryInput) -> i64 {
-    ops::create_accessory(&db.conn, input).unwrap().id
+    ops::create_accessory(&db.conn, input, None).unwrap().id
 }
 
 /// `list_accessories` for the contract's `ListAccessoriesInput`, as the
@@ -304,6 +304,7 @@ fn an_accessory_names_its_direct_host_only_and_an_unmounted_one_has_none() {
                 ..firearm("LaRue", "PredatAR", "L-1")
             },
             false,
+            None,
         )
         .unwrap()
         .id,
@@ -423,6 +424,7 @@ fn firearm_record(
                 ..firearm(make, model, serial)
             },
             false,
+            None,
         )
         .unwrap()
         .id,

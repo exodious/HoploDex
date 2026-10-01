@@ -38,6 +38,7 @@ fn a_catalog_cartridge_round_trips_with_its_caliber() {
         &db.conn,
         &with_cartridge(Some("9x19mm Parabellum"), "9mm", "C-1"),
         false,
+        None,
     )
     .unwrap();
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
@@ -63,9 +64,11 @@ fn a_custom_cartridge_and_a_caliber_only_record_round_trip() {
         &db.conn,
         &with_cartridge(Some(".30 Custom Improved"), ".30", "C-2"),
         false,
+        None,
     )
     .unwrap();
-    let plain = ops::create_firearm(&db.conn, &with_cartridge(None, ".50", "C-3"), false).unwrap();
+    let plain =
+        ops::create_firearm(&db.conn, &with_cartridge(None, ".50", "C-3"), false, None).unwrap();
 
     let custom = ops::get_firearm(&db.conn, custom.id).unwrap();
     assert_eq!(custom.cartridge.as_deref(), Some(".30 Custom Improved"));
@@ -79,7 +82,8 @@ fn a_custom_cartridge_and_a_caliber_only_record_round_trip() {
 fn a_blank_cartridge_is_stored_as_null_and_the_four_fields_are_trimmed() {
     let db = TestDb::new();
     let blank =
-        ops::create_firearm(&db.conn, &with_cartridge(Some("   "), "9mm", "C-4"), false).unwrap();
+        ops::create_firearm(&db.conn, &with_cartridge(Some("   "), "9mm", "C-4"), false, None)
+            .unwrap();
     assert_eq!(blank.cartridge, None);
     let stored: Option<String> = db
         .conn
@@ -97,6 +101,7 @@ fn a_blank_cartridge_is_stored_as_null_and_the_four_fields_are_trimmed() {
             ..firearm("x", "y", "C-5")
         },
         false,
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -126,23 +131,23 @@ fn create_rejects_an_over_long_or_control_character_value_in_each_field() {
             input
         };
 
-        let err = ops::create_firearm(&db.conn, &set(&long), false).unwrap_err();
+        let err = ops::create_firearm(&db.conn, &set(&long), false, None).unwrap_err();
         assert_eq!(err.code, "VALIDATION_ERROR");
         assert_eq!(
             field_error(&err, field).as_deref(),
             Some(format!("{label} can be at most 100 characters.").as_str())
         );
 
-        let err = ops::create_firearm(&db.conn, &set("Bad\u{7}value"), false).unwrap_err();
+        let err = ops::create_firearm(&db.conn, &set("Bad\u{7}value"), false, None).unwrap_err();
         assert_eq!(
             field_error(&err, field).as_deref(),
             Some(format!("{label} can't contain control characters.").as_str())
         );
-        let err = ops::create_firearm(&db.conn, &set("Bad\tvalue"), false).unwrap_err();
+        let err = ops::create_firearm(&db.conn, &set("Bad\tvalue"), false, None).unwrap_err();
         assert!(field_error(&err, field).is_some(), "a tab in {field} is a control character");
 
         // 100 characters, counted as characters, not bytes: accepted.
-        let saved = ops::create_firearm(&db.conn, &set(&exactly_100), false).unwrap();
+        let saved = ops::create_firearm(&db.conn, &set(&exactly_100), false, None).unwrap();
         ops::delete_firearm(&db.conn, saved.id, true).unwrap();
     }
 }
@@ -153,7 +158,7 @@ fn update_checks_only_the_fields_whose_value_changed() {
     // that field is edited (data-model.md).
     let db = TestDb::new();
     let created =
-        ops::create_firearm(&db.conn, &with_cartridge(None, "9mm", "C-7"), false).unwrap();
+        ops::create_firearm(&db.conn, &with_cartridge(None, "9mm", "C-7"), false, None).unwrap();
     let long_make = "M".repeat(120);
     db.conn
         .execute("UPDATE firearms SET make = ?1 WHERE id = ?2", params![long_make, created.id])
@@ -205,6 +210,7 @@ fn create_stores_the_values_given_without_snapping_or_deriving() {
         &db.conn,
         &with_cartridge(Some("9X19MM parabellum"), "Nine millimetre", "C-8"),
         false,
+        None,
     )
     .unwrap();
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
@@ -212,7 +218,7 @@ fn create_stores_the_values_given_without_snapping_or_deriving() {
     assert_eq!(fetched.caliber, "Nine millimetre");
 
     let different =
-        ops::create_firearm(&db.conn, &with_cartridge(Some(".45 ACP"), ".451", "C-9"), false)
+        ops::create_firearm(&db.conn, &with_cartridge(Some(".45 ACP"), ".451", "C-9"), false, None)
             .unwrap();
     let fetched = ops::get_firearm(&db.conn, different.id).unwrap();
     assert_eq!((fetched.cartridge.as_deref(), fetched.caliber.as_str()), (Some(".45 ACP"), ".451"));
@@ -287,5 +293,5 @@ fn an_input_without_cartridge_or_action_deserializes() {
     assert_eq!((input.cartridge.as_deref(), input.action_type_id), (None, None));
 
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &input, false).unwrap();
+    ops::create_firearm(&db.conn, &input, false, None).unwrap();
 }

@@ -70,11 +70,11 @@ fn accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
 }
 
 fn add_firearm(db: &TestDb, input: &FirearmInput) -> RecordRef {
-    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, input, false).unwrap().id)
+    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, input, false, None).unwrap().id)
 }
 
 fn add_accessory(db: &TestDb, input: &AccessoryInput) -> RecordRef {
-    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, input).unwrap().id)
+    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, input, None).unwrap().id)
 }
 
 /// A firearm named by make and model alone, of the given type.
@@ -578,7 +578,7 @@ fn a_disposed_or_missing_host_is_refused() {
     let mut new_record = accessory(OPTIC, "Vortex", "Razor");
     new_record.mounted_on = Some(RecordRef::Firearm(9_999));
     assert_field_error(
-        accessory_ops::create_accessory(&db.conn, &new_record).unwrap_err(),
+        accessory_ops::create_accessory(&db.conn, &new_record, None).unwrap_err(),
         "mountedOn",
         CHOOSE_ACTIVE,
     );

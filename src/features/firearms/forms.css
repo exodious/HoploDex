@@ -288,18 +288,8 @@
 }
 
 /* specs/006-accessory-links contracts/ui-accessories.md §7: the dispose
-   dialog's note under its title, and its Mounted group. */
+   dialog's note under its title. Its Mounted group is in mounts.css. */
 .hd-dialog__note {
   display: block;
   margin-top: var(--space-2);
-}
-
-.hd-dispose-mounted {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.hd-dispose-mounted__note {
-  font-size: var(--text-sm);
-  color: var(--ink-2);
 }

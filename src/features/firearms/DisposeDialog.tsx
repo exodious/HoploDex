@@ -1,18 +1,11 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
-import {
-  Button,
-  ChoiceCards,
-  DateField,
-  Dialog,
-  MoneyField,
-  SegmentedControl,
-  TextField,
-} from "../../components";
+import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { MountedList } from "../mounts/MountedList";
+import { MountedChoices } from "../mounts/MountedChoices";
+import { mountedStatements } from "../mounts/mountedStatements";
 import { recordKey } from "../mounts/recordKey";
 import { recordNameWithType } from "../mounts/recordNames";
 import type { MountDetail, MountedEntry } from "../mounts/types";
@@ -196,17 +189,11 @@ function DisposeForm({
         : [];
     }),
   );
-  const kept = mounted.filter((entry) => !(recordKey(entry.label.record) in disposeWith));
-  const disposedKeys = new Set(disposed.map((entry) => recordKey(entry.label.record)));
-  const hostIsDisposed = (entry: MountedEntry) => disposedKeys.has(recordKey(entry.host));
-  const statements = [
-    kept.some((entry) => entry.depth <= 1) &&
-      `Kept records mounted on ${subject.name} will be unmounted.`,
-    kept.some((entry) => entry.depth > 1 && hostIsDisposed(entry)) &&
-      "Kept records mounted on a record disposed with it will be unmounted.",
-    kept.some((entry) => entry.depth > 1 && !hostIsDisposed(entry)) &&
-      "Records kept with what they are mounted on stay mounted.",
-  ].filter((text): text is string => Boolean(text));
+  const statements = mountedStatements(
+    subject.name,
+    mounted,
+    Object.fromEntries(disposed.map((entry) => [recordKey(entry.label.record), true])),
+  );
 
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
   // and a lock keeps it (FR-039).
@@ -318,6 +305,7 @@ function DisposeForm({
         {mounted.length > 0 && (
           <MountedChoices
             mounted={mounted}
+            withPrices
             disposeWith={disposeWith}
             onChange={setDisposeWith}
             errors={submitted ? withErrors : undefined}
@@ -335,86 +323,5 @@ function DisposeForm({
         </Button>
       </footer>
     </form>
-  );
-}
-
-const CHOICES = [
-  { value: "keep", label: "Keep" },
-  { value: "dispose", label: "Dispose with it" },
-] as const;
-
-/** The **Mounted** group (contracts/ui-accessories.md §7): everything below
- * the record, each with a Keep | Dispose with it choice and, for a record
- * disposed with it, an optional price. Below it, what happens to the rest. */
-function MountedChoices({
-  mounted,
-  disposeWith,
-  onChange,
-  errors,
-  dateErrors,
-  statements,
-}: {
-  mounted: MountedEntry[];
-  disposeWith: Record<string, string>;
-  onChange: (next: Record<string, string>) => void;
-  /** Price errors by `recordKey`, once the form has been submitted. */
-  errors: Map<string, string> | undefined;
-  /** Disposition-date errors by `recordKey`, once the form has been submitted. */
-  dateErrors: Map<string, string> | undefined;
-  statements: string[];
-}) {
-  const titleId = useId();
-  return (
-    <div className="hd-dispose-mounted" role="group" aria-labelledby={titleId}>
-      <h3 className="hd-form-section__title" id={titleId}>
-        Mounted
-      </h3>
-      <MountedList
-        entries={mounted}
-        links={false}
-        detail={(entry) => {
-          const key = recordKey(entry.label.record);
-          const name = recordNameWithType(entry.label);
-          const disposing = key in disposeWith;
-          return (
-            <div className="hd-mounted__choice">
-              <SegmentedControl
-                label={name}
-                hideLabel
-                size="sm"
-                value={disposing ? "dispose" : "keep"}
-                options={[...CHOICES]}
-                onChange={(choice) => {
-                  const next = { ...disposeWith };
-                  if (choice === "dispose") next[key] = disposeWith[key] ?? "";
-                  else delete next[key];
-                  onChange(next);
-                }}
-              />
-              {disposing && (
-                <MoneyField
-                  label={`Price for ${name}`}
-                  fieldClassName="hd-field--third"
-                  value={disposeWith[key]}
-                  onValueChange={(text) => onChange({ ...disposeWith, [key]: text })}
-                  hint="Leave blank if none was received separately."
-                  error={errors?.get(key)}
-                />
-              )}
-              {disposing && dateErrors?.has(key) && (
-                <p className="hd-field__error" role="alert">
-                  {dateErrors.get(key)}
-                </p>
-              )}
-            </div>
-          );
-        }}
-      />
-      {statements.map((text) => (
-        <p className="hd-dispose-mounted__note" key={text}>
-          {text}
-        </p>
-      ))}
-    </div>
   );
 }

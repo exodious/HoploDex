@@ -10,7 +10,10 @@ unchanged:
 - dates are `YYYY-MM-DD`;
 - columns are read by header, trimmed and in any letter case;
 - unknown headers are ignored;
-- a duplicate known header stops the import;
+- a duplicate known header stops the import, and the message now names
+  the file (and the sheet of a workbook that holds several) as well as the
+  column, since one import can take two files: `accessories.csv: the header
+  has two "make" columns.` (issue #56);
 - text is protected against formula injection (below).
 
 ## Formula injection (CSV)
@@ -150,6 +153,11 @@ In export order (`ACCESSORY_COLUMNS`):
   one when the row has none. A **duplicate** created by the conflict choice
   always gets a new one. **Overwrite** keeps the existing record's
   identifier (FR-019: editing never changes it).
+- **Overwrite with a disposed row**: when the row marks an active record
+  disposed, confirming the overwrite asks which of the records mounted on
+  it are disposed of with it, as the dispose dialog does; they take the
+  row's disposition type, recipient and date and no price (FR-014, issue
+  #56).
 
 ## Mounted on (`mounted_on`, FR-023)
 

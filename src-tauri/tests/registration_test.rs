@@ -64,7 +64,7 @@ fn registration_saves_and_reopens_intact_on_a_suppressor_and_a_rifle() {
     let db = TestDb::new();
     for (serial, type_id) in [("S1", SUPPRESSOR), ("R1", RIFLE)] {
         let input = FirearmInput { caliber: ".30".into(), ..registered(serial, type_id) };
-        let created = ops::create_firearm(&db.conn, &input, false).unwrap();
+        let created = ops::create_firearm(&db.conn, &input, false, None).unwrap();
         let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
         assert_eq!(fetched.registration_class_id, Some(SUPPRESSOR_CLASS));
         assert_eq!(fetched.registration_form.as_deref(), Some("Form 4"));
@@ -82,7 +82,7 @@ fn registration_saves_and_reopens_intact_on_a_suppressor_and_a_rifle() {
         registered_to: None,
         ..registered("B1", RIFLE)
     };
-    let created = ops::create_firearm(&db.conn, &bare, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &bare, false, None).unwrap();
     assert_eq!(created.registration_class_id, Some(SUPPRESSOR_CLASS));
     assert_eq!(created.registration_form, None);
     let some = FirearmInput {
@@ -90,7 +90,7 @@ fn registration_saves_and_reopens_intact_on_a_suppressor_and_a_rifle() {
         registered_to: None,
         ..registered("B2", RIFLE)
     };
-    let created = ops::create_firearm(&db.conn, &some, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &some, false, None).unwrap();
     assert_eq!(created.registration_form.as_deref(), Some("Form 4"));
     assert_eq!(created.registered_to, None);
 }
@@ -117,7 +117,7 @@ fn details_without_a_classification_are_refused() {
             FirearmInput { registered_to: Some("A Trust".into()), ..firearm("A", "B", "3") },
         ),
     ] {
-        let err = ops::create_firearm(&db.conn, &input, false).expect_err(field);
+        let err = ops::create_firearm(&db.conn, &input, false, None).expect_err(field);
         assert_eq!(err.code, "VALIDATION_ERROR");
         assert_eq!(field_error(&err, field).as_deref(), Some(message), "{field}");
     }
@@ -139,13 +139,13 @@ fn details_without_a_classification_are_refused() {
 fn an_unknown_classification_is_refused() {
     let db = TestDb::new();
     let input = FirearmInput { registration_class_id: Some(99), ..firearm("A", "B", "1") };
-    let err = ops::create_firearm(&db.conn, &input, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &input, false, None).unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert_eq!(
         field_error(&err, "registrationClassId").as_deref(),
         Some("Choose a classification from the list.")
     );
-    let created = ops::create_firearm(&db.conn, &firearm("A", "B", "2"), false).unwrap();
+    let created = ops::create_firearm(&db.conn, &firearm("A", "B", "2"), false, None).unwrap();
     let err = ops::update_firearm(&db.conn, created.id, &input, false).unwrap_err();
     assert_eq!(
         field_error(&err, "registrationClassId").as_deref(),
@@ -158,21 +158,21 @@ fn the_approved_date_must_be_a_date_and_not_in_the_future() {
     // US2-6, FR-010.
     let db = TestDb::new();
     let future = FirearmInput { registration_approved: Some(tomorrow()), ..registered("1", RIFLE) };
-    let err = ops::create_firearm(&db.conn, &future, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &future, false, None).unwrap_err();
     assert_eq!(
         field_error(&err, "registrationApproved").as_deref(),
         Some("Approved date can't be in the future.")
     );
     let bad =
         FirearmInput { registration_approved: Some("2026-13-40".into()), ..registered("2", RIFLE) };
-    let err = ops::create_firearm(&db.conn, &bad, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &bad, false, None).unwrap_err();
     assert_eq!(
         field_error(&err, "registrationApproved").as_deref(),
         Some("Approved date must be a date in YYYY-MM-DD format.")
     );
     let today = chrono::Local::now().date_naive().format("%Y-%m-%d").to_string();
     let ok = FirearmInput { registration_approved: Some(today), ..registered("3", RIFLE) };
-    ops::create_firearm(&db.conn, &ok, false).unwrap();
+    ops::create_firearm(&db.conn, &ok, false, None).unwrap();
 }
 
 #[test]
@@ -180,13 +180,13 @@ fn form_and_registered_to_follow_the_entry_rules_and_are_trimmed() {
     // 004 FR-015, on entry only.
     let db = TestDb::new();
     let long = FirearmInput { registration_form: Some("F".repeat(101)), ..registered("1", RIFLE) };
-    let err = ops::create_firearm(&db.conn, &long, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &long, false, None).unwrap_err();
     assert_eq!(
         field_error(&err, "registrationForm").as_deref(),
         Some("Form can be at most 100 characters.")
     );
     let tab = FirearmInput { registered_to: Some("Smith\tTrust".into()), ..registered("2", RIFLE) };
-    let err = ops::create_firearm(&db.conn, &tab, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &tab, false, None).unwrap_err();
     assert_eq!(
         field_error(&err, "registeredTo").as_deref(),
         Some("Registered to can't contain control characters.")
@@ -198,7 +198,7 @@ fn form_and_registered_to_follow_the_entry_rules_and_are_trimmed() {
         registration_approved: Some(" 2026-02-10 ".into()),
         ..registered("3", RIFLE)
     };
-    let created = ops::create_firearm(&db.conn, &padded, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &padded, false, None).unwrap();
     assert_eq!(created.registration_form.as_deref(), Some("Form 4"));
     assert_eq!(created.registered_to.as_deref(), Some("A Trust"));
     assert_eq!(created.registration_approved.as_deref(), Some("2026-02-10"));
@@ -226,7 +226,7 @@ fn form_and_registered_to_follow_the_entry_rules_and_are_trimmed() {
 fn changing_the_classification_keeps_details_and_clearing_all_clears_them() {
     // FR-012.
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &registered("1", RIFLE), false).unwrap();
+    let created = ops::create_firearm(&db.conn, &registered("1", RIFLE), false, None).unwrap();
     let other = FirearmInput { registration_class_id: Some(2), ..FirearmInput::from(&created) };
     let changed = ops::update_firearm(&db.conn, created.id, &other, false).unwrap();
     assert_eq!(changed.registration_class_id, Some(2));
@@ -251,7 +251,7 @@ fn changing_the_classification_keeps_details_and_clearing_all_clears_them() {
 fn disposal_reversal_and_coverage_keep_the_details_and_deleting_removes_them() {
     // FR-013, US2-12.
     let db = TestDb::new();
-    let created = ops::create_firearm(&db.conn, &registered("1", RIFLE), false).unwrap();
+    let created = ops::create_firearm(&db.conn, &registered("1", RIFLE), false, None).unwrap();
     let same = |f: &hoplodex_lib::models::Firearm| {
         assert_eq!(f.registration_class_id, Some(SUPPRESSOR_CLASS));
         assert_eq!(f.registration_form.as_deref(), Some("Form 4"));
@@ -311,6 +311,7 @@ fn a_classification_no_longer_offered_is_still_held_and_accepted() {
         &db.conn,
         &FirearmInput { registration_class_id: Some(5), ..firearm("A", "B", "1") },
         false,
+        None,
     )
     .unwrap();
     db.conn.execute("UPDATE registration_classes SET offered = 0 WHERE id = 5", []).unwrap();
@@ -328,6 +329,7 @@ fn a_classification_no_longer_offered_is_still_held_and_accepted() {
         &db.conn,
         &FirearmInput { registration_class_id: Some(5), ..firearm("A", "B", "2") },
         false,
+        None,
     )
     .unwrap();
     assert_eq!(fresh.registration_class_id, Some(5));
@@ -349,7 +351,7 @@ fn every_type_saves_with_no_classification_and_with_each_of_the_six() {
                 barrel_length_hundredths: applies.then_some(1050),
                 ..firearm("Make", "Model", &format!("T{n}"))
             };
-            let created = ops::create_firearm(&db.conn, &input, false)
+            let created = ops::create_firearm(&db.conn, &input, false, None)
                 .unwrap_or_else(|e| panic!("type {type_id} class {class:?}: {e:?}"));
             assert_eq!(created.registration_class_id, class);
         }
@@ -362,7 +364,7 @@ fn every_type_saves_with_no_classification_and_with_each_of_the_six() {
             barrel_length_hundredths: Some(barrel),
             ..firearm("Make", "Model", serial)
         };
-        let created = ops::create_firearm(&db.conn, &input, false).unwrap();
+        let created = ops::create_firearm(&db.conn, &input, false, None).unwrap();
         assert_eq!(created.registration_class_id, None);
         assert_eq!(created.barrel_length_hundredths, Some(barrel));
     }

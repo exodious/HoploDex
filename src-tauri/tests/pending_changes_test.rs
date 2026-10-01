@@ -63,7 +63,7 @@ impl World {
 
     fn add_firearm(&self, serial: &str) -> Result<i64, CommandError> {
         self.session.write(|conn| {
-            firearms::create_firearm(conn, &support::firearm("Glock", "19", serial), false)
+            firearms::create_firearm(conn, &support::firearm("Glock", "19", serial), false, None)
                 .map(|created| created.id)
         })
     }
@@ -434,7 +434,7 @@ fn pending_changes_that_cant_be_written_still_lock_and_are_reported_lost() {
     let id = world
         .session
         .write(|conn| {
-            firearms::create_firearm(conn, &support::firearm("Glock", "19", "A1"), false)
+            firearms::create_firearm(conn, &support::firearm("Glock", "19", "A1"), false, None)
                 .map(|created| created.id)
         })
         .unwrap();
@@ -502,8 +502,12 @@ impl World {
             "status": "active",
         });
         self.session.write(|conn| {
-            accessories::create_accessory(conn, &serde_json::from_value(input.clone()).unwrap())
-                .map(|created| created.id)
+            accessories::create_accessory(
+                conn,
+                &serde_json::from_value(input.clone()).unwrap(),
+                None,
+            )
+            .map(|created| created.id)
         })
     }
 }

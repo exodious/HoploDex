@@ -63,7 +63,7 @@ const SAMPLE_PDF_BYTES: &[u8] = b"%PDF-1.4 sample receipt contents";
 #[test]
 fn scenario_4_attaches_and_reopens_a_document() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
 
     let attached = document_ops::add_document(
         &db.conn,
@@ -83,7 +83,7 @@ fn scenario_4_attaches_and_reopens_a_document() {
 #[test]
 fn deletes_a_document_only_when_confirmed() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let attached = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(firearm.id),
@@ -104,7 +104,7 @@ fn deletes_a_document_only_when_confirmed() {
 #[test]
 fn lists_every_document_for_a_firearm() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(firearm.id),
@@ -132,7 +132,7 @@ fn lists_every_document_for_a_firearm() {
 #[test]
 fn writes_a_temporary_copy_under_a_safe_filename() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::TempDir::new().unwrap();
 
     let attached = document_ops::add_document(
@@ -173,7 +173,7 @@ fn writes_a_temporary_copy_under_a_safe_filename() {
 #[test]
 fn attaches_a_document_dropped_as_a_file_path() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Appraisal 2026.pdf");
     std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
@@ -190,7 +190,7 @@ fn attaches_a_document_dropped_as_a_file_path() {
 #[test]
 fn a_dropped_folder_is_not_attached() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
     let err =
@@ -210,7 +210,7 @@ fn a_dropped_folder_is_not_attached() {
 #[test]
 fn clearing_opened_documents_overwrites_then_removes_each_copy() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let scratch = tempfile::TempDir::new().unwrap();
     let opened = scratch.path().join("opened-documents");
 
@@ -297,7 +297,7 @@ fn create_accessory(db: &TestDb, serial: &str) -> i64 {
         "serialNumber": serial,
         "status": "active",
     });
-    accessory_ops::create_accessory(&db.conn, &parse(input)).unwrap().id
+    accessory_ops::create_accessory(&db.conn, &parse(input), None).unwrap().id
 }
 
 fn count(db: &TestDb, table: &str) -> i64 {
@@ -352,7 +352,7 @@ fn attaches_a_document_dropped_on_an_accessory_as_a_file_path() {
 #[test]
 fn documents_are_listed_by_owner_and_only_that_owners() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let accessory = create_accessory(&db, "A-1");
     let other = create_accessory(&db, "A-2");
     assert_eq!(firearm.id, accessory, "both tables start at 1, which is the point of this test");
@@ -376,7 +376,7 @@ fn documents_are_listed_by_owner_and_only_that_owners() {
 #[test]
 fn a_document_row_needs_exactly_one_owner() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let accessory = create_accessory(&db, "A-1");
     let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
         db.conn.execute(
@@ -402,7 +402,7 @@ fn a_document_row_needs_exactly_one_owner() {
 #[test]
 fn a_disposition_history_row_needs_exactly_one_owner() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let accessory = create_accessory(&db, "A-1");
     let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
         db.conn.execute(
@@ -427,7 +427,7 @@ fn a_disposition_history_row_needs_exactly_one_owner() {
 #[test]
 fn deleting_an_accessory_deletes_its_documents_and_only_its_documents() {
     let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let gone = create_accessory(&db, "A-1");
     let kept = create_accessory(&db, "A-2");
     let add = |owner| {

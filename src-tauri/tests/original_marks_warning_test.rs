@@ -54,6 +54,7 @@ fn saving_a_firearm_whose_original_marks_match_another_warns_and_saves_nothing()
         &db.conn,
         &with_original_marks("Ridgeline Arms", "Hi-Power", "RA-1", "FN", "High Power", "FN-1"),
         false,
+        None,
     )
     .unwrap();
 
@@ -61,6 +62,7 @@ fn saving_a_firearm_whose_original_marks_match_another_warns_and_saves_nothing()
         &db.conn,
         &with_original_marks("Century Arms", "Hi-Power Clone", "CA-1", "FN", "High Power", "FN-1"),
         false,
+        None,
     )
     .expect_err("matching original marks must warn, not save silently");
     assert_eq!(err.code, "ORIGINAL_MARKS_MATCH");
@@ -77,14 +79,15 @@ fn resending_with_confirmed_warnings_saves_it() {
         &db.conn,
         &with_original_marks("Ridgeline Arms", "Hi-Power", "RA-2", "FN", "High Power", "FN-2"),
         false,
+        None,
     )
     .unwrap();
 
     let input =
         with_original_marks("Century Arms", "Hi-Power Clone", "CA-2", "FN", "High Power", "FN-2");
-    ops::create_firearm(&db.conn, &input, false).expect_err("first attempt warns");
+    ops::create_firearm(&db.conn, &input, false, None).expect_err("first attempt warns");
 
-    let created = ops::create_firearm(&db.conn, &input, true)
+    let created = ops::create_firearm(&db.conn, &input, true, None)
         .expect("confirmed_warnings: true saves it (US3-5)");
     assert_eq!(created.original_serial_number.as_deref(), Some("FN-2"));
 
@@ -98,12 +101,12 @@ fn a_partial_original_marks_set_never_warns() {
     let mut first =
         with_original_marks("Ridgeline Arms", "Hi-Power", "RA-3", "FN", "High Power", "FN-3");
     first.original_serial_number = None;
-    ops::create_firearm(&db.conn, &first, false).unwrap();
+    ops::create_firearm(&db.conn, &first, false, None).unwrap();
 
     let mut second =
         with_original_marks("Century Arms", "Hi-Power Clone", "CA-3", "FN", "High Power", "FN-3");
     second.original_serial_number = None;
-    ops::create_firearm(&db.conn, &second, false)
+    ops::create_firearm(&db.conn, &second, false, None)
         .expect("a partial set on the existing record never triggers the warning (US3-8)");
 }
 
@@ -114,6 +117,7 @@ fn a_match_against_a_disposed_firearm_never_warns() {
         &db.conn,
         &with_original_marks("Ridgeline Arms", "Hi-Power", "RA-4", "FN", "High Power", "FN-4"),
         false,
+        None,
     )
     .unwrap();
     dispose(&db, first.id);
@@ -122,6 +126,7 @@ fn a_match_against_a_disposed_firearm_never_warns() {
         &db.conn,
         &with_original_marks("Century Arms", "Hi-Power Clone", "CA-4", "FN", "High Power", "FN-4"),
         false,
+        None,
     )
     .expect("a disposed firearm's original marks are never compared (US3-7)");
 }
@@ -133,6 +138,7 @@ fn matching_original_marks_with_different_main_serials_is_never_blocked_by_ident
         &db.conn,
         &with_original_marks("Ridgeline Arms", "Hi-Power", "RA-5", "FN", "High Power", "FN-5"),
         false,
+        None,
     )
     .unwrap();
 
@@ -149,6 +155,7 @@ fn matching_original_marks_with_different_main_serials_is_never_blocked_by_ident
             "FN-5",
         ),
         false,
+        None,
     )
     .expect_err("original marks match, so the warning must fire");
     assert_eq!(err.code, "ORIGINAL_MARKS_MATCH");
@@ -161,10 +168,12 @@ fn editing_a_firearm_into_a_match_also_warns() {
         &db.conn,
         &with_original_marks("Ridgeline Arms", "Hi-Power", "RA-6", "FN", "High Power", "FN-6"),
         false,
+        None,
     )
     .unwrap();
     let other =
-        ops::create_firearm(&db.conn, &imported("Century Arms", "Clone", "CA-6"), false).unwrap();
+        ops::create_firearm(&db.conn, &imported("Century Arms", "Clone", "CA-6"), false, None)
+            .unwrap();
 
     let edited = FirearmInput {
         original_make: Some("FN".into()),
@@ -200,6 +209,7 @@ fn the_original_marks_match_message_never_judges_legality() {
             "FN-WORDING",
         ),
         false,
+        None,
     )
     .unwrap();
 
@@ -214,6 +224,7 @@ fn the_original_marks_match_message_never_judges_legality() {
             "FN-WORDING",
         ),
         false,
+        None,
     )
     .expect_err("warns");
     assert_eq!(err.code, "ORIGINAL_MARKS_MATCH");

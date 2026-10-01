@@ -29,6 +29,25 @@ pub struct DisposeInput {
     pub with_mounted: Vec<DisposeWith>,
 }
 
+impl DisposeInput {
+    pub fn disposition(&self) -> Disposition<'_> {
+        Disposition {
+            disposition_type: self.disposition_type,
+            recipient: &self.recipient,
+            date: &self.date,
+        }
+    }
+}
+
+/// What every record disposed of in one step shares (FR-014): the type,
+/// recipient and date. Each has its own price.
+#[derive(Debug, Clone, Copy)]
+pub struct Disposition<'a> {
+    pub disposition_type: DispositionType,
+    pub recipient: &'a str,
+    pub date: &'a str,
+}
+
 /// One record disposed of along with the one being disposed (FR-014): it
 /// takes the host's type, recipient and date, and its own price, which may
 /// be absent.
@@ -560,19 +579,10 @@ pub mod ops {
         .map_err(CommandError::from_db)
     }
 
+    /// `uid` is the record's identifier, generated when `None` (FR-019).
+    /// Import passes the row's `record_id`, already parsed and checked unused
+    /// (specs/006-accessory-links research.md §17).
     pub fn create_firearm(
-        conn: &Connection,
-        input: &FirearmInput,
-        confirmed_warnings: bool,
-    ) -> Result<Firearm, CommandError> {
-        create_firearm_with_uid(conn, input, confirmed_warnings, None)
-    }
-
-    /// [`create_firearm`], keeping `uid` as the record's identifier instead
-    /// of generating one. Import passes the row's `record_id`, already
-    /// parsed and checked unused (specs/006-accessory-links research.md
-    /// §17); every other caller goes through `create_firearm`.
-    pub fn create_firearm_with_uid(
         conn: &Connection,
         input: &FirearmInput,
         confirmed_warnings: bool,
@@ -812,21 +822,21 @@ pub mod ops {
         get_firearm(conn, id)
     }
 
-    /// Saves the firearm alone as disposed, with the disposition of `input`
-    /// and `price` (blank for a record disposed of along with its host).
+    /// Saves the firearm alone as disposed, with `disposition` and `price`
+    /// (blank for a record disposed of along with its host).
     pub fn save_disposed(
         conn: &Connection,
         id: i64,
-        input: &DisposeInput,
+        disposition: Disposition<'_>,
         price: Option<i64>,
     ) -> Result<Firearm, CommandError> {
         let current = get_firearm(conn, id)?;
 
         let updated_input = FirearmInput {
             status: FirearmStatus::Disposed,
-            disposition_type: Some(input.disposition_type),
-            disposition_recipient: Some(input.recipient.clone()),
-            disposition_date: Some(input.date.clone()),
+            disposition_type: Some(disposition.disposition_type),
+            disposition_recipient: Some(disposition.recipient.to_owned()),
+            disposition_date: Some(disposition.date.to_owned()),
             disposition_price: price,
             ..FirearmInput::from(&current)
         };
@@ -1195,7 +1205,8 @@ pub async fn create_firearm(
     confirmed_warnings: Option<bool>,
     session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
-    session.write(|conn| ops::create_firearm(conn, &input, confirmed_warnings.unwrap_or(false)))
+    session
+        .write(|conn| ops::create_firearm(conn, &input, confirmed_warnings.unwrap_or(false), None))
 }
 
 #[tauri::command]

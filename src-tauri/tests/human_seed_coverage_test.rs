@@ -269,6 +269,7 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
         &db.conn,
         &support::firearm("Smith & Wesson", "Model 10", "S-1"),
         false,
+        None,
     )
     .unwrap();
 
@@ -385,4 +386,53 @@ fn the_accessory_import_samples_show_each_part_of_the_report() {
     let db = fresh();
     let before = import(&db, &["import-before-accessories.csv"]);
     assert_eq!(before.imported_count, 1, "{:?}", before.row_errors);
+}
+
+/// Issue #56: `import-dispose-receiver.csv`, imported into the seeded main
+/// database, matches the "Stripped lower" and lists the four records below
+/// it, so choosing "Replace existing" asks about each.
+#[test]
+fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
+    use hoplodex_lib::commands::import_export::{ImportFile, ImportSessionStore, ops};
+    use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+
+    let dir = TempDir::new().unwrap();
+    let paths = human_seed::seed_sandbox(dir.path(), 0);
+    let samples = human_seed::write_import_samples(&dir.path().join("import-samples"));
+    let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+    let conn = db::open_database(
+        &paths.main,
+        &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+        &machine,
+        true,
+    )
+    .unwrap();
+
+    let result = ops::import_collection(
+        &conn,
+        &[ImportFile {
+            file_path: samples.join("import-dispose-receiver.csv"),
+            format: SpreadsheetFormat::Csv,
+        }],
+        &ImportSessionStore::new(),
+        &mut |_, _| {},
+    )
+    .unwrap();
+
+    assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
+    assert_eq!(result.conflicts.len(), 1);
+    let below: Vec<(Option<String>, u32)> = result.conflicts[0]
+        .mounted
+        .iter()
+        .map(|entry| (entry.label.model.clone(), entry.depth))
+        .collect();
+    assert_eq!(
+        below,
+        [
+            (Some("RECCE-16 upper".to_owned()), 1),
+            (Some("SLx 1-6x24".to_owned()), 2),
+            (Some("HS403B micro red dot".to_owned()), 3),
+            (Some("M300A Scout".to_owned()), 2),
+        ]
+    );
 }

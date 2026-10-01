@@ -36,7 +36,7 @@ fn add_rifle(db: &TestDb, serial: &str) -> RecordRef {
         caliber: ".308 Winchester".into(),
         ..firearm("Ruger", "Precision", serial)
     };
-    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, &input, false).unwrap().id)
+    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap().id)
 }
 
 /// A firearm that can be mounted on a rifle (a suppressor, or the launcher
@@ -47,7 +47,7 @@ fn add_launcher(db: &TestDb, serial: &str) -> RecordRef {
         caliber: ".22 WMR".into(),
         ..firearm("Mossberg", "Launcher", serial)
     };
-    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, &input, false).unwrap().id)
+    RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, &input, false, None).unwrap().id)
 }
 
 fn add_accessory(db: &TestDb, kind: i64, make: &str, model: &str) -> RecordRef {
@@ -55,7 +55,7 @@ fn add_accessory(db: &TestDb, kind: i64, make: &str, model: &str) -> RecordRef {
         serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
     input.make = Some(make.into());
     input.model = Some(model.into());
-    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, &input).unwrap().id)
+    RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, &input, None).unwrap().id)
 }
 
 fn mount(db: &TestDb, item: RecordRef, host: RecordRef) {
