@@ -547,7 +547,7 @@ pub mod ops {
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
         conn.execute(
             "INSERT INTO firearms (
-                make, model, serial_number, no_serial_attested, caliber, cartridge, firearm_type_id,
+                uid, make, model, serial_number, no_serial_attested, caliber, cartridge, firearm_type_id,
                 action_type_id, nickname, notes, accessories,
                 barrel_length_hundredths, overall_length_hundredths, weight_tenths_oz,
                 capacity, finish, condition, status, estimated_value,
@@ -559,7 +559,7 @@ pub mod ops {
                 registration_class_id, registration_form, registration_approved, registered_to,
                 created_at, updated_at
             ) VALUES (
-                :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
+                :uid, :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
                 :action_type_id, :nickname, :notes, :accessories,
                 :barrel_length_hundredths, :overall_length_hundredths, :weight_tenths_oz,
                 :capacity, :finish, :condition, :status, :estimated_value,
@@ -572,6 +572,8 @@ pub mod ops {
                 datetime('now'), datetime('now')
             )",
             named_params! {
+                // FR-019: set here and never in an UPDATE.
+                ":uid": crate::services::record_id::generate(),
                 ":make": input.make,
                 ":model": input.model,
                 ":serial_number": input.serial_number,

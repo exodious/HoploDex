@@ -248,17 +248,17 @@ fn the_trigger_backstop_refuses_raw_writes_that_break_the_rule() {
     const RULE: &str = "action type not allowed for this firearm type";
 
     let insert = message(db.conn.execute(
-        "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
-         VALUES ('M', 'X', 'S-1', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
-        [HANDGUN, PUMP_ACTION],
+        "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
+         VALUES (?3, 'M', 'X', 'S-1', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
+        rusqlite::params![HANDGUN, PUMP_ACTION, support::uid()],
     ));
     assert!(insert.contains(RULE), "{insert}");
 
     db.conn
         .execute(
-            "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
-             VALUES ('M', 'X', 'S-2', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
-            [HANDGUN, LEVER_ACTION],
+            "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
+             VALUES (?3, 'M', 'X', 'S-2', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
+            rusqlite::params![HANDGUN, LEVER_ACTION, support::uid()],
         )
         .unwrap();
     let id = db.conn.last_insert_rowid();

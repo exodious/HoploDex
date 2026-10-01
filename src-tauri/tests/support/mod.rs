@@ -266,6 +266,13 @@ pub fn csv_file(rows: &[String]) -> String {
     lines.join("\n") + "\n"
 }
 
+/// A valid record identifier (FR-019), for tests that insert a firearm with
+/// raw SQL.
+#[allow(dead_code)]
+pub fn uid() -> String {
+    hoplodex_lib::services::record_id::generate()
+}
+
 /// A valid, active Handgun record for `make`/`model`/`serial`, every other
 /// optional field empty — tests set only what they exercise.
 #[allow(dead_code)]

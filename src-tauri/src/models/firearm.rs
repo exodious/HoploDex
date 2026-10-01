@@ -70,6 +70,10 @@ impl Condition {
 #[serde(rename_all = "camelCase")]
 pub struct Firearm {
     pub id: i64,
+    /// specs/006-accessory-links FR-019: the record identifier. Set once at
+    /// creation and never sent over IPC; only the spreadsheet carries it.
+    #[serde(skip)]
+    pub uid: String,
     pub make: String,
     pub model: String,
     pub serial_number: Option<String>,
@@ -136,6 +140,7 @@ impl Firearm {
     pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get("id")?,
+            uid: row.get("uid")?,
             make: row.get("make")?,
             model: row.get("model")?,
             serial_number: row.get("serial_number")?,

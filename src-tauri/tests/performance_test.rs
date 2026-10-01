@@ -73,14 +73,14 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
         let mut stmt = tx
             .prepare(
                 "INSERT INTO firearms (
-                    make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
+                    uid, make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
                     notes, nickname, barrel_length_hundredths, overall_length_hundredths,
                     weight_tenths_oz, capacity, finish, condition,
                     status, origin, year_of_manufacture, country_of_manufacture,
                     importer_name, original_make, original_model, original_serial_number,
                     cartridge, action_type_id, created_at, updated_at
                 ) VALUES (
-                    ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                    ?23, ?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                     'active', ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, datetime('now'), datetime('now')
                 )",
             )
@@ -141,6 +141,7 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                     cartridges[i % cartridges.len()].map(str::to_owned)
                 },
                 actions[i % actions.len()],
+                support::uid(),
             ])
             .unwrap();
         }

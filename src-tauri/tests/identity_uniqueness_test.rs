@@ -278,10 +278,10 @@ fn the_database_backstop_allows_a_pair_distinguished_by_year() {
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
-            make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
+            uid, make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
             status, year_of_manufacture, created_at, updated_at
-        ) VALUES ('Colt', '1873', 'SAA-6', 0, '.45 Colt', 1, 'active', 1944, datetime('now'), datetime('now'))",
-        [],
+        ) VALUES (?1, 'Colt', '1873', 'SAA-6', 0, '.45 Colt', 1, 'active', 1944, datetime('now'), datetime('now'))",
+        [support::uid()],
     );
     assert!(bypassed.is_ok(), "distinguished by year, the trigger must allow it: {bypassed:?}");
 }
@@ -293,10 +293,10 @@ fn the_database_backstop_blocks_a_null_year_pair_bypassing_the_command_layer() {
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
-            make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
+            uid, make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
             status, created_at, updated_at
-        ) VALUES ('Colt', '1873', 'SAA-7', 0, '.45 Colt', 1, 'active', datetime('now'), datetime('now'))",
-        [],
+        ) VALUES (?1, 'Colt', '1873', 'SAA-7', 0, '.45 Colt', 1, 'active', datetime('now'), datetime('now'))",
+        [support::uid()],
     );
     assert!(bypassed.is_err(), "two null-year duplicates must still be blocked");
 }
@@ -308,10 +308,10 @@ fn the_database_backstop_blocks_an_equal_year_pair_bypassing_the_command_layer()
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
-            make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
+            uid, make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
             status, year_of_manufacture, created_at, updated_at
-        ) VALUES ('Colt', '1873', 'SAA-8', 0, '.45 Colt', 1, 'active', 1943, datetime('now'), datetime('now'))",
-        [],
+        ) VALUES (?1, 'Colt', '1873', 'SAA-8', 0, '.45 Colt', 1, 'active', 1943, datetime('now'), datetime('now'))",
+        [support::uid()],
     );
     assert!(bypassed.is_err(), "an equal year on both must still be blocked");
 }
@@ -323,10 +323,10 @@ fn the_database_backstop_blocks_a_year_no_year_pair_bypassing_the_command_layer(
 
     let bypassed = db.conn.execute(
         "INSERT INTO firearms (
-            make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
+            uid, make, model, serial_number, no_serial_attested, caliber, firearm_type_id,
             status, created_at, updated_at
-        ) VALUES ('Colt', '1873', 'SAA-9', 0, '.45 Colt', 1, 'active', datetime('now'), datetime('now'))",
-        [],
+        ) VALUES (?1, 'Colt', '1873', 'SAA-9', 0, '.45 Colt', 1, 'active', datetime('now'), datetime('now'))",
+        [support::uid()],
     );
     assert!(bypassed.is_err(), "a year on only one side must still be blocked");
 }

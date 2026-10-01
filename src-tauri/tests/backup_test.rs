@@ -106,6 +106,11 @@ impl World {
         self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
     }
 
+    /// Every firearm's `(id, uid)` in the open database, by id.
+    fn firearm_uids(&self) -> Vec<(i64, String)> {
+        self.session.read(|conn| Ok(uids(conn))).unwrap()
+    }
+
     fn firearm_count(&self) -> i64 {
         self.session
             .read(|conn| {
@@ -157,6 +162,11 @@ impl World {
     fn next_day(&self) {
         self.clock.advance(chrono::Duration::days(1));
     }
+}
+
+fn uids(conn: &rusqlite::Connection) -> Vec<(i64, String)> {
+    let mut stmt = conn.prepare("SELECT id, uid FROM firearms ORDER BY id").unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
 }
 
 fn notices(events: &TestEvents) -> Vec<Value> {
@@ -826,4 +836,33 @@ fn deleting_all_backups_can_be_stopped_between_files() {
 
 fn path_text(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+// --- Record identifiers (FR-019, research.md §23) -----------------------------
+
+#[test]
+fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    world.change();
+    let before = world.firearm_uids();
+    assert_eq!(before.len(), 2);
+    assert_ne!(before[0].1, before[1].1);
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    let backup = world.backups_in(&world.default_folder(), &id).remove(0);
+
+    assert_eq!(uids(&peek(Path::new(&backup.path))), before, "the backup holds them");
+
+    world.open();
+    world.change();
+    assert_eq!(world.firearm_uids().len(), 3);
+    // The backup made before restoring is named for the minute, so it
+    // needs a later one than the backup being restored.
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(&world.session, &world.machine, &backup.path, &passphrase(), None)
+        .unwrap();
+
+    assert_eq!(world.firearm_uids(), before, "restoring brings the same identifiers back");
 }

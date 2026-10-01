@@ -124,11 +124,12 @@ fn details_without_a_classification_are_refused() {
         assert_eq!(field_error(&err, field).as_deref(), Some(message), "{field}");
     }
     for column in ["registration_form", "registration_approved", "registered_to"] {
+        let uid = support::uid();
         let result = db.conn.execute(
             &format!(
-                "INSERT INTO firearms (make, model, caliber, firearm_type_id, no_serial_attested,
+                "INSERT INTO firearms (uid, make, model, caliber, firearm_type_id, no_serial_attested,
                     {column}, created_at, updated_at)
-                 VALUES ('A', 'B', '9mm', 1, 1, 'x', datetime('now'), datetime('now'))"
+                 VALUES ('{uid}', 'A', 'B', '9mm', 1, 1, 'x', datetime('now'), datetime('now'))"
             ),
             [],
         );

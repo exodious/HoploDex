@@ -231,9 +231,10 @@ fn the_triggers_refuse_a_raw_write_the_command_layer_would_have_caught() {
     let insert = |type_id: i64, column: &str, serial: &str| {
         db.conn.execute(
             &format!(
-                "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id,
+                "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id,
                                        {column}, created_at, updated_at)
-                 VALUES ('M', 'X', ?1, '9mm', ?2, 1, datetime('now'), datetime('now'))"
+                 VALUES ('{}', 'M', 'X', ?1, '9mm', ?2, 1, datetime('now'), datetime('now'))",
+                support::uid()
             ),
             rusqlite::params![serial, type_id],
         )
@@ -249,10 +250,10 @@ fn the_triggers_refuse_a_raw_write_the_command_layer_would_have_caught() {
     // A raw UPDATE of the type onto a row that holds a barrel length.
     db.conn
         .execute(
-            "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id,
+            "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id,
                                    barrel_length_hundredths, created_at, updated_at)
-             VALUES ('M', 'Y', 'UPD-1', '9mm', 2, 2000, datetime('now'), datetime('now'))",
-            [],
+             VALUES (?1, 'M', 'Y', 'UPD-1', '9mm', 2, 2000, datetime('now'), datetime('now'))",
+            [support::uid()],
         )
         .unwrap();
     let err = db
