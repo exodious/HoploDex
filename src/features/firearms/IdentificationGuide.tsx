@@ -77,7 +77,7 @@ const REGISTRATION_EXAMPLES: Example[] = [
     whatYouSee:
       "A suppressor, and the approved Form 4 that came back for it, showing a trust as the registrant.",
     howToRecordIt:
-      'Type: Suppressor. Caliber rating: the largest bore it is rated for, for example ".30". Registered as: Suppressor. Form: "Form 4". Approved: the date on the approved form. Registered to: the trust\'s name as it appears on the form. Attach the approved form as a document.',
+      'Type: Suppressor. Caliber: its bore, for example ".30". Rated cartridge: the most powerful cartridge it is rated for, for example ".300 Winchester Magnum". Registered as: Suppressor. Form: "Form 4". Approved: the date on the approved form. Registered to: the trust\'s name as it appears on the form. Attach the approved form as a document.',
   },
   {
     title: "Rifle made into a short-barreled rifle on a Form 1",

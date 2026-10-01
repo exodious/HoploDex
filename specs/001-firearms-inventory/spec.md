@@ -169,7 +169,7 @@ A collector exports their full collection (including photographs) to a standard 
 ### Functional Requirements
 
 - **FR-001**: System MUST allow the user to create a firearm record with make, model, caliber, and firearm type; a serial number MUST be recorded when the firearm has one. The record MAY also carry the optional physical details of FR-039.
-  _Amended by [spec 005](../005-regulated-item-types/spec.md): a Suppressor needs no action, barrel length or capacity, and a firearm may record what it is registered as._
+  _Amended by [spec 005](../005-regulated-item-types/spec.md): a Suppressor needs no action, barrel length or capacity, its caliber is its bore and its cartridge, labelled "Rated cartridge", the most powerful one it is rated for, and a firearm may record what it is registered as._
   _Amended by [spec 004](../004-cartridges-action-types/spec.md): a firearm also has an optional cartridge and an optional action type; the caliber may be derived from the cartridge._
 - **FR-002**: System MUST allow the user to record free-form notes on a firearm (e.g., condition details such as a scratch or a cracked handle) and a list of accessories.
 - **FR-003**: System MUST allow the user to record acquisition information for a firearm: source (from whom acquired), date, and price paid. The acquisition date MUST NOT be in the future.

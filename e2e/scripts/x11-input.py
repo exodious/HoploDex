@@ -25,6 +25,8 @@ x11 = ctypes.CDLL("libX11.so.6")
 xtst = ctypes.CDLL("libXtst.so.6")
 x11.XOpenDisplay.restype = c_void_p
 x11.XFlush.argtypes = [c_void_p]
+x11.XSync.argtypes = [c_void_p, c_int]
+x11.XCloseDisplay.argtypes = [c_void_p]
 x11.XStringToKeysym.restype = c_ulong
 x11.XKeysymToKeycode.argtypes = [c_void_p, c_ulong]
 xtst.XTestFakeMotionEvent.argtypes = [c_void_p, c_int, c_int, c_int, c_ulong]
@@ -54,9 +56,15 @@ def main(args: list[str]) -> None:
             time.sleep(0.02)
         for code in reversed(codes):
             xtst.XTestFakeKeyEvent(display, code, False, 0)
+            x11.XFlush(display)
+            time.sleep(0.02)
     else:
         sys.exit(__doc__)
-    x11.XFlush(display)
+    # Wait until the server has processed every event before exiting: with
+    # only a flush, the last one (a chord's Shift release) was sometimes lost,
+    # leaving Shift held for every later key.
+    x11.XSync(display, 0)
+    x11.XCloseDisplay(display)
 
 
 if __name__ == "__main__":

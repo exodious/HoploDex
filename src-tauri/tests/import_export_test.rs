@@ -1936,6 +1936,86 @@ mod registration_spreadsheet {
     }
 
     #[test]
+    fn a_suppressor_rows_caliber_is_never_worked_out_from_its_cartridge() {
+        // US4-7, FR-022, research.md §15: a Suppressor's caliber is its bore,
+        // so a blank one is a row error and nothing is listed as derived,
+        // while a Rifle row in the same sheet still derives.
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm(
+                    "SilencerCo",
+                    "Omega 300",
+                    "S1",
+                    &[
+                        ("firearm_type", "suppressor"),
+                        ("caliber", ""),
+                        ("cartridge", ".300 Winchester Magnum"),
+                    ],
+                ),
+                csv_firearm(
+                    "Ruger",
+                    "American",
+                    "R1",
+                    &[
+                        ("firearm_type", "Rifle"),
+                        ("caliber", ""),
+                        ("cartridge", ".300 Winchester Magnum"),
+                    ],
+                ),
+                csv_firearm(
+                    "Dead Air",
+                    "Mask",
+                    "S2",
+                    &[("firearm_type", "Suppressor"), ("caliber", ""), ("cartridge", "")],
+                ),
+            ],
+        );
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        let errors: Vec<(usize, &str)> =
+            result.row_errors.iter().map(|e| (e.row, e.message.as_str())).collect();
+        assert_eq!(
+            errors,
+            [
+                (
+                    1,
+                    "caliber: Caliber is required; a Suppressor's isn't worked out from its cartridge."
+                ),
+                (3, "caliber: Caliber is required."),
+            ]
+        );
+        assert_eq!(result.derived_calibers.len(), 1);
+        assert_eq!(result.derived_calibers[0].row, 2);
+        assert_eq!(result.derived_calibers[0].caliber, ".30");
+    }
+
+    #[test]
+    fn a_suppressor_row_keeps_its_bore_and_rated_cartridge_as_given() {
+        // US4-7: both values are imported as written, neither from the other.
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[csv_firearm(
+                "SilencerCo",
+                "Omega 300",
+                "S1",
+                &[
+                    ("firearm_type", "Suppressor"),
+                    ("caliber", ".46"),
+                    ("cartridge", ".300 Winchester Magnum"),
+                ],
+            )],
+        );
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        assert!(result.derived_calibers.is_empty());
+        let ids = import_export_ops::all_firearm_ids(&db.conn).unwrap();
+        let suppressor = firearm_ops::get_firearm(&db.conn, ids[0]).unwrap();
+        assert_eq!(suppressor.caliber, ".46");
+        assert_eq!(suppressor.cartridge.as_deref(), Some(".300 Winchester Magnum"));
+    }
+
+    #[test]
     fn a_form_snaps_to_a_built_in_name_then_to_the_forms_on_record() {
         let db = TestDb::new();
         record(&db, registered("R1", 1, Some("Tax-paid transfer"), None, Some("Jane Doe")));

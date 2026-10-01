@@ -360,20 +360,26 @@ for (const theme of ["Light", "Dark"] as const) {
     // export dialog's registration note is in 13-export below: the seeded
     // collection has registered firearms, so its note names them.
     it("a suppressor and a registration in the firearm form", async () => {
-      // Type Suppressor: Caliber rating, no Action, Physical details open
-      // without barrel length or capacity; at the default and minimum width.
-      await openRecord("SilencerCo Omega 300");
+      // Type Suppressor: Rated cartridge (filled in) and Caliber, the bore,
+      // with their hints, no Action, Physical details open without barrel
+      // length or capacity; at the default and minimum width.
+      await openRecord("Dead Air Sandman-K");
       await openDialog("Edit");
       await openPhysicalGroup();
       await shot(`35-suppressor-form-${suffix}`, { fullPage: true });
       await browser.setWindowSize(800, 1400);
       await browser.pause(500);
+      await centerField("caliber");
       await shot(`36-suppressor-form-minimum-width-${suffix}`);
       await browser.setWindowSize(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
       await browser.pause(500);
+      await discardForm();
+      await back();
 
       // Registration section: closed with its prompt, then open with only
-      // "Registered as".
+      // "Registered as", on a suppressor with no classification.
+      await openRecord("SilencerCo Sparrow 22");
+      await openDialog("Edit");
       await setGroup("Registration", false);
       await centerField("registrationClassId");
       await shot(`38-registration-closed-${suffix}`);
@@ -451,7 +457,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await $(".hd-tile__name").waitForExist();
       await browser.execute(() => {
         [...document.querySelectorAll<HTMLElement>(".hd-tile__name")]
-          .find((t) => t.textContent?.includes("Omega 300"))
+          .find((t) => t.textContent?.includes("Sparrow 22"))
           ?.scrollIntoView({ block: "center" });
       });
       await browser.pause(400);

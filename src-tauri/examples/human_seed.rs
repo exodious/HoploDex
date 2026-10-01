@@ -1113,20 +1113,24 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("S&W", "Model 60", "S&W-60-1", ".357", HANDGUN)
     });
     // specs/005-regulated-item-types US1: a Suppressor has no action, barrel
-    // length or capacity, and its caliber is a rating. No classification.
+    // length or capacity. Its caliber is its bore and its cartridge the most
+    // powerful one it is rated for (research.md §15); this one's rating isn't
+    // known, so it has no cartridge. No classification.
     add(FirearmInput {
-        estimated_value: Some(900),
+        estimated_value: Some(450),
         acquisition_date: text("2024-05-18"),
-        overall_length_hundredths: Some(780),
-        weight_tenths_oz: Some(130),
+        overall_length_hundredths: Some(500),
+        weight_tenths_oz: Some(24),
         finish: text("Cerakote graphite black"),
-        ..base("SilencerCo", "Omega 300", "OM300-20418", ".30", SUPPRESSOR)
+        ..base("SilencerCo", "Sparrow 22", "SP22-20418", ".22", SUPPRESSOR)
     });
     // specs/005-regulated-item-types US2: registration is a record of what
     // the owner enters, independent of the type. A Suppressor registered as
-    // Suppressor on Form 4, with the approved form attached.
+    // Suppressor on Form 4, with the approved form attached. A .30 bore rated
+    // for .300 Winchester Magnum: neither value comes from the other.
     let registered_suppressor = add(FirearmInput {
         estimated_value: Some(1100),
+        cartridge: text(".300 Winchester Magnum"),
         acquisition_source: text("Ridgeline Arms"),
         acquisition_date: text("2025-09-12"),
         overall_length_hundredths: Some(690),
@@ -1812,8 +1816,10 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     );
 
     // Row errors: an unknown classification, details with no classification,
-    // a future approved date, and a Suppressor row with an action, a barrel
-    // length and a capacity (all three reported on the one row).
+    // a future approved date, a Suppressor row with an action, a barrel
+    // length and a capacity (all three reported on the one row), and a
+    // Suppressor row with a rated cartridge and a blank caliber, which isn't
+    // worked out from the cartridge (research.md §15).
     write(
         "import-registration-errors.csv",
         vec![
@@ -1857,6 +1863,15 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("capacity", "10"),
                 ("firearm_type", "Suppressor"),
                 ("registered_as", "Suppressor"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Rated Only"),
+                ("serial_number", "E-005"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ""),
+                ("cartridge", ".300 Winchester Magnum"),
+                ("firearm_type", "Suppressor"),
             ]),
         ],
     );

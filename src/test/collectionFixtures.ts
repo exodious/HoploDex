@@ -12,7 +12,8 @@ export const FIREARM_TYPES: FirearmTypeInfo[] = (
     [4, "Other", "other"],
   ] as const
 ).map(([id, name, key]) => {
-  // Suppressor has no action, barrel length or capacity (FR-003).
+  // Suppressor has no action, barrel length or capacity (FR-003), and its
+  // caliber is never derived (FR-002).
   const applies = key !== "suppressor";
   return {
     id,
@@ -21,6 +22,7 @@ export const FIREARM_TYPES: FirearmTypeInfo[] = (
     actionTypeApplies: applies,
     barrelLengthApplies: applies,
     capacityApplies: applies,
+    caliberFromCartridge: applies,
   };
 });
 

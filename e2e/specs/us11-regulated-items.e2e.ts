@@ -27,6 +27,7 @@ const TASK_LIMIT_MS = 120_000;
 async function pressChar(char: string) {
   if (char === " ") await realKey("space");
   else if (char === "-") await realKey("minus");
+  else if (char === ".") await realKey("period");
   else if (/[A-Z]/.test(char)) await realKey(`Shift_L+${char.toLowerCase()}`);
   else if (/[a-z0-9]/.test(char)) await realKey(char);
   else throw new Error(`typeReal can't type "${char}"`);
@@ -36,7 +37,8 @@ async function pressChar(char: string) {
 const focusedValue = () =>
   browser.execute(() => (document.activeElement as HTMLInputElement | null)?.value ?? "");
 
-/** Types `text` with real key presses. Letters, digits, space and "-" only.
+/** Types `text` with real key presses. Letters, digits, space, "-" and "."
+ * only.
  * A real key press now and then does not land in a field with a suggestion list,
  * so each character is checked and pressed again if it did not. */
 async function typeReal(text: string) {
@@ -105,9 +107,15 @@ describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
     for (let step = 0; step < 5 && (await checkedType()) !== "5"; step++) await realKey("Down");
     expect(await checkedType()).toBe("5");
 
-    // Suppressor omits the action, and its caliber is a rating.
-    await tabTo("Caliber rating");
-    await typeReal("30");
+    // Suppressor omits the action. Its cartridge is the one it is rated for,
+    // and its caliber, the bore, is never worked out from it (US1-7).
+    await tabTo("Rated cartridge");
+    await typeReal(".300 Winchester Magnum");
+    await tabTo("Caliber");
+    // The cartridge settles on leaving; give a derived caliber time to land.
+    await browser.pause(800);
+    expect(await focusedValue()).toBe("");
+    await typeReal(".30");
     await tabTo("Serial number");
     await typeReal("e2e-sup-1");
 
@@ -166,7 +174,18 @@ describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
     ]);
     const page = (await $("main").getText()).replace(/\s+/g, " ");
     expect(page).not.toMatch(/Barrel length|Capacity|\bAction\b/i);
-    expect(page).toMatch(/Caliber rating/i);
+    expect(page).not.toMatch(/Caliber rating/i);
+    // The title block: the rated cartridge and the bore, as entered.
+    const cells = await browser.execute(() =>
+      [...document.querySelectorAll(".hd-titleblock__cell")].map((cell) => [
+        cell.querySelector("dt")?.textContent,
+        cell.querySelector("dd")?.textContent,
+      ]),
+    );
+    expect(cells.slice(0, 2)).toEqual([
+      ["Rated cartridge", ".300 Winchester Magnum"],
+      ["Caliber", ".30"],
+    ]);
   });
 
   it("groups by Registered as from the keyboard, with Unspecified last (US2-9)", async () => {

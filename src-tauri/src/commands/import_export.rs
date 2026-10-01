@@ -420,10 +420,13 @@ pub mod ops {
     /// The snapping context of one import (research.md §12): the four fields'
     /// vocabularies as they were on record when the import started, and the
     /// sheet's own majority spellings. Rows added by the import never enter
-    /// the vocabularies.
+    /// the vocabularies. Beside them, the names of the types whose caliber
+    /// is never worked out from the cartridge (005 FR-022, research.md §15),
+    /// since `settle_row` runs before `parse_row` and has no connection.
     struct Snapping {
         vocabularies: HashMap<EntryField, FieldVocabulary>,
         sheet: HashMap<EntryField, SheetSpellings>,
+        underived_types: Vec<String>,
     }
 
     impl Snapping {
@@ -443,7 +446,21 @@ pub mod ops {
                     ),
                 );
             }
-            Ok(Self { vocabularies, sheet })
+            let underived_types = conn
+                .prepare("SELECT name FROM firearm_types WHERE caliber_from_cartridge = 0")
+                .and_then(|mut stmt| {
+                    stmt.query_map([], |row| row.get(0))?.collect::<Result<Vec<String>, _>>()
+                })
+                .map_err(CommandError::from_db)?;
+            Ok(Self { vocabularies, sheet, underived_types })
+        }
+
+        /// The recorded name of the row's type when that type never derives
+        /// its caliber, matched as `parse_row` matches it (`COLLATE NOCASE`).
+        /// An unknown type derives as before, and `parse_row` refuses it.
+        fn underived_type(&self, raw: &RawImportRow) -> Option<&str> {
+            let name = raw.firearm_type.as_deref()?;
+            self.underived_types.iter().find(|t| t.eq_ignore_ascii_case(name)).map(String::as_str)
         }
 
         fn snap(&self, field: EntryField, text: &str) -> String {
@@ -483,8 +500,9 @@ pub mod ops {
     }
 
     /// FR-015, FR-025, FR-026 and (005) FR-021 for one row: checks the entry cells,
-    /// snaps them, and fills a blank caliber in from the cartridge. Returns
-    /// the row to parse; the error is a row error's message.
+    /// snaps them, and fills a blank caliber in from the cartridge, unless the
+    /// row's type never derives one (005 FR-022). Returns the row to parse;
+    /// the error is a row error's message.
     fn settle_row(
         snapping: &Snapping,
         raw: &RawImportRow,
@@ -517,6 +535,16 @@ pub mod ops {
                     settled.snapped.push((EntryField::Caliber, text.to_owned(), snapped.clone()));
                 }
                 set_cell(&mut row, EntryField::Caliber, snapped);
+            }
+            None if let Some(type_name) = snapping.underived_type(raw) => {
+                // A Suppressor's caliber is its bore, never its rated
+                // cartridge's (005 research.md §15).
+                return Err(match &row.cartridge {
+                    Some(_) => format!(
+                        "caliber: Caliber is required; a {type_name}'s isn't worked out from its cartridge."
+                    ),
+                    None => "caliber: Caliber is required.".to_owned(),
+                });
             }
             None => {
                 let cartridge = row.cartridge.clone();

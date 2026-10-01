@@ -26,7 +26,7 @@ import type { FocusField } from "./FirearmForm";
 import { RestoreDialog } from "./RestoreDialog";
 import * as firearmsService from "./firearmsService";
 import {
-  caliberLabel,
+  cartridgeLabel,
   conditionLabel,
   dispositionLabel,
   firearmTypeOption,
@@ -251,8 +251,10 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         <dl className="hd-titleblock">
           {/* specs/004-cartridges-action-types FR-027: none recorded reads
               as an unrecorded date does. */}
-          <TitleCell label="Cartridge">{firearm.cartridge ?? "—"}</TitleCell>
-          <TitleCell label={caliberLabel(type.label)}>{firearm.caliber}</TitleCell>
+          {/* specs/005-regulated-item-types FR-002: a Suppressor's cartridge
+              is its rating; its caliber is its bore. */}
+          <TitleCell label={cartridgeLabel(type.label)}>{firearm.cartridge ?? "—"}</TitleCell>
+          <TitleCell label="Caliber">{firearm.caliber}</TitleCell>
           {/* specs/005-regulated-item-types FR-003: a type with no action
               shows no Action cell. */}
           {type.actionTypeApplies && <TitleCell label="Action">{actionName ?? "—"}</TitleCell>}

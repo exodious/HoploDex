@@ -141,7 +141,7 @@ pub mod ops {
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, generic_thumbnail_key, action_type_applies,
-                        barrel_length_applies, capacity_applies
+                        barrel_length_applies, capacity_applies, caliber_from_cartridge
                  FROM firearm_types ORDER BY sort_order",
             )
             .map_err(CommandError::from_db)?;
@@ -154,6 +154,7 @@ pub mod ops {
                     action_type_applies: row.get(3)?,
                     barrel_length_applies: row.get(4)?,
                     capacity_applies: row.get(5)?,
+                    caliber_from_cartridge: row.get(6)?,
                 })
             })
             .map_err(CommandError::from_db)?

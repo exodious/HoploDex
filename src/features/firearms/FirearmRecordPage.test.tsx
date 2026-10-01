@@ -458,25 +458,29 @@ describe("FirearmRecordPage cartridge", () => {
 });
 
 // specs/005-regulated-item-types US1-3 (contracts/ui-registration.md §4): a
-// Suppressor's caliber is a rating, and it has no action.
+// Suppressor's cartridge is its rating and its caliber its bore, and it has no
+// action.
 describe("FirearmRecordPage title block by type", () => {
   beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn();
   });
 
-  it("labels a Suppressor's caliber 'Caliber rating' and lists no Action, Barrel length or Capacity", async () => {
+  it("labels a Suppressor's cartridge 'Rated cartridge', keeps 'Caliber', and lists no Action, Barrel length or Capacity", async () => {
     getFirearm.mockReset().mockResolvedValue({
       ...firearm,
       make: "SilencerCo",
       model: "Omega 300",
       caliber: ".30",
+      cartridge: ".300 Winchester Magnum",
       firearmTypeId: 5,
     });
     renderPage();
 
-    const rating = await screen.findByText("Caliber rating");
-    expect(rating.closest("div")).toHaveTextContent(".30");
-    expect(screen.queryByText("Caliber")).not.toBeInTheDocument();
+    const rating = await screen.findByText("Rated cartridge");
+    expect(rating.closest("div")).toHaveTextContent(".300 Winchester Magnum");
+    expect(screen.getByText("Caliber").closest("div")).toHaveTextContent(".30");
+    expect(screen.queryByText("Cartridge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Caliber rating")).not.toBeInTheDocument();
     expect(screen.queryByText("Action")).not.toBeInTheDocument();
     expect(screen.queryByText("Barrel length")).not.toBeInTheDocument();
     expect(screen.queryByText("Capacity")).not.toBeInTheDocument();
@@ -487,8 +491,9 @@ describe("FirearmRecordPage title block by type", () => {
     renderPage();
 
     expect(await screen.findByText("Caliber")).toBeInTheDocument();
+    expect(screen.getByText("Cartridge")).toBeInTheDocument();
     expect(screen.getByText("Action")).toBeInTheDocument();
-    expect(screen.queryByText("Caliber rating")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rated cartridge")).not.toBeInTheDocument();
   });
 });
 

@@ -48,6 +48,7 @@ const DERIVED: Record<string, DerivedCaliber> = {
   "9x19mm Parabellum": { caliber: "9mm", source: "catalog" },
   "9mm Luger": { caliber: "9mm", source: "catalog" },
   ".45 ACP": { caliber: ".45", source: "catalog" },
+  ".300 Winchester Magnum": { caliber: ".30", source: "catalog" },
   ".30 Custom Improved": { caliber: ".30", source: "guess" },
   "6.5x47 Wildcat": { caliber: "6.5mm", source: "guess" },
 };
@@ -1991,7 +1992,7 @@ describe("FirearmForm suppressor (US1)", () => {
     expect(names).toEqual(["Handgun", "Rifle", "Shotgun", "Suppressor", "Other"]);
   });
 
-  it("offers no Action, Barrel length or Capacity for a Suppressor, and says Caliber rating", async () => {
+  it("offers no Action, Barrel length or Capacity for a Suppressor, and labels its Rated cartridge", async () => {
     const user = userEvent.setup();
     renderForm();
 
@@ -2006,9 +2007,110 @@ describe("FirearmForm suppressor (US1)", () => {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
     expect(screen.getByRole("combobox", { name: "Condition" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Caliber rating")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Caliber")).not.toBeInTheDocument();
-    expect(screen.getByText("The largest bore the suppressor is rated for.")).toBeInTheDocument();
+    // FR-002, research.md §15: the caliber is the bore, the cartridge the
+    // rating.
+    const caliber = screen.getByLabelText("Caliber");
+    expect(caliber).toBeRequired();
+    expect(caliber).toHaveAttribute("placeholder", "e.g. .30");
+    expect(caliber).toHaveAccessibleDescription("The bore diameter.");
+    const rated = screen.getByLabelText("Rated cartridge");
+    expect(rated).not.toBeRequired();
+    expect(rated).toHaveAttribute("placeholder", "e.g. .300 Winchester Magnum");
+    expect(rated).toHaveAccessibleDescription(
+      "The most powerful cartridge the suppressor is rated for.",
+    );
+    expect(screen.queryByLabelText("Cartridge")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Caliber rating")).not.toBeInTheDocument();
+  });
+
+  /** Types a cartridge into the field under `label` and leaves it. */
+  async function enterRated(user: ReturnType<typeof userEvent.setup>, label: string, text: string) {
+    await user.clear(screen.getByLabelText(label));
+    await user.type(screen.getByLabelText(label), text);
+    await user.tab();
+    await waitFor(() => expect(settleEntry).toHaveBeenCalledWith("cartridge", text));
+  }
+
+  it("fills no caliber from a new Suppressor's rated cartridge (US1-7)", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Suppressor");
+
+    await enterRated(user, "Rated cartridge", ".300 Winchester Magnum");
+    expect(screen.getByLabelText("Caliber")).toHaveValue("");
+    expect(screen.queryByText("From the cartridge.")).not.toBeInTheDocument();
+
+    // Nothing is guessed, and an unreadable one asks for nothing either.
+    await enterRated(user, "Rated cartridge", ".30 Custom Improved");
+    await enterRated(user, "Rated cartridge", "Wildcat Special");
+    expect(screen.getByLabelText("Caliber")).toHaveValue("");
+    expect(screen.queryByText("Guess")).not.toBeInTheDocument();
+    expect(screen.queryByText(/We couldn't work out a caliber/)).not.toBeInTheDocument();
+
+    // Leaving the caliber empty derives nothing.
+    await user.click(screen.getByLabelText("Caliber"));
+    await user.tab();
+    expect(screen.getByLabelText("Caliber")).toHaveValue("");
+    expect(screen.getByLabelText("Caliber")).toHaveAccessibleDescription("The bore diameter.");
+  });
+
+  it("suggests no caliber for a saved Suppressor's new rated cartridge (US1-7)", async () => {
+    const user = userEvent.setup();
+    renderForm(
+      <FirearmForm
+        initialValues={{
+          ...rifle,
+          firearmTypeId: 5,
+          caliber: ".46",
+          actionTypeId: null,
+          barrelLengthHundredths: null,
+          capacity: null,
+        }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await enterRated(user, "Rated cartridge", ".300 Winchester Magnum");
+
+    expect(screen.getByLabelText("Caliber")).toHaveValue(".46");
+    expect(screen.queryByText(/The cartridge suggests/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a Rifle's derived caliber, without its hint, when the type becomes Suppressor", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Rifle");
+    await enterRated(user, "Cartridge", ".30 Custom Improved");
+    await waitFor(() => expect(screen.getByLabelText("Caliber")).toHaveValue(".30"));
+    expect(screen.getByText("Guess")).toBeInTheDocument();
+
+    await chooseType(user, "Suppressor");
+
+    expect(screen.getByLabelText("Caliber")).toHaveValue(".30");
+    expect(screen.queryByText("Guess")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Guessed from the cartridge/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Caliber")).toHaveAccessibleDescription("The bore diameter.");
+
+    // Back to a Rifle, the caliber stays the owner's: a new cartridge only
+    // suggests (004 FR-006).
+    await chooseType(user, "Rifle");
+    expect(screen.getByLabelText("Caliber")).toHaveValue(".30");
+    await enterRated(user, "Cartridge", ".45 ACP");
+    expect(await screen.findByText("The cartridge suggests \u201c.45\u201d.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Caliber")).toHaveValue(".30");
+  });
+
+  it("derives an empty caliber from the rated cartridge at once when the type stops being Suppressor", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await chooseType(user, "Suppressor");
+    await enterRated(user, "Rated cartridge", ".300 Winchester Magnum");
+    expect(screen.getByLabelText("Caliber")).toHaveValue("");
+
+    await chooseType(user, "Rifle");
+
+    expect(screen.getByLabelText("Caliber")).toHaveValue(".30");
+    expect(screen.getByText("From the cartridge.")).toBeInTheDocument();
   });
 
   it("leaves the hidden fields out of the closed summary", async () => {

@@ -8,10 +8,19 @@ import type { CaliberAction, CaliberState } from "./caliberDerivation";
 const catalog9mm = { caliber: "9mm", source: "catalog" } as const;
 const guess30 = { caliber: ".30", source: "guess" } as const;
 const catalog45 = { caliber: ".45", source: "catalog" } as const;
+const catalog30 = { caliber: ".30", source: "catalog" } as const;
 
+/** Runs the actions for a type that derives its caliber (004's every type). */
 function run(state: CaliberState, ...actions: CaliberAction[]): CaliberState {
-  return actions.reduce(caliberReducer, state);
+  return actions.reduce((prev, action) => caliberReducer(prev, action, true), state);
 }
+
+/** Runs the actions for a Suppressor, whose caliber is never derived. */
+function runBore(state: CaliberState, ...actions: CaliberAction[]): CaliberState {
+  return actions.reduce((prev, action) => caliberReducer(prev, action, false), state);
+}
+
+const typeChanged: CaliberAction = { type: "typeChanged" };
 
 const settled = (
   cartridge: string,
@@ -195,5 +204,117 @@ describe("caliberReducer, edited mode (a saved firearm)", () => {
       settled(".30 Custom Improved", guess30),
     );
     expect(state).toMatchObject({ caliber: ".30", mode: "derived", source: "guess" });
+  });
+});
+
+// specs/005-regulated-item-types FR-002, US1-7, research.md §15: a type
+// whose `caliberFromCartridge` is false (Suppressor) never derives its
+// caliber; changing type keeps the caliber's text either way.
+describe("caliberReducer, a type that doesn't derive (Suppressor)", () => {
+  const fresh = initialCaliberState();
+  const saved = initialCaliberState(".30");
+
+  it("remembers a settled cartridge but fills nothing on a new firearm", () => {
+    const state = runBore(fresh, settled(".300 Winchester Magnum", catalog30));
+    expect(state).toMatchObject({ caliber: "", mode: "derived", source: null, prompt: null });
+    expect(state.suggestion).toBeNull();
+    expect(state.derivedFrom).toEqual({
+      cartridge: ".300 Winchester Magnum",
+      derived: catalog30,
+    });
+    expect(caliberHint(state)).toBeUndefined();
+  });
+
+  it("neither guesses nor prompts for a cartridge it can't read", () => {
+    expect(runBore(fresh, settled(".30 Custom Improved", guess30))).toMatchObject({
+      caliber: "",
+      source: null,
+    });
+    const unreadable = runBore(fresh, settled("Wildcat Special", null));
+    expect(unreadable.prompt).toBeNull();
+    expect(caliberHint(unreadable)).toBeUndefined();
+  });
+
+  it("suggests nothing for a saved suppressor's new rated cartridge", () => {
+    const state = runBore(saved, settled(".300 Winchester Magnum", catalog30));
+    expect(state).toMatchObject({ caliber: ".30", mode: "edited", suggestion: null });
+  });
+
+  it("derives nothing when an empty caliber is left", () => {
+    const state = runBore(
+      saved,
+      settled(".300 Winchester Magnum", catalog30),
+      { type: "caliberTyped", caliber: "" },
+      { type: "caliberLeft" },
+    );
+    expect(state).toMatchObject({ caliber: "", mode: "derived", source: null, prompt: null });
+  });
+
+  it("keeps a typed bore when the rated cartridge is cleared", () => {
+    const state = runBore(
+      fresh,
+      settled(".300 Winchester Magnum", catalog30),
+      { type: "caliberTyped", caliber: ".46" },
+      { type: "cartridgeCleared" },
+    );
+    expect(state).toMatchObject({ caliber: ".46", mode: "edited", derivedFrom: null });
+  });
+});
+
+describe("caliberReducer, changing type", () => {
+  const fresh = initialCaliberState();
+
+  it("to a Suppressor keeps a derived caliber as the owner's, without its hint", () => {
+    const derived = run(fresh, settled("9x19mm Parabellum", catalog9mm));
+    const state = runBore(derived, typeChanged);
+    expect(state).toMatchObject({ caliber: "9mm", mode: "edited", source: null });
+    expect(caliberHint(state)).toBeUndefined();
+  });
+
+  it("to a Suppressor drops a guess's tag and a pending suggestion", () => {
+    const guessed = run(fresh, settled(".30 Custom Improved", guess30));
+    expect(runBore(guessed, typeChanged)).toMatchObject({
+      caliber: ".30",
+      mode: "edited",
+      source: null,
+    });
+    const offered = run(initialCaliberState("9mm"), settled(".45 ACP", catalog45));
+    expect(offered.suggestion).toBe(".45");
+    expect(runBore(offered, typeChanged).suggestion).toBeNull();
+  });
+
+  it("to a Suppressor drops the prompt and leaves an empty caliber empty", () => {
+    const prompted = run(fresh, settled("Wildcat Special", null));
+    const state = runBore(prompted, typeChanged);
+    expect(state).toMatchObject({ caliber: "", prompt: null });
+    expect(caliberHint(state)).toBeUndefined();
+  });
+
+  it("away from a Suppressor derives an empty caliber from the last cartridge at once", () => {
+    const bore = runBore(fresh, settled(".300 Winchester Magnum", catalog30));
+    const state = run(bore, typeChanged);
+    expect(state).toMatchObject({ caliber: ".30", mode: "derived", source: "catalog" });
+    expect(caliberHint(state)).toBe("From the cartridge.");
+
+    const unreadable = run(runBore(fresh, settled("Wildcat Special", null)), typeChanged);
+    expect(unreadable).toMatchObject({ caliber: "", mode: "derived", prompt: "Wildcat Special" });
+  });
+
+  it("away from a Suppressor leaves a non-empty caliber edited", () => {
+    const bore = runBore(fresh, settled(".300 Winchester Magnum", catalog30), {
+      type: "caliberTyped",
+      caliber: ".46",
+    });
+    const state = run(bore, typeChanged);
+    expect(state).toMatchObject({ caliber: ".46", mode: "edited", suggestion: null });
+    // A later cartridge change only suggests (004 FR-006).
+    expect(run(state, settled(".45 ACP", catalog45))).toMatchObject({
+      caliber: ".46",
+      suggestion: ".45",
+    });
+  });
+
+  it("away from a Suppressor with no cartridge leaves an empty caliber empty", () => {
+    expect(run(fresh, typeChanged)).toMatchObject({ caliber: "", mode: "derived", prompt: null });
   });
 });

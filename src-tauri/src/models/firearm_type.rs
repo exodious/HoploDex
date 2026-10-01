@@ -15,6 +15,10 @@ pub struct FirearmTypeInfo {
     pub action_type_applies: bool,
     pub barrel_length_applies: bool,
     pub capacity_applies: bool,
+    /// `false` = the caliber is never worked out from the cartridge, on the
+    /// form or on import: a Suppressor's caliber is its bore (FR-002;
+    /// research.md §15).
+    pub caliber_from_cartridge: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

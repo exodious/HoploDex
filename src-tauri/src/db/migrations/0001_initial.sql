@@ -14,7 +14,11 @@ CREATE TABLE firearm_types (
     -- hold a value.
     action_type_applies INTEGER NOT NULL DEFAULT 1 CHECK (action_type_applies IN (0, 1)),
     barrel_length_applies INTEGER NOT NULL DEFAULT 1 CHECK (barrel_length_applies IN (0, 1)),
-    capacity_applies INTEGER NOT NULL DEFAULT 1 CHECK (capacity_applies IN (0, 1))
+    capacity_applies INTEGER NOT NULL DEFAULT 1 CHECK (capacity_applies IN (0, 1)),
+    -- specs/005-regulated-item-types FR-002 (research.md §15): 0 = the
+    -- caliber is never worked out from the cartridge, on the form or on
+    -- import. A Suppressor's caliber is its bore, its cartridge its rating.
+    caliber_from_cartridge INTEGER NOT NULL DEFAULT 1 CHECK (caliber_from_cartridge IN (0, 1))
 );
 
 -- specs/004-cartridges-action-types FR-017/FR-018 (data-model.md's "Entity:

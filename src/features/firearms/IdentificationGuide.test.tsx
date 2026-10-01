@@ -81,6 +81,14 @@ describe("IdentificationGuide", () => {
     expect(within(list).getAllByText("What you have:")).toHaveLength(2);
     expect(within(list).getAllByText("How to record it:")).toHaveLength(2);
     expect(within(list).getByText(/list them in Notes/)).toBeInTheDocument();
+    // FR-002, research.md §12, §15: a suppressor's caliber is its bore and
+    // its cartridge its rating.
+    expect(
+      within(list).getByText(
+        /Caliber: its bore, for example "\.30"\. Rated cartridge: the most powerful cartridge it is rated for, for example "\.300 Winchester Magnum"\./,
+      ),
+    ).toBeInTheDocument();
+    expect(within(list).queryByText(/Caliber rating/)).not.toBeInTheDocument();
   });
 
   it("opens at the top for the origin", async () => {

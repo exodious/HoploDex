@@ -176,6 +176,9 @@ export interface FirearmTypeInfo {
   actionTypeApplies: boolean;
   barrelLengthApplies: boolean;
   capacityApplies: boolean;
+  /** `false`: the caliber is never worked out from the cartridge. A
+   * Suppressor's caliber is its bore (FR-002; research.md §15). */
+  caliberFromCartridge: boolean;
 }
 
 /** `list_firearm_types`' output: every type, in list order (Other last). */
@@ -206,6 +209,7 @@ export interface FirearmTypeOption {
   actionTypeApplies: boolean;
   barrelLengthApplies: boolean;
   capacityApplies: boolean;
+  caliberFromCartridge: boolean;
 }
 
 /** The type for an id, from the store's list (`useFirearmTypes`). An id the
@@ -224,6 +228,7 @@ export function firearmTypeOption(
         actionTypeApplies: type.actionTypeApplies,
         barrelLengthApplies: type.barrelLengthApplies,
         capacityApplies: type.capacityApplies,
+        caliberFromCartridge: type.caliberFromCartridge,
       }
     : {
         value: String(firearmTypeId),
@@ -232,13 +237,16 @@ export function firearmTypeOption(
         actionTypeApplies: true,
         barrelLengthApplies: true,
         capacityApplies: true,
+        caliberFromCartridge: true,
       };
 }
 
-/** FR-002: a suppressor's caliber is the largest bore it is rated for. A
- * display choice for the one seeded type, with no rule behind it. */
-export function caliberLabel(typeName: string): string {
-  return typeName === "Suppressor" ? "Caliber rating" : "Caliber";
+/** FR-002: a suppressor's cartridge is the most powerful one it is rated
+ * for, and its caliber keeps its label as its bore. A display choice for the
+ * one seeded type (research.md §15); whether the caliber is derived is the
+ * type's `caliberFromCartridge`. */
+export function cartridgeLabel(typeName: string): string {
+  return typeName === "Suppressor" ? "Rated cartridge" : "Cartridge";
 }
 
 export const DISPOSITION_TYPE_OPTIONS: { value: DispositionType; label: string }[] = [

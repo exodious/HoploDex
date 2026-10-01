@@ -1,6 +1,12 @@
 // specs/004-cartridges-action-types research.md §8 and contracts/ui-entry.md
 // §3: the caliber field's state on the firearm form, beside its text. Pure,
 // so every transition is tested without rendering the form.
+//
+// specs/005-regulated-item-types FR-002 (research.md §15): every transition
+// is told whether the type in effect works its caliber out from the
+// cartridge (`caliberFromCartridge`). A Suppressor's doesn't: its caliber is
+// its bore, so a settled cartridge is remembered but fills, guesses, suggests
+// and prompts nothing.
 
 import type { DerivedCaliber } from "./types";
 
@@ -29,7 +35,9 @@ export type CaliberAction =
   | { type: "cartridgeCleared" }
   | { type: "caliberTyped"; caliber: string }
   | { type: "caliberLeft" }
-  | { type: "suggestionUsed" };
+  | { type: "suggestionUsed" }
+  /** The firearm's type changed; the reducer's `derives` is the new type's. */
+  | { type: "typeChanged" };
 
 /** A new firearm's caliber starts derived and empty; a saved firearm's
  * starts edited (FR-006: its saved caliber counts as already edited). */
@@ -62,10 +70,19 @@ function derive(
   };
 }
 
-export function caliberReducer(state: CaliberState, action: CaliberAction): CaliberState {
+/** `derives`: whether the type in effect (after a `typeChanged`, the new
+ * one) works its caliber out from the cartridge. With no type chosen, it
+ * does. */
+export function caliberReducer(
+  state: CaliberState,
+  action: CaliberAction,
+  derives: boolean,
+): CaliberState {
   switch (action.type) {
     case "cartridgeSettled": {
       const derivedFrom = { cartridge: action.cartridge, derived: action.derived };
+      // Remembered, so a change to a type that derives can use it at once.
+      if (!derives) return { ...state, derivedFrom, suggestion: null, prompt: null };
       if (state.mode === "derived") return derive(state, derivedFrom);
       const offered = action.derived?.caliber;
       return {
@@ -75,6 +92,7 @@ export function caliberReducer(state: CaliberState, action: CaliberAction): Cali
       };
     }
     case "cartridgeCleared":
+      if (!derives) return { ...state, derivedFrom: null, suggestion: null, prompt: null };
       if (state.mode === "derived") {
         return { ...state, derivedFrom: null, caliber: "", source: null, prompt: null };
       }
@@ -92,8 +110,8 @@ export function caliberReducer(state: CaliberState, action: CaliberAction): Cali
       };
     case "caliberLeft":
       if (state.caliber.trim() !== "") return state;
-      if (state.derivedFrom) return derive(state, state.derivedFrom);
-      return { ...state, mode: "derived", source: null, suggestion: null };
+      if (derives && state.derivedFrom) return derive(state, state.derivedFrom);
+      return { ...state, mode: "derived", source: null, suggestion: null, prompt: null };
     case "suggestionUsed":
       if (state.suggestion === null) return state;
       return {
@@ -103,6 +121,24 @@ export function caliberReducer(state: CaliberState, action: CaliberAction): Cali
         source: null,
         suggestion: null,
       };
+    case "typeChanged": {
+      // The caliber's text is kept either way (FR-002).
+      const filled = state.caliber.trim() !== "";
+      if (!derives) {
+        // Now the owner's to check against the bore: no "From the
+        // cartridge." or "Guessed …" hint, Guess tag, suggestion or prompt.
+        return {
+          ...state,
+          mode: filled ? "edited" : state.mode,
+          source: null,
+          suggestion: null,
+          prompt: null,
+        };
+      }
+      if (filled) return { ...state, mode: "edited" };
+      if (state.derivedFrom) return derive(state, state.derivedFrom);
+      return { ...state, mode: "derived", source: null, suggestion: null, prompt: null };
+    }
   }
 }
 

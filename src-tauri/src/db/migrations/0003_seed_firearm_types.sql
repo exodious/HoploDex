@@ -7,13 +7,14 @@
 
 -- Fixed ids (005 research.md §4), listed in `sort_order`, which puts Other,
 -- the catch-all, last. Suppressor has no action, barrel length or capacity
--- (FR-003): its three flags are 0.
-INSERT INTO firearm_types (id, name, generic_thumbnail_key, sort_order, action_type_applies, barrel_length_applies, capacity_applies) VALUES
-    (1, 'Handgun', 'handgun', 1, 1, 1, 1),
-    (2, 'Rifle', 'rifle', 2, 1, 1, 1),
-    (3, 'Shotgun', 'shotgun', 3, 1, 1, 1),
-    (4, 'Other', 'other', 5, 1, 1, 1),
-    (5, 'Suppressor', 'suppressor', 4, 0, 0, 0);
+-- (FR-003): its three flags are 0. Its caliber is its bore, never worked out
+-- from its rated cartridge (FR-002, research.md §15).
+INSERT INTO firearm_types (id, name, generic_thumbnail_key, sort_order, action_type_applies, barrel_length_applies, capacity_applies, caliber_from_cartridge) VALUES
+    (1, 'Handgun', 'handgun', 1, 1, 1, 1, 1),
+    (2, 'Rifle', 'rifle', 2, 1, 1, 1, 1),
+    (3, 'Shotgun', 'shotgun', 3, 1, 1, 1, 1),
+    (4, 'Other', 'other', 5, 1, 1, 1, 1),
+    (5, 'Suppressor', 'suppressor', 4, 0, 0, 0, 0);
 
 -- FR-007: fixed ids, listed in `sort_order`, all offered. No rule about what
 -- is regulated lives here.

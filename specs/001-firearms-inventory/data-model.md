@@ -12,7 +12,7 @@ _Amended by [spec 003](../003-database-protection-management/data-model.md): the
 ## Entity: FirearmType (lookup)
 _Amended by [spec 005](../005-regulated-item-types/spec.md): adds four registration columns and the `registration_classes` table._
 
-_Amended by [spec 005](../005-regulated-item-types/spec.md): adds the Suppressor row and three flags saying which of action, barrel length and capacity the type has._
+_Amended by [spec 005](../005-regulated-item-types/spec.md): adds the Suppressor row, three flags saying which of action, barrel length and capacity the type has, and a fourth, `caliber_from_cartridge`, saying whether its caliber is worked out from the cartridge (0 for Suppressor)._
 
 
 Structured, extensible list backing FR-012's grouping and the generic

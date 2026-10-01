@@ -43,7 +43,7 @@ import {
   CONDITION_OPTIONS,
   DISPOSITION_TYPE_OPTIONS,
   ORIGIN_OPTIONS,
-  caliberLabel,
+  cartridgeLabel,
   conditionLabel,
   firearmTypeOption,
   originLabel,
@@ -114,20 +114,25 @@ const TYPE_LIST_FAILED =
 const REGISTRATION_LIST_FAILED =
   "The list of classifications couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
 
-/** specs/005-regulated-item-types FR-002: the hint under a suppressor's
- * caliber rating. */
-const CALIBER_RATING_HINT = "The largest bore the suppressor is rated for.";
+/** specs/005-regulated-item-types FR-002 (research.md §15): a suppressor's
+ * caliber is its bore, and its cartridge the most powerful one it is rated
+ * for. */
+const SUPPRESSOR_CALIBER_HINT = "The bore diameter.";
+const SUPPRESSOR_CARTRIDGE_HINT = "The most powerful cartridge the suppressor is rated for.";
 
-/** The fields a type omits (FR-003); with no type chosen, none. */
+/** The fields a type omits (FR-003) and whether it works its caliber out
+ * from the cartridge (FR-002); with no type chosen, every field applies and
+ * the caliber is derived. */
 type FieldRules = Pick<
   FirearmTypeOption,
-  "actionTypeApplies" | "barrelLengthApplies" | "capacityApplies"
+  "actionTypeApplies" | "barrelLengthApplies" | "capacityApplies" | "caliberFromCartridge"
 >;
 
 const ALL_FIELDS_APPLY: FieldRules = {
   actionTypeApplies: true,
   barrelLengthApplies: true,
   capacityApplies: true,
+  caliberFromCartridge: true,
 };
 
 /** contracts/ui-registration.md §1: what changing to a type that omits a
@@ -778,30 +783,35 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   }
 
   /** Runs the caliber reducer (research.md §8) over the form's caliber
-   * fields. `derivedFrom` is set before a cartridge action, so this only
+   * fields, for the type `prev` holds: specs/005-regulated-item-types
+   * research.md §15 reads whether it derives from the type list on each
+   * transition. `derivedFrom` is set before a cartridge action, so this only
    * reads it. */
+  function withCaliber(prev: FormState, action: CaliberAction): FormState {
+    const next = caliberReducer(
+      {
+        caliber: prev.caliber,
+        mode: prev.caliberMode,
+        source: prev.caliberSource || null,
+        suggestion: prev.caliberSuggestion || null,
+        prompt: prev.caliberPrompt || null,
+        derivedFrom: derivedFrom.current,
+      },
+      action,
+      rulesFor(prev.firearmTypeId).caliberFromCartridge,
+    );
+    return {
+      ...prev,
+      caliber: next.caliber,
+      caliberMode: next.mode,
+      caliberSource: next.source ?? "",
+      caliberSuggestion: next.suggestion ?? "",
+      caliberPrompt: next.prompt ?? "",
+    };
+  }
+
   function applyCaliber(action: CaliberAction) {
-    setForm((prev) => {
-      const next = caliberReducer(
-        {
-          caliber: prev.caliber,
-          mode: prev.caliberMode,
-          source: prev.caliberSource || null,
-          suggestion: prev.caliberSuggestion || null,
-          prompt: prev.caliberPrompt || null,
-          derivedFrom: derivedFrom.current,
-        },
-        action,
-      );
-      return {
-        ...prev,
-        caliber: next.caliber,
-        caliberMode: next.mode,
-        caliberSource: next.source ?? "",
-        caliberSuggestion: next.suggestion ?? "",
-        caliberPrompt: next.prompt ?? "",
-      };
-    });
+    setForm((prev) => withCaliber(prev, action));
   }
 
   /** contracts/ui-entry.md §2–§3: settles one of the four fields, when it
@@ -894,7 +904,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const typeName = firearmTypeOption(firearmTypes.types, Number(form.firearmTypeId)).label;
   const isSuppressor = form.firearmTypeId !== "" && typeName === "Suppressor";
   const caliberHintText =
-    caliberHint(caliberState) ?? (isSuppressor ? CALIBER_RATING_HINT : undefined);
+    caliberHint(caliberState) ?? (isSuppressor ? SUPPRESSOR_CALIBER_HINT : undefined);
   // What the type in effect will clear at save. Derived from the form, so it
   // disappears when the type changes back or the values are removed.
   const typeNote = clearedFieldsNote(
@@ -922,11 +932,14 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       cleared ? `${chosen.name} doesn't apply to a ${typeLabel}, so the action was cleared.` : "",
     );
     setTypeAnnouncement(clearedFieldsNote(typeLabel, next, form, chosen?.name));
-    setForm((prev) => ({
-      ...prev,
-      firearmTypeId: value,
-      actionTypeId: cleared ? "" : prev.actionTypeId,
-    }));
+    // FR-002: the caliber is kept as entered; the reducer follows whether
+    // the new type derives it.
+    setForm((prev) =>
+      withCaliber(
+        { ...prev, firearmTypeId: value, actionTypeId: cleared ? "" : prev.actionTypeId },
+        { type: "typeChanged" },
+      ),
+    );
   }
 
   /** FR-012: Unspecified with details recorded asks first; another
@@ -1286,22 +1299,28 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               <div data-field="cartridge">
                 <EntryField
                   field="cartridge"
-                  label="Cartridge"
+                  label={cartridgeLabel(typeName)}
                   value={form.cartridge}
                   onValueChange={(text) => editEntry("cartridge", text)}
                   onPick={(value) => pickEntry("cartridge", value)}
                   onLeave={() => leaveEntry("cartridge")}
                   note={entryNotes.cartridge}
                   error={errorFor("cartridge")}
-                  hint="Optional. The exact round it's chambered for, e.g. 9x19mm Parabellum."
-                  placeholder="e.g. 9x19mm Parabellum"
+                  hint={
+                    isSuppressor
+                      ? SUPPRESSOR_CARTRIDGE_HINT
+                      : "Optional. The exact round it's chambered for, e.g. 9x19mm Parabellum."
+                  }
+                  placeholder={
+                    isSuppressor ? "e.g. .300 Winchester Magnum" : "e.g. 9x19mm Parabellum"
+                  }
                 />
               </div>
               <div data-field="caliber" className="hd-form-stack">
                 <EntryField
                   field="caliber"
                   id="ff-caliber"
-                  label={caliberLabel(typeName)}
+                  label="Caliber"
                   required
                   value={form.caliber}
                   onValueChange={(text) => editEntry("caliber", text)}
@@ -1310,7 +1329,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   note={entryNotes.caliber}
                   error={errorFor("caliber")}
                   hint={caliberHintText}
-                  placeholder="e.g. 9mm"
+                  placeholder={isSuppressor ? "e.g. .30" : "e.g. 9mm"}
                   trailing={
                     caliberGuessed && (
                       // FR-005: marked as a guess in words, not by color alone.

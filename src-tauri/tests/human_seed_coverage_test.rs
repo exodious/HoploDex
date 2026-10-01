@@ -276,7 +276,13 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
 
     let errors = import("import-registration-errors.csv");
     assert_eq!(errors.imported_count, 0, "{:?}", errors.row_errors);
-    assert_eq!(errors.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(), [1, 2, 3, 4]);
+    assert_eq!(errors.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
+    // A Suppressor's caliber isn't worked out from its rated cartridge.
+    assert_eq!(
+        errors.row_errors[4].message,
+        "caliber: Caliber is required; a Suppressor's isn't worked out from its cartridge."
+    );
+    assert!(errors.derived_calibers.is_empty());
 
     let before = import("import-before-registrations.csv");
     assert_eq!(before.imported_count, 1, "{:?}", before.row_errors);

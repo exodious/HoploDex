@@ -1,7 +1,8 @@
 //! specs/005-regulated-item-types User Story 1 through `ops`, against a real
 //! temporary SQLCipher database: Suppressor is a fifth firearm type that
 //! omits the action, barrel length and capacity (FR-001 to FR-004), in the
-//! command layer and in the trigger backstop (FR-003, SC-005).
+//! command layer and in the trigger backstop (FR-003, SC-005). Its caliber is
+//! its bore and its cartridge its rating, never derived (FR-002).
 
 mod support;
 
@@ -42,6 +43,9 @@ fn the_type_list_has_five_types_and_suppressor_omits_three_fields() {
         assert_eq!(t.action_type_applies, !omits, "{}", t.name);
         assert_eq!(t.barrel_length_applies, !omits, "{}", t.name);
         assert_eq!(t.capacity_applies, !omits, "{}", t.name);
+        // FR-002, research.md §15: only a Suppressor's caliber is never
+        // worked out from its cartridge.
+        assert_eq!(t.caliber_from_cartridge, !omits, "{}", t.name);
     }
     let suppressor = &output.types[3];
     assert_eq!(suppressor.generic_thumbnail_key, "suppressor");
@@ -51,6 +55,7 @@ fn the_type_list_has_five_types_and_suppressor_omits_three_fields() {
     assert_eq!(json["actionTypeApplies"], false);
     assert_eq!(json["barrelLengthApplies"], false);
     assert_eq!(json["capacityApplies"], false);
+    assert_eq!(json["caliberFromCartridge"], false);
 }
 
 #[test]
@@ -188,6 +193,35 @@ fn a_suppressor_takes_a_cartridge_and_needs_none() {
     };
     assert!(ops::create_firearm(&db.conn, &with, false).is_ok());
     assert!(ops::create_firearm(&db.conn, &suppressor("C-2"), false).is_ok());
+}
+
+#[test]
+fn a_suppressor_keeps_its_bore_and_rated_cartridge_apart() {
+    // US1-1, US1-3, FR-002, research.md §15: the caliber is the bore and the
+    // cartridge the rating. ".22 WMR" would derive ".22" for a rifle, but a
+    // suppressor's two values are whatever the owner entered, and nothing on
+    // save ties one to the other.
+    let db = TestDb::new();
+    let input = FirearmInput {
+        caliber: ".22".into(),
+        cartridge: Some(".22 WMR".into()),
+        ..suppressor("BORE-1")
+    };
+    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
+    let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
+    assert_eq!(fetched.caliber, ".22");
+    assert_eq!(fetched.cartridge.as_deref(), Some(".22 WMR"));
+
+    // A bore that the rated cartridge would never derive is kept too.
+    let wide = FirearmInput {
+        caliber: ".46".into(),
+        cartridge: Some(".300 Winchester Magnum".into()),
+        ..suppressor("BORE-2")
+    };
+    let created = ops::create_firearm(&db.conn, &wide, false).unwrap();
+    let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
+    assert_eq!(fetched.caliber, ".46");
+    assert_eq!(fetched.cartridge.as_deref(), Some(".300 Winchester Magnum"));
 }
 
 #[test]
