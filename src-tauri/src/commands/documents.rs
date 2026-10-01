@@ -7,6 +7,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
+use crate::models::record::RecordRef;
 use crate::services::attachments::read_attachment_file;
 use crate::services::secure_delete::secure_delete_dir;
 use crate::session::Session;
@@ -30,32 +31,48 @@ pub mod ops {
 
     pub fn list_documents(
         conn: &Connection,
-        firearm_id: i64,
+        owner: RecordRef,
     ) -> Result<Vec<DocumentAttachment>, CommandError> {
         let mut stmt = conn
-            .prepare(
-                "SELECT * FROM document_attachments WHERE firearm_id = :firearm_id ORDER BY created_at",
-            )
+            .prepare(&format!(
+                "SELECT * FROM document_attachments WHERE {} = :id ORDER BY created_at, id",
+                owner.owner_column()
+            ))
             .map_err(CommandError::from_db)?;
         let rows = stmt
-            .query_map(named_params! { ":firearm_id": firearm_id }, DocumentAttachment::from_row)
+            .query_map(named_params! { ":id": owner.id() }, DocumentAttachment::from_row)
             .map_err(CommandError::from_db)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }
 
     pub fn add_document(
         conn: &Connection,
-        firearm_id: i64,
+        owner: RecordRef,
         file_bytes: &[u8],
         original_filename: &str,
         mime_type: &str,
     ) -> Result<DocumentAttachment, CommandError> {
+        let exists: bool = conn
+            .query_row(
+                &format!("SELECT EXISTS (SELECT 1 FROM {} WHERE id = :id)", owner.table()),
+                named_params! { ":id": owner.id() },
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        if !exists {
+            return Err(CommandError::not_found("No record was found with that id."));
+        }
+        let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(
             "INSERT INTO document_attachments (
-                firearm_id, file_bytes, original_filename, mime_type, created_at
-            ) VALUES (:firearm_id, :file_bytes, :original_filename, :mime_type, datetime('now'))",
+                firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at
+            ) VALUES (
+                :firearm_id, :accessory_id, :file_bytes, :original_filename, :mime_type,
+                datetime('now')
+            )",
             named_params! {
                 ":firearm_id": firearm_id,
+                ":accessory_id": accessory_id,
                 ":file_bytes": file_bytes,
                 ":original_filename": original_filename,
                 ":mime_type": mime_type,
@@ -70,11 +87,11 @@ pub mod ops {
     /// the window arrives as a path, not as bytes.
     pub fn add_document_from_path(
         conn: &Connection,
-        firearm_id: i64,
+        owner: RecordRef,
         path: &Path,
     ) -> Result<DocumentAttachment, CommandError> {
         let file = read_attachment_file(path)?;
-        add_document(conn, firearm_id, &file.bytes, &file.filename, file.mime_type)
+        add_document(conn, owner, &file.bytes, &file.filename, file.mime_type)
     }
 
     pub fn delete_document(
@@ -178,25 +195,24 @@ pub async fn open_document(
 
 #[tauri::command]
 pub async fn list_documents(
-    firearm_id: i64,
+    owner: RecordRef,
     session: State<'_, Session>,
 ) -> Result<Vec<DocumentSummary>, CommandError> {
     session.read(|conn| {
-        Ok(ops::list_documents(conn, firearm_id)?.into_iter().map(DocumentSummary::from).collect())
+        Ok(ops::list_documents(conn, owner)?.into_iter().map(DocumentSummary::from).collect())
     })
 }
 
 #[tauri::command]
 pub async fn add_document(
-    firearm_id: i64,
+    owner: RecordRef,
     file_bytes: Vec<u8>,
     original_filename: String,
     mime_type: String,
     session: State<'_, Session>,
 ) -> Result<DocumentSummary, CommandError> {
     session.write(|conn| {
-        ops::add_document(conn, firearm_id, &file_bytes, &original_filename, &mime_type)
-            .map(Into::into)
+        ops::add_document(conn, owner, &file_bytes, &original_filename, &mime_type).map(Into::into)
     })
 }
 
@@ -204,13 +220,11 @@ pub async fn add_document(
 /// delivers.
 #[tauri::command]
 pub async fn add_document_from_path(
-    firearm_id: i64,
+    owner: RecordRef,
     path: String,
     session: State<'_, Session>,
 ) -> Result<DocumentSummary, CommandError> {
-    session.write(|conn| {
-        ops::add_document_from_path(conn, firearm_id, Path::new(&path)).map(Into::into)
-    })
+    session.write(|conn| ops::add_document_from_path(conn, owner, Path::new(&path)).map(Into::into))
 }
 
 #[tauri::command]

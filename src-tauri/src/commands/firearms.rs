@@ -7,6 +7,7 @@ use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
     DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
+use crate::models::record::RecordRef;
 use crate::session::Session;
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
@@ -820,13 +821,18 @@ pub mod ops {
         // Dropped without commit on any error below, which rolls it back.
         let tx = conn.unchecked_transaction().map_err(CommandError::from_db)?;
         if input.history == HistoryChoice::Keep {
+            let owner = RecordRef::Firearm(id).owner_columns();
             conn.execute(
                 "INSERT INTO disposition_history (
-                    firearm_id, disposition_type, disposition_recipient,
+                    firearm_id, accessory_id, disposition_type, disposition_recipient,
                     disposition_date, disposition_price, reversed_at
-                ) VALUES (:firearm_id, :type, :recipient, :date, :price, datetime('now'))",
+                ) VALUES (
+                    :firearm_id, :accessory_id, :type, :recipient, :date, :price,
+                    datetime('now')
+                )",
                 named_params! {
-                    ":firearm_id": id,
+                    ":firearm_id": owner.0,
+                    ":accessory_id": owner.1,
                     ":type": disposition_type,
                     ":recipient": recipient,
                     ":date": date,
@@ -968,7 +974,7 @@ pub mod ops {
                         status: row.get(7)?,
                         thumbnail_photo_id: row.get(8)?,
                         estimated_value,
-                        insurance_warning: crate::services::insurance_status::firearm_warning(
+                        insurance_warning: crate::services::insurance_status::record_warning(
                             estimated_value,
                             insurance_policy_id,
                             scheduled_coverage_amount,

@@ -21,6 +21,7 @@ use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::photos::ops as photos;
 use hoplodex_lib::db;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 
@@ -105,9 +106,16 @@ fn main() {
     let passphrase = Passphrase::from_input(PASSPHRASE.to_owned());
     let conn = db::create_database(&path, &passphrase, &machine).expect("creating the fixture");
     let firearm = firearms::create_firearm(&conn, &firearm(), false).expect("the firearm");
-    photos::add_photo(&conn, firearm.id, PHOTO_PNG, PHOTO_NAME, "image/png").expect("the photo");
-    documents::add_document(&conn, firearm.id, DOCUMENT, DOCUMENT_NAME, "text/plain")
-        .expect("the document");
+    photos::add_photo(&conn, RecordRef::Firearm(firearm.id), PHOTO_PNG, PHOTO_NAME, "image/png")
+        .expect("the photo");
+    documents::add_document(
+        &conn,
+        RecordRef::Firearm(firearm.id),
+        DOCUMENT,
+        DOCUMENT_NAME,
+        "text/plain",
+    )
+    .expect("the document");
     // Closed as a normal close leaves it, so it opens anywhere without a
     // take-over.
     conn.execute(

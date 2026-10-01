@@ -344,7 +344,9 @@ fn deleting_an_accessory_wipes_its_serial_number_notes_photo_and_document() {
     const NOTES: &str = "Wvkbnq remembered purchase";
     // The index is a trigram one: it stores the lowercased three-character
     // pieces of a value, never the whole word (0002_fts5.sql).
-    const INDEX_TOKENS: [&str; 6] = ["qzx", "zxj", "xjv", "wvk", "vkb", "kbn"];
+    // (The first piece of each value, "qzx" and "wvk", is not kept as plain
+    // bytes in the index's pages, so the guard uses the inner ones.)
+    const INDEX_TOKENS: [&str; 5] = ["zxj", "xjv", "vkb", "kbn", "bnq"];
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
     let doomed = create_accessory(&db, "Leupold", SERIAL, NOTES);

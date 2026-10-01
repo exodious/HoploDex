@@ -1,11 +1,21 @@
 use rusqlite::{Connection, OptionalExtension, named_params};
+use serde::Serialize;
 use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
+use crate::models::record::RecordRef;
 use crate::services::attachments::read_attachment_file;
 use crate::session::Session;
+
+/// What `set_thumbnail_photo` returns (contracts/tauri-commands.md "Photos
+/// and documents (amended)"): the frontend already holds the record.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbnailChoice {
+    pub thumbnail_photo_id: i64,
+}
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -24,46 +34,71 @@ pub mod ops {
         .ok_or_else(|| CommandError::not_found("No photo was found with that id."))
     }
 
-    pub fn list_photos(conn: &Connection, firearm_id: i64) -> Result<Vec<Photo>, CommandError> {
+    /// Fails with `NOT_FOUND` when the owner's row doesn't exist.
+    fn require_owner(conn: &Connection, owner: RecordRef) -> Result<(), CommandError> {
+        let exists: bool = conn
+            .query_row(
+                &format!("SELECT EXISTS (SELECT 1 FROM {} WHERE id = :id)", owner.table()),
+                named_params! { ":id": owner.id() },
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        if exists {
+            Ok(())
+        } else {
+            Err(CommandError::not_found("No record was found with that id."))
+        }
+    }
+
+    pub fn list_photos(conn: &Connection, owner: RecordRef) -> Result<Vec<Photo>, CommandError> {
         let mut stmt = conn
-            .prepare("SELECT * FROM photos WHERE firearm_id = :firearm_id ORDER BY sort_order")
+            .prepare(&format!(
+                "SELECT * FROM photos WHERE {} = :id ORDER BY sort_order",
+                owner.owner_column()
+            ))
             .map_err(CommandError::from_db)?;
         let rows = stmt
-            .query_map(named_params! { ":firearm_id": firearm_id }, Photo::from_row)
+            .query_map(named_params! { ":id": owner.id() }, Photo::from_row)
             .map_err(CommandError::from_db)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }
 
-    /// The first photo added to a firearm automatically becomes its
-    /// thumbnail (FR-008, US4 Acceptance Scenario 1).
+    /// The first photo added to a record automatically becomes its
+    /// thumbnail (FR-008, US4 Acceptance Scenario 1; 006 FR-007a).
     pub fn add_photo(
         conn: &Connection,
-        firearm_id: i64,
+        owner: RecordRef,
         file_bytes: &[u8],
         original_filename: &str,
         mime_type: &str,
     ) -> Result<Photo, CommandError> {
         validate_photo_mime_type(mime_type)?;
         let thumbnail_bytes = generate_thumbnail(file_bytes)?;
+        require_owner(conn, owner)?;
 
         let next_sort_order: i64 = conn
             .query_row(
-                "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM photos WHERE firearm_id = :firearm_id",
-                named_params! { ":firearm_id": firearm_id },
+                &format!(
+                    "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM photos WHERE {} = :id",
+                    owner.owner_column()
+                ),
+                named_params! { ":id": owner.id() },
                 |row| row.get(0),
             )
             .map_err(CommandError::from_db)?;
 
+        let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(
             "INSERT INTO photos (
-                firearm_id, original_bytes, original_filename, mime_type,
+                firearm_id, accessory_id, original_bytes, original_filename, mime_type,
                 thumbnail_bytes, sort_order, created_at
             ) VALUES (
-                :firearm_id, :original_bytes, :original_filename, :mime_type,
+                :firearm_id, :accessory_id, :original_bytes, :original_filename, :mime_type,
                 :thumbnail_bytes, :sort_order, datetime('now')
             )",
             named_params! {
                 ":firearm_id": firearm_id,
+                ":accessory_id": accessory_id,
                 ":original_bytes": file_bytes,
                 ":original_filename": original_filename,
                 ":mime_type": mime_type,
@@ -76,58 +111,58 @@ pub mod ops {
 
         let has_thumbnail: bool = conn
             .query_row(
-                "SELECT thumbnail_photo_id IS NOT NULL FROM firearms WHERE id = :firearm_id",
-                named_params! { ":firearm_id": firearm_id },
+                &format!(
+                    "SELECT thumbnail_photo_id IS NOT NULL FROM {} WHERE id = :id",
+                    owner.table()
+                ),
+                named_params! { ":id": owner.id() },
                 |row| row.get(0),
             )
             .map_err(CommandError::from_db)?;
         if !has_thumbnail {
-            conn.execute(
-                "UPDATE firearms SET thumbnail_photo_id = :photo_id WHERE id = :firearm_id",
-                named_params! { ":photo_id": photo_id, ":firearm_id": firearm_id },
-            )
-            .map_err(CommandError::from_db)?;
+            set_owner_thumbnail(conn, owner, Some(photo_id))?;
         }
 
         get_photo(conn, photo_id)
+    }
+
+    fn set_owner_thumbnail(
+        conn: &Connection,
+        owner: RecordRef,
+        photo_id: Option<i64>,
+    ) -> Result<(), CommandError> {
+        conn.execute(
+            &format!("UPDATE {} SET thumbnail_photo_id = :photo_id WHERE id = :id", owner.table()),
+            named_params! { ":photo_id": photo_id, ":id": owner.id() },
+        )
+        .map_err(CommandError::from_db)?;
+        Ok(())
     }
 
     /// `add_photo` for a file already on disk — a photo dropped onto the
     /// window arrives as a path, not as bytes.
     pub fn add_photo_from_path(
         conn: &Connection,
-        firearm_id: i64,
+        owner: RecordRef,
         path: &std::path::Path,
     ) -> Result<Photo, CommandError> {
         let file = read_attachment_file(path)?;
-        add_photo(conn, firearm_id, &file.bytes, &file.filename, file.mime_type)
+        add_photo(conn, owner, &file.bytes, &file.filename, file.mime_type)
     }
 
+    /// Makes `photo_id` the owner's thumbnail; a photo of a different owner
+    /// is `NOT_FOUND`.
     pub fn set_thumbnail_photo(
         conn: &Connection,
-        firearm_id: i64,
+        owner: RecordRef,
         photo_id: i64,
-    ) -> Result<crate::models::firearm::Firearm, CommandError> {
-        let owner: i64 = conn
-            .query_row(
-                "SELECT firearm_id FROM photos WHERE id = :photo_id",
-                named_params! { ":photo_id": photo_id },
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(CommandError::from_db)?
-            .ok_or_else(|| CommandError::not_found("No photo was found with that id."))?;
-        if owner != firearm_id {
-            return Err(CommandError::not_found("That photo does not belong to this firearm."));
+    ) -> Result<ThumbnailChoice, CommandError> {
+        let photo = get_photo(conn, photo_id)?;
+        if photo.owner != owner {
+            return Err(CommandError::not_found("That photo does not belong to this record."));
         }
-
-        conn.execute(
-            "UPDATE firearms SET thumbnail_photo_id = :photo_id WHERE id = :firearm_id",
-            named_params! { ":photo_id": photo_id, ":firearm_id": firearm_id },
-        )
-        .map_err(CommandError::from_db)?;
-
-        crate::commands::firearms::ops::get_firearm(conn, firearm_id)
+        set_owner_thumbnail(conn, owner, Some(photo_id))?;
+        Ok(ThumbnailChoice { thumbnail_photo_id: photo_id })
     }
 
     /// If the deleted photo was the thumbnail, falls back to the
@@ -145,17 +180,17 @@ pub mod ops {
             ));
         }
 
-        let (firearm_id, was_thumbnail): (i64, bool) = conn
+        let owner = get_photo(conn, photo_id)?.owner;
+        let was_thumbnail: bool = conn
             .query_row(
-                "SELECT p.firearm_id, f.thumbnail_photo_id = p.id
-                 FROM photos p JOIN firearms f ON f.id = p.firearm_id
-                 WHERE p.id = :photo_id",
-                named_params! { ":photo_id": photo_id },
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                &format!(
+                    "SELECT thumbnail_photo_id IS :photo_id FROM {} WHERE id = :id",
+                    owner.table()
+                ),
+                named_params! { ":photo_id": photo_id, ":id": owner.id() },
+                |row| row.get(0),
             )
-            .optional()
-            .map_err(CommandError::from_db)?
-            .ok_or_else(|| CommandError::not_found("No photo was found with that id."))?;
+            .map_err(CommandError::from_db)?;
 
         conn.execute(
             "DELETE FROM photos WHERE id = :photo_id",
@@ -166,17 +201,16 @@ pub mod ops {
         if was_thumbnail {
             let next_oldest: Option<i64> = conn
                 .query_row(
-                    "SELECT id FROM photos WHERE firearm_id = :firearm_id ORDER BY sort_order LIMIT 1",
-                    named_params! { ":firearm_id": firearm_id },
+                    &format!(
+                        "SELECT id FROM photos WHERE {} = :id ORDER BY sort_order LIMIT 1",
+                        owner.owner_column()
+                    ),
+                    named_params! { ":id": owner.id() },
                     |row| row.get(0),
                 )
                 .optional()
                 .map_err(CommandError::from_db)?;
-            conn.execute(
-                "UPDATE firearms SET thumbnail_photo_id = :photo_id WHERE id = :firearm_id",
-                named_params! { ":photo_id": next_oldest, ":firearm_id": firearm_id },
-            )
-            .map_err(CommandError::from_db)?;
+            set_owner_thumbnail(conn, owner, next_oldest)?;
         }
 
         crate::db::reclaim_freed_space(conn);
@@ -186,37 +220,36 @@ pub mod ops {
 
 #[tauri::command]
 pub async fn list_photos(
-    firearm_id: i64,
+    owner: RecordRef,
     session: State<'_, Session>,
 ) -> Result<Vec<PhotoSummary>, CommandError> {
     session.read(|conn| {
-        Ok(ops::list_photos(conn, firearm_id)?.into_iter().map(PhotoSummary::from).collect())
+        Ok(ops::list_photos(conn, owner)?.into_iter().map(PhotoSummary::from).collect())
     })
 }
 
 #[tauri::command]
 pub async fn add_photo(
-    firearm_id: i64,
+    owner: RecordRef,
     file_bytes: Vec<u8>,
     original_filename: String,
     mime_type: String,
     session: State<'_, Session>,
 ) -> Result<PhotoSummary, CommandError> {
     session.write(|conn| {
-        ops::add_photo(conn, firearm_id, &file_bytes, &original_filename, &mime_type)
-            .map(Into::into)
+        ops::add_photo(conn, owner, &file_bytes, &original_filename, &mime_type).map(Into::into)
     })
 }
 
 /// Adds a photo from a file on disk: what a drop onto the window delivers.
 #[tauri::command]
 pub async fn add_photo_from_path(
-    firearm_id: i64,
+    owner: RecordRef,
     path: String,
     session: State<'_, Session>,
 ) -> Result<PhotoSummary, CommandError> {
     session.write(|conn| {
-        ops::add_photo_from_path(conn, firearm_id, std::path::Path::new(&path)).map(Into::into)
+        ops::add_photo_from_path(conn, owner, std::path::Path::new(&path)).map(Into::into)
     })
 }
 
@@ -246,11 +279,11 @@ pub async fn get_photo_original(
 
 #[tauri::command]
 pub async fn set_thumbnail_photo(
-    firearm_id: i64,
+    owner: RecordRef,
     photo_id: i64,
     session: State<'_, Session>,
-) -> Result<crate::models::firearm::Firearm, CommandError> {
-    session.write(|conn| ops::set_thumbnail_photo(conn, firearm_id, photo_id))
+) -> Result<ThumbnailChoice, CommandError> {
+    session.write(|conn| ops::set_thumbnail_photo(conn, owner, photo_id))
 }
 
 #[tauri::command]

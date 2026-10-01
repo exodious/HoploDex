@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -192,7 +192,8 @@ describe("AccessoriesPage controls (§2)", () => {
     expect(
       within(view)
         .getAllByRole("radio")
-        .map((r) => r.textContent),
+        // A radio input has no text of its own; its label does.
+        .map((r) => r.closest("label")?.textContent),
     ).toEqual(["List", "Tiles"]);
     expect(within(view).getByRole("radio", { name: "List" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Show disposed" })).not.toBeChecked();

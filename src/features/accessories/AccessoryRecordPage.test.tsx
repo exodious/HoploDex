@@ -366,7 +366,9 @@ describe("AccessoryRecordPage dialogs", () => {
     await screen.findByRole("heading", { level: 1, name: NAME });
     await user.click(within(actions()).getByRole("button", { name: /^Restore/ }));
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    // The restore dialog is a confirmation, so an alert dialog, as the firearm's is.
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(openDialogTitle()).toBe("Restore to the collection?");
   });
 });
 

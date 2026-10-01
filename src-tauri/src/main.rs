@@ -205,6 +205,7 @@ fn main() {
             hoplodex_lib::commands::insurance::get_policy_deletion_impact,
             hoplodex_lib::commands::insurance::delete_insurance_policy,
             hoplodex_lib::commands::insurance::assign_firearm_coverage,
+            hoplodex_lib::commands::insurance::assign_accessory_coverage,
             hoplodex_lib::commands::insurance::get_value_summary,
             hoplodex_lib::commands::photos::list_photos,
             hoplodex_lib::commands::photos::add_photo,

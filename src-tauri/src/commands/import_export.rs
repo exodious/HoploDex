@@ -268,7 +268,10 @@ pub mod ops {
                 None => None,
             };
 
-            let photos = crate::commands::photos::ops::list_photos(conn, firearm_id)?;
+            let photos = crate::commands::photos::ops::list_photos(
+                conn,
+                crate::models::record::RecordRef::Firearm(firearm_id),
+            )?;
             let mut photo_filenames = Vec::with_capacity(photos.len());
             for photo in &photos {
                 let dest_name = format!("{firearm_id}_{}", photo.original_filename);

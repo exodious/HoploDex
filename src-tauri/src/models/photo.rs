@@ -6,6 +6,7 @@ use rusqlite::Row;
 use serde::Serialize;
 
 use crate::commands::CommandError;
+use crate::models::record::RecordRef;
 
 /// Small cached thumbnail dimension (research.md §4: "~200px JPEG") — list/
 /// tile browse views read only this, never the full-resolution original,
@@ -51,7 +52,7 @@ pub fn generate_thumbnail(original_bytes: &[u8]) -> Result<Vec<u8>, CommandError
 #[derive(Debug, Clone)]
 pub struct Photo {
     pub id: i64,
-    pub firearm_id: i64,
+    pub owner: RecordRef,
     pub original_bytes: Vec<u8>,
     pub original_filename: String,
     pub mime_type: String,
@@ -64,7 +65,7 @@ impl Photo {
     pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get("id")?,
-            firearm_id: row.get("firearm_id")?,
+            owner: RecordRef::from_owner_row(row)?,
             original_bytes: row.get("original_bytes")?,
             original_filename: row.get("original_filename")?,
             mime_type: row.get("mime_type")?,
@@ -82,7 +83,7 @@ impl Photo {
 #[serde(rename_all = "camelCase")]
 pub struct PhotoSummary {
     pub id: i64,
-    pub firearm_id: i64,
+    pub owner: RecordRef,
     pub original_filename: String,
     pub mime_type: String,
     pub thumbnail_bytes: Vec<u8>,
@@ -94,7 +95,7 @@ impl From<Photo> for PhotoSummary {
     fn from(photo: Photo) -> Self {
         Self {
             id: photo.id,
-            firearm_id: photo.firearm_id,
+            owner: photo.owner,
             original_filename: photo.original_filename,
             mime_type: photo.mime_type,
             thumbnail_bytes: photo.thumbnail_bytes,

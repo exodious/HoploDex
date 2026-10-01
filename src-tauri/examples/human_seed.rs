@@ -41,6 +41,7 @@ use hoplodex_lib::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups::{self, BackupJob, resolve_folder as backup_folder};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
@@ -530,13 +531,20 @@ pub fn seed(conn: &Connection, extra: usize) {
         images
             .iter()
             .map(|(name, bytes, mime)| {
-                must(photo_ops::add_photo(conn, firearm_id, bytes, name, mime), name).id
+                must(
+                    photo_ops::add_photo(conn, RecordRef::Firearm(firearm_id), bytes, name, mime),
+                    name,
+                )
+                .id
             })
             .collect()
     };
     let documents = |firearm_id: i64, files: &[(&str, Vec<u8>, &str)]| {
         for (name, bytes, mime) in files {
-            must(document_ops::add_document(conn, firearm_id, bytes, name, mime), name);
+            must(
+                document_ops::add_document(conn, RecordRef::Firearm(firearm_id), bytes, name, mime),
+                name,
+            );
         }
     };
 
@@ -806,7 +814,10 @@ pub fn seed(conn: &Connection, extra: usize) {
     let ids =
         photos(s_and_w, &[seed_photo!("sw-686-cylinder.jpg"), seed_photo!("sw-686-side.jpg")]);
     // Not the first photo: a chosen thumbnail rather than the default.
-    must(photo_ops::set_thumbnail_photo(conn, s_and_w, ids[1]), "choosing a thumbnail");
+    must(
+        photo_ops::set_thumbnail_photo(conn, RecordRef::Firearm(s_and_w), ids[1]),
+        "choosing a thumbnail",
+    );
 
     let winchester = add(FirearmInput {
         nickname: text("Elk Rifle"),
@@ -884,7 +895,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         let (extension, mime) = if jpeg { ("jpg", "image/jpeg") } else { ("png", "image/png") };
         let name = format!("presentation-{:02}.{extension}", i + 1);
         let bytes = gradient_image(width, height, i as u32 * 36, jpeg);
-        must(photo_ops::add_photo(conn, commemorative, &bytes, &name, mime), &name);
+        must(
+            photo_ops::add_photo(conn, RecordRef::Firearm(commemorative), &bytes, &name, mime),
+            &name,
+        );
     }
 
     // -- Scheduled under an expired policy: uninsured despite the amount ----

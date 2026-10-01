@@ -8,6 +8,7 @@ mod support;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, sample_png_bytes};
 use tempfile::TempDir;
@@ -65,7 +66,7 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
     let f2 = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Sig"), false).unwrap();
     hoplodex_lib::commands::photos::ops::add_photo(
         &db.conn,
-        f1.id,
+        RecordRef::Firearm(f1.id),
         &sample_png_bytes(),
         "range-day.png",
         "image/png",

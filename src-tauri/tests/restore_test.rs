@@ -20,6 +20,7 @@ use hoplodex_lib::models::database::{
     BackupInfo, BackupLocationInput, BackupSettingsInput, CloseReason, DatabaseStatus,
     ExistingBackupsChoice,
 };
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
@@ -92,8 +93,14 @@ impl World {
                     &support::firearm("Colt", "Python", serial),
                     false,
                 )?;
-                photos::add_photo(conn, firearm.id, &sample_png_bytes(), "front.png", "image/png")
-                    .map(|_| ())
+                photos::add_photo(
+                    conn,
+                    RecordRef::Firearm(firearm.id),
+                    &sample_png_bytes(),
+                    "front.png",
+                    "image/png",
+                )
+                .map(|_| ())
             })
             .unwrap();
     }

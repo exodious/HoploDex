@@ -24,17 +24,9 @@ pub struct DispositionHistoryEntry {
 
 impl DispositionHistoryEntry {
     pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
-        let firearm_id: Option<i64> = row.get("firearm_id")?;
-        let accessory_id: Option<i64> = row.get("accessory_id")?;
-        let owner = match (firearm_id, accessory_id) {
-            (Some(id), None) => RecordRef::Firearm(id),
-            (None, Some(id)) => RecordRef::Accessory(id),
-            // The table's CHECK allows exactly one of the two.
-            _ => return Err(rusqlite::Error::InvalidQuery),
-        };
         Ok(Self {
             id: row.get("id")?,
-            owner,
+            owner: RecordRef::from_owner_row(row)?,
             disposition_type: row.get("disposition_type")?,
             disposition_recipient: row.get("disposition_recipient")?,
             disposition_date: row.get("disposition_date")?,

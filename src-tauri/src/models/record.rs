@@ -50,6 +50,36 @@ impl RecordRef {
             Self::Accessory(id) => (None, Some(*id)),
         }
     }
+
+    /// Reads the owner of a `photos`, `document_attachments` or
+    /// `disposition_history` row from its `firearm_id` / `accessory_id`
+    /// pair; the tables' `CHECK` allows exactly one to be set.
+    pub fn from_owner_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let firearm_id: Option<i64> = row.get("firearm_id")?;
+        let accessory_id: Option<i64> = row.get("accessory_id")?;
+        match (firearm_id, accessory_id) {
+            (Some(id), None) => Ok(Self::Firearm(id)),
+            (None, Some(id)) => Ok(Self::Accessory(id)),
+            _ => Err(rusqlite::Error::InvalidQuery),
+        }
+    }
+
+    /// The table the record lives in.
+    pub fn table(&self) -> &'static str {
+        match self {
+            Self::Firearm(_) => "firearms",
+            Self::Accessory(_) => "accessories",
+        }
+    }
+
+    /// The owner column on `photos`, `document_attachments` and
+    /// `disposition_history` that holds this kind of record.
+    pub fn owner_column(&self) -> &'static str {
+        match self {
+            Self::Firearm(_) => "firearm_id",
+            Self::Accessory(_) => "accessory_id",
+        }
+    }
 }
 
 /// The IPC form of [`RecordRef`].

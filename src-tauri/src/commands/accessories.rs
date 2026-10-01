@@ -397,7 +397,7 @@ pub mod ops {
                     status: row.get(9)?,
                     thumbnail_photo_id: row.get(10)?,
                     estimated_value,
-                    insurance_warning: crate::services::insurance_status::firearm_warning(
+                    insurance_warning: crate::services::insurance_status::record_warning(
                         estimated_value,
                         insurance_policy_id,
                         scheduled_coverage_amount,

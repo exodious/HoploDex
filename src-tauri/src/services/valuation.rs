@@ -1,7 +1,8 @@
-//! Value-summary computation (FR-015): the collection total, the blanket
-//! policy in force against its limit, each policy's individually scheduled
-//! firearms, and the firearms nothing covers — always recomputed fresh from
-//! the current active firearms, so there is no cached total to go stale.
+//! Value-summary computation (FR-015; 006 FR-008/FR-009): the collection
+//! total with its firearms and accessories subtotals, the blanket policy in
+//! force against its limit, each policy's individually scheduled records, and
+//! the records nothing covers — always recomputed fresh from the current
+//! active firearms and accessories, so there is no cached total to go stale.
 
 use std::collections::HashMap;
 
@@ -10,18 +11,19 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::commands::CommandError;
+use crate::models::record::RecordRef;
 use crate::services::insurance_status::{InsuranceContext, load_context_as_of};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndividualCoverage {
-    pub firearm_id: i64,
+    pub record: RecordRef,
     pub estimated_value: i64,
     pub scheduled_amount: i64,
     pub under_insured: bool,
 }
 
-/// A policy that has firearms scheduled under it.
+/// A policy that has records scheduled under it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicySummary {
@@ -33,7 +35,7 @@ pub struct PolicySummary {
 }
 
 /// The blanket policy in force today, against the combined value of every
-/// active firearm that isn't individually scheduled.
+/// active record (firearm or accessory) that isn't individually scheduled.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlanketSummary {
@@ -42,14 +44,15 @@ pub struct BlanketSummary {
     pub limit: i64,
     pub total: i64,
     pub firearm_count: i64,
+    pub accessory_count: i64,
     pub under_insured: bool,
 }
 
-/// An unscheduled firearm with no blanket policy in force to cover it.
+/// An unscheduled record with no blanket policy in force to cover it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UninsuredFirearm {
-    pub firearm_id: i64,
+pub struct UninsuredRecord {
+    pub record: RecordRef,
     pub estimated_value: i64,
 }
 
@@ -57,12 +60,14 @@ pub struct UninsuredFirearm {
 #[serde(rename_all = "camelCase")]
 pub struct ValueSummary {
     pub collection_total: i64,
+    pub firearms_total: i64,
+    pub accessories_total: i64,
     pub blanket: Option<BlanketSummary>,
     pub by_policy: Vec<PolicySummary>,
-    pub uninsured: Vec<UninsuredFirearm>,
+    pub uninsured: Vec<UninsuredRecord>,
 }
 
-/// Input is always "current active, non-disposed firearms" (FR-025) — the
+/// Input is always "current active, non-disposed firearms and accessories" (FR-025) — the
 /// frontend re-invokes this after every mutating command rather than
 /// maintaining its own running total (contracts/tauri-commands.md).
 pub fn get_value_summary(conn: &Connection) -> Result<ValueSummary, CommandError> {
@@ -76,32 +81,44 @@ pub fn get_value_summary_as_of(
 ) -> Result<ValueSummary, CommandError> {
     let ctx = load_context_as_of(conn, today)?;
 
+    // The two tables, one pass each, in one shape.
     let mut stmt = conn
         .prepare(
-            "SELECT id, estimated_value, insurance_policy_id, scheduled_coverage_amount
-             FROM firearms WHERE status = 'active'",
+            "SELECT 0, id, estimated_value, insurance_policy_id, scheduled_coverage_amount
+             FROM firearms WHERE status = 'active'
+             UNION ALL
+             SELECT 1, id, estimated_value, insurance_policy_id, scheduled_coverage_amount
+             FROM accessories WHERE status = 'active'",
         )
         .map_err(CommandError::from_db)?;
     let rows = stmt
         .query_map([], |row| {
+            let id: i64 = row.get(1)?;
+            let record = match row.get::<_, i64>(0)? {
+                0 => RecordRef::Firearm(id),
+                _ => RecordRef::Accessory(id),
+            };
             Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
+                record,
                 row.get::<_, Option<i64>>(2)?,
                 row.get::<_, Option<i64>>(3)?,
+                row.get::<_, Option<i64>>(4)?,
             ))
         })
         .map_err(CommandError::from_db)?;
 
-    let mut collection_total = 0i64;
+    let (mut firearms_total, mut accessories_total) = (0i64, 0i64);
     let mut by_policy: HashMap<i64, PolicySummary> = HashMap::new();
     let mut uninsured = Vec::new();
 
     for row in rows {
-        let (firearm_id, estimated_value, policy_id, scheduled_amount) =
+        let (record, estimated_value, policy_id, scheduled_amount) =
             row.map_err(CommandError::from_db)?;
         let value = estimated_value.unwrap_or(0);
-        collection_total += value;
+        match record {
+            RecordRef::Firearm(_) => firearms_total += value,
+            RecordRef::Accessory(_) => accessories_total += value,
+        }
 
         match policy_id {
             Some(policy_id) => {
@@ -109,14 +126,16 @@ pub fn get_value_summary_as_of(
                     by_policy.entry(policy_id).or_insert_with(|| policy_summary(policy_id, &ctx));
                 let scheduled = scheduled_amount.unwrap_or(0);
                 entry.individually_scheduled.push(IndividualCoverage {
-                    firearm_id,
+                    record,
                     estimated_value: value,
                     scheduled_amount: scheduled,
                     under_insured: entry.is_expired || scheduled < value,
                 });
             }
-            None if ctx.blanket.is_none() => {
-                uninsured.push(UninsuredFirearm { firearm_id, estimated_value: value });
+            // A record with no value is not listed: no value set is not a
+            // warning condition (001 Edge Cases), as for the record's own warning.
+            None if ctx.blanket.is_none() && value > 0 => {
+                uninsured.push(UninsuredRecord { record, estimated_value: value });
             }
             None => {}
         }
@@ -132,9 +151,17 @@ pub fn get_value_summary_as_of(
         limit: b.limit,
         total: b.total,
         firearm_count: b.firearm_count,
+        accessory_count: b.accessory_count,
     });
 
-    Ok(ValueSummary { collection_total, blanket, by_policy, uninsured })
+    Ok(ValueSummary {
+        collection_total: firearms_total + accessories_total,
+        firearms_total,
+        accessories_total,
+        blanket,
+        by_policy,
+        uninsured,
+    })
 }
 
 fn policy_summary(policy_id: i64, ctx: &InsuranceContext) -> PolicySummary {

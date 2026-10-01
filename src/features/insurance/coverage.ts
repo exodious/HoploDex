@@ -112,7 +112,7 @@ export function coverageStatus(
  * scheduled amount is below its value. Expired policies contribute
  * nothing here — their firearms count as uninsured instead, with their
  * whole value missing. Mirrors the rules in
- * `services::insurance_status::firearm_warning`. */
+ * `services::insurance_status::record_warning`. */
 export function coverageShortfall(summary: ValueSummary | null): number {
   if (!summary) return 0;
   let missing = summary.blanket ? Math.max(0, summary.blanket.total - summary.blanket.limit) : 0;

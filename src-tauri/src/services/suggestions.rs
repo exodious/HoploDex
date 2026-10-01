@@ -67,7 +67,7 @@ struct Group {
 }
 
 impl Group {
-    /// The spelling used by the most firearms; the earliest recorded on a
+    /// The spelling used by the most records; the earliest recorded on a
     /// tie (spec Edge Cases).
     fn display(&self) -> &str {
         self.spellings
@@ -78,7 +78,8 @@ impl Group {
     }
 }
 
-/// The values of one field on record (active and disposed firearms), grouped
+/// The values of one field on record (active and disposed firearms and
+/// accessories), grouped
 /// by entry key.
 #[derive(Debug)]
 pub struct FieldVocabulary {
@@ -91,11 +92,28 @@ pub struct FieldVocabulary {
 impl FieldVocabulary {
     pub fn load(conn: &Connection, field: EntryField) -> rusqlite::Result<Self> {
         let column = field.column();
+        // The shared fields are on both tables (006 FR-003, research.md §16);
+        // the registration fields are the firearms' alone.
+        let records = match field {
+            EntryField::Make | EntryField::Model | EntryField::Caliber | EntryField::Cartridge => {
+                format!(
+                    "(SELECT id, make, {column} FROM firearms
+                      UNION ALL SELECT id, make, {column} FROM accessories)"
+                )
+            }
+            EntryField::RegistrationForm | EntryField::RegisteredTo => {
+                format!("(SELECT id, make, {column} FROM firearms)")
+            }
+        };
+        // A make is NULL on an accessory that has none; its model still counts.
         let sql = if field == EntryField::Model {
-            "SELECT model, make, COUNT(*), MIN(id) FROM firearms GROUP BY make, model".to_owned()
+            format!(
+                "SELECT {column}, make, COUNT(*), MIN(id) FROM {records}
+                 WHERE {column} IS NOT NULL GROUP BY make, {column}"
+            )
         } else {
             format!(
-                "SELECT {column}, NULL, COUNT(*), MIN(id) FROM firearms
+                "SELECT {column}, NULL, COUNT(*), MIN(id) FROM {records}
                  WHERE {column} IS NOT NULL GROUP BY {column}"
             )
         };

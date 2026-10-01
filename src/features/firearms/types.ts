@@ -2,7 +2,8 @@
 // contracts/tauri-commands.md).
 
 // specs/006-accessory-links: a firearm or accessory, as mounts name it.
-export type { RecordRef } from "../mounts/types";
+import type { RecordRef } from "../mounts/types";
+export type { RecordRef };
 
 export type FirearmStatus = "active" | "disposed";
 
@@ -79,10 +80,12 @@ export interface Firearm {
   updatedAt: string;
 }
 
-/** A retained past disposition of a firearm restored to active (FR-033). */
+/** A retained past disposition of a firearm or accessory restored to active
+ * (FR-033; 006 FR-006). */
 export interface DispositionHistoryEntry {
   id: number;
-  firearmId: number;
+  /** The record it belonged to (006 data-model.md). */
+  owner: RecordRef;
   dispositionType: DispositionType;
   dispositionRecipient: string;
   dispositionDate: string;

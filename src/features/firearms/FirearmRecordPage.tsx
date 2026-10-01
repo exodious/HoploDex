@@ -532,8 +532,9 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
 }
 
 /** The plate's picture: the designated photo at full resolution (the
- * small thumbnail shows until the original loads), or the type drawing. */
-function PlateFigure({
+ * small thumbnail shows until the original loads), or the type drawing.
+ * Shared with the accessory record page (006 §12). */
+export function PlateFigure({
   thumbnailPhotoId,
   typeKey,
 }: {
@@ -601,7 +602,7 @@ function hasPhysicalDetails(firearm: Firearm): boolean {
   );
 }
 
-function TitleCell({ label, children }: { label: string; children: ReactNode }) {
+export function TitleCell({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="hd-titleblock__cell">
       <dt>{label}</dt>
@@ -610,7 +611,7 @@ function TitleCell({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+export function Fact({ label, children }: { label: string; children: ReactNode }) {
   const empty = children == null || children === false || children === "" || children === "—";
   return (
     <div className="hd-facts__row">
@@ -620,7 +621,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function TextBlock({
+export function TextBlock({
   text,
   empty,
   onAdd,
