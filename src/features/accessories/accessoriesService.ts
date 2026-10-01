@@ -55,9 +55,9 @@ export function assignAccessoryCoverage(
   policyId: number | null,
   scheduledCoverageAmount: number | null,
 ): Promise<Accessory> {
+  // `assign_accessory_coverage(accessory_id, input)`, as `assign_firearm_coverage` is.
   return invoke<Accessory>("assign_accessory_coverage", {
     accessoryId,
-    policyId,
-    scheduledCoverageAmount,
+    input: { policyId, scheduledCoverageAmount },
   });
 }

@@ -1105,6 +1105,22 @@ fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_
     assert_eq!(rows.len(), RECORD_COUNT);
     let head = rows.iter().find(|f| f.id == scale.firearm(0).id()).unwrap();
     assert_eq!(head.mounted_count, CHAIN_DEPTH);
+    // Searched, with each hit's host and mounted count (FR-026, SC-007): FTS5
+    // at three characters or more, LIKE at one or two.
+    for (query, expected) in [("xyzzy", Some(1)), ("Nick 4242", Some(1)), ("gl", None)] {
+        let found = within(&format!("list_firearms search {query:?}"), BUDGET_MS, || {
+            firearm_ops::list_firearms(
+                conn,
+                &ListFirearmsInput { query: Some(query.into()), ..Default::default() },
+            )
+            .unwrap()
+        });
+        let hits: usize = found.groups.iter().map(|g| g.firearms.len()).sum();
+        assert!(hits >= 1, "{query:?} should match");
+        if let Some(expected) = expected {
+            assert_eq!(hits, expected, "{query:?}");
+        }
+    }
     let grouped = within("list_firearms grouped, with mount details", BUDGET_MS, || {
         firearm_ops::list_firearms(
             conn,

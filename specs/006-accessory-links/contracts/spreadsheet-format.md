@@ -11,7 +11,26 @@ unchanged:
 - columns are read by header, trimmed and in any letter case;
 - unknown headers are ignored;
 - a duplicate known header stops the import;
-- text is protected against formula injection as before.
+- text is protected against formula injection (below).
+
+## Formula injection (CSV)
+
+A spreadsheet program reads a cell that starts with `=`, `+`, `-`, `@`, a
+tab or a carriage return as a formula. The two formats differ:
+
+- **CSV export** writes a `'` before any cell that starts with one of those
+  characters, in every column of both tables.
+- **CSV import** removes one leading `'` from a cell when it is followed by
+  one of those characters. Export then import returns the exact text of
+  every cell (SC-002). A `'` followed by anything else is text and is kept.
+- **XLSX** is unchanged: every cell is a typed string cell, which a
+  spreadsheet program does not evaluate, so the text is written and read
+  as it is.
+- **One accepted ambiguity**: a CSV cell that genuinely starts with `'` and
+  then one of those characters (`'=1`) loses its `'` on import, whether
+  the file is an export of this application (a record whose text starts
+  `'=`) or one written by hand. Text that starts with a `'` and anything
+  else is unaffected.
 
 ## Two tables
 
@@ -122,8 +141,9 @@ In export order (`ACCESSORY_COLUMNS`):
     before (001 FR-030, 002 FR-008).
   - *accessory row*: there is no other key, so the row is new.
 - **Row errors**:
-  - "record_id: {value} is also used by row {n}" (one used by an earlier
-    row of the same import, in either table);
+  - "record_id: {value} is also used by {Table}, row {n}" (one used by an
+    earlier row of the same import, in either table; `{Table}` is
+    "Firearms" or "Accessories", as in "also used by Accessories, row 3");
   - "record_id: {value} belongs to an accessory" (on a firearm row, and the
     reverse).
 - **A record created from a row** keeps the row's identifier, or gets a new

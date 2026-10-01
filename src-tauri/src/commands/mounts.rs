@@ -123,11 +123,43 @@ pub mod ops {
             for with in &listed {
                 mounts::clear_mounts(conn, with.record)?;
             }
+            // The host first, so what is wrong with its own input is
+            // reported as its own and not blamed on a record below it.
+            save_disposed(conn, host, input, Some(input.price))?;
             for with in listed {
-                save_disposed(conn, with.record, input, with.price)?;
+                save_disposed(conn, with.record, input, with.price)
+                    .map_err(|err| name_the_failed_record(conn, with.record, err))?;
             }
-            save_disposed(conn, host, input, Some(input.price))
+            Ok(())
         })
+    }
+
+    /// FR-014, US3/AC2: a record disposed of with the host that fails its own
+    /// checks (a disposition date before its own acquisition date) names
+    /// itself and the reason on `withMounted`; the caller's transaction rolls
+    /// everything back.
+    fn name_the_failed_record(
+        conn: &Connection,
+        record: RecordRef,
+        err: CommandError,
+    ) -> CommandError {
+        if err.code != "VALIDATION_ERROR" {
+            return err;
+        }
+        let mut reasons: Vec<(String, String)> =
+            err.field_errors.iter().flatten().map(|(f, r)| (f.clone(), r.clone())).collect();
+        reasons.sort();
+        let reason = match reasons.as_slice() {
+            [] => err.message.clone(),
+            _ => reasons.into_iter().map(|(_, reason)| reason).collect::<Vec<_>>().join(" "),
+        };
+        let name = match mounts::label(conn, record) {
+            Ok(Some(label)) => mounts::record_name(&label),
+            _ => "A mounted record".to_owned(),
+        };
+        let message = format!("{name}: {reason}");
+        CommandError::validation(message.clone(), Default::default())
+            .on_field("withMounted", message)
     }
 
     /// The listed records, each once, after checking they are below `host`.
@@ -174,7 +206,9 @@ pub mod ops {
     }
 
     /// The choices for either direction of a mount (research.md §8), each
-    /// with where it is mounted now.
+    /// with where it is mounted now. A query matches make, model, the two
+    /// together ("Leupold VX"), nickname, serial number and, for an
+    /// accessory, its kind ("sling") (FR-012).
     pub fn list_mount_candidates(
         conn: &Connection,
         input: &ListMountCandidatesInput,
@@ -231,6 +265,7 @@ pub mod ops {
                    AND f.id NOT IN (SELECT value FROM json_each(:firearms))
                    AND (:has_query = 0
                         OR f.make LIKE :like ESCAPE '\\' OR f.model LIKE :like ESCAPE '\\'
+                        OR (f.make || ' ' || f.model) LIKE :like ESCAPE '\\'
                         OR f.nickname LIKE :like ESCAPE '\\'
                         OR f.serial_number LIKE :like ESCAPE '\\')
                  UNION ALL
@@ -242,6 +277,9 @@ pub mod ops {
                    AND a.id NOT IN (SELECT value FROM json_each(:accessories))
                    AND (:has_query = 0
                         OR a.make LIKE :like ESCAPE '\\' OR a.model LIKE :like ESCAPE '\\'
+                        OR (COALESCE(a.make, '') || ' ' || COALESCE(a.model, ''))
+                            LIKE :like ESCAPE '\\'
+                        OR k.name LIKE :like ESCAPE '\\'
                         OR a.serial_number LIKE :like ESCAPE '\\')
                  ORDER BY 3, 2, 1
                  LIMIT :limit",

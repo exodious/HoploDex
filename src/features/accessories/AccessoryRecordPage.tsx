@@ -247,6 +247,15 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
                 <span className="hd-plate__no-serial">None recorded</span>
               )}
             </p>
+            {/* specs/006-accessory-links FR-013, contracts/ui-accessories.md §6: what
+                it is mounted on, and what that is mounted on, each a link; the
+                firearm's record page shows it in the same place. */}
+            {accessory.mount.chain.length > 0 && (
+              <p className="hd-plate__mounted">
+                <span className="hd-plate__stamp-label">Mounted on</span>
+                <MountedOnChain chain={accessory.mount.chain} />
+              </p>
+            )}
           </header>
         </div>
 
@@ -289,11 +298,6 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
               <Fact label="Serial number">{accessory.serialNumber}</Fact>
               <Fact label="Caliber">{accessory.caliber}</Fact>
               <Fact label="Cartridge">{accessory.cartridge}</Fact>
-              {accessory.mount.chain.length > 0 && (
-                <Fact label="Mounted on">
-                  <MountedOnChain chain={accessory.mount.chain} />
-                </Fact>
-              )}
             </dl>
           </section>
 

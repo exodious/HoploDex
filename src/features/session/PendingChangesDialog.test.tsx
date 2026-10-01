@@ -4,6 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { formatDateTime } from "../../lib/dates";
 import * as databasesService from "../databases/databasesService";
 import type { DatabaseStatus, Draft, PendingSummary } from "../databases/types";
+import { FORM_VERSION as ACCESSORY_FORM_VERSION } from "../accessories/AccessoryForm";
+import { FORM_VERSION as COVERAGE_FORM_VERSION } from "../insurance/CoverageDialog";
+import { FORM_VERSION as DISPOSE_FORM_VERSION } from "../firearms/DisposeDialog";
+import { FORM_VERSION as RESTORE_FORM_VERSION } from "../firearms/RestoreDialog";
 import { FORM_VERSION, InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
 import type { InsurancePolicy } from "../insurance/types";
 import { SessionProvider } from "./SessionProvider";
@@ -215,4 +219,84 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+});
+
+// specs/006-accessory-links FR-027: an accessory draft kept at a lock can be
+// resumed in each of its five modes. The accessory's dispose, restore and
+// coverage forms are the firearm's dialogs, so they carry those versions.
+describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
+  const modes: [Draft["mode"], number, number | null][] = [
+    ["add", ACCESSORY_FORM_VERSION, null],
+    ["edit", ACCESSORY_FORM_VERSION, 4],
+    ["dispose", DISPOSE_FORM_VERSION, 4],
+    ["restore", RESTORE_FORM_VERSION, 4],
+    ["coverage", COVERAGE_FORM_VERSION, 4],
+  ];
+
+  function accessoryPending(
+    mode: Draft["mode"],
+    formVersion: number,
+    targetId: number | null,
+  ): { summary: PendingSummary; kept: Draft } {
+    const label = `Leupold VX (${mode})`;
+    return {
+      summary: {
+        formVersion,
+        kind: "accessory",
+        mode,
+        targetId,
+        label,
+        savedAt: SAVED_AT,
+        resumable: true,
+      },
+      kept: { formVersion, kind: "accessory", mode, targetId, label, values: {} },
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(sessionService.getDatabaseStatus).mockReset();
+    vi.mocked(sessionService.resolvePendingChanges).mockReset();
+  });
+  afterEach(() => setResumedDraft(null));
+
+  it.each(modes)("resumes an accessory %s draft", async (mode, formVersion, targetId) => {
+    const user = userEvent.setup();
+    const { summary, kept } = accessoryPending(mode, formVersion, targetId);
+    vi.mocked(sessionService.resolvePendingChanges).mockResolvedValue({ draft: kept });
+    vi.mocked(sessionService.getDatabaseStatus).mockResolvedValue(status(summary));
+    render(
+      <SessionProvider>
+        <p>Collection shell</p>
+      </SessionProvider>,
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: `Unsaved changes to ${summary.label}`,
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Resume editing" }));
+
+    expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith("resume");
+    expect(await screen.findByText("Collection shell")).toBeInTheDocument();
+    expect(peekResumedDraft()).toEqual(kept);
+  });
+
+  it.each(modes)(
+    "offers only discarding for an accessory %s draft of another version",
+    async (mode, formVersion, targetId) => {
+      const { summary } = accessoryPending(mode, formVersion + 1, targetId);
+      vi.mocked(sessionService.getDatabaseStatus).mockResolvedValue(status(summary));
+      render(
+        <SessionProvider>
+          <p>Collection shell</p>
+        </SessionProvider>,
+      );
+
+      const dialog = await screen.findByRole("dialog", {
+        name: `Unsaved changes to ${summary.label}`,
+      });
+      expect(
+        within(dialog).queryByRole("button", { name: "Resume editing" }),
+      ).not.toBeInTheDocument();
+    },
+  );
 });

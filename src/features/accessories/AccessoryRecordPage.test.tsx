@@ -511,6 +511,7 @@ describe("AccessoryRecordPage mounts (US2)", () => {
   };
 
   /** A link to a record, whether rendered as a button or an anchor. */
+  const plate = () => document.querySelector<HTMLElement>(".hd-plate")!;
   const link = (name: string, scope: HTMLElement = document.body) =>
     within(scope).queryByRole("link", { name }) ?? within(scope).queryByRole("button", { name });
 
@@ -519,29 +520,21 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     open.mockReset();
   });
 
-  it("shows the 'Mounted on' chain in Details, after the cartridge, each record a link (US2-12)", async () => {
+  it("shows the 'Mounted on' chain in the header facts, each record a link (§6, US2-12)", async () => {
     const user = userEvent.setup();
     renderWithNavigation();
 
     await screen.findByRole("heading", { level: 1, name: NAME });
-    const details = screen.getByRole("region", { name: "Details" });
-    const labels = Array.from(details.querySelectorAll("dt")).map((dt) => dt.textContent);
-    expect(labels).toEqual([
-      "Kind",
-      "Make",
-      "Model",
-      "Serial number",
-      "Caliber",
-      "Cartridge",
-      "Mounted on",
-    ]);
-    expect(fact(details, "Mounted on")).toHaveTextContent(
-      /^BCM upper · Upper receiver, on LaRue PredatAR · Rifle$/,
+    expect(plate().textContent).toMatch(
+      /Mounted on\s*BCM upper · Upper receiver, on LaRue PredatAR · Rifle/,
     );
-    await user.click(link("BCM upper · Upper receiver", details)!);
+    await user.click(link("BCM upper · Upper receiver", plate())!);
     expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "accessory", id: 11 }));
-    await user.click(link("LaRue PredatAR · Rifle", details)!);
+    await user.click(link("LaRue PredatAR · Rifle", plate())!);
     expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "firearm", id: 9 }));
+    // Not in Details any more.
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).queryByText("Mounted on", { selector: "dt" })).not.toBeInTheDocument();
   });
 
   it("shows one host alone as 'Mounted on {host}'", async () => {
@@ -552,17 +545,15 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     renderWithNavigation();
 
     await screen.findByRole("heading", { level: 1, name: NAME });
-    const details = screen.getByRole("region", { name: "Details" });
-    expect(fact(details, "Mounted on")).toHaveTextContent(/^BCM upper · Upper receiver$/);
+    expect(plate().textContent).toMatch(/Mounted on\s*BCM upper · Upper receiver(?!,)/);
   });
 
-  it("has no 'Mounted on' row when the accessory is not mounted", async () => {
+  it("shows no 'Mounted on' when the accessory is not mounted", async () => {
     getAccessory.mockResolvedValue(optic);
     renderWithNavigation();
 
     await screen.findByRole("heading", { level: 1, name: NAME });
-    const details = screen.getByRole("region", { name: "Details" });
-    expect(within(details).queryByText("Mounted on", { selector: "dt" })).not.toBeInTheDocument();
+    expect(plate().textContent).not.toMatch(/Mounted on/);
   });
 
   it("puts the Mounted section after Notes and before Documents (§12)", async () => {

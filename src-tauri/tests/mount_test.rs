@@ -37,7 +37,10 @@ const HANDGUN: i64 = 1;
 const RIFLE: i64 = 2;
 const SUPPRESSOR: i64 = 5;
 
-const SELF_OR_BELOW: &str = "A firearm can't be mounted on itself, or on something mounted on it.";
+const FIREARM_SELF_OR_BELOW: &str =
+    "A firearm can't be mounted on itself, or on something mounted on it.";
+const ACCESSORY_SELF_OR_BELOW: &str =
+    "An accessory can't be mounted on itself, or on something mounted on it.";
 const CHOOSE_ACTIVE: &str = "Choose an active firearm or accessory.";
 
 // --- Building records --------------------------------------------------------------------
@@ -461,17 +464,21 @@ fn a_record_cannot_be_mounted_on_itself_through_mount_record_or_the_form() {
     let rifle = add_firearm(&db, &rifle("R-1"));
     let optic = plain_accessory(&db, OPTIC, "Leupold", "VX-5HD");
 
-    assert_field_error(mount(&db, rifle, Some(rifle)).unwrap_err(), "host", SELF_OR_BELOW);
-    assert_field_error(mount(&db, optic, Some(optic)).unwrap_err(), "host", SELF_OR_BELOW);
+    assert_field_error(mount(&db, rifle, Some(rifle)).unwrap_err(), "host", FIREARM_SELF_OR_BELOW);
+    assert_field_error(
+        mount(&db, optic, Some(optic)).unwrap_err(),
+        "host",
+        ACCESSORY_SELF_OR_BELOW,
+    );
     assert_field_error(
         save_mounted_on(&db, rifle, Some(rifle)).unwrap_err(),
         "mountedOn",
-        SELF_OR_BELOW,
+        FIREARM_SELF_OR_BELOW,
     );
     assert_field_error(
         save_mounted_on(&db, optic, Some(optic)).unwrap_err(),
         "mountedOn",
-        SELF_OR_BELOW,
+        ACCESSORY_SELF_OR_BELOW,
     );
     assert_eq!(mount_rows(&db), 0);
 }
@@ -485,18 +492,48 @@ fn an_upper_cannot_be_mounted_on_its_own_optic_or_anything_further_down() {
     mount(&db, optic, Some(upper)).unwrap();
     mount(&db, red_dot, Some(optic)).unwrap();
 
-    assert_field_error(mount(&db, upper, Some(optic)).unwrap_err(), "host", SELF_OR_BELOW);
-    assert_field_error(mount(&db, upper, Some(red_dot)).unwrap_err(), "host", SELF_OR_BELOW);
+    assert_field_error(
+        mount(&db, upper, Some(optic)).unwrap_err(),
+        "host",
+        ACCESSORY_SELF_OR_BELOW,
+    );
+    assert_field_error(
+        mount(&db, upper, Some(red_dot)).unwrap_err(),
+        "host",
+        ACCESSORY_SELF_OR_BELOW,
+    );
     assert_field_error(
         save_mounted_on(&db, upper, Some(optic)).unwrap_err(),
         "mountedOn",
-        SELF_OR_BELOW,
+        ACCESSORY_SELF_OR_BELOW,
     );
 
     // Nothing changed.
     assert_eq!(mount_rows(&db), 2);
     assert_eq!(chain(&db, red_dot), [optic, upper]);
     assert!(chain(&db, upper).is_empty());
+}
+
+#[test]
+fn the_loop_message_is_worded_by_the_kind_of_the_record_being_mounted() {
+    let db = TestDb::new();
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let can = add_firearm(&db, &suppressor("S-1"));
+    let optic = plain_accessory(&db, OPTIC, "Leupold", "VX-5HD");
+    mount(&db, optic, Some(can)).unwrap();
+    mount(&db, can, Some(rifle)).unwrap();
+
+    // A firearm on something below it, through an accessory: "A firearm".
+    assert_field_error(mount(&db, rifle, Some(optic)).unwrap_err(), "host", FIREARM_SELF_OR_BELOW);
+    // An accessory on its own host's chain, through a firearm: "An accessory".
+    let upper = plain_accessory(&db, UPPER, "BCM", "RECCE-16");
+    let red_dot = plain_accessory(&db, OPTIC, "Aimpoint", "T-2");
+    mount(&db, red_dot, Some(upper)).unwrap();
+    assert_field_error(
+        mount(&db, upper, Some(red_dot)).unwrap_err(),
+        "host",
+        ACCESSORY_SELF_OR_BELOW,
+    );
 }
 
 #[test]
@@ -509,7 +546,7 @@ fn a_failed_move_leaves_the_item_where_it_was() {
     mount(&db, optic, Some(upper)).unwrap();
 
     // The rifle's own host would be below it.
-    assert_field_error(mount(&db, rifle, Some(optic)).unwrap_err(), "host", SELF_OR_BELOW);
+    assert_field_error(mount(&db, rifle, Some(optic)).unwrap_err(), "host", FIREARM_SELF_OR_BELOW);
     assert_eq!(chain(&db, optic), [upper, rifle]);
     assert!(chain(&db, rifle).is_empty());
 }
@@ -663,6 +700,40 @@ fn candidates_match_inside_make_model_nickname_and_serial_number_without_regard_
 }
 
 #[test]
+fn candidates_also_match_the_make_and_model_together_and_an_accessorys_kind() {
+    let db = TestDb::new();
+    let glock = plain_firearm(&db, "Glock", "19 Gen5", "G-1", HANDGUN);
+    let scope = plain_accessory(&db, OPTIC, "Leupold", "VX-3HD");
+    let other_scope = plain_accessory(&db, OPTIC, "Vortex", "Razor");
+    let strap = plain_accessory(&db, SLING, "Magpul", "MS1");
+    let bare_sling = add_accessory(&db, &{
+        let mut input = accessory(SLING, "x", "x");
+        input.make = None;
+        input.model = None;
+        input
+    });
+
+    let query = |text: &str| {
+        candidate_records(&db, json!({ "role": "host", "record": null, "query": text }))
+    };
+
+    assert_eq!(query("Leupold VX"), [scope], "make and model together");
+    assert_eq!(query("leupold vx-3hd"), [scope]);
+    assert_eq!(query("Glock 19"), [glock], "a firearm's make and model together");
+    assert_eq!(query("sling"), [strap, bare_sling], "an accessory's kind, by name then id");
+    assert_eq!(query("Optic"), [scope, other_scope], "the kind of several records");
+    assert!(query("Leupold Razor").is_empty(), "the words must be together, in order");
+
+    // The same in the item direction.
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let item_query = |text: &str| {
+        candidate_records(&db, json!({ "role": "item", "record": rifle, "query": text }))
+    };
+    assert_eq!(item_query("Leupold VX"), [scope]);
+    assert_eq!(item_query("sling"), [strap, bare_sling]);
+}
+
+#[test]
 fn candidates_come_by_name_then_id() {
     let db = TestDb::new();
     let zeta = plain_firearm(&db, "Zeta", "One", "Z-1", RIFLE);
@@ -732,6 +803,111 @@ fn disposing_a_mounted_optic_unmounts_it() {
     assert_eq!(detail(&db, optic)["status"], "disposed");
     assert!(chain(&db, optic).is_empty());
     assert_eq!(mount_rows(&db), 0);
+}
+
+// --- A record disposed with its host that fails its own checks (FR-014, US3/AC2) ------------
+
+#[test]
+fn a_mounted_record_acquired_after_the_disposition_date_names_itself_and_nothing_changes() {
+    let db = TestDb::new();
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let optic = add_accessory(&db, &{
+        let mut input = accessory(OPTIC, "Leupold", "VX-5HD");
+        input.acquisition_date = Some("2025-09-01".into());
+        input
+    });
+    let fine = plain_accessory(&db, SLING, "Magpul", "MS1");
+    mount(&db, optic, Some(rifle)).unwrap();
+    mount(&db, fine, Some(rifle)).unwrap();
+
+    // The dispose input is dated 2025-06-15, before the optic was acquired.
+    let err = dispose_with(&db, rifle, &[(fine, None), (optic, Some(300))]).unwrap_err();
+
+    let message = "Leupold VX-5HD · Optic: Disposition date can't be earlier than the \
+                   acquisition date.";
+    assert_field_error(err, "withMounted", message);
+    for record in [rifle, optic, fine] {
+        assert_eq!(detail(&db, record)["status"], "active", "{record:?}");
+    }
+    assert_eq!(mount_rows(&db), 2, "the mounts are as they were");
+    assert_eq!(mounted_on(&db, optic), Some(rifle));
+}
+
+#[test]
+fn a_mounted_firearm_that_fails_its_own_checks_is_named_as_firearms_are() {
+    let db = TestDb::new();
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let can = add_firearm(
+        &db,
+        &FirearmInput {
+            nickname: Some("Quiet".into()),
+            acquisition_date: Some("2025-09-01".into()),
+            ..suppressor("S-1")
+        },
+    );
+    mount(&db, can, Some(rifle)).unwrap();
+
+    let err = dispose_with(&db, rifle, &[(can, None)]).unwrap_err();
+
+    assert_field_error(
+        err,
+        "withMounted",
+        "SilencerCo Sparrow “Quiet”: Disposition date can't be earlier than the acquisition date.",
+    );
+    assert_eq!(detail(&db, can)["status"], "active");
+    assert_eq!(detail(&db, rifle)["status"], "active");
+    assert_eq!(mount_rows(&db), 1);
+}
+
+#[test]
+fn the_hosts_own_failure_is_still_reported_as_the_hosts() {
+    let db = TestDb::new();
+    let rifle = add_firearm(
+        &db,
+        &FirearmInput { acquisition_date: Some("2025-09-01".into()), ..rifle("R-1") },
+    );
+    let optic = plain_accessory(&db, OPTIC, "Leupold", "VX-5HD");
+    mount(&db, optic, Some(rifle)).unwrap();
+
+    let err = dispose_with(&db, rifle, &[(optic, None)]).unwrap_err();
+
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert_eq!(field_error(&err, "withMounted"), None);
+    assert_eq!(
+        field_error(&err, "dispositionDate").as_deref(),
+        Some("Disposition date can't be earlier than the acquisition date.")
+    );
+    assert_eq!(detail(&db, optic)["status"], "active");
+    assert_eq!(mount_rows(&db), 1);
+}
+
+#[test]
+fn the_mounted_list_carries_each_records_acquisition_date() {
+    let db = TestDb::new();
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let optic = add_accessory(&db, &{
+        let mut input = accessory(OPTIC, "Leupold", "VX-5HD");
+        input.acquisition_date = Some("2025-09-01".into());
+        input
+    });
+    let can = add_firearm(
+        &db,
+        &FirearmInput { acquisition_date: Some("2024-01-02".into()), ..suppressor("S-1") },
+    );
+    let sling = plain_accessory(&db, SLING, "Magpul", "MS1");
+    for item in [optic, can, sling] {
+        mount(&db, item, Some(rifle)).unwrap();
+    }
+
+    let entries = detail(&db, rifle)["mount"]["mounted"].as_array().unwrap().clone();
+
+    let date_of = |record: RecordRef| {
+        let entry = entries.iter().find(|e| record_of(&e["label"]) == record).unwrap();
+        entry["acquisitionDate"].clone()
+    };
+    assert_eq!(date_of(optic), json!("2025-09-01"));
+    assert_eq!(date_of(can), json!("2024-01-02"));
+    assert_eq!(date_of(sling), Value::Null);
 }
 
 // --- The table's own backstops (data-model.md "Rules") -------------------------------------

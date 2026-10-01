@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, ConfirmDialog, Dialog } from "../../components";
 import { formatDateTime } from "../../lib/dates";
+import { FORM_VERSION as ACCESSORY_FORM } from "../accessories/AccessoryForm";
 import { FORM_VERSION as COVERAGE_FORM } from "../insurance/CoverageDialog";
 import { FORM_VERSION as POLICY_FORM } from "../insurance/InsurancePolicyForm";
 import { FORM_VERSION as DISPOSE_FORM } from "../firearms/DisposeDialog";
@@ -16,6 +17,12 @@ const FORM_VERSIONS: Record<string, number> = {
   "firearm/dispose": DISPOSE_FORM,
   "firearm/restore": RESTORE_FORM,
   "firearm/coverage": COVERAGE_FORM,
+  // An accessory is disposed, restored and scheduled in the firearm's dialogs.
+  "accessory/add": ACCESSORY_FORM,
+  "accessory/edit": ACCESSORY_FORM,
+  "accessory/dispose": DISPOSE_FORM,
+  "accessory/restore": RESTORE_FORM,
+  "accessory/coverage": COVERAGE_FORM,
   "policy/add": POLICY_FORM,
   "policy/edit": POLICY_FORM,
 };

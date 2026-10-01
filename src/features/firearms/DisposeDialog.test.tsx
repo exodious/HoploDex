@@ -430,6 +430,65 @@ describe("DisposeDialog with mounted records (US3)", () => {
     expect(onDispose).toHaveBeenCalledWith(expect.objectContaining({ withMounted: [] }));
   });
 
+  describe("a record disposed with it acquired after the disposition date (FR-014, US3/AC2)", () => {
+    // Acquired long after any date the dialog accepts.
+    const acquiredLater: MountDetail = {
+      chain: [],
+      mounted: [
+        { label: optic, host, depth: 1, acquisitionDate: "2999-01-01" },
+        { label: light, host, depth: 1, acquisitionDate: "2020-01-01" },
+      ],
+    };
+    const ORDER = "Disposition date can't be earlier than the acquisition date.";
+
+    it("names the record and blocks the save, with nothing sent", async () => {
+      const user = userEvent.setup();
+      const { onDispose } = renderDialog(acquiredLater);
+
+      await fillOwn(user);
+      await user.click(within(row(OPTIC)).getByRole("radio", { name: "Dispose with it" }));
+      await user.click(within(row(LIGHT)).getByRole("radio", { name: "Dispose with it" }));
+      await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(`${OPTIC}: ${ORDER}`);
+      // Only the record that fails says so.
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      expect(onDispose).not.toHaveBeenCalled();
+    });
+
+    it("says nothing about a record that is kept, and saves", async () => {
+      const user = userEvent.setup();
+      const { onDispose } = renderDialog(acquiredLater);
+
+      await fillOwn(user);
+      await user.click(within(row(LIGHT)).getByRole("radio", { name: "Dispose with it" }));
+      await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+      await waitFor(() => expect(onDispose).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText(new RegExp(ORDER))).not.toBeInTheDocument();
+    });
+
+    it("shows the backend's own failure for a record the dialog could not judge", async () => {
+      const user = userEvent.setup();
+      const message = `${OPTIC}: ${ORDER}`;
+      const onDispose = vi.fn().mockRejectedValue(
+        new CommandFailure({
+          code: "VALIDATION_ERROR",
+          message,
+          fieldErrors: { withMounted: message },
+        }),
+      );
+      // The list carried no acquisition date, as an older payload would.
+      renderDialog(carrying, onDispose);
+
+      await fillOwn(user);
+      await user.click(within(row(OPTIC)).getByRole("radio", { name: "Dispose with it" }));
+      await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    });
+  });
+
   it("shows the stale-mount error and reloads the list", async () => {
     const user = userEvent.setup();
     const stale = "What is mounted has changed. Close the dialog and try again.";

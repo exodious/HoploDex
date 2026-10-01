@@ -51,6 +51,7 @@ type RecordLabel = {
 type MountedEntry = {
   label: RecordLabel;
   host: RecordRef;   // what it is mounted on (the record itself at depth 1)
+  acquisitionDate: string | null;  // YYYY-MM-DD, so the dispose dialog can check the date per record (FR-014)
   depth: number;     // 1 = mounted directly on the record
 };
 
@@ -71,6 +72,9 @@ type MountDetail = {
   - "Choose an active firearm or accessory." (the host is missing or
     disposed);
   - "A firearm can't be mounted on itself, or on something mounted on it."
+    for a firearm, and "An accessory can't be mounted on itself, or on
+    something mounted on it." for an accessory (worded by the kind of the
+    record being mounted, FR-010).
   A record that is being disposed can't be mounted: the dispose commands
   clear it.
 - **`validate_firearm_input`**: `dispositionPrice` is no longer required
@@ -102,7 +106,17 @@ type MountDetail = {
   A `withMounted` record that is not below the host fails the call, with
   nothing changed: `VALIDATION_ERROR`,
   `fieldErrors.withMounted = "What is mounted has changed. Close the dialog
-  and try again."`. It returns the host `Firearm`.
+  and try again."`.
+
+  A `withMounted` record that fails its own checks (its disposition date,
+  the host's, is earlier than its own acquisition date) also fails the
+  call with nothing changed: `VALIDATION_ERROR`, and
+  `fieldErrors.withMounted = "{name}: {reason}"`, where `{name}` is the
+  record named as everywhere (FR-005; "Leupold VX-5HD · Optic") and
+  `{reason}` is the check's own message ("Disposition date can't be earlier
+  than the acquisition date."). The host's own checks are made first and
+  fail on the host's own fields. The dialog makes the same date check per
+  record before it sends. It returns the host `Firearm`.
 - **`reverse_disposition`**: unchanged. The restored firearm is not
   mounted, and nothing is mounted on it.
 - **`delete_firearm`**: unchanged. The `mounts` cascade leaves the records
@@ -123,7 +137,7 @@ codes and transaction behavior.
 | `dispose_accessory` | `{ id, input: DisposeInput }` | `Accessory` |
 | `reverse_accessory_disposition` | `{ id, input: { history: "keep" \| "discard" } }` | `Accessory` |
 | `delete_accessory` | `{ id, confirmed: boolean }` | `{ deleted: true }` |
-| `assign_accessory_coverage` | `{ accessoryId, policyId: number \| null, scheduledCoverageAmount: number \| null }` | `Accessory` |
+| `assign_accessory_coverage` | `{ accessoryId, input: { policyId: number \| null, scheduledCoverageAmount: number \| null } }` | `Accessory` |
 
 ```ts
 type AccessoryKind = {
@@ -239,7 +253,7 @@ input: {
   role: "host" | "item";
   record: RecordRef | null;   // role "host": the item being placed (null for a new record)
                               // role "item": the host receiving it (required)
-  query: string;              // matched in make, model, nickname, serial number; "" = first 50
+  query: string;              // matched in make, model, "make model", nickname, serial number and an accessory's kind name; "" = first 50
   limit?: number;             // default 50, at most 100
 }
 output: {
@@ -253,7 +267,10 @@ output: {
   host, the host's chain and what is already directly on the host (US2-4,
   US2-3a).
 - **Matching** is case-insensitive, matches inside a value, and ignores
-  surrounding whitespace.
+  surrounding whitespace. A query matches a record's make, model, nickname
+  or serial number, the make and model together ("Leupold VX" finds
+  "Leupold" "VX-3HD"), and an accessory's kind name ("sling" finds every
+  sling) (FR-012).
 - **Order**: by name (make, model, nickname or kind), then id.
 - It is read-only.
 

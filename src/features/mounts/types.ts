@@ -29,6 +29,11 @@ export type MountedEntry = {
   host: RecordRef;
   /** 1 = mounted directly on the record. */
   depth: number;
+  /** The record's acquisition date (YYYY-MM-DD), so the dispose dialog can
+   * check the disposition date against it for each record it disposes of
+   * (FR-014). Always sent by the backend; optional only so older fixtures
+   * still type. */
+  acquisitionDate?: string | null;
 };
 
 /** What a record page needs about mounts (FR-013). */

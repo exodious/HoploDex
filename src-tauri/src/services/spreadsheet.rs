@@ -4,6 +4,7 @@
 //! real SQLCipher DB — matching, validation, conflict resolution — never
 //! crosses the IPC boundary mid-computation.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use calamine::Reader;
@@ -600,6 +601,31 @@ fn export_error(what: &str, e: impl std::fmt::Display) -> CommandError {
     CommandError::new("INTERNAL_ERROR", format!("{what}: {e}"))
 }
 
+/// The characters that make a spreadsheet program read a cell as a formula.
+const FORMULA_TRIGGERS: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
+
+/// Protects one CSV text cell against formula injection (Constitution V,
+/// contracts/spreadsheet-format.md): a cell starting with a formula trigger
+/// gets a leading `'`. `unprotect_csv_cell` is its exact inverse for every
+/// cell this writes.
+fn protect_csv_cell(cell: &str) -> Cow<'_, str> {
+    if cell.starts_with(FORMULA_TRIGGERS) {
+        Cow::Owned(format!("'{cell}"))
+    } else {
+        Cow::Borrowed(cell)
+    }
+}
+
+/// Removes the one leading `'` that `protect_csv_cell` adds: a `'` followed by
+/// a formula trigger. A cell that genuinely starts with `'` and a trigger
+/// character loses its `'` too, the one accepted ambiguity.
+fn unprotect_csv_cell(cell: &str) -> &str {
+    match cell.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(FORMULA_TRIGGERS) => rest,
+        _ => cell,
+    }
+}
+
 fn write_csv_table<const N: usize>(
     path: &Path,
     columns: &[&str],
@@ -609,7 +635,9 @@ fn write_csv_table<const N: usize>(
         .map_err(|e| export_error("Could not create the export file", e))?;
     writer.write_record(columns).map_err(|e| export_error("Failed writing export header", e))?;
     for row in rows {
-        writer.write_record(&row).map_err(|e| export_error("Failed writing export row", e))?;
+        writer
+            .write_record(row.iter().map(|cell| protect_csv_cell(cell).into_owned()))
+            .map_err(|e| export_error("Failed writing export row", e))?;
     }
     writer.flush().map_err(|e| export_error("Failed saving the export file", e))
 }
@@ -794,7 +822,7 @@ fn read_csv(path: &Path) -> Result<Vec<ReadTable>, CommandError> {
         let record = record.map_err(|e| {
             CommandError::new("VALIDATION_ERROR", format!("{source}: could not parse a row: {e}"))
         })?;
-        data.push(record.iter().map(str::to_string).collect::<Vec<_>>());
+        data.push(record.iter().map(|cell| unprotect_csv_cell(cell).to_string()).collect());
     }
     Ok(vec![read_table(&headers, data.into_iter(), source)?])
 }
@@ -827,4 +855,65 @@ fn read_xlsx(path: &Path) -> Result<Vec<ReadTable>, CommandError> {
             read_table(&headers, rows.into_iter(), source)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TRIGGERS: [&str; 6] = ["=", "+", "-", "@", "\t", "\r"];
+
+    #[test]
+    fn a_cell_starting_with_each_trigger_character_gets_a_leading_apostrophe() {
+        for trigger in TRIGGERS {
+            let cell = format!("{trigger}SUM(A1)");
+            assert_eq!(protect_csv_cell(&cell), format!("'{cell}"), "{trigger:?}");
+        }
+    }
+
+    #[test]
+    fn other_cells_are_written_as_they_are() {
+        for cell in ["", "plain", "a=b", "x-1", "'quoted", "'", "1-2", " =lead", "2024-01-02"] {
+            assert_eq!(protect_csv_cell(cell), cell, "{cell:?}");
+        }
+    }
+
+    #[test]
+    fn reading_removes_one_apostrophe_only_before_a_trigger_character() {
+        for trigger in TRIGGERS {
+            assert_eq!(unprotect_csv_cell(&format!("'{trigger}x")), format!("{trigger}x"));
+            // Only one apostrophe is removed.
+            assert_eq!(unprotect_csv_cell(&format!("''{trigger}x")), format!("''{trigger}x"));
+        }
+        for cell in ["'quoted", "'", "''", "plain", "", "'a=b"] {
+            assert_eq!(unprotect_csv_cell(cell), cell, "{cell:?}");
+        }
+    }
+
+    #[test]
+    fn every_cell_survives_protect_then_unprotect_unless_it_starts_with_an_apostrophe_and_a_trigger()
+     {
+        for cell in ["=1", "+1", "-1", "@a", "\tx", "\rx", "'x", "x", "", "'", "a'=", "-"] {
+            assert_eq!(unprotect_csv_cell(&protect_csv_cell(cell)), cell, "{cell:?}");
+        }
+        // The one accepted ambiguity: the apostrophe is read as protection.
+        assert_eq!(unprotect_csv_cell(&protect_csv_cell("'=1")), "=1");
+    }
+
+    #[test]
+    fn the_csv_file_holds_the_protected_text_and_reading_returns_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.csv");
+        let rows =
+            vec![["=1+1".to_owned(), "\tTab".to_owned(), "\rCR".to_owned(), "ok".to_owned()]];
+        write_csv_table(&path, &["a", "b", "c", "d"], rows.into_iter()).unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(raw, "a,b,c,d\n'=1+1,'\tTab,\"'\rCR\",ok\n");
+
+        let mut reader = csv::Reader::from_path(&path).unwrap();
+        let record = reader.records().next().unwrap().unwrap();
+        let read: Vec<&str> = record.iter().map(unprotect_csv_cell).collect();
+        assert_eq!(read, ["=1+1", "\tTab", "\rCR", "ok"]);
+    }
 }

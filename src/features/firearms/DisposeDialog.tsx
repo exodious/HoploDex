@@ -183,6 +183,19 @@ function DisposeForm({
       parsed.ok ? [] : [[recordKey(entry.label.record), parsed.error] as const],
     ),
   );
+  // A record disposed with it is checked against its own acquisition date, as
+  // the record's own is (FR-014, US3/AC2); the error names it.
+  const dateErrors = new Map(
+    parsedWith.flatMap(({ entry }) => {
+      const error =
+        parsedDate.ok && parsedDate.iso
+          ? dispositionOrderError(entry.acquisitionDate ?? null, parsedDate.iso)
+          : undefined;
+      return error
+        ? [[recordKey(entry.label.record), `${recordNameWithType(entry.label)}: ${error}`] as const]
+        : [];
+    }),
+  );
   const kept = mounted.filter((entry) => !(recordKey(entry.label.record) in disposeWith));
   const disposedKeys = new Set(disposed.map((entry) => recordKey(entry.label.record)));
   const hostIsDisposed = (entry: MountedEntry) => disposedKeys.has(recordKey(entry.host));
@@ -222,7 +235,8 @@ function DisposeForm({
       Object.values(errors).some(Boolean) ||
       !parsedDate.ok ||
       !parsedPrice.ok ||
-      withErrors.size > 0
+      withErrors.size > 0 ||
+      dateErrors.size > 0
     ) {
       return false;
     }
@@ -307,6 +321,7 @@ function DisposeForm({
             disposeWith={disposeWith}
             onChange={setDisposeWith}
             errors={submitted ? withErrors : undefined}
+            dateErrors={submitted ? dateErrors : undefined}
             statements={statements}
           />
         )}
@@ -336,6 +351,7 @@ function MountedChoices({
   disposeWith,
   onChange,
   errors,
+  dateErrors,
   statements,
 }: {
   mounted: MountedEntry[];
@@ -343,6 +359,8 @@ function MountedChoices({
   onChange: (next: Record<string, string>) => void;
   /** Price errors by `recordKey`, once the form has been submitted. */
   errors: Map<string, string> | undefined;
+  /** Disposition-date errors by `recordKey`, once the form has been submitted. */
+  dateErrors: Map<string, string> | undefined;
   statements: string[];
 }) {
   const titleId = useId();
@@ -382,6 +400,11 @@ function MountedChoices({
                   hint="Leave blank if none was received separately."
                   error={errors?.get(key)}
                 />
+              )}
+              {disposing && dateErrors?.has(key) && (
+                <p className="hd-field__error" role="alert">
+                  {dateErrors.get(key)}
+                </p>
               )}
             </div>
           );

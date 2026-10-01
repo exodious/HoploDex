@@ -261,6 +261,16 @@ describe("InsurancePage policies (FR-009)", () => {
     expect(open).toHaveBeenCalledWith({ page: "accessory", id: 8, from: "insurance" });
   });
 
+  it("words the empty state for firearms and accessories alike", () => {
+    renderPage({ ...collectionWith(summaryWith()), policies: [], policiesById: new Map() });
+
+    expect(
+      screen.getByText(/Add each policy that covers your firearms and accessories\./),
+    ).toHaveTextContent(
+      "Add each policy that covers your firearms and accessories. A blanket policy, with a coverage limit, covers every firearm and accessory you haven't scheduled, with nothing to assign. A policy without a limit covers only the firearms and accessories you schedule on it from their records.",
+    );
+  });
+
   it("does not list a disposed accessory", () => {
     renderPage(collectionWith(summaryWith()));
 

@@ -178,7 +178,8 @@ section.
 
 ## 6. "Mounted on" on a record page (FR-013)
 
-- **Where**: in the record page's header facts, beside the type or kind.
+- **Where**: in the record page's header facts (the plate under the serial
+  number), on a firearm's record page and an accessory's alike.
 - **What it shows**: **Mounted on** followed by the chain, each record a
   link:
   - "Mounted on BCM upper · Upper receiver, on LaRue PredatAR · Rifle"
@@ -200,8 +201,9 @@ The existing `DisposeDialog` serves both kinds of record. Its shared fields
   - a `SegmentedControl` reading **Keep | Dispose with it**, with **Keep**
     selected;
   - when **Dispose with it** is chosen, a `MoneyField` labelled "Price for
-    {name}" (`hd-field--quarter`), optional, with the hint "Leave blank if
-    none was received separately."
+    {name}" (`hd-field--third`, as the standard dialog's "Price
+    received"), optional, with the hint "Leave blank if none was received
+    separately."
 - **What happens to kept records** is stated under the list, worked out
   from the choices:
   - "Kept records mounted on {name} will be unmounted."
@@ -271,8 +273,8 @@ own deletion wording is unchanged.
   or Restore, Delete).
 - **Main column**:
   - the photo gallery;
-  - **Details**: kind, make, model, serial number, caliber, cartridge and
-    the "Mounted on" chain (§6);
+  - **Details**: kind, make, model, serial number, caliber and cartridge
+    (the "Mounted on" chain is in the header facts, §6);
   - **Value and acquisition**;
   - **Notes**;
   - **Mounted** (§5);

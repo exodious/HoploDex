@@ -479,6 +479,102 @@ fn two_csv_files_reproduce_the_collection_in_either_order() {
     assert_round_trips(&db, &[&accessories, &firearms], expected);
 }
 
+/// Notes that a spreadsheet program would read as formulas (or that merely
+/// look like one), for a firearm and for an accessory (T127, Constitution V).
+const FORMULA_NOTES: [&str; 7] = [
+    "=HYPERLINK(\"http://example.invalid\",\"x\")",
+    "+1+1",
+    "-2+3",
+    "@SUM(A1)",
+    "'quoted note",
+    "plain = note",
+    "-",
+];
+
+fn formula_collection(db: &TestDb) -> (usize, usize) {
+    for (index, note) in FORMULA_NOTES.iter().enumerate() {
+        new_firearm(
+            db,
+            &FirearmInput {
+                notes: Some((*note).into()),
+                accessories: Some((*note).into()),
+                ..support::firearm("Ruger", "Formula", &format!("F{index}"))
+            },
+        );
+        new_accessory(
+            db,
+            &accessory_with(
+                OPTIC,
+                json!({ "make": "Leupold", "model": format!("M{index}"), "notes": note }),
+            ),
+        );
+    }
+    (FORMULA_NOTES.len(), FORMULA_NOTES.len())
+}
+
+fn note_of(conn: &Connection, table: &str, suffix: &str) -> String {
+    let column = if table == "firearms" { "serial_number" } else { "model" };
+    conn.query_row(&format!("SELECT notes FROM {table} WHERE {column} = ?1"), [suffix], |r| {
+        r.get(0)
+    })
+    .unwrap()
+}
+
+#[test]
+fn csv_export_protects_formula_text_and_import_returns_the_exact_text() {
+    let db = TestDb::new();
+    let expected = formula_collection(&db);
+    let dest = TempDir::new().unwrap();
+
+    let (firearms, accessories) = export_all(&db, dest.path(), "files", SpreadsheetFormat::Csv);
+    let accessories = accessories.expect("the accessory file");
+
+    // The files hold a leading apostrophe before each trigger character.
+    let firearm_table = sheets::read_csv(&firearms);
+    let accessory_table = sheets::read_csv(&accessories);
+    let written = |table: &Table, serial: &str, key: &str| -> String {
+        let row =
+            (0..table.len() - 1).find(|&r| sheets::cell(table, r, key) == serial).expect("the row");
+        sheets::cell(table, row, "notes").to_owned()
+    };
+    assert_eq!(written(&firearm_table, "F0", "serial_number"), format!("'{}", FORMULA_NOTES[0]));
+    assert_eq!(written(&firearm_table, "F1", "serial_number"), "'+1+1");
+    assert_eq!(written(&firearm_table, "F2", "serial_number"), "'-2+3");
+    assert_eq!(written(&firearm_table, "F3", "serial_number"), "'@SUM(A1)");
+    assert_eq!(written(&firearm_table, "F4", "serial_number"), "'quoted note");
+    assert_eq!(written(&firearm_table, "F5", "serial_number"), "plain = note");
+    assert_eq!(written(&accessory_table, "M3", "model"), "'@SUM(A1)");
+
+    // Exporting then importing returns every record exactly.
+    assert_round_trips(&db, &[&firearms, &accessories], expected);
+    let fresh = TestDb::new();
+    add_policies(&fresh);
+    import(&fresh, &ImportSessionStore::new(), &[&firearms, &accessories]);
+    for (index, note) in FORMULA_NOTES.iter().enumerate() {
+        assert_eq!(note_of(&fresh.conn, "firearms", &format!("F{index}")), *note);
+        assert_eq!(note_of(&fresh.conn, "accessories", &format!("M{index}")), *note);
+    }
+}
+
+#[test]
+fn xlsx_export_keeps_formula_text_as_it_is() {
+    let db = TestDb::new();
+    let expected = formula_collection(&db);
+    let dest = TempDir::new().unwrap();
+
+    let (workbook, _) = export_all(&db, dest.path(), "book", SpreadsheetFormat::Xlsx);
+
+    let sheets = sheets::read_workbook(&workbook);
+    for (_, table) in &sheets {
+        let notes = sheets::column(table, "notes");
+        let cells: Vec<&str> = table.iter().skip(1).map(|row| row[notes].as_str()).collect();
+        for note in FORMULA_NOTES {
+            assert!(cells.contains(&note), "{note:?} is stored unchanged in {cells:?}");
+        }
+    }
+    assert_round_trips(&db, &[&workbook], expected);
+}
+
 #[test]
 fn a_workbook_and_a_csv_file_may_be_picked_together() {
     let db = TestDb::new();
@@ -1054,7 +1150,11 @@ fn record_id_errors_are_row_errors_and_the_other_rows_import() {
         sheets::entries(&result.row_errors),
         [
             ("accessories".to_owned(), 1, "record_id: \"xyz\" is not a record ID".to_owned()),
-            ("accessories".to_owned(), 3, format!("record_id: {repeated} is also used by row 2")),
+            (
+                "accessories".to_owned(),
+                3,
+                format!("record_id: {repeated} is also used by Accessories, row 2")
+            ),
         ]
     );
 }
@@ -1081,10 +1181,7 @@ fn a_record_id_repeated_across_the_two_tables_is_a_row_error_on_the_later_row() 
     let errors = sheets::entries(&result.row_errors);
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!((errors[0].0.as_str(), errors[0].1), ("accessories", 1));
-    assert!(
-        errors[0].2.starts_with(&format!("record_id: {shared} is also used by row ")),
-        "{errors:?}"
-    );
+    assert_eq!(errors[0].2, format!("record_id: {shared} is also used by Firearms, row 1"));
 }
 
 #[test]

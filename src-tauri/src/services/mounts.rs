@@ -18,9 +18,15 @@ use crate::models::record::{MountDetail, MountedEntry, RecordLabel, RecordRef};
 
 /// FR-010: a host that is missing or disposed, or an item that is disposed.
 pub const CHOOSE_ACTIVE: &str = "Choose an active firearm or accessory.";
-/// FR-010: a record on itself, or on something that is mounted on it.
-pub const SELF_OR_BELOW: &str =
-    "A firearm can't be mounted on itself, or on something mounted on it.";
+/// FR-010: a record on itself, or on something that is mounted on it,
+/// worded by the kind of the record being mounted.
+pub fn self_or_below(item: RecordRef) -> String {
+    let what = match item {
+        RecordRef::Firearm(_) => "A firearm",
+        RecordRef::Accessory(_) => "An accessory",
+    };
+    format!("{what} can't be mounted on itself, or on something mounted on it.")
+}
 
 fn field_error(field: &str, message: &str) -> CommandError {
     CommandError::validation(message, Default::default()).on_field(field, message)
@@ -229,7 +235,7 @@ pub fn set_mount(
         return Err(field_error(field, CHOOSE_ACTIVE));
     }
     if graph.would_loop(item, host) {
-        return Err(field_error(field, SELF_OR_BELOW));
+        return Err(field_error(field, &self_or_below(item)));
     }
     let (host_firearm, host_accessory) = host.owner_columns();
     let updated = conn
@@ -396,6 +402,66 @@ pub fn labels(
     Ok(found)
 }
 
+/// The acquisition dates that `records` have, one query per table. A record
+/// with none, or that doesn't exist, has no entry.
+fn acquisition_dates(
+    conn: &Connection,
+    records: &[RecordRef],
+) -> Result<HashMap<RecordRef, String>, CommandError> {
+    let mut found = HashMap::new();
+    for firearms in [true, false] {
+        let ids: Vec<i64> = records
+            .iter()
+            .filter(|r| matches!(r, RecordRef::Firearm(_)) == firearms)
+            .map(RecordRef::id)
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let table = if firearms { "firearms" } else { "accessories" };
+        let ids = serde_json::to_string(&ids).expect("integers serialize");
+        let mut stmt = conn
+            .prepare_cached(&format!(
+                "SELECT id, acquisition_date FROM {table}
+                 WHERE acquisition_date IS NOT NULL
+                   AND id IN (SELECT value FROM json_each(:ids))"
+            ))
+            .map_err(CommandError::from_db)?;
+        let rows = stmt
+            .query_map(named_params! { ":ids": ids }, |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(CommandError::from_db)?;
+        for row in rows {
+            let (id, date) = row.map_err(CommandError::from_db)?;
+            let record = if firearms { RecordRef::Firearm(id) } else { RecordRef::Accessory(id) };
+            found.insert(record, date);
+        }
+    }
+    Ok(found)
+}
+
+/// A record's name as a message gives it (FR-005): a firearm "{make} {model}
+/// “{nickname}”", an accessory "{make} {model} · {kind}", or the kind alone
+/// when both are blank.
+pub fn record_name(label: &RecordLabel) -> String {
+    let make_model: Vec<&str> = [label.make.as_deref(), label.model.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
+    let make_model = make_model.join(" ");
+    match label.record {
+        RecordRef::Firearm(_) => match label.nickname.as_deref().filter(|n| !n.is_empty()) {
+            Some(nickname) => format!("{make_model} “{nickname}”"),
+            None => make_model,
+        },
+        RecordRef::Accessory(_) if make_model.is_empty() => label.type_name.clone(),
+        RecordRef::Accessory(_) => format!("{make_model} · {}", label.type_name),
+    }
+}
+
 /// One record's label.
 pub fn label(conn: &Connection, record: RecordRef) -> Result<Option<RecordLabel>, CommandError> {
     Ok(labels(conn, &[record])?.remove(&record))
@@ -414,6 +480,7 @@ pub fn detail(conn: &Connection, record: RecordRef) -> Result<MountDetail, Comma
     let wanted: Vec<RecordRef> =
         chain.iter().copied().chain(below.iter().map(|(r, _, _)| *r)).collect();
     let labels = labels(conn, &wanted)?;
+    let acquired = acquisition_dates(conn, &below.iter().map(|(r, _, _)| *r).collect::<Vec<_>>())?;
     Ok(MountDetail {
         chain: chain.iter().filter_map(|r| labels.get(r).cloned()).collect(),
         mounted: below
@@ -423,6 +490,7 @@ pub fn detail(conn: &Connection, record: RecordRef) -> Result<MountDetail, Comma
                     label: label.clone(),
                     host: *host,
                     depth: *depth,
+                    acquisition_date: acquired.get(r).cloned(),
                 })
             })
             .collect(),

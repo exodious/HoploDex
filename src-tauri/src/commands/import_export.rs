@@ -70,6 +70,16 @@ pub enum ImportTable {
     Accessories,
 }
 
+impl ImportTable {
+    /// The table as a message names it ("also used by Accessories, row 3").
+    fn heading(self) -> &'static str {
+        match self {
+            Self::Firearms => "Firearms",
+            Self::Accessories => "Accessories",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RowError {
@@ -423,16 +433,13 @@ pub mod ops {
         let accessory_csv_path = destination_folder.join(format!("{base_name}-accessories.csv"));
         // Only what this export made is removed if it stops.
         let made_folder = !photos_folder_path.exists();
-        let exported = export_rows(
-            conn,
-            &photos_folder_path,
-            &spreadsheet_path,
-            &accessory_csv_path,
+        let files = ExportFiles {
+            photos_folder: &photos_folder_path,
+            spreadsheet: &spreadsheet_path,
+            accessory_csv: &accessory_csv_path,
             format,
-            records,
-            on_progress,
-            is_cancelled,
-        );
+        };
+        let exported = export_rows(conn, &files, records, on_progress, is_cancelled);
         if exported.as_ref().is_err_and(|err| err.code == "OPERATION_STOPPED") && made_folder {
             let _ = std::fs::remove_dir_all(&photos_folder_path);
         }
@@ -486,17 +493,28 @@ pub mod ops {
         Ok(names.join(";"))
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Where an export writes, and in which format.
+    struct ExportFiles<'a> {
+        photos_folder: &'a Path,
+        spreadsheet: &'a Path,
+        /// The accessory table's file, used only by a CSV export.
+        accessory_csv: &'a Path,
+        format: SpreadsheetFormat,
+    }
+
     fn export_rows(
         conn: &Connection,
-        photos_folder_path: &Path,
-        spreadsheet_path: &Path,
-        accessory_csv_path: &Path,
-        format: SpreadsheetFormat,
+        files: &ExportFiles<'_>,
         records: &ExportRecords,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<ExportResult, CommandError> {
+        let ExportFiles {
+            photos_folder: photos_folder_path,
+            spreadsheet: spreadsheet_path,
+            accessory_csv: accessory_csv_path,
+            format,
+        } = *files;
         std::fs::create_dir_all(photos_folder_path).map_err(|e| {
             CommandError::new("INTERNAL_ERROR", format!("Could not create the photos folder: {e}"))
         })?;
@@ -1301,7 +1319,7 @@ pub mod ops {
     /// error it earns: malformed, or used by an earlier row of either table.
     fn row_record_id(
         cell: Option<&str>,
-        seen: &HashMap<String, usize>,
+        seen: &HashMap<String, (ImportTable, usize)>,
     ) -> Result<Option<String>, String> {
         let Some(cell) = cell else {
             return Ok(None);
@@ -1309,7 +1327,9 @@ pub mod ops {
         let uid = record_id::parse(cell)
             .ok_or_else(|| format!("record_id: \"{cell}\" is not a record ID"))?;
         match seen.get(&uid) {
-            Some(row) => Err(format!("record_id: {uid} is also used by row {row}")),
+            Some((table, row)) => {
+                Err(format!("record_id: {uid} is also used by {}, row {row}", table.heading()))
+            }
             None => Ok(Some(uid)),
         }
     }
@@ -1340,7 +1360,7 @@ pub mod ops {
         conn: &Connection,
         snapping: &Snapping,
         raw: &RawImportRow,
-        seen: &HashMap<String, usize>,
+        seen: &HashMap<String, (ImportTable, usize)>,
     ) -> Result<Imported, Fail> {
         let uid = row_record_id(raw.record_id.as_deref(), seen)?;
         let by_id = matched_by_record_id(conn, RecordKind::Firearm, uid.as_deref())?;
@@ -1397,7 +1417,7 @@ pub mod ops {
         conn: &Connection,
         snapping: &Snapping,
         raw: &RawAccessoryRow,
-        seen: &HashMap<String, usize>,
+        seen: &HashMap<String, (ImportTable, usize)>,
     ) -> Result<Imported, Fail> {
         let uid = row_record_id(raw.record_id.as_deref(), seen)?;
         let by_id = matched_by_record_id(conn, RecordKind::Accessory, uid.as_deref())?;
@@ -1560,8 +1580,8 @@ pub mod ops {
         warnings: Vec<RowError>,
         derived_calibers: Vec<DerivedCaliberReport>,
         snapped_values: Vec<SnappedValue>,
-        /// Identifier to the row (in whichever table) that settled with it.
-        seen: HashMap<String, usize>,
+        /// Identifier to the table and row that settled with it.
+        seen: HashMap<String, (ImportTable, usize)>,
         mount_requests: Vec<MountRequest>,
         outcomes: HashMap<String, RecordRef>,
     }
@@ -1590,7 +1610,7 @@ pub mod ops {
                 Ok(imported) => imported,
             };
             if let Some(uid) = &imported.uid {
-                self.seen.insert(uid.clone(), row);
+                self.seen.insert(uid.clone(), (table, row));
             }
             report(
                 imported.settled,

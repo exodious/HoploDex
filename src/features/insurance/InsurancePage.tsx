@@ -91,9 +91,10 @@ export function InsurancePage() {
           <div className="hd-empty hd-empty--compact">
             <Icon name="shield" size={28} />
             <p className="hd-empty__text">
-              Add each policy that covers your firearms. A blanket policy, with a coverage limit,
-              covers every firearm you haven't scheduled, with nothing to assign. A policy without a
-              limit covers only the firearms you schedule on it from their records.
+              Add each policy that covers your firearms and accessories. A blanket policy, with a
+              coverage limit, covers every firearm and accessory you haven't scheduled, with nothing
+              to assign. A policy without a limit covers only the firearms and accessories you
+              schedule on it from their records.
             </p>
             <Button variant="primary" icon="plus" onClick={() => add()}>
               Add policy

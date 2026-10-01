@@ -132,6 +132,10 @@ pub struct MountedEntry {
     pub host: RecordRef,
     /// 1 = mounted directly on the record.
     pub depth: u32,
+    /// The record's acquisition date (`YYYY-MM-DD`), so the dispose dialog can
+    /// check the disposition date against it for each record it disposes of
+    /// (FR-014).
+    pub acquisition_date: Option<String>,
 }
 
 /// What a record page needs about mounts.

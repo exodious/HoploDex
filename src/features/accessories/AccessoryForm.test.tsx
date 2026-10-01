@@ -737,7 +737,7 @@ describe("AccessoryForm Mounted on (US2)", () => {
 
   it("shows a mountedOn field error on the Mounted on field", async () => {
     const user = userEvent.setup();
-    const message = "A firearm can't be mounted on itself, or on something mounted on it.";
+    const message = "An accessory can't be mounted on itself, or on something mounted on it.";
     const onSubmit = vi.fn().mockRejectedValue(
       new CommandFailure({
         code: "VALIDATION_ERROR",
