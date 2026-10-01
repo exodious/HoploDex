@@ -261,7 +261,12 @@ own deletion wording is unchanged.
 - **CSV exports** with accessories report both file names in the result.
 - **The import dialog's file picker** allows one or two files ("Choose one
   file, or the firearm and accessory files together"). The chosen files are
-  listed. Picking a third replaces the selection.
+  listed, each with Remove. A typed path counts as one of the two. Once
+  two are chosen, Choose… is disabled (and with two picked, the path field
+  too) and the hint reads "Two files chosen, the most one import takes.
+  Remove one to choose another." A pick that would make more than two adds
+  nothing and the field's error says "An import takes at most two files,
+  one of firearms and one of accessories. Nothing was added." (issue #56).
 - **The import report** names each row's table ("Accessories, row 4") and
   lists mount warnings with the other warnings. The conflict list shows an
   accessory conflict by its `RecordName`.

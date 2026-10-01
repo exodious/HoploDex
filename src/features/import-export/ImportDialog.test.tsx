@@ -407,18 +407,59 @@ describe("ImportDialog files and the two tables (US5)", () => {
     expect(screen.getByText("/data/accessories.csv")).toBeInTheDocument();
   });
 
-  it("replaces the selection when a third file is picked", async () => {
+  // Issue #56: the picker never takes the import past its two files.
+  it("offers no more files once two are chosen, until one is removed", async () => {
     const user = userEvent.setup();
     picks(FIREARMS, ACCESSORIES);
-    picks("/data/other.csv");
+    renderDialog();
+
+    await choose(user);
+
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeDisabled();
+    expect(screen.getByLabelText(/Spreadsheet file/)).toBeDisabled();
+    expect(screen.getByText(/Two files chosen, the most one import takes/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: `Remove ${ACCESSORIES}` }));
+
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeEnabled();
+    expect(screen.getByLabelText(/Spreadsheet file/)).toBeEnabled();
+  });
+
+  it("counts a typed path as one of the two files", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    renderDialog();
+
+    await choose(user);
+    await user.type(screen.getByLabelText(/Spreadsheet file/), "/data/typed.csv");
+
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeDisabled();
+  });
+
+  it("adds nothing, and says so, when a pick would make more than two files", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    picks(ACCESSORIES, "/data/other.csv");
     renderDialog();
 
     await choose(user);
     await choose(user);
 
-    expect(screen.getByText("/data/other.csv")).toBeInTheDocument();
-    expect(screen.queryByText(FIREARMS)).not.toBeInTheDocument();
+    expect(screen.getByText(/An import takes at most two files/)).toBeInTheDocument();
+    expect(screen.getByText(FIREARMS)).toBeInTheDocument();
     expect(screen.queryByText(ACCESSORIES)).not.toBeInTheDocument();
+    expect(screen.queryByText("/data/other.csv")).not.toBeInTheDocument();
+  });
+
+  it("adds nothing when three files are picked at once", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS, ACCESSORIES, "/data/other.csv");
+    renderDialog();
+
+    await choose(user);
+
+    expect(screen.getByText(/An import takes at most two files/)).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Files to import" })).not.toBeInTheDocument();
   });
 
   it("keeps the selection when the picker is cancelled", async () => {

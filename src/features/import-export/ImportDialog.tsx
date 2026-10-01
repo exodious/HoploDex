@@ -144,6 +144,12 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   );
 }
 
+/** One firearm table and one accessory table (FR-022): the backend stops on
+ * a third file, so the picker never offers one. */
+const MAX_IMPORT_FILES = 2;
+const TOO_MANY_FILES =
+  "An import takes at most two files, one of firearms and one of accessories. Nothing was added.";
+
 function ImportFlow({ onClose }: { onClose: () => void }) {
   const { refresh } = useCollection();
   const notify = useToast();
@@ -165,6 +171,9 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [resolvedCount, setResolvedCount] = useState<number | null>(null);
   const [unresolved, setUnresolved] = useState<RowError[]>([]);
 
+  const chosenFiles = [...files, ...(typedPath.trim() ? [typedPath.trim()] : [])];
+  const full = chosenFiles.length >= MAX_IMPORT_FILES;
+
   async function chooseFile() {
     const selected = await withIdlePaused(() =>
       openDialog({
@@ -177,16 +186,17 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       (path): path is string => typeof path === "string",
     );
     if (picked.length === 0) return;
-    // A second pick adds to the first; a third file replaces the selection
-    // (ui-accessories.md §11).
-    setFiles((current) => {
-      const added = picked.filter((path) => !current.includes(path));
-      return current.length + added.length <= 2 ? [...current, ...added] : picked.slice(0, 2);
-    });
+    // A second pick adds to the first. A pick that would take the import
+    // past its two files adds nothing and says so (ui-accessories.md §11,
+    // issue #56).
+    const added = picked.filter((path) => !files.includes(path));
+    if (chosenFiles.length + added.length > MAX_IMPORT_FILES) {
+      setFileError(TOO_MANY_FILES);
+      return;
+    }
+    setFiles([...files, ...added]);
     setFileError(undefined);
   }
-
-  const chosenFiles = [...files, ...(typedPath.trim() ? [typedPath.trim()] : [])];
 
   async function handleImport(event: FormEvent) {
     event.preventDefault();
@@ -268,9 +278,20 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             }}
             error={fileError}
             spellCheck={false}
-            hint="Choose one file, or the firearm and accessory files together. Rows that match a record you already have are held for you to decide on."
+            // Two chosen files leave no room for a typed one.
+            disabled={files.length >= MAX_IMPORT_FILES}
+            hint={
+              full
+                ? "Two files chosen, the most one import takes. Remove one to choose another."
+                : "Choose one file, or the firearm and accessory files together. Rows that match a record you already have are held for you to decide on."
+            }
             trailing={
-              <button type="button" className="hd-input__text-action" onClick={chooseFile}>
+              <button
+                type="button"
+                className="hd-input__text-action"
+                onClick={chooseFile}
+                disabled={full}
+              >
                 Choose…
               </button>
             }
