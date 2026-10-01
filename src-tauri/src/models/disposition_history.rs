@@ -2,15 +2,19 @@ use rusqlite::Row;
 use serde::Serialize;
 
 use crate::models::firearm::DispositionType;
+use crate::models::record::RecordRef;
 
-/// A retained past disposition of a firearm that was later restored to
-/// active status (FR-033). Read-only: written only by `reverse_disposition`
-/// with `keep`.
+/// A retained past disposition of a firearm or accessory that was later
+/// restored to active status (FR-033; specs/006-accessory-links FR-006).
+/// Read-only: written only by `reverse_disposition` and
+/// `reverse_accessory_disposition` with `keep`. The record it belongs to is
+/// its `owner`, read from the `firearm_id` / `accessory_id` column pair
+/// (research.md §3).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DispositionHistoryEntry {
     pub id: i64,
-    pub firearm_id: i64,
+    pub owner: RecordRef,
     pub disposition_type: DispositionType,
     pub disposition_recipient: String,
     pub disposition_date: String,
@@ -20,9 +24,17 @@ pub struct DispositionHistoryEntry {
 
 impl DispositionHistoryEntry {
     pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        let firearm_id: Option<i64> = row.get("firearm_id")?;
+        let accessory_id: Option<i64> = row.get("accessory_id")?;
+        let owner = match (firearm_id, accessory_id) {
+            (Some(id), None) => RecordRef::Firearm(id),
+            (None, Some(id)) => RecordRef::Accessory(id),
+            // The table's CHECK allows exactly one of the two.
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        };
         Ok(Self {
             id: row.get("id")?,
-            firearm_id: row.get("firearm_id")?,
+            owner,
             disposition_type: row.get("disposition_type")?,
             disposition_recipient: row.get("disposition_recipient")?,
             disposition_date: row.get("disposition_date")?,

@@ -4,6 +4,10 @@ use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
+use crate::models::rules::{
+    DispositionFields, check_amounts, check_coverage_pair, check_dates_and_disposition,
+    checked_date, is_blank,
+};
 use crate::services::entry_text::{EntryField, check_entry_text};
 
 text_enum!(FirearmStatus {
@@ -339,52 +343,6 @@ impl FirearmInput {
     }
 }
 
-fn is_blank(value: &Option<String>) -> bool {
-    value.as_deref().map(str::trim).unwrap_or("").is_empty()
-}
-
-/// Parses an optional `YYYY-MM-DD` date that must not be later than
-/// `today` (FR-003/FR-004: today is allowed). A blank date is fine — both
-/// dates are optional — and yields `None`; a bad one records an error under
-/// `field` and also yields `None`.
-fn checked_date(
-    field: &str,
-    label: &str,
-    value: &Option<String>,
-    today: chrono::NaiveDate,
-    errors: &mut HashMap<String, String>,
-) -> Option<chrono::NaiveDate> {
-    if is_blank(value) {
-        return None;
-    }
-    match chrono::NaiveDate::parse_from_str(value.as_deref().unwrap_or_default().trim(), "%Y-%m-%d")
-    {
-        Ok(date) if date > today => {
-            errors.insert(field.into(), format!("{label} can't be in the future."));
-            None
-        }
-        Ok(date) => Some(date),
-        Err(_) => {
-            errors.insert(field.into(), format!("{label} must be a date in YYYY-MM-DD format."));
-            None
-        }
-    }
-}
-
-/// FR-037: an amount is a whole number of dollars, so once it has decoded
-/// (a fractional number never does) the only thing left to refuse is a
-/// negative one.
-fn checked_amount(
-    field: &str,
-    label: &str,
-    value: Option<i64>,
-    errors: &mut HashMap<String, String>,
-) {
-    if value.is_some_and(|dollars| dollars < 0) {
-        errors.insert(field.into(), format!("{label} can't be negative."));
-    }
-}
-
 /// FR-039: a length, weight or capacity, once it has decoded as a whole
 /// number (a fractional one never does), must be at least `min`.
 fn checked_measure(
@@ -439,12 +397,10 @@ pub fn validate_firearm_input(
         }
     }
 
-    checked_amount("estimatedValue", "Estimated value", input.estimated_value, &mut errors);
-    checked_amount("acquisitionPrice", "Acquisition price", input.acquisition_price, &mut errors);
-    checked_amount("dispositionPrice", "Disposition price", input.disposition_price, &mut errors);
-    checked_amount(
-        "scheduledCoverageAmount",
-        "Scheduled coverage amount",
+    check_amounts(
+        input.estimated_value,
+        input.acquisition_price,
+        input.disposition_price,
         input.scheduled_coverage_amount,
         &mut errors,
     );
@@ -485,63 +441,20 @@ pub fn validate_firearm_input(
 
     // FR-003/FR-004: judged against the user's local date, not UTC.
     let today = chrono::Local::now().date_naive();
-    let acquired = checked_date(
-        "acquisitionDate",
-        "Acquisition date",
-        &input.acquisition_date,
+    check_dates_and_disposition(
+        &DispositionFields {
+            noun: "firearm",
+            status: input.status,
+            acquisition_date: &input.acquisition_date,
+            disposition_type: input.disposition_type,
+            disposition_recipient: &input.disposition_recipient,
+            disposition_date: &input.disposition_date,
+            disposition_price: input.disposition_price,
+            price_required: true,
+        },
         today,
         &mut errors,
     );
-    let disposed_on = checked_date(
-        "dispositionDate",
-        "Disposition date",
-        &input.disposition_date,
-        today,
-        &mut errors,
-    );
-    if let (Some(acquired), Some(disposed_on)) = (acquired, disposed_on)
-        && disposed_on < acquired
-    {
-        errors.insert(
-            "dispositionDate".into(),
-            "Disposition date can't be earlier than the acquisition date.".into(),
-        );
-    }
-
-    match input.status {
-        FirearmStatus::Disposed => {
-            if input.disposition_type.is_none() {
-                errors
-                    .insert("dispositionType".into(), "Required when marking as disposed.".into());
-            }
-            if is_blank(&input.disposition_recipient) {
-                errors.insert(
-                    "dispositionRecipient".into(),
-                    "Required when marking as disposed.".into(),
-                );
-            }
-            if is_blank(&input.disposition_date) {
-                errors
-                    .insert("dispositionDate".into(), "Required when marking as disposed.".into());
-            }
-            if input.disposition_price.is_none() {
-                errors
-                    .insert("dispositionPrice".into(), "Required when marking as disposed.".into());
-            }
-        }
-        FirearmStatus::Active => {
-            if input.disposition_type.is_some()
-                || !is_blank(&input.disposition_recipient)
-                || !is_blank(&input.disposition_date)
-                || input.disposition_price.is_some()
-            {
-                errors.insert(
-                    "status".into(),
-                    "Disposition details can only be set once a firearm is marked disposed.".into(),
-                );
-            }
-        }
-    }
 
     // specs/002-firearm-identification FR-003: a whole four-digit year, no
     // later than the user's local current year. `checked_measure`'s `>= min`
@@ -620,23 +533,7 @@ pub fn validate_firearm_input(
         }
     }
 
-    // FR-014/FR-036: scheduled under a policy with its own amount, or not at
-    // all. There is no per-firearm blanket assignment.
-    match (input.insurance_policy_id, input.scheduled_coverage_amount) {
-        (Some(_), None) => {
-            errors.insert(
-                "scheduledCoverageAmount".into(),
-                "Enter the amount scheduled on the policy.".into(),
-            );
-        }
-        (None, Some(_)) => {
-            errors.insert(
-                "insurancePolicyId".into(),
-                "Choose the policy this amount is scheduled on.".into(),
-            );
-        }
-        _ => {}
-    }
+    check_coverage_pair(input.insurance_policy_id, input.scheduled_coverage_amount, &mut errors);
 
     if errors.is_empty() {
         Ok(())

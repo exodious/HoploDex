@@ -49,6 +49,7 @@ pub mod insurance_policy;
 pub mod photo;
 pub mod record;
 pub mod registration;
+pub(crate) mod rules;
 
 pub use document_attachment::DocumentAttachment;
 pub use firearm::{DispositionType, Firearm, FirearmInput, FirearmStatus};

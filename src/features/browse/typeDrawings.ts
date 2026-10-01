@@ -13,6 +13,16 @@
  * centred on the bore axis), with no brand marks. It is a partial section,
  * cut away between two break lines to show a generic cone-baffle stack.
  * Like the rest of the source it is GPL-3.0-only.
+ *
+ * The twelve accessory kinds (specs/006-accessory-links FR-007a, research.md
+ * §15) are `optic`, `light`, `magazine`, `stock`, `upper`, `barrel`,
+ * `muzzle`, `conversion`, `mount`, `sling`, `case` and `accessory` (the
+ * kind "Other"). They were drawn for this project, traced from side-on
+ * photographs for proportion, with no brand marks, in the same 320×200 box,
+ * muzzle-right convention and part, open and detail line roles. Each has
+ * separate subpaths per stroke, and its axis is the line the item sits on:
+ * the bore, the optical axis, or the rail it clamps to. Like the rest of
+ * the source they are GPL-3.0-only.
  */
 
 export type Part =
@@ -30,6 +40,72 @@ function sectionHatch(x0: number, x1: number, top: number, bottom: number): stri
   const rise = bottom - top;
   let d = "";
   for (let x = x0; x + rise <= x1; x += 4) d += `M${x} ${bottom}L${x + rise} ${top}`;
+  return d;
+}
+
+/** Round to a tenth, so computed coordinates stay short. */
+function r(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/** Evenly spaced vertical strokes from x0 to x1, each from y0 to y1. */
+function ticks(x0: number, x1: number, step: number, y0: number, y1: number): string {
+  let d = "";
+  for (let x = x0; x <= x1 + 0.01; x += step) d += `M${r(x)} ${y0}V${y1}`;
+  return d;
+}
+
+/** Evenly spaced horizontal dashes of length `len` along y. */
+function dashes(x0: number, x1: number, y: number, len: number, gap: number): string {
+  let d = "";
+  for (let x = x0; x + len <= x1 + 0.01; x += len + gap) d += `M${r(x)} ${y}h${len}`;
+  return d;
+}
+
+/** A rail's outline: a body with a transverse slot cut from the top edge
+ * every `pitch`, each `width` wide and `depth` deep. */
+function slottedRail(
+  x0: number,
+  x1: number,
+  top: number,
+  bottom: number,
+  first: number,
+  pitch: number,
+  width: number,
+  depth: number,
+): string {
+  let d = `M${x0} ${bottom}V${top}`;
+  for (let x = first; x + width <= x1 - 4; x += pitch) {
+    d += `H${x}V${top + depth}H${x + width}V${top}`;
+  }
+  return `${d}H${x1}V${bottom}Z`;
+}
+
+/** A straight tube of half-width `half` from (x0, y0) to (x1, y1). */
+function tube(x0: number, y0: number, x1: number, y1: number, half: number): string {
+  const length = Math.hypot(x1 - x0, y1 - y0);
+  const nx = (-(y1 - y0) / length) * half;
+  const ny = ((x1 - x0) / length) * half;
+  return (
+    `M${r(x0 + nx)} ${r(y0 + ny)}L${r(x1 + nx)} ${r(y1 + ny)}` +
+    `L${r(x1 - nx)} ${r(y1 - ny)}L${r(x0 - nx)} ${r(y0 - ny)}Z`
+  );
+}
+
+/** A stroke across a tube at (x, y), perpendicular to its direction. */
+function across(x: number, y: number, dx: number, dy: number, half: number): string {
+  const length = Math.hypot(dx, dy);
+  const nx = (-dy / length) * half;
+  const ny = (dx / length) * half;
+  return `M${r(x + nx)} ${r(y + ny)}L${r(x - nx)} ${r(y - ny)}`;
+}
+
+/** A spring's coils: slanted strokes between the wire's two edges. */
+function coils(x0: number, x1: number, y: number, half: number, pitch: number): string {
+  let d = "";
+  for (let x = x0; x + pitch <= x1 + 0.01; x += pitch) {
+    d += `M${r(x)} ${y + half}L${r(x + pitch * 0.6)} ${y - half}`;
+  }
   return d;
 }
 
@@ -272,5 +348,307 @@ export const DRAWINGS: Record<string, Drawing> = {
       ...BAFFLES.map((x, i) => coneBaffle(x, i === 0 ? 3.5 : 2)),
     ],
     axis: [23, 100, 313],
+  },
+  // A variable-power rifle scope, right side, on a rail with two rings: the
+  // ocular bell and its diopter ring at the rear, the magnification ring,
+  // the windage turret facing the viewer over the elevation turret, and the
+  // objective bell with its lens ring at the muzzle end.
+  optic: {
+    parts: [
+      { d: "M100 120H216V128H100Z", role: "part" },
+      { d: ticks(106, 210, 8, 120, 128), role: "detail" },
+      { d: "M139 86V70Q139 68 141 68H159Q161 68 161 70V86Z", role: "part" },
+      { d: "M139 73.5H161", role: "detail" },
+      { d: "M32 82L66 85.5V114.5L32 118Z", role: "part" },
+      { d: "M26 80H32V120H26Q24 120 24 118V82Q24 80 26 80Z", role: "part" },
+      { d: "M66 85H212V115H66Z", role: "part" },
+      { d: "M212 85L244 76H292V124H244L212 115Z", role: "part" },
+      { d: "M292 76.5H298Q300 76.5 300 78.5V121.5Q300 123.5 298 123.5H292Z", role: "part" },
+      { d: "M244 76V124M284 76V124M44 82.5V117.5", role: "detail" },
+      { d: "M76 85V115M108 85V115" + ticks(80, 104, 4, 88, 112), role: "detail" },
+      { d: "M113.5 80H128.5Q130 80 130 81.5V120H112V81.5Q112 80 113.5 80Z", role: "part" },
+      { d: "M187.5 80H200.5Q202 80 202 81.5V120H184V81.5Q184 80 185.5 80Z", role: "part" },
+      { circle: [121, 89, 2], role: "part" },
+      { circle: [121, 111, 2], role: "part" },
+      { circle: [193, 89, 2], role: "part" },
+      { circle: [193, 111, 2], role: "part" },
+      { circle: [150, 100, 13], role: "part" },
+      { d: "M141 100a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", role: "detail" },
+      { d: "M150 88.5V92M150 108V111.5M138.5 100H142M158 100H161.5", role: "detail" },
+    ],
+    axis: [14, 100, 308],
+  },
+  // A weapon light on a rail clamp, lens end right: a tail cap with its
+  // pressure button, a knurled body and a finned head behind the bezel.
+  light: {
+    parts: [
+      { d: "M114 112H186V126Q186 130 182 130H118Q114 130 114 126Z", role: "part" },
+      { d: "M122 130H178V135H122Z", role: "part" },
+      { d: ticks(130, 170, 10, 130, 135), role: "detail" },
+      { circle: [150, 121, 3.5], role: "part" },
+      { d: "M31 94.5H37V105.5H31Q29 105.5 29 103.5V96.5Q29 94.5 31 94.5Z", role: "part" },
+      { d: "M42 90H66V110H42Q37 110 37 105V95Q37 90 42 90Z", role: "part" },
+      { d: "M66 88H232V112H66Z", role: "part" },
+      { d: "M98 88V112M104 88V112" + ticks(72, 92, 4, 91, 109), role: "detail" },
+      { d: "M232 88L244 78H288V122H244L232 112Z", role: "part" },
+      { d: ticks(252, 280, 7, 80, 120) + "M244 78V122", role: "detail" },
+      { d: "M288 75H297Q300 75 300 78V122Q300 125 297 125H288Z", role: "part" },
+      { d: "M293 79V121", role: "detail" },
+    ],
+    axis: [20, 100, 308],
+  },
+  // A 30-round box magazine, upright and curved forward, with the top
+  // round seated between the feed lips and its bullet pointing at the
+  // muzzle; the axis runs through that round, where the bore would be.
+  magazine: {
+    parts: [
+      { d: "M112 42.5H141L147 44.5V51.5L141 53.5H112Z", role: "part" },
+      { d: "M147 44.5H160Q169 44.5 178 48Q169 51.5 160 51.5H147Z", role: "part" },
+      { d: "M113 42.5V53.5M141 42.5V53.5", role: "detail" },
+      {
+        d: "M112 58C109 100 120 138 136 168H172C156 138 145 100 148 58V53H142L140 58H122L120 53H112Z",
+        role: "part",
+      },
+      { d: "M130 64C128 102 138 136 154 164", role: "detail" },
+      { circle: [141, 96, 2.2], role: "part" },
+      { circle: [145, 116, 2.2], role: "part" },
+      { circle: [151, 136, 2.2], role: "part" },
+      { d: "M133 166H175L178 172Q178 175 175 175H131Q128 175 128.5 172Z", role: "part" },
+      { d: "M133.5 170.5H174", role: "detail" },
+    ],
+    axis: [70, 48, 232],
+  },
+  // A collapsible carbine stock on its buffer tube, right side: butt pad,
+  // cheek slot, adjustment lever and the notched tube, ending in the
+  // castle-nut flange.
+  stock: {
+    parts: [
+      { d: "M96 91H272V109H96Z", role: "part" },
+      { d: ticks(188, 250, 12, 101, 109), role: "detail" },
+      { d: "M132 112H162V122Q162 126 158 126H136Q132 126 132 122Z", role: "part" },
+      { d: "M140 112V126", role: "detail" },
+      {
+        d: "M40 70H88C120 70 146 80 172 91V109C152 112 130 118 108 124L48 134Q40 135 40 127Q35 100 40 70Z",
+        role: "part",
+      },
+      { d: "M50 72Q45 100 50 131", role: "detail" },
+      {
+        d: "M64 88H98Q104 88 104 94V104Q104 110 98 110H64Q58 110 58 104V94Q58 88 64 88Z",
+        role: "open",
+      },
+      { circle: [126, 104, 3], role: "part" },
+      { d: "M272 86H280Q283 86 283 89V111Q283 114 280 114H272Z", role: "part" },
+      { d: "M277 86V114", role: "detail" },
+    ],
+    axis: [18, 100, 306],
+  },
+  // A flat-top upper receiver with its free-float handguard, right side:
+  // brass deflector, ejection port cover, forward assist, the top rail all
+  // the way along, M-LOK slots, gas block with a front sight post and a
+  // birdcage flash hider.
+  upper: {
+    parts: [
+      { d: "M30 84H48V96H30Q28 96 28 94V86Q28 84 30 84Z", role: "part" },
+      { d: "M254 94.5H284V105.5H254Z", role: "part" },
+      { d: "M48 76H252V84H48Z", role: "part" },
+      { d: ticks(54, 246, 8, 76, 84), role: "detail" },
+      { d: "M48 84H138V113H48Z", role: "part" },
+      { d: "M60 104V96Q60 93 63 93H72V104Z", role: "part" },
+      { d: "M78 89H112Q114 89 114 91V101Q114 103 112 103H78Z", role: "part" },
+      { d: "M80 104H112", role: "detail" },
+      { d: "M120 98Q120 94 124 94H134V102H124Q120 102 120 98Z", role: "part" },
+      { d: "M138 84H250Q254 84 254 88V112Q254 116 250 116H138Z", role: "part" },
+      { d: "M136 82H144V118H136Z", role: "part" },
+      ...[148, 174, 200, 226].flatMap<Part>((x) => [
+        {
+          d: `M${x + 2} 92H${x + 16}Q${x + 18} 92 ${x + 18} 94Q${x + 18} 96 ${x + 16} 96H${x + 2}Q${x} 96 ${x} 94Q${x} 92 ${x + 2} 92Z`,
+          role: "open",
+        },
+        {
+          d: `M${x + 2} 105H${x + 16}Q${x + 18} 105 ${x + 18} 107Q${x + 18} 109 ${x + 16} 109H${x + 2}Q${x} 109 ${x} 107Q${x} 105 ${x + 2} 105Z`,
+          role: "open",
+        },
+      ]),
+      { d: "M262 88H274V112H262Z", role: "part" },
+      { d: "M265 88L266.5 72H269.5L271 88Z", role: "part" },
+      { d: "M280 90H284V110H280Z", role: "part" },
+      { d: "M284 92H304Q307 92 307 95V105Q307 108 304 108H284Z", role: "part" },
+      {
+        d: "M292 92V100M296 92V100M300 92V100M292 100V108M296 100V108M300 100V108",
+        role: "detail",
+      },
+    ],
+    axis: [20, 100, 314],
+  },
+  // A rifle barrel, bare: the barrel extension with its feed ramp, a heavy
+  // chamber end tapering to a lighter profile, the gas block journal and
+  // the threaded muzzle.
+  barrel: {
+    parts: [
+      {
+        d: "M76 89H120L148 92H196V90H214V93H276V94.5H302L304.5 96.5V103.5L302 105.5H276V107H214V110H196V108H148L120 111H76Z",
+        role: "part",
+      },
+      { d: "M120 89V111M205 90V110", role: "detail" },
+      {
+        d: "M280 105.5L283 94.5M285 105.5L288 94.5M290 105.5L293 94.5M295 105.5L298 94.5",
+        role: "detail",
+      },
+      {
+        d: "M38 85.5H70Q74 85.5 76 88V112Q74 114.5 70 114.5H38Q36 114.5 36 112.5V87.5Q36 85.5 38 85.5Z",
+        role: "part",
+      },
+      { d: "M70 85.5V114.5M44 85.5L56 93H66", role: "detail" },
+    ],
+    axis: [18, 100, 310],
+  },
+  // A ported muzzle brake: crush washer, wrench flats, swept ports through
+  // the side and a rounded nose.
+  muzzle: {
+    parts: [
+      { d: "M78 82H90V118H78Z", role: "part" },
+      { d: "M90 74H224Q238 74 244 84V116Q238 126 224 126H90Z", role: "part" },
+      { d: "M98 74V126M130 74V126M98 88H130M98 112H130", role: "detail" },
+      ...[146, 168, 190].map<Part>((x) => ({
+        d: `M${x} 84H${x + 9}L${x + 14} 116H${x + 5}Z`,
+        role: "part",
+      })),
+      { d: "M214 74V126", role: "detail" },
+      { d: "M228 90Q234 100 228 110", role: "detail" },
+    ],
+    axis: [50, 100, 290],
+  },
+  // A rimfire conversion kit for a pistol laid out as its parts: the slide
+  // with its sights, serrations and ejection port, the barrel with its
+  // hood, and the recoil spring on its guide rod.
+  conversion: {
+    parts: [
+      { d: "M56 46H66V40H80V46H232V40H246V46H258V78H56Z", role: "part" },
+      { d: "M64 52H80M64 56H80M64 60H80M64 64H80", role: "detail" },
+      { d: ticks(212, 244, 6, 54, 70), role: "detail" },
+      {
+        d: "M118 52H176Q180 52 180 56V64Q180 68 176 68H118Q114 68 114 64V56Q114 52 118 52Z",
+        role: "open",
+      },
+      { d: "M62 73H252", role: "detail" },
+      { d: "M70 95H120V113H70Z", role: "part" },
+      { d: "M120 99.5H258Q262 99.5 262 104Q262 108.5 258 108.5H120Z", role: "part" },
+      { d: "M96 95V113", role: "detail" },
+      { d: "M62 138H214V142H62Z", role: "part" },
+      { d: "M52 132H62V148H52Z", role: "part" },
+      { d: "M214 135H224V145H214Z", role: "part" },
+      { d: coils(70, 206, 140, 8, 8), role: "open" },
+    ],
+    axis: [26, 104, 298],
+  },
+  // A one-piece scope mount on a rail section: two ring bodies over a
+  // bar that clamps to the slotted rail with two cross bolts, a ring screw
+  // at each end of the split. The axis is the rings' bore.
+  mount: {
+    parts: [
+      { d: slottedRail(34, 286, 118, 138, 46, 16, 8, 7), role: "part" },
+      { d: "M34 131H286", role: "detail" },
+      { d: "M84 118H106V136H84Z", role: "part" },
+      { d: "M204 118H226V136H204Z", role: "part" },
+      { circle: [95, 127, 3.4], role: "part" },
+      { circle: [215, 127, 3.4], role: "part" },
+      { d: "M74 98H236V118H74Z", role: "part" },
+      { d: "M96 98V66Q96 56 106 56H122Q132 56 132 66V98Z", role: "part" },
+      { d: "M180 98V66Q180 56 190 56H206Q216 56 216 66V98Z", role: "part" },
+      { d: "M96 84H132M180 84H216", role: "detail" },
+      { circle: [103, 84, 2.4], role: "part" },
+      { circle: [125, 84, 2.4], role: "part" },
+      { circle: [187, 84, 2.4], role: "part" },
+      { circle: [209, 84, 2.4], role: "part" },
+    ],
+    axis: [20, 72, 300],
+  },
+  // A two-point sling laid flat: a swivel at each end, the strap with its
+  // stitching, the adjuster and the shoulder pad.
+  sling: {
+    parts: [
+      { d: "M48 93H272V107H48Z", role: "part" },
+      { d: dashes(60, 106, 96, 4, 3) + dashes(60, 106, 104, 4, 3), role: "detail" },
+      { d: dashes(222, 262, 96, 4, 3) + dashes(222, 262, 104, 4, 3), role: "detail" },
+      { d: "M76 89H92V111H76Z", role: "part" },
+      { d: "M84 89V111", role: "detail" },
+      {
+        d: "M116 84H204Q212 84 212 92V108Q212 116 204 116H116Q108 116 108 108V92Q108 84 116 84Z",
+        role: "part",
+      },
+      { d: ticks(120, 200, 8, 90, 110), role: "detail" },
+      { d: "M226 89H242V111H226Z", role: "part" },
+      { d: "M234 89V111", role: "detail" },
+      {
+        d: "M34 84H46Q56 84 56 94V106Q56 116 46 116H34Q22 116 22 106V94Q22 84 34 84Z",
+        role: "part",
+      },
+      {
+        d: "M36 92H44Q48 92 48 96V104Q48 108 44 108H36Q32 108 32 104V96Q32 92 36 92Z",
+        role: "open",
+      },
+      {
+        d: "M274 84H286Q298 84 298 94V106Q298 116 286 116H274Q264 116 264 106V94Q264 84 274 84Z",
+        role: "part",
+      },
+      {
+        d: "M276 92H284Q288 92 288 96V104Q288 108 284 108H276Q272 108 272 104V96Q272 92 276 92Z",
+        role: "open",
+      },
+    ],
+    axis: [14, 100, 306],
+  },
+  // A hard rifle case, closed: carry handle, lid seam, three latches,
+  // end bands, a pressure valve and feet.
+  case: {
+    parts: [
+      { d: "M122 64V57Q122 52 127 52H193Q198 52 198 57V64Z", role: "part" },
+      { d: "M132 64V60Q132 58 134 58H186Q188 58 188 60V64", role: "open" },
+      { d: "M52 134H72V140Q72 142 70 142H54Q52 142 52 140Z", role: "part" },
+      { d: "M248 134H268V140Q268 142 266 142H250Q248 142 248 140Z", role: "part" },
+      {
+        d: "M30 70Q30 64 36 64H284Q290 64 290 70V128Q290 134 284 134H36Q30 134 30 128Z",
+        role: "part",
+      },
+      { d: "M44 64V134M276 64V134", role: "detail" },
+      { d: "M30 90H290", role: "open" },
+      { d: "M30 94H290", role: "detail" },
+      ...[70, 160, 250].flatMap<Part>((x) => [
+        { d: `M${x - 8} 80H${x + 8}V92H${x - 8}Z`, role: "part" },
+        {
+          d: `M${x - 9} 92H${x + 9}V104Q${x + 9} 108 ${x + 5} 108H${x - 5}Q${x - 9} 108 ${x - 9} 104Z`,
+          role: "part",
+        },
+        { d: `M${x - 4} 98H${x + 4}`, role: "detail" },
+      ]),
+      { circle: [273, 76, 3], role: "part" },
+    ],
+    axis: [14, 118, 306],
+  },
+  // The generic accessory, a rail-clamp bipod with one leg deployed
+  // forward: clamp body and thumb knob, pivot housing, a telescoping leg
+  // with detents, and the rubber foot.
+  accessory: {
+    parts: [
+      { d: tube(167, 116, 184, 164, 5.5), role: "part" },
+      {
+        d:
+          across(172, 130, 0.342, 0.94, 5.5) +
+          across(176, 142, 0.342, 0.94, 5.5) +
+          across(181, 154, 0.342, 0.94, 5.5),
+        role: "detail",
+      },
+      { d: tube(184, 164, 188, 174, 9), role: "part" },
+      { d: tube(150, 72, 168.5, 123, 8.5), role: "part" },
+      { d: "M110 28H206Q210 28 210 32V56H106V32Q106 28 110 28Z", role: "part" },
+      { d: "M210 33H230Q234 33 234 37V47Q234 51 230 51H210Z", role: "part" },
+      { d: ticks(214, 228, 5, 34, 50), role: "detail" },
+      { circle: [128, 42, 6], role: "part" },
+      { d: "M124 42H132", role: "detail" },
+      { d: "M132 56H168V66Q168 70 164 70H136Q132 70 132 66Z", role: "part" },
+      { circle: [150, 72, 9], role: "part" },
+      { circle: [150, 72, 3.2], role: "part" },
+    ],
+    axis: [40, 43, 280],
   },
 };

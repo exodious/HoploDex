@@ -862,7 +862,7 @@ pub mod ops {
         }
         // Its photos, documents and search entry went with it: return their
         // space and leave none of their content behind (Constitution V).
-        crate::db::reclaim_deleted_firearm(conn);
+        crate::db::reclaim_deleted_record(conn);
         Ok(DeleteResult { deleted: true })
     }
 
