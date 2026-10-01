@@ -524,10 +524,9 @@ Full details are in contracts/spreadsheet-format.md. The decisions:
   Conflict rows keep their `mounted_on` in the import session, and
   `resolve_import_conflicts` applies the same steps when the choice is
   overwrite or duplicate:
-  - **overwrite with the `mounted_on` column present**: the row's mount,
-    or unmounted when the cell is blank (FR-023, Edge Cases);
-  - **overwrite with the column absent** (a sheet from before this
-    feature): the record's mount is left as it is;
+  - **overwrite**: the row's mount, or unmounted when the cell is blank
+    (FR-023, Edge Cases). A sheet with no `mounted_on` column reads as
+    blank in every row, as any missing column does;
   - **skip**: nothing changes.
 
   The warnings are added to `ImportResult.warnings` and
@@ -535,10 +534,10 @@ Full details are in contracts/spreadsheet-format.md. The decisions:
 - **Rationale**: Resolving after every row has been saved lets a row name a
   host that appears later in the file, or in the other table (US5-3). The
   outcome map covers the case the spec's edge cases imply, where a host row
-  in the same file matched an existing record. Telling an absent column
-  from a blank cell is what "a sheet without them imports as before" means
-  for an overwrite. Without the distinction, re-importing an old export
-  would silently unmount everything it overwrote.
+  in the same file matched an existing record. An absent column is not
+  told apart from a blank cell: until the first release there are no
+  exports made before this feature to protect (owner's decision of
+  2026-10-01).
 
 ## 19. Pending changes and unsaved-changes questions
 

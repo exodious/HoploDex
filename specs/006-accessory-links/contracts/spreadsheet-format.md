@@ -149,10 +149,9 @@ In export order (`ACCESSORY_COLUMNS`):
     - it would be mounted on itself through others. In that case, of the
       rows forming the loop, the last one in file order (firearm table
       first) is the one left unmounted.
-- **Overwrite**:
-  - *with a `mounted_on` column*: the row's mount, or unmounted when the
-    cell is blank (Edge Cases);
-  - *in a sheet without the column*: the record's mount is left as it is.
+- **Overwrite** takes the row's mount, or unmounts the record when the cell
+  is blank (Edge Cases). A sheet with no `mounted_on` column reads as blank
+  in every row, like any missing column.
 - **Skip** leaves the record and its mount untouched.
 
 ## Disposition price

@@ -319,9 +319,8 @@ Recomputed on every call, as before (001 FR-015, research.md §11):
 
 See [contracts/spreadsheet-format.md](./contracts/spreadsheet-format.md).
 `RawImportRow` gains `record_id` and `mounted_on`, and `RawAccessoryRow`
-mirrors it for the accessory table. Each also notes whether its sheet
-**had** a `mounted_on` column, because an absent column and a blank cell
-mean different things on overwrite (research.md §18).
+mirrors it for the accessory table. A missing `mounted_on` column reads
+as blank, as any missing column does (research.md §18).
 
 ## Seed and coverage
 

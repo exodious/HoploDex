@@ -59,8 +59,7 @@ The free-text `firearms.accessories` column is untouched.
 - **Nested mounts** are shown as a flat depth-first outline with "on …"
   lines (§14).
 - **The spreadsheet** has two tables recognised by header, resolves mounts
-  after every row has been saved, and treats an absent `mounted_on` column
-  differently from a blank cell (§17, §18).
+  after every row has been saved (§17, §18).
 
 ## Technical Context
 
@@ -123,7 +122,6 @@ The full table is in research.md §22.
   judge a mount.
 - The identifier is never shown outside the spreadsheet (FR-019).
 - A mount never outlives a disposed or deleted record (SC-004).
-- An absent `mounted_on` column never unmounts on overwrite.
 - Cipher settings are untouched.
 
 **Scale/Scope**: Five user stories (P1–P5), 28 functional requirements and
@@ -364,31 +362,35 @@ quickstart.md).*
 
 ## Findings to confirm with the user
 
-- **Build timing** (research.md §1): the design changes `firearms`,
-  `photos`, `document_attachments`, `disposition_history` and
-  `pending_changes`. By the owner's plan on issue #50, that means building
-  it in 0.1.0. Changing `firearms` is unavoidable, because FR-019 puts the
-  identifier on every firearm.
+Open:
+
 - **Acquisition source suggestions** (research.md §16): FR-003 says an
   accessory's acquisition source offers suggestions and snaps. A firearm's
   never has. The plan keeps it plain text on both forms, for consistency,
   and proposes dropping "acquisition source" from FR-003's suggestion list.
   The alternative, adding suggestions to both forms, is a firearm change
   this spec doesn't list among its amendments.
-- **A disposed record's price becomes optional** (research.md §9): FR-014
-  lets a record disposed of with its host have no price, and SC-002 needs
-  it to re-import. So a disposed row with a blank `disposition_price` is
-  no longer an import error, in either table. The dispose dialog still
-  requires the price for the record being disposed itself.
-- **Identifier format for #53** (research.md §6): a lowercase v4 UUID, not
-  32 hex digits like `database_id`, because spreadsheet applications can
-  read a bare hex string as a number. #53 should adopt the same format for
-  its other tables.
-- **Design choices made at planning** that the spec left open:
-  - The nested presentation is a flat depth-first outline with "on …"
-    lines (§14).
-  - On overwrite, a sheet without a `mounted_on` column leaves mounts as
-    they are, while a blank cell unmounts (§18).
-  - In a workbook, every non-blank sheet must be one of the two tables (§17).
-  - CSV accessory files are named `{base}-accessories.csv` (§17).
-  - The Accessories tab sits between Collection and Insurance (§20).
+
+Confirmed by the owner on 2026-10-01:
+
+- **Build timing** (research.md §1): the design changes `firearms`,
+  `photos`, `document_attachments`, `disposition_history` and
+  `pending_changes`, so it is built in 0.1.0, per the owner's plan on
+  issue #50.
+- **A disposed record's price becomes optional** (research.md §9): a
+  disposed row with a blank `disposition_price` is no longer an import
+  error, in either table. The dispose dialog still requires the price for
+  the record being disposed itself.
+- **Identifier format for #53** (research.md §6): a lowercase v4 UUID, which
+  #53 should adopt for its other tables.
+- **No special case for exports made before this feature** (research.md
+  §18): until the first release there are none, so a missing `mounted_on`
+  column reads as blank, like any missing column.
+
+Design choices made at planning that the spec left open:
+
+- The nested presentation is a flat depth-first outline with "on …" lines
+  (§14).
+- In a workbook, every non-blank sheet must be one of the two tables (§17).
+- CSV accessory files are named `{base}-accessories.csv` (§17).
+- The Accessories tab sits between Collection and Insurance (§20).
