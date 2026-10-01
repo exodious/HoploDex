@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { AccessoryKindsOutput, AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
 import type {
   ActionTypesOutput,
@@ -17,6 +18,11 @@ import type { InsurancePolicy, ValueSummary } from "../insurance/types";
 export interface CollectionState {
   firearms: FirearmSummary[];
   firearmsById: Map<number, FirearmSummary>;
+  /** specs/006-accessory-links: every accessory's browse summary (active and
+   * disposed), beside `firearms` and refreshed with them, so a name resolves
+   * without another call (research.md §20). */
+  accessories: AccessorySummary[];
+  accessoriesById: Map<number, AccessorySummary>;
   summary: ValueSummary | null;
   policies: InsurancePolicy[];
   policiesById: Map<number, InsurancePolicy>;
@@ -32,6 +38,12 @@ export interface CollectionState {
   /** The type list couldn't be loaded, so Type offers nothing to choose;
    * the form says so. The backend still checks every save. */
   firearmTypesFailed: boolean;
+  /** specs/006-accessory-links FR-001: the accessory kinds (offered or not,
+   * in sort order), loaded once per open database. */
+  accessoryKinds: AccessoryKindsOutput;
+  /** The kind list couldn't be loaded, so Kind offers nothing to choose;
+   * the form says so. The backend still checks every save. */
+  accessoryKindsFailed: boolean;
   /** specs/005-regulated-item-types FR-007: the fixed registration
    * classifications, loaded once per open database. */
   registrationClasses: RegistrationClassesOutput;
@@ -79,6 +91,20 @@ export function useFirearmTypes(): FirearmTypesOutput & { failed: boolean } {
   return {
     ...(collection?.firearmTypes ?? NO_FIREARM_TYPES),
     failed: collection?.firearmTypesFailed ?? false,
+  };
+}
+
+/** Before the list has loaded, or outside a provider: no kinds to offer. */
+export const NO_ACCESSORY_KINDS: AccessoryKindsOutput = { kinds: [] };
+
+/** The accessory kinds, for a view that may render on its own (as the tests
+ * do): empty without a provider, rather than an error. `failed` says the
+ * provider tried and couldn't load them. */
+export function useAccessoryKinds(): AccessoryKindsOutput & { failed: boolean } {
+  const collection = useContext(CollectionContext);
+  return {
+    ...(collection?.accessoryKinds ?? NO_ACCESSORY_KINDS),
+    failed: collection?.accessoryKindsFailed ?? false,
   };
 }
 

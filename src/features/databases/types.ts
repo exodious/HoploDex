@@ -82,7 +82,7 @@ export interface CollectionSettings {
 export interface PendingSummary {
   /** The form's draft version, which must be one this frontend knows. */
   formVersion: number;
-  kind: "firearm" | "policy";
+  kind: "firearm" | "policy" | "accessory";
   mode: "add" | "edit" | "dispose" | "restore" | "coverage";
   targetId: number | null;
   label: string;

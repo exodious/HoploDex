@@ -57,7 +57,7 @@ function resumedRoute(resumed: Draft | null): Route {
 }
 
 export function AppShell() {
-  const { firearmsById, firearms, policiesById, refresh } = useCollection();
+  const { firearmsById, accessoriesById, firearms, policiesById, refresh } = useCollection();
   const notify = useToast();
   // Resumed pending changes open where their form is (FR-039).
   const [route, setRoute] = useState<Route>(() => resumedRoute(peekResumedDraft()));
@@ -101,6 +101,15 @@ export function AppShell() {
           const firearm = firearmsById.get(target.id);
           return firearm ? firearmName(firearm) : "Firearm";
         }
+        case "accessories":
+          return "Accessories";
+        case "accessory": {
+          // FR-005: "{make} {model} · {kind}", or the kind alone.
+          const accessory = accessoriesById.get(target.id);
+          if (!accessory) return "Accessory";
+          const name = [accessory.make, accessory.model].filter(Boolean).join(" ");
+          return name ? `${name} · ${accessory.kindName}` : accessory.kindName;
+        }
       }
     };
     const previous = trail[trail.length - 1];
@@ -120,7 +129,7 @@ export function AppShell() {
       return { label: labelFor(list), go: () => navigate(list) };
     }
     return null;
-  }, [trail, route, firearmsById, policiesById, navigate]);
+  }, [trail, route, firearmsById, accessoriesById, policiesById, navigate]);
 
   useLayoutEffect(() => {
     if (restore.current?.route === route) {

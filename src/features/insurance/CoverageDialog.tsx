@@ -3,37 +3,39 @@ import type { FormEvent } from "react";
 import { Button, Dialog, MoneyField, Select } from "../../components";
 import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName, useCollection } from "../app/collectionStore";
+import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
-import type { Firearm } from "../firearms/types";
+import { useRecordSubject } from "../firearms/recordSubject";
+import type { RecordSubject, RecordSubjectProps } from "../firearms/recordSubject";
 import { expiryLabel } from "./coverage";
 import type { AssignCoverageInput } from "./types";
 import "../firearms/forms.css";
 
 const NOT_SCHEDULED = "none";
 
-export interface CoverageDialogProps {
+export type CoverageDialogProps = RecordSubjectProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  firearm: Firearm;
   onSave: (input: AssignCoverageInput) => Promise<void>;
-}
+};
 
-/** Schedules a firearm under an insurance policy with its own coverage
- * amount, or leaves it unscheduled (US3, FR-014, FR-036). An unscheduled
- * firearm needs no assignment: the blanket policy in force covers it. */
-export function CoverageDialog({ open, onOpenChange, firearm, onSave }: CoverageDialogProps) {
+/** Schedules a firearm or an accessory under an insurance policy with its own
+ * coverage amount, or leaves it unscheduled (US3, FR-014, FR-036; 006
+ * FR-009). An unscheduled record needs no assignment: the blanket policy in
+ * force covers it. */
+export function CoverageDialog({ open, onOpenChange, onSave, ...record }: CoverageDialogProps) {
+  const subject = useRecordSubject(record as RecordSubjectProps);
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title="Insurance coverage"
-      description={`Whether ${firearmName(firearm)} is scheduled on its own policy, or covered by your blanket policy.`}
+      description={`Whether ${subject.name} is scheduled on its own policy, or covered by your blanket policy.`}
       bare
     >
-      <CoverageForm firearm={firearm} onSave={onSave} onCancel={() => onOpenChange(false)} />
+      <CoverageForm subject={subject} onSave={onSave} onCancel={() => onOpenChange(false)} />
     </Dialog>
   );
 }
@@ -49,25 +51,25 @@ interface CoverageValues {
 }
 
 function CoverageForm({
-  firearm,
+  subject,
   onSave,
   onCancel,
 }: {
-  firearm: Firearm;
+  subject: RecordSubject;
   onSave: (input: AssignCoverageInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const { policies, summary } = useCollection();
   const { open: goTo } = useNavigation();
   const [initialPolicyId] = useState(
-    firearm.insurancePolicyId != null ? String(firearm.insurancePolicyId) : NOT_SCHEDULED,
+    subject.insurancePolicyId != null ? String(subject.insurancePolicyId) : NOT_SCHEDULED,
   );
-  const [initialAmount] = useState(() => dollarsToInput(firearm.scheduledCoverageAmount));
+  const [initialAmount] = useState(() => dollarsToInput(subject.scheduledCoverageAmount));
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
-    kind: "firearm",
+    kind: subject.kind,
     mode: "coverage",
-    targetId: firearm.id,
+    targetId: subject.id,
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [resumed] = useState(() =>
@@ -81,6 +83,10 @@ function CoverageForm({
   const [serverError, setServerError] = useState<string | null>(null);
 
   const scheduled = policyId !== NOT_SCHEDULED;
+  const valueNote =
+    subject.estimatedValue != null
+      ? `Its estimated replacement value is ${formatDollars(subject.estimatedValue)}.`
+      : "It has no estimated value yet, so coverage can't be checked.";
   const blanket = summary?.blanket ?? null;
   const parsedAmount = parseDollars(amount);
   const amountError = !scheduled
@@ -95,7 +101,7 @@ function CoverageForm({
   // and a lock keeps it (FR-039).
   const values: CoverageValues = { policyId, amount };
   useDirtyForm({
-    label: `${firearmName(firearm)} (coverage)`,
+    label: `${subject.name} (coverage)`,
     isDirty: policyId !== initialPolicyId || amount !== initialAmount,
     submit: save,
     draft: { ...target, values },
@@ -134,8 +140,8 @@ function CoverageForm({
         <div className="hd-dialog__body">
           <p className="hd-form-note">
             You haven’t added any insurance policies yet. Add one on the Insurance page, then come
-            back to schedule this firearm on it. A blanket policy covers every firearm you don’t
-            schedule, with no assignment needed.
+            back to schedule this {subject.noun} on it. A blanket policy covers every firearm and
+            accessory you don’t schedule, with no assignment needed.
           </p>
         </div>
         <footer className="hd-dialog__footer">
@@ -178,8 +184,8 @@ function CoverageForm({
         {!scheduled && (
           <p className="hd-form-note">
             {blanket
-              ? `Not scheduled, so it's covered by ${blanket.policyName}, along with every other firearm that isn't scheduled. Its value counts toward that policy's ${formatDollars(blanket.limit)} limit.`
-              : "No blanket policy is in force, so an unscheduled firearm is uninsured. Add a blanket policy on the Insurance page, or schedule this firearm on a policy."}
+              ? `Not scheduled, so it's covered by ${blanket.policyName}, along with ${subject.noun === "firearm" ? "every other firearm" : "everything else"} that isn't scheduled. Its value counts toward that policy's ${formatDollars(blanket.limit)} limit.${subject.estimatedValue != null ? ` ${valueNote}` : ""}`
+              : `No blanket policy is in force, so an unscheduled ${subject.noun} is uninsured. Add a blanket policy on the Insurance page, or schedule this ${subject.noun} on a policy.`}
           </p>
         )}
         {scheduled && (
@@ -190,11 +196,7 @@ function CoverageForm({
             onValueChange={setAmount}
             error={submitted ? amountError : undefined}
             fieldClassName="hd-field--third"
-            hint={
-              firearm.estimatedValue != null
-                ? `Its estimated replacement value is ${formatDollars(firearm.estimatedValue)}.`
-                : "It has no estimated value yet, so coverage can't be checked."
-            }
+            hint={valueNote}
           />
         )}
       </div>

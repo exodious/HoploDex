@@ -5,6 +5,7 @@ import { Button, ConfirmDialog, Icon, useToast } from "../../components";
 import { fileToByteArray } from "../../lib/bytes";
 import { formatDate } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
+import type { RecordRef } from "../mounts/types";
 import * as mediaService from "./mediaService";
 import type { DocumentSummary } from "./types";
 import { fileName, isDocumentPath } from "./filePaths";
@@ -12,7 +13,8 @@ import { useFileDrop } from "./useFileDrop";
 import "./media.css";
 
 export interface DocumentListProps {
-  firearmId: number;
+  /** The firearm or accessory the documents belong to (006 FR-007a). */
+  owner: RecordRef;
 }
 
 function failureMessage(e: unknown, fallback: string): string {
@@ -26,9 +28,9 @@ function kindLabel(doc: DocumentSummary): string {
   return extension && extension !== doc.originalFilename ? extension.toUpperCase() : "File";
 }
 
-/** Documents attached to a firearm — receipts, appraisals, manuals — that
+/** Documents attached to a firearm or an accessory — receipts, appraisals, manuals — that
  * open in the computer's default app for their type (US4, FR-010). */
-export function DocumentList({ firearmId }: DocumentListProps) {
+export function DocumentList({ owner }: DocumentListProps) {
   const notify = useToast();
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [adding, setAdding] = useState(0);
@@ -41,7 +43,7 @@ export function DocumentList({ firearmId }: DocumentListProps) {
 
   async function load() {
     try {
-      setDocuments(await mediaService.listDocuments(firearmId));
+      setDocuments(await mediaService.listDocuments(owner));
     } catch (e) {
       notify(failureMessage(e, "Documents couldn't be loaded."), "error");
       setDocuments([]);
@@ -51,7 +53,7 @@ export function DocumentList({ firearmId }: DocumentListProps) {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firearmId]);
+  }, [owner.kind, owner.id]);
 
   /** Attaches each document in turn, carrying on past one that fails so a
    * bad file doesn't cost the rest of a batch. */
@@ -80,7 +82,7 @@ export function DocumentList({ firearmId }: DocumentListProps) {
         name: file.name,
         add: async () =>
           mediaService.addDocument(
-            firearmId,
+            owner,
             await fileToByteArray(file),
             file.name,
             file.type || "application/octet-stream",
@@ -93,7 +95,7 @@ export function DocumentList({ firearmId }: DocumentListProps) {
     await addAll(
       paths.map((path) => ({
         name: fileName(path),
-        add: () => mediaService.addDocumentFromPath(firearmId, path),
+        add: () => mediaService.addDocumentFromPath(owner, path),
       })),
     );
   }

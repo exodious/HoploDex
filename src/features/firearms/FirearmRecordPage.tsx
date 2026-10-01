@@ -275,7 +275,11 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
 
       <div className="hd-record__grid">
         <div className="hd-record__main">
-          <PhotoGallery firearm={firearm} onChanged={handleMediaChanged} />
+          <PhotoGallery
+            owner={{ kind: "firearm", id: firearm.id }}
+            thumbnailPhotoId={firearm.thumbnailPhotoId}
+            onChanged={handleMediaChanged}
+          />
 
           <section className="hd-panel" aria-labelledby="identification-title">
             <header className="hd-panel__head">
@@ -463,7 +467,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
             )}
           </section>
 
-          <DocumentList firearmId={firearm.id} />
+          <DocumentList owner={{ kind: "firearm", id: firearm.id }} />
         </aside>
       </div>
 

@@ -5,7 +5,7 @@ import { Button, ConfirmDialog, Dialog, Icon, useToast } from "../../components"
 import { bytesToDataUrl, fileToByteArray } from "../../lib/bytes";
 import { formatDate } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
-import type { Firearm } from "../firearms/types";
+import type { RecordRef } from "../mounts/types";
 import * as mediaService from "./mediaService";
 import type { PhotoSummary } from "./types";
 import { fileName, isPhotoPath } from "./filePaths";
@@ -13,8 +13,11 @@ import { useFileDrop } from "./useFileDrop";
 import "./media.css";
 
 export interface PhotoGalleryProps {
-  firearm: Firearm;
-  /** Called after photos change, since the firearm's thumbnail may have. */
+  /** The firearm or accessory the photos belong to (006 FR-007a). */
+  owner: RecordRef;
+  /** The owner's current thumbnail photo, tagged in the gallery. */
+  thumbnailPhotoId: number | null;
+  /** Called after photos change, since the owner's thumbnail may have. */
   onChanged: () => Promise<void>;
 }
 
@@ -28,10 +31,10 @@ function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** Photos for a firearm (US4). The first photo added becomes the
+/** Photos for a firearm or an accessory (US4). The first photo added becomes the
  * thumbnail automatically (FR-008); the viewer lets the user pick another,
  * see the full-resolution original, or delete it. */
-export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
+export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGalleryProps) {
   const notify = useToast();
   const [photos, setPhotos] = useState<PhotoSummary[] | null>(null);
   const [adding, setAdding] = useState(0);
@@ -44,7 +47,7 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
 
   async function load() {
     try {
-      setPhotos(await mediaService.listPhotos(firearm.id));
+      setPhotos(await mediaService.listPhotos(owner));
     } catch (e) {
       notify(failureMessage(e, "Photos couldn't be loaded."), "error");
       setPhotos([]);
@@ -54,7 +57,7 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firearm.id]);
+  }, [owner.kind, owner.id]);
 
   /** Adds each photo in turn, carrying on past one that fails so a bad file
    * doesn't cost the rest of a batch. */
@@ -93,7 +96,7 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
       accepted.map((file) => ({
         name: file.name,
         add: async () =>
-          mediaService.addPhoto(firearm.id, await fileToByteArray(file), file.name, file.type),
+          mediaService.addPhoto(owner, await fileToByteArray(file), file.name, file.type),
       })),
     );
   }
@@ -102,14 +105,14 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
     await addAll(
       paths.map((path) => ({
         name: fileName(path),
-        add: () => mediaService.addPhotoFromPath(firearm.id, path),
+        add: () => mediaService.addPhotoFromPath(owner, path),
       })),
     );
   }
 
   async function setThumbnail(photo: PhotoSummary) {
     try {
-      await mediaService.setThumbnailPhoto(firearm.id, photo.id);
+      await mediaService.setThumbnailPhoto(owner, photo.id);
       await onChanged();
       notify("Thumbnail updated.");
     } catch (e) {
@@ -186,7 +189,7 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
                 aria-label={`View ${photo.originalFilename}`}
               >
                 <img src={bytesToDataUrl(photo.thumbnailBytes, "image/jpeg")} alt="" />
-                {firearm.thumbnailPhotoId === photo.id && (
+                {thumbnailPhotoId === photo.id && (
                   <span className="hd-photo__tag">
                     <Icon name="star" size={12} strokeWidth={2} />
                     <span>Thumbnail</span>
@@ -218,7 +221,7 @@ export function PhotoGallery({ firearm, onChanged }: PhotoGalleryProps) {
           index={viewing}
           onIndexChange={setViewing}
           onClose={() => setViewing(null)}
-          isThumbnail={firearm.thumbnailPhotoId === photos[viewing].id}
+          isThumbnail={thumbnailPhotoId === photos[viewing].id}
           onSetThumbnail={() => setThumbnail(photos[viewing])}
           onDelete={() => setDeleting(photos[viewing])}
         />

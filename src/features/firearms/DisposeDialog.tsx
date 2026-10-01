@@ -4,11 +4,12 @@ import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from ".
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName } from "../app/collectionStore";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
+import { useRecordSubject } from "./recordSubject";
+import type { RecordSubject, RecordSubjectProps } from "./recordSubject";
 import { DISPOSITION_TYPE_OPTIONS } from "./types";
-import type { DisposeFirearmInput, DispositionType, Firearm } from "./types";
+import type { DisposeFirearmInput, DispositionType } from "./types";
 import "./forms.css";
 
 const RECIPIENT_HINTS: Record<DispositionType, string> = {
@@ -19,33 +20,27 @@ const RECIPIENT_HINTS: Record<DispositionType, string> = {
   lost_stolen: "Where it was lost, or the police report number.",
 };
 
-export interface DisposeDialogProps {
+export type DisposeDialogProps = RecordSubjectProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  firearm: Firearm;
   onDispose: (input: DisposeFirearmInput) => Promise<void>;
-}
+};
 
-/** Marks a firearm disposed (US1 Scenario 4). The record keeps its full
- * history but leaves the active collection, its totals, and coverage
- * checks (FR-023, FR-025). */
-export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: DisposeDialogProps) {
+/** Marks a firearm or an accessory disposed (US1 Scenario 4; 006 FR-006). The
+ * record keeps its full history but leaves the active collection, its totals,
+ * and coverage checks (FR-023, FR-025). */
+export function DisposeDialog({ open, onOpenChange, onDispose, ...record }: DisposeDialogProps) {
+  const subject = useRecordSubject(record as RecordSubjectProps);
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title="Mark as disposed"
-      description={`${firearmName(firearm)} stays in your records with its full history, but leaves the active collection, its value totals, and coverage checks.`}
+      description={`${subject.name} stays in your records with its full history, but leaves the active collection, its value totals, and coverage checks.`}
       bare
     >
       {/* Mounted only while open, so every opening starts from a blank form. */}
-      <DisposeForm
-        firearmId={firearm.id}
-        label={`${firearmName(firearm)} (disposal)`}
-        acquisitionDate={firearm.acquisitionDate}
-        onDispose={onDispose}
-        onCancel={() => onOpenChange(false)}
-      />
+      <DisposeForm subject={subject} onDispose={onDispose} onCancel={() => onOpenChange(false)} />
     </Dialog>
   );
 }
@@ -63,24 +58,21 @@ interface DisposeValues {
 }
 
 function DisposeForm({
-  firearmId,
-  label,
-  acquisitionDate,
+  subject,
   onDispose,
   onCancel,
 }: {
-  firearmId: number;
-  label: string;
-  acquisitionDate: string | null;
+  subject: RecordSubject;
   onDispose: (input: DisposeFirearmInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
-    kind: "firearm",
+    kind: subject.kind,
     mode: "dispose",
-    targetId: firearmId,
+    targetId: subject.id,
   };
+  const label = `${subject.name} (disposal)`;
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [today] = useState(todayIso);
   const [resumed] = useState(() =>
@@ -112,7 +104,7 @@ function DisposeForm({
       : !parsedDate.iso
         ? "Enter the date."
         : (futureDateError(parsedDate.iso, "Disposition date") ??
-          dispositionOrderError(acquisitionDate, parsedDate.iso)),
+          dispositionOrderError(subject.acquisitionDate, parsedDate.iso)),
     price: !parsedPrice.ok
       ? parsedPrice.error
       : parsedPrice.dollars == null
@@ -153,7 +145,9 @@ function DisposeForm({
       return true;
     } catch (e) {
       setServerError(
-        e instanceof CommandFailure ? e.message : "The firearm couldn't be marked disposed.",
+        e instanceof CommandFailure
+          ? e.message
+          : `The ${subject.noun} couldn't be marked disposed.`,
       );
       return false;
     } finally {

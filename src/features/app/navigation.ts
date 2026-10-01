@@ -2,12 +2,20 @@ import { createContext, useContext } from "react";
 
 export type Route =
   | { page: "collection" }
+  | { page: "accessories" }
   | { page: "insurance" }
   | { page: "policy"; id: number }
-  | { page: "firearm"; id: number; from: "collection" | "insurance" };
+  | { page: "firearm"; id: number; from: "collection" | "insurance" }
+  // specs/006-accessory-links: `from` is where "back" returns to, which for
+  // a record reached through a mount is the record it was reached from.
+  | {
+      page: "accessory";
+      id: number;
+      from: "accessories" | "collection" | "insurance" | "firearm" | "accessory";
+    };
 
 /** Dialogs the app shell owns, so any page can open them. */
-export type ShellDialog = "addFirearm" | "import" | "export";
+export type ShellDialog = "addFirearm" | "addAccessory" | "import" | "export";
 
 /** Where "back" goes from the current page, and what to call it. */
 export interface BackTarget {

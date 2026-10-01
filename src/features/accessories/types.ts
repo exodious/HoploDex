@@ -91,3 +91,13 @@ export type AccessoryGroup = {
   host: RecordLabel | null;
   accessories: AccessorySummary[];
 };
+
+/** `list_accessory_kinds`'s output: every kind, offered or not, in `sortOrder`. */
+export type AccessoryKindsOutput = { kinds: AccessoryKind[] };
+
+/** `list_accessories`'s output. */
+export type ListAccessoriesOutput = { groups: AccessoryGroup[] };
+
+/** `reverse_accessory_disposition`'s input (FR-006): no nickname or identity
+ * re-check, so only what to do with the disposition being reversed. */
+export type ReverseAccessoryInput = { history: "keep" | "discard" };
