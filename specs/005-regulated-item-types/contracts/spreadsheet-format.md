@@ -34,6 +34,14 @@ so `COLUMNS` in `services::spreadsheet` becomes 40 entries (36 + 4).
 
 - May now be `Suppressor` (matched ignoring case, as before).
 
+## Changed columns: `caliber` and `cartridge`
+
+- For a Suppressor, `caliber` is its bore and `cartridge` the most powerful
+  cartridge it is rated for. Both are read and written as before.
+- For a `firearm_type` whose caliber isn't derived (Suppressor), a blank
+  `caliber` is never filled from `cartridge` (004 FR-025 doesn't apply). The
+  row is an error (below) and isn't listed among the derived calibers.
+
 ## Changed column: `action_type`
 
 - May now be `Automatic or select-fire`, allowed for Handgun, Rifle, Shotgun
@@ -53,6 +61,8 @@ Each is a row error. Other rows still import (001 FR-020).
 | `firearm_type` Suppressor with an `action_type` | `action_type: Action doesn't apply to a Suppressor.` |
 | … with `barrel_length_in` | `barrel_length_in: Barrel length doesn't apply to a Suppressor.` |
 | … with `capacity` | `capacity: Capacity doesn't apply to a Suppressor.` |
+| `firearm_type` Suppressor, `caliber` blank, `cartridge` given | `caliber: Caliber is required; a Suppressor's isn't worked out from its cartridge.` |
+| … with `cartridge` blank too | `caliber: Caliber is required.` (004's message) |
 
 A row with several of these reports them all, joined by "; " as before. The
 fields-apply errors are checked before 004's action mapping, so a Suppressor
@@ -84,7 +94,7 @@ and "Registered to".
   classification, the export dialog names registration details among what
   leaves the database unencrypted (contracts/ui-registration.md §5).
 
-## A sheet without the new columns (US4-7)
+## A sheet without the new columns (US4-8)
 
 A sheet exported before this feature has none of the four columns. They read
 as blank on every row, and the rows import with no classification. This is

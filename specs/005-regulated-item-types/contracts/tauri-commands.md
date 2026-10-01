@@ -105,6 +105,10 @@ trimmed before they are validated and stored.
   - `"registeredTo"` offers only the values on record, and snaps to them
     (`changedBy: "record"`).
   - `caliber` and `derivedCaliber` stay `null` for both.
+  - `settle_entry` for `"cartridge"` is unchanged: it returns the
+    `derivedCaliber` the cartridge gives, whatever the firearm's type. The
+    form applies it only while the type in effect has `caliberFromCartridge`
+    (research.md §15).
 - **Performance contract**: within 50 ms at 10,000 firearms, as in 004.
 - **Privacy**: reads `firearms` at call time and keeps nothing, so a value
   used only by deleted firearms is never offered (FR-013).
@@ -126,6 +130,8 @@ research.md §3).
       actionTypeApplies: boolean;
       barrelLengthApplies: boolean;
       capacityApplies: boolean;
+      caliberFromCartridge: boolean;  // false: the caliber is never derived
+                                      //  from the cartridge (FR-002)
     }[];                            // by sort_order: Other last
   };
   ```
@@ -166,6 +172,8 @@ The classification list (FR-007).
   may now be `"registrationForm"` or `"registeredTo"`.
 - **New row errors** (in `rowErrors`, FR-021, FR-022): see
   [spreadsheet-format.md](./spreadsheet-format.md).
+- `derivedCalibers` never lists a row of a type whose caliber isn't derived
+  (Suppressor), because no caliber is derived for it (FR-022).
 
 ## `export_collection`
 

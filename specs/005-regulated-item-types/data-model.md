@@ -27,19 +27,23 @@ CREATE TABLE firearm_types (
     -- offer it and no firearm of the type may hold a value.
     action_type_applies INTEGER NOT NULL DEFAULT 1 CHECK (action_type_applies IN (0, 1)),
     barrel_length_applies INTEGER NOT NULL DEFAULT 1 CHECK (barrel_length_applies IN (0, 1)),
-    capacity_applies INTEGER NOT NULL DEFAULT 1 CHECK (capacity_applies IN (0, 1))
+    capacity_applies INTEGER NOT NULL DEFAULT 1 CHECK (capacity_applies IN (0, 1)),
+    -- FR-002: 0 = the caliber is never derived from the cartridge, on the
+    -- form or on import. Read only where a caliber is derived. Nothing checks
+    -- it at save, because a derived caliber is stored like a typed one.
+    caliber_from_cartridge INTEGER NOT NULL DEFAULT 1 CHECK (caliber_from_cartridge IN (0, 1))
 );
 ```
 
 **Seed** (now with fixed ids, research.md §4):
 
-| id | name | generic_thumbnail_key | sort_order | action / barrel / capacity apply |
-|---:|---|---|---:|---|
-| 1 | Handgun | handgun | 1 | 1 / 1 / 1 |
-| 2 | Rifle | rifle | 2 | 1 / 1 / 1 |
-| 3 | Shotgun | shotgun | 3 | 1 / 1 / 1 |
-| 4 | Other | other | 5 | 1 / 1 / 1 |
-| 5 | **Suppressor** | **suppressor** | **4** | **0 / 0 / 0** |
+| id | name | generic_thumbnail_key | sort_order | action / barrel / capacity apply | caliber_from_cartridge |
+|---:|---|---|---:|---|---:|
+| 1 | Handgun | handgun | 1 | 1 / 1 / 1 | 1 |
+| 2 | Rifle | rifle | 2 | 1 / 1 / 1 | 1 |
+| 3 | Shotgun | shotgun | 3 | 1 / 1 / 1 | 1 |
+| 4 | Other | other | 5 | 1 / 1 / 1 | 1 |
+| 5 | **Suppressor** | **suppressor** | **4** | **0 / 0 / 0** | **0** |
 
 ### Rule: fields apply to the type (FR-003, FR-022, SC-005)
 
@@ -74,6 +78,21 @@ END;
 bypassed the command layer. 004's `firearms_action_allowed_*` triggers are
 unchanged. A Suppressor has no `firearm_type_actions` rows, which would allow
 every action, and this trigger is what refuses one.
+
+### Rule: a caliber is derived only for a type that derives it (FR-002, FR-022)
+
+A Suppressor's caliber is its bore and its cartridge the most powerful one
+it is rated for, so `caliber_from_cartridge` is 0 for it (research.md §15).
+Where the flag is 0:
+
+1. **The form** never fills, guesses or suggests the caliber from the
+   cartridge, and never prompts for one it couldn't work out.
+2. **Import** never derives a blank `caliber`. The row is an error instead,
+   even when `cartridge` is given.
+
+Caliber stays required for every type (001 FR-001). Nothing at save reads the
+flag, and no trigger backs it, because no stored value tells a derived
+caliber from a typed one.
 
 ## Entity: Action Type (extended)
 
@@ -195,8 +214,12 @@ its text into `firearms.registration_form`.
 
 ## Derived values (not stored)
 
-- **Caliber label**: "Caliber rating" when the type's name is Suppressor,
-  otherwise "Caliber" (FR-002). The frontend decides this from the type list.
+- **Cartridge label and the two hints**: the cartridge is labelled "Rated
+  cartridge" when the type's name is Suppressor, and "Cartridge" otherwise;
+  the caliber is "Caliber" for every type. For a Suppressor, the caliber's
+  hint is "The bore diameter." and the cartridge's "The most powerful
+  cartridge the suppressor is rated for." (FR-002). The frontend decides
+  this from the type list.
 - **Registration summary line** on the closed form section and in the record
   page's Registration panel (contracts/ui-registration.md §2, §4).
 - **Export disclosure flag**: whether any firearm in the export's scope has a
@@ -206,7 +229,8 @@ its text into `firearms.registration_form`.
 
 `FormState` gains `registrationClassId`, `registrationForm`,
 `registrationApproved` and `registeredTo`, and the last settled text of the
-two suggestion fields. Barrel length, capacity and the action stay in the
+two suggestion fields. Whether the caliber is derived is read from the type
+in effect on each transition, not stored (research.md §15). Barrel length, capacity and the action stay in the
 state while the type hides them, and are left out of the input at save when
 the type in effect omits them (research.md §2). `FORM_VERSION` becomes 3.
 
@@ -220,12 +244,14 @@ the type in effect omits them (research.md §2). `FORM_VERSION` becomes 3.
 | `registrationApproved` in the future or not a date (FR-010) | command, form, import | "Approved date can't be in the future." / "Approved date must be a date in YYYY-MM-DD format." (`registrationApproved`) |
 | `registrationForm`, `registeredTo` ≤ 100 characters, no control characters (004 FR-015) | command (create: all; update: changed only), form, import | "Form can be at most 100 characters.", "Registered to can't contain control characters." |
 | Import: `registered_as` not a known classification (FR-021) | import | "registered_as: unknown classification "…"" |
+| Import: blank `caliber` on a row whose type doesn't derive it, with a `cartridge` (FR-022) | import | "caliber: Caliber is required; a Suppressor's isn't worked out from its cartridge." (with no cartridge, 004's "caliber: Caliber is required.") |
 
 ## Relationship to 001, 002 and 004
 
-Amends 001's `FirearmType` (a fifth seeded type and the three flags), its
+Amends 001's `FirearmType` (a fifth seeded type and the four flags), its
 Firearm table (four columns, one check, two indexes), its FTS table, its
 `FirearmSummary` (`registeredAs`), and its seed file (type ids, the new
 action and its mappings, the classifications). Amends 004's action list and
-mapping and its FR-017 reading of "no rows" (a type can now omit the action
-entirely). 002's identity triggers and queries are untouched (FR-005).
+mapping, its FR-017 reading of "no rows" (a type can now omit the action
+entirely), and its derivation (FR-003, FR-005, FR-006, FR-025), which a type
+can now opt out of. 002's identity triggers and queries are untouched (FR-005).

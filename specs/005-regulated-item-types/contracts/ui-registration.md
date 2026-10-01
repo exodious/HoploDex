@@ -26,9 +26,21 @@ to [spec.md](../spec.md), and commands to
   - In the folded **Physical details** section, **Barrel length** and
     **Capacity** are not rendered. Overall length, weight, finish and
     condition stay. The closed section's summary omits the hidden fields.
-  - **Caliber** is labelled **Caliber rating**, with the hint "The largest
-    bore the suppressor is rated for." The Cartridge|Caliber row and 004's
-    derivation are otherwise unchanged (US1-7).
+  - **Cartridge** is labelled **Rated cartridge**, with the hint "The most
+    powerful cartridge the suppressor is rated for." and the placeholder
+    "e.g. .300 Winchester Magnum". It stays optional, and nothing prompts
+    for it when it is blank.
+  - **Caliber** keeps its label, with the hint "The bore diameter." and the
+    placeholder "e.g. .30". It stays required.
+  - **Nothing is derived** (US1-7, research.md §15): picking or typing a
+    rated cartridge never fills the caliber, marks a guess, shows "The
+    cartridge suggests …" or asks for a caliber it couldn't work out. The
+    Cartridge | Caliber row is otherwise 004's.
+- **Changing type to or from Suppressor** keeps the caliber on the form as
+  entered (FR-002). Changing to Suppressor drops a derived caliber's "From
+  the cartridge." or "Guessed …" hint and its Guess tag, so the value reads
+  as the owner's to check against the bore. Changing away derives an empty
+  caliber from the cartridge at once, and leaves a non-empty one as it is.
 - **Changing type to one that omits a recorded field** (US1-5, FR-004): a
   note appears under the Type select, in the same hint style as 004's
   cleared-action note: "A Suppressor has no action, barrel length or
@@ -119,8 +131,8 @@ own labels), "NFA", "pending" and "required".
 
 ## 4. The record page (FR-002, FR-018)
 
-- **Caliber rating** replaces the Caliber label in the title block for a
-  Suppressor.
+- **Rated cartridge** replaces the Cartridge label in the title block for a
+  Suppressor. Caliber keeps its label.
 - **Action**, **Barrel length** and **Capacity** are not listed for a
   Suppressor.
 - A **Registration** panel (`hd-panel`, after "Original maker's marks" and
@@ -258,8 +270,8 @@ styles):
 ## 10. Screens walk
 
 `e2e/screenshots/screens.e2e.ts` adds: the form with type Suppressor
-(Caliber rating, no Action, Physical details open without barrel length or
-capacity); the type-change clearing note; the Registration section closed
+(Caliber and Rated cartridge with their hints, no Action, Physical details
+open without barrel length or capacity); the type-change clearing note; the Registration section closed
 with a summary, open empty with only "Registered as", and open with all
 details and the Form list showing built-in names; the clear-classification
 confirmation; the record page's Registration panel; the guide at "Registered

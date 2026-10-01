@@ -121,12 +121,14 @@ Sources: [Brown v. ATF (Wikipedia)](https://en.wikipedia.org/wiki/Brown_v._ATF),
   ids that never change, and gives `firearm_types` a `sort_order` that lists
   them: 1 Handgun, 2 Rifle, 3 Shotgun, 4 Suppressor, 5 Other (the
   catch-all last). Suppressor keeps **id 5** and Other **id 4**, with drawing
-  key `suppressor`. The caliber is
-  labelled "Caliber rating" for a Suppressor on the form and the record
-  page. On the form it has the hint "The largest bore the suppressor is rated
-  for." The label and hint depend on the type's name being Suppressor, not on
-  a flag. That is a display choice for one seeded type, and it has no rule
-  behind it.
+  key `suppressor`. For a Suppressor the
+  cartridge is labelled "Rated cartridge" on the form and the record page,
+  and the caliber keeps its "Caliber" label. On the form the caliber has the
+  hint "The bore diameter." and the cartridge "The most powerful cartridge
+  the suppressor is rated for." These labels and hints depend on the type's
+  name being Suppressor, not on a flag: a display choice for one seeded type,
+  with no rule behind it. Whether the caliber is derived from the cartridge
+  is a rule, and that one is a flag (§15).
 - **The drawing**: a new `suppressor` entry in `DRAWINGS`
   (`src/features/browse/typeDrawings.ts`). It is a side elevation, mount end
   to the left, in the same 320×200 box and the same part/open/detail roles
@@ -362,6 +364,8 @@ offers a grouping choice, so there is nothing else to carry it to.
   - `registration_form` and `registered_to`: checked with
     `check_entry_text`, then snapped (catalog, the database's values when the
     import started, the sheet) and listed in `snappedValues` (FR-021).
+  - A Suppressor row with a blank `caliber` is a row error, even when it has
+    a `cartridge`: no caliber is derived for it (FR-022, §15).
   - FR-022: before `check_action_allowed`, a row whose type omits a field and
     has a value in it fails with a message naming the spreadsheet column:
     "action_type: Action doesn't apply to a Suppressor.",
@@ -404,7 +408,9 @@ offers a grouping choice, so there is nothing else to carry it to.
   registered", with two headed parts: the six origin examples, and
   **Registered items** with two examples:
   1. *Suppressor bought on a Form 4, registered to a trust*: type Suppressor;
-     caliber rating ".30"; registered as Suppressor; form "Form 4"; approved
+     caliber is its bore, ".30"; rated cartridge is the most powerful
+     cartridge it is rated for, ".300 Winchester Magnum"; registered as
+     Suppressor; form "Form 4"; approved
      is the date on the approved form; registered to the trust's name as it
      appears on the form; attach the approved form as a document.
   2. *Rifle made into a short-barreled rifle on a Form 1*: type stays Rifle;
@@ -449,3 +455,85 @@ offers a grouping choice, so there is nothing else to carry it to.
   value used only by deleted firearms is never suggested (FR-013, SC-007).
 - The export disclosure (§10) covers the one route by which details leave
   the database unencrypted. Backups stay encrypted (feature 003).
+
+## 15. A suppressor's caliber is its bore: derivation is a type flag (FR-002, FR-022)
+
+The clarification of 2026-09-30 makes a Suppressor's caliber its bore
+diameter, and its cartridge the most powerful (generally highest-pressure)
+cartridge it is rated for. Neither follows from the other. 004's derivation
+would give a .46 suppressor rated for .300 Winchester Magnum the caliber
+".30". This replaces §4's first reading, in which the caliber was a "caliber
+rating" derived from the cartridge like any other.
+
+- **Decision**: `firearm_types` gains a fourth flag,
+  `caliber_from_cartridge INTEGER NOT NULL DEFAULT 1 CHECK (… IN (0, 1))`.
+  Suppressor is seeded with 0, and every other type with 1.
+  `list_firearm_types` returns it as `caliberFromCartridge`. FR-002 asks for
+  exactly this: "a property of the type, like the fields that don't apply to
+  it". The default of 1 keeps 004's behavior for any type added later.
+- **Where it is read**: in the two places that derive a caliber, and nowhere
+  else.
+  1. **The form** (`caliberDerivation.ts`). The reducer is told whether the
+     type in effect derives. When it doesn't, a settled cartridge is
+     remembered but fills nothing. It offers no "The cartridge suggests …"
+     line and raises no "We couldn't work out a caliber" prompt, and leaving
+     an empty caliber derives nothing. That covers US1-7 for a new Suppressor
+     (the caliber stays empty) and for a saved one (nothing is suggested).
+  2. **Import** (`settle_row`). A row whose `firearm_type` names a type that
+     doesn't derive gets no caliber from its cartridge. A blank `caliber` on
+     such a row is a row error: "caliber: Caliber is required; a
+     Suppressor's isn't worked out from its cartridge." when a cartridge is
+     given, and 004's "caliber: Caliber is required." when none is (US4-7).
+     Such a row never appears in the report's `derivedCalibers`. The names of
+     the types that don't derive are loaded once when the import starts,
+     beside the snapping vocabularies, because `settle_row` runs before
+     `parse_row` and has no connection. They are matched as `parse_row`
+     matches the type, ignoring case. A row with an unknown type still
+     derives as before and fails in `parse_row` as before.
+- **No save check and no trigger**: a derived caliber is stored as an
+  ordinary caliber, indistinguishable from a typed one, and caliber is
+  required for every type. No stored state can break the rule, so
+  `create_firearm`, `update_firearm` and the database have nothing to check.
+  That is why this flag, unlike §2's, has no backstop.
+- **`settle_entry` is unchanged**: its `derivedCaliber` is what a cartridge
+  gives, which is a fact about the cartridge, not the firearm. The form
+  decides whether to apply it, from the type it already holds. Passing the
+  type to `settle_entry` was rejected: the form has to react to a type
+  change without settling the cartridge again, so the reducer needs the flag
+  anyway, and two places would then decide the same thing.
+- **Type changes** (FR-002, spec Edge Cases): the caliber on the form is kept
+  as entered either way.
+  - **To a type that doesn't derive**: the caliber's text stays. A non-empty
+    caliber becomes the owner's (edited), and its "From the cartridge." or
+    "Guessed …" hint, its Guess tag and any suggestion go. That leaves a plain
+    value for the owner to check against the bore, with the hint "The bore
+    diameter.".
+  - **To a type that does**: a non-empty caliber stays edited, so a later
+    cartridge change only suggests (004 FR-006). An empty one is derived at
+    once from the last settled cartridge, as 004's form already does when an
+    empty caliber is left.
+  `FormState` holds nothing new: whether the type derives is read from the
+  type list on each transition, so `FORM_VERSION` stays 3.
+- **Labels, hints and placeholders** are §4's display choice by type name.
+  The caliber keeps "Caliber", with the hint "The bore diameter." and the
+  placeholder "e.g. .30". The cartridge becomes "Rated cartridge", with the
+  hint "The most powerful cartridge the suppressor is rated for." in place of
+  "Optional. The exact round it's chambered for …", and the placeholder
+  "e.g. .300 Winchester Magnum". The spec gives the hint's exact words, so it
+  drops the "Optional." prefix. The field stays optional, and nothing prompts
+  for it. `caliberLabel` gives way to `cartridgeLabel`. The record page's
+  title block reads "Cartridge" → "Rated cartridge" and keeps "Caliber".
+- **Nothing else changes**: the spreadsheet keeps its `caliber` and
+  `cartridge` columns, and the owner knows what they mean for a Suppressor.
+  Grouping by Cartridge puts a Suppressor in its rated cartridge's group,
+  beside the firearms chambered in it (spec Assumptions), and search is
+  unchanged.
+- **Alternatives considered**:
+  - Testing the type's name in TypeScript and Rust (rejected: FR-002 makes
+    this a property of the type, and §3 removed the frontend's copy of the
+    type list for the same reason).
+  - Making the rated cartridge required for a Suppressor (rejected by the
+    clarification: an owner who doesn't know the rating leaves it blank).
+  - A separate `rated_cartridge` column (rejected: a second cartridge field
+    used by one type, outside 004's catalog and suggestions, and grouping by
+    Cartridge would no longer gather a suppressor with its firearms).

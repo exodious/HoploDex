@@ -9,8 +9,9 @@
 ## Summary
 
 **Suppressor** becomes a fifth firearm type, with its own drawing and no
-action type, barrel length or capacity. Its caliber is shown as "Caliber
-rating". Separately, any firearm can carry an optional **Registered as**
+action type, barrel length or capacity. Its caliber is its bore, and its
+cartridge, labelled "Rated cartridge", is the most powerful one it is rated
+for, so its caliber is never derived from its cartridge. Separately, any firearm can carry an optional **Registered as**
 classification from a fixed list: Suppressor, Short-barreled rifle,
 Short-barreled shotgun, Any other weapon, Machine gun, Destructive device.
 Once a classification is chosen, three optional details can be recorded: the
@@ -22,14 +23,16 @@ import.
 
 Technically, `firearm_types` gains three "applies" flags. A command-layer
 check, run before 004's action mapping, enforces them, with a trigger pair as
-the backstop (research.md §2). A new read command, `list_firearm_types`,
+the backstop (research.md §2). A fourth flag, `caliber_from_cartridge`,
+says whether a type's caliber is derived from its cartridge. The form and
+import read it, and Suppressor's is 0 (§15). A new read command, `list_firearm_types`,
 replaces the frontend's hard-coded type list (§3). Classifications are a
 seeded lookup table with fixed ids and an `offered` flag (§5).
 `list_registration_classes` exposes them, and any known classification is
 accepted on save and import. Registration is four columns on `firearms`, with
 a `CHECK` that the details need a classification (§6). Form and "Registered
 to" become two more `EntryField`s, so 004's suggestion, snapping and import
-machinery covers them unchanged. Five built-in form names act as the form's
+machinery covers them unchanged. Three built-in form names act as the form's
 catalog (§7). `list_firearms` gains two groupings, the FTS table three columns
 and the summary one field (§8).
 
@@ -55,8 +58,9 @@ React 18 (`src`), unchanged
 (already used by `Menu`) for the grouping menu's radio items
 
 **Storage**: The existing encrypted SQLCipher database:
-- `firearm_types` gains three flags and is seeded with fixed ids, adding
-  Suppressor (id 5).
+- `firearm_types` gains four flags (three "applies" flags and
+  `caliber_from_cartridge`) and is seeded with fixed ids, adding Suppressor
+  (id 5).
 - `action_types` gains id 13.
 - A new `registration_classes` table is seeded with six rows.
 - `firearms` gains four columns, one `CHECK`, two partial indexes and a
@@ -89,13 +93,15 @@ firearms. `suggest_entries` for the two new fields within 004's 50 ms
 - Record only (FR-014): no rule about what is regulated exists anywhere in
   code or data, and nothing reads barrel or overall length.
 - Saved classifications and details never change without an edit (FR-015).
+- A Suppressor's caliber is never derived from its cartridge, on the form
+  or on import (FR-002, FR-022).
 - Nothing is cleared silently: the form announces what a type change will
   clear, and asks before a cleared classification discards details.
 - Cipher settings are untouched.
 
 **Scale/Scope**: Four user stories (P1–P4) and 23 functional requirements.
 The schema gains 1 seeded type, 1 action, 1 new lookup table (6 rows),
-3 type flags, 4 firearm columns and 3 FTS columns. The interface gains
+4 type flags, 4 firearm columns and 3 FTS columns. The interface gains
 2 new read commands, 2 new entry fields, 4 spreadsheet columns, 2 group-by
 values, 1 new drawing, 3 new shared menu primitives and 0 new error codes
 
@@ -105,7 +111,7 @@ values, 1 new drawing, 3 new shared menu primitives and 0 new error codes
 
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
-| I. Code Quality | Lint/static analysis, review, small single-purpose modules, no speculative abstraction | No new layer or dependency. The fields rule is one function (`check_fields_apply`) plus a backstop, like 004's action rule. Registration reuses 004's `EntryField` machinery rather than a parallel suggestion path. The new `services::registration` module holds only the form names. The three type flags are the minimum the spec names: a general "omitted fields" table was rejected as speculative (research.md §2). The `offered` flag is required by FR-007 and tested by SC-004. `clippy`/`rustfmt`/`eslint`/`prettier` run locally (CI stays disabled by the owner's choice, an existing documented deviation) |
+| I. Code Quality | Lint/static analysis, review, small single-purpose modules, no speculative abstraction | No new layer or dependency. The fields rule is one function (`check_fields_apply`) plus a backstop, like 004's action rule. Registration reuses 004's `EntryField` machinery rather than a parallel suggestion path. The new `services::registration` module holds only the form names. The three "applies" flags are the minimum the spec names: a general "omitted fields" table was rejected as speculative (research.md §2). The fourth, `caliber_from_cartridge`, is the type property FR-002 asks for. It is read only where a caliber is derived, with no save check or trigger, because a derived caliber is stored like a typed one (§15). The `offered` flag is required by FR-007 and tested by SC-004. `clippy`/`rustfmt`/`eslint`/`prettier` run locally (CI stays disabled by the owner's choice, an existing documented deviation) |
 | II. Testing (NON-NEGOTIABLE) | Tests first, real persistence, one test per acceptance scenario, test isolation | Every acceptance scenario and success criterion maps to a named test in quickstart.md. Persistence, import and search tests run the real `ops` against a temporary SQLCipher database. Both backstops (the fields trigger and the details `CHECK`) are tested by raw SQL. Tests use throwaway databases only, and the seed tool keeps refusing the real data directory |
 | III. UX Consistency | One component set and pattern, WCAG 2.1 AA | The Registration section is a folded `Disclosure` like Origin and Physical details. Clearing uses the shared `ConfirmDialog`, worded like origin's discard. Form and Registered to use 004's `EntryField`. An unrecorded value is "Unspecified". The grouping control adds radio items to the shared `Menu` rather than a one-off widget, with `menuitemradio` roles and full keyboard use. The guide stays one dialog. Contract: [contracts/ui-registration.md](./contracts/ui-registration.md) |
 | IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | Grouping adds one `LEFT JOIN` on a six-row table to the existing list query. Search adds three trigram columns. The two new suggestion fields have partial indexes. `performance_test.rs` holds all three to the budgets at 10,000 firearms (research.md §7, §8) |
@@ -143,8 +149,10 @@ pointer at each amended anchor:
   FTS table, the spreadsheet columns and `FirearmSummary`.
 - In 002's: FR-006, FR-015, the Assumption on registration detail, and
   contracts/ui-identification.md §8, the guide.
-- In 004's: FR-017, FR-018, FR-024, the clarification on automatic fire, the
-  action seed and the `EntryField` list.
+- In 004's: FR-003, FR-005, FR-006 and FR-025 (no derivation for a
+  Suppressor), FR-017, FR-018, FR-024, the clarification on automatic fire,
+  the action seed, the `EntryField` list, and contracts/ui-entry.md §3 (the
+  caliber's derivation states).
 
 ### Source Code (repository root)
 
@@ -164,7 +172,8 @@ src-tauri/
 │   ├── models/
 │   │   ├── firearm.rs                # 4 fields on Firearm/FirearmInput; normalized(); validation
 │   │   │                             #  (details need a class, approved date, entry rules via ipc_name)
-│   │   ├── firearm_type.rs           # NEW: FirearmTypeInfo, FirearmTypesOutput (+ mod.rs)
+│   │   ├── firearm_type.rs           # NEW: FirearmTypeInfo (+ caliber_from_cartridge),
+│   │   │                             #  FirearmTypesOutput (+ mod.rs)
 │   │   └── registration.rs           # NEW: RegistrationClass, RegistrationClassesOutput
 │   ├── services/
 │   │   ├── entry_text.rs             # EntryField +RegistrationForm, +RegisteredTo; ipc_name();
@@ -177,11 +186,13 @@ src-tauri/
 │   │   │                             #  LIKE branch +3; class-id check
 │   │   ├── entries.rs                # list_firearm_types, list_registration_classes (+ ops)
 │   │   └── import_export.rs          # parse registered_as and details; FR-022 mapping to
-│   │                                 #  columns; settle_row covers the 2 new fields; export +4
+│   │                                 #  columns; settle_row covers the 2 new fields; export +4;
+│   │                                 #  settle_row derives no caliber for a Suppressor (§15)
 │   └── main.rs                       # register the two new commands
 ├── examples/human_seed.rs            # the records and import samples in quickstart.md
 └── tests/
-    ├── suppressor_test.rs            # NEW: US1, the fields rule and its trigger (SC-005)
+    ├── suppressor_test.rs            # NEW: US1, the fields rule and its trigger (SC-005),
+    │                                 #  caliber and rated cartridge, caliberFromCartridge
     ├── registration_test.rs          # NEW: US2, FR-008/FR-014 matrix (SC-002), SC-004, CHECK
     ├── action_type_test.rs           # + Automatic or select-fire, sort order, mapping
     ├── entry_suggestions_test.rs     # + form and Registered to suggestions, snapping, deletion
@@ -189,7 +200,8 @@ src-tauri/
     ├── list_firearms_test.rs         # + Suppressor group, group by registered_as / registered_to
     ├── fts_search_test.rs            # + registration search, short-query LIKE
     ├── identity_uniqueness_test.rs   # + a Suppressor, with and without a classification
-    ├── import_export_test.rs         # + US4, row errors, round trip, pre-feature sheet
+    ├── import_export_test.rs         # + US4, row errors (a Suppressor's blank caliber among
+    │                                 #  them), round trip, pre-feature sheet
     ├── export_test.rs                # + column order and values
     ├── deletion_wipe_test.rs         # + a unique Registered to leaves no bytes behind
     ├── disposition_reversal_test.rs  # + details kept through dispose and restore
@@ -211,11 +223,14 @@ src/
 │   │   ├── types.ts                  # registration fields; FirearmTypeInfo; RegistrationClass;
 │   │   │                             #  FIREARM_TYPE_OPTIONS removed; firearmTypeOption from store
 │   │   ├── firearmsService.ts        # listFirearmTypes, listRegistrationClasses
-│   │   ├── FirearmForm.tsx           # type-driven fields and clearing note; Caliber rating;
+│   │   ├── FirearmForm.tsx           # type-driven fields and clearing note; Rated cartridge
+│   │   │                             #  and the two hints; no derivation for a Suppressor;
 │   │   │                             #  Registration section and confirm; FORM_VERSION 3
-│   │   ├── FirearmRecordPage.tsx     # Caliber rating; hidden fields; Registration panel
+│   │   ├── caliberDerivation.ts      # derives only while the type's caliberFromCartridge
+│   │   ├── FirearmRecordPage.tsx     # Rated cartridge; hidden fields; Registration panel
 │   │   ├── IdentificationGuide.tsx   # renamed from OriginGuide.tsx; + Registered items part
-│   │   └── *.test.tsx                # FirearmForm, FirearmRecordPage, IdentificationGuide
+│   │   └── *.test.ts(x)              # FirearmForm, FirearmRecordPage, IdentificationGuide,
+│   │                                 #  caliberDerivation
 │   ├── browse/
 │   │   ├── typeDrawings.ts           # + suppressor drawing, with its source note
 │   │   ├── TypeDrawing.test.tsx      # NEW: every seeded key has a drawing
@@ -259,7 +274,8 @@ quickstart.md).*
   - the approved date (`checked_date`, already shared);
   - the entry rules and snapping (004's).
   The frontend reads the flags and classifications from the backend instead
-  of copying them. The only duplicated check is the `DateField`'s `max` for
+  of copying them. Whether a caliber is derived is one column that the form
+  and import both read, and neither names Suppressor. The only duplicated check is the `DateField`'s `max` for
   an immediate refusal, with the backend as the authority, as for the other
   dates. Still PASS.
 - **Testing**: each acceptance scenario and success criterion has a named
@@ -296,3 +312,11 @@ quickstart.md).*
   - The export note counts a classification alone as registration details
     (§10).
   - "Automatic or select-fire" sorts seventh, after the six common actions (§13).
+- **The clarification of 2026-09-30 came after implementation** (research.md
+  §15). A suppressor's caliber is its bore and its cartridge is the most
+  powerful one it is rated for. The built feature still labels the caliber
+  "Caliber rating" and derives it from the cartridge as for any type, so the
+  schema seed, `list_firearm_types`, the form, the record page, import, the
+  guide's example, the human seed, the E2E spec, their tests and the
+  screenshots all change. tasks.md doesn't list that work yet;
+  `/speckit-tasks` (or `/speckit-converge`) adds it.
