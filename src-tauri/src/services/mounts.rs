@@ -4,8 +4,9 @@
 //! walks are iterative, so a deep chain can't overflow the stack and a
 //! listing never asks the database a question per row (SC-007).
 //!
-//! Nothing here reads a kind, type, caliber or cartridge: no mount is ever
-//! judged by what the two records are (FR-011).
+//! No rule here reads a kind, type, caliber or cartridge: no mount is ever
+//! judged by what the two records are (FR-011). `labels` reads the type or
+//! kind name only to show it in a record's label.
 
 use std::collections::{HashMap, HashSet};
 

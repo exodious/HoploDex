@@ -234,7 +234,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     // Section labels are upper-cased by CSS, and getText() returns what's rendered.
     const blanket = (await policyCardText("InsE2E Blanket A")).toLowerCase();
     expect(blanket).toContain("blanket coverage");
-    expect(blanket).toContain("covers every firearm not scheduled individually");
+    expect(blanket).toContain("covers every firearm and accessory not scheduled individually");
 
     const rider = (await policyCardText("InsE2E Rider")).toLowerCase();
     expect(rider).toContain("scheduled individually");
@@ -327,7 +327,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
 
     await choose("Move to another policy");
     await selectOption("Move to", "InsE2E Rider Old");
-    await expect($('[role="alertdialog"]*=actually covers these firearms')).toExist();
+    await expect($('[role="alertdialog"]*=actually covers these records')).toExist();
     await clickButton("Delete policy");
     await waitForPolicyGone("InsE2E Rider");
 
@@ -376,7 +376,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await choose("Leave unscheduled");
     expect(await isButtonDisabled("Delete policy")).toBe(true);
 
-    await toggle("2 firearms will lose their scheduled coverage");
+    await toggle("2 records will lose their scheduled coverage");
     await clickButton("Delete policy");
     await waitForPolicyGone("InsE2E Rider Old");
   });

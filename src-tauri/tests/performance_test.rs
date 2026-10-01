@@ -916,8 +916,12 @@ fn seed_10k_accessories(conn: &Connection) -> Vec<i64> {
 }
 
 /// Runs `run`, prints its time for the pull request's performance note
-/// (`--nocapture`), and holds it to `budget_ms`.
+/// (`--nocapture`), and holds it to `budget_ms`. The budgets are the release
+/// build's (DEVELOPMENT.md, "Test"): an unoptimised build, which a plain
+/// `cargo test` is, gets three times the budget so that it still catches a
+/// scan gone quadratic.
 fn within<T>(what: &str, budget_ms: u128, run: impl FnOnce() -> T) -> T {
+    let budget_ms = if cfg!(debug_assertions) { budget_ms * 3 } else { budget_ms };
     let started = Instant::now();
     let result = run();
     let elapsed = started.elapsed();

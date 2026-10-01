@@ -47,6 +47,9 @@ export async function realClick(selector: string) {
   const el = await $(selector);
   await el.waitForExist();
   const middle = await browser.execute((element: HTMLElement) => {
+    // A click below the fold of a scrolling dialog lands on whatever is
+    // there instead (a form that grew a field pushed this one down).
+    element.scrollIntoView({ block: "center" });
     const r = element.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }, el);

@@ -184,8 +184,8 @@ describe("User Story 5 - Export and Import Records", () => {
     // Regression: the export dialog never offered the current results.
     await search("ImportE2E");
     await clickButton("Export");
-    await $(".hd-choice__label=Current results (2)").waitForExist();
-    await choose("Current results (2)");
+    await $(".hd-choice__label=Current results (2 firearms and 0 accessories)").waitForExist();
+    await choose("Current results (2 firearms and 0 accessories)");
     const filteredDir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-filtered-"));
     await fill("Save to folder", filteredDir);
     await clickButton("Export");
@@ -245,8 +245,8 @@ describe("User Story 5 - Export and Import Records", () => {
 
     await search("PhysE2E");
     await clickButton("Export");
-    await $(".hd-choice__label=Current results (1)").waitForExist();
-    await choose("Current results (1)");
+    await $(".hd-choice__label=Current results (1 firearm and 0 accessories)").waitForExist();
+    await choose("Current results (1 firearm and 0 accessories)");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-physical-"));
     await fill("Save to folder", dir);
     await clickButton("Export");
@@ -262,11 +262,15 @@ describe("User Story 5 - Export and Import Records", () => {
     );
     expect(row).toContain("5.25,8.5,38.5,7,Parkerized,Like new");
 
-    // Re-import the file as a different firearm, so it is added, not matched.
+    // Re-import the file as a different firearm, so it is added, not matched:
+    // with another make and model, and without the record ID, which a match
+    // would otherwise be made by (specs/006-accessory-links FR-019).
     const copyPath = path.join(dir, "copy.csv");
     fs.writeFileSync(
       copyPath,
-      contents.replace("PhysE2E,Colt,,PHYS-001", "PhysE2E,Copy,,PHYS-002"),
+      contents
+        .replace("PhysE2E,Colt,,PHYS-001", "PhysE2E,Copy,,PHYS-002")
+        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/, ""),
     );
     await search("");
     await importFile(copyPath);
