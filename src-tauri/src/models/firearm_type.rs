@@ -20,6 +20,6 @@ pub struct FirearmTypeInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirearmTypesOutput {
-    /// Every type, in id order.
+    /// Every type, in list order (`sort_order`): Other last.
     pub types: Vec<FirearmTypeInfo>,
 }

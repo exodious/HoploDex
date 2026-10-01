@@ -97,7 +97,7 @@ fn a_type_added_later_allows_every_action_and_a_renamed_type_keeps_its_mapping()
     let db = TestDb::new();
     db.conn
         .execute(
-            "INSERT INTO firearm_types (name, generic_thumbnail_key) VALUES ('Crossbow', 'other')",
+            "INSERT INTO firearm_types (name, generic_thumbnail_key, sort_order) VALUES ('Crossbow', 'other', 9)",
             [],
         )
         .unwrap();

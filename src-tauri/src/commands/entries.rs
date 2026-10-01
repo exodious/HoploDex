@@ -134,7 +134,7 @@ pub mod ops {
         Ok(ActionTypesOutput { actions, allowed_by_firearm_type })
     }
 
-    /// The fixed firearm types, by id, with the fields each omits (FR-001,
+    /// The fixed firearm types, in list order (`sort_order`), with the fields each omits (FR-001,
     /// FR-003; research.md §3): the frontend reads the list instead of
     /// copying it.
     pub fn list_firearm_types(conn: &Connection) -> Result<FirearmTypesOutput, CommandError> {
@@ -142,7 +142,7 @@ pub mod ops {
             .prepare(
                 "SELECT id, name, generic_thumbnail_key, action_type_applies,
                         barrel_length_applies, capacity_applies
-                 FROM firearm_types ORDER BY id",
+                 FROM firearm_types ORDER BY sort_order",
             )
             .map_err(CommandError::from_db)?;
         let types = stmt

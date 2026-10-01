@@ -70,7 +70,7 @@ fn every_table_is_housekeeping_or_tracks_changes() {
 const STEPS: &[(&str, &str)] = &[
     (
         "firearm_types insert",
-        "INSERT INTO firearm_types (id, name, generic_thumbnail_key) VALUES (9, 'Cannon', 'other')",
+        "INSERT INTO firearm_types (id, name, generic_thumbnail_key, sort_order) VALUES (9, 'Cannon', 'other', 9)",
     ),
     ("firearm_types update", "UPDATE firearm_types SET name = 'Big cannon' WHERE id = 9"),
     (

@@ -7,6 +7,8 @@ CREATE TABLE firearm_types (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     generic_thumbnail_key TEXT NOT NULL,
+    -- The list's order: Other, the catch-all, comes last.
+    sort_order INTEGER NOT NULL UNIQUE,
     -- specs/005-regulated-item-types FR-003: 0 = the field doesn't apply to
     -- this type: the form doesn't offer it and no firearm of the type may
     -- hold a value.

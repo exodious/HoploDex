@@ -16,7 +16,7 @@ to [spec.md](../spec.md), and commands to
 ## 1. Type-dependent fields on the firearm form (US1, FR-002 to FR-004)
 
 - **Type** stays the existing `ChoiceCards`, built from `list_firearm_types`
-  in id order: Handgun, Rifle, Shotgun, Other, **Suppressor**. Each card shows
+  in list order: Handgun, Rifle, Shotgun, **Suppressor**, Other. Each card shows
   its cropped `TypeDrawing`, the suppressor's included. With five cards at
   `minCardWidth` 140, the row wraps at narrow dialog widths, as
   `ChoiceCards` already allows. The screens walk checks both the wide and

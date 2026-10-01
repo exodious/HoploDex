@@ -1984,11 +1984,11 @@ describe("FirearmForm suppressor (US1)", () => {
     status: "active",
   } as Firearm;
 
-  it("offers the types in id order, Suppressor last", () => {
+  it("offers the types in list order, Suppressor before Other", () => {
     renderForm();
 
     const names = screen.getAllByRole("radio").map((radio) => radio.closest("label")?.textContent);
-    expect(names).toEqual(["Handgun", "Rifle", "Shotgun", "Other", "Suppressor"]);
+    expect(names).toEqual(["Handgun", "Rifle", "Shotgun", "Suppressor", "Other"]);
   });
 
   it("offers no Action, Barrel length or Capacity for a Suppressor, and says Caliber rating", async () => {

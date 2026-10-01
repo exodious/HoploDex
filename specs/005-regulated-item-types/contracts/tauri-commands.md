@@ -126,7 +126,7 @@ research.md §3).
       actionTypeApplies: boolean;
       barrelLengthApplies: boolean;
       capacityApplies: boolean;
-    }[];                            // by id
+    }[];                            // by sort_order: Other last
   };
   ```
 

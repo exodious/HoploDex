@@ -21,6 +21,8 @@ CREATE TABLE firearm_types (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     generic_thumbnail_key TEXT NOT NULL,
+    -- The list's order: Other, the catch-all, comes last.
+    sort_order INTEGER NOT NULL UNIQUE,
     -- FR-003: 0 = the field doesn't apply to this type: the form doesn't
     -- offer it and no firearm of the type may hold a value.
     action_type_applies INTEGER NOT NULL DEFAULT 1 CHECK (action_type_applies IN (0, 1)),
@@ -31,13 +33,13 @@ CREATE TABLE firearm_types (
 
 **Seed** (now with fixed ids, research.md §4):
 
-| id | name | generic_thumbnail_key | action / barrel / capacity apply |
-|---:|---|---|---|
-| 1 | Handgun | handgun | 1 / 1 / 1 |
-| 2 | Rifle | rifle | 1 / 1 / 1 |
-| 3 | Shotgun | shotgun | 1 / 1 / 1 |
-| 4 | Other | other | 1 / 1 / 1 |
-| 5 | **Suppressor** | **suppressor** | **0 / 0 / 0** |
+| id | name | generic_thumbnail_key | sort_order | action / barrel / capacity apply |
+|---:|---|---|---:|---|
+| 1 | Handgun | handgun | 1 | 1 / 1 / 1 |
+| 2 | Rifle | rifle | 2 | 1 / 1 / 1 |
+| 3 | Shotgun | shotgun | 3 | 1 / 1 / 1 |
+| 4 | Other | other | 5 | 1 / 1 / 1 |
+| 5 | **Suppressor** | **suppressor** | **4** | **0 / 0 / 0** |
 
 ### Rule: fields apply to the type (FR-003, FR-022, SC-005)
 

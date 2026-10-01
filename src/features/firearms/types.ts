@@ -178,7 +178,7 @@ export interface FirearmTypeInfo {
   capacityApplies: boolean;
 }
 
-/** `list_firearm_types`' output: every type, in id order. */
+/** `list_firearm_types`' output: every type, in list order (Other last). */
 export interface FirearmTypesOutput {
   types: FirearmTypeInfo[];
 }

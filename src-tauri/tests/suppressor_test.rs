@@ -30,20 +30,20 @@ fn field_error(err: &CommandError, field: &str) -> Option<String> {
 
 #[test]
 fn the_type_list_has_five_types_and_suppressor_omits_three_fields() {
-    // US1-1, FR-001.
+    // US1-1, FR-001. Listed in `sort_order`, which puts Other last.
     let db = TestDb::new();
     let output = entry_ops::list_firearm_types(&db.conn).unwrap();
     let names: Vec<&str> = output.types.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["Handgun", "Rifle", "Shotgun", "Other", "Suppressor"]);
+    assert_eq!(names, ["Handgun", "Rifle", "Shotgun", "Suppressor", "Other"]);
     let ids: Vec<i64> = output.types.iter().map(|t| t.id).collect();
-    assert_eq!(ids, [1, 2, 3, 4, 5]);
+    assert_eq!(ids, [1, 2, 3, 5, 4]);
     for t in &output.types {
         let omits = t.id == SUPPRESSOR;
         assert_eq!(t.action_type_applies, !omits, "{}", t.name);
         assert_eq!(t.barrel_length_applies, !omits, "{}", t.name);
         assert_eq!(t.capacity_applies, !omits, "{}", t.name);
     }
-    let suppressor = &output.types[4];
+    let suppressor = &output.types[3];
     assert_eq!(suppressor.generic_thumbnail_key, "suppressor");
 
     let json = serde_json::to_value(suppressor).unwrap();
