@@ -360,16 +360,7 @@ quickstart.md).*
 
 **Result**: PASS. The design introduces no new violations.
 
-## Findings to confirm with the user
-
-Open:
-
-- **Acquisition source suggestions** (research.md §16): FR-003 says an
-  accessory's acquisition source offers suggestions and snaps. A firearm's
-  never has. The plan keeps it plain text on both forms, for consistency,
-  and proposes dropping "acquisition source" from FR-003's suggestion list.
-  The alternative, adding suggestions to both forms, is a firearm change
-  this spec doesn't list among its amendments.
+## Findings confirmed with the user
 
 Confirmed by the owner on 2026-10-01:
 
@@ -383,6 +374,10 @@ Confirmed by the owner on 2026-10-01:
   the record being disposed itself.
 - **Identifier format for #53** (research.md §6): a lowercase v4 UUID, which
   #53 should adopt for its other tables.
+- **Acquisition source stays plain text** (research.md §16): on both forms,
+  with no suggestions or snapping, and FR-003 is amended to say so (the
+  serial number too). The field itself is examined for both kinds of
+  record in issue #55.
 - **No special case for exports made before this feature** (research.md
   §18): until the first release there are none, so a missing `mounted_on`
   column reads as blank, like any missing column.

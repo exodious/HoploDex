@@ -435,16 +435,17 @@ stays readable at any depth without assuming an indent per level (FR-013).
     `derive_caliber`, on the form and on import, for every kind. There is no
     per-kind `caliber_from_cartridge` flag, because no kind's caliber means
     anything else (FR-003).
-- **Spec conflict, flagged**: FR-003 also lists **acquisition source** among
-  the fields that offer suggestions and snap, "from firearms and accessories
-  together". A firearm's acquisition source has never had suggestions or
-  entry rules: it is plain text in `FirearmForm` and not an `EntryField`.
-  Giving the accessory form suggestions the firearm form lacks would break
-  constitution III, and giving them to both would change firearm behavior
-  that this spec doesn't list among its amendments. **The plan treats
-  acquisition source on an accessory exactly as on a firearm: plain text,
-  trimmed, blank stored as null.** plan.md asks the user to confirm and,
-  if agreed, to drop "acquisition source" from FR-003's suggestion list.
+- **Acquisition source and serial number stay plain text** (resolved with
+  the owner, 2026-10-01). FR-003 first listed acquisition source among the
+  fields that suggest and snap, and both it and the serial number among
+  those under 004's entry rules. A firearm's have never had either: they
+  are plain text in `FirearmForm` and not `EntryField`s. Giving the
+  accessory form behavior the firearm form lacks would break constitution
+  III, and changing the firearm form is outside this spec. So both are
+  plain text on an accessory, trimmed, blank stored as null, exactly as on
+  a firearm, and FR-003 now says so. Whether "acquisition source" is the
+  right field at all, and whether it should suggest, is examined for both
+  kinds of record in issue #55.
 
 ## 17. Spreadsheet: two tables, recognised by header
 
