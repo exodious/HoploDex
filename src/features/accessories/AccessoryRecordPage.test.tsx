@@ -627,3 +627,73 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     expect(within(dialog).getByRole("button", { name: /clear|×/i })).toBeInTheDocument();
   });
 });
+
+// specs/006-accessory-links User Story 3 (contracts/ui-accessories.md §8,
+// US3-5, US3-9): the delete confirmation names what stays behind, unmounted.
+describe("AccessoryRecordPage delete confirmation with mounted records (US3)", () => {
+  const label = (id: number, make: string, model: string, typeName: string): RecordLabel => ({
+    record: { kind: "accessory", id },
+    make,
+    model,
+    nickname: null,
+    typeName,
+    serialNumber: null,
+    status: "active",
+  });
+  const light = label(14, "SureFire", "M600", "Light or laser");
+  const cap = label(15, "SureFire", "Cap", "Other");
+  const grip = label(16, "Magpul", "Grip", "Other");
+  const host = { kind: "accessory", id: 3 } as const;
+
+  async function openDelete() {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+    return await screen.findByRole("alertdialog");
+  }
+
+  it("lists the records mounted directly on it, and not those further down", async () => {
+    getAccessory.mockResolvedValue({
+      ...optic,
+      mount: {
+        chain: [],
+        mounted: [
+          { label: light, host, depth: 1 },
+          { label: cap, host: light.record, depth: 2 },
+          { label: grip, host, depth: 1 },
+        ],
+      },
+    });
+
+    const dialog = await openDelete();
+
+    expect(dialog).toHaveTextContent(
+      "2 records mounted on it will stay in the collection, unmounted:",
+    );
+    const items = within(within(dialog).getByRole("list")).getAllByRole("listitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      "SureFire M600 · Light or laser",
+      "Magpul Grip · Other",
+    ]);
+    expect(dialog).not.toHaveTextContent("SureFire Cap");
+    expect(dialog).toHaveTextContent("This erases the record entirely");
+  });
+
+  it("says '1 record' for one", async () => {
+    getAccessory.mockResolvedValue({
+      ...optic,
+      mount: { chain: [], mounted: [{ label: light, host, depth: 1 }] },
+    });
+
+    expect(await openDelete()).toHaveTextContent(
+      "1 record mounted on it will stay in the collection, unmounted:",
+    );
+  });
+
+  it("leaves the wording unchanged when nothing is mounted on it", async () => {
+    const dialog = await openDelete();
+
+    expect(dialog).not.toHaveTextContent(/stay in the collection/);
+    expect(within(dialog).queryByRole("list")).not.toBeInTheDocument();
+  });
+});

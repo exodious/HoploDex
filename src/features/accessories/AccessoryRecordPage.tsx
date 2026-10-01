@@ -12,12 +12,14 @@ import { DisposeDialog } from "../firearms/DisposeDialog";
 import { Fact, PlateFigure, TextBlock, TitleCell } from "../firearms/FirearmRecordPage";
 import { RestoreDialog } from "../firearms/RestoreDialog";
 import { dispositionLabel } from "../firearms/types";
-import type { DisposeFirearmInput, ReverseDispositionInput } from "../firearms/types";
+import type { DisposeInput, ReverseDispositionInput } from "../firearms/types";
 import { CoverageDialog } from "../insurance/CoverageDialog";
 import { coverageStatus, expiryLabel } from "../insurance/coverage";
 import type { AssignCoverageInput } from "../insurance/types";
 import { DocumentList } from "../media/DocumentList";
 import { PhotoGallery } from "../media/PhotoGallery";
+import { DeleteMountedNote } from "../mounts/DeleteMountedNote";
+import { directlyMounted } from "../mounts/directlyMounted";
 import { MountedOnChain } from "../mounts/MountedOnChain";
 import { MountedSection } from "../mounts/MountedSection";
 import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
@@ -150,7 +152,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
     await afterChange(updated, `Saved changes to ${name}.`);
   }
 
-  async function handleDispose(input: DisposeFirearmInput) {
+  async function handleDispose(input: DisposeInput) {
     const updated = await accessoriesService.disposeAccessory(id, input);
     await afterChange(
       updated,
@@ -440,6 +442,8 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
         onOpenChange={(isOpen) => !isOpen && setDialog(null)}
         accessory={accessory}
         onDispose={handleDispose}
+        mount={accessory.mount}
+        onMountChanged={refresh}
       />
 
       <RestoreDialog
@@ -473,7 +477,11 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
         }
         confirmLabel="Delete accessory"
         onConfirm={handleDelete}
-      />
+      >
+        {directlyMounted(accessory.mount.mounted).length > 0 && (
+          <DeleteMountedNote mounted={accessory.mount.mounted} />
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

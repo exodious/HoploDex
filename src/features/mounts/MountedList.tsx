@@ -1,9 +1,9 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
 import { recordKey } from "./recordKey";
-import { recordNameText } from "./recordNames";
+import { recordNameWithType } from "./recordNames";
 import { RecordName } from "./RecordName";
-import type { MountedEntry, RecordLabel } from "./types";
+import type { MountedEntry } from "./types";
 import "./mounts.css";
 
 // specs/006-accessory-links research.md §14, contracts/ui-accessories.md §5:
@@ -24,13 +24,6 @@ export interface MountedListProps {
   actions?: (entry: MountedEntry) => ReactNode;
   /** Content under an entry, indented with it. */
   detail?: (entry: MountedEntry) => ReactNode;
-}
-
-/** A name as the list shows it: a firearm's type follows after a dot, as an
- * accessory's kind already does (FR-005). */
-function nameWithType(label: RecordLabel): string {
-  const name = recordNameText(label);
-  return label.record.kind === "firearm" ? `${name} · ${label.typeName}` : name;
 }
 
 export function MountedList({ entries, label, links = true, actions, detail }: MountedListProps) {
@@ -62,7 +55,7 @@ export function MountedList({ entries, label, links = true, actions, detail }: M
             </div>
             {host && (
               <p className="hd-mounted__on" id={onId}>
-                on {nameWithType(host)}
+                on {recordNameWithType(host)}
               </p>
             )}
             {detail?.(entry)}

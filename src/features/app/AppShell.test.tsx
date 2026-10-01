@@ -10,6 +10,7 @@ import type { SessionState } from "../session/sessionStore";
 import { peekResumedDraft, setResumedDraft } from "../session/usePendingDraft";
 import type { Draft } from "../databases/types";
 import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
+import { FORM_VERSION as DISPOSE_FORM_VERSION } from "../firearms/DisposeDialog";
 import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
@@ -495,12 +496,14 @@ describe("Resumed pending changes open where their form is (FR-039)", () => {
   };
 
   /** Each form keeps drafts of its own version; the firearm form's is
-   * `FIREARM_FORM_VERSION`, the others' 1. */
+   * `FIREARM_FORM_VERSION`, the others' 1 (the dispose dialog's, its own). */
   function resume(draft: Omit<Draft, "formVersion" | "label">) {
     const formVersion =
       draft.kind === "firearm" && (draft.mode === "add" || draft.mode === "edit")
         ? FIREARM_FORM_VERSION
-        : 1;
+        : draft.mode === "dispose"
+          ? DISPOSE_FORM_VERSION
+          : 1;
     setResumedDraft({ formVersion, label: "Colt Python", ...draft });
   }
 
@@ -661,9 +664,14 @@ describe("Resumed accessory pending changes open where their form is (FR-027, FR
   });
   afterEach(() => setResumedDraft(null));
 
-  /** Each accessory form and dialog keeps drafts of version 1. */
+  /** Each accessory form and dialog keeps drafts of version 1, the dispose
+   * dialog's of its own. */
   function resume(draft: Omit<Draft, "formVersion" | "label">, label = `${OPTIC} (edit)`) {
-    setResumedDraft({ formVersion: 1, label, ...draft });
+    setResumedDraft({
+      formVersion: draft.mode === "dispose" ? DISPOSE_FORM_VERSION : 1,
+      label,
+      ...draft,
+    });
   }
 
   it("a new accessory reopens the add form with the changes", async () => {

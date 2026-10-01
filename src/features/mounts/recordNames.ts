@@ -34,3 +34,10 @@ export function recordNameText(label: {
   const name = `${label.make ?? ""} ${label.model ?? ""}`.trim();
   return label.nickname ? `${name} “${label.nickname}”` : name;
 }
+
+/** {@link recordNameText}, with a firearm's type after a dot as an accessory's
+ * kind already is (FR-005): the name lists show a record by. */
+export function recordNameWithType(label: Parameters<typeof recordNameText>[0]): string {
+  const name = recordNameText(label);
+  return label.record.kind === "firearm" ? `${name} · ${label.typeName}` : name;
+}

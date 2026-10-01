@@ -13,7 +13,10 @@ import type { RecordLabel, RecordRef } from "./types";
 export interface MountChooserProps {
   /** What is chosen now; `null` = not mounted. */
   value: RecordLabel | null;
-  onChange: (label: RecordLabel | null) => void;
+  /** `mountedOn` is where a chosen candidate is mounted now (`null` when
+   * nowhere), for the question a move needs (§5); it is not passed when the
+   * field is cleared. */
+  onChange: (label: RecordLabel | null, mountedOn?: RecordLabel | null) => void;
   /** The record being placed (role "host": left out of the list with
    * everything mounted on it; `null` for a new record), or the record
    * receiving the choice (role "item"). */
@@ -23,6 +26,8 @@ export interface MountChooserProps {
   role?: "host" | "item";
   /** The field's label; "Mounted on" unless the dialog says otherwise. */
   label?: string;
+  /** What the empty field says; "Not mounted" unless the dialog says otherwise. */
+  placeholder?: string;
   hint?: string;
   error?: string;
   id?: string;
@@ -49,6 +54,7 @@ export function MountChooser({
   record,
   role = "host",
   label = "Mounted on",
+  placeholder = "Not mounted",
   hint,
   error,
   id,
@@ -56,7 +62,7 @@ export function MountChooser({
   // The text typed since the field was last settled; `null` shows `value`.
   const [typed, setTyped] = useState<string | null>(null);
   const typedNow = useRef<string | null>(null);
-  const candidates = useRef(new Map<string, RecordLabel>());
+  const candidates = useRef(new Map<string, MountCandidate>());
   const text = typed ?? (value ? recordNameText(value) : "");
 
   function setTypedText(next: string | null) {
@@ -68,9 +74,10 @@ export function MountChooser({
     // The field showing the chosen name is not a search for it.
     const query = typedNow.current === null ? "" : searched.trim();
     const { candidates: found } = await listMountCandidates({ role, record, query });
-    const rows: ComboboxOption[] = found.map(({ label: candidate, mountedOn }: MountCandidate) => {
+    const rows: ComboboxOption[] = found.map((entry: MountCandidate) => {
+      const { label: candidate, mountedOn } = entry;
       const key = candidateKey(candidate);
-      candidates.current.set(key, candidate);
+      candidates.current.set(key, entry);
       return {
         key,
         value: recordNameText(candidate),
@@ -85,7 +92,9 @@ export function MountChooser({
 
   function pick(key: string) {
     setTypedText(null);
-    onChange(key === NOT_MOUNTED_KEY ? null : (candidates.current.get(key) ?? null));
+    const picked = key === NOT_MOUNTED_KEY ? undefined : candidates.current.get(key);
+    if (picked) onChange(picked.label, picked.mountedOn);
+    else onChange(null);
   }
 
   return (
@@ -93,7 +102,7 @@ export function MountChooser({
       id={id}
       label={label}
       value={text}
-      placeholder="Not mounted"
+      placeholder={placeholder}
       hint={hint}
       error={error}
       loadOptions={loadOptions}

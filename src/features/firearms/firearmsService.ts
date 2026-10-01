@@ -1,7 +1,7 @@
 import { invoke } from "../../services/tauriClient";
 import type {
   ActionTypesOutput,
-  DisposeFirearmInput,
+  DisposeInput,
   EntryFieldName,
   Firearm,
   FirearmDetail,
@@ -26,7 +26,7 @@ export function updateFirearm(
   return invoke<Firearm>("update_firearm", { id, input, confirmedWarnings });
 }
 
-export function disposeFirearm(id: number, input: DisposeFirearmInput): Promise<Firearm> {
+export function disposeFirearm(id: number, input: DisposeInput): Promise<Firearm> {
   return invoke<Firearm>("dispose_firearm", { id, input });
 }
 

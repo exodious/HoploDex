@@ -21,6 +21,10 @@ import { realClick, realKey } from "../support/realInput";
  * right, and WebDriver's own keys don't pass through GTK. See "Real keyboard
  * and mouse input" in DEVELOPMENT.md.
  *
+ * User Story 3 follows in the same session: the Rifle, carrying an Optic and
+ * the AR (which carries the Suppressor), is marked disposed from the keyboard
+ * with the Optic disposed with it (US3-1, US3-2).
+ *
  * The records are made first, through the Add firearm dialog (not timed); a
  * real click on a page's heading then puts real focus on the page, and from
  * there the keys alone do the work.
@@ -155,6 +159,40 @@ async function searchMountDialog(text: string) {
   await typeReal(text);
 }
 
+/** Back to the collection by key: Shift+Tab from the heading to Back. */
+async function backToCollectionByKeys() {
+  await realClick("#record-name");
+  for (let step = 0; step < 12; step++) {
+    await realKey("Shift_L+Tab");
+    const onBack = await browser.execute(() =>
+      document.activeElement?.classList.contains("hd-backlink"),
+    );
+    if (onBack) break;
+  }
+  await realKey("Return");
+  await $(".hd-row__name").waitForExist({ timeout: 8000 });
+}
+
+/** The name of the radio group the focused radio button is in (a group's
+ * label, or what labels it), or null when focus is elsewhere. */
+const focusedRadioGroup = () =>
+  browser.execute(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (active?.getAttribute("type") !== "radio") return null;
+    const group = active.closest('[role="radiogroup"]');
+    const id = group?.getAttribute("aria-labelledby");
+    return id ? (document.getElementById(id)?.textContent ?? "").trim() : null;
+  });
+
+/** Presses Tab until a radio button in the group named `group` has focus. */
+async function tabToRadioGroup(group: string) {
+  for (let step = 0; step < 30; step++) {
+    if ((await focusedRadioGroup())?.startsWith(group)) return;
+    await realKey("Tab");
+  }
+  throw new Error(`Tab never reached the "${group}" choice`);
+}
+
 /** Opens a firearm's record from the collection list with keys: Tab to its
  * name and press Enter. */
 async function openFirearmByKeys(name: string) {
@@ -180,6 +218,12 @@ async function openFirearmByKeys(name: string) {
   }
   throw new Error(`Tab never reached "${name}" in the list`);
 }
+
+/** The text of the page's title block, spaces collapsed. */
+const titleBlockText = () =>
+  browser.execute(() =>
+    (document.querySelector(".hd-titleblock")?.textContent ?? "").replace(/\s+/g, " "),
+  );
 
 const RIFLE: NewFirearm = {
   make: "LaRue",
@@ -259,17 +303,7 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
     await mountedSectionShows("SilencerCo Omega 300");
     expect(await mountedSectionText()).toContain("Nikon P3 · Optic");
 
-    // Back to the collection by key: Shift+Tab from the heading to Back.
-    await realClick("#record-name");
-    for (let step = 0; step < 12; step++) {
-      await realKey("Shift_L+Tab");
-      const onBack = await browser.execute(() =>
-        document.activeElement?.classList.contains("hd-backlink"),
-      );
-      if (onBack) break;
-    }
-    await realKey("Return");
-    await $(".hd-row__name").waitForExist({ timeout: 8000 });
+    await backToCollectionByKeys();
 
     // Open the AR and mount the Suppressor on it. It is mounted on the Rifle,
     // so the dialog lists it with where it is, and moving it asks first.
@@ -277,7 +311,15 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
     await openMountMenu(1);
     await searchMountDialog("omeg");
     await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
-    expect(await $('[role="listbox"]').getText()).toContain("Mounted on LaRue PredatAR");
+    // The text, not WebDriver's getText: WebKitGTK's leaves out the name and
+    // the "Mounted on" line of a row (both ellipsised) that are plainly shown.
+    await browser.waitUntil(
+      async () =>
+        (
+          await browser.execute(() => document.querySelector('[role="listbox"]')?.textContent ?? "")
+        ).includes("Mounted on LaRue PredatAR"),
+      { timeout: 5000, timeoutMsg: "the Suppressor's row never said where it is mounted" },
+    );
     await chooseSuggestion("SilencerCo Omega 300");
 
     const ask = await $('[role="alertdialog"]');
@@ -292,5 +334,98 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
 
     await mountedSectionShows("SilencerCo Omega 300");
     expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+  });
+});
+
+describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-links)", () => {
+  it("marks the Rifle disposed with its Optic, from the keyboard, and leaves the rest unmounted (US3-1, US3-2)", async () => {
+    // Setup, not timed: the Rifle carries the Optic already; mount the AR on
+    // it too, so that the AR (with the Suppressor on it) can be kept.
+    await backToCollectionByKeys();
+    await openFirearmByKeys("LaRue PredatAR");
+    await openMountMenu(1);
+    await searchMountDialog("ddm");
+    await chooseSuggestion("Daniel Defense DDM4");
+    await mountedSectionShows("Daniel Defense DDM4");
+    await mountedSectionShows("SilencerCo Omega 300");
+    expect(await mountedSectionText()).toContain("Nikon P3 · Optic");
+
+    const started = Date.now();
+    await realClick("#record-name");
+    await tabToControl("Mark disposed");
+    await realKey("Return");
+    await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
+
+    // The Rifle is not mounted, so no unmount note; the Mounted group lists
+    // all three, each defaulting to Keep.
+    const dialogText = (await $('[role="dialog"]').getText()).replace(/\s+/g, " ");
+    expect(dialogText).not.toContain("will be unmounted from");
+    expect(dialogText).toContain("Nikon P3 · Optic");
+    expect(dialogText).toContain("Kept records mounted on LaRue PredatAR will be unmounted.");
+
+    await tabToRadioGroup("What happened");
+    await realKey("space");
+    await tabTo("Transferred to");
+    await typeReal("Jane Doe");
+    await tabTo("Price received");
+    await typeReal("2500");
+
+    // The Optic's row: arrow to Dispose with it, then its price.
+    await tabToRadioGroup("Nikon P3 · Optic");
+    await realKey("Right");
+    await tabTo("Price for Nikon P3 · Optic");
+    await typeReal("150");
+    // Enter in the last field confirms.
+    await realKey("Return");
+
+    await browser.waitUntil(async () => (await titleBlockText()).includes("Sold"), {
+      timeout: 8000,
+      timeoutMsg: "the Rifle never showed as sold",
+    });
+    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+
+    // The Rifle's page has no Mounted section any more.
+    expect(await mountedSectionText()).toBe("");
+
+    // The Optic is disposed, with the Rifle's recipient and its own price.
+    await browser.execute(() => {
+      [...document.querySelectorAll<HTMLElement>(".hd-tab")]
+        .find((t) => t.textContent?.trim().startsWith("Accessories"))
+        ?.click();
+    });
+    // Every accessory is disposed, so none is listed until they are included.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() =>
+          [...document.querySelectorAll<HTMLElement>("button")].some((b) =>
+            /^Include \d+ disposed accessor/.test(b.textContent?.trim() ?? ""),
+          ),
+        ),
+      { timeout: 8000, timeoutMsg: "the Accessories page never offered its disposed accessory" },
+    );
+    expect(await $$(".hd-row--disposed").length).toBe(0);
+    await browser.execute(() => {
+      [...document.querySelectorAll<HTMLElement>("button")]
+        .find((b) => /^Include \d+ disposed accessor/.test(b.textContent?.trim() ?? ""))
+        ?.click();
+    });
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(() => document.querySelectorAll(".hd-row--disposed").length)) === 1,
+      { timeout: 8000, timeoutMsg: "the Optic never showed as disposed" },
+    );
+    expect(await $(".hd-row--disposed").getText()).toContain("Nikon P3");
+
+    // The AR was kept: unmounted from the Rifle, still carrying the Suppressor.
+    await browser.execute(() => {
+      [...document.querySelectorAll<HTMLElement>(".hd-tab")]
+        .find((t) => t.textContent?.trim().startsWith("Collection"))
+        ?.click();
+    });
+    await $(".hd-row__name").waitForExist({ timeout: 8000 });
+    await openFirearmByKeys("Daniel Defense DDM4");
+    expect(await $(".hd-plate__mounted").isExisting()).toBe(false);
+    expect(await mountedSectionText()).toContain("SilencerCo Omega 300");
+    expect(await mountedSectionText()).not.toContain("Nikon P3");
   });
 });

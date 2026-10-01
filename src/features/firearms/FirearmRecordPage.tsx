@@ -19,6 +19,8 @@ import type { AssignCoverageInput } from "../insurance/types";
 import { DocumentList } from "../media/DocumentList";
 import * as mediaService from "../media/mediaService";
 import { PhotoGallery } from "../media/PhotoGallery";
+import { DeleteMountedNote } from "../mounts/DeleteMountedNote";
+import { directlyMounted } from "../mounts/directlyMounted";
 import { MountedOnChain } from "../mounts/MountedOnChain";
 import { MountedSection } from "../mounts/MountedSection";
 import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
@@ -37,7 +39,7 @@ import {
   originLabel,
 } from "./types";
 import type {
-  DisposeFirearmInput,
+  DisposeInput,
   Firearm,
   FirearmDetail,
   FirearmInput,
@@ -166,7 +168,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     await afterChange(updated, `Saved changes to ${firearmName(updated)}.`);
   }
 
-  async function handleDispose(input: DisposeFirearmInput) {
+  async function handleDispose(input: DisposeInput) {
     const updated = await firearmsService.disposeFirearm(id, input);
     await afterChange(
       updated,
@@ -538,6 +540,8 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         onOpenChange={(open) => !open && setDialog(null)}
         firearm={firearm}
         onDispose={handleDispose}
+        mount={firearm.mount}
+        onMountChanged={refresh}
       />
 
       <RestoreDialog
@@ -571,7 +575,11 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         }
         confirmLabel="Delete firearm"
         onConfirm={handleDelete}
-      />
+      >
+        {directlyMounted(firearm.mount.mounted).length > 0 && (
+          <DeleteMountedNote mounted={firearm.mount.mounted} />
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

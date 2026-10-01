@@ -170,11 +170,16 @@ export interface SettleEntryOutput {
   derivedCaliber: DerivedCaliber | null;
 }
 
-export interface DisposeFirearmInput {
+/** `dispose_firearm`'s and `dispose_accessory`'s input (006 contracts/tauri-commands.md). */
+export interface DisposeInput {
   dispositionType: DispositionType;
   recipient: string;
   date: string;
+  /** The record's own price, required as before. */
   price: number;
+  /** Records mounted below it that are disposed with it, each with its own
+   * optional price (`null`: none was received). Default none. */
+  withMounted?: { record: RecordRef; price: number | null }[];
 }
 
 /** specs/005-regulated-item-types FR-001/FR-003. Mirrors `FirearmTypeInfo` in

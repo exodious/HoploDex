@@ -2,7 +2,7 @@
 // "Accessories (new)"; the screens that use them are in contracts/ui-accessories.md.
 
 import { invoke } from "../../services/tauriClient";
-import type { DisposeFirearmInput } from "../firearms/types";
+import type { DisposeInput } from "../firearms/types";
 import type {
   Accessory,
   AccessoryDetail,
@@ -33,8 +33,8 @@ export function listAccessories(input: ListAccessoriesInput): Promise<ListAccess
   return invoke<ListAccessoriesOutput>("list_accessories", { input });
 }
 
-/** The same input a firearm's disposal takes (`withMounted` arrives with User Story 3). */
-export function disposeAccessory(id: number, input: DisposeFirearmInput): Promise<Accessory> {
+/** The same input a firearm's disposal takes (`withMounted` included). */
+export function disposeAccessory(id: number, input: DisposeInput): Promise<Accessory> {
   return invoke<Accessory>("dispose_accessory", { id, input });
 }
 

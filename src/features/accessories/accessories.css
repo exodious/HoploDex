@@ -1,1 +1,10 @@
 /* Styles for the accessory list, form and detail screens: contracts/ui-accessories.md. */
+
+/* A host group's heading names which of two same-named hosts it means
+ * (contracts/ui-accessories.md §2): muted, in the body face. */
+.hd-group__serial {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--ink-2);
+}

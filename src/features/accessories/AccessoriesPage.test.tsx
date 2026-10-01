@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -9,11 +9,16 @@ import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
 import { AccessoriesPage } from "./AccessoriesPage";
 import type { RecordLabel } from "../mounts/types";
-import type { AccessoryGroup, AccessorySummary, ListAccessoriesInput } from "./types";
+import type {
+  AccessoryGroup,
+  AccessoryGroupBy,
+  AccessorySummary,
+  ListAccessoriesInput,
+} from "./types";
 
 // specs/006-accessory-links User Story 1, contracts/ui-accessories.md §2.
-// Search and grouping are User Story 4's; this is the plain list and tiles,
-// and at the end the Mounted on column and tile line (User Story 2, §2).
+// This is the plain list and tiles, then the Mounted on column and tile line
+// (User Story 2, §2), then search and grouping (User Story 4, §2).
 
 const listAccessories = vi.fn();
 
@@ -120,7 +125,7 @@ function collectionWith(accessories: AccessorySummary[]): CollectionState {
 
 type Browse = {
   query: string;
-  groupBy: undefined;
+  groupBy: AccessoryGroupBy | undefined;
   includeDisposed: boolean;
   view: "list" | "tile";
 };
@@ -132,10 +137,19 @@ const openDialog = vi.fn();
  * it, so a change to it shows. */
 function renderPage(
   initial: Partial<Browse> = {},
-  { all = ALL, active = ALL.filter((a) => a.status === "active") } = {},
+  {
+    all = ALL,
+    active = ALL.filter((a) => a.status === "active"),
+    respond,
+  }: {
+    all?: AccessorySummary[];
+    active?: AccessorySummary[];
+    /** Answers `list_accessories` itself, for a test of search or grouping. */
+    respond?: (input: ListAccessoriesInput) => { groups: AccessoryGroup[] };
+  } = {},
 ) {
   listAccessories.mockImplementation(async (input: ListAccessoriesInput) =>
-    groupOf(input.includeDisposed ? all : active),
+    respond ? respond(input) : groupOf(input.includeDisposed ? all : active),
   );
   const changes: Browse[] = [];
   function Harness() {
@@ -511,5 +525,352 @@ describe("AccessoriesPage mounted on (US2)", () => {
     expect(open).toHaveBeenLastCalledWith({ page: "firearm", id: 7, from: "accessories" });
     // Following the host's link does not also open this accessory.
     expect(open).not.toHaveBeenCalledWith(expect.objectContaining({ page: "accessory", id: 1 }));
+  });
+});
+
+// specs/006-accessory-links User Story 4 (contracts/ui-accessories.md §2,
+// FR-016 to FR-018): the collection page's search bar and "Group by" menu.
+describe("AccessoriesPage search and grouping (US4)", () => {
+  const deerRifle: RecordLabel = {
+    record: { kind: "firearm", id: 7 },
+    make: "Winchester",
+    model: "Model 70",
+    nickname: "Deer rifle",
+    typeName: "Rifle",
+    serialNumber: "W-70",
+    status: "active",
+  };
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: "U-1",
+    status: "active",
+  };
+  const sameNameA: RecordLabel = {
+    record: { kind: "firearm", id: 21 },
+    make: "Colt",
+    model: "Python",
+    nickname: null,
+    typeName: "Revolver",
+    serialNumber: "P-1",
+    status: "active",
+  };
+  const sameNameB: RecordLabel = {
+    ...sameNameA,
+    record: { kind: "firearm", id: 22 },
+    serialNumber: "P-2",
+  };
+
+  const hostGroups: AccessoryGroup[] = [
+    {
+      key: "Winchester Model 70 “Deer rifle”",
+      host: deerRifle,
+      accessories: [summary({ id: 1, mountedOn: deerRifle })],
+    },
+    { key: "Not mounted", host: null, accessories: [magazine, sling] },
+  ];
+
+  /** The menu's items, once opened. */
+  async function openMenu(user: ReturnType<typeof userEvent.setup>, current = "None") {
+    await user.click(await screen.findByRole("button", { name: `Group by, ${current}` }));
+    return within(await screen.findByRole("menu"));
+  }
+
+  it("has a search bar named 'Search accessories' with the 'Search accessories…' placeholder", async () => {
+    renderPage();
+
+    const box = await screen.findByRole("searchbox", { name: "Search accessories" });
+    expect(box).toHaveAttribute("placeholder", "Search accessories…");
+  });
+
+  it("sends the typed text to list_accessories, once typing pauses, and remembers it", async () => {
+    const user = userEvent.setup();
+    const changes = renderPage();
+    await screen.findByText(NAMES.optic);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search accessories" }), "vx");
+
+    expect(changes.at(-1)?.query).toBe("vx");
+    await waitFor(() =>
+      expect(listAccessories).toHaveBeenLastCalledWith(expect.objectContaining({ query: "vx" })),
+    );
+  });
+
+  it("sends no query when the box is blank", async () => {
+    renderPage();
+
+    await screen.findByText(NAMES.optic);
+    const input = listAccessories.mock.calls.at(-1)![0] as ListAccessoriesInput;
+    expect(input.query).toBeUndefined();
+    expect(input.groupBy).toBeUndefined();
+  });
+
+  it("clears the search with Escape", async () => {
+    const user = userEvent.setup();
+    const changes = renderPage({ query: "vx" });
+    await screen.findByText(NAMES.optic);
+
+    await user.type(screen.getByRole("searchbox", { name: "Search accessories" }), "{Escape}");
+
+    expect(changes.at(-1)?.query).toBe("");
+  });
+
+  it('reads No accessories match "{query}". when nothing is found, with a way to clear it', async () => {
+    const user = userEvent.setup();
+    const changes = renderPage({ query: "zzz" }, { respond: () => ({ groups: [] }) });
+
+    const note = await screen.findByText(/No accessories match/);
+    expect(note.closest("p")).toHaveTextContent("No accessories match “zzz”.");
+    expect(screen.queryByText("No accessories recorded yet.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    // The search box has an icon button of that name too; this is the note's link.
+    await user.click(screen.getByText("Clear search"));
+    expect(changes.at(-1)?.query).toBe("");
+  });
+
+  it("counts the matches while a search is on", async () => {
+    renderPage({ query: "vx" }, { respond: () => groupOf([optic, magazine]) });
+
+    expect(await screen.findByText(/2 accessories match/)).toHaveTextContent(
+      "2 accessories match “vx”.",
+    );
+  });
+
+  it("reads Group by None when ungrouped and names the grouping when grouped", async () => {
+    renderPage();
+    const trigger = await screen.findByRole("button", { name: "Group by, None" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveTextContent("Group byNone");
+  });
+
+  it("offers No grouping, Kind, Make, Caliber, Cartridge and Mounted on as radio items", async () => {
+    const user = userEvent.setup();
+    renderPage({ groupBy: "make" });
+
+    const menu = await openMenu(user, "Make");
+
+    const items = menu.getAllByRole("menuitemradio");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "No grouping",
+      "Kind",
+      "Make",
+      "Caliber",
+      "Cartridge",
+      "Mounted on",
+    ]);
+    expect(
+      items
+        .filter((item) => item.getAttribute("aria-checked") === "true")
+        .map((i) => i.textContent),
+    ).toEqual(["Make"]);
+  });
+
+  it.each([
+    ["Kind", "kind"],
+    ["Make", "make"],
+    ["Caliber", "caliber"],
+    ["Cartridge", "cartridge"],
+    ["Mounted on", "mounted_on"],
+  ])("regroups by %s and asks list_accessories for %s", async (label, groupBy) => {
+    const user = userEvent.setup();
+    const changes = renderPage();
+    await screen.findByText(NAMES.optic);
+
+    await user.click(await screen.findByRole("button", { name: "Group by, None" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: label }));
+
+    expect(changes.at(-1)?.groupBy).toBe(groupBy);
+    await waitFor(() =>
+      expect(listAccessories).toHaveBeenLastCalledWith(expect.objectContaining({ groupBy })),
+    );
+  });
+
+  it("chooses No grouping to ungroup", async () => {
+    const user = userEvent.setup();
+    const changes = renderPage({ groupBy: "kind" });
+    await screen.findByText(NAMES.optic);
+
+    await user.click(await screen.findByRole("button", { name: "Group by, Kind" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "No grouping" }));
+
+    expect(changes.at(-1)?.groupBy).toBeUndefined();
+  });
+
+  it("shows a heading with a count for each group when grouped, and none when not", async () => {
+    renderPage(
+      { groupBy: "kind" },
+      {
+        respond: () => ({
+          groups: [
+            { key: "Optic", host: null, accessories: [optic] },
+            { key: "Magazine", host: null, accessories: [magazine] },
+            { key: "Sling", host: null, accessories: [sling, sling] },
+          ],
+        }),
+      },
+    );
+
+    const headings = await screen.findAllByRole("heading", { level: 2 });
+    expect(headings.map((h) => h.textContent)).toEqual(["Optic1", "Magazine1", "Sling2"]);
+  });
+
+  it("shows no group heading when ungrouped", async () => {
+    renderPage();
+
+    await screen.findByText(NAMES.optic);
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+  });
+
+  it("keeps every column when grouped by kind, make, caliber or cartridge", async () => {
+    renderPage(
+      { groupBy: "kind" },
+      { respond: () => ({ groups: [{ key: "Optic", host: null, accessories: [optic] }] }) },
+    );
+
+    await screen.findByText(NAMES.optic);
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Accessory",
+      "Mounted on",
+      "Value",
+      "Coverage",
+    ]);
+  });
+
+  describe("grouped by Mounted on", () => {
+    it("heads each host's group with its name as a link to the host", async () => {
+      const user = userEvent.setup();
+      renderPage({ groupBy: "mounted_on" }, { respond: () => ({ groups: hostGroups }) });
+
+      const headings = await screen.findAllByRole("heading", { level: 2 });
+      expect(headings[0]).toHaveTextContent("Winchester Model 70 “Deer rifle”");
+      expect(headings[1]).toHaveTextContent("Not mounted");
+      const hostLink = within(headings[0]).getByRole("button", {
+        name: "Winchester Model 70 “Deer rifle”",
+      });
+
+      await user.click(hostLink);
+
+      expect(open).toHaveBeenLastCalledWith({ page: "firearm", id: 7, from: "accessories" });
+    });
+
+    it("heads an accessory host's group with its RecordName, and follows it to the accessory", async () => {
+      const user = userEvent.setup();
+      renderPage(
+        { groupBy: "mounted_on" },
+        {
+          respond: () => ({
+            groups: [
+              {
+                key: "BCM upper · Upper receiver",
+                host: upper,
+                accessories: [summary({ id: 5, make: "Aimpoint", model: "T-2", mountedOn: upper })],
+              },
+            ],
+          }),
+        },
+      );
+
+      const heading = await screen.findByRole("heading", { level: 2 });
+      await user.click(within(heading).getByRole("button", { name: "BCM upper · Upper receiver" }));
+
+      expect(open).toHaveBeenLastCalledWith({ page: "accessory", id: 11, from: "accessories" });
+    });
+
+    it("does not make 'Not mounted' a link", async () => {
+      renderPage({ groupBy: "mounted_on" }, { respond: () => ({ groups: hostGroups }) });
+
+      const headings = await screen.findAllByRole("heading", { level: 2 });
+      expect(within(headings[1]).queryByRole("button")).not.toBeInTheDocument();
+    });
+
+    it("follows the host's name with its serial number only when two hosts share the name", async () => {
+      renderPage(
+        { groupBy: "mounted_on" },
+        {
+          respond: () => ({
+            groups: [
+              {
+                key: "Colt Python",
+                host: sameNameA,
+                accessories: [summary({ id: 31, mountedOn: sameNameA })],
+              },
+              {
+                key: "Colt Python",
+                host: sameNameB,
+                accessories: [summary({ id: 32, mountedOn: sameNameB })],
+              },
+              {
+                key: "Winchester Model 70 “Deer rifle”",
+                host: deerRifle,
+                accessories: [summary({ id: 33, mountedOn: deerRifle })],
+              },
+              { key: "Not mounted", host: null, accessories: [sling] },
+            ],
+          }),
+        },
+      );
+
+      const headings = await screen.findAllByRole("heading", { level: 2 });
+      expect(headings.map((h) => h.textContent)).toEqual([
+        "Colt PythonP-11",
+        "Colt PythonP-21",
+        "Winchester Model 70 “Deer rifle”1",
+        "Not mounted1",
+      ]);
+      // Muted: its own element, not part of the link.
+      expect(within(headings[0]).getByText("P-1")).not.toHaveRole("button");
+      expect(within(headings[0]).getByRole("button", { name: "Colt Python" })).toBeInTheDocument();
+    });
+
+    it("leaves out the Mounted on column, which the heading already says", async () => {
+      renderPage({ groupBy: "mounted_on" }, { respond: () => ({ groups: [hostGroups[1]] }) });
+
+      await screen.findByText(NAMES.magazine);
+      expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+        "Accessory",
+        "Value",
+        "Coverage",
+      ]);
+    });
+
+    it("shows each group as its own section named by its heading", async () => {
+      renderPage({ groupBy: "mounted_on" }, { respond: () => ({ groups: hostGroups }) });
+
+      await screen.findByText(NAMES.magazine);
+      expect(screen.getByRole("region", { name: "Not mounted" })).toBeInTheDocument();
+    });
+
+    it("groups the tiles the same way", async () => {
+      renderPage(
+        { groupBy: "mounted_on", view: "tile" },
+        { respond: () => ({ groups: hostGroups }) },
+      );
+
+      const headings = await screen.findAllByRole("heading", { level: 2 });
+      expect(headings.map((h) => h.textContent)).toEqual([
+        "Winchester Model 70 “Deer rifle”1",
+        "Not mounted2",
+      ]);
+    });
+  });
+
+  it("remembers the search and the grouping for the session (they are the shell's state)", async () => {
+    const user = userEvent.setup();
+    const changes = renderPage({ query: "vx", groupBy: "caliber" });
+    await screen.findByText(NAMES.optic);
+
+    expect(screen.getByRole("searchbox", { name: "Search accessories" })).toHaveValue("vx");
+    expect(screen.getByRole("button", { name: "Group by, Caliber" })).toHaveTextContent("Caliber");
+    // A change keeps the rest of the remembered state.
+    await user.click(screen.getByRole("checkbox", { name: "Show disposed" }));
+    expect(changes.at(-1)).toMatchObject({
+      query: "vx",
+      groupBy: "caliber",
+      includeDisposed: true,
+    });
   });
 });

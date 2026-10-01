@@ -1,21 +1,10 @@
-import { useId, useRef, useState } from "react";
-import {
-  Button,
-  Combobox,
-  ConfirmDialog,
-  Dialog,
-  Icon,
-  Menu,
-  MenuItem,
-  useToast,
-} from "../../components";
-import type { ComboboxOption } from "../../components";
+import { useId, useState } from "react";
+import { Button, ConfirmDialog, Dialog, Icon, Menu, MenuItem, useToast } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { MountedList } from "./MountedList";
-import { listMountCandidates, mountRecord } from "./mountsService";
-import type { MountCandidate } from "./mountsService";
-import { recordKey } from "./recordKey";
+import { MountChooser } from "./MountChooser";
+import { mountRecord } from "./mountsService";
 import { recordNameText } from "./recordNames";
 import type { MountedEntry, RecordLabel } from "./types";
 import "./mounts.css";
@@ -68,7 +57,7 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
     return true;
   }
 
-  async function choose(item: RecordLabel, mountedOn: RecordLabel | null) {
+  async function choose(item: RecordLabel, mountedOn: RecordLabel | null = null) {
     setError(undefined);
     if (mountedOn) {
       setMoving({ item, from: mountedOn });
@@ -138,7 +127,15 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
           </Button>
         }
       >
-        <MountSearch record={record} error={error} onChoose={choose} />
+        <MountChooser
+          role="item"
+          record={record.record}
+          value={null}
+          label="Accessory or firearm"
+          placeholder="Search by make, model, nickname or serial number"
+          error={error}
+          onChange={(item, mountedOn) => item && void choose(item, mountedOn)}
+        />
       </Dialog>
 
       <ConfirmDialog
@@ -157,65 +154,5 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
         }}
       />
     </section>
-  );
-}
-
-/** The muted text after a candidate's name: a firearm's type, then the serial
- * number. An accessory's kind is already in its name (FR-005). */
-function marker(label: RecordLabel): string | undefined {
-  const parts: string[] = [];
-  if (label.record.kind === "firearm") parts.push(label.typeName);
-  if (label.serialNumber) parts.push(label.serialNumber);
-  return parts.length > 0 ? parts.join(" · ") : undefined;
-}
-
-/** The dialog's search: `list_mount_candidates` with role "item", over the
- * shared `Combobox`. Each option names where the record is now (§4, §5). */
-function MountSearch({
-  record,
-  error,
-  onChoose,
-}: {
-  record: RecordLabel;
-  error: string | undefined;
-  onChoose: (item: RecordLabel, mountedOn: RecordLabel | null) => void;
-}) {
-  const [text, setText] = useState("");
-  const found = useRef(new Map<string, MountCandidate>());
-
-  async function loadOptions(searched: string): Promise<ComboboxOption[]> {
-    const { candidates } = await listMountCandidates({
-      role: "item",
-      record: record.record,
-      query: searched.trim(),
-    });
-    return candidates.map((candidate) => {
-      const key = recordKey(candidate.label.record);
-      found.current.set(key, candidate);
-      return {
-        key,
-        value: recordNameText(candidate.label),
-        marker: marker(candidate.label),
-        detail: candidate.mountedOn
-          ? `Mounted on ${recordNameText(candidate.mountedOn)}`
-          : undefined,
-      };
-    });
-  }
-
-  return (
-    <Combobox
-      label="Accessory or firearm"
-      placeholder="Search by make, model, nickname or serial number"
-      value={text}
-      error={error}
-      loadOptions={loadOptions}
-      onInputChange={setText}
-      onPick={(key) => {
-        const picked = found.current.get(key);
-        setText("");
-        if (picked) onChoose(picked.label, picked.mountedOn);
-      }}
-    />
   );
 }

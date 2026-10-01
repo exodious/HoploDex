@@ -59,13 +59,15 @@ function Harness({
   record = null,
   role,
   onChange,
+  placeholder,
   hint,
   error,
 }: {
   initial?: RecordLabel | null;
   record?: RecordRef | null;
   role?: "host" | "item";
-  onChange?: (label: RecordLabel | null) => void;
+  onChange?: (label: RecordLabel | null, mountedOn?: RecordLabel | null) => void;
+  placeholder?: string;
   hint?: string;
   error?: string;
 }) {
@@ -75,11 +77,12 @@ function Harness({
       value={value}
       record={record}
       {...(role ? { role } : {})}
+      {...(placeholder ? { placeholder } : {})}
       hint={hint}
       error={error}
-      onChange={(next: RecordLabel | null) => {
-        setValue(next);
-        onChange?.(next);
+      onChange={(...args) => {
+        setValue(args[0]);
+        onChange?.(...args);
       }}
     />
   );
@@ -292,6 +295,33 @@ describe("MountChooser choosing and clearing (§4, FR-012)", () => {
     expect(onChange.mock.calls[0][0]).toEqual(optic);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("passes where the candidate is mounted now as a second argument (FR-012)", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    answer({ label: optic, mountedOn: upper }, { label: deerRifle, mountedOn: null });
+    render(<Harness onChange={onChange} />);
+
+    await user.click(field());
+    await user.click(await screen.findByRole("option", { name: /Leupold/ }));
+    expect(onChange).toHaveBeenLastCalledWith(optic, upper);
+
+    await user.click(field());
+    await user.click(await screen.findByRole("option", { name: /Deer rifle/ }));
+    expect(onChange).toHaveBeenLastCalledWith(deerRifle, null);
+  });
+
+  it("says what the empty field says as its placeholder, 'Not mounted' unless told otherwise", () => {
+    const { unmount } = render(<Harness />);
+    expect(field()).toHaveAttribute("placeholder", "Not mounted");
+    unmount();
+
+    render(<Harness placeholder="Search by make, model, nickname or serial number" />);
+    expect(field()).toHaveAttribute(
+      "placeholder",
+      "Search by make, model, nickname or serial number",
+    );
   });
 
   it("clears with the × button", async () => {

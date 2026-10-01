@@ -1,14 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Icon,
-  Menu,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuSeparator,
-  SegmentedControl,
-} from "../../components";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
 import { daysUntil } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
@@ -17,17 +8,16 @@ import { useNavigation } from "../app/navigation";
 import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
+import { GroupByMenu } from "./GroupByMenu";
 import { SearchBar } from "./SearchBar";
+import { SEARCH_DEBOUNCE_MS, useDebounced, useSearchShortcut } from "./searchHooks";
 import { GROUP_BY_OPTIONS, GROUP_BY_SECTIONS } from "./types";
-import type { BrowseState, FirearmGroup, GroupBy, VisibleGroup } from "./types";
+import type { BrowseState, FirearmGroup, VisibleGroup } from "./types";
 import "./collection.css";
 
 /** Rows rendered per step; more mount as the end of the list nears, so a
  * 10,000-firearm collection stays responsive (constitution Principle IV). */
 const RENDER_STEP = 150;
-const SEARCH_DEBOUNCE_MS = 150;
-
-type GroupChoice = GroupBy | "none";
 
 export interface CollectionPageProps {
   browse: BrowseState;
@@ -82,22 +72,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     setRenderLimit(RENDER_STEP);
   }, [query, browse.groupBy, browse.includeDisposed]);
 
-  // "/" (outside a text field) or Ctrl/⌘+F jumps to search.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement;
-      const typing = target.closest("input, textarea, select, [contenteditable]");
-      const find = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f";
-      if ((event.key === "/" && !typing) || find) {
-        if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
-        event.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useSearchShortcut(searchRef);
 
   const total = groups?.reduce((n, g) => n + g.firearms.length, 0) ?? 0;
   const visibleGroups = useMemo(
@@ -167,7 +142,12 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
           onChange={(value) => update({ query: value })}
           busy={fetching}
         />
-        <GroupByMenu value={browse.groupBy} onChange={(groupBy) => update({ groupBy })} />
+        <GroupByMenu
+          value={browse.groupBy}
+          onChange={(groupBy) => update({ groupBy })}
+          options={GROUP_BY_OPTIONS}
+          sections={GROUP_BY_SECTIONS}
+        />
         <div className="hd-toolbar__end">
           <Checkbox
             label="Show disposed"
@@ -234,48 +214,6 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
         ))}
       {renderLimit < total && <div ref={sentinelRef} className="hd-browse__more" />}
     </>
-  );
-}
-
-/** The "Group by" control: a button naming the current grouping that opens a
- * menu of radio items under fixed headings (specs/005-regulated-item-types
- * contracts/ui-registration.md §6). */
-function GroupByMenu({
-  value,
-  onChange,
-}: {
-  value: GroupBy | undefined;
-  onChange: (value: GroupBy | undefined) => void;
-}) {
-  const chosen: GroupChoice = value ?? "none";
-  const label = GROUP_BY_OPTIONS.find((option) => option.value === value)?.label ?? "None";
-  const choose = (next: string) => onChange(next === "none" ? undefined : (next as GroupBy));
-  return (
-    <Menu
-      trigger={
-        <Button size="sm" className="hd-groupby" aria-label={`Group by, ${label}`}>
-          <span className="hd-groupby__prompt">Group by</span>
-          <span className="hd-groupby__value">{label}</span>
-          <Icon name="chevronDown" size={16} />
-        </Button>
-      }
-    >
-      <MenuRadioGroup value={chosen} onValueChange={choose}>
-        <MenuRadioItem value="none">None</MenuRadioItem>
-      </MenuRadioGroup>
-      {GROUP_BY_SECTIONS.map(({ section, heading }) => (
-        <Fragment key={section}>
-          <MenuSeparator />
-          <MenuRadioGroup value={chosen} onValueChange={choose} label={heading}>
-            {GROUP_BY_OPTIONS.filter((option) => option.section === section).map((option) => (
-              <MenuRadioItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuRadioItem>
-            ))}
-          </MenuRadioGroup>
-        </Fragment>
-      ))}
-    </Menu>
   );
 }
 
@@ -386,13 +324,4 @@ function truncateGroups(groups: FirearmGroup[], limit: number): VisibleGroup[] {
     remaining -= group.firearms.length;
   }
   return out;
-}
-
-function useDebounced<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [value, delayMs]);
-  return debounced;
 }

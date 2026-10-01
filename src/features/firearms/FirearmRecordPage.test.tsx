@@ -805,3 +805,83 @@ describe("FirearmRecordPage mounts (US2)", () => {
     );
   });
 });
+
+// specs/006-accessory-links User Story 3 (contracts/ui-accessories.md §8,
+// US3-5, US3-9): the delete confirmation names what stays behind, unmounted.
+describe("FirearmRecordPage delete confirmation with mounted records (US3)", () => {
+  const label = (id: number, make: string, model: string, typeName: string): RecordLabel => ({
+    record: { kind: "accessory", id },
+    make,
+    model,
+    nickname: null,
+    typeName,
+    serialNumber: null,
+    status: "active",
+  });
+  const optic = label(12, "Leupold", "Mark 5HD", "Optic");
+  const light = label(14, "SureFire", "M600", "Light or laser");
+  const cap = label(15, "Leupold", "Flip cap", "Other");
+
+  async function openDelete() {
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    const bar = document.querySelector<HTMLElement>(".hd-record__actions")!;
+    await user.click(within(bar).getByRole("button", { name: "Delete" }));
+    return await screen.findByRole("alertdialog");
+  }
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("lists the records mounted directly on it, and not those further down", async () => {
+    getFirearm.mockReset().mockResolvedValue({
+      ...firearm,
+      mount: {
+        chain: [],
+        mounted: [
+          { label: optic, host: { kind: "firearm", id: 1 }, depth: 1 },
+          { label: cap, host: optic.record, depth: 2 },
+          { label: light, host: { kind: "firearm", id: 1 }, depth: 1 },
+        ],
+      },
+    });
+    renderPage();
+
+    const dialog = await openDelete();
+
+    expect(dialog).toHaveTextContent(
+      "2 records mounted on it will stay in the collection, unmounted:",
+    );
+    const items = within(within(dialog).getByRole("list")).getAllByRole("listitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      "Leupold Mark 5HD · Optic",
+      "SureFire M600 · Light or laser",
+    ]);
+    expect(dialog).not.toHaveTextContent("Flip cap");
+    // The record's own wording is unchanged.
+    expect(dialog).toHaveTextContent("This erases the record entirely");
+  });
+
+  it("says '1 record' for one", async () => {
+    getFirearm.mockReset().mockResolvedValue({
+      ...firearm,
+      mount: { chain: [], mounted: [{ label: optic, host: { kind: "firearm", id: 1 }, depth: 1 }] },
+    });
+    renderPage();
+
+    expect(await openDelete()).toHaveTextContent(
+      "1 record mounted on it will stay in the collection, unmounted:",
+    );
+  });
+
+  it("leaves the wording unchanged when nothing is mounted on it", async () => {
+    getFirearm.mockReset().mockResolvedValue(firearm);
+    renderPage();
+
+    const dialog = await openDelete();
+
+    expect(dialog).not.toHaveTextContent(/stay in the collection/);
+    expect(within(dialog).queryByRole("list")).not.toBeInTheDocument();
+  });
+});

@@ -55,10 +55,13 @@ export type AccessoryDetail = Accessory & {
   mount: MountDetail;
 };
 
+/** How the Accessories page groups (FR-017). */
+export type AccessoryGroupBy = "kind" | "make" | "caliber" | "cartridge" | "mounted_on";
+
 export type ListAccessoriesInput = {
   /** FR-018: every text field; 1-2 chars use LIKE. */
   query?: string | null;
-  groupBy?: "kind" | "make" | "caliber" | "cartridge" | "mounted_on" | null;
+  groupBy?: AccessoryGroupBy | null;
   /** Default false (001 FR-025). */
   includeDisposed?: boolean;
 };
