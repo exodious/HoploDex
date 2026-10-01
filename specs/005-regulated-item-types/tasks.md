@@ -248,7 +248,8 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T072 Check quickstart.md's "Checks that must hold before merge": no new migration file exists (`ls src-tauri/src/db/migrations`); `human_seed_coverage_test` passes with `NEVER_SEEDED` unchanged; the suppressor drawing's source note is in `typeDrawings.ts`; tell the user their development databases must be recreated (the schema was edited in place); draft the PR notes: before/after screenshots from T067, how the persistence changes meet Security & Data Handling (research.md §14: no storage outside `firearms` and its FTS entry, the deletion wipe test extended, the export disclosure, no cipher or dependency change, no network access), and T066's performance figures against Principle IV's budgets
 - [X] T073 On Linux, with Orca, do quickstart.md's manual check **M1** (the grouping menu with a screen reader) with `scripts/dev-container.sh --gui scripts/human-testing.sh`, and record the result for the PR (best effort, not a merge gate)
   - **Deferred** (2026-09-30) to #48, with 004's M1: not run before the PR. The ARIA it depends on is covered by `Menu.test.tsx`, `CollectionPage.test.tsx` and `us11-regulated-items.e2e.ts`
-- [ ] T074 On Linux, do quickstart.md's manual check **M2** (the suppressor drawing at every size, both themes, minimum window width) with `scripts/dev-container.sh --gui scripts/human-testing.sh`, and record the result for the PR (best effort, not a merge gate)
+- [X] T074 On Linux, do quickstart.md's manual check **M2** (the suppressor drawing at every size, both themes, minimum window width) with `scripts/dev-container.sh --gui scripts/human-testing.sh`, and record the result for the PR (best effort, not a merge gate)
+  - **Passed** (2026-09-30), as reported by the user; not run by Claude. Best effort, not a merge gate
 
 ---
 
