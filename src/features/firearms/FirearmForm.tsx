@@ -1534,7 +1534,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     { value: NOT_RECORDED, label: "Unspecified" },
                     ...registrationClasses.classes
                       .filter(
-                        (item) => item.offered || String(item.id) === form.registrationClassId,
+                        (item) => item.offered || item.id === initialValues?.registrationClassId,
                       )
                       .map((item) => ({ value: String(item.id), label: item.name })),
                   ]}

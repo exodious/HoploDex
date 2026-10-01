@@ -2570,6 +2570,33 @@ describe("FirearmForm registration (US2)", () => {
     );
   });
 
+  it("still offers the saved record's no-longer-offered classification after switching away and back", async () => {
+    const user = userEvent.setup();
+    const classes = offered.map((item) => (item.id === 5 ? { ...item, offered: false } : item));
+    renderForm(
+      <FirearmForm initialValues={{ ...suppressor, registrationClassId: 5 }} onSubmit={vi.fn()} />,
+      classes,
+    );
+    const select = () => screen.getByRole("combobox", { name: "Registered as" });
+    await user.click(select());
+    await user.click(await screen.findByRole("option", { name: "Suppressor" }));
+    expect(select()).toHaveTextContent("Suppressor");
+
+    await user.click(select());
+    const names = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(names).toEqual([
+      "Unspecified",
+      "Suppressor",
+      "Short-barreled rifle",
+      "Short-barreled shotgun",
+      "Any other weapon",
+      "Machine gun",
+      "Destructive device",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Machine gun" }));
+    expect(select()).toHaveTextContent("Machine gun");
+  });
+
   it("says so when the classifications couldn't be loaded", async () => {
     const user = userEvent.setup();
     renderBase(

@@ -118,8 +118,10 @@ Sources: [Brown v. ATF (Wikipedia)](https://en.wikipedia.org/wiki/Brown_v._ATF),
 ## 4. The Suppressor type and its drawing (FR-001, FR-002)
 
 - **Decision**: `0003_seed_firearm_types.sql` seeds the types with explicit
-  ids, matching the order they have today: 1 Handgun, 2 Rifle, 3 Shotgun,
-  4 Other, and **5 Suppressor**, with drawing key `suppressor`. The caliber is
+  ids that never change, and gives `firearm_types` a `sort_order` that lists
+  them: 1 Handgun, 2 Rifle, 3 Shotgun, 4 Suppressor, 5 Other (the
+  catch-all last). Suppressor keeps **id 5** and Other **id 4**, with drawing
+  key `suppressor`. The caliber is
   labelled "Caliber rating" for a Suppressor on the form and the record
   page. On the form it has the hint "The largest bore the suppressor is rated
   for." The label and hint depend on the type's name being Suppressor, not on
@@ -128,21 +130,27 @@ Sources: [Brown v. ATF (Wikipedia)](https://en.wikipedia.org/wiki/Brown_v._ATF),
 - **The drawing**: a new `suppressor` entry in `DRAWINGS`
   (`src/features/browse/typeDrawings.ts`). It is a side elevation, mount end
   to the left, in the same 320×200 box and the same part/open/detail roles
-  as the others. It shows a cylindrical tube with a threaded or
-  quick-detach mount collar, wrench flats near the mount, and a front cap
-  with the bore opening. The tube's length-to-diameter ratio is about 6:1,
-  typical of a .30-caliber rifle can. It is centred vertically on the bore
-  axis, which runs through it. Like the others, it is traced from side-on
+  as the others, but drawn as a **partial section**: the tube is cut away
+  between two break lines to show a hatched wall, a blast chamber and a
+  generic cone-baffle stack (a sleeve of skirts with a cone at each joint,
+  the blast baffle heavier than the rest). The mount end has a threaded or
+  quick-detach collar with wrench flats; the front end is a flush rounded
+  end cap with no front cap drawn. The tube's length-to-diameter ratio is
+  about 6:1, typical of a .30-caliber rifle can, centred vertically on the
+  bore axis. Like the others, it is traced from side-on
   photographs of real models for proportion (spec FR-001: drawn for the
   project). It carries no brand marks. The file's header comment records
   that. The drawing is licensed GPL-3.0-only with the rest of the source
   (constitution, Licensing). The empty-state draw-in animation
   (`TypeDrawing`) uses it unchanged. The branding notes' cautions apply:
   separate subpaths for each stroke, and round caps started past 1.
+- **Why the cutaway**: a plain tube with a cap is indistinguishable from a
+  flashlight or a pipe at thumbnail size. The baffle stack is what makes a
+  suppressor recognizable, and the break lines keep it a drawing of the
+  object, not a schematic.
 - **Alternatives considered**: Reusing the "other" drawing (rejected by
-  FR-001). A cross-section showing baffles (rejected: the other drawings are
-  exterior elevations, and a cut-away reads as a technical diagram, not a
-  thumbnail).
+  FR-001). An exterior-only elevation with a front cap (the first draft;
+  superseded by the cutaway for the reason above).
 
 ## 5. The classification list: a seeded lookup table with an `offered` flag (FR-007, FR-015)
 
