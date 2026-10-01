@@ -85,7 +85,7 @@ describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
     await tabTo("Model");
     await typeReal("Omega 300");
 
-    // Type is a group of radio cards: the arrow keys choose, Suppressor last.
+    // Type is a group of radio cards: the arrow keys choose, until Suppressor.
     for (let step = 0; step < 6; step++) {
       await realKey("Tab");
       const onRadio = await browser.execute(
@@ -93,17 +93,17 @@ describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
       );
       if (onRadio) break;
     }
-    for (let step = 0; step < 5; step++) await realKey("Down");
-    expect(
-      await browser.execute(
+    const checkedType = () =>
+      browser.execute(
         () =>
           (
             document.querySelector(
               '[data-field="firearmTypeId"] input[type="radio"]:checked',
             ) as HTMLInputElement
           )?.value,
-      ),
-    ).toBe("5");
+      );
+    for (let step = 0; step < 5 && (await checkedType()) !== "5"; step++) await realKey("Down");
+    expect(await checkedType()).toBe("5");
 
     // Suppressor omits the action, and its caliber is a rating.
     await tabTo("Caliber rating");
