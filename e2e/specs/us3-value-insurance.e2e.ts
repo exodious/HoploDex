@@ -327,7 +327,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
 
     await choose("Move to another policy");
     await selectOption("Move to", "InsE2E Rider Old");
-    await expect($('[role="alertdialog"]*=actually covers these records')).toExist();
+    await expect($('[role="alertdialog"]*=actually covers this firearm.')).toExist();
     await clickButton("Delete policy");
     await waitForPolicyGone("InsE2E Rider");
 
@@ -376,7 +376,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await choose("Leave unscheduled");
     expect(await isButtonDisabled("Delete policy")).toBe(true);
 
-    await toggle("2 records will lose their scheduled coverage");
+    await toggle("2 firearms will lose their scheduled coverage");
     await clickButton("Delete policy");
     await waitForPolicyGone("InsE2E Rider Old");
   });

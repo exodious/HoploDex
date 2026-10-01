@@ -3,6 +3,7 @@
 // valuation}.rs's wire shapes (camelCase, per contracts/tauri-commands.md),
 // User Story 3.
 
+import type { RecordCounts } from "../mounts/recordCounts";
 import type { RecordLabel, RecordRef } from "../mounts/types";
 
 export interface InsurancePolicy {
@@ -104,12 +105,12 @@ export interface ValueSummary {
 export interface PolicyDeletionImpact {
   isExpired: boolean;
   isBlanketInForce: boolean;
-  /** Firearms and accessories together (006 FR-009). */
-  scheduledRecordCount: number;
+  /** Firearms and accessories (006 FR-009), counted by kind (issue #56). */
+  scheduledCounts: RecordCounts;
   scheduledRecords: RecordLabel[];
   /** Unscheduled firearms and accessories that lose blanket coverage if this
-   * is the blanket policy in force (0 otherwise). */
-  blanketRecordCount: number;
+   * is the blanket policy in force (none otherwise). */
+  blanketCounts: RecordCounts;
   /** What becomes of firearms left unscheduled. */
   unscheduleOutcome: "blanket" | "uninsured";
   otherPolicies: { id: number; name: string; isExpired: boolean }[];

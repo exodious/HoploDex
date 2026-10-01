@@ -89,7 +89,7 @@ export function coverageStatus(
     return {
       tone: "warn",
       label: "Under-insured",
-      detail: `The records covered by ${blanket?.policyName ?? "the blanket policy"} are worth more than its limit.`,
+      detail: `The firearms and accessories covered by ${blanket?.policyName ?? "the blanket policy"} are worth more than its limit.`,
     };
   }
 

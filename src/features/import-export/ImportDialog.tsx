@@ -17,6 +17,14 @@ import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { MountedChoices } from "../mounts/MountedChoices";
 import { mountedStatements } from "../mounts/mountedStatements";
+import {
+  capitalized,
+  countKinds,
+  describeCounts,
+  kindHeading,
+  kindNoun,
+  type RecordCounts,
+} from "../mounts/recordCounts";
 import { recordKey } from "../mounts/recordKey";
 import { accessoryNameText } from "../mounts/recordNames";
 import * as importExportService from "./importExportService";
@@ -108,7 +116,13 @@ function conflictNouns(conflicts: ImportConflict[]): [string, string] {
   if (accessories === 0) return ["row matches a firearm", "rows match firearms"];
   if (accessories === conflicts.length)
     return ["row matches an accessory", "rows match accessories"];
-  return ["row matches a record", "rows match records"];
+  return ["row matches a firearm or accessory", "rows match firearms and accessories"];
+}
+
+/** The firearms and accessories the rows are about, by their tables. */
+function rowCounts(rows: { table: ImportTable }[]): RecordCounts {
+  const accessories = rows.filter((row) => row.table === "accessories").length;
+  return { firearms: rows.length - accessories, accessories };
 }
 
 function formatForPath(filePath: string): SpreadsheetFormat {
@@ -283,7 +297,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             hint={
               full
                 ? "Two files chosen, the most one import takes. Remove one to choose another."
-                : "Choose one file, or the firearm and accessory files together. Rows that match a record you already have are held for you to decide on."
+                : "Choose one file, or the firearm and accessory files together. Rows that match a firearm or accessory you already have are held for you to decide on."
             }
             trailing={
               <button
@@ -341,11 +355,18 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   // ── Step 2: results, and any rows needing a decision ───────────────────
   const conflicts = result.conflicts;
   const undecided = conflicts.filter((c) => !choices[c.conflictId]);
-  const replacing = conflicts.filter((c) => choices[c.conflictId] === "overwrite").length;
+  const replacingRows = conflicts.filter((c) => choices[c.conflictId] === "overwrite");
+  const replacing = replacingRows.length;
   // Rows that dispose of a record with records mounted on it ask, on
   // replacing, which go with it (issue #56).
   const disposing = conflicts.filter(
     (c) => choices[c.conflictId] === "overwrite" && c.mounted.length > 0,
+  );
+  const disposedWith = capitalized(
+    kindNoun(
+      countKinds(disposing.flatMap((c) => c.mounted.map((entry) => entry.label.record))),
+      true,
+    ),
   );
 
   return (
@@ -365,8 +386,12 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           {resolvedCount != null && <Tally value={resolvedCount} label="resolved" />}
         </div>
         <p className="hd-sr-only">
-          Imported {count(result.importedCount, "new record", "new records")}.{" "}
-          {count(result.rowErrors.length, "row", "rows")} failed.
+          Imported{" "}
+          {describeCounts({
+            firearms: result.importedCount - result.importedAccessoryCount,
+            accessories: result.importedAccessoryCount,
+          })}
+          . {count(result.rowErrors.length, "row", "rows")} failed.
         </p>
 
         <ReportDisclosure
@@ -416,7 +441,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             </h3>
             <p className="hd-form-note">
               These rows imported, with a note: a firearm shares original maker's marks with one in
-              your collection, or a mount couldn’t be made and the record was left unmounted.
+              your collection, or a mount couldn’t be made and the firearm or accessory was left
+              unmounted.
             </p>
             <ul className="hd-row-errors hd-row-errors--info">
               {result.warnings.map((warning) => (
@@ -488,7 +514,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               <thead>
                 <tr>
                   <th scope="col">Row</th>
-                  <th scope="col">Record</th>
+                  <th scope="col">{kindHeading(rowCounts(conflicts))}</th>
                   <th scope="col">Decision</th>
                 </tr>
               </thead>
@@ -566,17 +592,17 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       <ConfirmDialog
         open={confirmingReplace}
         onOpenChange={setConfirmingReplace}
-        title={`Replace ${count(replacing, "existing record", "existing records")}?`}
+        title={`Replace ${describeCounts(rowCounts(replacingRows))}?`}
         description="Their details will be overwritten with the spreadsheet's values. Their photos and documents are kept."
-        confirmLabel="Replace records"
+        confirmLabel={`Replace ${kindNoun(rowCounts(replacingRows))}`}
         onConfirm={() => applyChoices(conflicts)}
       >
         {disposing.length > 0 && (
           <div className="hd-io-disposing">
             <p className="hd-form-note">
               {disposing.length === 1
-                ? "This row marks its record disposed. Records disposed with it take the row's type, recipient and date, with no price."
-                : "These rows mark their records disposed. Records disposed with one take its row's type, recipient and date, with no price."}
+                ? `This row marks ${conflictName(disposing[0])} disposed. ${disposedWith} disposed with it take the row's type, recipient and date, with no price.`
+                : `These rows mark their ${kindNoun(rowCounts(disposing))} disposed. ${disposedWith} disposed with one take its row's type, recipient and date, with no price.`}
             </p>
             {disposing.map((conflict) => {
               const name = conflictName(conflict);

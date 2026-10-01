@@ -74,7 +74,7 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                         </span>
                         <MountLines
                           mountedOn={firearm.mountedOn}
-                          mountedCount={firearm.mountedCount}
+                          mountedCounts={firearm.mountedCounts}
                         />
                       </div>
                     </div>

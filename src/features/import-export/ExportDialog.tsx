@@ -207,7 +207,7 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
         {filterActive ? (
           <>
             <ChoiceCards<"all" | "filtered">
-              label="Records to include"
+              label="What to include"
               value={scope}
               onChange={setScope}
               minCardWidth={180}
@@ -215,7 +215,7 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
                 {
                   value: "all",
                   label: `Entire collection${countsOf(allScope)}`,
-                  description: "Every record, including disposed ones.",
+                  description: "Every firearm and accessory, including disposed ones.",
                 },
                 {
                   value: "filtered",
@@ -273,11 +273,7 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
         </p>
 
         {exporting && (
-          <ProgressBar
-            eventName="export_collection:progress"
-            label="Export progress"
-            unit="records"
-          />
+          <ProgressBar eventName="export_collection:progress" label="Export progress" unit="rows" />
         )}
         {error && (
           <p className="hd-banner hd-banner--error" role="alert">

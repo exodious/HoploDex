@@ -851,7 +851,7 @@ describe("FirearmRecordPage delete confirmation with mounted records (US3)", () 
     const dialog = await openDelete();
 
     expect(dialog).toHaveTextContent(
-      "2 records mounted on it will stay in the collection, unmounted:",
+      "2 accessories mounted on it will stay in the collection, unmounted:",
     );
     const items = within(within(dialog).getByRole("list")).getAllByRole("listitem");
     expect(items.map((i) => i.textContent)).toEqual([
@@ -863,7 +863,7 @@ describe("FirearmRecordPage delete confirmation with mounted records (US3)", () 
     expect(dialog).toHaveTextContent("This erases the record entirely");
   });
 
-  it("says '1 record' for one", async () => {
+  it("says '1 accessory' for one, naming the kind (issue #56)", async () => {
     getFirearm.mockReset().mockResolvedValue({
       ...firearm,
       mount: { chain: [], mounted: [{ label: optic, host: { kind: "firearm", id: 1 }, depth: 1 }] },
@@ -871,7 +871,7 @@ describe("FirearmRecordPage delete confirmation with mounted records (US3)", () 
     renderPage();
 
     expect(await openDelete()).toHaveTextContent(
-      "1 record mounted on it will stay in the collection, unmounted:",
+      "1 accessory mounted on it will stay in the collection, unmounted:",
     );
   });
 

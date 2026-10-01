@@ -77,14 +77,14 @@ fn the_impact_lists_what_the_dialog_needs_before_anything_changes() {
 
     assert!(!impact.is_expired);
     assert!(!impact.is_blanket_in_force);
-    assert_eq!(impact.scheduled_record_count, 1);
+    assert_eq!(impact.scheduled_counts.total(), 1);
     assert_eq!(impact.scheduled_records[0].record, RecordRef::Firearm(f.id));
     assert_eq!(impact.scheduled_records[0].make.as_deref(), Some("Colt"));
     assert_eq!(impact.scheduled_records[0].nickname.as_deref(), Some("Range gun"));
     let mut others: Vec<_> = impact.other_policies.iter().map(|p| (p.id, p.is_expired)).collect();
     others.sort();
     assert_eq!(others, vec![(other, false), (expired_other, true)], "everything but itself");
-    assert_eq!(impact.blanket_record_count, 0);
+    assert_eq!(impact.blanket_counts.total(), 0);
 }
 
 #[test]
@@ -114,7 +114,8 @@ fn scenario_15_deleting_the_blanket_policy_in_force_reports_how_many_lose_its_co
 
     assert!(impact.is_blanket_in_force);
     assert_eq!(
-        impact.blanket_record_count, 2,
+        impact.blanket_counts.total(),
+        2,
         "the two unscheduled firearms, not the scheduled one"
     );
     assert_eq!(impact.unschedule_outcome, "uninsured");
@@ -129,7 +130,7 @@ fn a_blanket_policy_that_is_not_in_force_takes_no_coverage_with_it() {
     let impact = insurance_ops::get_policy_deletion_impact(&db.conn, old).unwrap();
 
     assert!(!impact.is_blanket_in_force);
-    assert_eq!(impact.blanket_record_count, 0);
+    assert_eq!(impact.blanket_counts.total(), 0);
     assert!(impact.is_expired);
 }
 
@@ -173,6 +174,7 @@ fn scenario_9_an_unresolved_deletion_is_refused_and_changes_nothing() {
     let err = insurance_ops::delete_policy(&db.conn, doomed, true, None).unwrap_err();
 
     assert_eq!(err.code, "POLICY_HAS_FIREARMS");
+    assert!(err.message.starts_with("This policy still covers 1 firearm."), "{}", err.message);
     assert!(policy_exists(&db, doomed));
     assert_eq!(firearm_ops::get_firearm(&db.conn, f).unwrap().insurance_policy_id, Some(doomed));
 }
@@ -318,7 +320,7 @@ fn firearms_that_were_disposed_do_not_block_a_deletion_and_are_cleared_with_it()
         .unwrap();
 
     let impact = insurance_ops::get_policy_deletion_impact(&db.conn, doomed).unwrap();
-    assert_eq!(impact.scheduled_record_count, 0, "a disposed firearm isn't insured");
+    assert_eq!(impact.scheduled_counts.total(), 0, "a disposed firearm isn't insured");
 
     insurance_ops::delete_policy(&db.conn, doomed, true, None).unwrap();
 
@@ -411,7 +413,7 @@ fn the_impact_lists_scheduled_firearms_and_accessories_together_by_label() {
 
     let impact = insurance_ops::get_policy_deletion_impact(&db.conn, doomed).unwrap();
 
-    assert_eq!(impact.scheduled_record_count, 2);
+    assert_eq!(impact.scheduled_counts.total(), 2);
     let records: Vec<RecordRef> = impact.scheduled_records.iter().map(|l| l.record).collect();
     assert_eq!(records.len(), 2);
     assert!(records.contains(&RecordRef::Firearm(f)));
@@ -442,7 +444,7 @@ fn the_impact_does_not_list_a_disposed_accessory() {
 
     let impact = insurance_ops::get_policy_deletion_impact(&db.conn, doomed).unwrap();
 
-    assert_eq!(impact.scheduled_record_count, 0);
+    assert_eq!(impact.scheduled_counts.total(), 0);
     assert!(impact.scheduled_records.is_empty());
 }
 
@@ -461,7 +463,8 @@ fn deleting_the_blanket_policy_in_force_counts_unscheduled_records_of_both_kinds
 
     assert!(impact.is_blanket_in_force);
     assert_eq!(
-        impact.blanket_record_count, 3,
+        impact.blanket_counts.total(),
+        3,
         "one unscheduled firearm and two unscheduled accessories, not the scheduled ones"
     );
 }
@@ -475,6 +478,11 @@ fn an_unresolved_deletion_with_only_a_scheduled_accessory_is_refused_and_changes
     let err = insurance_ops::delete_policy(&db.conn, doomed, true, None).unwrap_err();
 
     assert_eq!(err.code, "POLICY_HAS_FIREARMS");
+    assert!(
+        err.message.starts_with("This policy still covers 1 accessory."),
+        "names the kind, not \"record\" (issue #56): {}",
+        err.message
+    );
     assert!(policy_exists(&db, doomed));
     assert_eq!(accessory_schedule(&db, a), (Some(doomed), Some(600)));
 }
@@ -576,8 +584,8 @@ fn the_wire_format_of_the_impact_names_the_records() {
         serde_json::to_value(insurance_ops::get_policy_deletion_impact(&db.conn, doomed).unwrap())
             .unwrap();
 
-    assert_eq!(wire["scheduledRecordCount"], json!(1));
-    assert_eq!(wire["blanketRecordCount"], json!(0));
+    assert_eq!(wire["scheduledCounts"], json!({ "firearms": 0, "accessories": 1 }));
+    assert_eq!(wire["blanketCounts"], json!({ "firearms": 0, "accessories": 0 }));
     assert_eq!(wire["scheduledRecords"][0]["record"], json!({ "kind": "accessory", "id": a }));
     assert!(wire.get("scheduledFirearms").is_none(), "the firearm-only fields are gone");
     assert!(wire.get("scheduledFirearmCount").is_none());

@@ -14,7 +14,7 @@ use rusqlite::{Connection, OptionalExtension, named_params};
 
 use crate::commands::CommandError;
 use crate::models::firearm::FirearmStatus;
-use crate::models::record::{MountDetail, MountedEntry, RecordLabel, RecordRef};
+use crate::models::record::{MountDetail, MountedEntry, RecordCounts, RecordLabel, RecordRef};
 
 /// FR-010: a host that is missing or disposed, or an item that is disposed.
 pub const CHOOSE_ACTIVE: &str = "Choose an active firearm or accessory.";
@@ -145,12 +145,16 @@ impl MountGraph {
         entries
     }
 
-    /// How many records are below `host` at any depth. `memo` is shared
-    /// across calls, so counting every firearm of a listing visits each
-    /// mount once.
-    pub fn count_below(&self, host: RecordRef, memo: &mut HashMap<RecordRef, usize>) -> usize {
-        if let Some(count) = memo.get(&host) {
-            return *count;
+    /// How many firearms and accessories are below `host` at any depth.
+    /// `memo` is shared across calls, so counting every firearm of a
+    /// listing visits each mount once.
+    pub fn count_below(
+        &self,
+        host: RecordRef,
+        memo: &mut HashMap<RecordRef, RecordCounts>,
+    ) -> RecordCounts {
+        if let Some(counts) = memo.get(&host) {
+            return *counts;
         }
         let mut visiting = HashSet::new();
         let mut stack = vec![(host, false)];
@@ -160,9 +164,11 @@ impl MountGraph {
             }
             let items = self.items_of.get(&record).map(Vec::as_slice).unwrap_or_default();
             if expanded {
-                let count: usize =
-                    items.iter().map(|item| 1 + memo.get(item).copied().unwrap_or(0)).sum();
-                memo.insert(record, count);
+                let mut counts = RecordCounts::of(items.iter().copied());
+                for item in items {
+                    counts += memo.get(item).copied().unwrap_or_default();
+                }
+                memo.insert(record, counts);
                 continue;
             }
             if !visiting.insert(record) {
@@ -173,7 +179,7 @@ impl MountGraph {
                 items.iter().filter(|item| !visiting.contains(*item)).map(|item| (*item, false)),
             );
         }
-        memo.get(&host).copied().unwrap_or(0)
+        memo.get(&host).copied().unwrap_or_default()
     }
 
     /// FR-010: mounting `item` on `host` would make a record carry itself.

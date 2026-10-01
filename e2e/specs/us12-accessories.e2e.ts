@@ -496,7 +496,9 @@ describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-lin
     const dialogText = (await $('[role="dialog"]').getText()).replace(/\s+/g, " ");
     expect(dialogText).not.toContain("will be unmounted from");
     expect(dialogText).toContain("Nikon P3 · Optic");
-    expect(dialogText).toContain("Kept records mounted on LaRue PredatAR will be unmounted.");
+    expect(dialogText).toContain(
+      "Kept firearms and accessories mounted on LaRue PredatAR will be unmounted.",
+    );
 
     await tabToRadioGroup("What happened");
     await realKey("space");

@@ -354,7 +354,7 @@ in §1, because every later decision feeds it.
 ## 13. The collection page's mount details
 
 - **Decision**: `FirearmSummary` gains `mountedOn: RecordLabel | null` (the
-  direct host) and `mountedCount: number` (everything below it).
+  direct host) and `mountedCounts: RecordCounts` (everything below it, by kind; issue #56).
   `list_firearms` loads the graph once and fetches the labels of the hosts
   it needs in one query per table
   (`WHERE id IN (SELECT value FROM json_each(:ids))`). Grouping and search
@@ -606,7 +606,7 @@ budget:
 | `dispose_firearm` with 20 items below | 1 s | one transaction |
 | create or update with `mountedOn` | 1 s | as today + graph check |
 | `list_accessories` search, and each grouping | 500 ms | FTS5 + graph load + label lookups |
-| `list_firearms` with `mountedOn` and `mountedCount` | 500 ms | as today + graph load + one label query per table |
+| `list_firearms` with `mountedOn` and `mountedCounts` | 500 ms | as today + graph load + one label query per table |
 | `list_mount_candidates` | 500 ms | `LIKE` over 20,000 rows, limit 50 |
 | `suggest_entries` over both tables | 50 ms | two indexed `GROUP BY`s |
 

@@ -68,7 +68,7 @@ const colt: FirearmSummary = {
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
   mountedOn: null,
-  mountedCount: 0,
+  mountedCounts: { firearms: 0, accessories: 0 },
 };
 
 function accessory(id: number, overrides: Partial<AccessorySummary>): AccessorySummary {
@@ -208,9 +208,9 @@ beforeEach(() => {
   vi.mocked(insuranceService.getPolicyDeletionImpact).mockResolvedValue({
     isExpired: false,
     isBlanketInForce: false,
-    scheduledRecordCount: 0,
+    scheduledCounts: { firearms: 0, accessories: 0 },
     scheduledRecords: [],
-    blanketRecordCount: 0,
+    blanketCounts: { firearms: 0, accessories: 0 },
     unscheduleOutcome: "uninsured",
     otherPolicies: [],
   });
@@ -269,6 +269,21 @@ describe("InsurancePage policies (FR-009)", () => {
     ).toHaveTextContent(
       "Add each policy that covers your firearms and accessories. A blanket policy, with a coverage limit, covers every firearm and accessory you haven't scheduled, with nothing to assign. A policy without a limit covers only the firearms and accessories you schedule on it from their records.",
     );
+  });
+
+  it("heads a scheduled table by the kinds in it, not 'Record' (issue #56)", () => {
+    renderPage(collectionWith(summaryWith()));
+
+    const card = screen.getByRole("heading", { name: "Optics rider" }).closest("article")!;
+    expect(within(card).getByRole("columnheader", { name: "Accessory" })).toBeInTheDocument();
+  });
+
+  it("counts each part of the coverage overview by kind (issue #56)", () => {
+    renderPage(collectionWith(summaryWith()));
+
+    const legend = document.querySelector<HTMLElement>(".hd-overview__legend")!;
+    expect(legend).toHaveTextContent(/\d (firearms?|accessor(y|ies))/);
+    expect(legend).not.toHaveTextContent(/\brecords?\b/);
   });
 
   it("does not list a disposed accessory", () => {

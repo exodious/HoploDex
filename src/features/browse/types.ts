@@ -2,6 +2,7 @@
 // (camelCase, per contracts/tauri-commands.md), User Story 2.
 
 import type { FirearmStatus } from "../firearms/types";
+import type { RecordCounts } from "../mounts/recordCounts";
 import type { RecordLabel } from "../mounts/types";
 
 export type GroupBy =
@@ -48,8 +49,9 @@ export interface FirearmSummary {
   scheduledCoverageAmount: number | null;
   /** specs/006-accessory-links FR-013: the direct host only. */
   mountedOn: RecordLabel | null;
-  /** Everything mounted below, at any depth (contracts/ui-accessories.md §9). */
-  mountedCount: number;
+  /** Everything mounted below, at any depth, by kind
+   * (contracts/ui-accessories.md §9). */
+  mountedCounts: RecordCounts;
 }
 
 export interface FirearmGroup {

@@ -17,7 +17,7 @@ host at a time, nested to any depth and never in a loop. Mounts record only
 the current configuration and are never judged. They show:
 - on both records: a "Mounted on" chain, and a Mounted section listing
   everything below;
-- on the collection page: "Mounted on …" and "N mounted";
+- on the collection page: "Mounted on …" and "{counts} mounted" ("1 firearm and 2 accessories mounted");
 - on the new Accessories page: grouping by "Mounted on".
 
 Disposing of a host offers to dispose of what is mounted on it, each record
@@ -229,7 +229,7 @@ src-tauri/
 │   │   ├── accessories.rs            # NEW: the 9 accessory commands + ops
 │   │   ├── mounts.rs                 # NEW: mount_record, list_mount_candidates + ops
 │   │   ├── firearms.rs               # uid on create; mountedOn on save; MountDetail; summary
-│   │   │                             #  mountedOn/mountedCount; dispose withMounted; HashMap groups
+│   │   │                             #  mountedOn/mountedCounts; dispose withMounted; HashMap groups
 │   │   ├── photos.rs, documents.rs   # owner: RecordRef
 │   │   ├── insurance.rs              # deletion impact and updates over both tables;
 │   │   │                             #  assign_accessory_coverage
@@ -247,7 +247,7 @@ src-tauri/
     ├── list_accessories_test.rs      # NEW: US4, FR-016–FR-018
     ├── accessory_spreadsheet_test.rs # NEW: US5, FR-020–FR-024, SC-002, SC-003
     ├── record_identifier_test.rs     # NEW: FR-019, uid triggers
-    ├── list_firearms_test.rs         # + mountedOn, mountedCount
+    ├── list_firearms_test.rs         # + mountedOn, mountedCounts
     ├── fts_search_test.rs            # + not found through mounts
     ├── entry_suggestions_test.rs     # + both tables
     ├── photo_test.rs, document_test.rs  # + accessory owner, owner CHECK
@@ -293,7 +293,7 @@ src/
 │   │   ├── RestoreDialog.tsx         # either record kind
 │   │   └── types.ts                  # mountedOn; RecordRef re-exported
 │   ├── browse/
-│   │   ├── BrowseList.tsx, BrowseTiles.tsx   # "Mounted on …", "N mounted"
+│   │   ├── BrowseList.tsx, BrowseTiles.tsx   # "Mounted on …", "{counts} mounted"
 │   │   ├── typeDrawings.ts           # + 12 kind drawings, with their source note
 │   │   └── TypeDrawing.test.tsx      # every seeded kind key has a drawing
 │   ├── media/

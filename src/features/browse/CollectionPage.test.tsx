@@ -35,7 +35,7 @@ const summary = {
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
   mountedOn: null,
-  mountedCount: 0,
+  mountedCounts: { firearms: 0, accessories: 0 },
 };
 
 const collection: CollectionState = {

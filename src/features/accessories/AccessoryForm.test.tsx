@@ -187,7 +187,7 @@ describe("AccessoryForm hints (FR-002, FR-005)", () => {
     render(<AccessoryForm onSubmit={vi.fn()} />);
     expect(screen.getByLabelText(/^Estimated value/)).toHaveAccessibleDescription(
       expect.stringContaining(
-        "The value of this record as a whole, everything it describes included. Value each record on its own.",
+        "The value of this accessory as a whole, everything it describes included. Leave out any firearm or accessory recorded separately, such as one mounted on it.",
       ),
     );
   });

@@ -88,7 +88,7 @@ A `Dialog` with the large form layout, as `FirearmForm`'s add and edit:
 | 3 | **Cartridge**, **Caliber** (`EntryField`s) | 004's row: a blank caliber is filled from the cartridge, with its hints |
 | 4 | **Serial number** (`TextField`, `hd-field--third`) | No "no serial number" box (FR-004) |
 | 5 | **Mounted on** (`MountChooser`, §4) | Optional. The hint reads "The firearm or accessory it is on now, if any." |
-| 6 | **Estimated value** (`MoneyField`, `hd-field--quarter`) | The hint reads "The value of this record as a whole, everything it describes included. Value each record on its own." (FR-005) |
+| 6 | **Estimated value** (`MoneyField`, `hd-field--quarter`) | The hint reads "The value of this accessory as a whole, everything it describes included. Leave out any firearm or accessory recorded separately, such as one mounted on it." (FR-005) |
 | 7 | **Acquired**: source (`TextField`), date (`DateField`), price (`MoneyField`) | As the firearm form's Acquisition group |
 | 8 | **Notes** (`TextArea`) | |
 
@@ -205,10 +205,15 @@ The existing `DisposeDialog` serves both kinds of record. Its shared fields
     received"), optional, with the hint "Leave blank if none was received
     separately."
 - **What happens to kept records** is stated under the list, worked out
-  from the choices:
-  - "Kept records mounted on {name} will be unmounted."
-  - When a kept record stays on a kept record: "Records kept with what
-    they are mounted on stay mounted."
+  from the choices, each statement naming the kinds it is about (spec.md
+  FR-012, issue #56: "The kept accessory", "Kept firearms and
+  accessories"):
+  - "Kept {kinds} mounted on {name} will be unmounted.", for those
+    mounted directly on the record being disposed of, and once for each
+    record disposed with it that kept ones are mounted on, naming it.
+  - When kept records stay on a kept record: "{Kinds} kept with what they
+    are mounted on stay mounted." ("The accessory kept with what it is
+    mounted on stays mounted." for one).
 - **Confirm** submits one `dispose_*` call with `withMounted`. If the
   backend reports that what is mounted has changed, the dialog shows that
   error and reloads the list.
@@ -220,8 +225,9 @@ The existing `DisposeDialog` serves both kinds of record. Its shared fields
 ## 8. Delete confirmation (FR-015, US3-5, US3-9)
 
 The standard delete `ConfirmDialog` gains, when anything is mounted
-directly on the record: "{n} records mounted on it will stay in the
-collection, unmounted:", followed by their names as a list. Records mounted
+directly on the record: "{counts} mounted on it will stay in the
+collection, unmounted:", the counts by kind ("1 firearm and 2
+accessories", issue #56), followed by their names as a list. Records mounted
 further down are not listed, because they stay where they are. The record's
 own deletion wording is unchanged.
 
@@ -231,9 +237,10 @@ own deletion wording is unchanged.
   - **List**: "Mounted on {host's RecordName}" as a muted line under the
     firearm's name, with the host as a link.
   - **Tiles**: the same line under the name.
-- **A firearm with records mounted on it**: "{n} mounted" in the same
-  place, counting everything below at any depth, not linked, not naming
-  them (US2-11).
+- **A firearm with records mounted on it**: "{counts} mounted" in the
+  same place, counting everything below at any depth by kind ("1 firearm
+  and 2 accessories mounted", "2 accessories mounted", issue #56), not
+  linked, not naming them (US2-11).
 - **A firearm that is both mounted and carrying records** shows both
   lines: "Mounted on …" first.
 - **A firearm that is neither** shows neither.
@@ -243,7 +250,17 @@ own deletion wording is unchanged.
 
 - **Value summary**: a third line under the collection total, "Accessories
   {accessoriesTotal}", beside the firearms subtotal (FR-008). The blanket
-  policy's line counts "{n} firearms and {m} accessories".
+  policy's line counts "{n} firearms and {m} accessories". The coverage
+  overview's Covered, Under-insured and Uninsured counts, and every other
+  count of insured firearms and accessories, say so by kind ("2 firearms
+  and 1 accessory"), and a policy card's scheduled table heads its name
+  column by the kinds in it: "Firearm", "Accessory", or "Firearm or
+  accessory" (spec.md FR-012, issue #56).
+- **The policy delete dialog** counts what is scheduled by kind ("2
+  firearms and 1 accessory are scheduled under it"), as do the blanket
+  warning ("{counts} that aren't scheduled will lose its blanket coverage")
+  and the confirmation checkbox ("{counts} will lose their scheduled
+  coverage"); its notes say "this firearm", "these accessories" and so on.
 - **Policy cards** list scheduled accessories with the scheduled firearms,
   each by `RecordName`. The coverage dialog serves accessories as it serves
   firearms (FR-009).
@@ -254,7 +271,10 @@ own deletion wording is unchanged.
 
 - **The export dialog's counts** read "{n} firearms and {m} accessories"
   from `get_export_scope`. With the filtered scope, a hint reads
-  "Includes everything mounted on these firearms."
+  "Includes everything mounted on these firearms." The scope choice is
+  labelled "What to include", the whole collection's card reads "Every
+  firearm and accessory, including disposed ones.", and the progress bar
+  counts rows (issue #56).
 - **The disclosure** gains "accessories, with their serial numbers, values
   and photos" whenever `includesAccessories` is true (FR-021). It is worded
   in the same sentence as 005's registration disclosure.
@@ -269,14 +289,21 @@ own deletion wording is unchanged.
   one of firearms and one of accessories. Nothing was added." (issue #56).
 - **The import report** names each row's table ("Accessories, row 4") and
   lists mount warnings with the other warnings. The conflict list shows an
-  accessory conflict by its `RecordName`.
+  accessory conflict by its `RecordName`, under a column headed by the
+  kinds it lists ("Firearm", "Accessory", or "Firearm or accessory"), and
+  its heading counts rows matching "firearms", "accessories", or
+  "firearms and accessories" (issue #56).
+- **The Replace confirmation** is titled by what it replaces, by kind
+  ("Replace 2 firearms and 1 accessory?"), and its button names the kinds
+  ("Replace firearms").
 - **Replacing a record with a disposed row** (issue #56): the Replace
   confirmation adds, for each row being replaced whose conflict has a
   `mounted` list, a group titled "Mounted on {name} ({Table}, row {n})"
   with §7's list and choices (Keep | Dispose with it, Keep by default) and
-  statements, but no price fields. A note above the groups says the
-  records disposed with it take the row's type, recipient and date, with
-  no price. Confirming sends each row's chosen records as `withMounted`.
+  statements, but no price fields. A note above the groups names the
+  record the row disposes of and says that the kinds disposed with it
+  ("Accessories disposed with it") take the row's type, recipient and
+  date, with no price. Confirming sends each row's chosen records as `withMounted`.
 
 ## 12. Accessory record page (US1, FR-007a, FR-013)
 
@@ -313,7 +340,7 @@ and dark:
 - the dispose dialog with nested mounted records, one set to "Dispose
   with it";
 - the delete confirmation naming mounted records;
-- the collection list and tiles with "Mounted on" and "3 mounted";
+- the collection list and tiles with "Mounted on" and "{counts} mounted";
 - the value summary with the accessories subtotal;
 - the export dialog with the accessories disclosure;
 - the import report with a mount warning;

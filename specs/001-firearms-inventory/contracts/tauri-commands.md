@@ -141,7 +141,7 @@ _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#fir
 
 ### `list_firearms`
 
-_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmSummary` gains `mountedOn` and `mountedCount`; search and `groupBy` are unchanged._
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmSummary` gains `mountedOn` and `mountedCounts`; search and `groupBy` are unchanged._
 
 - **Input**:
   ```ts

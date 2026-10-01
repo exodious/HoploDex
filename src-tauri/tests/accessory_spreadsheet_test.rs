@@ -1096,7 +1096,7 @@ fn a_mount_that_cannot_be_made_warns_with_the_row_and_the_reason_and_the_record_
             (
                 "accessories".to_owned(),
                 2,
-                format!("Mounted on {disposed_uid}: that record is disposed. Imported unmounted.")
+                format!("Mounted on {disposed_uid}: that firearm is disposed. Imported unmounted.")
             ),
             (
                 "accessories".to_owned(),

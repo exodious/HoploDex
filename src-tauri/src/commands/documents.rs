@@ -60,7 +60,10 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
         if !exists {
-            return Err(CommandError::not_found("No record was found with that id."));
+            return Err(CommandError::not_found(format!(
+                "No {} was found with that id.",
+                owner.noun()
+            )));
         }
         let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(

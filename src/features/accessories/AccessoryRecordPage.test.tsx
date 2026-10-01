@@ -659,7 +659,7 @@ describe("AccessoryRecordPage delete confirmation with mounted records (US3)", (
     const dialog = await openDelete();
 
     expect(dialog).toHaveTextContent(
-      "2 records mounted on it will stay in the collection, unmounted:",
+      "2 accessories mounted on it will stay in the collection, unmounted:",
     );
     const items = within(within(dialog).getByRole("list")).getAllByRole("listitem");
     expect(items.map((i) => i.textContent)).toEqual([
@@ -670,14 +670,14 @@ describe("AccessoryRecordPage delete confirmation with mounted records (US3)", (
     expect(dialog).toHaveTextContent("This erases the record entirely");
   });
 
-  it("says '1 record' for one", async () => {
+  it("says '1 accessory' for one, naming the kind (issue #56)", async () => {
     getAccessory.mockResolvedValue({
       ...optic,
       mount: { chain: [], mounted: [{ label: light, host, depth: 1 }] },
     });
 
     expect(await openDelete()).toHaveTextContent(
-      "1 record mounted on it will stay in the collection, unmounted:",
+      "1 accessory mounted on it will stay in the collection, unmounted:",
     );
   });
 

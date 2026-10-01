@@ -3,6 +3,7 @@ import { FirearmName } from "../app/FirearmName";
 import { GroupHeading } from "./BrowseList";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
+import { hasAny } from "../mounts/recordCounts";
 import { MountLines } from "./MountLines";
 import { caliberText } from "./types";
 import type { VisibleGroup } from "./types";
@@ -61,11 +62,11 @@ export function BrowseTiles({ groups, grouped, onSelect }: BrowseTilesProps) {
                       </span>
                     </span>
                   </button>
-                  {(firearm.mountedOn || firearm.mountedCount > 0) && (
+                  {(firearm.mountedOn || hasAny(firearm.mountedCounts)) && (
                     <div className="hd-tile__mounts">
                       <MountLines
                         mountedOn={firearm.mountedOn}
-                        mountedCount={firearm.mountedCount}
+                        mountedCounts={firearm.mountedCounts}
                       />
                     </div>
                   )}

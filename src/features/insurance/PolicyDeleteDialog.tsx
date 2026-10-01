@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Checkbox, ChoiceCards, ConfirmDialog, Icon, Select } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
+import { capitalized, describeCounts, hasAny, kindNoun } from "../mounts/recordCounts";
 import { RecordName } from "../mounts/RecordName";
 import * as insuranceService from "./insuranceService";
 import type { InsurancePolicy, PolicyDeletionImpact, ScheduledFirearmsAction } from "./types";
@@ -15,8 +16,6 @@ export interface PolicyDeleteDialogProps {
 }
 
 type Choice = "move" | "unschedule";
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Deleting a policy never silently un-insures a record (FR-034, 006 FR-009):
  * with firearms or accessories scheduled under it, the user first moves them to another policy
@@ -64,7 +63,9 @@ function PolicyDeleteBody({
     };
   }, [policy.id]);
 
-  const scheduled = impact?.scheduledRecordCount ?? 0;
+  const scheduledCounts = impact?.scheduledCounts ?? { firearms: 0, accessories: 0 };
+  const scheduled = scheduledCounts.firearms + scheduledCounts.accessories;
+  const scheduledNoun = kindNoun(scheduledCounts);
   const target = impact?.otherPolicies.find((p) => String(p.id) === targetId);
   // A policy that hasn't expired is still insuring these firearms.
   const strongConfirmation = choice === "unschedule" && impact != null && !impact.isExpired;
@@ -105,7 +106,7 @@ function PolicyDeleteBody({
       title={`Delete ${policy.name}?`}
       description={
         scheduled > 0
-          ? `${plural(scheduled, "record is", "records are")} scheduled under it. Choose what happens to them; none is left uninsured by accident.`
+          ? `${capitalized(describeCounts(scheduledCounts))} ${scheduled === 1 ? "is" : "are"} scheduled under it. Choose what happens to ${scheduled === 1 ? "it" : "them"}; none is left uninsured by accident.`
           : "The policy and its details will be permanently removed."
       }
       confirmLabel="Delete policy"
@@ -125,8 +126,8 @@ function PolicyDeleteBody({
             <Icon name="alert" />
             <span className="hd-banner__text">
               This is the blanket policy in force.{" "}
-              {impact.blanketRecordCount > 0
-                ? `${plural(impact.blanketRecordCount, "record", "records")} that ${impact.blanketRecordCount === 1 ? "isn't" : "aren't"} scheduled will lose its blanket coverage`
+              {hasAny(impact.blanketCounts)
+                ? `${capitalized(describeCounts(impact.blanketCounts))} that ${impact.blanketCounts.firearms + impact.blanketCounts.accessories === 1 ? "isn't" : "aren't"} scheduled will lose its blanket coverage`
                 : "No unscheduled firearms or accessories rely on it, but any you add later will lose its blanket coverage"}
               , and will be uninsured unless another blanket policy is in force.
             </span>
@@ -144,7 +145,8 @@ function PolicyDeleteBody({
             </ul>
             {impact.isExpired && (
               <p className="hd-form-note">
-                This policy has expired, so these records are already treated as uninsured.
+                This policy has expired, so {scheduled === 1 ? "this" : "these"} {scheduledNoun}{" "}
+                {scheduled === 1 ? "is" : "are"} already treated as uninsured.
               </p>
             )}
             <ChoiceCards<Choice>
@@ -184,7 +186,8 @@ function PolicyDeleteBody({
                   }))}
                 />
                 <p className="hd-form-note">
-                  Please confirm that the new policy actually covers these records.
+                  Please confirm that the new policy actually covers{" "}
+                  {scheduled === 1 ? "this" : "these"} {scheduledNoun}.
                 </p>
                 {target?.isExpired && (
                   <p className="hd-form-note">
@@ -202,7 +205,7 @@ function PolicyDeleteBody({
                 </p>
                 {strongConfirmation && (
                   <Checkbox
-                    label={`${plural(scheduled, "record", "records")} will lose their scheduled coverage`}
+                    label={`${capitalized(describeCounts(scheduledCounts))} will lose ${scheduled === 1 ? "its" : "their"} scheduled coverage`}
                     checked={understood}
                     onCheckedChange={setUnderstood}
                   />

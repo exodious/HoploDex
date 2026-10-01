@@ -61,6 +61,10 @@ type MountDetail = {
   chain: RecordLabel[];     // direct host first, then its host, …; [] when not mounted
   mounted: MountedEntry[];  // everything below; [] on a disposed record
 };
+
+/** How many firearms and accessories a set holds, so the UI can say which
+ *  (issue #56: "1 firearm and 2 accessories", never "3 records"). */
+type RecordCounts = { firearms: number; accessories: number };
 ```
 
 ## Firearms (amended)
@@ -83,8 +87,8 @@ type MountDetail = {
   rule is unchanged.
 - **`get_firearm`** → `FirearmDetail` gains `mount: MountDetail`.
 - **`list_firearms`**: `FirearmSummary` gains `mountedOn: RecordLabel | null`
-  and `mountedCount: number`, which counts everything below, at any depth
-  (FR-016a). Search and `groupBy` are unchanged.
+  and `mountedCounts: RecordCounts`, which counts everything below, at any
+  depth, by kind (FR-016a, issue #56). Search and `groupBy` are unchanged.
 - **`dispose_firearm`**:
 
   ```ts
@@ -322,9 +326,11 @@ FR-008). A photo that belongs to a different owner than the one named is
 
 - **`get_policy_deletion_impact`**: `scheduledFirearms` becomes
   `scheduledRecords: RecordLabel[]`. `scheduledFirearmCount` and
-  `blanketFirearmCount` become `scheduledRecordCount` and
-  `blanketRecordCount`, counting firearms and accessories together
-  (FR-009).
+  `blanketFirearmCount` become `scheduledCounts: RecordCounts` and
+  `blanketCounts: RecordCounts`, counting firearms and accessories by kind
+  (FR-009, issue #56). `delete_insurance_policy`'s refusals and
+  confirmation request count them the same way ("This policy still covers
+  2 firearms and 1 accessory. …").
 - **`delete_insurance_policy`**: unchanged input. Moving or unscheduling
   now covers the policy's accessories as well as its firearms, in the same
   transaction.
@@ -392,7 +398,10 @@ input: { files: { filePath: string; format: "csv" | "xlsx" }[] }   // 1 or 2 fil
   reason:
   - "Mounted on {id}: no firearm or accessory has this record ID. Imported
     unmounted."
-  - "Mounted on {id}: that record is disposed. Imported unmounted."
+  - "Mounted on {id}: that firearm is disposed. Imported unmounted." (or
+    "that accessory", by the kind of the record it names, issue #56)
+  - "Mounted on {id}: a disposed firearm is never mounted. Imported
+    unmounted." (or "accessory", by the row's table)
   - "Mounted on {id}: it would be mounted on itself through {name}.
     Imported unmounted."
   - "Mounted on {value}: not a record ID. Imported unmounted."

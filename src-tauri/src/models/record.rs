@@ -64,6 +64,14 @@ impl RecordRef {
         }
     }
 
+    /// What the user calls it: "firearm" or "accessory" (issue #56).
+    pub fn noun(&self) -> &'static str {
+        match self {
+            Self::Firearm(_) => "firearm",
+            Self::Accessory(_) => "accessory",
+        }
+    }
+
     /// The table the record lives in.
     pub fn table(&self) -> &'static str {
         match self {
@@ -102,6 +110,76 @@ impl<'de> Deserialize<'de> for RecordRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = RecordRefWire::deserialize(deserializer)?;
         Ok(Self::new(wire.kind, wire.id))
+    }
+}
+
+/// How many firearms and accessories a set holds. Issue #56: the
+/// application doesn't call either a "record" on its own, so a count says
+/// what it counts ("1 firearm and 2 accessories").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct RecordCounts {
+    pub firearms: usize,
+    pub accessories: usize,
+}
+
+impl RecordCounts {
+    pub fn of(records: impl IntoIterator<Item = RecordRef>) -> Self {
+        let mut counts = Self::default();
+        for record in records {
+            counts.add(record);
+        }
+        counts
+    }
+
+    pub fn add(&mut self, record: RecordRef) {
+        match record {
+            RecordRef::Firearm(_) => self.firearms += 1,
+            RecordRef::Accessory(_) => self.accessories += 1,
+        }
+    }
+
+    pub fn total(&self) -> usize {
+        self.firearms + self.accessories
+    }
+
+    /// "1 firearm", "2 accessories", "1 firearm and 2 accessories"; "no
+    /// firearms or accessories" when both are 0. The frontend's
+    /// `describeCounts` says the same.
+    pub fn describe(&self) -> String {
+        let plural =
+            |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        match (self.firearms, self.accessories) {
+            (0, 0) => "no firearms or accessories".to_owned(),
+            (f, 0) => plural(f, "firearm", "firearms"),
+            (0, a) => plural(a, "accessory", "accessories"),
+            (f, a) => format!(
+                "{} and {}",
+                plural(f, "firearm", "firearms"),
+                plural(a, "accessory", "accessories")
+            ),
+        }
+    }
+}
+
+impl RecordCounts {
+    /// The noun for the set without its count: "firearm" or "accessory"
+    /// for one, "firearms", "accessories" or "firearms and accessories" for
+    /// more. The frontend's `kindNoun` says the same.
+    pub fn noun(&self) -> &'static str {
+        match (self.firearms, self.accessories) {
+            (1, 0) => "firearm",
+            (0, 1) => "accessory",
+            (_, 0) => "firearms",
+            (0, _) => "accessories",
+            _ => "firearms and accessories",
+        }
+    }
+}
+
+impl std::ops::AddAssign for RecordCounts {
+    fn add_assign(&mut self, other: Self) {
+        self.firearms += other.firearms;
+        self.accessories += other.accessories;
     }
 }
 
@@ -146,4 +224,41 @@ pub struct MountDetail {
     pub chain: Vec<RecordLabel>,
     /// Everything below; empty on a disposed record.
     pub mounted: Vec<MountedEntry>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn counts(firearms: usize, accessories: usize) -> RecordCounts {
+        RecordCounts { firearms, accessories }
+    }
+
+    #[test]
+    fn a_count_names_what_it_counts() {
+        assert_eq!(counts(1, 0).describe(), "1 firearm");
+        assert_eq!(counts(0, 2).describe(), "2 accessories");
+        assert_eq!(counts(2, 1).describe(), "2 firearms and 1 accessory");
+        assert_eq!(counts(0, 0).describe(), "no firearms or accessories");
+    }
+
+    #[test]
+    fn a_noun_names_the_kinds_in_the_set() {
+        assert_eq!(counts(1, 0).noun(), "firearm");
+        assert_eq!(counts(0, 1).noun(), "accessory");
+        assert_eq!(counts(3, 0).noun(), "firearms");
+        assert_eq!(counts(0, 2).noun(), "accessories");
+        assert_eq!(counts(1, 1).noun(), "firearms and accessories");
+    }
+
+    #[test]
+    fn counts_are_taken_by_kind() {
+        let of = RecordCounts::of([
+            RecordRef::Firearm(1),
+            RecordRef::Accessory(1),
+            RecordRef::Accessory(2),
+        ]);
+        assert_eq!(of, counts(1, 2));
+        assert_eq!(of.total(), 3);
+    }
 }

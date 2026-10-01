@@ -1099,13 +1099,13 @@ fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_
     }
 
     // The collection page with each firearm's host and count of mounted records.
-    let firearms = within("list_firearms with mountedOn and mountedCount", BUDGET_MS, || {
+    let firearms = within("list_firearms with mountedOn and mountedCounts", BUDGET_MS, || {
         firearm_ops::list_firearms(conn, &ListFirearmsInput::default()).unwrap()
     });
     let rows: Vec<_> = firearms.groups.iter().flat_map(|g| &g.firearms).collect();
     assert_eq!(rows.len(), RECORD_COUNT);
     let head = rows.iter().find(|f| f.id == scale.firearm(0).id()).unwrap();
-    assert_eq!(head.mounted_count, CHAIN_DEPTH);
+    assert_eq!(head.mounted_counts.total(), CHAIN_DEPTH);
     // Searched, with each hit's host and mounted count (FR-026, SC-007): FTS5
     // at three characters or more, LIKE at one or two.
     for (query, expected) in [("xyzzy", Some(1)), ("Nick 4242", Some(1)), ("gl", None)] {

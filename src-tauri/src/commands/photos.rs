@@ -46,7 +46,7 @@ pub mod ops {
         if exists {
             Ok(())
         } else {
-            Err(CommandError::not_found("No record was found with that id."))
+            Err(CommandError::not_found(format!("No {} was found with that id.", owner.noun())))
         }
     }
 
@@ -159,7 +159,10 @@ pub mod ops {
     ) -> Result<ThumbnailChoice, CommandError> {
         let photo = get_photo(conn, photo_id)?;
         if photo.owner != owner {
-            return Err(CommandError::not_found("That photo does not belong to this record."));
+            return Err(CommandError::not_found(format!(
+                "That photo does not belong to this {}.",
+                owner.noun()
+            )));
         }
         set_owner_thumbnail(conn, owner, Some(photo_id))?;
         Ok(ThumbnailChoice { thumbnail_photo_id: photo_id })

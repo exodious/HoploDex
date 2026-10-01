@@ -95,7 +95,7 @@ const summary: FirearmSummary = {
   insurancePolicyId: policy.id,
   scheduledCoverageAmount: 1250,
   mountedOn: null,
-  mountedCount: 0,
+  mountedCounts: { firearms: 0, accessories: 0 },
 };
 
 // An uninsured one, so the collection offers "Review insurance".

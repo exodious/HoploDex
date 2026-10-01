@@ -1,4 +1,5 @@
 import { directlyMounted } from "./directlyMounted";
+import { countKinds, describeCounts } from "./recordCounts";
 import { recordKey } from "./recordKey";
 import { recordNameWithType } from "./recordNames";
 import type { MountedEntry } from "./types";
@@ -20,8 +21,8 @@ export function DeleteMountedNote({ mounted }: DeleteMountedNoteProps) {
   return (
     <>
       <p>
-        {direct.length === 1 ? "1 record" : `${direct.length} records`} mounted on it will stay in
-        the collection, unmounted:
+        {describeCounts(countKinds(direct.map((entry) => entry.label.record)))} mounted on it will
+        stay in the collection, unmounted:
       </p>
       <ul className="hd-mounted-stay">
         {direct.map((entry) => (

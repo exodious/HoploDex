@@ -85,7 +85,7 @@ function firearmSummary(id: number, overrides: Partial<FirearmSummary> = {}): Fi
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
     mountedOn: null,
-    mountedCount: 0,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }

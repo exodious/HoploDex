@@ -8,6 +8,7 @@ import type { FirearmSummary } from "../browse/types";
 import { RecordName } from "../mounts/RecordName";
 import type { RecordLabel } from "../mounts/types";
 import { expiryLabel } from "./coverage";
+import { countKinds, kindHeading } from "../mounts/recordCounts";
 import { accessoryRecord, firearmRecord, refKey, type InsuranceRecord } from "./records";
 import type { BlanketSummary, InsurancePolicy, PolicySummary } from "./types";
 
@@ -238,7 +239,9 @@ function ScheduledTable({
     <table className="hd-mini-table">
       <thead>
         <tr>
-          <th scope="col">Record</th>
+          <th scope="col">
+            {kindHeading(countKinds(records.map((record) => record.label.record)))}
+          </th>
           <th scope="col" className="hd-table__num">
             Value
           </th>

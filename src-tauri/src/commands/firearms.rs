@@ -7,7 +7,7 @@ use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
     DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
-use crate::models::record::{MountDetail, RecordLabel, RecordRef};
+use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
 
@@ -184,8 +184,8 @@ pub struct FirearmSummary {
     pub scheduled_coverage_amount: Option<i64>,
     /// specs/006-accessory-links FR-013: what it is mounted on directly.
     pub mounted_on: Option<RecordLabel>,
-    /// FR-016a: everything below it, at any depth.
-    pub mounted_count: usize,
+    /// FR-016a: everything below it, at any depth, by kind (issue #56).
+    pub mounted_counts: RecordCounts,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -1074,7 +1074,7 @@ pub mod ops {
                         action_type_name: row.get(15)?,
                         registered_as: row.get(16)?,
                         mounted_on: None,
-                        mounted_count: 0,
+                        mounted_counts: RecordCounts::default(),
                     };
                     let registered_to: Option<String> = row.get(17)?;
                     Ok((summary, origin, registered_to))
@@ -1103,7 +1103,7 @@ pub mod ops {
             let record = RecordRef::Firearm(summary.id);
             summary.mounted_on =
                 graph.host_of(record).and_then(|host| host_labels.get(&host).cloned());
-            summary.mounted_count = graph.count_below(record, &mut counts);
+            summary.mounted_counts = graph.count_below(record, &mut counts);
             let key = match input.group_by {
                 Some(GroupBy::Type) => summary.firearm_type_name.clone(),
                 Some(GroupBy::Caliber) => summary.caliber.clone(),

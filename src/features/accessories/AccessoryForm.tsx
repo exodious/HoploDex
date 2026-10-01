@@ -44,7 +44,7 @@ const KIND_HINT = "A suppressor is recorded as a firearm.";
 
 /** FR-005: shown under Estimated value. */
 const VALUE_HINT =
-  "The value of this record as a whole, everything it describes included. Value each record on its own.";
+  "The value of this accessory as a whole, everything it describes included. Leave out any firearm or accessory recorded separately, such as one mounted on it.";
 
 /** Under Kind when `list_accessory_kinds` failed: it has nothing to offer,
  * and the user should know why rather than see an empty choice. */

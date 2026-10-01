@@ -9,7 +9,7 @@ use crate::models::firearm::{Firearm, FirearmStatus};
 use crate::models::insurance_policy::{
     InsurancePolicy, InsurancePolicyInput, validate_insurance_policy_input,
 };
-use crate::models::record::{RecordLabel, RecordRef};
+use crate::models::record::{RecordCounts, RecordLabel, RecordRef};
 use crate::services::insurance_status::{PolicyStatus, load_context};
 use crate::services::valuation::{self, ValueSummary};
 use crate::session::Session;
@@ -63,12 +63,12 @@ pub struct OtherPolicy {
 pub struct PolicyDeletionImpact {
     pub is_expired: bool,
     pub is_blanket_in_force: bool,
-    /// Active firearms and accessories together (FR-009).
-    pub scheduled_record_count: i64,
+    /// Active firearms and accessories (FR-009), by kind (issue #56).
+    pub scheduled_counts: RecordCounts,
     pub scheduled_records: Vec<RecordLabel>,
     /// Active unscheduled firearms and accessories that lose blanket coverage
-    /// because this is the blanket policy in force (0 otherwise).
-    pub blanket_record_count: i64,
+    /// because this is the blanket policy in force (none otherwise).
+    pub blanket_counts: RecordCounts,
     /// What becomes of records left unscheduled: `"blanket"` if another
     /// blanket policy is in force once this one is gone, else `"uninsured"`.
     pub unschedule_outcome: &'static str,
@@ -324,9 +324,12 @@ pub mod ops {
         Ok(PolicyDeletionImpact {
             is_expired: status.is_expired,
             is_blanket_in_force: in_force.is_some(),
-            scheduled_record_count: scheduled_records.len() as i64,
+            scheduled_counts: RecordCounts::of(scheduled_records.iter().map(|label| label.record)),
             scheduled_records,
-            blanket_record_count: in_force.map_or(0, |b| b.firearm_count + b.accessory_count),
+            blanket_counts: in_force.map_or_else(RecordCounts::default, |b| RecordCounts {
+                firearms: b.firearm_count as usize,
+                accessories: b.accessory_count as usize,
+            }),
             unschedule_outcome: if another_blanket_in_force { "blanket" } else { "uninsured" },
             other_policies,
         })
@@ -351,17 +354,18 @@ pub mod ops {
             ));
         }
         let impact = get_policy_deletion_impact(conn, id)?;
-        let active = impact.scheduled_record_count;
+        let active = impact.scheduled_counts;
 
         let tx = conn.unchecked_transaction().map_err(CommandError::from_db)?;
         let (mut moved_count, mut unscheduled_count) = (0, 0);
         match resolution {
-            None if active > 0 => {
+            None if active.total() > 0 => {
                 return Err(CommandError::new(
                     "POLICY_HAS_FIREARMS",
                     format!(
-                        "This policy still covers {active} record(s). Move them to another \
-                         policy, or leave them unscheduled, before deleting it."
+                        "This policy still covers {}. Move them to another policy, or leave \
+                         them unscheduled, before deleting it.",
+                        active.describe()
                     ),
                 ));
             }
@@ -369,7 +373,7 @@ pub mod ops {
                 if *target_policy_id == id || get_policy(conn, *target_policy_id).is_err() {
                     return Err(CommandError::new(
                         "VALIDATION_ERROR",
-                        "Choose another existing policy to move the records to.",
+                        format!("Choose another existing policy to move the {} to.", active.noun()),
                     ));
                 }
                 for table in ["firearms", "accessories"] {
@@ -388,7 +392,7 @@ pub mod ops {
             resolution => {
                 if let Some(ScheduledFirearmsAction::Unschedule { confirm_unschedule }) = resolution
                     && !impact.is_expired
-                    && active > 0
+                    && active.total() > 0
                     && *confirm_unschedule != Some(true)
                 {
                     let outcome = if impact.unschedule_outcome == "blanket" {
@@ -399,8 +403,9 @@ pub mod ops {
                     return Err(CommandError::new(
                         "VALIDATION_ERROR",
                         format!(
-                            "Leaving {active} record(s) unscheduled removes their scheduled \
-                                 coverage; they would be {outcome}. Confirm to continue."
+                            "Leaving {} unscheduled removes their scheduled coverage; they \
+                             would be {outcome}. Confirm to continue.",
+                            active.describe()
                         ),
                     ));
                 }

@@ -1584,13 +1584,16 @@ pub mod ops {
                 continue;
             };
             if !active.contains(&host) {
-                warn(warnings, format!("Mounted on {host_id}: that record is disposed."));
+                warn(warnings, format!("Mounted on {host_id}: that {} is disposed.", host.noun()));
                 continue;
             }
             if !active.contains(&request.record) {
                 warn(
                     warnings,
-                    format!("Mounted on {host_id}: a disposed record is never mounted."),
+                    format!(
+                        "Mounted on {host_id}: a disposed {} is never mounted.",
+                        request.record.noun()
+                    ),
                 );
                 continue;
             }

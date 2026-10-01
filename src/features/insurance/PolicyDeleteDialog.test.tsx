@@ -44,9 +44,9 @@ const optic: RecordLabel = {
 const impact: PolicyDeletionImpact = {
   isExpired: false,
   isBlanketInForce: false,
-  scheduledRecordCount: 2,
+  scheduledCounts: { firearms: 2, accessories: 0 },
   scheduledRecords: [colt, glock],
-  blanketRecordCount: 0,
+  blanketCounts: { firearms: 0, accessories: 0 },
   unscheduleOutcome: "uninsured",
   otherPolicies: [
     { id: 4, name: "Homeowner's rider", isExpired: false },
@@ -80,7 +80,10 @@ describe("PolicyDeleteDialog (FR-034)", () => {
 
   it("deletes a policy with nothing scheduled on it straight away", async () => {
     const user = userEvent.setup();
-    const { onDeleted } = renderDialog({ scheduledRecordCount: 0, scheduledRecords: [] });
+    const { onDeleted } = renderDialog({
+      scheduledCounts: { firearms: 0, accessories: 0 },
+      scheduledRecords: [],
+    });
 
     await user.click(await deleteButton());
 
@@ -99,16 +102,23 @@ describe("PolicyDeleteDialog (FR-034)", () => {
 
   it("counts and lists scheduled firearms and accessories together, each by its name (US1, FR-009)", async () => {
     const user = userEvent.setup();
-    renderDialog({ scheduledRecordCount: 3, scheduledRecords: [colt, glock, optic] });
+    renderDialog({
+      scheduledCounts: { firearms: 2, accessories: 1 },
+      scheduledRecords: [colt, glock, optic],
+    });
 
     const items = await screen.findAllByRole("listitem");
     expect(items).toHaveLength(3);
     expect(items[2]).toHaveTextContent("Leupold VX-5HD 3-15x44 · Optic");
-    expect(screen.getByText(/3 records are scheduled under it/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 firearms and 1 accessory are scheduled under it/),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("radio", { name: /Leave unscheduled/ }));
     expect(
-      screen.getByRole("checkbox", { name: /3 records will lose their scheduled coverage/ }),
+      screen.getByRole("checkbox", {
+        name: "2 firearms and 1 accessory will lose their scheduled coverage",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -119,7 +129,9 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     await user.click(await screen.findByRole("radio", { name: /Move to another policy/ }));
     expect(await deleteButton()).toBeDisabled(); // no target chosen yet
     expect(screen.getByText(/keeps its scheduled amount/i)).toBeInTheDocument();
-    expect(screen.getByText(/confirm that the new policy actually covers/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/confirm that the new policy actually covers these firearms\./i),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: "Move to" }));
     await user.click(await screen.findByRole("option", { name: /Homeowner's rider/ }));
@@ -151,7 +163,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(await deleteButton()).toBeDisabled();
 
     await user.click(
-      screen.getByRole("checkbox", { name: /2 records will lose their scheduled coverage/ }),
+      screen.getByRole("checkbox", { name: /2 firearms will lose their scheduled coverage/ }),
     );
     await user.click(await deleteButton());
 
@@ -193,25 +205,27 @@ describe("PolicyDeleteDialog (FR-034)", () => {
 
   it("warns how many unscheduled firearms lose their blanket coverage when the blanket policy in force is deleted", async () => {
     renderDialog({
-      scheduledRecordCount: 0,
+      scheduledCounts: { firearms: 0, accessories: 0 },
       scheduledRecords: [],
       isBlanketInForce: true,
-      blanketRecordCount: 12,
+      blanketCounts: { firearms: 10, accessories: 2 },
     });
 
-    expect(await screen.findByText(/12 records/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/10 firearms and 2 accessories that aren't scheduled/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/lose its blanket coverage/i)).toBeInTheDocument();
   });
 
   it("counts an accessory among the records that lose blanket coverage", async () => {
     renderDialog({
-      scheduledRecordCount: 0,
+      scheduledCounts: { firearms: 0, accessories: 0 },
       scheduledRecords: [],
       isBlanketInForce: true,
-      blanketRecordCount: 1,
+      blanketCounts: { firearms: 0, accessories: 1 },
     });
 
-    expect(await screen.findByText(/1 record that isn't scheduled/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 accessory that isn't scheduled/)).toBeInTheDocument();
   });
 
   it("keeps the dialog open and shows the reason when the deletion is refused", async () => {
@@ -223,7 +237,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
       }),
     );
     const { onDeleted, onOpenChange } = renderDialog({
-      scheduledRecordCount: 0,
+      scheduledCounts: { firearms: 0, accessories: 0 },
       scheduledRecords: [],
     });
 

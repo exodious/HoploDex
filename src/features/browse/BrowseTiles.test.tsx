@@ -39,7 +39,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     scheduledCoverageAmount: null,
     // specs/006-accessory-links US2: not mounted, nothing mounted on it.
     mountedOn: null,
-    mountedCount: 0,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -138,13 +138,18 @@ describe("BrowseTiles mount details (US2-11)", () => {
   }
 
   const mounted = summary({ id: 1, make: "Gemtech", model: "GM-45", mountedOn: deerRifle });
-  const carrying = summary({ id: 2, make: "Ruger", model: "10/22", mountedCount: 3 });
+  const carrying = summary({
+    id: 2,
+    make: "Ruger",
+    model: "10/22",
+    mountedCounts: { firearms: 1, accessories: 2 },
+  });
   const both = summary({
     id: 3,
     make: "Springfield",
     model: "Saint",
     mountedOn: upper,
-    mountedCount: 2,
+    mountedCounts: { firearms: 0, accessories: 2 },
   });
   const neither = summary({ id: 4, make: "Hawken", model: "Plains" });
 
@@ -186,11 +191,11 @@ describe("BrowseTiles mount details (US2-11)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("shows '{n} mounted' on a firearm with records on it, not linked", () => {
+  it("shows what is mounted on a firearm by kind ('1 firearm and 2 accessories mounted'), not linked", () => {
     renderMounts([carrying]);
 
     const item = tile("Ruger 10/22");
-    const text = within(item).getByText("3 mounted");
+    const text = within(item).getByText("1 firearm and 2 accessories mounted");
     // Not a control of its own: no link, and no button other than the tile.
     expect(text.closest("a")).toBeNull();
     expect(within(item).queryByRole("link")).not.toBeInTheDocument();
@@ -203,7 +208,7 @@ describe("BrowseTiles mount details (US2-11)", () => {
 
     const item = tile("Springfield Saint");
     const hostLine = within(item).getByText(/Mounted on/);
-    const countLine = within(item).getByText("2 mounted");
+    const countLine = within(item).getByText("2 accessories mounted");
     expect(
       Boolean(hostLine.compareDocumentPosition(countLine) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true);

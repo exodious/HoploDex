@@ -6,9 +6,13 @@ import { useNavigation } from "../app/navigation";
 import { coverageShortfall } from "./coverage";
 import { PolicyCard, RecordLinkList } from "./PolicyCard";
 import { usePolicyEditors } from "./PolicyEditors";
+import { countKinds, describeCounts, type RecordCounts } from "../mounts/recordCounts";
 import { accessoryRecord, firearmRecord, type InsuranceRecord } from "./records";
 import type { InsurancePolicy } from "./types";
 import "./insurance.css";
+
+const kinds = (records: InsuranceRecord[]) =>
+  countKinds(records.map((record) => record.label.record));
 
 /** Value and coverage across the collection (US3): the collection-wide
  * total with its firearms and accessories subtotals (006 FR-008), every
@@ -78,7 +82,7 @@ export function InsurancePage() {
         under={sum(under)}
         underMissing={coverageShortfall(summary)}
         uninsured={sum(uninsured)}
-        counts={{ covered: covered.length, under: under.length, uninsured: uninsured.length }}
+        counts={{ covered: kinds(covered), under: kinds(under), uninsured: kinds(uninsured) }}
         unvaluedCount={unvalued.length}
       />
 
@@ -163,7 +167,7 @@ function CoverageOverview({
   /** How much coverage those records are short by — what the legend shows. */
   underMissing: number;
   uninsured: number;
-  counts: { covered: number; under: number; uninsured: number };
+  counts: { covered: RecordCounts; under: RecordCounts; uninsured: RecordCounts };
   unvaluedCount: number;
 }) {
   const total = covered + under + uninsured;
@@ -217,9 +221,7 @@ function CoverageOverview({
             <span className="hd-overview__label">{s.label}</span>
             <strong className="hd-num">{formatDollars(s.shown)}</strong>
             {s.suffix && <span className="hd-muted">{s.suffix}</span>}
-            <span className="hd-muted hd-num">
-              {s.count} {s.count === 1 ? "record" : "records"}
-            </span>
+            <span className="hd-muted hd-num">{describeCounts(s.count)}</span>
           </li>
         ))}
       </ul>

@@ -224,7 +224,7 @@ export function InsurancePolicyForm({
               onBlur={touch("blanketCoverageLimit")}
               error={errorFor("blanketCoverageLimit")}
               fieldClassName="hd-field--quarter"
-              hint="Makes this a blanket policy: its limit is shared by every firearm and accessory not scheduled individually while it is in force. Leave blank for a policy that only covers records scheduled on it."
+              hint="Makes this a blanket policy: its limit is shared by every firearm and accessory not scheduled individually while it is in force. Leave blank for a policy that only covers the firearms and accessories scheduled on it."
             />
           </div>
         </section>

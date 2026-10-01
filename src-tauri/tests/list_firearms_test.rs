@@ -622,13 +622,17 @@ fn a_mounted_firearm_names_its_host_and_a_carrying_firearm_counts_what_is_below_
     assert_eq!(suppressor["mountedOn"]["make"], "Ruger");
     assert_eq!(suppressor["mountedOn"]["model"], "Precision");
     assert_eq!(suppressor["mountedOn"]["nickname"], "Deer rifle", "named as everywhere (FR-005)");
-    assert_eq!(suppressor["mountedCount"], 0);
+    assert_eq!(suppressor["mountedCounts"], json!({ "firearms": 0, "accessories": 0 }));
     let rifle = summary(&all, deer);
     assert_eq!(rifle["mountedOn"], Value::Null);
-    assert_eq!(rifle["mountedCount"], 3, "the suppressor, the optic and the light");
+    assert_eq!(
+        rifle["mountedCounts"],
+        json!({ "firearms": 1, "accessories": 2 }),
+        "the suppressor, and the optic and the light (issue #56: by kind)"
+    );
     let glock = summary(&all, bare);
     assert_eq!(glock["mountedOn"], Value::Null);
-    assert_eq!(glock["mountedCount"], 0);
+    assert_eq!(glock["mountedCounts"], json!({ "firearms": 0, "accessories": 0 }));
 }
 
 #[test]
@@ -646,7 +650,10 @@ fn the_count_includes_everything_below_at_any_depth() {
 
     let all = listed(&db, &ListFirearmsInput::default());
 
-    assert_eq!(summary(&all, receiver)["mountedCount"], 4);
+    assert_eq!(
+        summary(&all, receiver)["mountedCounts"],
+        json!({ "firearms": 0, "accessories": 4 })
+    );
     assert_eq!(summary(&all, receiver)["mountedOn"], Value::Null);
 }
 

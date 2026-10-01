@@ -1,19 +1,20 @@
+import { describeCounts, hasAny, type RecordCounts } from "../mounts/recordCounts";
 import { RecordName } from "../mounts/RecordName";
 import type { RecordLabel } from "../mounts/types";
 
 // specs/006-accessory-links FR-016a, contracts/ui-accessories.md §9: a mounted
 // record names its host under its name (the host a link); a firearm with
-// records mounted on it counts everything below at any depth ("{n} mounted",
-// not linked, not naming them). Both, "Mounted on …" first, when both. Neither
-// renders nothing.
+// records mounted on it counts everything below at any depth, by kind ("1
+// firearm and 2 accessories mounted", issue #56), not linked, not naming
+// them. Both, "Mounted on …" first, when both. Neither renders nothing.
 
 export interface MountLinesProps {
   mountedOn: RecordLabel | null;
   /** Firearms only: everything mounted below, at any depth. */
-  mountedCount?: number;
+  mountedCounts?: RecordCounts;
 }
 
-export function MountLines({ mountedOn, mountedCount = 0 }: MountLinesProps) {
+export function MountLines({ mountedOn, mountedCounts }: MountLinesProps) {
   return (
     <>
       {mountedOn && (
@@ -21,7 +22,9 @@ export function MountLines({ mountedOn, mountedCount = 0 }: MountLinesProps) {
           Mounted on <RecordName label={mountedOn} link />
         </p>
       )}
-      {mountedCount > 0 && <p className="hd-mountline">{mountedCount} mounted</p>}
+      {mountedCounts && hasAny(mountedCounts) && (
+        <p className="hd-mountline">{describeCounts(mountedCounts)} mounted</p>
+      )}
     </>
   );
 }

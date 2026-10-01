@@ -104,9 +104,9 @@ describe("PolicyPage pinned strip (FR-041, US3/AC17)", () => {
     vi.mocked(insuranceService.getPolicyDeletionImpact).mockResolvedValue({
       isExpired: false,
       isBlanketInForce: false,
-      scheduledRecordCount: 0,
+      scheduledCounts: { firearms: 0, accessories: 0 },
       scheduledRecords: [],
-      blanketRecordCount: 0,
+      blanketCounts: { firearms: 0, accessories: 0 },
       unscheduleOutcome: "uninsured",
       otherPolicies: [],
     });

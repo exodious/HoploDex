@@ -259,7 +259,7 @@ from one scan of `mounts`. It answers `host_of`, `chain`, `below`
   disposed firearm (research.md §9). The dispose dialog and
   `DisposeInput.price` still require the host's own price.
 - `FirearmSummary` gains `mountedOn: RecordLabel | null` and
-  `mountedCount` (FR-016a).
+  `mountedCounts` (FR-016a; by kind, issue #56).
 - The free-text `accessories` column, its search and its spreadsheet column
   are unchanged (FR-007).
 - `firearms_fts` is unchanged: no mount is searched (FR-018).

@@ -173,7 +173,10 @@ pub mod ops {
         };
         let name = match mounts::label(conn, record) {
             Ok(Some(label)) => mounts::record_name(&label),
-            _ => "A mounted record".to_owned(),
+            _ => match record {
+                RecordRef::Firearm(_) => "A mounted firearm".to_owned(),
+                RecordRef::Accessory(_) => "A mounted accessory".to_owned(),
+            },
         };
         let message = format!("{name}: {reason}");
         CommandError::validation(message.clone(), Default::default())

@@ -243,9 +243,12 @@ describe("DisposeDialog with mounted records (US3)", () => {
   const light = label(14, "accessory", "SureFire", "M600", "Light or laser");
   const cap = label(15, "accessory", "Leupold", "Flip cap", "Other");
   const NAME = "Colt Python";
-  const KEEP = "Kept records mounted on Colt Python will be unmounted.";
-  const ORPHAN = "Kept records mounted on a record disposed with it will be unmounted.";
-  const STAY = "Records kept with what they are mounted on stay mounted.";
+  // Issue #56: each statement names the kinds it is about, and what they
+  // were mounted on.
+  const KEEP_BOTH = "Kept accessories mounted on Colt Python will be unmounted.";
+  const KEEP_ONE = "The kept accessory mounted on Colt Python will be unmounted.";
+  const ORPHAN = "The kept accessory mounted on Leupold Mark 5HD · Optic will be unmounted.";
+  const STAY = "The accessory kept with what it is mounted on stays mounted.";
   const host = { kind: "firearm", id: 1 } as const;
 
   /** An optic and a light on the firearm, and a cap on the optic. */
@@ -373,25 +376,26 @@ describe("DisposeDialog with mounted records (US3)", () => {
     renderDialog(carrying);
 
     // Everything kept: the direct ones are unmounted; the cap stays on the optic.
-    expect(screen.getByText(KEEP)).toBeInTheDocument();
+    expect(screen.getByText(KEEP_BOTH)).toBeInTheDocument();
     expect(screen.getByText(STAY)).toBeInTheDocument();
     expect(screen.queryByText(ORPHAN)).not.toBeInTheDocument();
 
     // The optic goes: the cap, kept, loses its host, and the light is still kept.
     await user.click(within(row(OPTIC)).getByRole("radio", { name: "Dispose with it" }));
-    expect(screen.getByText(KEEP)).toBeInTheDocument();
+    expect(screen.getByText(KEEP_ONE)).toBeInTheDocument();
     expect(screen.getByText(ORPHAN)).toBeInTheDocument();
     expect(screen.queryByText(STAY)).not.toBeInTheDocument();
 
     // The light goes too: only the cap is left, unmounted from the optic.
     await user.click(within(row(LIGHT)).getByRole("radio", { name: "Dispose with it" }));
-    expect(screen.queryByText(KEEP)).not.toBeInTheDocument();
+    expect(screen.queryByText(KEEP_ONE)).not.toBeInTheDocument();
+    expect(screen.queryByText(KEEP_BOTH)).not.toBeInTheDocument();
     expect(screen.getByText(ORPHAN)).toBeInTheDocument();
     expect(screen.queryByText(STAY)).not.toBeInTheDocument();
 
     // Back to keeping the optic with the cap: the cap stays on it.
     await user.click(within(row(OPTIC)).getByRole("radio", { name: "Keep" }));
-    expect(screen.getByText(KEEP)).toBeInTheDocument();
+    expect(screen.getByText(KEEP_ONE)).toBeInTheDocument();
     expect(screen.getByText(STAY)).toBeInTheDocument();
     expect(screen.queryByText(ORPHAN)).not.toBeInTheDocument();
   });

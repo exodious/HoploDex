@@ -694,8 +694,17 @@ describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-01
       expect(within(choice).getByRole("radio", { name: "Keep" })).toBeChecked();
     }
     expect(within(confirm).getAllByRole("group")).toHaveLength(1);
-    expect(group).toHaveTextContent("Kept records mounted on Ruger Precision will be unmounted.");
-    expect(group).toHaveTextContent("Records kept with what they are mounted on stay mounted.");
+    // Issue #56: what is replaced, and what goes with it, by kind.
+    expect(
+      within(confirm).getByRole("heading", { name: "Replace 2 firearms?" }),
+    ).toBeInTheDocument();
+    expect(confirm).toHaveTextContent(
+      "This row marks Ruger Precision disposed. Accessories disposed with it take the row's type, recipient and date, with no price.",
+    );
+    expect(group).toHaveTextContent(
+      "Kept accessories mounted on Ruger Precision will be unmounted.",
+    );
+    expect(group).toHaveTextContent("The accessory kept with what it is mounted on stays mounted.");
     // No price: the row has none for a record disposed with it.
     expect(within(confirm).queryByLabelText(/Price for/)).not.toBeInTheDocument();
   });
@@ -713,9 +722,9 @@ describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-01
       }),
     );
     expect(group).toHaveTextContent(
-      "Kept records mounted on a record disposed with it will be unmounted.",
+      "The kept accessory mounted on Leupold Mark 5HD · Optic will be unmounted.",
     );
-    await user.click(within(confirm).getByRole("button", { name: "Replace records" }));
+    await user.click(within(confirm).getByRole("button", { name: "Replace firearms" }));
 
     expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith({
       importSessionId: "import-1",

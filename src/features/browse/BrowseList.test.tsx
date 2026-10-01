@@ -32,7 +32,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     scheduledCoverageAmount: null,
     // specs/006-accessory-links US2: not mounted, nothing mounted on it.
     mountedOn: null,
-    mountedCount: 0,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -191,13 +191,18 @@ describe("BrowseList mount details (US2-11)", () => {
   }
 
   const mounted = summary({ id: 1, make: "Gemtech", model: "GM-45", mountedOn: deerRifle });
-  const carrying = summary({ id: 2, make: "Ruger", model: "10/22", mountedCount: 3 });
+  const carrying = summary({
+    id: 2,
+    make: "Ruger",
+    model: "10/22",
+    mountedCounts: { firearms: 1, accessories: 2 },
+  });
   const both = summary({
     id: 3,
     make: "Springfield",
     model: "Saint",
     mountedOn: upper,
-    mountedCount: 2,
+    mountedCounts: { firearms: 0, accessories: 2 },
   });
   const neither = summary({ id: 4, make: "Hawken", model: "Plains" });
 
@@ -242,11 +247,11 @@ describe("BrowseList mount details (US2-11)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("shows '{n} mounted' under a firearm with records on it, not linked", () => {
+  it("shows what is mounted under a firearm's name by kind, not linked", () => {
     renderMounts([carrying]);
 
     const cell = nameCell(/Ruger 10\/22/);
-    const text = within(cell).getByText("3 mounted");
+    const text = within(cell).getByText("1 firearm and 2 accessories mounted");
     expect(text.closest("a, button")).toBeNull();
     expect(cell).not.toHaveTextContent(/Mounted on/);
   });
@@ -256,7 +261,7 @@ describe("BrowseList mount details (US2-11)", () => {
 
     const cell = nameCell(/Springfield Saint/);
     const hostLine = within(cell).getByText(/Mounted on/);
-    const countLine = within(cell).getByText("2 mounted");
+    const countLine = within(cell).getByText("2 accessories mounted");
     expect(
       Boolean(hostLine.compareDocumentPosition(countLine) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true);
