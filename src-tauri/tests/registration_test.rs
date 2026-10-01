@@ -8,9 +8,7 @@ mod support;
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::entries::ops as entry_ops;
 use hoplodex_lib::commands::firearms::ops;
-use hoplodex_lib::commands::firearms::{
-    DisposeFirearmInput, HistoryChoice, ReverseDispositionInput,
-};
+use hoplodex_lib::commands::firearms::{DisposeInput, HistoryChoice, ReverseDispositionInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use support::{TestDb, firearm, policy};
@@ -263,11 +261,12 @@ fn disposal_reversal_and_coverage_keep_the_details_and_deleting_removes_them() {
     let disposed = ops::dispose_firearm(
         &db.conn,
         created.id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2026-03-01".into(),
             price: 100,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

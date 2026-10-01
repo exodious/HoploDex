@@ -257,7 +257,7 @@ from one scan of `mounts`. It answers `host_of`, `chain`, `below`
   `From<&Firearm> for FirearmInput` copies it.
 - `validate_firearm_input` no longer requires `dispositionPrice` for a
   disposed firearm (research.md §9). The dispose dialog and
-  `DisposeFirearmInput.price` still require the host's own price.
+  `DisposeInput.price` still require the host's own price.
 - `FirearmSummary` gains `mountedOn: RecordLabel | null` and
   `mountedCount` (FR-016a).
 - The free-text `accessories` column, its search and its spreadsheet column

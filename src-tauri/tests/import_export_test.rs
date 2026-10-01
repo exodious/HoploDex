@@ -180,6 +180,66 @@ fn a_valid_disposition_on_or_after_the_acquisition_date_imports() {
     assert_eq!(result.imported_count, 1);
 }
 
+// --- A disposed row's price is optional (research.md §9, 006 FR-014) ---
+
+/// A disposed Glock 19 row with the given cells replacing the usual ones.
+fn disposed_cells(overrides: &[(&str, &str)]) -> String {
+    let mut cells = vec![
+        ("status", "disposed"),
+        ("disposition_type", "sold"),
+        ("disposition_recipient", "Jane"),
+        ("disposition_date", "2025-03-01"),
+        ("disposition_price", "400.00"),
+    ];
+    for (column, value) in overrides {
+        cells.retain(|(name, _)| name != column);
+        cells.push((column, value));
+    }
+    csv_firearm("Glock", "19", "ABC123", &cells)
+}
+
+#[test]
+fn a_disposed_row_with_a_blank_price_imports_with_no_price() {
+    // 001 made this a row error; a disposed accessory's price is optional
+    // and its export must re-import (SC-002), so a firearm's is too.
+    let db = TestDb::new();
+
+    let result = import_into(&db, &[disposed_cells(&[("disposition_price", "")])]);
+
+    assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
+    assert_eq!(result.imported_count, 1);
+    let listing = firearm_ops::list_firearms(
+        &db.conn,
+        &serde_json::from_value(serde_json::json!({ "includeDisposed": true })).unwrap(),
+    )
+    .unwrap();
+    let all: Vec<_> = listing.groups.iter().flat_map(|g| &g.firearms).collect();
+    assert_eq!(all.len(), 1);
+    let stored = firearm_ops::get_firearm(&db.conn, all[0].id).unwrap();
+    assert_eq!(stored.disposition_price, None);
+    assert_eq!(stored.disposition_recipient.as_deref(), Some("Jane"));
+}
+
+#[test]
+fn a_disposed_row_missing_its_type_recipient_or_date_is_still_a_row_error() {
+    for (column, field) in [
+        ("disposition_type", "type"),
+        ("disposition_recipient", "recipient"),
+        ("disposition_date", "date"),
+    ] {
+        let result = import_one_row(disposed_cells(&[(column, ""), ("disposition_price", "")]));
+
+        assert_eq!(result.imported_count, 0, "{column}");
+        assert_eq!(result.row_errors.len(), 1, "{column}: {:?}", result.row_errors);
+        assert!(
+            result.row_errors[0].message.to_lowercase().contains("disposition")
+                || result.row_errors[0].message.to_lowercase().contains(field),
+            "{column}: {}",
+            result.row_errors[0].message
+        );
+    }
+}
+
 // --- Coverage columns (FR-014/FR-036, contracts/spreadsheet-format.md) ---
 
 fn import_into(

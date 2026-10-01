@@ -255,9 +255,7 @@ describe("ExportDialog with accessories (US5)", () => {
     await user.type(screen.getByLabelText(/Save to folder/), "/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    expect(
-      await screen.findByText("/out/hoplodex-export-20261001-120000.csv"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("/out/hoplodex-export-20261001-120000.csv")).toBeInTheDocument();
     expect(
       screen.getByText("/out/hoplodex-export-20261001-120000-accessories.csv"),
     ).toBeInTheDocument();

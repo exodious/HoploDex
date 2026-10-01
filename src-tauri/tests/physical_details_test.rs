@@ -5,9 +5,7 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{
-    DisposeFirearmInput, HistoryChoice, ReverseDispositionInput, ops,
-};
+use hoplodex_lib::commands::firearms::{DisposeInput, HistoryChoice, ReverseDispositionInput, ops};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::{Condition, DispositionType, FirearmInput};
 use support::{TestDb, firearm, policy};
@@ -163,11 +161,12 @@ fn the_values_survive_disposal_reversal_and_coverage_assignment() {
     let disposed = ops::dispose_firearm(
         &db.conn,
         created.id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2024-01-01".into(),
             price: 400,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

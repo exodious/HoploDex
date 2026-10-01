@@ -269,7 +269,7 @@ in §1, because every later decision feeds it.
     no longer require `dispositionPrice` when disposed: type, recipient and
     date stay required. The host's own price stays required, as today:
     the dispose dialog still asks for it ("Enter the price, or 0 if nothing
-    was received."), and `DisposeFirearmInput.price` stays a number.
+    was received."), and `DisposeInput.price` stays a number.
   - This changes 001's import behavior in one way: a disposed row with a
     blank `disposition_price` is now accepted, not a row error. That is
     unavoidable for the round trip. It is listed under "Findings to

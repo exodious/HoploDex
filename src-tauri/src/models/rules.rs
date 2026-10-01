@@ -86,14 +86,13 @@ pub(crate) struct DispositionFields<'a> {
     pub disposition_recipient: &'a Option<String>,
     pub disposition_date: &'a Option<String>,
     pub disposition_price: Option<i64>,
-    /// Whether a disposed record must have a price.
-    pub price_required: bool,
 }
 
 /// FR-003/FR-004: both dates are judged against the user's local date, and
 /// the disposition date is not before the acquisition date. A disposed
-/// record needs its type, recipient and date (and its price when
-/// `price_required`), and an active one none of them.
+/// record needs its type, recipient and date, and an active one none of
+/// them. The price is optional (research.md §9): a record disposed of along
+/// with its host may have none.
 pub(crate) fn check_dates_and_disposition(
     fields: &DispositionFields<'_>,
     today: NaiveDate,
@@ -123,9 +122,6 @@ pub(crate) fn check_dates_and_disposition(
             }
             if is_blank(fields.disposition_date) {
                 errors.insert("dispositionDate".into(), required.into());
-            }
-            if fields.price_required && fields.disposition_price.is_none() {
-                errors.insert("dispositionPrice".into(), required.into());
             }
         }
         FirearmStatus::Active => {

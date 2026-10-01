@@ -2,13 +2,13 @@
 //! serial key, no-serial-always-new, apply-to-remaining (spec.md FR-026,
 //! FR-030), run against a real temporary SQLCipher database.
 
+mod sheets;
 mod support;
 
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops as firearm_ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ops as firearm_ops};
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::{ConflictResolution, ImportSessionStore};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
-use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, csv_file, csv_firearm};
 use tempfile::TempDir;
 
@@ -80,8 +80,7 @@ fn a_matching_make_model_serial_produces_a_conflict_not_a_silent_overwrite() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         &store,
         &mut |_, _| {},
     )
@@ -110,8 +109,7 @@ fn no_serial_attested_rows_are_always_inserted_as_new() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         &store,
         &mut |_, _| {},
     )
@@ -137,8 +135,7 @@ fn resolving_a_conflict_as_overwrite_updates_the_existing_record() {
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         &store,
         &mut |_, _| {},
     )
@@ -169,8 +166,7 @@ fn import_glock(
     let path = write_csv(&dir, &csv_file(rows));
     import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         store,
         &mut |_, _| {},
     )
@@ -181,11 +177,12 @@ fn dispose(db: &TestDb, id: i64) {
     firearm_ops::dispose_firearm(
         &db.conn,
         id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2025-06-15".into(),
             price: 40000,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();
@@ -425,8 +422,7 @@ fn resolving_a_conflict_as_skip_leaves_the_original_untouched() {
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         &store,
         &mut |_, _| {},
     )
@@ -477,8 +473,7 @@ fn apply_to_remaining_resolves_conflicts_not_explicitly_listed() {
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         &store,
         &mut |_, _| {},
     )
@@ -527,8 +522,7 @@ fn overwriting_a_conflict_updates_the_physical_details() {
     );
     let imported = import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &[sheets::import_file(&path)],
         &store,
         &mut |_, _| {},
     )
@@ -591,4 +585,268 @@ fn a_row_with_identical_main_marks_and_a_year_on_only_one_side_still_matches() {
 
 fn existing_firearm_with_serial(serial: &str) -> FirearmInput {
     FirearmInput { serial_number: Some(serial.into()), ..existing_firearm() }
+}
+
+// --- specs/006-accessory-links US5: the record identifier first (tasks.md T101) -----------------
+//
+// contracts/spreadsheet-format.md "Record ID" (Matching): an identifier that
+// belongs to an existing record of the row's own kind, active or disposed,
+// is the row's match, ahead of the make, model and serial number key. For a
+// firearm row anything else falls back to that key, as before; an accessory
+// row has no other key, so it is new.
+
+mod record_id_matching {
+    use super::*;
+    use hoplodex_lib::commands::accessories::ops as accessory_ops;
+    use hoplodex_lib::models::accessory::AccessoryInput;
+    use hoplodex_lib::models::record::RecordRef;
+    use serde_json::{Value, json};
+
+    const OPTIC: i64 = 1;
+
+    fn add_firearm(db: &TestDb, make: &str, model: &str, serial: &str) -> RecordRef {
+        let input = FirearmInput {
+            make: make.into(),
+            model: model.into(),
+            serial_number: Some(serial.into()),
+            ..existing_firearm()
+        };
+        RecordRef::Firearm(firearm_ops::create_firearm(&db.conn, &input, false).unwrap().id)
+    }
+
+    fn add_accessory(db: &TestDb, make: &str, model: &str, serial: &str) -> RecordRef {
+        let mut input: AccessoryInput =
+            serde_json::from_value(json!({ "accessoryKindId": OPTIC, "status": "active" }))
+                .unwrap();
+        input.make = Some(make.into());
+        input.model = Some(model.into());
+        input.serial_number = Some(serial.into());
+        RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, &input).unwrap().id)
+    }
+
+    fn uid_of(db: &TestDb, record: RecordRef) -> String {
+        db.conn
+            .query_row(
+                &format!("SELECT uid FROM {} WHERE id = ?1", record.table()),
+                [record.id()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn import_firearm_rows(
+        db: &TestDb,
+        rows: &[Vec<String>],
+    ) -> hoplodex_lib::commands::import_export::ImportResult {
+        let dir = TempDir::new().unwrap();
+        let path = sheets::csv_in(dir.path(), "firearms.csv", &sheets::firearm_table(rows));
+        sheets::import(&db.conn, &ImportSessionStore::new(), &[&path]).unwrap()
+    }
+
+    fn import_accessory_rows(
+        db: &TestDb,
+        rows: &[Vec<String>],
+    ) -> hoplodex_lib::commands::import_export::ImportResult {
+        let dir = TempDir::new().unwrap();
+        let path = sheets::csv_in(dir.path(), "accessories.csv", &sheets::accessory_table(rows));
+        sheets::import(&db.conn, &ImportSessionStore::new(), &[&path]).unwrap()
+    }
+
+    fn existing_record(conflict: &impl serde::Serialize) -> RecordRef {
+        let value: Value = serde_json::to_value(conflict).unwrap();
+        serde_json::from_value(value["existingRecord"].clone()).unwrap()
+    }
+
+    #[test]
+    fn a_firearm_row_matches_the_record_its_identifier_names_ahead_of_its_make_model_and_serial() {
+        let db = TestDb::new();
+        let by_key = add_firearm(&db, "Glock", "19", "ABC123");
+        let by_id = add_firearm(&db, "Sig", "P226", "DEF456");
+
+        // The identifier is the Sig's; the make, model and serial number are the Glock's.
+        let row = sheets::firearm_cells(
+            "Glock",
+            "19",
+            "ABC123",
+            &[("record_id", &uid_of(&db, by_id)), ("notes", "from the sheet")],
+        );
+        let result = import_firearm_rows(&db, &[row]);
+
+        assert_eq!(result.imported_count, 0);
+        assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
+        assert_eq!(existing_record(&result.conflicts[0]), by_id);
+        assert_ne!(existing_record(&result.conflicts[0]), by_key);
+    }
+
+    #[test]
+    fn an_identifier_is_enough_even_when_the_rows_marks_differ_from_the_record() {
+        let db = TestDb::new();
+        let existing = add_firearm(&db, "Glock", "19", "ABC123");
+
+        let row = sheets::firearm_cells(
+            "Glock",
+            "19 Gen5",
+            "ZZZ999",
+            &[("record_id", &uid_of(&db, existing))],
+        );
+        let result = import_firearm_rows(&db, &[row]);
+
+        assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
+        assert_eq!(existing_record(&result.conflicts[0]), existing);
+    }
+
+    #[test]
+    fn an_identifier_in_capitals_with_surrounding_spaces_still_matches() {
+        let db = TestDb::new();
+        let existing = add_firearm(&db, "Glock", "19", "ABC123");
+        let written = format!("  {}  ", uid_of(&db, existing).to_uppercase());
+
+        let row = sheets::firearm_cells("Sig", "P226", "DEF456", &[("record_id", &written)]);
+        let result = import_firearm_rows(&db, &[row]);
+
+        assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
+        assert_eq!(existing_record(&result.conflicts[0]), existing);
+    }
+
+    #[test]
+    fn a_disposed_firearm_is_matched_by_its_identifier() {
+        let db = TestDb::new();
+        let sold = add_firearm(&db, "Glock", "19", "ABC123");
+        dispose(&db, sold.id());
+
+        let row =
+            sheets::firearm_cells("Sig", "P226", "DEF456", &[("record_id", &uid_of(&db, sold))]);
+        let result = import_firearm_rows(&db, &[row]);
+
+        assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
+        assert_eq!(existing_record(&result.conflicts[0]), sold);
+    }
+
+    #[test]
+    fn with_no_identifier_or_one_matching_nothing_the_make_model_serial_key_is_used_as_before() {
+        let db = TestDb::new();
+        let existing = add_firearm(&db, "Glock", "19", "ABC123");
+        let nothing = hoplodex_lib::services::record_id::generate();
+
+        let result = import_firearm_rows(
+            &db,
+            &[
+                sheets::firearm_cells("Glock", "19", "ABC123", &[]),
+                sheets::firearm_cells("glock", "19", "abc123", &[("record_id", &nothing)]),
+            ],
+        );
+
+        assert_eq!(result.imported_count, 0, "{:?}", result.row_errors);
+        assert_eq!(result.conflicts.len(), 2);
+        assert!(result.conflicts.iter().all(|c| existing_record(c) == existing));
+    }
+
+    #[test]
+    fn a_firearm_row_with_an_unknown_identifier_and_no_key_match_is_new_and_keeps_its_identifier() {
+        let db = TestDb::new();
+        add_firearm(&db, "Glock", "19", "ABC123");
+        let fresh = hoplodex_lib::services::record_id::generate();
+
+        let row = sheets::firearm_cells("Sig", "P226", "DEF456", &[("record_id", &fresh)]);
+        let result = import_firearm_rows(&db, &[row]);
+
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        let stored: String = db
+            .conn
+            .query_row("SELECT uid FROM firearms WHERE make = 'Sig'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(stored, fresh);
+    }
+
+    #[test]
+    fn an_accessory_row_matches_only_by_its_identifier() {
+        let db = TestDb::new();
+        let optic = add_accessory(&db, "Leupold", "VX-5HD", "OP-1");
+
+        let result = import_accessory_rows(
+            &db,
+            &[sheets::accessory_cells(
+                "Optic",
+                &[("record_id", &uid_of(&db, optic)), ("make", "Vortex"), ("model", "Razor")],
+            )],
+        );
+
+        assert_eq!(result.imported_count, 0, "{:?}", result.row_errors);
+        assert_eq!(result.conflicts.len(), 1);
+        assert_eq!(existing_record(&result.conflicts[0]), optic);
+        let conflict: Value = serde_json::to_value(&result.conflicts[0]).unwrap();
+        assert_eq!(conflict["table"], "accessories");
+        assert_eq!(conflict["duplicateAllowed"], true);
+    }
+
+    #[test]
+    fn an_accessory_row_with_the_same_kind_make_model_and_serial_but_no_identifier_is_new() {
+        let db = TestDb::new();
+        add_accessory(&db, "Leupold", "VX-5HD", "OP-1");
+        let unmatched = hoplodex_lib::services::record_id::generate();
+
+        let result = import_accessory_rows(
+            &db,
+            &[
+                sheets::accessory_cells(
+                    "Optic",
+                    &[("make", "Leupold"), ("model", "VX-5HD"), ("serial_number", "OP-1")],
+                ),
+                sheets::accessory_cells(
+                    "Optic",
+                    &[
+                        ("record_id", &unmatched),
+                        ("make", "Leupold"),
+                        ("model", "VX-5HD"),
+                        ("serial_number", "OP-1"),
+                    ],
+                ),
+            ],
+        );
+
+        assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+        assert!(result.conflicts.is_empty());
+        let count: i64 =
+            db.conn.query_row("SELECT count(*) FROM accessories", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 3);
+        let kept: i64 = db
+            .conn
+            .query_row("SELECT count(*) FROM accessories WHERE uid = ?1", [&unmatched], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(kept, 1, "a created record keeps the row's identifier");
+    }
+
+    #[test]
+    fn a_firearms_identifier_does_not_match_an_accessory_row_and_the_reverse() {
+        let db = TestDb::new();
+        let firearm = add_firearm(&db, "Glock", "19", "ABC123");
+        let optic = add_accessory(&db, "Leupold", "VX-5HD", "OP-1");
+
+        let accessories = import_accessory_rows(
+            &db,
+            &[sheets::accessory_cells("Optic", &[("record_id", &uid_of(&db, firearm))])],
+        );
+        assert_eq!(accessories.imported_count, 0);
+        assert!(accessories.conflicts.is_empty());
+        assert_eq!(
+            accessories.row_errors.len(),
+            1,
+            "an identifier of the other kind is a row error"
+        );
+
+        let firearms = import_firearm_rows(
+            &db,
+            &[sheets::firearm_cells(
+                "Sig",
+                "P226",
+                "DEF456",
+                &[("record_id", &uid_of(&db, optic))],
+            )],
+        );
+        assert_eq!(firearms.imported_count, 0);
+        assert!(firearms.conflicts.is_empty());
+        assert_eq!(firearms.row_errors.len(), 1);
+    }
 }

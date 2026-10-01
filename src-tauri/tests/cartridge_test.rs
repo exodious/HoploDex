@@ -174,11 +174,12 @@ fn update_checks_only_the_fields_whose_value_changed() {
     ops::dispose_firearm(
         &db.conn,
         created.id,
-        &hoplodex_lib::commands::firearms::DisposeFirearmInput {
+        &hoplodex_lib::commands::firearms::DisposeInput {
             disposition_type: hoplodex_lib::models::firearm::DispositionType::Sold,
             recipient: "Jane".into(),
             date: "2025-01-01".into(),
             price: 100,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

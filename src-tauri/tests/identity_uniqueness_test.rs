@@ -5,7 +5,7 @@
 mod support;
 
 use hoplodex_lib::commands::CommandError;
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, Origin};
 use support::{TestDb, firearm};
 
@@ -18,11 +18,12 @@ fn dispose(db: &TestDb, id: i64) {
     ops::dispose_firearm(
         &db.conn,
         id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2025-06-15".into(),
             price: 40000,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

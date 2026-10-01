@@ -128,11 +128,12 @@ fn disposed_firearms_do_not_count_toward_the_blanket_total() {
     firearm_ops::dispose_firearm(
         &db.conn,
         gone.id,
-        &hoplodex_lib::commands::firearms::DisposeFirearmInput {
+        &hoplodex_lib::commands::firearms::DisposeInput {
             disposition_type: hoplodex_lib::models::firearm::DispositionType::Sold,
             recipient: "Jane".into(),
             date: "2026-02-01".into(),
             price: 1,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

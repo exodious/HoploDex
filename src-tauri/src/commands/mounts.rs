@@ -2,14 +2,23 @@
 //! mount commands. Each `#[tauri::command]` is thin and calls the matching
 //! function in `ops`, which takes a `&Connection`.
 
+use std::collections::HashSet;
+
 use rusqlite::{Connection, named_params};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
+use crate::commands::accessories::ops as accessory_ops;
+use crate::commands::firearms::ops as firearm_ops;
+use crate::commands::firearms::{DisposeInput, DisposeWith};
 use crate::models::record::{RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
+
+/// A dispose dialog's list no longer matches what is mounted (research.md
+/// §9).
+const STALE_MOUNTED: &str = "What is mounted has changed. Close the dialog and try again.";
 
 /// Input for `mount_record`: `host: null` takes the item off whatever it
 /// is on.
@@ -95,6 +104,69 @@ pub mod ops {
             None => None,
         };
         Ok(MountRecordOutput { item: item_label, host: host_label })
+    }
+
+    /// FR-014, research.md §9: disposes of `host` and the listed records
+    /// below it, with the host's type, recipient and date, in one step. The
+    /// listed records must all be below the host now (else a stale dialog
+    /// could dispose of the wrong record). Every mount that involves the
+    /// host or a listed record goes first, so a kept record mounted on a
+    /// disposed one is unmounted and a kept record on a kept one stays.
+    pub fn dispose_with_mounted(
+        conn: &Connection,
+        host: RecordRef,
+        input: &DisposeInput,
+    ) -> Result<(), CommandError> {
+        mounts::atomically(conn, || {
+            let listed = checked_listing(conn, host, &input.with_mounted)?;
+            mounts::clear_mounts(conn, host)?;
+            for with in &listed {
+                mounts::clear_mounts(conn, with.record)?;
+            }
+            for with in listed {
+                save_disposed(conn, with.record, input, with.price)?;
+            }
+            save_disposed(conn, host, input, Some(input.price))
+        })
+    }
+
+    /// The listed records, each once, after checking they are below `host`.
+    fn checked_listing(
+        conn: &Connection,
+        host: RecordRef,
+        listed: &[DisposeWith],
+    ) -> Result<Vec<DisposeWith>, CommandError> {
+        if listed.is_empty() {
+            return Ok(Vec::new());
+        }
+        let below: HashSet<RecordRef> =
+            MountGraph::load(conn)?.below(host).into_iter().map(|(record, _, _)| record).collect();
+        let mut seen = HashSet::new();
+        let mut checked = Vec::new();
+        for with in listed {
+            if !below.contains(&with.record) {
+                return Err(CommandError::validation(STALE_MOUNTED, Default::default())
+                    .on_field("withMounted", STALE_MOUNTED));
+            }
+            if seen.insert(with.record) {
+                checked.push(*with);
+            }
+        }
+        Ok(checked)
+    }
+
+    fn save_disposed(
+        conn: &Connection,
+        record: RecordRef,
+        input: &DisposeInput,
+        price: Option<i64>,
+    ) -> Result<(), CommandError> {
+        match record {
+            RecordRef::Firearm(id) => firearm_ops::save_disposed(conn, id, input, price).map(drop),
+            RecordRef::Accessory(id) => {
+                accessory_ops::save_disposed(conn, id, input, price).map(drop)
+            }
+        }
     }
 
     fn internal() -> CommandError {

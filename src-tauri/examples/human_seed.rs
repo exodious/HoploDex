@@ -33,7 +33,7 @@ use hoplodex_lib::commands::accessories::{ReverseAccessoryDispositionInput, ops 
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{
-    DisposeFirearmInput, HistoryChoice, ListFirearmsInput, ReverseDispositionInput,
+    DisposeInput, DisposeWith, HistoryChoice, ListFirearmsInput, ReverseDispositionInput,
 };
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
@@ -541,11 +541,12 @@ pub fn seed(conn: &Connection, extra: usize) {
         must(firearm_ops::create_firearm(conn, &input, false), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
-        let input = DisposeFirearmInput {
+        let input = DisposeInput {
             disposition_type: kind,
             recipient: recipient.into(),
             date: date.into(),
             price,
+            with_mounted: Vec::new(),
         };
         must(firearm_ops::dispose_firearm(conn, id, &input), "a disposition");
     };
@@ -1322,11 +1323,12 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         must(accessory_ops::create_accessory(conn, &input), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
-        let input = DisposeFirearmInput {
+        let input = DisposeInput {
             disposition_type: kind,
             recipient: recipient.into(),
             date: date.into(),
             price,
+            with_mounted: Vec::new(),
         };
         must(accessory_ops::dispose_accessory(conn, id, &input), "an accessory disposition");
     };
@@ -1599,6 +1601,42 @@ fn seed_mounts(conn: &Connection) {
         mounted_on: Some(case),
         ..base("Walther", "PPK/S", "PPKS-221903", ".380", HANDGUN)
     });
+
+    // US3: a rifle carrying a launcher (a firearm) that carries a light, so
+    // disposing of the rifle asks about the launcher and, through it, the
+    // light.
+    let carbine = add_firearm(FirearmInput {
+        nickname: text("Range carbine"),
+        ..base("Aero Precision", "M4E1 carbine", "AP-M4-70318", ".223", RIFLE)
+    });
+    let launcher = add_firearm(FirearmInput {
+        mounted_on: Some(carbine),
+        ..base("Midwest Industries", "40 mm launcher", "MI-L-2210", "40 mm", OTHER)
+    });
+    add_accessory(accessory(KIND_LIGHT, "Streamlight", "TLR-1 HL", launcher));
+
+    // A rifle disposed of with its optic, which went with it and has no
+    // price of its own (FR-014); its light was kept, so it is active and
+    // unmounted.
+    let sold_rifle = add_firearm(FirearmInput {
+        nickname: text("Sold with scope"),
+        ..base("Savage", "110 Storm", "SV-110-46620", ".270 Winchester", RIFLE)
+    });
+    let sold_optic =
+        add_accessory(accessory(KIND_OPTIC, "Leupold", "VX-3HD 3.5-10x40", sold_rifle));
+    add_accessory(accessory(KIND_LIGHT, "Inforce", "WML Gen 2", sold_rifle));
+    let RecordRef::Firearm(sold_rifle_id) = sold_rifle else { unreachable!() };
+    let input = DisposeInput {
+        disposition_type: DispositionType::Sold,
+        recipient: "Dale Whitaker".into(),
+        date: "2025-08-23".into(),
+        price: 650,
+        with_mounted: vec![DisposeWith { record: sold_optic, price: None }],
+    };
+    must(
+        firearm_ops::dispose_firearm(conn, sold_rifle_id, &input),
+        "a rifle disposed of with its optic",
+    );
 }
 
 /// Deterministic filler: plain, valued, unscheduled firearms with distinct

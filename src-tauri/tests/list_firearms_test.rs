@@ -152,11 +152,12 @@ fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
     ops::dispose_firearm(
         &db.conn,
         created.id,
-        &hoplodex_lib::commands::firearms::DisposeFirearmInput {
+        &hoplodex_lib::commands::firearms::DisposeInput {
             disposition_type: hoplodex_lib::models::firearm::DispositionType::Sold,
             recipient: "Jane".into(),
             date: "2025-01-01".into(),
             price: 100,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

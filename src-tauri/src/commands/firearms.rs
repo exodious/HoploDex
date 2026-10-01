@@ -11,16 +11,31 @@ use crate::models::record::{MountDetail, RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
 
-/// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
-/// Equivalent to calling `update_firearm` with `status: "disposed"` and
-/// these four fields set.
+/// Input for the `dispose_firearm` and `dispose_accessory` commands, per
+/// contracts/tauri-commands.md. Without `with_mounted`, equivalent to
+/// calling `update_firearm` with `status: "disposed"` and these four fields
+/// set.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DisposeFirearmInput {
+pub struct DisposeInput {
     pub disposition_type: DispositionType,
     pub recipient: String,
     pub date: String,
+    /// The record's own price, required (research.md §9).
     pub price: i64,
+    /// The records below it to dispose of with it (FR-014); everything else
+    /// below it is kept.
+    #[serde(default)]
+    pub with_mounted: Vec<DisposeWith>,
+}
+
+/// One record disposed of along with the one being disposed (FR-014): it
+/// takes the host's type, recipient and date, and its own price, which may
+/// be absent.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct DisposeWith {
+    pub record: RecordRef,
+    pub price: Option<i64>,
 }
 
 /// What the user chose to do with the disposition being reversed (FR-033).
@@ -772,10 +787,25 @@ pub mod ops {
         get_firearm(conn, id)
     }
 
+    /// Disposes of the firearm, and of the listed records mounted below it,
+    /// in one step (research.md §9): see `mounts::ops::dispose_with_mounted`.
     pub fn dispose_firearm(
         conn: &Connection,
         id: i64,
-        input: &DisposeFirearmInput,
+        input: &DisposeInput,
+    ) -> Result<Firearm, CommandError> {
+        get_firearm(conn, id)?;
+        crate::commands::mounts::ops::dispose_with_mounted(conn, RecordRef::Firearm(id), input)?;
+        get_firearm(conn, id)
+    }
+
+    /// Saves the firearm alone as disposed, with the disposition of `input`
+    /// and `price` (blank for a record disposed of along with its host).
+    pub fn save_disposed(
+        conn: &Connection,
+        id: i64,
+        input: &DisposeInput,
+        price: Option<i64>,
     ) -> Result<Firearm, CommandError> {
         let current = get_firearm(conn, id)?;
 
@@ -784,7 +814,7 @@ pub mod ops {
             disposition_type: Some(input.disposition_type),
             disposition_recipient: Some(input.recipient.clone()),
             disposition_date: Some(input.date.clone()),
-            disposition_price: Some(input.price),
+            disposition_price: price,
             ..FirearmInput::from(&current)
         };
 
@@ -1168,7 +1198,7 @@ pub async fn update_firearm(
 #[tauri::command]
 pub async fn dispose_firearm(
     id: i64,
-    input: DisposeFirearmInput,
+    input: DisposeInput,
     session: State<'_, Session>,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::dispose_firearm(conn, id, &input))

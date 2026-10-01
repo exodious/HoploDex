@@ -211,8 +211,7 @@ pub fn validate_accessory_input(
         &mut errors,
     );
 
-    // Judged against the user's local date, not UTC. The price stays
-    // required for a disposed accessory until User Story 3 (research.md §9).
+    // Judged against the user's local date, not UTC.
     let today = chrono::Local::now().date_naive();
     check_dates_and_disposition(
         &DispositionFields {
@@ -223,7 +222,6 @@ pub fn validate_accessory_input(
             disposition_recipient: &input.disposition_recipient,
             disposition_date: &input.disposition_date,
             disposition_price: input.disposition_price,
-            price_required: true,
         },
         today,
         &mut errors,

@@ -462,7 +462,6 @@ pub fn validate_firearm_input(
             disposition_recipient: &input.disposition_recipient,
             disposition_date: &input.disposition_date,
             disposition_price: input.disposition_price,
-            price_required: true,
         },
         today,
         &mut errors,

@@ -428,6 +428,52 @@ fn deleting_an_accessorys_photo_wipes_its_bytes_and_returns_the_space() {
     assert_wiped(&db.conn, size_before, scratch.path());
 }
 
+/// SC-006 with mounts (FR-015): a deleted accessory that carried records
+/// leaves no `mounts` row, its unique values are gone from the file, and
+/// the records that were on it are still there, unmounted.
+#[test]
+fn deleting_an_accessory_host_unmounts_what_was_on_it_and_wipes_its_values() {
+    const SERIAL: &str = "Qzhost-5519";
+    const NOTES: &str = "Xvhost remembered purchase";
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let host = create_accessory(&db, "Pelican", SERIAL, NOTES);
+    let optic = create_accessory(&db, "Leupold", "ON-1", "rides on the host");
+    let rifle = firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "Precision", "R-1"), false)
+        .unwrap()
+        .id;
+    let doomed = RecordRef::Accessory(host);
+    for item in [RecordRef::Accessory(optic), RecordRef::Firearm(rifle)] {
+        let input = json!({ "item": item, "host": doomed });
+        hoplodex_lib::commands::mounts::ops::mount_record(&db.conn, &parse(input)).unwrap();
+    }
+    assert_eq!(row_count(&db, "mounts"), 2);
+    let before = decrypted_export(&db.conn, scratch.path());
+    assert!(contains(&before, SERIAL));
+    assert!(contains(&before, NOTES));
+
+    accessory_ops::delete_accessory(&db.conn, host, true).unwrap();
+
+    assert_eq!(row_count(&db, "mounts"), 0, "no mount names the deleted host");
+    let after = decrypted_export(&db.conn, scratch.path());
+    assert!(!contains(&after, SERIAL), "the serial number is still in the database");
+    assert!(!contains(&after, "Qzhost"), "a remnant of the serial number was left");
+    assert!(!contains(&after, NOTES), "the notes are still in the database");
+    assert!(!contains(&after, "Xvhost"), "a remnant of the notes was left");
+    assert!(contains(&after, "ON-1"), "the record that was on it is untouched");
+    assert!(contains(&after, "rides on the host"));
+    assert!(contains(&after, "R-1"));
+    let shown =
+        serde_json::to_value(accessory_ops::get_accessory(&db.conn, optic).unwrap()).unwrap();
+    assert_eq!(shown["status"], "active");
+    assert_eq!(shown["mountedOn"], Value::Null);
+    let rifle_shown =
+        serde_json::to_value(firearm_ops::get_firearm_detail(&db.conn, rifle).unwrap()).unwrap();
+    assert_eq!(rifle_shown["status"], "active");
+    assert_eq!(rifle_shown["mountedOn"], Value::Null);
+    assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
+}
+
 // --- Whole files: databases and backups (research.md §12) -------------------
 
 mod whole_files {

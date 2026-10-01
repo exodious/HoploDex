@@ -8,9 +8,7 @@ mod support;
 use std::collections::HashSet;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
-use hoplodex_lib::commands::firearms::{
-    DisposeFirearmInput, HistoryChoice, ReverseDispositionInput, ops,
-};
+use hoplodex_lib::commands::firearms::{DisposeInput, HistoryChoice, ReverseDispositionInput, ops};
 use hoplodex_lib::commands::insurance::ops as insurance;
 use hoplodex_lib::models::accessory::{Accessory, AccessoryInput};
 use hoplodex_lib::models::firearm::{DispositionType, Firearm};
@@ -83,12 +81,13 @@ fn create(db: &TestDb, serial: &str) -> Firearm {
     ops::create_firearm(&db.conn, &support::firearm("Glock", "19", serial), false).unwrap()
 }
 
-fn dispose_input() -> DisposeFirearmInput {
-    DisposeFirearmInput {
+fn dispose_input() -> DisposeInput {
+    DisposeInput {
         disposition_type: DispositionType::Sold,
         recipient: "Jane Doe".into(),
         date: "2025-06-15".into(),
         price: 40000,
+        with_mounted: Vec::new(),
     }
 }
 

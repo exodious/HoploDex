@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
-use crate::commands::firearms::{DeleteResult, DisposeFirearmInput, HistoryChoice};
+use crate::commands::firearms::{DeleteResult, DisposeInput, HistoryChoice};
 use crate::models::accessory::{Accessory, AccessoryInput, validate_accessory_input};
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::FirearmStatus;
@@ -286,12 +286,27 @@ pub mod ops {
         Ok(AccessoryDetail { accessory, disposition_history, mount })
     }
 
-    /// The same checks and result as saving the accessory with `status:
-    /// "disposed"` and these four fields set (as `dispose_firearm`).
+    /// Disposes of the accessory, and of the listed records mounted below
+    /// it, in one step (research.md §9): see
+    /// `mounts::ops::dispose_with_mounted`.
     pub fn dispose_accessory(
         conn: &Connection,
         id: i64,
-        input: &DisposeFirearmInput,
+        input: &DisposeInput,
+    ) -> Result<Accessory, CommandError> {
+        load_accessory(conn, id)?;
+        crate::commands::mounts::ops::dispose_with_mounted(conn, RecordRef::Accessory(id), input)?;
+        load_accessory(conn, id)
+    }
+
+    /// The same checks and result as saving the accessory alone with
+    /// `status: "disposed"`, the disposition of `input` and `price` (blank
+    /// for a record disposed of along with its host).
+    pub fn save_disposed(
+        conn: &Connection,
+        id: i64,
+        input: &DisposeInput,
+        price: Option<i64>,
     ) -> Result<Accessory, CommandError> {
         let current = load_accessory(conn, id)?;
         let updated_input = AccessoryInput {
@@ -299,7 +314,7 @@ pub mod ops {
             disposition_type: Some(input.disposition_type),
             disposition_recipient: Some(input.recipient.clone()),
             disposition_date: Some(input.date.clone()),
-            disposition_price: Some(input.price),
+            disposition_price: price,
             ..AccessoryInput::from(&current)
         };
         update_accessory(conn, id, &updated_input)
@@ -500,7 +515,7 @@ pub async fn list_accessories(
 #[tauri::command]
 pub async fn dispose_accessory(
     id: i64,
-    input: DisposeFirearmInput,
+    input: DisposeInput,
     session: State<'_, Session>,
 ) -> Result<Accessory, CommandError> {
     session.write(|conn| ops::dispose_accessory(conn, id, &input))

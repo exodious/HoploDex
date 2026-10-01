@@ -4,7 +4,7 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
 use support::TestDb;
 
@@ -112,11 +112,12 @@ fn scenario_4_disposing_flips_status_and_retains_history() {
     let disposed = ops::dispose_firearm(
         &db.conn,
         created.id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2025-06-15".into(),
             price: 40000,
+            with_mounted: Vec::new(),
         },
     )
     .expect("dispose should succeed");
@@ -194,12 +195,13 @@ fn iso(date: chrono::NaiveDate) -> String {
     date.format("%Y-%m-%d").to_string()
 }
 
-fn dispose_input(date: &str) -> DisposeFirearmInput {
-    DisposeFirearmInput {
+fn dispose_input(date: &str) -> DisposeInput {
+    DisposeInput {
         disposition_type: DispositionType::Sold,
         recipient: "Jane Doe".into(),
         date: date.into(),
         price: 40000,
+        with_mounted: Vec::new(),
     }
 }
 
@@ -393,7 +395,7 @@ fn a_fractional_amount_is_refused_when_the_arguments_are_decoded_never_rounded()
     let dispose = serde_json::json!({
         "dispositionType": "sold", "recipient": "Jane", "date": "2025-01-01", "price": 400.5
     });
-    assert!(serde_json::from_value::<DisposeFirearmInput>(dispose).is_err());
+    assert!(serde_json::from_value::<DisposeInput>(dispose).is_err());
 }
 
 #[test]

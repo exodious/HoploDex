@@ -4,7 +4,7 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ListFirearmsInput, ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ListFirearmsInput, ops};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
@@ -20,11 +20,12 @@ fn dispose(db: &TestDb, id: i64) {
     ops::dispose_firearm(
         &db.conn,
         id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2025-06-15".into(),
             price: 40000,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

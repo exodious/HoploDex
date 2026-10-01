@@ -9,7 +9,7 @@ use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::entries::{
     SettleEntryInput, SettleEntryOutput, SuggestEntriesInput, Suggestion, ops as entry_ops,
 };
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ops};
 use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use hoplodex_lib::services::cartridges::{CaliberSource, catalog};
@@ -334,11 +334,12 @@ fn a_value_disappears_with_its_only_firearm_but_not_when_it_is_disposed() {
     ops::dispose_firearm(
         &db.conn,
         disposed,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane".into(),
             date: "2025-01-01".into(),
             price: 100,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

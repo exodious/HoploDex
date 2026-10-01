@@ -5,7 +5,7 @@
 mod support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops as firearm_ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ops as firearm_ops};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use hoplodex_lib::models::record::RecordRef;
@@ -39,11 +39,12 @@ fn scenario_5_total_updates_immediately_after_every_mutation() {
     firearm_ops::dispose_firearm(
         &db.conn,
         a.id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane".into(),
             date: "2025-01-01".into(),
             price: 55000,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();
@@ -162,11 +163,12 @@ fn disposed_firearms_leave_every_part_of_the_summary() {
     firearm_ops::dispose_firearm(
         &db.conn,
         f.id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane".into(),
             date: "2026-02-01".into(),
             price: 1,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

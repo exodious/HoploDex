@@ -6,9 +6,7 @@ mod support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
-use hoplodex_lib::commands::firearms::{
-    DisposeFirearmInput, HistoryChoice, ReverseDispositionInput, ops,
-};
+use hoplodex_lib::commands::firearms::{DisposeInput, HistoryChoice, ReverseDispositionInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -18,11 +16,12 @@ fn dispose(db: &TestDb, id: i64, recipient: &str, date: &str) {
     ops::dispose_firearm(
         &db.conn,
         id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: recipient.into(),
             date: date.into(),
             price: 40000,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();

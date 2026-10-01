@@ -881,3 +881,401 @@ fn deleting_either_record_cascades_its_rows_away() {
     assert_eq!(mount_rows(&db), 0);
     assert_eq!(mounted_on(&db, optic), None);
 }
+
+// --- SC-004: a random walk over every operation (tasks.md T080) ----------------------------
+
+/// A fixed-seed generator (SplitMix64), so the walk is the same every run.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// A number in `0..n`.
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+
+    fn pick<T: Copy>(&mut self, items: &[T]) -> Option<T> {
+        (!items.is_empty()).then(|| items[self.below(items.len())])
+    }
+}
+
+/// Every record's status, read from the tables themselves.
+fn status_map(db: &TestDb) -> std::collections::HashMap<RecordRef, String> {
+    let mut found = std::collections::HashMap::new();
+    for (table, make) in [
+        ("firearms", RecordRef::Firearm as fn(i64) -> RecordRef),
+        ("accessories", RecordRef::Accessory as fn(i64) -> RecordRef),
+    ] {
+        let mut stmt = db.conn.prepare(&format!("SELECT id, status FROM {table}")).unwrap();
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)));
+        for row in rows.unwrap() {
+            let (id, status) = row.unwrap();
+            found.insert(make(id), status);
+        }
+    }
+    found
+}
+
+/// Every `mounts` row as `(item, host)`; a second row for one item is
+/// reported as a count mismatch by the caller.
+fn mount_pairs(db: &TestDb) -> Vec<(RecordRef, RecordRef)> {
+    let mut stmt = db
+        .conn
+        .prepare(
+            "SELECT item_firearm_id, item_accessory_id, host_firearm_id, host_accessory_id
+             FROM mounts",
+        )
+        .unwrap();
+    let pair = |firearm: Option<i64>, accessory: Option<i64>| match (firearm, accessory) {
+        (Some(id), None) => RecordRef::Firearm(id),
+        (None, Some(id)) => RecordRef::Accessory(id),
+        _ => panic!("a mounts row names exactly one record per side"),
+    };
+    stmt.query_map([], |r| Ok((pair(r.get(0)?, r.get(1)?), pair(r.get(2)?, r.get(3)?))))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+fn graph(db: &TestDb) -> hoplodex_lib::services::mounts::MountGraph {
+    hoplodex_lib::services::mounts::MountGraph::load(&db.conn).unwrap()
+}
+
+/// SC-004's three invariants, which must hold after every step.
+fn assert_mounts_sound(db: &TestDb, step: usize, what: &str) {
+    let statuses = status_map(db);
+    let pairs = mount_pairs(db);
+    let items: std::collections::HashSet<RecordRef> = pairs.iter().map(|(item, _)| *item).collect();
+    assert_eq!(items.len(), pairs.len(), "step {step} ({what}): an item has two rows");
+    for (item, host) in &pairs {
+        for record in [item, host] {
+            assert_eq!(
+                statuses.get(record).map(String::as_str),
+                Some("active"),
+                "step {step} ({what}): a mount involves {record:?}, which is disposed or deleted"
+            );
+        }
+    }
+    let graph = graph(db);
+    for record in statuses.keys() {
+        let (mut at, mut steps) = (*record, 0);
+        while let Some(host) = graph.host_of(at) {
+            steps += 1;
+            assert!(
+                host != *record && steps <= statuses.len(),
+                "step {step} ({what}): {record:?} is part of a loop"
+            );
+            at = host;
+        }
+    }
+}
+
+/// Whether `record` is on the chain above (or is) `other`.
+fn is_below(
+    graph: &hoplodex_lib::services::mounts::MountGraph,
+    record: RecordRef,
+    other: RecordRef,
+) -> bool {
+    graph.chain(record).contains(&other)
+}
+
+/// The rule of FR-010, stated independently of the code under test: the
+/// item and the host are active and the host is not the item or below it.
+fn mount_allowed(db: &TestDb, item: RecordRef, host: Option<RecordRef>) -> bool {
+    let Some(host) = host else { return true };
+    let statuses = status_map(db);
+    let active = |r: &RecordRef| statuses.get(r).map(String::as_str) == Some("active");
+    active(&item) && active(&host) && host != item && !is_below(&graph(db), host, item)
+}
+
+fn dispose_with(
+    db: &TestDb,
+    record: RecordRef,
+    with: &[(RecordRef, Option<i64>)],
+) -> Result<(), CommandError> {
+    let with: Vec<Value> =
+        with.iter().map(|(record, price)| json!({ "record": record, "price": price })).collect();
+    let mut input = dispose_input();
+    input["withMounted"] = Value::Array(with);
+    let input = serde_json::from_value(input).unwrap();
+    match record {
+        RecordRef::Firearm(id) => firearm_ops::dispose_firearm(&db.conn, id, &input).map(|_| ()),
+        RecordRef::Accessory(id) => {
+            accessory_ops::dispose_accessory(&db.conn, id, &input).map(|_| ())
+        }
+    }
+}
+
+fn restore_record(db: &TestDb, record: RecordRef) {
+    let input = json!({ "history": "discard" });
+    match record {
+        RecordRef::Firearm(id) => {
+            firearm_ops::reverse_disposition(&db.conn, id, &serde_json::from_value(input).unwrap())
+                .unwrap();
+        }
+        RecordRef::Accessory(id) => {
+            accessory_ops::reverse_accessory_disposition(
+                &db.conn,
+                id,
+                &serde_json::from_value(input).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+fn delete_record(db: &TestDb, record: RecordRef) {
+    match record {
+        RecordRef::Firearm(id) => {
+            firearm_ops::delete_firearm(&db.conn, id, true).unwrap();
+        }
+        RecordRef::Accessory(id) => {
+            accessory_ops::delete_accessory(&db.conn, id, true).unwrap();
+        }
+    }
+}
+
+/// Counts of what the walk did, so it can't pass by doing nothing.
+#[derive(Default, Debug)]
+struct Coverage {
+    mounted: usize,
+    refused: usize,
+    moved_with_records_below: usize,
+    disposed_with_records: usize,
+    disposed_keeping_records: usize,
+    stale: usize,
+    restored: usize,
+    deleted_with_records_below: usize,
+    created_mounted: usize,
+}
+
+#[test]
+fn two_thousand_random_operations_never_break_the_mount_rules() {
+    const STEPS: usize = 2_000;
+    const MOST_RECORDS: usize = 14;
+    let db = TestDb::new();
+    let mut rng = Rng(0x00C0_FFEE_2006_0004);
+    let mut serial = 0;
+    let mut next_serial = || {
+        serial += 1;
+        format!("W-{serial}")
+    };
+    let mut records: Vec<RecordRef> = Vec::new();
+    for _ in 0..3 {
+        records.push(add_firearm(&db, &rifle(&next_serial())));
+        records.push(add_firearm(&db, &suppressor(&next_serial())));
+    }
+    for kind in [OPTIC, LIGHT, MAGAZINE, UPPER, SLING, CASE] {
+        records.push(plain_accessory(&db, kind, "Make", "Model"));
+    }
+    let mut seen = Coverage::default();
+
+    for step in 1..=STEPS {
+        let statuses = status_map(&db);
+        let active: Vec<RecordRef> =
+            records.iter().copied().filter(|r| statuses[r] == "active").collect();
+        let disposed: Vec<RecordRef> =
+            records.iter().copied().filter(|r| statuses[r] == "disposed").collect();
+        let pairs_before = mount_pairs(&db);
+        let graph_before = graph(&db);
+        let what: String;
+
+        match rng.below(100) {
+            // A form save with a Mounted on value, or a mount_record call.
+            0..=44 => {
+                let by_form = rng.below(2) == 0;
+                let item = if by_form { rng.pick(&active) } else { rng.pick(&records) };
+                let Some(item) = item else { continue };
+                let host = if rng.below(4) == 0 { None } else { rng.pick(&records) };
+                what = format!(
+                    "{} {item:?} on {host:?}",
+                    if by_form { "form" } else { "mount_record" }
+                );
+                let below_before: Vec<RecordRef> =
+                    graph_before.below(item).iter().map(|(r, _, _)| *r).collect();
+                let expected = mount_allowed(&db, item, host)
+                    || (!by_form && host.is_none())
+                    || graph_before.host_of(item) == host;
+                let result = if by_form {
+                    save_mounted_on(&db, item, host)
+                } else {
+                    mount(&db, item, host).map(|_| ())
+                };
+                assert_eq!(result.is_ok(), expected, "step {step} ({what}): {result:?}");
+                if result.is_ok() {
+                    if host.is_some() {
+                        seen.mounted += 1;
+                    }
+                    assert_eq!(graph(&db).host_of(item), host, "step {step} ({what})");
+                    if !below_before.is_empty() {
+                        seen.moved_with_records_below += 1;
+                    }
+                    let after = graph(&db);
+                    for below in below_before {
+                        assert!(
+                            is_below(&after, below, item),
+                            "step {step} ({what}): {below:?} is no longer below {item:?}"
+                        );
+                    }
+                } else {
+                    seen.refused += 1;
+                    let mut after = mount_pairs(&db);
+                    let mut before = pairs_before.clone();
+                    after.sort_by_key(|p| format!("{p:?}"));
+                    before.sort_by_key(|p| format!("{p:?}"));
+                    assert_eq!(after, before, "step {step} ({what}): a refused mount changed rows");
+                }
+            }
+            // Disposing, with a random subset of what is below.
+            45..=64 => {
+                let Some(host) = rng.pick(&active) else { continue };
+                let below: Vec<RecordRef> =
+                    graph_before.below(host).iter().map(|(r, _, _)| *r).collect();
+                let mut chosen: Vec<(RecordRef, Option<i64>)> = Vec::new();
+                for record in &below {
+                    if rng.below(2) == 0 {
+                        let price =
+                            if rng.below(3) == 0 { None } else { Some(rng.below(500) as i64) };
+                        chosen.push((*record, price));
+                    }
+                }
+                let outsiders: Vec<RecordRef> =
+                    records.iter().copied().filter(|r| !below.contains(r)).collect();
+                let stale = rng.below(6) == 0 && !outsiders.is_empty();
+                if stale {
+                    let outsider = rng.pick(&outsiders).unwrap();
+                    let at = rng.below(chosen.len() + 1);
+                    chosen.insert(at, (outsider, None));
+                }
+                what = format!("dispose {host:?} with {chosen:?}");
+                let result = dispose_with(&db, host, &chosen);
+                if stale {
+                    seen.stale += 1;
+                    let err = result.expect_err(&format!("step {step} ({what}) should be stale"));
+                    assert_field_error(
+                        err,
+                        "withMounted",
+                        "What is mounted has changed. Close the dialog and try again.",
+                    );
+                    assert!(statuses_after_eq(&db, &statuses), "step {step} ({what})");
+                    let mut after = mount_pairs(&db);
+                    let mut before = pairs_before.clone();
+                    after.sort_by_key(|p| format!("{p:?}"));
+                    before.sort_by_key(|p| format!("{p:?}"));
+                    assert_eq!(after, before, "step {step} ({what}): a stale call changed rows");
+                } else {
+                    result.unwrap_or_else(|e| panic!("step {step} ({what}): {e:?}"));
+                    if chosen.is_empty() {
+                        seen.disposed_keeping_records += usize::from(!below.is_empty());
+                    } else {
+                        seen.disposed_with_records += 1;
+                    }
+                    let after_statuses = status_map(&db);
+                    assert_eq!(after_statuses[&host], "disposed", "step {step} ({what})");
+                    let chosen_records: Vec<RecordRef> = chosen.iter().map(|(r, _)| *r).collect();
+                    for (record, price) in &chosen {
+                        assert_eq!(after_statuses[record], "disposed", "step {step} ({what})");
+                        let shown = detail(&db, *record);
+                        assert_eq!(shown["dispositionPrice"], json!(price), "step {step} ({what})");
+                        assert_eq!(shown["dispositionRecipient"], "Jane Doe");
+                    }
+                    let after = graph(&db);
+                    for r in below.iter().filter(|r| !chosen_records.contains(r)) {
+                        assert_eq!(after_statuses[r], "active", "step {step} ({what}): {r:?} kept");
+                        // A kept record keeps a mount on a kept record, and
+                        // loses one on a disposed record.
+                        let before_host = graph_before.host_of(*r).unwrap();
+                        let expected = (before_host != host
+                            && !chosen_records.contains(&before_host))
+                        .then_some(before_host);
+                        assert_eq!(after.host_of(*r), expected, "step {step} ({what}): {r:?}");
+                    }
+                }
+            }
+            // Restoring a disposed record: it comes back unmounted.
+            65..=77 => {
+                let Some(record) = rng.pick(&disposed) else { continue };
+                what = format!("restore {record:?}");
+                restore_record(&db, record);
+                seen.restored += 1;
+                assert_eq!(status_map(&db)[&record], "active", "step {step} ({what})");
+                assert_eq!(graph(&db).host_of(record), None, "step {step} ({what})");
+                assert!(graph(&db).below(record).is_empty(), "step {step} ({what})");
+            }
+            // Deleting anything: what was on it stays, unmounted.
+            78..=87 => {
+                let Some(record) = rng.pick(&records) else { continue };
+                what = format!("delete {record:?}");
+                let hosts: Vec<(RecordRef, RecordRef)> = pairs_before.clone();
+                delete_record(&db, record);
+                records.retain(|r| *r != record);
+                if hosts.iter().any(|(_, host)| *host == record) {
+                    seen.deleted_with_records_below += 1;
+                }
+                let after = graph(&db);
+                let after_statuses = status_map(&db);
+                assert!(!after_statuses.contains_key(&record), "step {step} ({what})");
+                for (item, host) in hosts {
+                    if item == record {
+                        continue;
+                    }
+                    let expected = (host != record).then_some(host);
+                    assert_eq!(after.host_of(item), expected, "step {step} ({what}): {item:?}");
+                    assert!(after_statuses.contains_key(&item), "step {step} ({what}): {item:?}");
+                }
+            }
+            // Creating a record, sometimes already mounted.
+            _ => {
+                if records.len() >= MOST_RECORDS {
+                    continue;
+                }
+                let host = if rng.below(3) == 0 { rng.pick(&active) } else { None };
+                what = format!("create on {host:?}");
+                let created = match rng.below(3) {
+                    0 => add_firearm(
+                        &db,
+                        &FirearmInput { mounted_on: host, ..rifle(&next_serial()) },
+                    ),
+                    1 => add_firearm(
+                        &db,
+                        &FirearmInput { mounted_on: host, ..suppressor(&next_serial()) },
+                    ),
+                    _ => {
+                        let mut input = accessory(OPTIC, "Make", "Model");
+                        input.mounted_on = host;
+                        add_accessory(&db, &input)
+                    }
+                };
+                records.push(created);
+                if host.is_some() {
+                    seen.created_mounted += 1;
+                    assert_eq!(graph(&db).host_of(created), host, "step {step} ({what})");
+                }
+            }
+        }
+        assert_mounts_sound(&db, step, &what);
+    }
+
+    // Guard: the walk did exercise every operation, in the interesting ways.
+    assert!(seen.mounted >= 100, "{seen:?}");
+    assert!(seen.refused >= 50, "{seen:?}");
+    assert!(seen.moved_with_records_below >= 20, "{seen:?}");
+    assert!(seen.disposed_with_records >= 20, "{seen:?}");
+    assert!(seen.disposed_keeping_records >= 10, "{seen:?}");
+    assert!(seen.stale >= 10, "{seen:?}");
+    assert!(seen.restored >= 20, "{seen:?}");
+    assert!(seen.deleted_with_records_below >= 10, "{seen:?}");
+    assert!(seen.created_mounted >= 10, "{seen:?}");
+}
+
+/// Whether every record still has the status it had.
+fn statuses_after_eq(db: &TestDb, before: &std::collections::HashMap<RecordRef, String>) -> bool {
+    &status_map(db) == before
+}
