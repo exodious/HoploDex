@@ -10,10 +10,14 @@ mod support;
 
 use std::path::Path;
 
+use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
+use hoplodex_lib::models::record::RecordRef;
 use rusqlite::Connection;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 use support::{TestDb, firearm, sample_png_bytes};
 
 const MARKER: &[u8] = b"HOPLODEX-WIPE-ME-0123456789ABCDEF";
@@ -82,7 +86,7 @@ fn the_search_can_see_the_marker_while_it_is_stored() {
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-0"), false).unwrap();
     document_ops::add_document(
         &db.conn,
-        created.id,
+        RecordRef::Firearm(created.id),
         &marker_blob(),
         "receipt.pdf",
         "application/pdf",
@@ -108,7 +112,7 @@ fn deleting_a_document_wipes_its_bytes_and_returns_the_space() {
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-1"), false).unwrap();
     let document = document_ops::add_document(
         &db.conn,
-        created.id,
+        RecordRef::Firearm(created.id),
         &marker_blob(),
         "receipt.pdf",
         "application/pdf",
@@ -127,8 +131,14 @@ fn deleting_a_photo_wipes_its_bytes_and_returns_the_space() {
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-2"), false).unwrap();
-    let photo = photo_ops::add_photo(&db.conn, created.id, &marker_png(), "range.png", "image/png")
-        .unwrap();
+    let photo = photo_ops::add_photo(
+        &db.conn,
+        RecordRef::Firearm(created.id),
+        &marker_png(),
+        "range.png",
+        "image/png",
+    )
+    .unwrap();
     let size_before = file_size(&db.conn);
 
     photo_ops::delete_photo(&db.conn, photo.id, true).unwrap();
@@ -142,10 +152,17 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-3"), false).unwrap();
-    photo_ops::add_photo(&db.conn, created.id, &marker_png(), "range.png", "image/png").unwrap();
+    photo_ops::add_photo(
+        &db.conn,
+        RecordRef::Firearm(created.id),
+        &marker_png(),
+        "range.png",
+        "image/png",
+    )
+    .unwrap();
     document_ops::add_document(
         &db.conn,
-        created.id,
+        RecordRef::Firearm(created.id),
         &marker_blob(),
         "receipt.pdf",
         "application/pdf",
@@ -248,7 +265,7 @@ fn deleting_one_attachment_leaves_the_others_intact() {
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-4"), false).unwrap();
     let keep = document_ops::add_document(
         &db.conn,
-        created.id,
+        RecordRef::Firearm(created.id),
         &marker_blob(),
         "keep.pdf",
         "application/pdf",
@@ -256,7 +273,7 @@ fn deleting_one_attachment_leaves_the_others_intact() {
     .unwrap();
     let doomed = document_ops::add_document(
         &db.conn,
-        created.id,
+        RecordRef::Firearm(created.id),
         b"%PDF-1.4 to be deleted",
         "gone.pdf",
         "application/pdf",
@@ -276,7 +293,7 @@ fn an_unconfirmed_delete_changes_nothing() {
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-5"), false).unwrap();
     let document = document_ops::add_document(
         &db.conn,
-        created.id,
+        RecordRef::Firearm(created.id),
         &marker_blob(),
         "receipt.pdf",
         "application/pdf",
@@ -285,6 +302,128 @@ fn an_unconfirmed_delete_changes_nothing() {
 
     assert!(document_ops::delete_document(&db.conn, document.id, false).is_err());
     assert!(document_ops::get_document(&db.conn, document.id).is_ok());
+}
+
+// --- Accessories (specs/006-accessory-links SC-006, constitution V) -----------
+//
+// The database file is encrypted, so the bytes are looked for in its decrypted
+// contents (`decrypted_export`), exactly as for a firearm: a search of the
+// encrypted file itself could never find plaintext, deleted or not.
+// Accessory inputs are built from the IPC shape (`AccessoryInput`'s camelCase
+// JSON), so these tests do not depend on how the struct is spelled.
+
+fn parse<T: DeserializeOwned>(value: Value) -> T {
+    serde_json::from_value(value).expect("the JSON must fit the type")
+}
+
+fn create_accessory(db: &TestDb, make: &str, serial: &str, notes: &str) -> i64 {
+    let input = json!({
+        "accessoryKindId": 1,
+        "make": make,
+        "model": "Wipe model",
+        "serialNumber": serial,
+        "notes": notes,
+        "status": "active",
+    });
+    accessory_ops::create_accessory(&db.conn, &parse(input)).unwrap().id
+}
+
+fn contains(haystack: &[u8], needle: &str) -> bool {
+    haystack.windows(needle.len()).any(|window| window == needle.as_bytes())
+}
+
+fn row_count(db: &TestDb, table: &str) -> i64 {
+    db.conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+}
+
+/// SC-006: a deleted accessory's serial number, notes, photo and document are
+/// gone from the file, the full-text index included, and the space comes back.
+#[test]
+fn deleting_an_accessory_wipes_its_serial_number_notes_photo_and_document() {
+    const SERIAL: &str = "Qzxjv-7731";
+    const NOTES: &str = "Wvkbnq remembered purchase";
+    // The index is a trigram one: it stores the lowercased three-character
+    // pieces of a value, never the whole word (0002_fts5.sql).
+    const INDEX_TOKENS: [&str; 6] = ["qzx", "zxj", "xjv", "wvk", "vkb", "kbn"];
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let doomed = create_accessory(&db, "Leupold", SERIAL, NOTES);
+    let kept = create_accessory(&db, "Aimpoint", "KEEP-1", "kept notes");
+    let owner = RecordRef::Accessory(doomed);
+    photo_ops::add_photo(&db.conn, owner, &marker_png(), "scope.png", "image/png").unwrap();
+    document_ops::add_document(&db.conn, owner, &marker_blob(), "warranty.pdf", "application/pdf")
+        .unwrap();
+    // Guard: the search sees every one of them while stored.
+    let before = decrypted_export(&db.conn, scratch.path());
+    assert!(contains(&before, SERIAL));
+    assert!(contains(&before, NOTES));
+    assert!(count_marker(&before) > REPEATS, "the photo's and the document's markers");
+    for token in INDEX_TOKENS {
+        assert!(contains(&before, token), "the full-text index holds {token:?}");
+    }
+    let size_before = file_size(&db.conn);
+
+    accessory_ops::delete_accessory(&db.conn, doomed, true).unwrap();
+
+    let after = decrypted_export(&db.conn, scratch.path());
+    assert!(!contains(&after, SERIAL), "the serial number is still in the database");
+    assert!(!contains(&after, "Qzxjv"), "a remnant of the serial number was left");
+    assert!(!contains(&after, NOTES), "the notes are still in the database");
+    assert!(!contains(&after, "Wvkbnq"), "a remnant of the notes was left");
+    assert_eq!(count_marker(&after), 0, "the photo or the document is still in the database");
+    for token in INDEX_TOKENS {
+        assert!(!contains(&after, token), "the index kept {token:?}");
+    }
+    assert_eq!(row_count(&db, "photos"), 0, "the photo row is gone");
+    assert_eq!(row_count(&db, "document_attachments"), 0, "the document row is gone");
+    assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
+    let blob = (MARKER.len() * REPEATS) as u64;
+    assert!(
+        file_size(&db.conn) + blob < size_before,
+        "the file kept the freed space of the photo and the document"
+    );
+    assert!(contains(&after, "KEEP-1"), "the other accessory is untouched");
+    assert!(accessory_ops::get_accessory(&db.conn, kept).is_ok());
+}
+
+#[test]
+fn deleting_an_accessorys_document_wipes_its_bytes_and_returns_the_space() {
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let id = create_accessory(&db, "Leupold", "W-A1", "notes");
+    let document = document_ops::add_document(
+        &db.conn,
+        RecordRef::Accessory(id),
+        &marker_blob(),
+        "warranty.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+    let size_before = file_size(&db.conn);
+
+    document_ops::delete_document(&db.conn, document.id, true).unwrap();
+
+    assert_wiped(&db.conn, size_before, scratch.path());
+}
+
+#[test]
+fn deleting_an_accessorys_photo_wipes_its_bytes_and_returns_the_space() {
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let id = create_accessory(&db, "Leupold", "W-A2", "notes");
+    let photo = photo_ops::add_photo(
+        &db.conn,
+        RecordRef::Accessory(id),
+        &marker_png(),
+        "scope.png",
+        "image/png",
+    )
+    .unwrap();
+    let size_before = file_size(&db.conn);
+
+    photo_ops::delete_photo(&db.conn, photo.id, true).unwrap();
+
+    assert_wiped(&db.conn, size_before, scratch.path());
 }
 
 // --- Whole files: databases and backups (research.md §12) -------------------

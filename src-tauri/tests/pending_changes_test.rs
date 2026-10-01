@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::accessories::ops as accessories;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::insurance::ops as insurance;
@@ -481,4 +482,234 @@ fn a_take_over_found_while_finishing_on_waking_loses_the_draft_and_says_so() {
         .query_row("SELECT count(*) FROM pending_changes", [], |row| row.get(0))
         .unwrap();
     assert_eq!(pending, 0, "nothing is written to a file taken over");
+}
+
+// --- Accessory drafts (specs/006-accessory-links FR-027, research.md §19) ------
+//
+// `Draft.kind` gains "accessory" with the modes a firearm has. Accessory
+// inputs are built from the IPC shape (`AccessoryInput`'s camelCase JSON), so
+// these tests do not depend on how the struct is spelled.
+
+const ACCESSORY_MODES: [DraftMode; 5] =
+    [DraftMode::Add, DraftMode::Edit, DraftMode::Dispose, DraftMode::Restore, DraftMode::Coverage];
+
+impl World {
+    fn add_accessory(&self) -> Result<i64, CommandError> {
+        let input = json!({
+            "accessoryKindId": 1,
+            "make": "Leupold",
+            "model": "VX-5HD 3-15x44",
+            "status": "active",
+        });
+        self.session.write(|conn| {
+            accessories::create_accessory(conn, &serde_json::from_value(input.clone()).unwrap())
+                .map(|created| created.id)
+        })
+    }
+}
+
+/// An accessory draft labelled with the accessory's name (FR-005, FR-027).
+fn accessory_draft(mode: DraftMode, target_id: Option<i64>) -> Draft {
+    Draft {
+        label: format!("Leupold VX-5HD 3-15x44 · Optic — {}", mode.as_str()),
+        values: json!({ "make": "Leupold", "notes": "half typed, with “quotes” é" }),
+        ..draft_for(DraftKind::Accessory, mode, target_id)
+    }
+}
+
+fn target_for(mode: DraftMode, id: i64) -> Option<i64> {
+    (mode != DraftMode::Add).then_some(id)
+}
+
+#[test]
+fn an_accessory_draft_is_accepted_in_every_mode_a_firearm_has() {
+    let world = World::new();
+    world.create();
+    let id = world.add_accessory().unwrap();
+
+    for mode in ACCESSORY_MODES {
+        let draft = accessory_draft(mode, target_for(mode, id));
+        databases::stage_pending_changes(&world.session, Some(draft.clone()))
+            .unwrap_or_else(|err| panic!("{mode:?}: {err:?}"));
+        assert_eq!(
+            world.session.inspect(|open| Ok(open.staged_draft.clone())).unwrap(),
+            Some(draft),
+            "{mode:?}"
+        );
+    }
+}
+
+#[test]
+fn an_accessory_drafts_target_follows_the_same_rules_as_a_firearms() {
+    let world = World::new();
+    world.create();
+    let id = world.add_accessory().unwrap();
+
+    for mode in [DraftMode::Edit, DraftMode::Dispose, DraftMode::Restore, DraftMode::Coverage] {
+        let no_target = accessory_draft(mode, None);
+        let refused =
+            databases::stage_pending_changes(&world.session, Some(no_target)).unwrap_err();
+        assert_eq!(validation_field(refused), "targetId", "{mode:?} needs a target");
+    }
+    let added_with_target = accessory_draft(DraftMode::Add, Some(id));
+    let refused =
+        databases::stage_pending_changes(&world.session, Some(added_with_target)).unwrap_err();
+    assert_eq!(validation_field(refused), "targetId", "an added accessory has no target yet");
+}
+
+#[test]
+fn a_policy_draft_in_coverage_mode_is_still_refused() {
+    let world = World::new();
+    world.create();
+    world.add_accessory().unwrap();
+
+    let refused = databases::stage_pending_changes(
+        &world.session,
+        Some(draft_for(DraftKind::Policy, DraftMode::Coverage, Some(1))),
+    )
+    .unwrap_err();
+
+    assert_eq!(validation_field(refused), "mode");
+}
+
+#[test]
+fn an_accessory_draft_in_each_mode_is_kept_by_a_lock_and_resumed_with_its_label() {
+    for mode in ACCESSORY_MODES {
+        let world = World::new();
+        world.create();
+        let id = world.add_accessory().unwrap();
+        let draft = accessory_draft(mode, target_for(mode, id));
+        databases::lock_database(&world.session, &world.machine, Some(draft.clone())).unwrap();
+        assert_eq!(world.closed_file().0, 1, "{mode:?} is kept in the database");
+
+        let status = databases::open_database(
+            &world.session,
+            &world.machine,
+            &world.path_text(),
+            databases::Unlock::typed(&passphrase()),
+            false,
+        )
+        .unwrap();
+
+        let pending = status.pending_changes.unwrap_or_else(|| panic!("{mode:?} is reported"));
+        assert_eq!(pending.kind, DraftKind::Accessory, "{mode:?}");
+        assert_eq!(pending.mode, mode);
+        assert_eq!(pending.target_id, target_for(mode, id));
+        assert_eq!(pending.label, draft.label, "named by the accessory's label");
+        assert!(pending.resumable, "{mode:?}");
+
+        let resolved =
+            databases::resolve_pending_changes(&world.session, PendingAction::Resume).unwrap();
+        assert_eq!(resolved.draft, Some(draft), "{mode:?}: the exact draft comes back");
+        assert_eq!(world.pending_rows(), 0, "{mode:?}");
+    }
+}
+
+#[test]
+fn an_accessory_draft_is_kept_by_a_sleep_as_well() {
+    let world = World::new();
+    world.create();
+    let id = world.add_accessory().unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        Some(accessory_draft(DraftMode::Edit, Some(id))),
+    )
+    .unwrap();
+
+    lifecycle::close_immediate(&world.session, &world.machine, CloseReason::Sleep);
+
+    let (pending, _, marked) = world.closed_file();
+    assert_eq!(pending, 1);
+    assert!(!marked);
+}
+
+#[test]
+fn a_resumed_edit_whose_accessory_was_deleted_elsewhere_can_only_be_discarded() {
+    let world = World::new();
+    world.create();
+    let id = world.add_accessory().unwrap();
+    databases::lock_database(
+        &world.session,
+        &world.machine,
+        Some(accessory_draft(DraftMode::Edit, Some(id))),
+    )
+    .unwrap();
+    // Deleted on another computer while this one was locked.
+    {
+        let conn = hoplodex_lib::db::open_database(
+            &world.path(),
+            &passphrase(),
+            &support::other_machine(),
+            false,
+        )
+        .unwrap();
+        conn.execute("DELETE FROM pending_changes", []).unwrap();
+        accessories::delete_accessory(&conn, id, true).unwrap();
+        conn.execute(
+            "INSERT INTO pending_changes (id, kind, mode, target_id, label, form_version,
+                                          values_json, saved_at)
+             VALUES (1, 'accessory', 'edit', ?1, 'Leupold VX-5HD 3-15x44 · Optic — edit', 1, '{}',
+                     '2026-09-25T12:00:00Z')",
+            [id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE app_state SET open_machine_id = NULL, open_machine_name = NULL,
+                                  open_since = NULL",
+            [],
+        )
+        .unwrap();
+    }
+
+    world.open();
+
+    let pending =
+        databases::database_status(&world.session, &world.machine).unwrap().pending_changes;
+    let pending = pending.expect("the draft is still offered");
+    assert_eq!(pending.kind, DraftKind::Accessory);
+    assert!(!pending.resumable);
+}
+
+/// A firearm and an accessory can have the same numeric id: an accessory
+/// draft is checked against `accessories`, never `firearms`.
+#[test]
+fn an_accessory_draft_is_not_resumable_just_because_a_firearm_has_its_target_id() {
+    let world = World::new();
+    world.create();
+    let firearm = world.add_firearm("A1").unwrap();
+    databases::lock_database(
+        &world.session,
+        &world.machine,
+        Some(accessory_draft(DraftMode::Edit, Some(firearm))),
+    )
+    .unwrap();
+
+    world.open();
+
+    let pending = databases::database_status(&world.session, &world.machine)
+        .unwrap()
+        .pending_changes
+        .unwrap();
+    assert_eq!(pending.kind, DraftKind::Accessory);
+    assert!(!pending.resumable, "there is no accessory {firearm}, only a firearm");
+}
+
+#[test]
+fn collection_commands_wait_for_an_accessory_draft_too() {
+    let world = World::new();
+    world.create();
+    let id = world.add_accessory().unwrap();
+    databases::lock_database(
+        &world.session,
+        &world.machine,
+        Some(accessory_draft(DraftMode::Edit, Some(id))),
+    )
+    .unwrap();
+    world.open();
+
+    let refused = world.add_accessory().unwrap_err();
+    assert_eq!(refused.code, "PENDING_CHANGES_UNRESOLVED");
+
+    databases::resolve_pending_changes(&world.session, PendingAction::Discard).unwrap();
+    world.add_accessory().unwrap();
 }

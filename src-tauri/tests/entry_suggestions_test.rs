@@ -5,10 +5,12 @@
 
 mod support;
 
+use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::entries::{
     SettleEntryInput, SettleEntryOutput, SuggestEntriesInput, Suggestion, ops as entry_ops,
 };
 use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ops};
+use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use hoplodex_lib::services::cartridges::{CaliberSource, catalog};
 use hoplodex_lib::services::entry_text::EntryField;
@@ -575,4 +577,172 @@ fn registered_to_offers_only_values_on_record_and_snaps_to_them() {
     assert!(suggest(&db, EntryField::RegisteredTo, "only").is_empty());
     assert_eq!(values(&suggest(&db, EntryField::RegisteredTo, "")), ["Smith Family Trust"]);
     let _ = id;
+}
+
+// --- Accessories share the vocabulary (specs/006-accessory-links FR-003, tasks.md T018) ----
+
+/// An accessory of `make` and `model` (kind Optic) with the given cartridge
+/// and caliber; every value is suggested from firearms and accessories
+/// together.
+fn accessory_record(
+    db: &TestDb,
+    make: &str,
+    model: &str,
+    cartridge: Option<&str>,
+    caliber: Option<&str>,
+) -> i64 {
+    let mut input: AccessoryInput =
+        serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "status": "active" }))
+            .unwrap();
+    input.make = Some(make.into());
+    input.model = Some(model.into());
+    input.cartridge = cartridge.map(str::to_owned);
+    input.caliber = caliber.map(str::to_owned);
+    accessory_ops::create_accessory(&db.conn, &input).unwrap().id
+}
+
+#[test]
+fn a_make_recorded_only_on_an_accessory_is_suggested_and_a_variant_snaps_to_it() {
+    // US1-6.
+    let db = makes_db();
+    accessory_record(&db, "Leupold & Stevens", "VX-5HD", None, None);
+
+    for typed in ["leup", "l&s", "stevens"] {
+        assert!(
+            values(&suggest(&db, EntryField::Make, typed)).contains(&"Leupold & Stevens"),
+            "{typed:?} should find the accessory's make"
+        );
+    }
+    for typed in ["leupold and stevens", "LEUPOLD&STEVENS", " leupold  &  stevens "] {
+        let settled = settle(&db, EntryField::Make, typed);
+        assert_eq!(settled.value, "Leupold & Stevens", "{typed:?}");
+        assert_eq!(
+            settled.changed_by,
+            Some(hoplodex_lib::services::suggestions::ChangedBy::Record),
+            "{typed:?}"
+        );
+    }
+    // The firearms' makes are still there beside it.
+    assert!(values(&suggest(&db, EntryField::Make, "ruger")).contains(&"Ruger"));
+    let same = settle(&db, EntryField::Make, "Leupold & Stevens");
+    assert_eq!((same.value.as_str(), same.changed_by), ("Leupold & Stevens", None));
+}
+
+#[test]
+fn model_suggestions_for_a_make_include_models_recorded_on_accessories_of_that_make() {
+    let db = TestDb::new();
+    record(&db, "Ruger", "10/22", None, ".22");
+    accessory_record(&db, "Ruger", "BX-25 magazine", None, None);
+    accessory_record(&db, "Leupold", "VX-5HD", None, None);
+    accessory_record(&db, "Leupold", "Mark 4", None, None);
+
+    let ruger = suggest_with(&db, EntryField::Model, "", Some("Ruger"));
+    let mut found = values(&ruger);
+    found.sort_unstable();
+    assert_eq!(found, ["10/22", "BX-25 magazine"]);
+
+    let leupold = suggest_with(&db, EntryField::Model, "", Some("  LEUPOLD "));
+    let mut found = values(&leupold);
+    found.sort_unstable();
+    assert_eq!(found, ["Mark 4", "VX-5HD"], "the make is compared by key");
+    assert_eq!(values(&suggest_with(&db, EntryField::Model, "vx", Some("Leupold"))), ["VX-5HD"]);
+    // A model is offered only for the make it is recorded under.
+    assert!(suggest_with(&db, EntryField::Model, "vx", Some("Ruger")).is_empty());
+    assert!(suggest_with(&db, EntryField::Model, "bx", Some("Leupold")).is_empty());
+    // With no make, every model of both tables.
+    let all = suggest_with(&db, EntryField::Model, "", None);
+    assert_eq!(all.len(), 4, "{:?}", values(&all));
+}
+
+#[test]
+fn caliber_and_cartridge_vocabularies_read_both_tables() {
+    let db = TestDb::new();
+    record(&db, "Custom", "One", Some("Firearm Special"), "Zork 7");
+    accessory_record(&db, "Custom", "Barrel", Some("Accessory Special"), Some("Zork 9"));
+
+    assert_eq!(values(&suggest(&db, EntryField::Cartridge, "accessory")), ["Accessory Special"]);
+    assert_eq!(values(&suggest(&db, EntryField::Cartridge, "firearm")), ["Firearm Special"]);
+    let calibers = suggest(&db, EntryField::Caliber, "zork");
+    let mut found = values(&calibers);
+    found.sort_unstable();
+    assert_eq!(found, ["Zork 7", "Zork 9"]);
+
+    // Snapping reads both: a variant of the accessory's cartridge and caliber.
+    let settled = settle(&db, EntryField::Cartridge, "ACCESSORY SPECIAL");
+    assert_eq!(settled.value, "Accessory Special");
+    assert_eq!(settled.changed_by, Some(hoplodex_lib::services::suggestions::ChangedBy::Record));
+    let settled = settle(&db, EntryField::Caliber, "zork  9");
+    assert_eq!(settled.value, "Zork 9");
+}
+
+#[test]
+fn a_spelling_used_across_both_tables_is_ranked_and_snapped_by_its_combined_use() {
+    let db = TestDb::new();
+    // "Acme Co" is on one firearm, "ACME CO" on two accessories: three
+    // records against one, and "Alpha" on two firearms.
+    record(&db, "Acme Co", "1", None, "9mm");
+    accessory_record(&db, "ACME CO", "2", None, None);
+    accessory_record(&db, "ACME CO", "3", None, None);
+    record(&db, "Alpha", "4", None, "9mm");
+    record(&db, "Alpha", "5", None, "9mm");
+
+    let list = suggest(&db, EntryField::Make, "");
+    assert_eq!(values(&list), ["ACME CO", "Alpha"], "the same key counts across tables");
+    let settled = settle(&db, EntryField::Make, "acme co");
+    assert_eq!(settled.value, "ACME CO", "the spelling most used on record, in either table");
+}
+
+#[test]
+fn a_value_disappears_with_its_only_accessory_but_not_when_it_is_disposed() {
+    // US1-10.
+    let db = TestDb::new();
+    let deleted =
+        accessory_record(&db, "Wildcat Optics", "Eagle", Some("Wildcat Special"), Some("Zork 3"));
+    let disposed =
+        accessory_record(&db, "Bobcat Optics", "Lynx", Some("Bobcat Special"), Some("Zork 4"));
+    assert_eq!(values(&suggest(&db, EntryField::Make, "wildcat")), ["Wildcat Optics"]);
+    assert_eq!(values(&suggest(&db, EntryField::Model, "eagle")), ["Eagle"]);
+    assert_eq!(values(&suggest(&db, EntryField::Cartridge, "wildcat")), ["Wildcat Special"]);
+    assert_eq!(values(&suggest(&db, EntryField::Caliber, "zork 3")), ["Zork 3"]);
+
+    accessory_ops::delete_accessory(&db.conn, deleted, true).unwrap();
+    assert!(suggest(&db, EntryField::Make, "wildcat").is_empty());
+    assert!(suggest(&db, EntryField::Model, "eagle").is_empty());
+    assert!(suggest(&db, EntryField::Cartridge, "wildcat").is_empty());
+    assert!(suggest(&db, EntryField::Caliber, "zork 3").is_empty());
+    assert_eq!(values(&suggest(&db, EntryField::Caliber, "zork 4")), ["Zork 4"]);
+    assert_eq!(settle(&db, EntryField::Make, "WILDCAT OPTICS").changed_by, None);
+
+    accessory_ops::dispose_accessory(
+        &db.conn,
+        disposed,
+        &serde_json::from_value(serde_json::json!({
+            "dispositionType": "sold",
+            "recipient": "Jane",
+            "date": "2025-01-01",
+            "price": 100,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(values(&suggest(&db, EntryField::Make, "bobcat")), ["Bobcat Optics"]);
+    assert_eq!(values(&suggest(&db, EntryField::Model, "lynx")), ["Lynx"]);
+    assert_eq!(values(&suggest(&db, EntryField::Cartridge, "bobcat")), ["Bobcat Special"]);
+}
+
+#[test]
+fn a_make_stays_while_either_a_firearm_or_an_accessory_still_holds_it() {
+    let db = TestDb::new();
+    let firearm = record(&db, "Shared Maker", "F1", None, "9mm");
+    let accessory = accessory_record(&db, "Shared Maker", "A1", None, None);
+
+    accessory_ops::delete_accessory(&db.conn, accessory, true).unwrap();
+    assert_eq!(values(&suggest(&db, EntryField::Make, "shared")), ["Shared Maker"]);
+
+    let accessory = accessory_record(&db, "Shared Maker", "A2", None, None);
+    ops::delete_firearm(&db.conn, firearm, true).unwrap();
+    assert_eq!(values(&suggest(&db, EntryField::Make, "shared")), ["Shared Maker"]);
+
+    accessory_ops::delete_accessory(&db.conn, accessory, true).unwrap();
+    assert!(suggest(&db, EntryField::Make, "shared").is_empty());
 }

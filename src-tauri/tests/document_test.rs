@@ -4,9 +4,13 @@
 
 mod support;
 
+use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
+use hoplodex_lib::models::record::RecordRef;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 use support::TestDb;
 
 fn sample_firearm() -> FirearmInput {
@@ -62,7 +66,7 @@ fn scenario_4_attaches_and_reopens_a_document() {
 
     let attached = document_ops::add_document(
         &db.conn,
-        firearm.id,
+        RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
         "application/pdf",
@@ -81,7 +85,7 @@ fn deletes_a_document_only_when_confirmed() {
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let attached = document_ops::add_document(
         &db.conn,
-        firearm.id,
+        RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
         "application/pdf",
@@ -100,12 +104,24 @@ fn deletes_a_document_only_when_confirmed() {
 fn lists_every_document_for_a_firearm() {
     let db = TestDb::new();
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
-    document_ops::add_document(&db.conn, firearm.id, SAMPLE_PDF_BYTES, "a.pdf", "application/pdf")
-        .unwrap();
-    document_ops::add_document(&db.conn, firearm.id, SAMPLE_PDF_BYTES, "b.pdf", "application/pdf")
-        .unwrap();
+    document_ops::add_document(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        SAMPLE_PDF_BYTES,
+        "a.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+    document_ops::add_document(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        SAMPLE_PDF_BYTES,
+        "b.pdf",
+        "application/pdf",
+    )
+    .unwrap();
 
-    let listed = document_ops::list_documents(&db.conn, firearm.id).unwrap();
+    let listed = document_ops::list_documents(&db.conn, RecordRef::Firearm(firearm.id)).unwrap();
     assert_eq!(listed.len(), 2);
 }
 
@@ -120,7 +136,7 @@ fn writes_a_temporary_copy_under_a_safe_filename() {
 
     let attached = document_ops::add_document(
         &db.conn,
-        firearm.id,
+        RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
         "application/pdf",
@@ -132,7 +148,7 @@ fn writes_a_temporary_copy_under_a_safe_filename() {
 
     let hostile = document_ops::add_document(
         &db.conn,
-        firearm.id,
+        RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "../../escape:me?.pdf",
         "application/pdf",
@@ -141,9 +157,14 @@ fn writes_a_temporary_copy_under_a_safe_filename() {
     let path = document_ops::write_document_copy(dir.path(), &hostile).unwrap();
     assert_eq!(path, dir.path().join("escape_me_.pdf"));
 
-    let unnamed =
-        document_ops::add_document(&db.conn, firearm.id, SAMPLE_PDF_BYTES, "..", "text/plain")
-            .unwrap();
+    let unnamed = document_ops::add_document(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        SAMPLE_PDF_BYTES,
+        "..",
+        "text/plain",
+    )
+    .unwrap();
     let path = document_ops::write_document_copy(dir.path(), &unnamed).unwrap();
     assert_eq!(path, dir.path().join("document"));
 }
@@ -156,7 +177,9 @@ fn attaches_a_document_dropped_as_a_file_path() {
     let path = dir.path().join("Appraisal 2026.pdf");
     std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
 
-    let attached = document_ops::add_document_from_path(&db.conn, firearm.id, &path).unwrap();
+    let attached =
+        document_ops::add_document_from_path(&db.conn, RecordRef::Firearm(firearm.id), &path)
+            .unwrap();
 
     assert_eq!(attached.original_filename, "Appraisal 2026.pdf");
     assert_eq!(attached.mime_type, "application/pdf");
@@ -169,10 +192,13 @@ fn a_dropped_folder_is_not_attached() {
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
-    let err = document_ops::add_document_from_path(&db.conn, firearm.id, dir.path())
-        .expect_err("folders can't be attachments");
+    let err =
+        document_ops::add_document_from_path(&db.conn, RecordRef::Firearm(firearm.id), dir.path())
+            .expect_err("folders can't be attachments");
     assert_eq!(err.code, "VALIDATION_ERROR");
-    assert!(document_ops::list_documents(&db.conn, firearm.id).unwrap().is_empty());
+    assert!(
+        document_ops::list_documents(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().is_empty()
+    );
 }
 
 /// Regression for FR-035 / SC-010: the decrypted copies `open_document`
@@ -189,7 +215,7 @@ fn clearing_opened_documents_overwrites_then_removes_each_copy() {
 
     let attached = document_ops::add_document(
         &db.conn,
-        firearm.id,
+        RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
         "application/pdf",
@@ -248,4 +274,181 @@ fn a_copy_that_cannot_be_deleted_is_reported_and_retried_by_the_next_sweep() {
     std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(document_ops::clear_opened_documents(&opened).is_empty());
     assert!(!opened.exists());
+}
+
+// --- Accessory documents (specs/006-accessory-links US1-12, FR-007a) ----------
+//
+// Documents belong to an owner, `RecordRef::Firearm(id)` or
+// `RecordRef::Accessory(id)` (research.md §3, §21). Accessory inputs are built
+// from the IPC shape (`AccessoryInput`'s camelCase JSON, contracts/tauri-
+// commands.md), so these tests do not depend on how the struct is spelled.
+
+fn parse<T: DeserializeOwned>(value: Value) -> T {
+    serde_json::from_value(value).expect("the JSON must fit the type")
+}
+
+/// An active Optic (kind 1) with a make and model.
+fn create_accessory(db: &TestDb, serial: &str) -> i64 {
+    let input: Value = json!({
+        "accessoryKindId": 1,
+        "make": "Leupold",
+        "model": "VX-5HD",
+        "serialNumber": serial,
+        "status": "active",
+    });
+    accessory_ops::create_accessory(&db.conn, &parse(input)).unwrap().id
+}
+
+fn count(db: &TestDb, table: &str) -> i64 {
+    db.conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn attaches_and_reopens_a_document_on_an_accessory() {
+    let db = TestDb::new();
+    let id = create_accessory(&db, "A-1");
+
+    let attached = document_ops::add_document(
+        &db.conn,
+        RecordRef::Accessory(id),
+        SAMPLE_PDF_BYTES,
+        "warranty.pdf",
+        "application/pdf",
+    )
+    .unwrap();
+
+    assert_eq!(attached.owner, RecordRef::Accessory(id));
+    assert_eq!(attached.original_filename, "warranty.pdf");
+    // `open_document` reads it back by id and hands the OS a copy.
+    let reopened = document_ops::get_document(&db.conn, attached.id).unwrap();
+    assert_eq!(reopened.file_bytes, SAMPLE_PDF_BYTES);
+    assert_eq!(reopened.mime_type, "application/pdf");
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = document_ops::write_document_copy(dir.path(), &reopened).unwrap();
+    assert_eq!(path, dir.path().join("warranty.pdf"));
+    assert_eq!(std::fs::read(&path).unwrap(), SAMPLE_PDF_BYTES);
+}
+
+#[test]
+fn attaches_a_document_dropped_on_an_accessory_as_a_file_path() {
+    let db = TestDb::new();
+    let id = create_accessory(&db, "A-1");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Manual.pdf");
+    std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
+
+    let attached =
+        document_ops::add_document_from_path(&db.conn, RecordRef::Accessory(id), &path).unwrap();
+
+    assert_eq!(attached.owner, RecordRef::Accessory(id));
+    assert_eq!(attached.original_filename, "Manual.pdf");
+    assert_eq!(attached.mime_type, "application/pdf");
+    assert_eq!(attached.file_bytes, SAMPLE_PDF_BYTES);
+}
+
+/// A firearm and an accessory can have the same numeric id, so the owner's
+/// kind is what keeps their documents apart.
+#[test]
+fn documents_are_listed_by_owner_and_only_that_owners() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let accessory = create_accessory(&db, "A-1");
+    let other = create_accessory(&db, "A-2");
+    assert_eq!(firearm.id, accessory, "both tables start at 1, which is the point of this test");
+    let add = |owner, name: &str| {
+        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, name, "application/pdf")
+            .unwrap()
+    };
+    let on_firearm = add(RecordRef::Firearm(firearm.id), "firearm.pdf");
+    let on_accessory = add(RecordRef::Accessory(accessory), "accessory.pdf");
+    add(RecordRef::Accessory(other), "other.pdf");
+    add(RecordRef::Accessory(other), "other-2.pdf");
+
+    let ids = |owner| -> Vec<i64> {
+        document_ops::list_documents(&db.conn, owner).unwrap().iter().map(|d| d.id).collect()
+    };
+    assert_eq!(ids(RecordRef::Firearm(firearm.id)), vec![on_firearm.id]);
+    assert_eq!(ids(RecordRef::Accessory(accessory)), vec![on_accessory.id]);
+    assert_eq!(ids(RecordRef::Accessory(other)).len(), 2);
+}
+
+#[test]
+fn a_document_row_needs_exactly_one_owner() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let accessory = create_accessory(&db, "A-1");
+    let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
+        db.conn.execute(
+            "INSERT INTO document_attachments (
+                firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at
+            ) VALUES (?1, ?2, x'00', 'd.pdf', 'application/pdf', datetime('now'))",
+            rusqlite::params![firearm_id, accessory_id],
+        )
+    };
+
+    let both = insert(Some(firearm.id), Some(accessory)).expect_err("both owners");
+    assert!(both.to_string().contains("CHECK constraint failed"), "{both}");
+    let neither = insert(None, None).expect_err("no owner");
+    assert!(neither.to_string().contains("CHECK constraint failed"), "{neither}");
+    assert_eq!(count(&db, "document_attachments"), 0);
+
+    insert(None, Some(accessory)).expect("one owner is fine");
+    insert(Some(firearm.id), None).expect("one owner is fine");
+}
+
+/// The same `CHECK` guards the retained dispositions, so it is tested here
+/// beside the other two tables that share the owner pair (research.md §3).
+#[test]
+fn a_disposition_history_row_needs_exactly_one_owner() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let accessory = create_accessory(&db, "A-1");
+    let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
+        db.conn.execute(
+            "INSERT INTO disposition_history (
+                firearm_id, accessory_id, disposition_type, disposition_recipient,
+                disposition_date, disposition_price, reversed_at
+            ) VALUES (?1, ?2, 'sold', 'A buyer', '2026-01-02', NULL, datetime('now'))",
+            rusqlite::params![firearm_id, accessory_id],
+        )
+    };
+
+    let both = insert(Some(firearm.id), Some(accessory)).expect_err("both owners");
+    assert!(both.to_string().contains("CHECK constraint failed"), "{both}");
+    let neither = insert(None, None).expect_err("no owner");
+    assert!(neither.to_string().contains("CHECK constraint failed"), "{neither}");
+    assert_eq!(count(&db, "disposition_history"), 0);
+
+    insert(None, Some(accessory)).expect("one owner is fine");
+    insert(Some(firearm.id), None).expect("one owner is fine");
+}
+
+#[test]
+fn deleting_an_accessory_deletes_its_documents_and_only_its_documents() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false).unwrap();
+    let gone = create_accessory(&db, "A-1");
+    let kept = create_accessory(&db, "A-2");
+    let add = |owner| {
+        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "d.pdf", "application/pdf")
+            .unwrap()
+    };
+    add(RecordRef::Accessory(gone));
+    add(RecordRef::Accessory(gone));
+    add(RecordRef::Accessory(kept));
+    add(RecordRef::Firearm(firearm.id));
+    assert_eq!(count(&db, "document_attachments"), 4);
+
+    accessory_ops::delete_accessory(&db.conn, gone, true).unwrap();
+
+    assert_eq!(count(&db, "document_attachments"), 2);
+    assert!(document_ops::list_documents(&db.conn, RecordRef::Accessory(gone)).unwrap().is_empty());
+    assert_eq!(
+        document_ops::list_documents(&db.conn, RecordRef::Accessory(kept)).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        document_ops::list_documents(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().len(),
+        1
+    );
 }

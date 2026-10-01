@@ -5,20 +5,48 @@ import { CommandFailure } from "../../services/tauriClient";
 import * as insuranceService from "./insuranceService";
 import { PolicyDeleteDialog } from "./PolicyDeleteDialog";
 import type { InsurancePolicy, PolicyDeletionImpact } from "./types";
+import type { RecordLabel } from "../mounts/types";
 
 vi.mock("./insuranceService");
 
 const policy = { id: 3, name: "Collectibles rider" } as InsurancePolicy;
 
+// specs/006-accessory-links FR-009, contracts/ui-accessories.md §10: the
+// impact counts records of both kinds, and lists them as `RecordLabel`s.
+const colt: RecordLabel = {
+  record: { kind: "firearm", id: 1 },
+  make: "Colt",
+  model: "Python",
+  nickname: "Snake",
+  typeName: "Handgun",
+  serialNumber: "V1",
+  status: "active",
+};
+const glock: RecordLabel = {
+  record: { kind: "firearm", id: 2 },
+  make: "Glock",
+  model: "19",
+  nickname: null,
+  typeName: "Handgun",
+  serialNumber: "G1",
+  status: "active",
+};
+const optic: RecordLabel = {
+  record: { kind: "accessory", id: 3 },
+  make: "Leupold",
+  model: "VX-5HD 3-15x44",
+  nickname: null,
+  typeName: "Optic",
+  serialNumber: null,
+  status: "active",
+};
+
 const impact: PolicyDeletionImpact = {
   isExpired: false,
   isBlanketInForce: false,
-  scheduledFirearmCount: 2,
-  scheduledFirearms: [
-    { id: 1, make: "Colt", model: "Python", nickname: "Snake" },
-    { id: 2, make: "Glock", model: "19", nickname: null },
-  ],
-  blanketFirearmCount: 0,
+  scheduledRecordCount: 2,
+  scheduledRecords: [colt, glock],
+  blanketRecordCount: 0,
   unscheduleOutcome: "uninsured",
   otherPolicies: [
     { id: 4, name: "Homeowner's rider", isExpired: false },
@@ -52,7 +80,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
 
   it("deletes a policy with nothing scheduled on it straight away", async () => {
     const user = userEvent.setup();
-    const { onDeleted } = renderDialog({ scheduledFirearmCount: 0, scheduledFirearms: [] });
+    const { onDeleted } = renderDialog({ scheduledRecordCount: 0, scheduledRecords: [] });
 
     await user.click(await deleteButton());
 
@@ -60,12 +88,28 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(onDeleted).toHaveBeenCalled();
   });
 
-  it("lists the scheduled firearms, with nicknames, and holds delete back until a choice is made", async () => {
+  it("lists the scheduled records, with nicknames, and holds delete back until a choice is made", async () => {
     renderDialog();
 
-    expect(await screen.findByText(/Colt Python “Snake”/)).toBeInTheDocument();
-    expect(screen.getByText(/Glock 19/)).toBeInTheDocument();
+    const items = await screen.findAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Colt Python “Snake”");
+    expect(items[1]).toHaveTextContent("Glock 19");
     expect(await deleteButton()).toBeDisabled();
+  });
+
+  it("counts and lists scheduled firearms and accessories together, each by its name (US1, FR-009)", async () => {
+    const user = userEvent.setup();
+    renderDialog({ scheduledRecordCount: 3, scheduledRecords: [colt, glock, optic] });
+
+    const items = await screen.findAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[2]).toHaveTextContent("Leupold VX-5HD 3-15x44 · Optic");
+    expect(screen.getByText(/3 records are scheduled under it/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /Leave unscheduled/ }));
+    expect(
+      screen.getByRole("checkbox", { name: /3 records will lose their scheduled coverage/ }),
+    ).toBeInTheDocument();
   });
 
   it("moves the firearms to another policy, reminding the user to check its coverage", async () => {
@@ -107,7 +151,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(await deleteButton()).toBeDisabled();
 
     await user.click(
-      screen.getByRole("checkbox", { name: /2 firearms will lose their scheduled coverage/ }),
+      screen.getByRole("checkbox", { name: /2 records will lose their scheduled coverage/ }),
     );
     await user.click(await deleteButton());
 
@@ -149,14 +193,25 @@ describe("PolicyDeleteDialog (FR-034)", () => {
 
   it("warns how many unscheduled firearms lose their blanket coverage when the blanket policy in force is deleted", async () => {
     renderDialog({
-      scheduledFirearmCount: 0,
-      scheduledFirearms: [],
+      scheduledRecordCount: 0,
+      scheduledRecords: [],
       isBlanketInForce: true,
-      blanketFirearmCount: 12,
+      blanketRecordCount: 12,
     });
 
-    expect(await screen.findByText(/12 firearms/)).toBeInTheDocument();
+    expect(await screen.findByText(/12 records/)).toBeInTheDocument();
     expect(screen.getByText(/lose its blanket coverage/i)).toBeInTheDocument();
+  });
+
+  it("counts an accessory among the records that lose blanket coverage", async () => {
+    renderDialog({
+      scheduledRecordCount: 0,
+      scheduledRecords: [],
+      isBlanketInForce: true,
+      blanketRecordCount: 1,
+    });
+
+    expect(await screen.findByText(/1 record that isn't scheduled/)).toBeInTheDocument();
   });
 
   it("keeps the dialog open and shows the reason when the deletion is refused", async () => {
@@ -168,8 +223,8 @@ describe("PolicyDeleteDialog (FR-034)", () => {
       }),
     );
     const { onDeleted, onOpenChange } = renderDialog({
-      scheduledFirearmCount: 0,
-      scheduledFirearms: [],
+      scheduledRecordCount: 0,
+      scheduledRecords: [],
     });
 
     await user.click(await deleteButton());

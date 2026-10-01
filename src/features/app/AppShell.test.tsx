@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { AccessoryDetail, AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
 import type { FirearmDetail } from "../firearms/types";
 import type { InsurancePolicy } from "../insurance/types";
@@ -12,12 +13,28 @@ import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
-import { FIREARM_TYPES } from "../../test/collectionFixtures";
+import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
 
 const getFirearm = vi.fn();
 const listFirearms = vi.fn();
+const getAccessory = vi.fn();
+const listAccessories = vi.fn();
 
-vi.mock("../firearms/firearmsService", () => ({ getFirearm: (id: number) => getFirearm(id) }));
+// The accessory form's make, model, cartridge and caliber use the shared
+// entry commands (specs/006-accessory-links FR-003).
+vi.mock("../firearms/firearmsService", () => ({
+  getFirearm: (id: number) => getFirearm(id),
+  settleEntry: async (_field: string, text: string) => ({
+    value: text.trim(),
+    changedBy: null,
+    derivedCaliber: null,
+  }),
+  suggestEntries: async () => [],
+}));
+vi.mock("../accessories/accessoriesService", () => ({
+  getAccessory: (id: number) => getAccessory(id),
+  listAccessories: (input: unknown) => listAccessories(input),
+}));
 vi.mock("../browse/browseService", () => ({ listFirearms: () => listFirearms() }));
 // The media panels and thumbnails talk to Tauri; they aren't under test.
 vi.mock("../media/PhotoGallery", () => ({ PhotoGallery: () => null }));
@@ -137,12 +154,65 @@ const detail: FirearmDetail = {
   dispositionHistory: [],
 };
 
+const opticSummary: AccessorySummary = {
+  id: 3,
+  accessoryKindId: 1,
+  kindName: "Optic",
+  genericThumbnailKey: "optic",
+  make: "Leupold",
+  model: "VX-5HD 3-15x44",
+  serialNumber: "L-5521",
+  caliber: null,
+  cartridge: null,
+  status: "active",
+  thumbnailPhotoId: null,
+  estimatedValue: 1000,
+  insuranceWarning: "none",
+  insurancePolicyId: null,
+  scheduledCoverageAmount: null,
+  mountedOn: null,
+};
+
+const opticDetail: AccessoryDetail = {
+  id: 3,
+  accessoryKindId: 1,
+  make: "Leupold",
+  model: "VX-5HD 3-15x44",
+  serialNumber: "L-5521",
+  caliber: null,
+  cartridge: null,
+  notes: null,
+  status: "active",
+  estimatedValue: 1000,
+  acquisitionSource: null,
+  acquisitionDate: null,
+  acquisitionPrice: null,
+  dispositionType: null,
+  dispositionRecipient: null,
+  dispositionDate: null,
+  dispositionPrice: null,
+  insurancePolicyId: null,
+  scheduledCoverageAmount: null,
+  mountedOn: null,
+  thumbnailPhotoId: null,
+  createdAt: "2025-01-01 00:00:00",
+  updatedAt: "2025-01-01 00:00:00",
+  dispositionHistory: [],
+  mount: { chain: [], mounted: [] },
+};
+
+const OPTIC = "Leupold VX-5HD 3-15x44 · Optic";
+
 const collection: CollectionState = {
   firearms: [summary, uninsured],
   firearmsById: new Map([
     [summary.id, summary],
     [uninsured.id, uninsured],
   ]),
+  accessories: [opticSummary],
+  accessoriesById: new Map([[opticSummary.id, opticSummary]]),
+  accessoryKinds: { kinds: ACCESSORY_KINDS },
+  accessoryKindsFailed: false,
   summary: null,
   policies: [policy],
   policiesById: new Map([[policy.id, policy]]),
@@ -493,5 +563,198 @@ describe("Resumed pending changes open where their form is (FR-039)", () => {
 
     const form = await screen.findByRole("dialog", { name: "Edit Collector Floater" });
     expect(within(form).getByLabelText("Agent name")).toHaveValue("Dana");
+  });
+});
+
+// specs/006-accessory-links User Story 1, contracts/ui-accessories.md §1.
+describe("The Accessories tab (FR-016)", () => {
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+    getAccessory.mockReset().mockResolvedValue(opticDetail);
+    listAccessories.mockReset().mockResolvedValue({
+      groups: [{ key: "All", host: null, accessories: [opticSummary] }],
+    });
+  });
+
+  it("puts the tabs in the order Collection, Accessories, Insurance", () => {
+    renderShell();
+
+    const tabs = within(screen.getByRole("navigation", { name: "Sections" }))
+      .getAllByRole("button")
+      .map((tab) => /^(Collection|Accessories|Insurance)/.exec(tab.textContent ?? "")?.[1]);
+    expect(tabs).toEqual(["Collection", "Accessories", "Insurance"]);
+  });
+
+  it("opens the Accessories page from its tab, and marks the tab current", async () => {
+    const user = userEvent.setup();
+    renderShell();
+
+    const tab = within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", {
+      name: /^Accessories/,
+    });
+    await user.click(tab);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Accessories" }),
+    ).toBeInTheDocument();
+    expect(tab).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByRole("button", { name: OPTIC })).toBeInTheDocument();
+  });
+
+  it("opens the add-accessory form from Add accessory", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", {
+        name: /^Accessories/,
+      }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Add accessory" }));
+
+    const form = await screen.findByRole("dialog", { name: "Add accessory" });
+    expect(within(form).getByRole("combobox", { name: /^Kind/ })).toBeInTheDocument();
+  });
+
+  it("opens an accessory's record from its name, and Back returns to the list", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", {
+        name: /^Accessories/,
+      }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: OPTIC }));
+    await screen.findByRole("heading", { level: 1, name: OPTIC });
+    expect(getAccessory).toHaveBeenCalledWith(3);
+    expect(backLink()).toHaveTextContent("Accessories");
+    // The Accessories tab stays current on its records.
+    expect(
+      within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", {
+        name: /^Accessories/,
+      }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Accessories" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("Resumed accessory pending changes open where their form is (FR-027, FR-039)", () => {
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+    getAccessory.mockReset().mockResolvedValue(opticDetail);
+    listAccessories.mockReset().mockResolvedValue({
+      groups: [{ key: "All", host: null, accessories: [opticSummary] }],
+    });
+  });
+  afterEach(() => setResumedDraft(null));
+
+  /** Each accessory form and dialog keeps drafts of version 1. */
+  function resume(draft: Omit<Draft, "formVersion" | "label">, label = `${OPTIC} (edit)`) {
+    setResumedDraft({ formVersion: 1, label, ...draft });
+  }
+
+  it("a new accessory reopens the add form with the changes", async () => {
+    resume(
+      { kind: "accessory", mode: "add", targetId: null, values: { make: "Walther" } },
+      "New accessory",
+    );
+    renderShell();
+
+    const form = await screen.findByRole("dialog", { name: "Add accessory" });
+    expect(within(form).getByLabelText(/^Make/)).toHaveValue("Walther");
+    expect(peekResumedDraft()).toBeNull();
+  });
+
+  it("an edit reopens the accessory's edit form on its record, with the changes", async () => {
+    resume({
+      kind: "accessory",
+      mode: "edit",
+      targetId: 3,
+      values: { notes: "Kept at the lock" },
+    });
+    renderShell();
+
+    const form = await screen.findByRole("dialog", { name: `Edit ${OPTIC}` });
+    expect(within(form).getByLabelText(/^Notes/)).toHaveValue("Kept at the lock");
+    expect(getAccessory).toHaveBeenCalledWith(3);
+    // On the accessory's record, behind the modal form.
+    expect(
+      screen.getByRole("heading", { level: 1, name: OPTIC, hidden: true }),
+    ).toBeInTheDocument();
+    expect(peekResumedDraft()).toBeNull();
+  });
+
+  it("a disposal reopens the dispose dialog with the changes", async () => {
+    resume(
+      {
+        kind: "accessory",
+        mode: "dispose",
+        targetId: 3,
+        values: {
+          dispositionType: "sold",
+          recipient: "Jane Doe",
+          date: "2025-06-15",
+          price: "800",
+        },
+      },
+      `${OPTIC} (disposal)`,
+    );
+    renderShell();
+
+    const dialog = await screen.findByRole("dialog", { name: "Mark as disposed" });
+    expect(within(dialog).getByLabelText("Transferred to")).toHaveValue("Jane Doe");
+    expect(within(dialog).getByLabelText(/^Price received/)).toHaveValue("800");
+    expect(dialog).toHaveTextContent(OPTIC);
+  });
+
+  it("a restore reopens the restore dialog on a disposed accessory", async () => {
+    getAccessory.mockResolvedValue({
+      ...opticDetail,
+      status: "disposed",
+      dispositionType: "sold",
+      dispositionRecipient: "Jane Doe",
+      dispositionDate: "2025-06-15",
+      dispositionPrice: 800,
+    });
+    resume(
+      {
+        kind: "accessory",
+        mode: "restore",
+        targetId: 3,
+        values: { history: "keep", renaming: false, nickname: "" },
+      },
+      `${OPTIC} (restore)`,
+    );
+    renderShell();
+
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore to the collection?" });
+    expect(within(dialog).getByRole("radio", { name: /Keep as history/ })).toBeChecked();
+    expect(dialog).toHaveTextContent(OPTIC);
+  });
+
+  it("a coverage change reopens the coverage dialog with it", async () => {
+    resume(
+      {
+        kind: "accessory",
+        mode: "coverage",
+        targetId: 3,
+        values: { policyId: String(policy.id), amount: "900" },
+      },
+      `${OPTIC} (coverage)`,
+    );
+    renderShell();
+
+    const dialog = await screen.findByRole("dialog", { name: "Insurance coverage" });
+    expect(within(dialog).getByLabelText(/Scheduled amount/)).toHaveValue("900");
+    expect(dialog).toHaveTextContent(OPTIC);
   });
 });
