@@ -25,6 +25,13 @@ export function expiryLabel(
   return `In force until ${formatDate(policy.effectiveEndDate)}`;
 }
 
+/** What `coverageStatus` reads of a record: the fields a firearm and an
+ * accessory share (006 FR-009). */
+export type CoverageRecord = Pick<
+  Firearm,
+  "status" | "insurancePolicyId" | "scheduledCoverageAmount" | "estimatedValue"
+>;
+
 export type CoverageTone = "ok" | "warn" | "neutral";
 
 export interface CoverageStatus {
@@ -33,13 +40,13 @@ export interface CoverageStatus {
   detail: string;
 }
 
-/** Plain-language coverage status for one firearm. The warning itself
+/** Plain-language coverage status for one firearm or accessory. The warning itself
  * always comes from the backend (`insuranceWarning` on its browse summary,
  * the single source of truth shared with the value summary); this only
  * explains it. `policy` is the policy the firearm is scheduled on, if any;
  * `blanket` is the blanket policy in force, which covers it otherwise. */
 export function coverageStatus(
-  firearm: Firearm,
+  firearm: CoverageRecord,
   warning: InsuranceWarning,
   policy: InsurancePolicy | undefined,
   blanket: BlanketSummary | null,
@@ -82,7 +89,7 @@ export function coverageStatus(
     return {
       tone: "warn",
       label: "Under-insured",
-      detail: `The firearms covered by ${blanket?.policyName ?? "the blanket policy"} are worth more than its limit.`,
+      detail: `The records covered by ${blanket?.policyName ?? "the blanket policy"} are worth more than its limit.`,
     };
   }
 

@@ -9,7 +9,7 @@ import type { Navigation } from "../app/navigation";
 import * as insuranceService from "./insuranceService";
 import { PolicyPage } from "./PolicyPage";
 import type { InsurancePolicy } from "./types";
-import { FIREARM_TYPES } from "../../test/collectionFixtures";
+import { FIREARM_TYPES, ACCESSORY_KINDS } from "../../test/collectionFixtures";
 
 vi.mock("./insuranceService");
 
@@ -37,6 +37,8 @@ const policy: InsurancePolicy = {
 const collection: CollectionState = {
   firearms: [],
   firearmsById: new Map(),
+  accessories: [],
+  accessoriesById: new Map(),
   summary: null,
   policies: [policy],
   policiesById: new Map([[policy.id, policy]]),
@@ -44,6 +46,8 @@ const collection: CollectionState = {
   actionTypesFailed: false,
   firearmTypes: { types: FIREARM_TYPES },
   firearmTypesFailed: false,
+  accessoryKinds: { kinds: ACCESSORY_KINDS },
+  accessoryKindsFailed: false,
   registrationClasses: { classes: [] },
   registrationClassesFailed: false,
   loaded: true,
@@ -100,9 +104,9 @@ describe("PolicyPage pinned strip (FR-041, US3/AC17)", () => {
     vi.mocked(insuranceService.getPolicyDeletionImpact).mockResolvedValue({
       isExpired: false,
       isBlanketInForce: false,
-      scheduledFirearmCount: 0,
-      scheduledFirearms: [],
-      blanketFirearmCount: 0,
+      scheduledRecordCount: 0,
+      scheduledRecords: [],
+      blanketRecordCount: 0,
       unscheduleOutcome: "uninsured",
       otherPolicies: [],
     });

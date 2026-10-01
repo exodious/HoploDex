@@ -12,7 +12,7 @@ import { DisposeDialog } from "../firearms/DisposeDialog";
 import { Fact, PlateFigure, TextBlock, TitleCell } from "../firearms/FirearmRecordPage";
 import { RestoreDialog } from "../firearms/RestoreDialog";
 import { dispositionLabel } from "../firearms/types";
-import type { DisposeFirearmInput, Firearm, ReverseDispositionInput } from "../firearms/types";
+import type { DisposeFirearmInput, ReverseDispositionInput } from "../firearms/types";
 import { CoverageDialog } from "../insurance/CoverageDialog";
 import { coverageStatus, expiryLabel } from "../insurance/coverage";
 import type { AssignCoverageInput } from "../insurance/types";
@@ -106,7 +106,6 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   const blanketPolicy =
     !policy && blanket && !disposed ? policiesById.get(blanket.policyId) : undefined;
   const coveringPolicy = policy ?? blanketPolicy;
-  // `coverageStatus` reads only the fields an accessory shares with a firearm.
   const coverage = disposed
     ? {
         tone: "neutral" as const,
@@ -114,7 +113,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
         detail: "Disposed accessories are left out of totals and coverage checks.",
       }
     : coverageStatus(
-        accessory as unknown as Firearm,
+        accessory,
         accessoriesById.get(accessory.id)?.insuranceWarning ?? "none",
         policy,
         blanket,

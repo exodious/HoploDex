@@ -14,6 +14,7 @@ import {
 import type { PlateEntry } from "./entries";
 import { PLATE_TIMING } from "./timing";
 import { DRAWINGS } from "../../browse/typeDrawings";
+import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../../test/collectionFixtures";
 
 function plate(timing = PLATE_TIMING, entries: readonly PlateEntry[] = PLATE_ENTRIES) {
   const { container } = render(<CataloguePlate timing={timing} entries={entries} />);
@@ -235,8 +236,15 @@ describe("entry 2's order", () => {
 });
 
 describe("entry 2's drawings", () => {
-  it("include every type drawing", () => {
-    expect(PLATE_ENTRIES.map((e) => e.key).sort()).toEqual(Object.keys(DRAWINGS).sort());
+  it("include every firearm type drawing, and no accessory kind's (the plate is of firearms)", () => {
+    const firearmKeys = FIREARM_TYPES.map((t) => t.genericThumbnailKey).sort();
+    expect(PLATE_ENTRIES.map((e) => e.key).sort()).toEqual(firearmKeys);
+    // 006 added a drawing per accessory kind to DRAWINGS; none belongs here.
+    for (const kind of ACCESSORY_KINDS) {
+      if (kind.genericThumbnailKey in DRAWINGS && !firearmKeys.includes(kind.genericThumbnailKey)) {
+        expect(PLATE_ENTRIES.map((e) => e.key)).not.toContain(kind.genericThumbnailKey);
+      }
+    }
   });
 
   it("have bounds read through smooth (S) curves", () => {

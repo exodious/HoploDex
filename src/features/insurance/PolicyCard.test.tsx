@@ -121,7 +121,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.getByText("$4,000")).toBeInTheDocument();
     expect(screen.getByText(/\$10,000/)).toBeInTheDocument();
     expect(screen.getByText(/3 firearms/)).toBeInTheDocument();
-    expect(screen.getByText(/every firearm not scheduled/i)).toBeInTheDocument();
+    expect(screen.getByText(/every firearm and accessory not scheduled individually/i)).toBeInTheDocument();
   });
 
   it("counts the accessories the blanket policy covers beside its firearms (FR-009)", () => {

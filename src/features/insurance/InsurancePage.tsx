@@ -3,32 +3,41 @@ import { formatDollars } from "../../lib/money";
 import { BackLink } from "../app/BackLink";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
-import type { FirearmSummary } from "../browse/types";
 import { coverageShortfall } from "./coverage";
-import { FirearmLinkList, PolicyCard } from "./PolicyCard";
+import { PolicyCard, RecordLinkList } from "./PolicyCard";
 import { usePolicyEditors } from "./PolicyEditors";
+import { accessoryRecord, firearmRecord, type InsuranceRecord } from "./records";
 import type { InsurancePolicy } from "./types";
 import "./insurance.css";
 
 /** Value and coverage across the collection (US3): the collection-wide
- * total, every policy with its blanket usage and scheduled firearms
- * (FR-015, FR-017), expiry warnings (FR-028), and whatever isn't covered.
- * Policies can be added, edited, and deleted here (FR-027). */
+ * total with its firearms and accessories subtotals (006 FR-008), every
+ * policy with its blanket usage and the firearms and accessories scheduled
+ * on it (FR-015, FR-017, 006 FR-009), expiry warnings (FR-028), and whatever
+ * isn't covered. Policies can be added, edited, and deleted here (FR-027). */
 export function InsurancePage() {
-  const { firearms, summary, policies } = useCollection();
+  const { firearms, accessories, summary, policies } = useCollection();
   const { back, open } = useNavigation();
 
-  const active = firearms.filter((f) => f.status === "active");
-  const valued = active.filter((f) => (f.estimatedValue ?? 0) > 0);
-  const sum = (list: FirearmSummary[]) => list.reduce((n, f) => n + (f.estimatedValue ?? 0), 0);
-  const covered = valued.filter((f) => f.insuranceWarning === "none");
-  const under = valued.filter((f) => f.insuranceWarning === "under_insured");
-  const uninsured = valued.filter((f) => f.insuranceWarning === "uninsured");
-  const unvalued = active.filter((f) => !f.estimatedValue);
+  const activeFirearms = firearms.filter((f) => f.status === "active");
+  const activeAccessories = accessories.filter((a) => a.status === "active");
+  // Firearms and accessories are covered and warned about alike (006 FR-009).
+  const active: InsuranceRecord[] = [
+    ...activeFirearms.map(firearmRecord),
+    ...activeAccessories.map(accessoryRecord),
+  ];
+  const valued = active.filter((r) => (r.estimatedValue ?? 0) > 0);
+  const sum = (list: InsuranceRecord[]) => list.reduce((n, r) => n + (r.estimatedValue ?? 0), 0);
+  const covered = valued.filter((r) => r.insuranceWarning === "none");
+  const under = valued.filter((r) => r.insuranceWarning === "under_insured");
+  const uninsured = valued.filter((r) => r.insuranceWarning === "uninsured");
+  const unvalued = active.filter((r) => !r.estimatedValue);
 
   const { add, edit, remove, dialogs } = usePolicyEditors();
-  const scheduledOn = (policy: InsurancePolicy) =>
-    firearms.filter((f) => f.insurancePolicyId === policy.id && f.status === "active");
+  const firearmsOn = (policy: InsurancePolicy) =>
+    activeFirearms.filter((f) => f.insurancePolicyId === policy.id);
+  const accessoriesOn = (policy: InsurancePolicy) =>
+    activeAccessories.filter((a) => a.insurancePolicyId === policy.id);
 
   return (
     <>
@@ -42,8 +51,21 @@ export function InsurancePage() {
           <h1 className="hd-page-title">Insurance</h1>
           <p className="hd-page-sub">
             <strong className="hd-num">{formatDollars(summary?.collectionTotal ?? 0)}</strong>{" "}
-            estimated replacement value across <span className="hd-num">{active.length}</span>{" "}
-            active {active.length === 1 ? "firearm" : "firearms"}
+            estimated replacement value across{" "}
+            <span className="hd-num">{activeFirearms.length}</span> active{" "}
+            {activeFirearms.length === 1 ? "firearm" : "firearms"} and{" "}
+            <span className="hd-num">{activeAccessories.length}</span>{" "}
+            {activeAccessories.length === 1 ? "accessory" : "accessories"}
+          </p>
+          <p className="hd-page-sub hd-value-split">
+            <span>
+              Firearms{" "}
+              <strong className="hd-num">{formatDollars(summary?.firearmsTotal ?? 0)}</strong>
+            </span>
+            <span>
+              Accessories{" "}
+              <strong className="hd-num">{formatDollars(summary?.accessoriesTotal ?? 0)}</strong>
+            </span>
           </p>
         </div>
         <Button variant="primary" icon="plus" onClick={() => add()}>
@@ -85,7 +107,8 @@ export function InsurancePage() {
                 policy={policy}
                 blanket={summary?.blanket ?? null}
                 summary={summary?.byPolicy.find((p) => p.policyId === policy.id)}
-                firearms={scheduledOn(policy)}
+                firearms={firearmsOn(policy)}
+                accessories={accessoriesOn(policy)}
                 onOpen={() => open({ page: "policy", id: policy.id })}
                 onEdit={() => edit(policy)}
                 onDelete={() => remove(policy)}
@@ -102,18 +125,18 @@ export function InsurancePage() {
           </h2>
           <div className="hd-gaps">
             {uninsured.length > 0 && (
-              <FirearmLinkList
+              <RecordLinkList
                 title="Uninsured"
                 note="No blanket policy is in force for them, or the policy they're scheduled on has expired."
-                firearms={uninsured}
+                records={uninsured}
                 showValue
               />
             )}
             {unvalued.length > 0 && (
-              <FirearmLinkList
+              <RecordLinkList
                 title="No estimated value"
                 note="Coverage can't be checked until a value is set."
-                firearms={unvalued}
+                records={unvalued}
               />
             )}
           </div>
@@ -134,9 +157,9 @@ function CoverageOverview({
   unvaluedCount,
 }: {
   covered: number;
-  /** Combined value of the under-insured firearms — sizes the bar. */
+  /** Combined value of the under-insured records — sizes the bar. */
   under: number;
-  /** How much coverage those firearms are short by — what the legend shows. */
+  /** How much coverage those records are short by — what the legend shows. */
   underMissing: number;
   uninsured: number;
   counts: { covered: number; under: number; uninsured: number };
@@ -147,8 +170,8 @@ function CoverageOverview({
     return (
       <p className="hd-overview-note">
         {unvaluedCount > 0
-          ? "Set estimated replacement values on your firearms to see how much of the collection is covered."
-          : "Add firearms with estimated values to see how much of the collection is covered."}
+          ? "Set estimated replacement values on your firearms and accessories to see how much of the collection is covered."
+          : "Add firearms or accessories with estimated values to see how much of the collection is covered."}
       </p>
     );
   }
@@ -194,7 +217,7 @@ function CoverageOverview({
             <strong className="hd-num">{formatDollars(s.shown)}</strong>
             {s.suffix && <span className="hd-muted">{s.suffix}</span>}
             <span className="hd-muted hd-num">
-              {s.count} {s.count === 1 ? "firearm" : "firearms"}
+              {s.count} {s.count === 1 ? "record" : "records"}
             </span>
           </li>
         ))}

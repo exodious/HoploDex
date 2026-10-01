@@ -9,7 +9,11 @@ import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectio
 import { FirearmRecordPage } from "./FirearmRecordPage";
 import { ORIGIN_OPTIONS } from "./types";
 import type { FirearmDetail, Origin } from "./types";
-import { FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
+import {
+  FIREARM_TYPES,
+  REGISTRATION_CLASSES,
+  ACCESSORY_KINDS,
+} from "../../test/collectionFixtures";
 
 const getFirearm = vi.fn();
 
@@ -69,6 +73,8 @@ const firearm: FirearmDetail = {
 const collection: CollectionState = {
   firearms: [],
   firearmsById: new Map(),
+  accessories: [],
+  accessoriesById: new Map(),
   summary: null,
   policies: [],
   policiesById: new Map(),
@@ -82,6 +88,8 @@ const collection: CollectionState = {
   actionTypesFailed: false,
   firearmTypes: { types: FIREARM_TYPES },
   firearmTypesFailed: false,
+  accessoryKinds: { kinds: ACCESSORY_KINDS },
+  accessoryKindsFailed: false,
   registrationClasses: { classes: REGISTRATION_CLASSES },
   registrationClassesFailed: false,
   loaded: true,

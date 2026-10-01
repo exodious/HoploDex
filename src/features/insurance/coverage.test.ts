@@ -30,6 +30,7 @@ const blanket: BlanketSummary = {
   limit: 1_000_000,
   total: 400_000,
   firearmCount: 3,
+  accessoryCount: 0,
   underInsured: false,
 };
 
@@ -194,6 +195,8 @@ describe("coverageShortfall", () => {
     blanketSummary: BlanketSummary | null = null,
   ): ValueSummary => ({
     collectionTotal: 0,
+    firearmsTotal: 0,
+    accessoriesTotal: 0,
     blanket: blanketSummary,
     byPolicy,
     uninsured: [],
@@ -213,9 +216,24 @@ describe("coverageShortfall", () => {
     const summary = summaryOf([
       policySummary({
         individuallyScheduled: [
-          { firearmId: 1, estimatedValue: 4000, scheduledAmount: 3000, underInsured: true },
-          { firearmId: 2, estimatedValue: 2000, scheduledAmount: 2500, underInsured: false },
-          { firearmId: 3, estimatedValue: 1000, scheduledAmount: 0, underInsured: true },
+          {
+            record: { kind: "firearm", id: 1 },
+            estimatedValue: 4000,
+            scheduledAmount: 3000,
+            underInsured: true,
+          },
+          {
+            record: { kind: "firearm", id: 2 },
+            estimatedValue: 2000,
+            scheduledAmount: 2500,
+            underInsured: false,
+          },
+          {
+            record: { kind: "firearm", id: 3 },
+            estimatedValue: 1000,
+            scheduledAmount: 0,
+            underInsured: true,
+          },
         ],
       }),
     ]);
@@ -228,13 +246,23 @@ describe("coverageShortfall", () => {
         policySummary({
           isExpired: true,
           individuallyScheduled: [
-            { firearmId: 1, estimatedValue: 5000, scheduledAmount: 1, underInsured: true },
+            {
+              record: { kind: "firearm", id: 1 },
+              estimatedValue: 5000,
+              scheduledAmount: 1,
+              underInsured: true,
+            },
           ],
         }),
         policySummary({
           policyId: 2,
           individuallyScheduled: [
-            { firearmId: 2, estimatedValue: 1200, scheduledAmount: 1000, underInsured: true },
+            {
+              record: { kind: "firearm", id: 2 },
+              estimatedValue: 1200,
+              scheduledAmount: 1000,
+              underInsured: true,
+            },
           ],
         }),
       ],

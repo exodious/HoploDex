@@ -3,7 +3,11 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
-import { FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
+import {
+  FIREARM_TYPES,
+  REGISTRATION_CLASSES,
+  ACCESSORY_KINDS,
+} from "../../test/collectionFixtures";
 import { CollectionPage } from "./CollectionPage";
 import type { BrowseState } from "./types";
 
@@ -35,6 +39,8 @@ const summary = {
 const collection: CollectionState = {
   firearms: [summary],
   firearmsById: new Map([[summary.id, summary]]),
+  accessories: [],
+  accessoriesById: new Map(),
   summary: null,
   policies: [],
   policiesById: new Map(),
@@ -42,6 +48,8 @@ const collection: CollectionState = {
   actionTypesFailed: false,
   firearmTypes: { types: FIREARM_TYPES },
   firearmTypesFailed: false,
+  accessoryKinds: { kinds: ACCESSORY_KINDS },
+  accessoryKindsFailed: false,
   registrationClasses: { classes: REGISTRATION_CLASSES },
   registrationClassesFailed: false,
   loaded: true,

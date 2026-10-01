@@ -97,6 +97,13 @@
   font-size: var(--text-lg);
 }
 
+/* The firearms and accessories subtotals under the collection total. */
+.hd-value-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-6);
+}
+
 /* ── Policy cards ────────────────────────────────────────────────────── */
 
 .hd-policies {

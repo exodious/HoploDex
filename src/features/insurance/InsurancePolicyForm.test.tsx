@@ -41,7 +41,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     render(<InsurancePolicyForm onSubmit={vi.fn()} />);
 
     expect(
-      screen.getByText(/every firearm not scheduled individually/i, { exact: false }),
+      screen.getByText(/every firearm and accessory not scheduled individually/i, { exact: false }),
     ).toBeInTheDocument();
   });
 
