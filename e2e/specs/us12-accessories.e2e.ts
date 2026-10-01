@@ -7,6 +7,7 @@ import {
   createDatabase,
   expect,
   focusedFieldLabel,
+  toggle,
 } from "../support/ui";
 import type { NewFirearm } from "../support/ui";
 import { realClick, realKey } from "../support/realInput";
@@ -24,6 +25,10 @@ import { realClick, realKey } from "../support/realInput";
  * User Story 3 follows in the same session: the Rifle, carrying an Optic and
  * the AR (which carries the Suppressor), is marked disposed from the keyboard
  * with the Optic disposed with it (US3-1, US3-2).
+ *
+ * User Story 4 is in between: the Accessories page, with an unmounted Sling
+ * added from the keyboard, is grouped by Mounted on through the grouping menu,
+ * and shows the Rifle's group and "Not mounted" last (US4-2).
  *
  * The records are made first, through the Add firearm dialog (not timed); a
  * real click on a page's heading then puts real focus on the page, and from
@@ -90,7 +95,10 @@ async function tabToControl(text: string) {
     if ((await focusedControlText())?.startsWith(text)) return;
     await realKey("Tab");
   }
-  throw new Error(`Tab never reached "${text}"`);
+  const where = await browser.execute(
+    () => document.activeElement?.outerHTML.slice(0, 160) ?? "nothing",
+  );
+  throw new Error(`Tab never reached "${text}"; focus is on ${where}`);
 }
 
 /** The text of the row `aria-activedescendant` points at, or null. */
@@ -158,6 +166,39 @@ async function searchMountDialog(text: string) {
   }
   await typeReal(text);
 }
+
+/** Presses Shift+Tab until a button, link or menu item whose text starts with
+ * `text` has focus. */
+async function shiftTabToControl(text: string) {
+  for (let step = 0; step < 30; step++) {
+    if ((await focusedControlText())?.startsWith(text)) return;
+    await realKey("Shift_L+Tab");
+  }
+  throw new Error(`Shift+Tab never reached "${text}"`);
+}
+
+/** Opens the "Kind" field's list (focus is on it) and chooses `kind`. */
+async function chooseKind(kind: string) {
+  await realKey("Return");
+  await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
+  for (let step = 0; step < 14; step++) {
+    const option = await browser.execute(() => {
+      const active = document.activeElement as HTMLElement | null;
+      return active?.getAttribute("role") === "option" ? (active.textContent ?? "").trim() : null;
+    });
+    if (option === kind) break;
+    await realKey("Down");
+  }
+  await realKey("Return");
+}
+
+/** The group headings of the Accessories page, spaces collapsed. */
+const groupHeadings = () =>
+  browser.execute(() =>
+    [...document.querySelectorAll<HTMLElement>(".hd-group__title")].map((h) =>
+      (h.textContent ?? "").replace(/\s+/g, " ").trim(),
+    ),
+  );
 
 /** Back to the collection by key: Shift+Tab from the heading to Back. */
 async function backToCollectionByKeys() {
@@ -269,17 +310,7 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
     expect(await $('[role="dialog"]').getText()).toContain("Add accessory");
 
     await tabTo("Kind");
-    await realKey("Return");
-    await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
-    for (let step = 0; step < 14; step++) {
-      const option = await browser.execute(() => {
-        const active = document.activeElement as HTMLElement | null;
-        return active?.getAttribute("role") === "option" ? (active.textContent ?? "").trim() : null;
-      });
-      if (option === "Optic") break;
-      await realKey("Down");
-    }
-    await realKey("Return");
+    await chooseKind("Optic");
 
     await tabTo("Make");
     await typeReal("Nikon");
@@ -334,6 +365,71 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
 
     await mountedSectionShows("SilencerCo Omega 300");
     expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+  });
+});
+
+describe("User Story 4 - Browsing accessories by what they are mounted on (specs/006-accessory-links)", () => {
+  it("groups the Accessories page by Mounted on from the keyboard: the Rifle's group, then Not mounted (US4-2)", async () => {
+    // Setup, not timed: an unmounted Sling, added from the Accessories page.
+    await realClick("#record-name");
+    await shiftTabToControl("Accessories");
+    await realKey("Return");
+    await $("h1=Accessories").waitForExist({ timeout: 8000 });
+    await tabToControl("Add accessory");
+    await realKey("Return");
+    await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
+    await tabTo("Kind");
+    await chooseKind("Sling");
+    await tabTo("Make");
+    await typeReal("Vickers");
+    await tabTo("Model");
+    await typeReal("Two Point");
+    await tabTo("Estimated value");
+    await typeReal("40");
+    await realKey("Return");
+    await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
+      timeout: 8000,
+      timeoutMsg: "the Add accessory dialog never closed",
+    });
+    // Saving opens the Sling's record; its Back link returns to the list.
+    await $("#record-name").waitForExist({ timeout: 8000 });
+    await realClick("#record-name");
+    await shiftTabToControl("Accessories");
+    await realKey("Return");
+    await $("h1=Accessories").waitForExist({ timeout: 8000 });
+
+    const started = Date.now();
+    // Real focus is on the page already (the dialog's keys); Tab to the
+    // grouping menu and choose Mounted on.
+    await tabToControl("Group by");
+    await realKey("Return");
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    for (let step = 0; step < 8; step++) {
+      const item = await browser.execute(() => {
+        const active = document.activeElement as HTMLElement | null;
+        return active?.getAttribute("role") === "menuitemradio"
+          ? (active.textContent ?? "").trim()
+          : null;
+      });
+      if (item === "Mounted on") break;
+      await realKey("Down");
+    }
+    await realKey("Return");
+
+    await browser.waitUntil(async () => (await groupHeadings()).length === 2, {
+      timeout: 8000,
+      timeoutMsg: "the Accessories page never showed its two groups",
+    });
+    const headings = await groupHeadings();
+    expect(headings[0]).toContain("LaRue PredatAR");
+    expect(headings[1]).toContain("Not mounted");
+    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+
+    // Back to the AR's page for the next story, which starts on a record.
+    await shiftTabToControl("Collection");
+    await realKey("Return");
+    await $(".hd-row__name").waitForExist({ timeout: 8000 });
+    await openFirearmByKeys("Daniel Defense DDM4");
   });
 });
 
@@ -393,22 +489,14 @@ describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-lin
         .find((t) => t.textContent?.trim().startsWith("Accessories"))
         ?.click();
     });
-    // Every accessory is disposed, so none is listed until they are included.
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() =>
-          [...document.querySelectorAll<HTMLElement>("button")].some((b) =>
-            /^Include \d+ disposed accessor/.test(b.textContent?.trim() ?? ""),
-          ),
-        ),
-      { timeout: 8000, timeoutMsg: "the Accessories page never offered its disposed accessory" },
-    );
-    expect(await $$(".hd-row--disposed").length).toBe(0);
-    await browser.execute(() => {
-      [...document.querySelectorAll<HTMLElement>("button")]
-        .find((b) => /^Include \d+ disposed accessor/.test(b.textContent?.trim() ?? ""))
-        ?.click();
+    // The Optic is disposed, so the page lists only the Sling until disposed
+    // accessories are included.
+    await browser.waitUntil(async () => (await $$(".hd-row").length) === 1, {
+      timeout: 8000,
+      timeoutMsg: "the Accessories page never listed only the Sling",
     });
+    expect(await $$(".hd-row--disposed").length).toBe(0);
+    await toggle("Show disposed");
     await browser.waitUntil(
       async () =>
         (await browser.execute(() => document.querySelectorAll(".hd-row--disposed").length)) === 1,
