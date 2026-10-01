@@ -4,6 +4,7 @@ use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
+use crate::models::record::RecordRef;
 use crate::models::rules::{
     DispositionFields, check_amounts, check_coverage_pair, check_dates_and_disposition,
     checked_date, is_blank,
@@ -136,6 +137,10 @@ pub struct Firearm {
     pub registration_approved: Option<String>,
     /// FR-009: e.g. "Smith Family Trust". Only with a classification.
     pub registered_to: Option<String>,
+    /// specs/006-accessory-links research.md §8: the direct host. Not a
+    /// column: `from_row` leaves it `None` and the loaders fill it from
+    /// `mounts`.
+    pub mounted_on: Option<RecordRef>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -185,6 +190,7 @@ impl Firearm {
             registration_form: row.get("registration_form")?,
             registration_approved: row.get("registration_approved")?,
             registered_to: row.get("registered_to")?,
+            mounted_on: None,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
         })
@@ -259,6 +265,11 @@ pub struct FirearmInput {
     /// FR-009: e.g. "Smith Family Trust". Only with a classification.
     #[serde(default)]
     pub registered_to: Option<String>,
+    /// specs/006-accessory-links research.md §8: the direct host (FR-010);
+    /// checked and saved by the command, in the save's savepoint. The form
+    /// always sends it.
+    #[serde(default)]
+    pub mounted_on: Option<RecordRef>,
 }
 
 /// The record as an input that would save it unchanged — the starting point
@@ -306,6 +317,7 @@ impl From<&Firearm> for FirearmInput {
             registration_form: firearm.registration_form.clone(),
             registration_approved: firearm.registration_approved.clone(),
             registered_to: firearm.registered_to.clone(),
+            mounted_on: firearm.mounted_on,
         }
     }
 }

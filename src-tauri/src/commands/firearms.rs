@@ -7,7 +7,8 @@ use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::{
     DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
-use crate::models::record::RecordRef;
+use crate::models::record::{MountDetail, RecordLabel, RecordRef};
+use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
 
 /// Input for the `dispose_firearm` command, per contracts/tauri-commands.md.
@@ -53,6 +54,9 @@ pub struct FirearmDetail {
     #[serde(flatten)]
     pub firearm: Firearm,
     pub disposition_history: Vec<DispositionHistoryEntry>,
+    /// specs/006-accessory-links FR-013: what the firearm is mounted on and
+    /// what is mounted on it.
+    pub mount: MountDetail,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -144,6 +148,10 @@ pub struct FirearmSummary {
     /// policy's firearms without fetching every full record.
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
+    /// specs/006-accessory-links FR-013: what it is mounted on directly.
+    pub mounted_on: Option<RecordLabel>,
+    /// FR-016a: everything below it, at any depth.
+    pub mounted_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -166,14 +174,17 @@ pub mod ops {
     use super::*;
 
     pub fn get_firearm(conn: &Connection, id: i64) -> Result<Firearm, CommandError> {
-        conn.query_row(
-            "SELECT * FROM firearms WHERE id = :id",
-            named_params! { ":id": id },
-            Firearm::from_row,
-        )
-        .optional()
-        .map_err(CommandError::from_db)?
-        .ok_or_else(|| CommandError::not_found("No firearm was found with that id."))
+        let mut firearm = conn
+            .query_row(
+                "SELECT * FROM firearms WHERE id = :id",
+                named_params! { ":id": id },
+                Firearm::from_row,
+            )
+            .optional()
+            .map_err(CommandError::from_db)?
+            .ok_or_else(|| CommandError::not_found("No firearm was found with that id."))?;
+        firearm.mounted_on = mounts::host_of_record(conn, RecordRef::Firearm(id))?;
+        Ok(firearm)
     }
 
     /// A record already in the collection that a new or edited firearm
@@ -546,150 +557,37 @@ pub mod ops {
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
-        conn.execute(
-            "INSERT INTO firearms (
-                uid, make, model, serial_number, no_serial_attested, caliber, cartridge, firearm_type_id,
-                action_type_id, nickname, notes, accessories,
-                barrel_length_hundredths, overall_length_hundredths, weight_tenths_oz,
-                capacity, finish, condition, status, estimated_value,
-                acquisition_source, acquisition_date, acquisition_price,
-                disposition_type, disposition_recipient, disposition_date, disposition_price,
-                insurance_policy_id, scheduled_coverage_amount,
-                origin, year_of_manufacture, country_of_manufacture, importer_name,
-                original_make, original_model, original_serial_number,
-                registration_class_id, registration_form, registration_approved, registered_to,
-                created_at, updated_at
-            ) VALUES (
-                :uid, :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
-                :action_type_id, :nickname, :notes, :accessories,
-                :barrel_length_hundredths, :overall_length_hundredths, :weight_tenths_oz,
-                :capacity, :finish, :condition, :status, :estimated_value,
-                :acquisition_source, :acquisition_date, :acquisition_price,
-                :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
-                :insurance_policy_id, :scheduled_coverage_amount,
-                :origin, :year_of_manufacture, :country_of_manufacture, :importer_name,
-                :original_make, :original_model, :original_serial_number,
-                :registration_class_id, :registration_form, :registration_approved, :registered_to,
-                datetime('now'), datetime('now')
-            )",
-            named_params! {
-                // FR-019: set here and never in an UPDATE.
-                ":uid": crate::services::record_id::generate(),
-                ":make": input.make,
-                ":model": input.model,
-                ":serial_number": input.serial_number,
-                ":no_serial_attested": input.no_serial_attested,
-                ":caliber": input.caliber,
-                ":cartridge": input.cartridge,
-                ":firearm_type_id": input.firearm_type_id,
-                ":action_type_id": input.action_type_id,
-                ":nickname": input.nickname,
-                ":notes": input.notes,
-                ":accessories": input.accessories,
-                ":barrel_length_hundredths": input.barrel_length_hundredths,
-                ":overall_length_hundredths": input.overall_length_hundredths,
-                ":weight_tenths_oz": input.weight_tenths_oz,
-                ":capacity": input.capacity,
-                ":finish": input.finish,
-                ":condition": input.condition,
-                ":status": input.status,
-                ":estimated_value": input.estimated_value,
-                ":acquisition_source": input.acquisition_source,
-                ":acquisition_date": input.acquisition_date,
-                ":acquisition_price": input.acquisition_price,
-                ":disposition_type": input.disposition_type,
-                ":disposition_recipient": input.disposition_recipient,
-                ":disposition_date": input.disposition_date,
-                ":disposition_price": input.disposition_price,
-                ":insurance_policy_id": input.insurance_policy_id,
-                ":scheduled_coverage_amount": input.scheduled_coverage_amount,
-                ":origin": input.origin,
-                ":year_of_manufacture": input.year_of_manufacture,
-                ":country_of_manufacture": input.country_of_manufacture,
-                ":importer_name": input.importer_name,
-                ":original_make": input.original_make,
-                ":original_model": input.original_model,
-                ":original_serial_number": input.original_serial_number,
-                ":registration_class_id": input.registration_class_id,
-                ":registration_form": input.registration_form,
-                ":registration_approved": input.registration_approved,
-                ":registered_to": input.registered_to,
-            },
-        )
-        .map_err(CommandError::from_db)?;
-
-        get_firearm(conn, conn.last_insert_rowid())
-    }
-
-    pub fn update_firearm(
-        conn: &Connection,
-        id: i64,
-        input: &FirearmInput,
-        confirmed_warnings: bool,
-    ) -> Result<Firearm, CommandError> {
-        let input = &input.normalized();
-        // A missing record is reported by the update below, after the
-        // checks, as before.
-        let stored = conn
-            .query_row(
-                "SELECT * FROM firearms WHERE id = :id",
-                named_params! { ":id": id },
-                Firearm::from_row,
-            )
-            .optional()
-            .map_err(CommandError::from_db)?;
-        validate_firearm_input(input, stored.as_ref())?;
-        check_fields_apply(conn, input)?;
-        check_registration_class(conn, input)?;
-        check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
-        check_uniqueness(conn, Some(id), input)?;
-        check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
-        let updated = conn
-            .execute(
-                "UPDATE firearms SET
-                    make = :make,
-                    model = :model,
-                    serial_number = :serial_number,
-                    no_serial_attested = :no_serial_attested,
-                    caliber = :caliber,
-                    cartridge = :cartridge,
-                    firearm_type_id = :firearm_type_id,
-                    action_type_id = :action_type_id,
-                    nickname = :nickname,
-                    notes = :notes,
-                    accessories = :accessories,
-                    barrel_length_hundredths = :barrel_length_hundredths,
-                    overall_length_hundredths = :overall_length_hundredths,
-                    weight_tenths_oz = :weight_tenths_oz,
-                    capacity = :capacity,
-                    finish = :finish,
-                    condition = :condition,
-                    status = :status,
-                    estimated_value = :estimated_value,
-                    acquisition_source = :acquisition_source,
-                    acquisition_date = :acquisition_date,
-                    acquisition_price = :acquisition_price,
-                    disposition_type = :disposition_type,
-                    disposition_recipient = :disposition_recipient,
-                    disposition_date = :disposition_date,
-                    disposition_price = :disposition_price,
-                    insurance_policy_id = :insurance_policy_id,
-                    scheduled_coverage_amount = :scheduled_coverage_amount,
-                    origin = :origin,
-                    year_of_manufacture = :year_of_manufacture,
-                    country_of_manufacture = :country_of_manufacture,
-                    importer_name = :importer_name,
-                    original_make = :original_make,
-                    original_model = :original_model,
-                    original_serial_number = :original_serial_number,
-                    registration_class_id = :registration_class_id,
-                    registration_form = :registration_form,
-                    registration_approved = :registration_approved,
-                    registered_to = :registered_to,
-                    updated_at = datetime('now')
-                WHERE id = :id",
+        // The row and its mount stand or fall together (research.md §8).
+        let id = mounts::atomically(conn, || {
+            conn.execute(
+                "INSERT INTO firearms (
+                    uid, make, model, serial_number, no_serial_attested, caliber, cartridge, firearm_type_id,
+                    action_type_id, nickname, notes, accessories,
+                    barrel_length_hundredths, overall_length_hundredths, weight_tenths_oz,
+                    capacity, finish, condition, status, estimated_value,
+                    acquisition_source, acquisition_date, acquisition_price,
+                    disposition_type, disposition_recipient, disposition_date, disposition_price,
+                    insurance_policy_id, scheduled_coverage_amount,
+                    origin, year_of_manufacture, country_of_manufacture, importer_name,
+                    original_make, original_model, original_serial_number,
+                    registration_class_id, registration_form, registration_approved, registered_to,
+                    created_at, updated_at
+                ) VALUES (
+                    :uid, :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
+                    :action_type_id, :nickname, :notes, :accessories,
+                    :barrel_length_hundredths, :overall_length_hundredths, :weight_tenths_oz,
+                    :capacity, :finish, :condition, :status, :estimated_value,
+                    :acquisition_source, :acquisition_date, :acquisition_price,
+                    :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
+                    :insurance_policy_id, :scheduled_coverage_amount,
+                    :origin, :year_of_manufacture, :country_of_manufacture, :importer_name,
+                    :original_make, :original_model, :original_serial_number,
+                    :registration_class_id, :registration_form, :registration_approved, :registered_to,
+                    datetime('now'), datetime('now')
+                )",
                 named_params! {
-                    ":id": id,
+                    // FR-019: set here and never in an UPDATE.
+                    ":uid": crate::services::record_id::generate(),
                     ":make": input.make,
                     ":model": input.model,
                     ":serial_number": input.serial_number,
@@ -717,7 +615,7 @@ pub mod ops {
                     ":disposition_date": input.disposition_date,
                     ":disposition_price": input.disposition_price,
                     ":insurance_policy_id": input.insurance_policy_id,
-                        ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                    ":scheduled_coverage_amount": input.scheduled_coverage_amount,
                     ":origin": input.origin,
                     ":year_of_manufacture": input.year_of_manufacture,
                     ":country_of_manufacture": input.country_of_manufacture,
@@ -732,10 +630,145 @@ pub mod ops {
                 },
             )
             .map_err(CommandError::from_db)?;
+            let id = conn.last_insert_rowid();
+            mounts::save_form_mount(conn, RecordRef::Firearm(id), input.status, input.mounted_on)?;
+            Ok(id)
+        })?;
 
-        if updated == 0 {
-            return Err(CommandError::not_found("No firearm was found with that id."));
-        }
+        get_firearm(conn, id)
+    }
+
+    pub fn update_firearm(
+        conn: &Connection,
+        id: i64,
+        input: &FirearmInput,
+        confirmed_warnings: bool,
+    ) -> Result<Firearm, CommandError> {
+        let input = &input.normalized();
+        // A missing record is reported by the update below, after the
+        // checks, as before.
+        let stored = conn
+            .query_row(
+                "SELECT * FROM firearms WHERE id = :id",
+                named_params! { ":id": id },
+                Firearm::from_row,
+            )
+            .optional()
+            .map_err(CommandError::from_db)?;
+        validate_firearm_input(input, stored.as_ref())?;
+        check_fields_apply(conn, input)?;
+        check_registration_class(conn, input)?;
+        check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
+        check_uniqueness(conn, Some(id), input)?;
+        check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
+        // The row and its mount stand or fall together (research.md §8).
+        mounts::atomically(conn, || {
+            // A disposed record is in no mount (FR-014), and the status
+            // triggers refuse the save while it is.
+            if input.status == FirearmStatus::Disposed {
+                mounts::clear_mounts(conn, RecordRef::Firearm(id))?;
+            }
+            let updated = conn
+                .execute(
+                    "UPDATE firearms SET
+                        make = :make,
+                        model = :model,
+                        serial_number = :serial_number,
+                        no_serial_attested = :no_serial_attested,
+                        caliber = :caliber,
+                        cartridge = :cartridge,
+                        firearm_type_id = :firearm_type_id,
+                        action_type_id = :action_type_id,
+                        nickname = :nickname,
+                        notes = :notes,
+                        accessories = :accessories,
+                        barrel_length_hundredths = :barrel_length_hundredths,
+                        overall_length_hundredths = :overall_length_hundredths,
+                        weight_tenths_oz = :weight_tenths_oz,
+                        capacity = :capacity,
+                        finish = :finish,
+                        condition = :condition,
+                        status = :status,
+                        estimated_value = :estimated_value,
+                        acquisition_source = :acquisition_source,
+                        acquisition_date = :acquisition_date,
+                        acquisition_price = :acquisition_price,
+                        disposition_type = :disposition_type,
+                        disposition_recipient = :disposition_recipient,
+                        disposition_date = :disposition_date,
+                        disposition_price = :disposition_price,
+                        insurance_policy_id = :insurance_policy_id,
+                        scheduled_coverage_amount = :scheduled_coverage_amount,
+                        origin = :origin,
+                        year_of_manufacture = :year_of_manufacture,
+                        country_of_manufacture = :country_of_manufacture,
+                        importer_name = :importer_name,
+                        original_make = :original_make,
+                        original_model = :original_model,
+                        original_serial_number = :original_serial_number,
+                        registration_class_id = :registration_class_id,
+                        registration_form = :registration_form,
+                        registration_approved = :registration_approved,
+                        registered_to = :registered_to,
+                        updated_at = datetime('now')
+                    WHERE id = :id",
+                    named_params! {
+                        ":id": id,
+                        ":make": input.make,
+                        ":model": input.model,
+                        ":serial_number": input.serial_number,
+                        ":no_serial_attested": input.no_serial_attested,
+                        ":caliber": input.caliber,
+                        ":cartridge": input.cartridge,
+                        ":firearm_type_id": input.firearm_type_id,
+                        ":action_type_id": input.action_type_id,
+                        ":nickname": input.nickname,
+                        ":notes": input.notes,
+                        ":accessories": input.accessories,
+                        ":barrel_length_hundredths": input.barrel_length_hundredths,
+                        ":overall_length_hundredths": input.overall_length_hundredths,
+                        ":weight_tenths_oz": input.weight_tenths_oz,
+                        ":capacity": input.capacity,
+                        ":finish": input.finish,
+                        ":condition": input.condition,
+                        ":status": input.status,
+                        ":estimated_value": input.estimated_value,
+                        ":acquisition_source": input.acquisition_source,
+                        ":acquisition_date": input.acquisition_date,
+                        ":acquisition_price": input.acquisition_price,
+                        ":disposition_type": input.disposition_type,
+                        ":disposition_recipient": input.disposition_recipient,
+                        ":disposition_date": input.disposition_date,
+                        ":disposition_price": input.disposition_price,
+                        ":insurance_policy_id": input.insurance_policy_id,
+                            ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                        ":origin": input.origin,
+                        ":year_of_manufacture": input.year_of_manufacture,
+                        ":country_of_manufacture": input.country_of_manufacture,
+                        ":importer_name": input.importer_name,
+                        ":original_make": input.original_make,
+                        ":original_model": input.original_model,
+                        ":original_serial_number": input.original_serial_number,
+                        ":registration_class_id": input.registration_class_id,
+                        ":registration_form": input.registration_form,
+                        ":registration_approved": input.registration_approved,
+                        ":registered_to": input.registered_to,
+                    },
+                )
+                .map_err(CommandError::from_db)?;
+            if updated == 0 {
+                return Err(CommandError::not_found("No firearm was found with that id."));
+            }
+            if input.status == FirearmStatus::Active {
+                mounts::save_form_mount(
+                    conn,
+                    RecordRef::Firearm(id),
+                    input.status,
+                    input.mounted_on,
+                )?;
+            }
+            Ok(())
+        })?;
         get_firearm(conn, id)
     }
 
@@ -773,7 +806,8 @@ pub mod ops {
             .map_err(CommandError::from_db)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(CommandError::from_db)?;
-        Ok(FirearmDetail { firearm, disposition_history })
+        let mount = mounts::detail(conn, RecordRef::Firearm(id))?;
+        Ok(FirearmDetail { firearm, disposition_history, mount })
     }
 
     /// Restores a disposed firearm to active status (FR-033). With `keep`
@@ -986,6 +1020,8 @@ pub mod ops {
                         generic_thumbnail_key: row.get(14)?,
                         action_type_name: row.get(15)?,
                         registered_as: row.get(16)?,
+                        mounted_on: None,
+                        mounted_count: 0,
                     };
                     let registered_to: Option<String> = row.get(17)?;
                     Ok((summary, origin, registered_to))
@@ -993,9 +1029,28 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
 
-        let mut summaries = Vec::new();
+        // FR-013, FR-016a: the whole mount graph once, and one label query
+        // per table for every host named (research.md §5, §22).
+        let graph = MountGraph::load(conn)?;
+        let mut rows_read = Vec::new();
         for row in rows {
-            let (summary, origin, registered_to) = row.map_err(CommandError::from_db)?;
+            rows_read.push(row.map_err(CommandError::from_db)?);
+        }
+        let host_labels = {
+            let hosts: Vec<RecordRef> = rows_read
+                .iter()
+                .filter_map(|(summary, _, _)| graph.host_of(RecordRef::Firearm(summary.id)))
+                .collect();
+            mounts::labels(conn, &hosts)?
+        };
+        let mut counts = std::collections::HashMap::new();
+
+        let mut summaries = Vec::new();
+        for (mut summary, origin, registered_to) in rows_read {
+            let record = RecordRef::Firearm(summary.id);
+            summary.mounted_on =
+                graph.host_of(record).and_then(|host| host_labels.get(&host).cloned());
+            summary.mounted_count = graph.count_below(record, &mut counts);
             let key = match input.group_by {
                 Some(GroupBy::Type) => summary.firearm_type_name.clone(),
                 Some(GroupBy::Caliber) => summary.caliber.clone(),
@@ -1020,11 +1075,18 @@ pub mod ops {
             summaries.push((key, summary));
         }
 
+        // A map from key to group index, not a search of the groups for
+        // every row (research.md §12, §13).
         let mut groups: Vec<FirearmGroup> = Vec::new();
+        let mut group_index: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for (key, summary) in summaries {
-            match groups.iter_mut().find(|g| g.key == key) {
-                Some(group) => group.firearms.push(summary),
-                None => groups.push(FirearmGroup { key, firearms: vec![summary] }),
+            match group_index.get(&key) {
+                Some(index) => groups[*index].firearms.push(summary),
+                None => {
+                    group_index.insert(key.clone(), groups.len());
+                    groups.push(FirearmGroup { key, firearms: vec![summary] });
+                }
             }
         }
         match input.group_by {

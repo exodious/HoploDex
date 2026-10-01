@@ -11,14 +11,19 @@
 mod support;
 
 use hoplodex_lib::commands::accessories::ops;
+use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::insurance::ops as insurance;
+use hoplodex_lib::commands::mounts::ops as mount_ops;
 use hoplodex_lib::models::accessory::AccessoryInput;
+use hoplodex_lib::models::firearm::FirearmInput;
+use hoplodex_lib::models::record::RecordRef;
 use serde_json::{Value, json};
-use support::{TestDb, policy};
+use support::{TestDb, firearm, policy};
 
 const OPTIC: i64 = 1;
 const MAGAZINE: i64 = 3;
 const SLING: i64 = 10;
+const UPPER: i64 = 5;
 
 fn accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
     let mut input: AccessoryInput =
@@ -278,4 +283,49 @@ fn unscheduling_returns_an_accessory_to_the_blanket_rules() {
     assert_eq!(warning(&output, id), "uninsured", "no blanket policy is in force");
     assert_eq!(all(&output)[0]["insurancePolicyId"], Value::Null);
     assert_eq!(all(&output)[0]["scheduledCoverageAmount"], Value::Null);
+}
+
+// --- Mounted on (specs/006-accessory-links US2, FR-013) -----------------------------------
+
+fn mount(db: &TestDb, item: RecordRef, host: RecordRef) {
+    let input = serde_json::from_value(json!({ "item": item, "host": host })).unwrap();
+    mount_ops::mount_record(&db.conn, &input).unwrap();
+}
+
+#[test]
+fn an_accessory_names_its_direct_host_only_and_an_unmounted_one_has_none() {
+    let db = TestDb::new();
+    let receiver = RecordRef::Firearm(
+        firearm_ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                nickname: Some("Deer rifle".into()),
+                firearm_type_id: 2,
+                ..firearm("LaRue", "PredatAR", "L-1")
+            },
+            false,
+        )
+        .unwrap()
+        .id,
+    );
+    let upper = create(&db, &accessory(UPPER, "BCM", "RECCE-16"));
+    let optic = create(&db, &accessory(OPTIC, "Vortex", "Razor"));
+    let loose = create(&db, &accessory(SLING, "Magpul", "MS1"));
+    mount(&db, RecordRef::Accessory(upper), receiver);
+    mount(&db, RecordRef::Accessory(optic), RecordRef::Accessory(upper));
+
+    let output = list(&db, json!({}));
+    let summaries = all(&output);
+    let find = |id: i64| *summaries.iter().find(|s| s["id"] == id).unwrap();
+
+    let on_upper = &find(optic)["mountedOn"];
+    assert_eq!(on_upper["record"], json!({ "kind": "accessory", "id": upper }));
+    assert_eq!(on_upper["make"], "BCM");
+    assert_eq!(on_upper["model"], "RECCE-16");
+    assert_eq!(on_upper["typeName"], "Upper receiver");
+    assert_eq!(on_upper["status"], "active");
+    let on_receiver = &find(upper)["mountedOn"];
+    assert_eq!(on_receiver["record"], json!({ "kind": "firearm", "id": receiver.id() }));
+    assert_eq!(on_receiver["nickname"], "Deer rifle");
+    assert_eq!(find(loose)["mountedOn"], Value::Null);
 }

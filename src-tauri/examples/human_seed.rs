@@ -422,6 +422,7 @@ fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> F
         registered_to: None,
         cartridge: None,
         action_type_id: None,
+        mounted_on: None,
     }
 }
 
@@ -1281,15 +1282,12 @@ pub fn seed(conn: &Connection, extra: usize) {
     }
 
     seed_accessories(conn, &policies);
+    seed_mounts(conn);
 }
 
-/// specs/006-accessory-links: one accessory of every kind, some with every
-/// field and some with almost none, a pair of magazines as one record, one
-/// scheduled under a policy, photos and a document, and disposed accessories
-/// with retained history covering every disposition type. Mounts are added
-/// by the mount stories' part of the seed.
-fn seed_accessories(conn: &Connection, policies: &Policies) {
-    let bare = |kind: i64| AccessoryInput {
+/// A valid active accessory of a kind with only the required fields.
+fn bare_accessory(kind: i64) -> AccessoryInput {
+    AccessoryInput {
         accessory_kind_id: kind,
         make: None,
         model: None,
@@ -1308,7 +1306,17 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         disposition_price: None,
         insurance_policy_id: None,
         scheduled_coverage_amount: None,
-    };
+        mounted_on: None,
+    }
+}
+
+/// specs/006-accessory-links: one accessory of every kind, some with every
+/// field and some with almost none, a pair of magazines as one record, one
+/// scheduled under a policy, photos and a document, and disposed accessories
+/// with retained history covering every disposition type. The mounts are
+/// `seed_mounts`'.
+fn seed_accessories(conn: &Connection, policies: &Policies) {
+    let bare = bare_accessory;
     let add = |input: AccessoryInput| {
         let label = format!("{:?} {:?}", input.make, input.model);
         must(accessory_ops::create_accessory(conn, &input), &label).id
@@ -1523,6 +1531,74 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         unscheduled <= ACCESSORY_BLANKET_ALLOWANCE,
         "raise ACCESSORY_BLANKET_ALLOWANCE to at least {unscheduled}"
     );
+}
+
+/// specs/006-accessory-links US2 (data-model.md "Seed and coverage"): the
+/// user stories' mounts, with records of their own so the other parts of the
+/// seed stay as they were. Every `mounts` column is set in some row: an
+/// accessory and a firearm each as an item, and each as a host. Unvalued, so
+/// the blanket policy's headroom is unchanged. Mounts are set the way the
+/// forms set them, through `mountedOn` on the record's own input.
+fn seed_mounts(conn: &Connection) {
+    let add_firearm = |input: FirearmInput| {
+        let label = format!("{} {}", input.make, input.model);
+        RecordRef::Firearm(must(firearm_ops::create_firearm(conn, &input, false), &label).id)
+    };
+    let add_accessory = |input: AccessoryInput| {
+        let label = format!("{:?} {:?}", input.make, input.model);
+        RecordRef::Accessory(must(accessory_ops::create_accessory(conn, &input), &label).id)
+    };
+    let accessory = |kind: i64, make: &str, model: &str, host: RecordRef| AccessoryInput {
+        make: text(make),
+        model: text(model),
+        mounted_on: Some(host),
+        ..bare_accessory(kind)
+    };
+
+    // An optic and a suppressor on the rifle nicknamed "Deer rifle". The
+    // suppressor is a firearm record and so is mounted by the firearm form's
+    // field; the optic by the accessory form's.
+    let deer_rifle = add_firearm(FirearmInput {
+        nickname: text("Deer rifle"),
+        finish: text("Walnut stock, blued"),
+        ..base("Ruger", "Hawkeye Hunter", "RH-39-20417", ".308 Winchester", RIFLE)
+    });
+    add_accessory(accessory(KIND_OPTIC, "Vortex", "Diamondback Tactical 4-16x44", deer_rifle));
+    add_firearm(FirearmInput {
+        mounted_on: Some(deer_rifle),
+        ..base("SilencerCo", "Hybrid 46M", "HY46-10442", ".30", SUPPRESSOR)
+    });
+
+    // A receiver with an upper carrying a scope (carrying a red dot) and a
+    // light: nested mounts three deep.
+    let receiver = add_firearm(FirearmInput {
+        nickname: text("Stripped lower"),
+        ..base("LaRue Tactical", "PredatAR lower", "LT-L-30915", ".223", RIFLE)
+    });
+    let upper = add_accessory(accessory(KIND_UPPER, "BCM", "RECCE-16 upper", receiver));
+    let scope = add_accessory(accessory(KIND_OPTIC, "Primary Arms", "SLx 1-6x24", upper));
+    add_accessory(accessory(KIND_OPTIC, "Holosun", "HS403B micro red dot", scope));
+    add_accessory(accessory(KIND_LIGHT, "SureFire", "M300A Scout", upper));
+
+    // An upper that is not on any receiver, carrying its own optic.
+    let spare_upper = add_accessory(AccessoryInput {
+        make: text("Daniel Defense"),
+        model: text("MK18 upper"),
+        serial_number: text("DD-U-55102"),
+        ..bare_accessory(KIND_UPPER)
+    });
+    add_accessory(accessory(KIND_OPTIC, "Trijicon", "ACOG TA31 4x32", spare_upper));
+
+    // A firearm mounted on an accessory (FR-009): a pistol kept in its case.
+    let case = add_accessory(AccessoryInput {
+        make: text("Pelican"),
+        model: text("1170 case"),
+        ..bare_accessory(KIND_CASE)
+    });
+    add_firearm(FirearmInput {
+        mounted_on: Some(case),
+        ..base("Walther", "PPK/S", "PPKS-221903", ".380", HANDGUN)
+    });
 }
 
 /// Deterministic filler: plain, valued, unscheduled firearms with distinct

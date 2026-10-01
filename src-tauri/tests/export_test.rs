@@ -54,6 +54,7 @@ fn firearm_with_photo(make: &str) -> FirearmInput {
         registered_to: None,
         cartridge: None,
         action_type_id: None,
+        mounted_on: None,
     }
 }
 

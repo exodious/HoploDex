@@ -17,6 +17,7 @@ use hoplodex_lib::commands::accessories::ops as accessories;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
+use hoplodex_lib::commands::mounts::ops as mounts;
 use hoplodex_lib::commands::photos::ops as photos;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
@@ -979,4 +980,88 @@ fn an_accessory_its_photo_and_its_identifier_survive_a_backup_and_a_restore_of_i
         before,
         "restoring brings back the accessory, its photo and the same identifier"
     );
+}
+
+// --- Mounts (specs/006-accessory-links FR-025) ---------------------------------------------
+
+/// `(item firearm, item accessory, host firearm, host accessory)` of every
+/// mount by id.
+type StoredMount = (Option<i64>, Option<i64>, Option<i64>, Option<i64>);
+
+fn stored_mounts(conn: &rusqlite::Connection) -> Vec<StoredMount> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT item_firearm_id, item_accessory_id, host_firearm_id, host_accessory_id
+             FROM mounts ORDER BY id",
+        )
+        .unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+impl World {
+    /// A firearm; returns its id.
+    fn add_firearm(&self, serial: &str) -> i64 {
+        self.session
+            .write(|conn| {
+                firearms::create_firearm(conn, &support::firearm("Colt", "Python", serial), false)
+                    .map(|firearm| firearm.id)
+            })
+            .unwrap()
+    }
+
+    /// `mount_record` of `item` on `host`, or off whatever it is on.
+    fn mount(&self, item: RecordRef, host: Option<RecordRef>) {
+        let input = json!({ "item": item, "host": host });
+        self.session
+            .write(|conn| {
+                mounts::mount_record(conn, &serde_json::from_value(input.clone()).unwrap())
+                    .map(|_| ())
+            })
+            .unwrap();
+    }
+
+    fn mount_state(&self) -> Vec<StoredMount> {
+        self.session.read(|conn| Ok(stored_mounts(conn))).unwrap()
+    }
+}
+
+#[test]
+fn a_mount_of_an_accessory_on_a_firearm_and_of_a_firearm_on_an_accessory_survive_a_backup_and_a_restore_of_it()
+ {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let optic = world.add_accessory_with_photo("ACC-1");
+    let case = world.add_accessory_with_photo("ACC-2");
+    let rifle = world.add_firearm("F-1");
+    let pistol = world.add_firearm("F-2");
+    world.mount(RecordRef::Accessory(optic), Some(RecordRef::Firearm(rifle)));
+    world.mount(RecordRef::Firearm(pistol), Some(RecordRef::Accessory(case)));
+    let before = world.mount_state();
+    assert_eq!(
+        before,
+        [(None, Some(optic), Some(rifle), None), (Some(pistol), None, None, Some(case))],
+        "an accessory on a firearm, then a firearm on an accessory"
+    );
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    let backup = world.backups_in(&world.default_folder(), &id).remove(0);
+
+    assert_eq!(stored_mounts(&peek(Path::new(&backup.path))), before, "the backup holds both");
+
+    world.open();
+    // Change the mounts after the backup: both off, and one new.
+    world.mount(RecordRef::Accessory(optic), None);
+    world.mount(RecordRef::Firearm(pistol), None);
+    world.mount(RecordRef::Accessory(case), Some(RecordRef::Firearm(rifle)));
+    assert_ne!(world.mount_state(), before);
+    // The backup made before restoring is named for the minute, so it
+    // needs a later one than the backup being restored.
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(&world.session, &world.machine, &backup.path, &passphrase(), None)
+        .unwrap();
+
+    assert_eq!(world.mount_state(), before, "restoring brings both mounts back, and only them");
 }

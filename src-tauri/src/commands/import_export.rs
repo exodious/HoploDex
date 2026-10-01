@@ -736,6 +736,9 @@ pub mod ops {
             // `validate_firearm_input`'s `checked_date`.
             registration_approved: raw.registration_approved.clone(),
             registered_to: raw.registered_to.clone(),
+            // The sheet's mounted_on column is read in a later phase
+            // (contracts/spreadsheet-format.md); until then no row mounts.
+            mounted_on: None,
         };
 
         // FR-022: fields the type doesn't have come first, so a Suppressor

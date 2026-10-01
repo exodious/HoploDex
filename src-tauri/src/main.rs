@@ -193,6 +193,8 @@ fn main() {
             hoplodex_lib::commands::accessories::dispose_accessory,
             hoplodex_lib::commands::accessories::reverse_accessory_disposition,
             hoplodex_lib::commands::accessories::delete_accessory,
+            hoplodex_lib::commands::mounts::mount_record,
+            hoplodex_lib::commands::mounts::list_mount_candidates,
             hoplodex_lib::commands::entries::list_accessory_kinds,
             hoplodex_lib::commands::entries::suggest_entries,
             hoplodex_lib::commands::entries::settle_entry,

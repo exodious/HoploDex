@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
 use crate::models::firearm::{DispositionType, FirearmStatus};
+use crate::models::record::RecordRef;
 use crate::models::rules::{
     DispositionFields, check_amounts, check_coverage_pair, check_dates_and_disposition,
 };
@@ -41,6 +42,9 @@ pub struct Accessory {
     pub thumbnail_photo_id: Option<i64>,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
+    /// research.md §8: the direct host. Not a column: `from_row` leaves it
+    /// `None` and the loaders fill it from `mounts`.
+    pub mounted_on: Option<RecordRef>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -69,6 +73,7 @@ impl Accessory {
             thumbnail_photo_id: row.get("thumbnail_photo_id")?,
             insurance_policy_id: row.get("insurance_policy_id")?,
             scheduled_coverage_amount: row.get("scheduled_coverage_amount")?,
+            mounted_on: None,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
         })
@@ -114,6 +119,9 @@ pub struct AccessoryInput {
     pub insurance_policy_id: Option<i64>,
     #[serde(default)]
     pub scheduled_coverage_amount: Option<i64>,
+    /// FR-010; checked and saved by the command, as `FirearmInput`'s.
+    #[serde(default)]
+    pub mounted_on: Option<RecordRef>,
 }
 
 /// The record as an input that would save it unchanged — the starting point
@@ -140,6 +148,7 @@ impl From<&Accessory> for AccessoryInput {
             disposition_price: accessory.disposition_price,
             insurance_policy_id: accessory.insurance_policy_id,
             scheduled_coverage_amount: accessory.scheduled_coverage_amount,
+            mounted_on: accessory.mounted_on,
         }
     }
 }

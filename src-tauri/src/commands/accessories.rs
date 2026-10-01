@@ -11,8 +11,9 @@ use crate::commands::firearms::{DeleteResult, DisposeFirearmInput, HistoryChoice
 use crate::models::accessory::{Accessory, AccessoryInput, validate_accessory_input};
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::FirearmStatus;
-use crate::models::record::{MountDetail, RecordLabel};
+use crate::models::record::{MountDetail, RecordLabel, RecordRef};
 use crate::services::insurance_status::InsuranceWarning;
+use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
 
 /// Input for `reverse_accessory_disposition`. An accessory has no nickname
@@ -24,7 +25,7 @@ pub struct ReverseAccessoryDispositionInput {
 }
 
 /// `get_accessory`'s output: the record, its retained dispositions (newest
-/// first) and what it is mounted on and carries (empty until User Story 2).
+/// first) and what it is mounted on and carries (FR-013).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessoryDetail {
@@ -61,7 +62,7 @@ pub struct AccessorySummary {
     pub insurance_warning: InsuranceWarning,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
-    /// The direct host only (FR-013); `None` until User Story 2.
+    /// The direct host only (FR-013).
     pub mounted_on: Option<RecordLabel>,
 }
 
@@ -96,9 +97,12 @@ pub mod ops {
         .map_err(CommandError::from_db)
     }
 
-    /// The record as stored, without its history or mounts.
+    /// The record as stored, with its direct host but without its history.
     fn load_accessory(conn: &Connection, id: i64) -> Result<Accessory, CommandError> {
-        find_accessory(conn, id)?.ok_or_else(|| CommandError::not_found(NOT_FOUND))
+        let mut accessory =
+            find_accessory(conn, id)?.ok_or_else(|| CommandError::not_found(NOT_FOUND))?;
+        accessory.mounted_on = mounts::host_of_record(conn, RecordRef::Accessory(id))?;
+        Ok(accessory)
     }
 
     /// The validation of `validate_accessory_input` plus the one rule that
@@ -134,81 +138,23 @@ pub mod ops {
     ) -> Result<Accessory, CommandError> {
         let input = &input.normalized();
         validate(conn, input, None)?;
-        conn.execute(
-            "INSERT INTO accessories (
-                uid, accessory_kind_id, make, model, serial_number, caliber, cartridge, notes,
-                status, estimated_value, acquisition_source, acquisition_date, acquisition_price,
-                disposition_type, disposition_recipient, disposition_date, disposition_price,
-                insurance_policy_id, scheduled_coverage_amount, created_at, updated_at
-            ) VALUES (
-                :uid, :accessory_kind_id, :make, :model, :serial_number, :caliber, :cartridge, :notes,
-                :status, :estimated_value, :acquisition_source, :acquisition_date, :acquisition_price,
-                :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
-                :insurance_policy_id, :scheduled_coverage_amount, datetime('now'), datetime('now')
-            )",
-            named_params! {
-                // FR-019: set here and never in an UPDATE.
-                ":uid": crate::services::record_id::generate(),
-                ":accessory_kind_id": input.accessory_kind_id,
-                ":make": input.make,
-                ":model": input.model,
-                ":serial_number": input.serial_number,
-                ":caliber": input.caliber,
-                ":cartridge": input.cartridge,
-                ":notes": input.notes,
-                ":status": input.status,
-                ":estimated_value": input.estimated_value,
-                ":acquisition_source": input.acquisition_source,
-                ":acquisition_date": input.acquisition_date,
-                ":acquisition_price": input.acquisition_price,
-                ":disposition_type": input.disposition_type,
-                ":disposition_recipient": input.disposition_recipient,
-                ":disposition_date": input.disposition_date,
-                ":disposition_price": input.disposition_price,
-                ":insurance_policy_id": input.insurance_policy_id,
-                ":scheduled_coverage_amount": input.scheduled_coverage_amount,
-            },
-        )
-        .map_err(CommandError::from_db)?;
-
-        load_accessory(conn, conn.last_insert_rowid())
-    }
-
-    pub fn update_accessory(
-        conn: &Connection,
-        id: i64,
-        input: &AccessoryInput,
-    ) -> Result<Accessory, CommandError> {
-        let input = &input.normalized();
-        // A missing record is reported by the update below, after the
-        // checks, as for a firearm.
-        let stored = find_accessory(conn, id)?;
-        validate(conn, input, stored.as_ref())?;
-        let updated = conn
-            .execute(
-                "UPDATE accessories SET
-                    accessory_kind_id = :accessory_kind_id,
-                    make = :make,
-                    model = :model,
-                    serial_number = :serial_number,
-                    caliber = :caliber,
-                    cartridge = :cartridge,
-                    notes = :notes,
-                    status = :status,
-                    estimated_value = :estimated_value,
-                    acquisition_source = :acquisition_source,
-                    acquisition_date = :acquisition_date,
-                    acquisition_price = :acquisition_price,
-                    disposition_type = :disposition_type,
-                    disposition_recipient = :disposition_recipient,
-                    disposition_date = :disposition_date,
-                    disposition_price = :disposition_price,
-                    insurance_policy_id = :insurance_policy_id,
-                    scheduled_coverage_amount = :scheduled_coverage_amount,
-                    updated_at = datetime('now')
-                WHERE id = :id",
+        // The row and its mount stand or fall together (research.md §8).
+        let id = mounts::atomically(conn, || {
+            conn.execute(
+                "INSERT INTO accessories (
+                    uid, accessory_kind_id, make, model, serial_number, caliber, cartridge, notes,
+                    status, estimated_value, acquisition_source, acquisition_date, acquisition_price,
+                    disposition_type, disposition_recipient, disposition_date, disposition_price,
+                    insurance_policy_id, scheduled_coverage_amount, created_at, updated_at
+                ) VALUES (
+                    :uid, :accessory_kind_id, :make, :model, :serial_number, :caliber, :cartridge, :notes,
+                    :status, :estimated_value, :acquisition_source, :acquisition_date, :acquisition_price,
+                    :disposition_type, :disposition_recipient, :disposition_date, :disposition_price,
+                    :insurance_policy_id, :scheduled_coverage_amount, datetime('now'), datetime('now')
+                )",
                 named_params! {
-                    ":id": id,
+                    // FR-019: set here and never in an UPDATE.
+                    ":uid": crate::services::record_id::generate(),
                     ":accessory_kind_id": input.accessory_kind_id,
                     ":make": input.make,
                     ":model": input.model,
@@ -230,10 +176,96 @@ pub mod ops {
                 },
             )
             .map_err(CommandError::from_db)?;
+            let id = conn.last_insert_rowid();
+            mounts::save_form_mount(
+                conn,
+                RecordRef::Accessory(id),
+                input.status,
+                input.mounted_on,
+            )?;
+            Ok(id)
+        })?;
 
-        if updated == 0 {
-            return Err(CommandError::not_found(NOT_FOUND));
-        }
+        load_accessory(conn, id)
+    }
+
+    pub fn update_accessory(
+        conn: &Connection,
+        id: i64,
+        input: &AccessoryInput,
+    ) -> Result<Accessory, CommandError> {
+        let input = &input.normalized();
+        // A missing record is reported by the update below, after the
+        // checks, as for a firearm.
+        let stored = find_accessory(conn, id)?;
+        validate(conn, input, stored.as_ref())?;
+        // The row and its mount stand or fall together (research.md §8).
+        mounts::atomically(conn, || {
+            // A disposed record is in no mount (FR-014), and the status
+            // triggers refuse the save while it is.
+            if input.status == FirearmStatus::Disposed {
+                mounts::clear_mounts(conn, RecordRef::Accessory(id))?;
+            }
+            let updated = conn
+                .execute(
+                    "UPDATE accessories SET
+                        accessory_kind_id = :accessory_kind_id,
+                        make = :make,
+                        model = :model,
+                        serial_number = :serial_number,
+                        caliber = :caliber,
+                        cartridge = :cartridge,
+                        notes = :notes,
+                        status = :status,
+                        estimated_value = :estimated_value,
+                        acquisition_source = :acquisition_source,
+                        acquisition_date = :acquisition_date,
+                        acquisition_price = :acquisition_price,
+                        disposition_type = :disposition_type,
+                        disposition_recipient = :disposition_recipient,
+                        disposition_date = :disposition_date,
+                        disposition_price = :disposition_price,
+                        insurance_policy_id = :insurance_policy_id,
+                        scheduled_coverage_amount = :scheduled_coverage_amount,
+                        updated_at = datetime('now')
+                    WHERE id = :id",
+                    named_params! {
+                        ":id": id,
+                        ":accessory_kind_id": input.accessory_kind_id,
+                        ":make": input.make,
+                        ":model": input.model,
+                        ":serial_number": input.serial_number,
+                        ":caliber": input.caliber,
+                        ":cartridge": input.cartridge,
+                        ":notes": input.notes,
+                        ":status": input.status,
+                        ":estimated_value": input.estimated_value,
+                        ":acquisition_source": input.acquisition_source,
+                        ":acquisition_date": input.acquisition_date,
+                        ":acquisition_price": input.acquisition_price,
+                        ":disposition_type": input.disposition_type,
+                        ":disposition_recipient": input.disposition_recipient,
+                        ":disposition_date": input.disposition_date,
+                        ":disposition_price": input.disposition_price,
+                        ":insurance_policy_id": input.insurance_policy_id,
+                        ":scheduled_coverage_amount": input.scheduled_coverage_amount,
+                    },
+                )
+                .map_err(CommandError::from_db)?;
+
+            if updated == 0 {
+                return Err(CommandError::not_found(NOT_FOUND));
+            }
+            if input.status == FirearmStatus::Active {
+                mounts::save_form_mount(
+                    conn,
+                    RecordRef::Accessory(id),
+                    input.status,
+                    input.mounted_on,
+                )?;
+            }
+            Ok(())
+        })?;
         load_accessory(conn, id)
     }
 
@@ -250,8 +282,8 @@ pub mod ops {
             .map_err(CommandError::from_db)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(CommandError::from_db)?;
-        // The mounts are User Story 2's.
-        Ok(AccessoryDetail { accessory, disposition_history, mount: MountDetail::default() })
+        let mount = mounts::detail(conn, RecordRef::Accessory(id))?;
+        Ok(AccessoryDetail { accessory, disposition_history, mount })
     }
 
     /// The same checks and result as saving the accessory with `status:
@@ -379,7 +411,7 @@ pub mod ops {
                  ORDER BY a.make, a.model, k.sort_order, a.id",
             )
             .map_err(CommandError::from_db)?;
-        let accessories = stmt
+        let mut accessories = stmt
             .query_map(named_params! { ":include_disposed": input.include_disposed }, |row| {
                 let estimated_value = row.get(11)?;
                 let insurance_policy_id = row.get(12)?;
@@ -411,6 +443,20 @@ pub mod ops {
             .map_err(CommandError::from_db)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(CommandError::from_db)?;
+
+        // FR-013: the direct host's label, from the whole graph once and one
+        // label query per table (research.md §5, §22).
+        let graph = MountGraph::load(conn)?;
+        let hosts: Vec<RecordRef> = accessories
+            .iter()
+            .filter_map(|summary| graph.host_of(RecordRef::Accessory(summary.id)))
+            .collect();
+        let host_labels = mounts::labels(conn, &hosts)?;
+        for summary in &mut accessories {
+            summary.mounted_on = graph
+                .host_of(RecordRef::Accessory(summary.id))
+                .and_then(|host| host_labels.get(&host).cloned());
+        }
 
         Ok(ListAccessoriesOutput {
             groups: vec![AccessoryGroup { key: "All".to_string(), host: None, accessories }],
