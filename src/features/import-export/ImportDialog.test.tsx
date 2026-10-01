@@ -195,6 +195,27 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
     ]);
   });
 
+  it('labels a snapped registration form and "Registered to" by name (US4)', async () => {
+    const user = await importWith({
+      snappedValues: [
+        { row: 2, field: "registrationForm", sheetValue: "FORM 4", recordedValue: "Form 4" },
+        { row: 3, field: "registeredTo", sheetValue: "jane doe", recordedValue: "Jane Doe" },
+      ],
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /Spellings matched to existing values \(2\)/ }),
+    );
+
+    const rows = screen
+      .getAllByRole("listitem")
+      .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
+    expect(rows).toEqual([
+      ["Row 2", "Form: “FORM 4” → “Form 4”"],
+      ["Row 3", "Registered to: “jane doe” → “Jane Doe”"],
+    ]);
+  });
+
   it("lists the spellings matched to existing values", async () => {
     const user = await importWith({
       snappedValues: [

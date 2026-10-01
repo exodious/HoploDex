@@ -89,6 +89,8 @@ on every keystroke.
 
 ## 3. Cartridge and caliber (US1, FR-003 to FR-006)
 
+_Amended by [spec 005](../../005-regulated-item-types/contracts/ui-registration.md): a type whose `caliberFromCartridge` is false (Suppressor) never derives its caliber, on the form or on import: a settled cartridge fills, guesses, suggests and prompts nothing, and its Cartridge is labelled "Rated cartridge" (005 research.md §15)._
+
 **Layout**: in the **Identification** section, after **Type** and **Action**
 (§4), one `hd-form-grid--2` row: **Cartridge** (left, optional) then
 **Caliber** (right, required), so a derived caliber fills in to the right of

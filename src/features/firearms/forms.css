@@ -113,6 +113,12 @@
   width: calc((100% - var(--space-4)) / 2);
 }
 
+/* specs/005-regulated-item-types: inside the Registration disclosure, Form
+   and Approved take a third of the row each and Registered to spans it. */
+.hd-form-grid--registration {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 /* specs/002-firearm-identification: inside the "Origin and year of
    manufacture" disclosure, the origin control spans the row and its
    conditional fields (country, importer) sit two to a row below it. */
@@ -166,6 +172,10 @@
   margin-bottom: var(--space-3);
 }
 
+.hd-origin-guide__part {
+  margin-top: var(--space-6);
+}
+
 .hd-origin-guide__list {
   display: flex;
   flex-direction: column;
@@ -201,6 +211,7 @@
 @media (max-width: 700px) {
   .hd-form-grid--2,
   .hd-form-grid--3,
+  .hd-form-grid--registration,
   .hd-form-grid--origin {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -215,6 +226,10 @@
 
   .hd-form-span-3 {
     grid-column: span 2;
+  }
+
+  .hd-form-grid--registration > .hd-form-span-3 {
+    grid-column: 1 / -1;
   }
 
   .hd-field--quarter .hd-input,

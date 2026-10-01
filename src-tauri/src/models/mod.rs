@@ -42,8 +42,10 @@ pub mod database;
 pub mod disposition_history;
 pub mod document_attachment;
 pub mod firearm;
+pub mod firearm_type;
 pub mod insurance_policy;
 pub mod photo;
+pub mod registration;
 
 pub use document_attachment::DocumentAttachment;
 pub use firearm::{DispositionType, Firearm, FirearmInput, FirearmStatus};

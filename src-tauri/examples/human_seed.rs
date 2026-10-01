@@ -67,6 +67,14 @@ const HANDGUN: i64 = 1;
 const RIFLE: i64 = 2;
 const SHOTGUN: i64 = 3;
 const OTHER: i64 = 4;
+const SUPPRESSOR: i64 = 5;
+// Ids of the registration classifications seeded by 0003_seed_firearm_types.
+const REGISTERED_SUPPRESSOR: i64 = 1;
+const REGISTERED_SBR: i64 = 2;
+const REGISTERED_SBS: i64 = 3;
+const REGISTERED_MACHINE_GUN: i64 = 5;
+/// 005 US3: "Automatic or select-fire", unrelated to any classification.
+const ACTION_AUTOMATIC: i64 = 13;
 
 // Ids seeded by migration 0003_seed_firearm_types (specs/004-cartridges-action-types FR-018).
 const SEMI_AUTOMATIC: i64 = 1;
@@ -386,6 +394,10 @@ fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> F
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         cartridge: None,
         action_type_id: None,
     }
@@ -936,6 +948,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         original_make: text("Glock"),
         original_model: text("19"),
         original_serial_number: text("AWC442"),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..base("Ridgeline Arms", "Imported Glock 19", "RA-70019", "9mm", HANDGUN)
     });
 
@@ -1006,6 +1022,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         original_make: text("Fabrique Nationale"),
         original_model: text("High Power"),
         original_serial_number: text("FN-70044"),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power A", "RA-90001", "9mm", HANDGUN)
     };
     must(firearm_ops::create_firearm(conn, &original_marks_first, false), "original-marks demo 1");
@@ -1021,6 +1041,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         original_make: text("Fabrique Nationale"),
         original_model: text("High Power"),
         original_serial_number: text("FN-70044"),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power B", "RA-90002", "9mm", HANDGUN)
     };
     must(firearm_ops::create_firearm(conn, &original_marks_second, true), "original-marks demo 2");
@@ -1087,6 +1111,105 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2020-08-14"),
         cartridge: text(".38 Special"),
         ..base("S&W", "Model 60", "S&W-60-1", ".357", HANDGUN)
+    });
+    // specs/005-regulated-item-types US1: a Suppressor has no action, barrel
+    // length or capacity. Its caliber is its bore and its cartridge the most
+    // powerful one it is rated for (research.md §15); this one's rating isn't
+    // known, so it has no cartridge. No classification.
+    add(FirearmInput {
+        estimated_value: Some(450),
+        acquisition_date: text("2024-05-18"),
+        overall_length_hundredths: Some(500),
+        weight_tenths_oz: Some(24),
+        finish: text("Cerakote graphite black"),
+        ..base("SilencerCo", "Sparrow 22", "SP22-20418", ".22", SUPPRESSOR)
+    });
+    // specs/005-regulated-item-types US2: registration is a record of what
+    // the owner enters, independent of the type. A Suppressor registered as
+    // Suppressor on Form 4, with the approved form attached. A .30 bore rated
+    // for .300 Winchester Magnum: neither value comes from the other.
+    let registered_suppressor = add(FirearmInput {
+        estimated_value: Some(1100),
+        cartridge: text(".300 Winchester Magnum"),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2025-09-12"),
+        overall_length_hundredths: Some(690),
+        weight_tenths_oz: Some(115),
+        finish: text("Anodized black"),
+        registration_class_id: Some(REGISTERED_SUPPRESSOR),
+        registration_form: text("Form 4"),
+        registration_approved: text("2026-02-10"),
+        registered_to: text("Smith Family Trust"),
+        ..base("Dead Air", "Sandman-K", "SMK-51207", ".30", SUPPRESSOR)
+    });
+    documents(
+        registered_suppressor,
+        &[(
+            "Form 4 approval.pdf",
+            simple_pdf(&["Approved Form 4", "Registered to Smith Family Trust"]),
+            "application/pdf",
+        )],
+    );
+    // A Rifle made into a short-barreled rifle on a Form 1, to the owner.
+    add(FirearmInput {
+        estimated_value: Some(1300),
+        acquisition_date: text("2024-11-03"),
+        barrel_length_hundredths: Some(1050),
+        registration_class_id: Some(REGISTERED_SBR),
+        registration_form: text("Form 1"),
+        registration_approved: text("2025-06-20"),
+        registered_to: text("Alex Rivera"),
+        ..base("Daniel Defense", "DDM4 V7", "DD-770231", ".223", RIFLE)
+    });
+    // A 10.5 in barrel with no classification: nothing about it is judged.
+    add(FirearmInput {
+        estimated_value: Some(950),
+        acquisition_date: text("2023-07-29"),
+        barrel_length_hundredths: Some(1050),
+        ..base("Ruger", "Mini Thirty", "580-90021", ".30", RIFLE)
+    });
+    // A select-fire rifle registered as a Machine gun (US3): the action and
+    // the classification are entered separately.
+    add(FirearmInput {
+        estimated_value: Some(14500),
+        acquisition_date: text("2025-09-12"),
+        action_type_id: Some(ACTION_AUTOMATIC),
+        registration_class_id: Some(REGISTERED_MACHINE_GUN),
+        registration_form: text("Form 4"),
+        registration_approved: text("2025-12-02"),
+        registered_to: text("Alex Rivera"),
+        ..base("Colt", "M16A1", "CM-3317902", ".223", RIFLE)
+    });
+    // A classification with no approved date yet.
+    add(FirearmInput {
+        estimated_value: Some(700),
+        acquisition_date: text("2026-01-15"),
+        barrel_length_hundredths: Some(1200),
+        registration_class_id: Some(REGISTERED_SBS),
+        registration_form: text("Form 1"),
+        registered_to: text("Alex Rivera"),
+        ..base("Mossberg", "590 Shockwave", "MS-400518", "12 gauge", SHOTGUN)
+    });
+    // Disposed of, yet its registration stays, under a unique name to search.
+    let disposed_registered = add(FirearmInput {
+        estimated_value: Some(800),
+        acquisition_date: text("2022-04-09"),
+        overall_length_hundredths: Some(720),
+        registration_class_id: Some(REGISTERED_SUPPRESSOR),
+        registration_form: text("Form 4"),
+        registration_approved: text("2022-08-01"),
+        registered_to: text("Zephyr Holdings LLC"),
+        ..base("SilencerCo", "Sparrow", "SP-7781", ".22", SUPPRESSOR)
+    });
+    dispose(disposed_registered, DispositionType::Sold, "Kestrel Outfitters", "2025-03-03", 650);
+    // Typed in lower case: the form snaps it to "Smith Family Trust", and
+    // this record shows what is kept when it is not snapped.
+    add(FirearmInput {
+        estimated_value: Some(600),
+        acquisition_date: text("2024-02-20"),
+        registration_class_id: Some(REGISTERED_SUPPRESSOR),
+        registered_to: text("Smith family trust"),
+        ..base("Griffin Armament", "Optimus", "GA-30412", ".22", SUPPRESSOR)
     });
     add(FirearmInput {
         estimated_value: Some(300),
@@ -1258,10 +1381,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     };
     // specs/004-cartridges-action-types FR-023: a sheet exported before
     // `cartridge` and `action_type` existed, so its header lacks both.
-    let write_without_new_columns = |name: &str, rows: Vec<Vec<String>>| {
-        let kept: Vec<usize> = (0..COLUMNS.len())
-            .filter(|&index| !matches!(COLUMNS[index], "cartridge" | "action_type"))
-            .collect();
+    let write_without = |name: &str, dropped: &[&str], rows: Vec<Vec<String>>| {
+        let kept: Vec<usize> =
+            (0..COLUMNS.len()).filter(|&index| !dropped.contains(&COLUMNS[index])).collect();
         let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
         writer.write_record(kept.iter().map(|&index| COLUMNS[index])).expect("write the header");
         for record in rows {
@@ -1634,8 +1756,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
 
     // A sheet exported before this feature: no `cartridge` or `action_type`
     // column, and every later column still lands in its own field.
-    write_without_new_columns(
+    write_without(
         "import-before-cartridges.csv",
+        &["cartridge", "action_type"],
         vec![row(&[
             ("make", "Ruger"),
             ("model", "10/22"),
@@ -1644,6 +1767,128 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
             ("caliber", ".22 LR"),
             ("firearm_type", "Rifle"),
             ("notes", "From a sheet exported before cartridges and actions were recorded."),
+        ])],
+    );
+
+    // specs/005-regulated-item-types US4: a round-trip sheet, as export
+    // writes it: a suppressor and two registered firearms, one of them with a
+    // same-notation variant of a form on record ("FORM 4") that import
+    // matches and lists under "Spellings matched to existing values".
+    write(
+        "import-registrations.csv",
+        vec![
+            row(&[
+                ("make", "Dead Air"),
+                ("model", "Sandman-S"),
+                ("serial_number", "R-001"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ".30"),
+                ("firearm_type", "Suppressor"),
+                ("registered_as", "Suppressor"),
+                ("registration_form", "Form 4"),
+                ("registration_approved", "2024-03-05"),
+                ("registered_to", "Sean Example"),
+            ]),
+            row(&[
+                ("make", "Ruger"),
+                ("model", "Mini-14 Tactical"),
+                ("serial_number", "R-002"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "5.56mm"),
+                ("firearm_type", "Rifle"),
+                ("registered_as", "short-barreled rifle"),
+                ("registration_form", "FORM 1"),
+                ("registered_to", "Example Arms Trust"),
+            ]),
+            row(&[
+                ("make", "Colt"),
+                ("model", "M16A1"),
+                ("serial_number", "R-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "5.56mm"),
+                ("action_type", "Automatic or select-fire"),
+                ("firearm_type", "Rifle"),
+                ("registered_as", "Machine gun"),
+                ("registration_form", "Form 4"),
+                ("registration_approved", "1985-06-01"),
+            ]),
+        ],
+    );
+
+    // Row errors: an unknown classification, details with no classification,
+    // a future approved date, a Suppressor row with an action, a barrel
+    // length and a capacity (all three reported on the one row), and a
+    // Suppressor row with a rated cartridge and a blank caliber, which isn't
+    // worked out from the cartridge (research.md §15).
+    write(
+        "import-registration-errors.csv",
+        vec![
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Short Barrel"),
+                ("serial_number", "E-001"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "12 gauge"),
+                ("firearm_type", "Shotgun"),
+                ("registered_as", "Short barrel shotgun"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "No Classification"),
+                ("serial_number", "E-002"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("registration_form", "Form 4"),
+                ("registered_to", "Sean Example"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Future Approval"),
+                ("serial_number", "E-003"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("firearm_type", "Handgun"),
+                ("registered_as", "Suppressor"),
+                ("registration_approved", "2999-01-01"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Silencer With Action"),
+                ("serial_number", "E-004"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", "9mm"),
+                ("action_type", "Semi-automatic"),
+                ("barrel_length_in", "4"),
+                ("capacity", "10"),
+                ("firearm_type", "Suppressor"),
+                ("registered_as", "Suppressor"),
+            ]),
+            row(&[
+                ("make", "Wildcat Arms"),
+                ("model", "Rated Only"),
+                ("serial_number", "E-005"),
+                ("no_serial_attested", "FALSE"),
+                ("caliber", ""),
+                ("cartridge", ".300 Winchester Magnum"),
+                ("firearm_type", "Suppressor"),
+            ]),
+        ],
+    );
+
+    // A sheet exported before this feature: none of the four registration
+    // columns, and the row imports with no classification.
+    write_without(
+        "import-before-registrations.csv",
+        &["registered_as", "registration_form", "registration_approved", "registered_to"],
+        vec![row(&[
+            ("make", "Savage"),
+            ("model", "Model 110"),
+            ("serial_number", "P-001"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".308"),
+            ("firearm_type", "Rifle"),
+            ("notes", "From a sheet exported before registrations were recorded."),
         ])],
     );
 

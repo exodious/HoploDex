@@ -2,6 +2,8 @@
 -- "Virtual table: firearms_fts" section (FR-013, US2 Scenarios 3-4).
 -- specs/004-cartridges-action-types FR-008/FR-020 adds the cartridge and the
 -- action's name, looked up the way the type's name is.
+-- specs/005-regulated-item-types FR-017 adds the classification's name and the
+-- registration form and "registered to" text (not the approved date).
 --
 -- The trigram tokenizer matches any run of three or more characters inside a
 -- value, so "365" finds the model "P365 XL" and "1911" finds serial "CO1911";
@@ -27,6 +29,9 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
     original_serial_number,
     cartridge,
     action_type_name,
+    registered_as,
+    registration_form,
+    registered_to,
     content = 'firearms',
     content_rowid = 'id',
     tokenize = 'trigram remove_diacritics 1'
@@ -41,7 +46,7 @@ BEGIN
     INSERT INTO firearms_fts (
         rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
         origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
-        cartridge, action_type_name
+        cartridge, action_type_name, registered_as, registration_form, registered_to
     )
     VALUES (
         new.id,
@@ -62,7 +67,10 @@ BEGIN
         new.original_model,
         new.original_serial_number,
         new.cartridge,
-        (SELECT name FROM action_types WHERE id = new.action_type_id)
+        (SELECT name FROM action_types WHERE id = new.action_type_id),
+        (SELECT name FROM registration_classes WHERE id = new.registration_class_id),
+        new.registration_form,
+        new.registered_to
     );
 END;
 
@@ -71,7 +79,7 @@ BEGIN
     INSERT INTO firearms_fts (
         firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
         origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
-        cartridge, action_type_name
+        cartridge, action_type_name, registered_as, registration_form, registered_to
     )
     VALUES (
         'delete',
@@ -93,7 +101,10 @@ BEGIN
         old.original_model,
         old.original_serial_number,
         old.cartridge,
-        (SELECT name FROM action_types WHERE id = old.action_type_id)
+        (SELECT name FROM action_types WHERE id = old.action_type_id),
+        (SELECT name FROM registration_classes WHERE id = old.registration_class_id),
+        old.registration_form,
+        old.registered_to
     );
 END;
 
@@ -102,7 +113,7 @@ BEGIN
     INSERT INTO firearms_fts (
         firearms_fts, rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
         origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
-        cartridge, action_type_name
+        cartridge, action_type_name, registered_as, registration_form, registered_to
     )
     VALUES (
         'delete',
@@ -124,12 +135,15 @@ BEGIN
         old.original_model,
         old.original_serial_number,
         old.cartridge,
-        (SELECT name FROM action_types WHERE id = old.action_type_id)
+        (SELECT name FROM action_types WHERE id = old.action_type_id),
+        (SELECT name FROM registration_classes WHERE id = old.registration_class_id),
+        old.registration_form,
+        old.registered_to
     );
     INSERT INTO firearms_fts (
         rowid, make, model, nickname, serial_number, caliber, notes, accessories, finish, firearm_type_name,
         origin, year_of_manufacture, country_of_manufacture, importer_name, original_make, original_model, original_serial_number,
-        cartridge, action_type_name
+        cartridge, action_type_name, registered_as, registration_form, registered_to
     )
     VALUES (
         new.id,
@@ -150,6 +164,9 @@ BEGIN
         new.original_model,
         new.original_serial_number,
         new.cartridge,
-        (SELECT name FROM action_types WHERE id = new.action_type_id)
+        (SELECT name FROM action_types WHERE id = new.action_type_id),
+        (SELECT name FROM registration_classes WHERE id = new.registration_class_id),
+        new.registration_form,
+        new.registered_to
     );
 END;

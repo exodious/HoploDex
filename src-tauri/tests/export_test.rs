@@ -47,6 +47,10 @@ fn firearm_with_photo(make: &str) -> FirearmInput {
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         cartridge: None,
         action_type_id: None,
     }
@@ -183,6 +187,10 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
             "original_make",
             "original_model",
             "original_serial_number",
+            "registered_as",
+            "registration_form",
+            "registration_approved",
+            "registered_to",
             "photo_filenames"
         ]
     );
@@ -215,7 +223,7 @@ fn blank_physical_details_are_exported_as_blank_cells() {
 }
 
 #[test]
-fn the_export_header_is_the_36_columns_with_cartridge_and_action_type_after_caliber() {
+fn the_export_header_is_the_40_columns_with_cartridge_and_action_type_after_caliber() {
     let db = TestDb::new();
     let dest = TempDir::new().unwrap();
     let created =
@@ -233,9 +241,59 @@ fn the_export_header_is_the_36_columns_with_cartridge_and_action_type_after_cali
     let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
     let headers: Vec<_> = reader.headers().unwrap().iter().map(str::to_owned).collect();
     assert_eq!(headers, hoplodex_lib::services::spreadsheet::COLUMNS);
-    assert_eq!(headers.len(), 36);
+    assert_eq!(headers.len(), 40);
     let caliber_at = headers.iter().position(|h| h == "caliber").unwrap();
     assert_eq!(headers[caliber_at + 1], "cartridge");
     assert_eq!(headers[caliber_at + 2], "action_type");
     assert_eq!(headers[caliber_at + 3], "firearm_type");
+}
+
+/// specs/005-regulated-item-types US4-1: the four registration columns hold
+/// the classification's name, the form, the approved date and "Registered
+/// to"; a Suppressor exports its type with blank action, barrel length and
+/// capacity; a firearm with no classification has all four blank.
+#[test]
+fn export_writes_the_registration_columns_and_blanks_what_a_suppressor_lacks() {
+    let db = TestDb::new();
+    let dest = TempDir::new().unwrap();
+    let suppressor = firearm_ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            firearm_type_id: 5,
+            registration_class_id: Some(1),
+            registration_form: Some("Form 4".into()),
+            registration_approved: Some("2024-03-05".into()),
+            registered_to: Some("Jane Doe".into()),
+            ..firearm_with_photo("Omega")
+        },
+        false,
+    )
+    .unwrap();
+    let plain = firearm_ops::create_firearm(&db.conn, &firearm_with_photo("Glock"), false).unwrap();
+
+    let result = import_export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        "registration",
+        SpreadsheetFormat::Csv,
+        &[suppressor.id, plain.id],
+        &mut |_, _| {},
+    )
+    .unwrap();
+    let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
+    let headers = reader.headers().unwrap().clone();
+    let at = |name: &str| headers.iter().position(|h| h == name).unwrap();
+    let rows: Vec<_> = reader.records().map(Result::unwrap).collect();
+
+    assert_eq!(&rows[0][at("firearm_type")], "Suppressor");
+    assert_eq!(&rows[0][at("registered_as")], "Suppressor");
+    assert_eq!(&rows[0][at("registration_form")], "Form 4");
+    assert_eq!(&rows[0][at("registration_approved")], "2024-03-05");
+    assert_eq!(&rows[0][at("registered_to")], "Jane Doe");
+    for blank in ["action_type", "barrel_length_in", "capacity"] {
+        assert_eq!(&rows[0][at(blank)], "", "{blank}");
+    }
+    for blank in ["registered_as", "registration_form", "registration_approved", "registered_to"] {
+        assert_eq!(&rows[1][at(blank)], "", "{blank}");
+    }
 }

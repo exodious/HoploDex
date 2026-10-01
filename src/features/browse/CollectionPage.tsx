@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Button,
+  Checkbox,
+  Icon,
+  Menu,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  SegmentedControl,
+} from "../../components";
 import { daysUntil } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
@@ -9,7 +18,7 @@ import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
 import { SearchBar } from "./SearchBar";
-import { GROUP_BY_OPTIONS } from "./types";
+import { GROUP_BY_OPTIONS, GROUP_BY_SECTIONS } from "./types";
 import type { BrowseState, FirearmGroup, GroupBy, VisibleGroup } from "./types";
 import "./collection.css";
 
@@ -158,13 +167,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
           onChange={(value) => update({ query: value })}
           busy={fetching}
         />
-        <SegmentedControl<GroupChoice>
-          label="Group by"
-          size="sm"
-          value={browse.groupBy ?? "none"}
-          onChange={(value) => update({ groupBy: value === "none" ? undefined : value })}
-          options={[{ value: "none", label: "None" }, ...GROUP_BY_OPTIONS]}
-        />
+        <GroupByMenu value={browse.groupBy} onChange={(groupBy) => update({ groupBy })} />
         <div className="hd-toolbar__end">
           <Checkbox
             label="Show disposed"
@@ -231,6 +234,48 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
         ))}
       {renderLimit < total && <div ref={sentinelRef} className="hd-browse__more" />}
     </>
+  );
+}
+
+/** The "Group by" control: a button naming the current grouping that opens a
+ * menu of radio items under fixed headings (specs/005-regulated-item-types
+ * contracts/ui-registration.md §6). */
+function GroupByMenu({
+  value,
+  onChange,
+}: {
+  value: GroupBy | undefined;
+  onChange: (value: GroupBy | undefined) => void;
+}) {
+  const chosen: GroupChoice = value ?? "none";
+  const label = GROUP_BY_OPTIONS.find((option) => option.value === value)?.label ?? "None";
+  const choose = (next: string) => onChange(next === "none" ? undefined : (next as GroupBy));
+  return (
+    <Menu
+      trigger={
+        <Button size="sm" className="hd-groupby" aria-label={`Group by, ${label}`}>
+          <span className="hd-groupby__prompt">Group by</span>
+          <span className="hd-groupby__value">{label}</span>
+          <Icon name="chevronDown" size={16} />
+        </Button>
+      }
+    >
+      <MenuRadioGroup value={chosen} onValueChange={choose}>
+        <MenuRadioItem value="none">None</MenuRadioItem>
+      </MenuRadioGroup>
+      {GROUP_BY_SECTIONS.map(({ section, heading }) => (
+        <Fragment key={section}>
+          <MenuSeparator />
+          <MenuRadioGroup value={chosen} onValueChange={choose} label={heading}>
+            {GROUP_BY_OPTIONS.filter((option) => option.section === section).map((option) => (
+              <MenuRadioItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </Fragment>
+      ))}
+    </Menu>
   );
 }
 

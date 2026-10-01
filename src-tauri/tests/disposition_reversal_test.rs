@@ -262,6 +262,10 @@ fn restoring_into_an_original_marks_match_warns_and_only_proceeds_when_confirmed
             original_make: Some("FN".into()),
             original_model: Some("High Power".into()),
             original_serial_number: Some("FN-1".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..firearm("Ridgeline Arms", "Hi-Power", "RA-1")
         },
         false,
@@ -275,6 +279,10 @@ fn restoring_into_an_original_marks_match_warns_and_only_proceeds_when_confirmed
             original_make: Some("FN".into()),
             original_model: Some("High Power".into()),
             original_serial_number: Some("FN-1".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..firearm("Century Arms", "Clone", "CA-1")
         },
         false,
@@ -311,4 +319,37 @@ fn the_history_choice_is_required_on_the_wire() {
     let discard: ReverseDispositionInput =
         serde_json::from_str(r#"{"history":"discard","nickname":null}"#).unwrap();
     assert!(matches!(discard.history, HistoryChoice::Discard));
+}
+
+/// specs/005-regulated-item-types FR-013: disposing of a registered firearm
+/// and reversing it leaves the classification and details as they were.
+#[test]
+fn registration_is_unchanged_after_disposal_and_after_reversal() {
+    let db = TestDb::new();
+    let created = ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            registration_class_id: Some(1),
+            registration_form: Some("Form 4".into()),
+            registration_approved: Some("2026-02-10".into()),
+            registered_to: Some("Smith Family Trust".into()),
+            ..firearm("SilencerCo", "Omega", "REG1")
+        },
+        false,
+    )
+    .unwrap();
+    let registration = |f: &hoplodex_lib::models::Firearm| {
+        (
+            f.registration_class_id,
+            f.registration_form.clone(),
+            f.registration_approved.clone(),
+            f.registered_to.clone(),
+        )
+    };
+    let before = registration(&created);
+    dispose(&db, created.id, "Jane Doe", "2026-03-01");
+    assert_eq!(registration(&ops::get_firearm(&db.conn, created.id).unwrap()), before);
+    let restored =
+        ops::reverse_disposition(&db.conn, created.id, &reverse(HistoryChoice::Keep)).unwrap();
+    assert_eq!(registration(&restored), before);
 }

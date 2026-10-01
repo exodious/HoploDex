@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
+import * as browseService from "../browse/browseService";
 import type { CollectionState } from "../app/collectionStore";
 import { ExportDialog } from "./ExportDialog";
 import * as importExportService from "./importExportService";
@@ -9,14 +10,17 @@ import * as importExportService from "./importExportService";
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
+vi.mock("../browse/browseService");
 
-const collection = { firearms: [] } as unknown as CollectionState;
 const browse = { query: "", groupBy: undefined, includeDisposed: false, view: "list" } as const;
 
-function renderDialog() {
+function renderDialog(
+  firearms: { registeredAs: string | null }[] = [],
+  browseState: Parameters<typeof ExportDialog>[0]["browse"] = browse,
+) {
   render(
-    <CollectionContext.Provider value={collection}>
-      <ExportDialog open onOpenChange={vi.fn()} browse={browse} />
+    <CollectionContext.Provider value={{ firearms } as unknown as CollectionState}>
+      <ExportDialog open onOpenChange={vi.fn()} browse={browseState} />
     </CollectionContext.Provider>,
   );
 }
@@ -75,5 +79,50 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
     await user.type(folder, "/tmp/b");
     expect(screen.getByRole("note")).toHaveTextContent("/tmp/b");
     expect(screen.getByRole("note")).not.toHaveTextContent("/tmp/a");
+  });
+});
+
+describe("ExportDialog registration disclosure (FR-020, US4-2)", () => {
+  const PLAIN = "including serial numbers and values.";
+  const WITH_REGISTRATION = "including serial numbers, values and registration details.";
+  const filtered = { ...browse, query: "glock" };
+
+  function listing(...registeredAs: (string | null)[]) {
+    vi.mocked(browseService.listFirearms).mockResolvedValue({
+      groups: [{ firearms: registeredAs.map((r) => ({ registeredAs: r })) }],
+    } as unknown as Awaited<ReturnType<typeof browseService.listFirearms>>);
+  }
+
+  it("ends with serial numbers and values when no firearm is registered", () => {
+    renderDialog([{ registeredAs: null }]);
+    expect(screen.getByRole("note")).toHaveTextContent(PLAIN);
+  });
+
+  it("adds registration details when any firearm in the whole collection is registered", () => {
+    renderDialog([{ registeredAs: null }, { registeredAs: "Suppressor" }]);
+    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+  });
+
+  it("follows the scope: the current results decide it once they are chosen", async () => {
+    const user = userEvent.setup();
+    listing(null);
+    renderDialog([{ registeredAs: "Suppressor" }], filtered);
+    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+
+    await user.click(await screen.findByRole("radio", { name: /Current results/ }));
+    expect(screen.getByRole("note")).toHaveTextContent(PLAIN);
+
+    await user.click(screen.getByRole("radio", { name: /Entire collection/ }));
+    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+  });
+
+  it("adds registration details when the current results hold a registered firearm", async () => {
+    const user = userEvent.setup();
+    listing(null, "Machine gun");
+    renderDialog([{ registeredAs: null }], filtered);
+    expect(screen.getByRole("note")).toHaveTextContent(PLAIN);
+
+    await user.click(await screen.findByRole("radio", { name: /Current results/ }));
+    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
   });
 });

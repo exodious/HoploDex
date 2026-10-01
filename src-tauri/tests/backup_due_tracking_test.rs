@@ -70,7 +70,7 @@ fn every_table_is_housekeeping_or_tracks_changes() {
 const STEPS: &[(&str, &str)] = &[
     (
         "firearm_types insert",
-        "INSERT INTO firearm_types (id, name, generic_thumbnail_key) VALUES (9, 'Cannon', 'other')",
+        "INSERT INTO firearm_types (id, name, generic_thumbnail_key, sort_order) VALUES (9, 'Cannon', 'other', 9)",
     ),
     ("firearm_types update", "UPDATE firearm_types SET name = 'Big cannon' WHERE id = 9"),
     (
@@ -88,6 +88,15 @@ const STEPS: &[(&str, &str)] = &[
     ),
     ("firearm_type_actions delete", "DELETE FROM firearm_type_actions WHERE firearm_type_id = 9"),
     ("action_types delete", "DELETE FROM action_types WHERE id = 99"),
+    (
+        "registration_classes insert",
+        "INSERT INTO registration_classes (id, name, sort_order) VALUES (99, 'Test class', 99)",
+    ),
+    (
+        "registration_classes update",
+        "UPDATE registration_classes SET name = 'Other test class' WHERE id = 99",
+    ),
+    ("registration_classes delete", "DELETE FROM registration_classes WHERE id = 99"),
     (
         "insurance_policies insert",
         "INSERT INTO insurance_policies (id, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')",

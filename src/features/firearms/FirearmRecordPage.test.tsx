@@ -9,6 +9,7 @@ import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectio
 import { FirearmRecordPage } from "./FirearmRecordPage";
 import { ORIGIN_OPTIONS } from "./types";
 import type { FirearmDetail, Origin } from "./types";
+import { FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
 
 const getFirearm = vi.fn();
 
@@ -56,6 +57,10 @@ const firearm: FirearmDetail = {
   originalMake: null,
   originalModel: null,
   originalSerialNumber: null,
+  registrationClassId: null,
+  registrationForm: null,
+  registrationApproved: null,
+  registeredTo: null,
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
@@ -75,6 +80,10 @@ const collection: CollectionState = {
     allowedByFirearmType: {},
   },
   actionTypesFailed: false,
+  firearmTypes: { types: FIREARM_TYPES },
+  firearmTypesFailed: false,
+  registrationClasses: { classes: REGISTRATION_CLASSES },
+  registrationClassesFailed: false,
   loaded: true,
   error: null,
   revision: 1,
@@ -445,5 +454,156 @@ describe("FirearmRecordPage cartridge", () => {
     const cells = await titleCells();
     const acquired = cells.find(([label]) => label === "Acquired")![1];
     expect(cells).toContainEqual(["Cartridge", acquired]);
+  });
+});
+
+// specs/005-regulated-item-types US1-3 (contracts/ui-registration.md §4): a
+// Suppressor's cartridge is its rating and its caliber its bore, and it has no
+// action.
+describe("FirearmRecordPage title block by type", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("labels a Suppressor's cartridge 'Rated cartridge', keeps 'Caliber', and lists no Action, Barrel length or Capacity", async () => {
+    getFirearm.mockReset().mockResolvedValue({
+      ...firearm,
+      make: "SilencerCo",
+      model: "Omega 300",
+      caliber: ".30",
+      cartridge: ".300 Winchester Magnum",
+      firearmTypeId: 5,
+    });
+    renderPage();
+
+    const rating = await screen.findByText("Rated cartridge");
+    expect(rating.closest("div")).toHaveTextContent(".300 Winchester Magnum");
+    expect(screen.getByText("Caliber").closest("div")).toHaveTextContent(".30");
+    expect(screen.queryByText("Cartridge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Caliber rating")).not.toBeInTheDocument();
+    expect(screen.queryByText("Action")).not.toBeInTheDocument();
+    expect(screen.queryByText("Barrel length")).not.toBeInTheDocument();
+    expect(screen.queryByText("Capacity")).not.toBeInTheDocument();
+  });
+
+  it("leaves a Rifle as it was", async () => {
+    getFirearm.mockReset().mockResolvedValue({ ...firearm, firearmTypeId: 2 });
+    renderPage();
+
+    expect(await screen.findByText("Caliber")).toBeInTheDocument();
+    expect(screen.getByText("Cartridge")).toBeInTheDocument();
+    expect(screen.getByText("Action")).toBeInTheDocument();
+    expect(screen.queryByText("Rated cartridge")).not.toBeInTheDocument();
+  });
+});
+
+// specs/005-regulated-item-types contracts/ui-registration.md §4, FR-018, US2-3, US2-4
+describe("FirearmRecordPage registration (US2)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  const registered = {
+    ...firearm,
+    firearmTypeId: 5,
+    registrationClassId: 1,
+    registrationForm: "Form 4",
+    registrationApproved: "2026-02-10",
+    registeredTo: "Smith Family Trust",
+  };
+
+  it("lists the registration in a panel after the original marks and before the physical details", async () => {
+    getFirearm.mockResolvedValue({
+      ...registered,
+      originalMake: "FN",
+      origin: "imported",
+      finish: "Blued",
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Registration" });
+    const rows = Array.from(panel.querySelectorAll(".hd-facts__row")).map((row) => [
+      row.querySelector("dt")?.textContent,
+      row.querySelector("dd")?.textContent,
+    ]);
+    expect(rows).toEqual([
+      ["Registered as", "Suppressor"],
+      ["Form", "Form 4"],
+      ["Approved", "Feb 10, 2026"],
+      ["Registered to", "Smith Family Trust"],
+    ]);
+
+    const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    const at = (title: string) => titles.indexOf(title);
+    expect(at("Original maker's marks")).toBeLessThan(at("Registration"));
+    expect(at("Registration")).toBeLessThan(at("Physical details"));
+  });
+
+  it("omits the rows that have no value and shows no status row", async () => {
+    getFirearm.mockResolvedValue({
+      ...registered,
+      registrationForm: null,
+      registrationApproved: null,
+    });
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Registration" });
+    expect(within(panel).getByText("Registered as")).toBeInTheDocument();
+    expect(within(panel).getByText("Registered to")).toBeInTheDocument();
+    expect(within(panel).queryByText("Form")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Approved")).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/status/i)).not.toBeInTheDocument();
+  });
+
+  it("shows no panel when no classification is recorded", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderPage();
+
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(screen.queryByRole("region", { name: "Registration" })).not.toBeInTheDocument();
+  });
+
+  it("opens the form on the Registration section from the panel's Edit link", async () => {
+    const user = userEvent.setup();
+    getFirearm.mockResolvedValue(registered);
+    renderPage();
+
+    const panel = await screen.findByRole("region", { name: "Registration" });
+    await user.click(within(panel).getByRole("button", { name: "Edit" }));
+
+    const select = await screen.findByRole("combobox", { name: "Registered as" });
+    await waitFor(() => expect(select).toHaveFocus());
+    expect(screen.getByRole("button", { name: /^Registration/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  // FR-014, SC-002, US2-8: nothing on the page judges legal status.
+  it.each([
+    [
+      "a Rifle with a 10.5 in barrel and no classification",
+      { ...firearm, firearmTypeId: 2, barrelLengthHundredths: 1050 },
+    ],
+    ["a Suppressor with no classification", { ...firearm, firearmTypeId: 5 }],
+    [
+      "a Rifle registered as Machine gun with a Semi-automatic action",
+      { ...firearm, firearmTypeId: 2, actionTypeId: 1, registrationClassId: 5 },
+    ],
+  ])("shows no regulatory text for %s", async (_name, record) => {
+    getFirearm.mockResolvedValue(record);
+    const { container } = render(
+      <CollectionContext.Provider value={collection}>
+        <FirearmRecordPage id={1} />
+      </CollectionContext.Provider>,
+    );
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+
+    const text = (container.textContent ?? "")
+      .replace("Registered as", "")
+      .replace("Registered to", "");
+    expect(text).not.toMatch(/regulat|\bNFA\b|pending|unregistered|compliant|required/i);
+    expect(text).not.toMatch(/register/i);
   });
 });

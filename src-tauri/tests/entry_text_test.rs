@@ -150,8 +150,39 @@ fn make_model_and_caliber_are_required_but_cartridge_is_not() {
 }
 
 #[test]
-fn fields_serialize_in_lower_case() {
+fn fields_serialize_in_camel_case() {
     assert_eq!(serde_json::to_string(&EntryField::Cartridge).unwrap(), "\"cartridge\"");
     assert_eq!(serde_json::from_str::<EntryField>("\"make\"").unwrap(), EntryField::Make);
     assert!(serde_json::from_str::<EntryField>("\"nickname\"").is_err());
+}
+
+#[test]
+fn the_registration_fields_join_the_four() {
+    // specs/005-regulated-item-types research.md §7.
+    assert_eq!(EntryField::ALL.len(), 6);
+    let names: Vec<&str> = EntryField::ALL.iter().map(|f| f.ipc_name()).collect();
+    assert_eq!(
+        names,
+        ["make", "model", "cartridge", "caliber", "registrationForm", "registeredTo"]
+    );
+    assert_eq!(EntryField::RegistrationForm.column(), "registration_form");
+    assert_eq!(EntryField::RegisteredTo.column(), "registered_to");
+    for field in EntryField::ALL {
+        let json = serde_json::to_string(&field).unwrap();
+        assert_eq!(json, format!("\"{}\"", field.ipc_name()));
+        assert_eq!(serde_json::from_str::<EntryField>(&json).unwrap(), field);
+    }
+    assert_eq!(EntryField::RegistrationForm.label(), "Form");
+    assert_eq!(EntryField::RegisteredTo.label(), "Registered to");
+    assert!(!EntryField::RegistrationForm.required());
+    assert!(!EntryField::RegisteredTo.required());
+    assert_eq!(check_entry_text(EntryField::RegistrationForm, "  "), Ok(()));
+    assert_eq!(
+        check_entry_text(EntryField::RegistrationForm, &"F".repeat(101)),
+        Err("Form can be at most 100 characters.".to_owned())
+    );
+    assert_eq!(
+        check_entry_text(EntryField::RegisteredTo, "a\tb"),
+        Err("Registered to can't contain control characters.".to_owned())
+    );
 }

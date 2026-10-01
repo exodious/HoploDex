@@ -280,6 +280,33 @@ export async function choose(text: string) {
   await browser.pause(SETTLE_MS);
 }
 
+/** Regroups the collection through the "Group by" menu (specs/005-regulated-item-types
+ * contracts/ui-registration.md §6): opens it (it opens on pointer down, which a
+ * plain click doesn't send) and picks the radio item named `label`, such as
+ * "Cartridge", "Registered as" or "None". */
+export async function groupBy(label: string) {
+  const trigger = await $('button[aria-haspopup="menu"][aria-label^="Group by"]');
+  await trigger.waitForExist();
+  await browser.execute((element: HTMLElement) => {
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+    );
+  }, trigger);
+  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+  await browser.waitUntil(
+    () =>
+      browser.execute((text: string) => {
+        const found = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(
+          (m) => (m.textContent ?? "").trim() === text,
+        );
+        found?.click();
+        return Boolean(found);
+      }, label),
+    { timeout: 5000, timeoutMsg: `no grouping "${label}"` },
+  );
+  await browser.pause(SETTLE_MS);
+}
+
 /** Toggles a checkbox by its visible label. */
 export async function toggle(label: string) {
   const found = await browser.execute(

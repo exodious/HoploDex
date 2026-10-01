@@ -41,7 +41,7 @@ describe("User Story 1 - Identification (specs/002-firearm-identification)", () 
         " ",
       ),
     ).toContain(
-      "Record what is stamped on the firearm and what your paperwork says. The app does not check it against any rules.",
+      "Record what is stamped on the firearm and what your paperwork says. HoploDex doesn't check it against any rules or decide what is regulated.",
     );
     expect(
       (await $('[role="dialog"]*=How to record where a firearm came from').getText()).replace(

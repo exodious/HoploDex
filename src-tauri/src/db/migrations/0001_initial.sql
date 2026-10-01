@@ -6,7 +6,19 @@
 CREATE TABLE firearm_types (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    generic_thumbnail_key TEXT NOT NULL
+    generic_thumbnail_key TEXT NOT NULL,
+    -- The list's order: Other, the catch-all, comes last.
+    sort_order INTEGER NOT NULL UNIQUE,
+    -- specs/005-regulated-item-types FR-003: 0 = the field doesn't apply to
+    -- this type: the form doesn't offer it and no firearm of the type may
+    -- hold a value.
+    action_type_applies INTEGER NOT NULL DEFAULT 1 CHECK (action_type_applies IN (0, 1)),
+    barrel_length_applies INTEGER NOT NULL DEFAULT 1 CHECK (barrel_length_applies IN (0, 1)),
+    capacity_applies INTEGER NOT NULL DEFAULT 1 CHECK (capacity_applies IN (0, 1)),
+    -- specs/005-regulated-item-types FR-002 (research.md §15): 0 = the
+    -- caliber is never worked out from the cartridge, on the form or on
+    -- import. A Suppressor's caliber is its bore, its cartridge its rating.
+    caliber_from_cartridge INTEGER NOT NULL DEFAULT 1 CHECK (caliber_from_cartridge IN (0, 1))
 );
 
 -- specs/004-cartridges-action-types FR-017/FR-018 (data-model.md's "Entity:
@@ -25,6 +37,18 @@ CREATE TABLE firearm_type_actions (
     action_type_id INTEGER NOT NULL REFERENCES action_types (id),
     PRIMARY KEY (firearm_type_id, action_type_id)
 ) WITHOUT ROWID;
+
+-- specs/005-regulated-item-types FR-007 (data-model.md's "Entity:
+-- Registration Classification"): the fixed list of what a firearm can be
+-- registered as, seeded in 0003 with fixed ids and never changed at run time.
+CREATE TABLE registration_classes (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL UNIQUE,
+    -- FR-007: 0 = no longer offered for new choices. The row is never
+    -- deleted or renamed while a record can hold it.
+    offered INTEGER NOT NULL DEFAULT 1 CHECK (offered IN (0, 1))
+);
 
 CREATE TABLE insurance_policies (
     id INTEGER PRIMARY KEY,
@@ -102,6 +126,14 @@ CREATE TABLE firearms (
     original_make TEXT,
     original_model TEXT,
     original_serial_number TEXT,
+    -- specs/005-regulated-item-types FR-007/FR-009: what the item is
+    -- registered as (NULL = none) and the optional details of that
+    -- registration. The text fields carry no length CHECK: 004's entry rules
+    -- apply on entry only.
+    registration_class_id INTEGER REFERENCES registration_classes (id),
+    registration_form TEXT,
+    registration_approved TEXT,
+    registered_to TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     -- FR-029: a serial number, or the attestation that there is none; never both.
@@ -117,6 +149,11 @@ CREATE TABLE firearms (
         (importer_name IS NULL AND original_make IS NULL
          AND original_model IS NULL AND original_serial_number IS NULL)
         OR origin IN ('imported', 'reimported')
+    ),
+    -- specs/005-regulated-item-types FR-009: no details without a classification.
+    CHECK (
+        registration_class_id IS NOT NULL
+        OR (registration_form IS NULL AND registration_approved IS NULL AND registered_to IS NULL)
     )
 );
 
@@ -125,6 +162,10 @@ CREATE INDEX idx_firearms_caliber ON firearms (caliber);
 -- specs/004-cartridges-action-types research.md §5: covers suggest_entries'
 -- GROUP BY cartridge.
 CREATE INDEX idx_firearms_cartridge ON firearms (cartridge);
+-- specs/005-regulated-item-types research.md §7: cover suggest_entries'
+-- GROUP BY for the two registration text fields.
+CREATE INDEX idx_firearms_registered_to ON firearms (registered_to) WHERE registered_to IS NOT NULL;
+CREATE INDEX idx_firearms_registration_form ON firearms (registration_form) WHERE registration_form IS NOT NULL;
 CREATE INDEX idx_firearms_make ON firearms (make);
 -- specs/004-cartridges-action-types research.md §5 (T043): covers the model
 -- suggestions' GROUP BY make, model, which performance_test.rs holds to 50ms
@@ -223,6 +264,33 @@ BEGIN
           SELECT 1 FROM firearm_type_actions
           WHERE firearm_type_id = NEW.firearm_type_id AND action_type_id = NEW.action_type_id
       );
+END;
+
+-- specs/005-regulated-item-types FR-003/SC-005: the backstop for
+-- `check_fields_apply` in the command layer, which runs first. A firearm may
+-- hold an action, a barrel length or a capacity only when its type's flag
+-- says the field applies. Reaching this means a bug bypassed that layer, so
+-- `from_db` maps the raised ABORT to INTERNAL_ERROR.
+CREATE TRIGGER firearms_fields_apply_insert BEFORE INSERT ON firearms
+WHEN NEW.action_type_id IS NOT NULL OR NEW.barrel_length_hundredths IS NOT NULL OR NEW.capacity IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'a field that does not apply to this firearm type has a value')
+    FROM firearm_types t
+    WHERE t.id = NEW.firearm_type_id
+      AND ((NEW.action_type_id IS NOT NULL AND t.action_type_applies = 0)
+        OR (NEW.barrel_length_hundredths IS NOT NULL AND t.barrel_length_applies = 0)
+        OR (NEW.capacity IS NOT NULL AND t.capacity_applies = 0));
+END;
+
+CREATE TRIGGER firearms_fields_apply_update BEFORE UPDATE OF firearm_type_id, action_type_id, barrel_length_hundredths, capacity ON firearms
+WHEN NEW.action_type_id IS NOT NULL OR NEW.barrel_length_hundredths IS NOT NULL OR NEW.capacity IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'a field that does not apply to this firearm type has a value')
+    FROM firearm_types t
+    WHERE t.id = NEW.firearm_type_id
+      AND ((NEW.action_type_id IS NOT NULL AND t.action_type_applies = 0)
+        OR (NEW.barrel_length_hundredths IS NOT NULL AND t.barrel_length_applies = 0)
+        OR (NEW.capacity IS NOT NULL AND t.capacity_applies = 0));
 END;
 
 -- specs/002-firearm-identification FR-009 (data-model.md's "Indexes and
@@ -404,6 +472,15 @@ CREATE TRIGGER action_types_marks_backup_due_after_update AFTER UPDATE ON action
 BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
 
 CREATE TRIGGER action_types_marks_backup_due_after_delete AFTER DELETE ON action_types
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER registration_classes_marks_backup_due_after_insert AFTER INSERT ON registration_classes
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER registration_classes_marks_backup_due_after_update AFTER UPDATE ON registration_classes
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER registration_classes_marks_backup_due_after_delete AFTER DELETE ON registration_classes
 BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
 
 CREATE TRIGGER firearm_type_actions_marks_backup_due_after_insert AFTER INSERT ON firearm_type_actions

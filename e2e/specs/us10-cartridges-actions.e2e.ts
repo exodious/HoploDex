@@ -8,6 +8,7 @@ import {
   fieldValue,
   fill,
   focusedFieldLabel,
+  groupBy,
 } from "../support/ui";
 import { realClick, realKey } from "../support/realInput";
 
@@ -77,7 +78,7 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
 
   it("finds the firearm under its cartridge when grouped by Cartridge", async () => {
     await back();
-    await choose("Cartridge");
+    await groupBy("Cartridge");
     await $("h2.hd-group__title*=9x19mm Parabellum").waitForExist({ timeout: 5000 });
   });
 

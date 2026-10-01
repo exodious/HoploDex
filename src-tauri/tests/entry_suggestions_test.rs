@@ -504,3 +504,75 @@ fn variants_of_twenty_recorded_values_all_snap_and_other_notations_never_do() {
         assert_eq!(settle(&db2, EntryField::Cartridge, kept).changed_by, None, "{kept:?}");
     }
 }
+
+/// A record registered as a Suppressor with the given form and owner.
+fn registered(db: &TestDb, form: Option<&str>, to: Option<&str>) -> i64 {
+    let count: i64 = db.conn.query_row("SELECT COUNT(*) FROM firearms", [], |r| r.get(0)).unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &FirearmInput {
+            registration_class_id: Some(1),
+            registration_form: form.map(str::to_owned),
+            registered_to: to.map(str::to_owned),
+            ..firearm("Make", "Model", &format!("R-{count}"))
+        },
+        false,
+    )
+    .unwrap()
+    .id
+}
+
+#[test]
+fn form_suggests_the_built_in_names_first_then_those_on_record() {
+    // specs/005-regulated-item-types US2-5, FR-009.
+    let db = TestDb::new();
+    for typed in ["F", "Form"] {
+        let found = suggest(&db, EntryField::RegistrationForm, typed);
+        assert_eq!(values(&found), ["Form 4", "Form 1", "Form 5"], "typed {typed:?}");
+        assert!(found.iter().all(|s| s.in_catalog && s.use_count == 0));
+    }
+    // As everywhere (004 research.md §4), a value in use ranks above one
+    // never used, and the built-in names keep their own order.
+    registered(&db, Some("Form 4 eFiled"), None);
+    registered(&db, Some("eForm 4"), None);
+    let found = suggest(&db, EntryField::RegistrationForm, "Form");
+    assert_eq!(values(&found), ["Form 4 eFiled", "Form 4", "Form 1", "Form 5"]);
+    assert!(!found[0].in_catalog);
+    assert!(found[1..].iter().all(|s| s.in_catalog));
+    // A form on record matches from the start of any of its words.
+    let found = suggest(&db, EntryField::RegistrationForm, "eF");
+    assert_eq!(values(&found)[0], "eForm 4");
+    let settled = settle(&db, EntryField::RegistrationForm, "form 4");
+    assert_eq!(settled.value, "Form 4");
+    assert_eq!(settled.changed_by, Some(hoplodex_lib::services::suggestions::ChangedBy::Catalog));
+    assert!(settled.derived_caliber.is_none());
+}
+
+#[test]
+fn registered_to_offers_only_values_on_record_and_snaps_to_them() {
+    // FR-009, FR-013, SC-007.
+    let db = TestDb::new();
+    assert!(suggest(&db, EntryField::RegisteredTo, "").is_empty());
+    let id = registered(&db, None, Some("Smith Family Trust"));
+    registered(&db, None, Some("Only Deleted LLC"));
+    let found = suggest(&db, EntryField::RegisteredTo, "smith");
+    assert_eq!(values(&found), ["Smith Family Trust"]);
+    assert!(!found[0].in_catalog);
+    assert_eq!(found[0].caliber, None);
+
+    let settled = settle(&db, EntryField::RegisteredTo, "smith family trust");
+    assert_eq!(settled.value, "Smith Family Trust");
+    assert_eq!(settled.changed_by, Some(hoplodex_lib::services::suggestions::ChangedBy::Record));
+    assert!(settled.derived_caliber.is_none());
+
+    let last: i64 = db
+        .conn
+        .query_row("SELECT id FROM firearms WHERE registered_to = 'Only Deleted LLC'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    ops::delete_firearm(&db.conn, last, true).unwrap();
+    assert!(suggest(&db, EntryField::RegisteredTo, "only").is_empty());
+    assert_eq!(values(&suggest(&db, EntryField::RegisteredTo, "")), ["Smith Family Trust"]);
+    let _ = id;
+}

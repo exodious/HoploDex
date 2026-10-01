@@ -43,8 +43,8 @@ export type { DialogProps } from "./Dialog";
 export { LOCK_SHORTCUT, LockContext, useLock } from "./lock";
 export { ConfirmDialog } from "./ConfirmDialog";
 export type { ConfirmDialogProps } from "./ConfirmDialog";
-export { Menu, MenuItem, MenuSeparator } from "./Menu";
-export type { MenuItemProps, MenuProps } from "./Menu";
+export { Menu, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator } from "./Menu";
+export type { MenuItemProps, MenuProps, MenuRadioGroupProps, MenuRadioItemProps } from "./Menu";
 export { Badge, InsuranceWarningBadge } from "./InsuranceWarningBadge";
 export type {
   BadgeProps,

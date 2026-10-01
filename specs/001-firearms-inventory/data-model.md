@@ -10,6 +10,10 @@ real temporary SQLCipher database with this schema applied.
 _Amended by [spec 003](../003-database-protection-management/data-model.md): the database is one passphrase-keyed file per collection, in a folder the user chooses, and there may be several._
 
 ## Entity: FirearmType (lookup)
+_Amended by [spec 005](../005-regulated-item-types/spec.md): adds four registration columns and the `registration_classes` table._
+
+_Amended by [spec 005](../005-regulated-item-types/spec.md): adds the Suppressor row, three flags saying which of action, barrel length and capacity the type has, and a fourth, `caliber_from_cartridge`, saying whether its caliber is worked out from the cartridge (0 for Suppressor)._
+
 
 Structured, extensible list backing FR-012's grouping and the generic
 thumbnail requirement (FR-009).
@@ -273,6 +277,8 @@ replacing one never touches firearm rows.
   (US3 Acceptance Scenario 13). Disposed firearms never count (FR-025).
 
 ## Virtual table: firearms_fts (FTS5)
+_Amended by [spec 005](../005-regulated-item-types/spec.md): the index gains `registered_as`, `registration_form` and `registered_to`._
+
 
 External-content FTS5 table over `Firearm`, kept in sync via `AFTER INSERT
 / UPDATE / DELETE` triggers, indexing: `make`, `model`, `nickname`, `serial_number`,

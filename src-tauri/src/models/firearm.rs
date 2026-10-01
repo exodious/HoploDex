@@ -119,6 +119,15 @@ pub struct Firearm {
     pub original_make: Option<String>,
     pub original_model: Option<String>,
     pub original_serial_number: Option<String>,
+    /// specs/005-regulated-item-types FR-007: a `registration_classes` id;
+    /// `None` = no classification.
+    pub registration_class_id: Option<i64>,
+    /// FR-009: e.g. "Form 4". Only with a classification.
+    pub registration_form: Option<String>,
+    /// FR-009, FR-010: `YYYY-MM-DD`. Only with a classification.
+    pub registration_approved: Option<String>,
+    /// FR-009: e.g. "Smith Family Trust". Only with a classification.
+    pub registered_to: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -163,6 +172,10 @@ impl Firearm {
             original_make: row.get("original_make")?,
             original_model: row.get("original_model")?,
             original_serial_number: row.get("original_serial_number")?,
+            registration_class_id: row.get("registration_class_id")?,
+            registration_form: row.get("registration_form")?,
+            registration_approved: row.get("registration_approved")?,
+            registered_to: row.get("registered_to")?,
             created_at: row.get("created_at")?,
             updated_at: row.get("updated_at")?,
         })
@@ -224,6 +237,19 @@ pub struct FirearmInput {
     pub original_make: Option<String>,
     pub original_model: Option<String>,
     pub original_serial_number: Option<String>,
+    /// specs/005-regulated-item-types FR-007: a `registration_classes` id;
+    /// `None` = no classification.
+    #[serde(default)]
+    pub registration_class_id: Option<i64>,
+    /// FR-009: e.g. "Form 4". Only with a classification.
+    #[serde(default)]
+    pub registration_form: Option<String>,
+    /// FR-009, FR-010: `YYYY-MM-DD`. Only with a classification.
+    #[serde(default)]
+    pub registration_approved: Option<String>,
+    /// FR-009: e.g. "Smith Family Trust". Only with a classification.
+    #[serde(default)]
+    pub registered_to: Option<String>,
 }
 
 /// The record as an input that would save it unchanged — the starting point
@@ -267,6 +293,10 @@ impl From<&Firearm> for FirearmInput {
             original_make: firearm.original_make.clone(),
             original_model: firearm.original_model.clone(),
             original_serial_number: firearm.original_serial_number.clone(),
+            registration_class_id: firearm.registration_class_id,
+            registration_form: firearm.registration_form.clone(),
+            registration_approved: firearm.registration_approved.clone(),
+            registered_to: firearm.registered_to.clone(),
         }
     }
 }
@@ -276,7 +306,9 @@ impl FirearmInput {
     /// becomes `None` and any other is trimmed (FR-031, FR-032, FR-039: blank
     /// is not a value, and comparison ignores surrounding whitespace). Make,
     /// model and caliber are trimmed and a blank cartridge becomes `None`
-    /// (specs/004-cartridges-action-types FR-015, research.md §9).
+    /// (specs/004-cartridges-action-types FR-015, research.md §9). The two
+    /// registration text details are treated as the cartridge is
+    /// (specs/005-regulated-item-types research.md §6).
     pub fn normalized(&self) -> Self {
         let trimmed = |value: &Option<String>| {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
@@ -294,6 +326,9 @@ impl FirearmInput {
             original_make: trimmed(&self.original_make),
             original_model: trimmed(&self.original_model),
             original_serial_number: trimmed(&self.original_serial_number),
+            registration_form: trimmed(&self.registration_form),
+            registration_approved: trimmed(&self.registration_approved),
+            registered_to: trimmed(&self.registered_to),
             ..self.clone()
         }
     }
@@ -382,12 +417,20 @@ pub fn validate_firearm_input(
                 stored.map(|f| f.cartridge.as_deref().unwrap_or("")),
             ),
             EntryField::Caliber => (input.caliber.as_str(), stored.map(|f| f.caliber.as_str())),
+            EntryField::RegistrationForm => (
+                input.registration_form.as_deref().unwrap_or(""),
+                stored.map(|f| f.registration_form.as_deref().unwrap_or("")),
+            ),
+            EntryField::RegisteredTo => (
+                input.registered_to.as_deref().unwrap_or(""),
+                stored.map(|f| f.registered_to.as_deref().unwrap_or("")),
+            ),
         };
         if stored_value.is_some_and(|stored| stored.trim() == value.trim()) {
             continue;
         }
         if let Err(message) = check_entry_text(field, value) {
-            errors.insert(field.column().into(), message);
+            errors.insert(field.ipc_name().into(), message);
         }
     }
 
@@ -546,6 +589,29 @@ pub fn validate_firearm_input(
                 field.into(),
                 format!("{label} applies only to an imported or re-imported firearm."),
             );
+        }
+    }
+
+    // specs/005-regulated-item-types FR-009, FR-010: registration details
+    // need a classification, and the approved date is not in the future.
+    // Only the classification's existence is checked by the command.
+    checked_date(
+        "registrationApproved",
+        "Approved date",
+        &input.registration_approved,
+        today,
+        &mut errors,
+    );
+    if input.registration_class_id.is_none() {
+        for (field, blank) in [
+            ("registrationForm", is_blank(&input.registration_form)),
+            ("registrationApproved", is_blank(&input.registration_approved)),
+            ("registeredTo", is_blank(&input.registered_to)),
+        ] {
+            if !blank {
+                errors
+                    .insert(field.into(), "Choose what the firearm is registered as first.".into());
+            }
         }
     }
 

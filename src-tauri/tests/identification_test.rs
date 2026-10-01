@@ -199,6 +199,10 @@ fn original_marks_round_trip_on_an_imported_firearm_distinct_from_the_main_marks
         original_make: Some("Fabrique Nationale".into()),
         original_model: Some("High Power".into()),
         original_serial_number: Some("FN-99001".into()),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..firearm("Ridgeline Arms", "Imported Hi-Power", "RA-5001")
     };
     let created = ops::create_firearm(&db.conn, &input, false).unwrap();
@@ -215,6 +219,10 @@ fn original_marks_round_trip_on_an_imported_firearm_distinct_from_the_main_marks
 
     let edited = FirearmInput {
         original_serial_number: Some("FN-99002".into()),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..FirearmInput::from(&created)
     };
     let updated = ops::update_firearm(&db.conn, created.id, &edited, false).unwrap();
@@ -230,6 +238,10 @@ fn original_marks_round_trip_on_a_reimported_firearm() {
         original_make: Some("Inland".into()),
         original_model: Some("M1 Carbine".into()),
         original_serial_number: Some("IN-2245567".into()),
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         ..firearm("Inland", "M1 Carbine", "IN-2245567")
     };
     let created = ops::create_firearm(&db.conn, &input, false).unwrap();
@@ -292,6 +304,10 @@ fn a_non_blank_original_serial_number_on_a_domestic_record_is_rejected() {
         &FirearmInput {
             origin: Some(Origin::Domestic),
             original_serial_number: Some("SN-1".into()),
+            registration_class_id: None,
+            registration_form: None,
+            registration_approved: None,
+            registered_to: None,
             ..firearm("Colt", "1911A1", "BAD-10")
         },
         "originalSerialNumber",

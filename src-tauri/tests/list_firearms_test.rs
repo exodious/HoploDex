@@ -43,6 +43,10 @@ fn firearm(make: &str, model: &str, caliber: &str, firearm_type_id: i64) -> Fire
         original_make: None,
         original_model: None,
         original_serial_number: None,
+        registration_class_id: None,
+        registration_form: None,
+        registration_approved: None,
+        registered_to: None,
         cartridge: None,
         action_type_id: None,
     }
@@ -439,4 +443,89 @@ fn group_by_action_type_deserializes_from_its_wire_name() {
     let input: ListFirearmsInput =
         serde_json::from_value(serde_json::json!({ "groupBy": "action_type" })).unwrap();
     assert_eq!(input.group_by, Some(GroupBy::ActionType));
+}
+
+// specs/005-regulated-item-types US1-4: a Suppressor groups under its own
+// type and shows its own drawing.
+
+#[test]
+fn a_suppressor_groups_under_suppressor_with_its_own_drawing() {
+    let db = TestDb::new();
+    ops::create_firearm(&db.conn, &firearm("SilencerCo", "Omega 300", ".30", 5), false).unwrap();
+    ops::create_firearm(&db.conn, &firearm("Ruger", "10/22", ".22 LR", 2), false).unwrap();
+
+    let result = ops::list_firearms(
+        &db.conn,
+        &ListFirearmsInput { group_by: Some(GroupBy::Type), ..Default::default() },
+    )
+    .unwrap();
+
+    let group = result.groups.iter().find(|g| g.key == "Suppressor").unwrap();
+    assert_eq!(group.firearms.len(), 1);
+    let summary = &group.firearms[0];
+    assert_eq!(summary.generic_thumbnail_key, "suppressor");
+    assert_eq!(summary.action_type_name, None);
+}
+
+/// specs/005-regulated-item-types US2-9, US2-10, FR-016.
+#[test]
+fn grouping_by_registration_follows_the_list_and_the_alphabet_with_unspecified_last() {
+    let db = TestDb::new();
+    let add = |serial: &str, class: Option<i64>, to: Option<&str>| {
+        ops::create_firearm(
+            &db.conn,
+            &FirearmInput {
+                serial_number: Some(serial.into()),
+                registration_class_id: class,
+                registered_to: to.map(str::to_owned),
+                ..firearm("Make", &format!("M{serial}"), "9mm", 1)
+            },
+            false,
+        )
+        .unwrap();
+    };
+    add("1", Some(5), Some("Zed Trust"));
+    add("2", None, None);
+    add("3", Some(1), Some("Adams LLC"));
+    add("4", Some(1), None);
+    add("5", Some(2), Some("Zed Trust"));
+    add("6", None, None);
+
+    let grouped = |by| {
+        ops::list_firearms(
+            &db.conn,
+            &ListFirearmsInput { group_by: Some(by), ..Default::default() },
+        )
+        .unwrap()
+        .groups
+    };
+    let as_groups = grouped(GroupBy::RegisteredAs);
+    let keys: Vec<(&str, usize)> =
+        as_groups.iter().map(|g| (g.key.as_str(), g.firearms.len())).collect();
+    assert_eq!(
+        keys,
+        [("Suppressor", 2), ("Short-barreled rifle", 1), ("Machine gun", 1), ("Unspecified", 2)]
+    );
+    assert_eq!(as_groups[0].firearms[0].registered_as.as_deref(), Some("Suppressor"));
+    assert_eq!(as_groups[3].firearms[0].registered_as, None);
+
+    let to_groups = grouped(GroupBy::RegisteredTo);
+    let keys: Vec<(&str, usize)> =
+        to_groups.iter().map(|g| (g.key.as_str(), g.firearms.len())).collect();
+    // Unspecified holds every firearm with no "Registered to", classified or not.
+    assert_eq!(keys, [("Adams LLC", 1), ("Zed Trust", 2), ("Unspecified", 3)]);
+    let json = serde_json::to_value(&as_groups[0].firearms[0]).unwrap();
+    assert_eq!(json["registeredAs"], "Suppressor");
+}
+
+#[test]
+fn group_by_action_puts_automatic_after_break_action_and_before_falling_block() {
+    // 005 US3: id 13 sorts seventh in the action list.
+    let db = TestDb::new();
+    for (model, action) in [("A", 7), ("B", 13), ("C", 6)] {
+        ops::create_firearm(&db.conn, &acting(model, 2, Some(action)), false).unwrap();
+    }
+    let groups = group_keys(&db.conn, GroupBy::ActionType);
+    let keys: Vec<&str> = groups.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(keys, vec!["Break action", "Automatic or select-fire", "Falling block"]);
 }

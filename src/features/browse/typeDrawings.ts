@@ -6,6 +6,13 @@
  * Each firearm is traced from a side-on photograph of a real model so its
  * proportions hold up. Muzzle-right puts the right side toward the viewer,
  * so only right-side features are drawn (ejection ports, not slide stops).
+ *
+ * The suppressor (specs/005-regulated-item-types FR-001, research.md §4) was
+ * drawn for this project, traced from side-on photographs of rifle
+ * suppressors for proportion (a tube about 6:1 in length to diameter,
+ * centred on the bore axis), with no brand marks. It is a partial section,
+ * cut away between two break lines to show a generic cone-baffle stack.
+ * Like the rest of the source it is GPL-3.0-only.
  */
 
 export type Part =
@@ -17,6 +24,29 @@ export interface Drawing {
   /** Bore axis: [x start, y, x end]. */
   axis: [number, number, number];
 }
+
+/** Section hatching at 45° across a horizontal band of a cut wall. */
+function sectionHatch(x0: number, x1: number, top: number, bottom: number): string {
+  const rise = bottom - top;
+  let d = "";
+  for (let x = x0; x + rise <= x1; x += 4) d += `M${x} ${bottom}L${x + rise} ${top}`;
+  return d;
+}
+
+/** One cone baffle in section, apex toward the mount: the cone's wall above
+ * and below the bore, from the skirt at `x` down to the bore hole. */
+function coneBaffle(x: number, thickness: number): Part {
+  const [depth, t] = [10, thickness];
+  return {
+    d:
+      `M${x} 86.5L${x - depth} 95.5H${x - depth + t}L${x + t} 86.5Z` +
+      `M${x} 113.5L${x - depth} 104.5H${x - depth + t}L${x + t} 113.5Z`,
+    role: "part",
+  };
+}
+
+/** Where each baffle's cone meets its skirt; the first is the blast baffle. */
+const BAFFLES = [130, 145, 160, 175, 190, 205, 220, 235];
 
 export const DRAWINGS: Record<string, Drawing> = {
   // Glock 17, right side: ejection port and extractor show; the slide stop
@@ -216,6 +246,30 @@ export const DRAWINGS: Record<string, Drawing> = {
       { d: "M216 85.7H253C271 85.7 282 92 292 100C282 108 271 114.3 253 114.3H216Z", role: "part" },
       { d: "M225 86.6V113.4M228.5 86.6V113.4", role: "detail" },
       { d: "M216 83.5V116.5", role: "detail" },
+    ],
+    axis: [23, 100, 313],
+  },
+  // A rifle-caliber suppressor, mount end left: a threaded mount collar,
+  // wrench flats near the mount, and a seam where the end cap seats, flush
+  // with the tube and rounded at the muzzle. Between two break lines the
+  // tube is cut away on the bore axis: a hatched wall, an empty blast
+  // chamber, then the baffle stack, a sleeve of skirts with a cone at each
+  // joint, the blast baffle heavier than the rest.
+  suppressor: {
+    parts: [
+      { d: "M29 88.5H47V111.5H29Q27 111.5 27 109.5V90.5Q27 88.5 29 88.5Z", role: "part" },
+      { d: "M32 89V111M35 89V111M38 89V111M41 89V111", role: "detail" },
+      { d: "M47 80.5H283Q287 80.5 287 84.5V115.5Q287 119.5 283 119.5H47Z", role: "part" },
+      { d: "M52 80.8V119.2M82 80.8V119.2", role: "detail" },
+      { d: "M52 87H82M52 113H82", role: "detail" },
+      { d: "M268 80.8V119.2", role: "detail" },
+      { d: "M92 80.5C95 87 89 93 92 100S89 113 92 119.5", role: "open" },
+      { d: "M258 80.5C261 87 255 93 258 100S255 113 258 119.5", role: "open" },
+      { d: "M92.9 84H258.9M91.1 116H257.1", role: "open" },
+      { d: sectionHatch(96, 256, 80.5, 84) + sectionHatch(96, 256, 116, 119.5), role: "detail" },
+      { d: "M130 86.5H250V84M130 113.5H250V116", role: "open" },
+      { d: BAFFLES.map((x) => `M${x} 84V86.5M${x} 116V113.5`).join(""), role: "detail" },
+      ...BAFFLES.map((x, i) => coneBaffle(x, i === 0 ? 3.5 : 2)),
     ],
     axis: [23, 100, 313],
   },

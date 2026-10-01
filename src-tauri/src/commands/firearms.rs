@@ -78,6 +78,13 @@ pub enum GroupBy {
     /// specs/004-cartridges-action-types FR-020: keyed by the action's name,
     /// in the action list's order, with the firearms that have none last.
     ActionType,
+    /// specs/005-regulated-item-types FR-016: keyed by the classification's
+    /// name, in the list's order, with the firearms that have none last.
+    RegisteredAs,
+    /// specs/005-regulated-item-types FR-016: keyed by the stored "Registered
+    /// to" text, alphabetical; every firearm with none, classified or not,
+    /// is "Unspecified" and last.
+    RegisteredTo,
 }
 
 /// The group of firearms with no value for the grouping field, always last
@@ -123,6 +130,9 @@ pub struct FirearmSummary {
     /// specs/004-cartridges-action-types FR-020: the action's name, `None`
     /// when not recorded.
     pub action_type_name: Option<String>,
+    /// specs/005-regulated-item-types FR-016: the classification's name,
+    /// `None` when there is none.
+    pub registered_as: Option<String>,
     pub status: FirearmStatus,
     pub thumbnail_photo_id: Option<i64>,
     pub generic_thumbnail_key: String,
@@ -385,6 +395,84 @@ pub mod ops {
         Err(CommandError::validation(messages.join(" "), errors))
     }
 
+    /// specs/005-regulated-item-types FR-003, FR-004, FR-022: an action, a
+    /// barrel length or a capacity may be set only when the firearm's type
+    /// says the field applies. One field error per offending field, "<Field>
+    /// doesn't apply to a <type>." The backend never clears a value itself.
+    /// Runs before `check_action_allowed`, because a type with no mapped
+    /// actions allows every action there. The `firearms_fields_apply_*`
+    /// triggers enforce the same rule, which only a bug would reach. Import
+    /// calls this for every row.
+    pub fn check_fields_apply(conn: &Connection, input: &FirearmInput) -> Result<(), CommandError> {
+        if input.action_type_id.is_none()
+            && input.barrel_length_hundredths.is_none()
+            && input.capacity.is_none()
+        {
+            return Ok(());
+        }
+        // An unknown type id is left to the foreign key, as before.
+        let Some((type_name, action, barrel, capacity)) = conn
+            .query_row(
+                "SELECT name, action_type_applies, barrel_length_applies, capacity_applies
+                 FROM firearm_types WHERE id = :id",
+                named_params! { ":id": input.firearm_type_id },
+                |row| Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(CommandError::from_db)?
+        else {
+            return Ok(());
+        };
+        let mut errors = std::collections::HashMap::new();
+        let mut check = |is_set: bool, applies: bool, field: &str, label: &str| {
+            if is_set && !applies {
+                errors
+                    .insert(field.to_string(), format!("{label} doesn't apply to a {type_name}."));
+            }
+        };
+        check(input.action_type_id.is_some(), action, "actionTypeId", "Action");
+        check(
+            input.barrel_length_hundredths.is_some(),
+            barrel,
+            "barrelLengthHundredths",
+            "Barrel length",
+        );
+        check(input.capacity.is_some(), capacity, "capacity", "Capacity");
+        if errors.is_empty() {
+            return Ok(());
+        }
+        let mut messages: Vec<_> = errors.values().cloned().collect();
+        messages.sort();
+        Err(CommandError::validation(messages.join(" "), errors))
+    }
+
+    /// specs/005-regulated-item-types FR-007: a classification must name one
+    /// on the list. A row that is no longer offered is still accepted, so a
+    /// record that holds it can be edited and a new one may still use it
+    /// (research.md §5). Import calls this for every row.
+    pub fn check_registration_class(
+        conn: &Connection,
+        input: &FirearmInput,
+    ) -> Result<(), CommandError> {
+        let Some(class_id) = input.registration_class_id else {
+            return Ok(());
+        };
+        let known: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM registration_classes WHERE id = :id)",
+                named_params! { ":id": class_id },
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        if known {
+            return Ok(());
+        }
+        let message = "Choose a classification from the list.".to_string();
+        let errors =
+            std::collections::HashMap::from([("registrationClassId".to_string(), message.clone())]);
+        Err(CommandError::validation(message, errors))
+    }
+
     /// specs/004-cartridges-action-types FR-017, FR-019, SC-008: the action
     /// must name an action on the list and be allowed for the firearm's type.
     /// A type with no mapped actions (Other, or one added later) allows all
@@ -452,6 +540,8 @@ pub mod ops {
     ) -> Result<Firearm, CommandError> {
         let input = &input.normalized();
         validate_firearm_input(input, None)?;
+        check_fields_apply(conn, input)?;
+        check_registration_class(conn, input)?;
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
@@ -466,6 +556,7 @@ pub mod ops {
                 insurance_policy_id, scheduled_coverage_amount,
                 origin, year_of_manufacture, country_of_manufacture, importer_name,
                 original_make, original_model, original_serial_number,
+                registration_class_id, registration_form, registration_approved, registered_to,
                 created_at, updated_at
             ) VALUES (
                 :make, :model, :serial_number, :no_serial_attested, :caliber, :cartridge, :firearm_type_id,
@@ -477,6 +568,7 @@ pub mod ops {
                 :insurance_policy_id, :scheduled_coverage_amount,
                 :origin, :year_of_manufacture, :country_of_manufacture, :importer_name,
                 :original_make, :original_model, :original_serial_number,
+                :registration_class_id, :registration_form, :registration_approved, :registered_to,
                 datetime('now'), datetime('now')
             )",
             named_params! {
@@ -515,6 +607,10 @@ pub mod ops {
                 ":original_make": input.original_make,
                 ":original_model": input.original_model,
                 ":original_serial_number": input.original_serial_number,
+                ":registration_class_id": input.registration_class_id,
+                ":registration_form": input.registration_form,
+                ":registration_approved": input.registration_approved,
+                ":registered_to": input.registered_to,
             },
         )
         .map_err(CommandError::from_db)?;
@@ -540,6 +636,8 @@ pub mod ops {
             .optional()
             .map_err(CommandError::from_db)?;
         validate_firearm_input(input, stored.as_ref())?;
+        check_fields_apply(conn, input)?;
+        check_registration_class(conn, input)?;
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, Some(id), input)?;
         check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
@@ -581,6 +679,10 @@ pub mod ops {
                     original_make = :original_make,
                     original_model = :original_model,
                     original_serial_number = :original_serial_number,
+                    registration_class_id = :registration_class_id,
+                    registration_form = :registration_form,
+                    registration_approved = :registration_approved,
+                    registered_to = :registered_to,
                     updated_at = datetime('now')
                 WHERE id = :id",
                 named_params! {
@@ -620,6 +722,10 @@ pub mod ops {
                     ":original_make": input.original_make,
                     ":original_model": input.original_model,
                     ":original_serial_number": input.original_serial_number,
+                    ":registration_class_id": input.registration_class_id,
+                    ":registration_form": input.registration_form,
+                    ":registration_approved": input.registration_approved,
+                    ":registered_to": input.registered_to,
                 },
             )
             .map_err(CommandError::from_db)?;
@@ -802,10 +908,11 @@ pub mod ops {
                 "SELECT f.id, f.make, f.model, f.nickname, f.serial_number, f.caliber, f.cartridge,
                         f.status, f.thumbnail_photo_id, f.estimated_value, f.insurance_policy_id,
                         f.scheduled_coverage_amount, f.origin,
-                        ft.name, ft.generic_thumbnail_key, at.name
+                        ft.name, ft.generic_thumbnail_key, at.name, rc.name, f.registered_to
                  FROM firearms f
                  JOIN firearm_types ft ON ft.id = f.firearm_type_id
                  LEFT JOIN action_types at ON at.id = f.action_type_id
+                 LEFT JOIN registration_classes rc ON rc.id = f.registration_class_id
                  WHERE (:include_disposed = 1 OR f.status = 'active')
                    AND (:has_query = 0
                         OR (:short_query = 0 AND f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
@@ -826,6 +933,9 @@ pub mod ops {
                             OR f.cartridge LIKE :like ESCAPE '\\'
                             OR ft.name LIKE :like ESCAPE '\\'
                             OR at.name LIKE :like ESCAPE '\\'
+                            OR rc.name LIKE :like ESCAPE '\\'
+                            OR f.registration_form LIKE :like ESCAPE '\\'
+                            OR f.registered_to LIKE :like ESCAPE '\\'
                             OR (CASE f.origin WHEN 'domestic' THEN 'Domestic' WHEN 'imported' THEN 'Imported' WHEN 'reimported' THEN 'Re-imported' END) LIKE :like ESCAPE '\\'
                             OR (CASE WHEN f.origin = 'reimported' THEN 'United States' ELSE f.country_of_manufacture END) LIKE :like ESCAPE '\\')))
                  ORDER BY f.make, f.model",
@@ -867,15 +977,17 @@ pub mod ops {
                         firearm_type_name: row.get(13)?,
                         generic_thumbnail_key: row.get(14)?,
                         action_type_name: row.get(15)?,
+                        registered_as: row.get(16)?,
                     };
-                    Ok((summary, origin))
+                    let registered_to: Option<String> = row.get(17)?;
+                    Ok((summary, origin, registered_to))
                 },
             )
             .map_err(CommandError::from_db)?;
 
         let mut summaries = Vec::new();
         for row in rows {
-            let (summary, origin) = row.map_err(CommandError::from_db)?;
+            let (summary, origin, registered_to) = row.map_err(CommandError::from_db)?;
             let key = match input.group_by {
                 Some(GroupBy::Type) => summary.firearm_type_name.clone(),
                 Some(GroupBy::Caliber) => summary.caliber.clone(),
@@ -888,6 +1000,12 @@ pub mod ops {
                 }
                 Some(GroupBy::ActionType) => {
                     summary.action_type_name.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
+                }
+                Some(GroupBy::RegisteredAs) => {
+                    summary.registered_as.clone().unwrap_or_else(|| UNSPECIFIED.to_string())
+                }
+                Some(GroupBy::RegisteredTo) => {
+                    registered_to.unwrap_or_else(|| UNSPECIFIED.to_string())
                 }
                 None => "All".to_string(),
             };
@@ -933,6 +1051,24 @@ pub mod ops {
                     order.iter().position(|name| *name == g.key).unwrap_or(order.len())
                 });
             }
+            // FR-016: the classification list's order, "Unspecified" last.
+            Some(GroupBy::RegisteredAs) => {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM registration_classes ORDER BY sort_order")
+                    .map_err(CommandError::from_db)?;
+                let order = stmt
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(CommandError::from_db)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(CommandError::from_db)?;
+                groups.sort_by_key(|g| {
+                    order.iter().position(|name| *name == g.key).unwrap_or(order.len())
+                });
+            }
+            // FR-016: alphabetical by stored text, "Unspecified" last.
+            Some(GroupBy::RegisteredTo) => groups.sort_by(|a, b| {
+                (a.key == UNSPECIFIED, &a.key).cmp(&(b.key == UNSPECIFIED, &b.key))
+            }),
             _ => groups.sort_by(|a, b| a.key.cmp(&b.key)),
         }
 

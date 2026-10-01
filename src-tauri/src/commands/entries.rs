@@ -1,6 +1,7 @@
 //! The entry commands of specs/004-cartridges-action-types:
 //! `suggest_entries`, `settle_entry` and `list_action_types`
-//! (contracts/tauri-commands.md).
+//! (contracts/tauri-commands.md), and of specs/005-regulated-item-types:
+//! `list_firearm_types` and `list_registration_classes`.
 
 use std::collections::BTreeMap;
 
@@ -10,6 +11,8 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::models::action_type::{ActionType, ActionTypesOutput};
+use crate::models::firearm_type::{FirearmTypeInfo, FirearmTypesOutput};
+use crate::models::registration::{RegistrationClass, RegistrationClassesOutput};
 use crate::services::cartridges::{DerivedCaliber, derive_caliber};
 use crate::services::entry_text::EntryField;
 pub use crate::services::suggestions::Suggestion;
@@ -130,6 +133,54 @@ pub mod ops {
         }
         Ok(ActionTypesOutput { actions, allowed_by_firearm_type })
     }
+
+    /// The fixed firearm types, in list order (`sort_order`), with the fields each omits (FR-001,
+    /// FR-003; research.md §3): the frontend reads the list instead of
+    /// copying it.
+    pub fn list_firearm_types(conn: &Connection) -> Result<FirearmTypesOutput, CommandError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, generic_thumbnail_key, action_type_applies,
+                        barrel_length_applies, capacity_applies, caliber_from_cartridge
+                 FROM firearm_types ORDER BY sort_order",
+            )
+            .map_err(CommandError::from_db)?;
+        let types = stmt
+            .query_map([], |row| {
+                Ok(FirearmTypeInfo {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    generic_thumbnail_key: row.get(2)?,
+                    action_type_applies: row.get(3)?,
+                    barrel_length_applies: row.get(4)?,
+                    capacity_applies: row.get(5)?,
+                    caliber_from_cartridge: row.get(6)?,
+                })
+            })
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+        Ok(FirearmTypesOutput { types })
+    }
+
+    /// The fixed registration classifications in list order, including any
+    /// no longer offered (FR-007; research.md §5): a record that holds one
+    /// still shows it.
+    pub fn list_registration_classes(
+        conn: &Connection,
+    ) -> Result<RegistrationClassesOutput, CommandError> {
+        let mut stmt = conn
+            .prepare("SELECT id, name, offered FROM registration_classes ORDER BY sort_order")
+            .map_err(CommandError::from_db)?;
+        let classes = stmt
+            .query_map([], |row| {
+                Ok(RegistrationClass { id: row.get(0)?, name: row.get(1)?, offered: row.get(2)? })
+            })
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+        Ok(RegistrationClassesOutput { classes })
+    }
 }
 
 #[tauri::command]
@@ -153,4 +204,18 @@ pub async fn list_action_types(
     session: State<'_, Session>,
 ) -> Result<ActionTypesOutput, CommandError> {
     session.read(ops::list_action_types)
+}
+
+#[tauri::command]
+pub async fn list_firearm_types(
+    session: State<'_, Session>,
+) -> Result<FirearmTypesOutput, CommandError> {
+    session.read(ops::list_firearm_types)
+}
+
+#[tauri::command]
+pub async fn list_registration_classes(
+    session: State<'_, Session>,
+) -> Result<RegistrationClassesOutput, CommandError> {
+    session.read(ops::list_registration_classes)
 }

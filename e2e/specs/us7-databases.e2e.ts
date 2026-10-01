@@ -95,9 +95,17 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     expect(plate.drawing).toBeGreaterThan(500);
     expect(plate.cycling).toBeGreaterThan(0);
     // shuffled at startup, each keeping its own number
-    expect([...plate.drawings].sort()).toEqual(["handgun", "other", "rifle", "shotgun"]);
+    expect([...plate.drawings].sort()).toEqual([
+      "handgun",
+      "other",
+      "rifle",
+      "shotgun",
+      "suppressor",
+    ]);
     expect(plate.numbers).toEqual(
-      plate.drawings.map((d) => ({ rifle: "2", handgun: "3", shotgun: "4", other: "5" })[d!]),
+      plate.drawings.map(
+        (d) => ({ rifle: "2", handgun: "3", shotgun: "4", suppressor: "5", other: "6" })[d!],
+      ),
     );
   });
 

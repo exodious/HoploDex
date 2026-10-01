@@ -660,6 +660,10 @@ mod identification_spreadsheet {
                 original_make: Some("FN".into()),
                 original_model: Some("High Power".into()),
                 original_serial_number: Some("FN-1".into()),
+                registration_class_id: None,
+                registration_form: None,
+                registration_approved: None,
+                registered_to: None,
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-1")
             },
             false,
@@ -692,7 +696,8 @@ mod identification_spreadsheet {
 
         let order: Vec<_> = headers.iter().collect();
         let condition_at = headers.iter().position(|h| h == "condition").unwrap();
-        let photos_at = headers.iter().position(|h| h == "photo_filenames").unwrap();
+        // The four registration columns of specs/005 follow original_serial_number.
+        let photos_at = headers.iter().position(|h| h == "registered_as").unwrap();
         assert_eq!(
             &order[condition_at + 1..photos_at],
             [
@@ -771,6 +776,10 @@ mod identification_spreadsheet {
                 original_make: Some("FN".into()),
                 original_model: Some("High Power".into()),
                 original_serial_number: Some("FN-2".into()),
+                registration_class_id: None,
+                registration_form: None,
+                registration_approved: None,
+                registered_to: None,
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-2")
             },
             false,
@@ -939,6 +948,10 @@ mod identification_spreadsheet {
                 original_make: Some("FN".into()),
                 original_model: Some("High Power".into()),
                 original_serial_number: Some("FN-3".into()),
+                registration_class_id: None,
+                registration_form: None,
+                registration_approved: None,
+                registered_to: None,
                 ..support::firearm("Ridgeline Arms", "Hi-Power", "RA-3")
             },
             false,
@@ -1155,7 +1168,7 @@ mod cartridge_spreadsheet {
 
     #[test]
     fn the_header_puts_cartridge_and_action_type_directly_after_caliber() {
-        assert_eq!(COLUMNS.len(), 36);
+        assert_eq!(COLUMNS.len(), 40);
         let caliber_at = COLUMNS.iter().position(|c| *c == "caliber").unwrap();
         assert_eq!(
             &COLUMNS[caliber_at + 1..caliber_at + 4],
@@ -1181,7 +1194,7 @@ mod cartridge_spreadsheet {
         let mut reader = csv::Reader::from_path(path).unwrap();
         let headers = reader.headers().unwrap().clone();
         let at = |name: &str| headers.iter().position(|h| h == name).unwrap();
-        assert_eq!(headers.iter().count(), 36);
+        assert_eq!(headers.iter().count(), 40);
         assert_eq!(at("cartridge"), at("caliber") + 1);
         assert_eq!(at("action_type"), at("caliber") + 2);
         let rows: Vec<_> = reader.records().map(Result::unwrap).collect();
@@ -1546,7 +1559,7 @@ mod cartridge_spreadsheet {
         let db = TestDb::new();
         let legacy: Vec<_> =
             COLUMNS.iter().copied().filter(|c| *c != "cartridge" && *c != "action_type").collect();
-        assert_eq!(legacy.len(), 34);
+        assert_eq!(legacy.len(), 38);
         let row = legacy
             .iter()
             .map(|c| match *c {
@@ -1634,5 +1647,436 @@ mod cartridge_spreadsheet {
         assert_eq!(makes.iter().filter(|m| *m == "Springfield Armory").count(), 21);
         assert!(makes.contains(&"Springfield Arms".to_owned()));
         assert!(makes.contains(&"S. Armory".to_owned()));
+    }
+}
+
+mod registration_spreadsheet {
+    use super::*;
+    use hoplodex_lib::commands::import_export::ImportResult;
+    use hoplodex_lib::models::firearm::{Firearm, FirearmInput};
+    use hoplodex_lib::services::entry_text::EntryField;
+    use hoplodex_lib::services::spreadsheet::COLUMNS;
+
+    const SUPPRESSOR_TYPE: i64 = 5;
+
+    fn import_rows(db: &TestDb, rows: &[String]) -> ImportResult {
+        let dir = TempDir::new().unwrap();
+        let path = write_csv(&dir, &csv_file(rows));
+        reimport(&path, db)
+    }
+
+    fn reimport(path: &std::path::Path, into: &TestDb) -> ImportResult {
+        import_export_ops::import_collection(
+            &into.conn,
+            path,
+            SpreadsheetFormat::Csv,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+        )
+        .unwrap()
+    }
+
+    fn all_firearms(db: &TestDb) -> Vec<Firearm> {
+        let mut ids = import_export_ops::all_firearm_ids(&db.conn).unwrap();
+        ids.sort();
+        ids.into_iter().map(|id| firearm_ops::get_firearm(&db.conn, id).unwrap()).collect()
+    }
+
+    fn record(db: &TestDb, input: FirearmInput) {
+        firearm_ops::create_firearm(&db.conn, &input, false).unwrap();
+    }
+
+    fn export_all(db: &TestDb, dest: &TempDir) -> std::path::PathBuf {
+        let ids = import_export_ops::all_firearm_ids(&db.conn).unwrap();
+        import_export_ops::export_collection(
+            &db.conn,
+            dest.path(),
+            "backup",
+            SpreadsheetFormat::Csv,
+            &ids,
+            &mut |_, _| {},
+        )
+        .unwrap()
+        .spreadsheet_path
+    }
+
+    fn only_error(result: &ImportResult) -> &str {
+        assert_eq!(result.row_errors.len(), 1, "{:?}", result.row_errors);
+        &result.row_errors[0].message
+    }
+
+    fn registered(
+        serial: &str,
+        class: i64,
+        form: Option<&str>,
+        approved: Option<&str>,
+        to: Option<&str>,
+    ) -> FirearmInput {
+        FirearmInput {
+            registration_class_id: Some(class),
+            registration_form: form.map(str::to_owned),
+            registration_approved: approved.map(str::to_owned),
+            registered_to: to.map(str::to_owned),
+            ..support::firearm("Glock", "19", serial)
+        }
+    }
+
+    #[test]
+    fn the_header_puts_the_four_registration_columns_after_the_original_marks() {
+        assert_eq!(COLUMNS.len(), 40);
+        let at = COLUMNS.iter().position(|c| *c == "original_serial_number").unwrap();
+        assert_eq!(
+            &COLUMNS[at + 1..at + 6],
+            [
+                "registered_as",
+                "registration_form",
+                "registration_approved",
+                "registered_to",
+                "photo_filenames"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_collection_with_suppressors_and_every_classification_round_trips_exactly() {
+        let db = TestDb::new();
+        for class in 1..=6 {
+            record(
+                &db,
+                registered(
+                    &format!("S{class}"),
+                    class,
+                    Some("Form 4"),
+                    Some("2024-03-05"),
+                    Some(&format!("Owner {class}")),
+                ),
+            );
+        }
+        // A classification no longer offered still exports and imports.
+        db.conn.execute("UPDATE registration_classes SET offered = 0 WHERE id = 6", []).unwrap();
+        record(
+            &db,
+            FirearmInput {
+                firearm_type_id: SUPPRESSOR_TYPE,
+                ..registered("Q1", 1, None, None, None)
+            },
+        );
+        record(&db, support::firearm("Ruger", "Mk IV", "C3"));
+
+        let dest = TempDir::new().unwrap();
+        let path = export_all(&db, &dest);
+        let fresh = TestDb::new();
+        let result = reimport(&path, &fresh);
+
+        assert_eq!(result.imported_count, 8, "{:?}", result.row_errors);
+        assert!(result.snapped_values.is_empty(), "{:?}", result.snapped_values);
+        let shape = |db: &TestDb| {
+            let mut all: Vec<_> = all_firearms(db)
+                .into_iter()
+                .map(|f| {
+                    (
+                        f.serial_number,
+                        f.firearm_type_id,
+                        f.registration_class_id,
+                        f.registration_form,
+                        f.registration_approved,
+                        f.registered_to,
+                    )
+                })
+                .collect();
+            all.sort();
+            all
+        };
+        assert_eq!(shape(&fresh), shape(&db));
+    }
+
+    #[test]
+    fn same_notation_variants_of_a_form_and_a_name_merge_and_are_reported() {
+        let db = TestDb::new();
+        let rows: Vec<String> = [
+            ("A1", "form 4", "Jane Doe"),
+            ("A2", "Form 4", "Jane Doe"),
+            ("A3", "Form 4", "jane doe"),
+            ("A4", "FORM 4", "Jane Doe"),
+        ]
+        .iter()
+        .map(|(serial, form, to)| {
+            csv_firearm(
+                "Glock",
+                "19",
+                serial,
+                &[
+                    ("registered_as", "Suppressor"),
+                    ("registration_form", form),
+                    ("registered_to", to),
+                ],
+            )
+        })
+        .collect();
+        let result = import_rows(&db, &rows);
+
+        assert_eq!(result.imported_count, 4, "{:?}", result.row_errors);
+        for firearm in all_firearms(&db) {
+            assert_eq!(firearm.registration_form.as_deref(), Some("Form 4"));
+            assert_eq!(firearm.registered_to.as_deref(), Some("Jane Doe"));
+        }
+        let fields: Vec<_> = result.snapped_values.iter().map(|s| s.field).collect();
+        assert!(fields.contains(&EntryField::RegistrationForm), "{fields:?}");
+        assert!(fields.contains(&EntryField::RegisteredTo), "{fields:?}");
+    }
+
+    #[test]
+    fn registered_as_matches_ignoring_case_and_spaces_and_a_classification_no_longer_offered() {
+        let db = TestDb::new();
+        db.conn.execute("UPDATE registration_classes SET offered = 0 WHERE id = 5", []).unwrap();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm("Glock", "19", "A1", &[("registered_as", "  SHORT-BARRELED RIFLE ")]),
+                csv_firearm("Glock", "19", "A2", &[("registered_as", "machine gun")]),
+            ],
+        );
+        assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+        let classes: Vec<_> =
+            all_firearms(&db).into_iter().map(|f| f.registration_class_id).collect();
+        assert_eq!(classes, [Some(2), Some(5)]);
+    }
+
+    #[test]
+    fn an_unknown_classification_is_a_row_error_and_other_rows_still_import() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm("Glock", "19", "A1", &[("registered_as", "Short barrel rifle")]),
+                csv_firearm("Glock", "19", "A2", &[]),
+            ],
+        );
+        assert_eq!(result.imported_count, 1);
+        assert_eq!(
+            only_error(&result),
+            "registered_as: unknown classification \"Short barrel rifle\""
+        );
+    }
+
+    #[test]
+    fn details_without_a_classification_are_a_row_error() {
+        let db = TestDb::new();
+        for cell in [
+            ("registration_form", "Form 4"),
+            ("registration_approved", "2024-03-05"),
+            ("registered_to", "Jane"),
+        ] {
+            let result = import_rows(&db, &[csv_firearm("Glock", "19", "A1", &[cell])]);
+            assert_eq!(result.imported_count, 0);
+            assert_eq!(
+                only_error(&result),
+                "registered_as: Registration details need a classification."
+            );
+        }
+    }
+
+    #[test]
+    fn a_bad_approved_date_and_a_long_name_are_row_errors_naming_the_column() {
+        let db = TestDb::new();
+        let tomorrow = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let long = "x".repeat(101);
+        for (cells, expected) in [
+            (
+                ("registration_approved", tomorrow.as_str()),
+                "registration_approved: Approved date can't be in the future.",
+            ),
+            (
+                ("registration_approved", "5 March"),
+                "registration_approved: Approved date must be a date in YYYY-MM-DD format.",
+            ),
+            (
+                ("registered_to", long.as_str()),
+                "registered_to: Registered to can be at most 100 characters.",
+            ),
+        ] {
+            let result = import_rows(
+                &db,
+                &[csv_firearm("Glock", "19", "A1", &[("registered_as", "Suppressor"), cells])],
+            );
+            assert_eq!(result.imported_count, 0);
+            assert_eq!(only_error(&result), expected);
+        }
+    }
+
+    #[test]
+    fn a_suppressor_row_with_an_action_a_barrel_length_and_a_capacity_reports_all_three() {
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm(
+                    "SilencerCo",
+                    "Omega",
+                    "A1",
+                    &[
+                        ("firearm_type", "Suppressor"),
+                        ("action_type", "Semi-automatic"),
+                        ("barrel_length_in", "4"),
+                        ("capacity", "10"),
+                    ],
+                ),
+                csv_firearm("Glock", "19", "A2", &[]),
+            ],
+        );
+        assert_eq!(result.imported_count, 1);
+        assert_eq!(
+            only_error(&result),
+            "action_type: Action doesn't apply to a Suppressor.; \
+             barrel_length_in: Barrel length doesn't apply to a Suppressor.; \
+             capacity: Capacity doesn't apply to a Suppressor."
+        );
+    }
+
+    #[test]
+    fn a_suppressor_rows_caliber_is_never_worked_out_from_its_cartridge() {
+        // US4-7, FR-022, research.md §15: a Suppressor's caliber is its bore,
+        // so a blank one is a row error and nothing is listed as derived,
+        // while a Rifle row in the same sheet still derives.
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm(
+                    "SilencerCo",
+                    "Omega 300",
+                    "S1",
+                    &[
+                        ("firearm_type", "suppressor"),
+                        ("caliber", ""),
+                        ("cartridge", ".300 Winchester Magnum"),
+                    ],
+                ),
+                csv_firearm(
+                    "Ruger",
+                    "American",
+                    "R1",
+                    &[
+                        ("firearm_type", "Rifle"),
+                        ("caliber", ""),
+                        ("cartridge", ".300 Winchester Magnum"),
+                    ],
+                ),
+                csv_firearm(
+                    "Dead Air",
+                    "Mask",
+                    "S2",
+                    &[("firearm_type", "Suppressor"), ("caliber", ""), ("cartridge", "")],
+                ),
+            ],
+        );
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        let errors: Vec<(usize, &str)> =
+            result.row_errors.iter().map(|e| (e.row, e.message.as_str())).collect();
+        assert_eq!(
+            errors,
+            [
+                (
+                    1,
+                    "caliber: Caliber is required; a Suppressor's isn't worked out from its cartridge."
+                ),
+                (3, "caliber: Caliber is required."),
+            ]
+        );
+        assert_eq!(result.derived_calibers.len(), 1);
+        assert_eq!(result.derived_calibers[0].row, 2);
+        assert_eq!(result.derived_calibers[0].caliber, ".30");
+    }
+
+    #[test]
+    fn a_suppressor_row_keeps_its_bore_and_rated_cartridge_as_given() {
+        // US4-7: both values are imported as written, neither from the other.
+        let db = TestDb::new();
+        let result = import_rows(
+            &db,
+            &[csv_firearm(
+                "SilencerCo",
+                "Omega 300",
+                "S1",
+                &[
+                    ("firearm_type", "Suppressor"),
+                    ("caliber", ".46"),
+                    ("cartridge", ".300 Winchester Magnum"),
+                ],
+            )],
+        );
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        assert!(result.derived_calibers.is_empty());
+        let ids = import_export_ops::all_firearm_ids(&db.conn).unwrap();
+        let suppressor = firearm_ops::get_firearm(&db.conn, ids[0]).unwrap();
+        assert_eq!(suppressor.caliber, ".46");
+        assert_eq!(suppressor.cartridge.as_deref(), Some(".300 Winchester Magnum"));
+    }
+
+    #[test]
+    fn a_form_snaps_to_a_built_in_name_then_to_the_forms_on_record() {
+        let db = TestDb::new();
+        record(&db, registered("R1", 1, Some("Tax-paid transfer"), None, Some("Jane Doe")));
+        let result = import_rows(
+            &db,
+            &[
+                csv_firearm(
+                    "Glock",
+                    "19",
+                    "A1",
+                    &[
+                        ("registered_as", "Suppressor"),
+                        ("registration_form", "FORM 5"),
+                        ("registered_to", "JANE DOE"),
+                    ],
+                ),
+                csv_firearm(
+                    "Glock",
+                    "19",
+                    "A2",
+                    &[("registered_as", "Suppressor"), ("registration_form", "tax-paid TRANSFER")],
+                ),
+            ],
+        );
+        assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+        let imported = &all_firearms(&db)[1..];
+        assert_eq!(imported[0].registration_form.as_deref(), Some("Form 5"));
+        assert_eq!(imported[0].registered_to.as_deref(), Some("Jane Doe"));
+        assert_eq!(imported[1].registration_form.as_deref(), Some("Tax-paid transfer"));
+        assert_eq!(result.snapped_values.len(), 3, "{:?}", result.snapped_values);
+    }
+
+    #[test]
+    fn a_sheet_without_the_four_columns_imports_with_no_classification() {
+        let db = TestDb::new();
+        let header: Vec<_> = COLUMNS
+            .iter()
+            .filter(|c| {
+                !["registered_as", "registration_form", "registration_approved", "registered_to"]
+                    .contains(c)
+            })
+            .copied()
+            .collect();
+        let cells: Vec<String> = header
+            .iter()
+            .map(|c| match *c {
+                "make" => "Glock",
+                "model" => "19",
+                "serial_number" => "A1",
+                "caliber" => "9mm",
+                "firearm_type" => "Handgun",
+                _ => "",
+            })
+            .map(str::to_owned)
+            .collect();
+        let dir = TempDir::new().unwrap();
+        let path = write_csv(&dir, &format!("{}\n{}\n", header.join(","), cells.join(",")));
+        let result = reimport(&path, &db);
+        assert_eq!(result.imported_count, 1, "{:?}", result.row_errors);
+        let firearm = &all_firearms(&db)[0];
+        assert_eq!(firearm.registration_class_id, None);
+        assert_eq!(firearm.registration_form, None);
     }
 }

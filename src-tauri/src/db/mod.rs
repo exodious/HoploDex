@@ -427,7 +427,7 @@ mod tests {
         let conn = create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap();
         let type_count: i64 =
             conn.query_row("SELECT count(*) FROM firearm_types", [], |r| r.get(0)).unwrap();
-        assert_eq!(type_count, 4, "seed migration should insert 4 firearm types");
+        assert_eq!(type_count, 5, "seed migration should insert 5 firearm types");
         drop(conn);
 
         // Reopening must succeed and must not re-apply (and thus fail to
@@ -435,7 +435,7 @@ mod tests {
         let conn2 = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false).unwrap();
         let type_count2: i64 =
             conn2.query_row("SELECT count(*) FROM firearm_types", [], |r| r.get(0)).unwrap();
-        assert_eq!(type_count2, 4);
+        assert_eq!(type_count2, 5);
     }
 
     #[test]

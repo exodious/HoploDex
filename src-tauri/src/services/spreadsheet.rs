@@ -31,7 +31,8 @@ impl SpreadsheetFormat {
 /// adds seven columns after `condition` and before `photo_filenames`
 /// (contracts/spreadsheet-format.md's "New columns");
 /// specs/004-cartridges-action-types adds `cartridge` and `action_type`
-/// directly after `caliber` (FR-022). Import finds columns by header, not by
+/// directly after `caliber` (FR-022); specs/005-regulated-item-types adds
+/// four registration columns after `original_serial_number` (FR-019). Import finds columns by header, not by
 /// position, so this order is the export's only.
 pub const COLUMNS: &[&str] = &[
     "make",
@@ -69,6 +70,10 @@ pub const COLUMNS: &[&str] = &[
     "original_make",
     "original_model",
     "original_serial_number",
+    "registered_as",
+    "registration_form",
+    "registration_approved",
+    "registered_to",
     "photo_filenames",
 ];
 
@@ -118,11 +123,18 @@ pub struct FirearmExportRow {
     pub original_make: String,
     pub original_model: String,
     pub original_serial_number: String,
+    /// specs/005-regulated-item-types FR-019: the classification's name, the
+    /// form, the approved date (`YYYY-MM-DD`) and "Registered to", each
+    /// blank when there is none.
+    pub registered_as: String,
+    pub registration_form: String,
+    pub registration_approved: String,
+    pub registered_to: String,
     pub photo_filenames: String,
 }
 
 impl FirearmExportRow {
-    fn as_fields(&self) -> [&str; 36] {
+    fn as_fields(&self) -> [&str; 40] {
         [
             &self.make,
             &self.model,
@@ -159,6 +171,10 @@ impl FirearmExportRow {
             &self.original_make,
             &self.original_model,
             &self.original_serial_number,
+            &self.registered_as,
+            &self.registration_form,
+            &self.registration_approved,
+            &self.registered_to,
             &self.photo_filenames,
         ]
     }
@@ -205,6 +221,10 @@ pub struct RawImportRow {
     pub original_make: Option<String>,
     pub original_model: Option<String>,
     pub original_serial_number: Option<String>,
+    pub registered_as: Option<String>,
+    pub registration_form: Option<String>,
+    pub registration_approved: Option<String>,
+    pub registered_to: Option<String>,
 }
 
 fn non_blank(value: &str) -> Option<String> {
@@ -289,6 +309,10 @@ impl HeaderMap {
             original_make: take("original_make"),
             original_model: take("original_model"),
             original_serial_number: take("original_serial_number"),
+            registered_as: take("registered_as"),
+            registration_form: take("registration_form"),
+            registration_approved: take("registration_approved"),
+            registered_to: take("registered_to"),
         }
     }
 }

@@ -11,6 +11,8 @@ spreadsheet, matched by a `photo_filenames` column referencing files in the
 sibling photos folder.
 
 ## Columns
+_Amended by [spec 005](../../005-regulated-item-types/spec.md): four registration columns follow `original_serial_number`; see 005's spreadsheet contract._
+
 
 | Column | Required on import? | Maps to | Notes |
 |---|---|---|---|

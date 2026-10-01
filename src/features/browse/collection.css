@@ -22,6 +22,19 @@
   color: var(--ink-2);
 }
 
+/* The grouping button: "Group by" quiet, the choice in full ink. */
+.hd-toolbar .hd-groupby {
+  height: var(--control-height);
+}
+
+.hd-groupby__prompt {
+  color: var(--ink-2);
+}
+
+.hd-groupby__value {
+  font-weight: 650;
+}
+
 .hd-toolbar__end {
   display: flex;
   align-items: center;

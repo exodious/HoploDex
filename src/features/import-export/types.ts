@@ -54,7 +54,7 @@ export interface DerivedCaliber {
 /** FR-026, SC-007: a value changed to the spelling already in use. */
 export interface SnappedValue {
   row: number;
-  field: "make" | "model" | "cartridge" | "caliber";
+  field: "make" | "model" | "cartridge" | "caliber" | "registrationForm" | "registeredTo";
   /** As in the sheet, trimmed. */
   sheetValue: string;
   recordedValue: string;

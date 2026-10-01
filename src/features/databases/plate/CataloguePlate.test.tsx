@@ -13,6 +13,7 @@ import {
 } from "./entries";
 import type { PlateEntry } from "./entries";
 import { PLATE_TIMING } from "./timing";
+import { DRAWINGS } from "../../browse/typeDrawings";
 
 function plate(timing = PLATE_TIMING, entries: readonly PlateEntry[] = PLATE_ENTRIES) {
   const { container } = render(<CataloguePlate timing={timing} entries={entries} />);
@@ -56,7 +57,13 @@ describe("CataloguePlate", () => {
   });
 
   it("has one layer in entry 2 for each drawing it cycles through, in the order given", () => {
-    const order = [PLATE_ENTRIES[2], PLATE_ENTRIES[0], PLATE_ENTRIES[3], PLATE_ENTRIES[1]];
+    const order = [
+      PLATE_ENTRIES[2],
+      PLATE_ENTRIES[0],
+      PLATE_ENTRIES[4],
+      PLATE_ENTRIES[3],
+      PLATE_ENTRIES[1],
+    ];
     const svg = plate(PLATE_TIMING, order);
     expect(layerDrawings(svg)).toEqual(order.map((e) => e.key));
     expect(svg.querySelector('.layer[data-layer="0"]')!.textContent).toContain("Shotgun.");
@@ -76,7 +83,8 @@ describe("CataloguePlate", () => {
       l.querySelector(".caption .no")!.textContent,
     ]);
     expect(numbers).toEqual([
-      ["other", "5"],
+      ["other", "6"],
+      ["suppressor", "5"],
       ["shotgun", "4"],
       ["handgun", "3"],
       ["rifle", "2"],
@@ -201,11 +209,18 @@ describe("the owl's blink", () => {
 describe("entry 2's order", () => {
   it("is shuffled: every drawing once, in the order the random draws give", () => {
     // Fisher–Yates from the end: 0.99 leaves the last where it is, then 0
-    // swaps the third with the first, then the second with the first
-    const draws = [0.99, 0, 0];
+    // swaps the fourth with the first, the third with the first, then the
+    // second with the first
+    const draws = [0.99, 0, 0, 0];
     const order = shuffled(PLATE_ENTRIES, () => draws.shift()!);
-    expect(order.map((e) => e.key)).toEqual(["handgun", "shotgun", "rifle", "other"]);
-    expect(PLATE_ENTRIES.map((e) => e.key)).toEqual(["rifle", "handgun", "shotgun", "other"]);
+    expect(order.map((e) => e.key)).toEqual(["handgun", "shotgun", "suppressor", "rifle", "other"]);
+    expect(PLATE_ENTRIES.map((e) => e.key)).toEqual([
+      "rifle",
+      "handgun",
+      "shotgun",
+      "suppressor",
+      "other",
+    ]);
   });
 
   it("keeps every drawing, once, at startup", () => {
@@ -215,11 +230,20 @@ describe("entry 2's order", () => {
   });
 
   it("gives each drawing its own number, after the hoplon's 1", () => {
-    expect(PLATE_ENTRIES.map(entryNumber)).toEqual([2, 3, 4, 5]);
+    expect(PLATE_ENTRIES.map(entryNumber)).toEqual([2, 3, 4, 5, 6]);
   });
 });
 
 describe("entry 2's drawings", () => {
+  it("include every type drawing", () => {
+    expect(PLATE_ENTRIES.map((e) => e.key).sort()).toEqual(Object.keys(DRAWINGS).sort());
+  });
+
+  it("have bounds read through smooth (S) curves", () => {
+    // The suppressor's break lines are S curves, all inside its tube.
+    expect(drawingBounds("suppressor")).toEqual([27, 80.5, 287, 119.5]);
+  });
+
   it("each fit the entry's box", () => {
     for (const entry of PLATE_ENTRIES) {
       const [x0, y0, x1, y1] = drawingBounds(entry.key);
