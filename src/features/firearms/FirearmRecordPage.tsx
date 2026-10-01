@@ -19,6 +19,10 @@ import type { AssignCoverageInput } from "../insurance/types";
 import { DocumentList } from "../media/DocumentList";
 import * as mediaService from "../media/mediaService";
 import { PhotoGallery } from "../media/PhotoGallery";
+import { MountedOnChain } from "../mounts/MountedOnChain";
+import { MountedSection } from "../mounts/MountedSection";
+import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
+import type { RecordLabel } from "../mounts/types";
 import { DispositionHistoryList } from "./DispositionHistoryList";
 import { DisposeDialog } from "./DisposeDialog";
 import { FirearmForm } from "./FirearmForm";
@@ -41,7 +45,7 @@ import type {
 } from "./types";
 import "./record.css";
 
-type RecordDialog = "edit" | "dispose" | "restore" | "delete" | "coverage";
+type RecordDialog = "edit" | "dispose" | "restore" | "delete" | "coverage" | "mountNew";
 
 export interface FirearmRecordPageProps {
   id: number;
@@ -128,6 +132,16 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   // FR-027: the action's name comes from the list the collection loaded.
   const actionName = actionTypes.actions.find((a) => a.id === firearm.actionTypeId)?.name;
   const disposed = firearm.status === "disposed";
+  // How mounts name this firearm.
+  const label: RecordLabel = {
+    record: { kind: "firearm", id: firearm.id },
+    make: firearm.make,
+    model: firearm.model,
+    nickname: firearm.nickname,
+    typeName: type.label,
+    serialNumber: firearm.serialNumber,
+    status: firearm.status,
+  };
 
   async function afterChange(updated: Firearm, message: string) {
     // The refresh below reloads the retained history; keep what's shown
@@ -135,6 +149,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     setFirearm((current) => ({
       ...updated,
       dispositionHistory: current?.dispositionHistory ?? [],
+      mount: current?.mount ?? { chain: [], mounted: [] },
     }));
     setDialog(null);
     await refresh();
@@ -245,6 +260,14 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 <span className="hd-plate__no-serial">None — attested as not required</span>
               )}
             </p>
+            {/* specs/006-accessory-links FR-013: what it is mounted on, and what
+                that is mounted on, each a link. */}
+            {firearm.mount.chain.length > 0 && (
+              <p className="hd-plate__mounted">
+                <span className="hd-plate__stamp-label">Mounted on</span>
+                <MountedOnChain chain={firearm.mount.chain} />
+              </p>
+            )}
           </header>
         </div>
 
@@ -382,13 +405,29 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               empty="No notes recorded."
               onAdd={() => editField("notes")}
             />
-            <h3 className="hd-subhead">Accessories</h3>
+          </section>
+
+          {/* specs/006-accessory-links FR-012: records mounted on this one, between
+              the notes and the free-text accessories note, which is unchanged. */}
+          {!disposed && (
+            <MountedSection
+              record={label}
+              mounted={firearm.mount.mounted}
+              onNewAccessory={() => setDialog("mountNew")}
+            />
+          )}
+
+          {/* Not a labelled region: the edit form's field is labelled "Accessories". */}
+          <div className="hd-panel">
+            <header className="hd-panel__head">
+              <h2 className="hd-panel__title">Accessories</h2>
+            </header>
             <TextBlock
               text={firearm.accessories}
               empty="No accessories recorded."
               onAdd={() => editField("accessories")}
             />
-          </section>
+          </div>
 
           <section className="hd-panel" aria-labelledby="history-title">
             <header className="hd-panel__head">
@@ -513,6 +552,12 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         onOpenChange={(open) => !open && setDialog(null)}
         firearm={firearm}
         onSave={handleCoverage}
+      />
+
+      <NewAccessoryDialog
+        open={dialog === "mountNew"}
+        onOpenChange={(open) => !open && setDialog(null)}
+        record={label}
       />
 
       <ConfirmDialog

@@ -93,6 +93,8 @@ const summary: FirearmSummary = {
   insuranceWarning: "none",
   insurancePolicyId: policy.id,
   scheduledCoverageAmount: 1250,
+  mountedOn: null,
+  mountedCount: 0,
 };
 
 // An uninsured one, so the collection offers "Review insurance".
@@ -151,6 +153,8 @@ const detail: FirearmDetail = {
   registeredTo: null,
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
+  mountedOn: null,
+  mount: { chain: [], mounted: [] },
   dispositionHistory: [],
 };
 

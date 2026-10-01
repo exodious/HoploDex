@@ -37,6 +37,8 @@ import { IdentificationGuide } from "./IdentificationGuide";
 import type { GuidePart } from "./IdentificationGuide";
 import { caliberHint, caliberReducer } from "./caliberDerivation";
 import type { CaliberAction, CaliberMode, CaliberState } from "./caliberDerivation";
+import { MountChooser } from "../mounts/MountChooser";
+import type { MountDetail, RecordLabel } from "../mounts/types";
 import { EntryField } from "./EntryField";
 import { entryTextError, snapNote } from "./entryText";
 import { settleEntry } from "./firearmsService";
@@ -373,8 +375,10 @@ export type FocusField = "notes" | "accessories" | "registration";
 const HIGHLIGHT_MS = 1800;
 
 export interface FirearmFormProps {
-  /** Present in edit mode; omitted when creating a new record. */
-  initialValues?: Firearm;
+  /** Present in edit mode; omitted when creating a new record. `mount` is
+   * the record's `get_firearm` detail: the form shows `mount.chain[0]`, its
+   * direct host, as Mounted on (specs/006-accessory-links FR-010). */
+  initialValues?: Firearm & { mount?: MountDetail };
   /** Opens with this field scrolled into view, focused, and its section
    * briefly highlighted (FR-038). */
   focusField?: FocusField;
@@ -387,8 +391,9 @@ export interface FirearmFormProps {
  * `FormState` changes shape, so older drafts are only discarded. 2: the
  * cartridge and the caliber's state (specs/004-cartridges-action-types
  * research.md §8). 3: the registration classification and details
- * (specs/005-regulated-item-types). */
-export const FORM_VERSION = 3;
+ * (specs/005-regulated-item-types). 4: the Mounted on choice
+ * (specs/006-accessory-links research.md §19). */
+export const FORM_VERSION = 4;
 
 interface FormState {
   make: string;
@@ -407,6 +412,9 @@ interface FormState {
   /** specs/004-cartridges-action-types FR-017: an action id; "" is
    * Unspecified. */
   actionTypeId: string;
+  /** specs/006-accessory-links FR-010: the record it is mounted on, as the
+   * chooser names it; `null` is not mounted. */
+  mountedOn: RecordLabel | null;
   serialNumber: string;
   noSerialAttested: boolean;
   notes: string;
@@ -458,7 +466,7 @@ function weightFields(tenthsOz: number | null) {
   return { weightPounds: pounds, weightOunces: ounces };
 }
 
-function toFormState(firearm?: Firearm): FormState {
+function toFormState(firearm?: FirearmFormProps["initialValues"]): FormState {
   return {
     make: firearm?.make ?? "",
     model: firearm?.model ?? "",
@@ -472,6 +480,7 @@ function toFormState(firearm?: Firearm): FormState {
     cartridge: firearm?.cartridge ?? "",
     firearmTypeId: firearm ? String(firearm.firearmTypeId) : "",
     actionTypeId: firearm?.actionTypeId == null ? "" : String(firearm.actionTypeId),
+    mountedOn: firearm?.mountedOn ? (firearm.mount?.chain[0] ?? null) : null,
     serialNumber: firearm?.serialNumber ?? "",
     noSerialAttested: firearm?.noSerialAttested ?? false,
     notes: firearm?.notes ?? "",
@@ -616,6 +625,7 @@ const FIELD_ORDER: Field[] = [
   "nickname",
   "firearmTypeId",
   "actionTypeId",
+  "mountedOn",
   "cartridge",
   "caliber",
   "serialNumber",
@@ -1056,6 +1066,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       firearmTypeId: Number(form.firearmTypeId),
       actionTypeId:
         form.actionTypeId === "" || !rules.actionTypeApplies ? null : Number(form.actionTypeId),
+      // A disposed record is never mounted (FR-014).
+      mountedOn: disposed ? null : (form.mountedOn?.record ?? null),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
       notes: blankToNull(form.notes),
@@ -1273,6 +1285,20 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 <span className="hd-sr-only" role="status" aria-live="polite">
                   {actionNote}
                 </span>
+              </div>
+            )}
+
+            {/* specs/006-accessory-links contracts/ui-accessories.md §4: after
+                Type and Action. */}
+            {!disposed && (
+              <div data-field="mountedOn">
+                <MountChooser
+                  value={form.mountedOn}
+                  onChange={(label) => update("mountedOn", label)}
+                  record={initialValues ? { kind: "firearm", id: initialValues.id } : null}
+                  hint="Only if this firearm is mounted on another firearm or an accessory, such as a suppressor on a rifle."
+                  error={errorFor("mountedOn")}
+                />
               </div>
             )}
 

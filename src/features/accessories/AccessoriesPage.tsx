@@ -6,6 +6,8 @@ import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
 import { CoverageCell } from "../browse/CoverageCell";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
+import { MountLines } from "../browse/MountLines";
+import { RecordName } from "../mounts/RecordName";
 import { accessoryNameText } from "../mounts/recordNames";
 import * as accessoriesService from "./accessoriesService";
 import type { AccessoryGroup, AccessorySummary } from "./types";
@@ -186,10 +188,11 @@ function AccessoryList({ groups, onSelect }: LayoutProps) {
         .filter((group) => group.accessories.length > 0)
         .map((group, index) => (
           <section key={group.key} className="hd-group">
-            <table className="hd-table">
+            <table className="hd-table hd-table--accessories">
               <thead className={index > 0 ? "hd-sr-only" : undefined}>
                 <tr>
                   <th scope="col">Accessory</th>
+                  <th scope="col">Mounted on</th>
                   <th scope="col" className="hd-table__num">
                     Value
                   </th>
@@ -231,6 +234,17 @@ function AccessoryList({ groups, onSelect }: LayoutProps) {
                         </div>
                       </div>
                     </td>
+                    <td>
+                      {/* FR-013: the direct host only. */}
+                      {accessory.mountedOn ? (
+                        <RecordName label={accessory.mountedOn} link />
+                      ) : (
+                        <>
+                          <span aria-hidden>—</span>
+                          <span className="hd-sr-only">Not mounted</span>
+                        </>
+                      )}
+                    </td>
                     <td className="hd-table__num hd-num">
                       {formatDollars(accessory.estimatedValue)}
                     </td>
@@ -257,33 +271,42 @@ function AccessoryTiles({ groups, onSelect }: LayoutProps) {
             <ul className="hd-tiles">
               {group.accessories.map((accessory) => (
                 <li key={accessory.id}>
-                  <button
-                    type="button"
-                    className={
-                      accessory.status === "disposed" ? "hd-tile hd-tile--disposed" : "hd-tile"
-                    }
-                    onClick={() => onSelect(accessory.id)}
-                  >
-                    <FirearmThumbnail
-                      className="hd-tile__image"
-                      thumbnailPhotoId={accessory.thumbnailPhotoId}
-                      genericThumbnailKey={accessory.genericThumbnailKey}
-                    />
-                    <span className="hd-tile__body">
-                      <span className="hd-tile__name">{nameOf(accessory)}</span>
-                      {accessory.serialNumber && (
-                        <span className="hd-tile__meta">
-                          <span className="hd-serial">{accessory.serialNumber}</span>
+                  {/* As the collection's tiles: the host is a link, which cannot
+                      sit inside the tile's button. */}
+                  <div className="hd-tile-card">
+                    <button
+                      type="button"
+                      className={
+                        accessory.status === "disposed" ? "hd-tile hd-tile--disposed" : "hd-tile"
+                      }
+                      onClick={() => onSelect(accessory.id)}
+                    >
+                      <FirearmThumbnail
+                        className="hd-tile__image"
+                        thumbnailPhotoId={accessory.thumbnailPhotoId}
+                        genericThumbnailKey={accessory.genericThumbnailKey}
+                      />
+                      <span className="hd-tile__body">
+                        <span className="hd-tile__name">{nameOf(accessory)}</span>
+                        {accessory.serialNumber && (
+                          <span className="hd-tile__meta">
+                            <span className="hd-serial">{accessory.serialNumber}</span>
+                          </span>
+                        )}
+                        <span className="hd-tile__foot">
+                          <span className="hd-tile__value hd-num">
+                            {formatDollars(accessory.estimatedValue)}
+                          </span>
+                          <CoverageCell firearm={accessory} />
                         </span>
-                      )}
-                      <span className="hd-tile__foot">
-                        <span className="hd-tile__value hd-num">
-                          {formatDollars(accessory.estimatedValue)}
-                        </span>
-                        <CoverageCell firearm={accessory} />
                       </span>
-                    </span>
-                  </button>
+                    </button>
+                    {accessory.mountedOn && (
+                      <div className="hd-tile__mounts">
+                        <MountLines mountedOn={accessory.mountedOn} />
+                      </div>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

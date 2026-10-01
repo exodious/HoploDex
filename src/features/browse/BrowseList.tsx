@@ -2,6 +2,7 @@ import { formatDollars } from "../../lib/money";
 import { FirearmName } from "../app/FirearmName";
 import { CoverageCell } from "./CoverageCell";
 import { FirearmThumbnail } from "./FirearmThumbnail";
+import { MountLines } from "./MountLines";
 import { caliberText } from "./types";
 import type { GroupBy, VisibleGroup } from "./types";
 
@@ -71,6 +72,10 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
                             "No serial number"
                           )}
                         </span>
+                        <MountLines
+                          mountedOn={firearm.mountedOn}
+                          mountedCount={firearm.mountedCount}
+                        />
                       </div>
                     </div>
                   </td>

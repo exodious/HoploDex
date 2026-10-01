@@ -77,6 +77,7 @@ function firearm(overrides: Partial<Firearm> = {}): Firearm {
     registrationForm: null,
     registrationApproved: null,
     registeredTo: null,
+    mountedOn: null,
     createdAt: "",
     updatedAt: "",
     ...overrides,

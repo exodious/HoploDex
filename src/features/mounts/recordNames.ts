@@ -18,3 +18,19 @@ export function accessoryNameText(
   const makeModel = accessoryMakeModel(make, model);
   return makeModel ? `${makeModel} · ${kindName}` : kindName;
 }
+
+/** Any record's name as plain text (FR-005): a firearm "{make} {model}
+ * “{nickname}”" (001 FR-031), an accessory "{make} {model} · {kind}". */
+export function recordNameText(label: {
+  record: { kind: "firearm" | "accessory" };
+  make: string | null;
+  model: string | null;
+  nickname: string | null;
+  typeName: string;
+}): string {
+  if (label.record.kind === "accessory") {
+    return accessoryNameText(label.make, label.model, label.typeName);
+  }
+  const name = `${label.make ?? ""} ${label.model ?? ""}`.trim();
+  return label.nickname ? `${name} “${label.nickname}”` : name;
+}

@@ -158,7 +158,12 @@ export function AppShell() {
     }
     // A record reached without a trail returns to the list it belongs to.
     if (route.page === "firearm") {
-      const list: Route = { page: route.from };
+      // Reached through a mount, it returns to the collection.
+      const list = (
+        ["accessories", "collection", "insurance"].includes(route.from)
+          ? { page: route.from }
+          : { page: "collection" }
+      ) as Route;
       return { label: labelFor(list), go: () => navigate(list) };
     }
     if (
@@ -258,7 +263,9 @@ export function AppShell() {
 
   const section =
     route.page === "firearm"
-      ? route.from
+      ? route.from === "insurance"
+        ? "insurance"
+        : "collection"
       : route.page === "policy"
         ? "insurance"
         : route.page === "accessory"

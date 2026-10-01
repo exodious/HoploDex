@@ -67,6 +67,8 @@ const colt: FirearmSummary = {
   insuranceWarning: "none",
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
+  mountedOn: null,
+  mountedCount: 0,
 };
 
 function accessory(id: number, overrides: Partial<AccessorySummary>): AccessorySummary {

@@ -2,7 +2,7 @@
 // contracts/tauri-commands.md).
 
 // specs/006-accessory-links: a firearm or accessory, as mounts name it.
-import type { RecordRef } from "../mounts/types";
+import type { MountDetail, RecordRef } from "../mounts/types";
 export type { RecordRef };
 
 export type FirearmStatus = "active" | "disposed";
@@ -76,6 +76,9 @@ export interface Firearm {
   registrationApproved: string | null;
   /** FR-009: e.g. "Smith Family Trust". Only with a classification. */
   registeredTo: string | null;
+  /** specs/006-accessory-links FR-010: the direct host, if mounted. The
+   * forms always send it; `null` = not mounted. */
+  mountedOn: RecordRef | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,7 +98,11 @@ export interface DispositionHistoryEntry {
 
 /** `get_firearm`'s output: the record plus its retained dispositions,
  * newest first. */
-export type FirearmDetail = Firearm & { dispositionHistory: DispositionHistoryEntry[] };
+export type FirearmDetail = Firearm & {
+  dispositionHistory: DispositionHistoryEntry[];
+  /** specs/006-accessory-links FR-013: the chain above and everything below. */
+  mount: MountDetail;
+};
 
 /** What to do with the disposition being reversed (FR-033). */
 export type HistoryChoice = "keep" | "discard";

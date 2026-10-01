@@ -1,1 +1,87 @@
 /* Styles for the mount pickers and Mounted sections: contracts/ui-accessories.md. */
+
+/* ── The mounted outline: research.md §14 ───────────────────────────────
+   One flat list. A direct entry sits at the edge; everything below it sits
+   one fixed step in whatever its depth, joined to the direct entry above by
+   a rail, so the eye sees what travels with what. */
+
+.hd-mounted {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-mounted__entry {
+  padding: var(--space-3) 0;
+}
+
+/* A new direct entry starts a new group, set off by a hairline. */
+.hd-mounted__entry--direct + .hd-mounted__entry--direct,
+.hd-mounted__entry--nested + .hd-mounted__entry--direct {
+  border-top: 1px solid var(--rule);
+}
+
+.hd-mounted__entry--direct {
+  padding-bottom: var(--space-2);
+}
+
+.hd-mounted__entry--nested {
+  margin-left: var(--space-2);
+  padding: var(--space-2) 0 var(--space-2) var(--space-5);
+  border-left: 2px solid var(--rule-strong);
+}
+
+/* A nested entry's rail runs into the next nested one without a break. */
+.hd-mounted__entry--nested:last-child,
+.hd-mounted__entry--nested + .hd-mounted__entry--direct {
+  margin-bottom: var(--space-2);
+}
+
+.hd-mounted__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hd-mounted__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+/* The name is a link; keep it reading as the entry's name, not as prose. */
+.hd-mounted__name .hd-link {
+  font: inherit;
+  text-align: left;
+}
+
+.hd-mounted__entry--nested .hd-mounted__name {
+  font-weight: 550;
+}
+
+.hd-mounted__actions {
+  flex: none;
+}
+
+.hd-mounted__on {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* ── "Mounted on" chain ──────────────────────────────────────────────── */
+
+.hd-mounted-chain {
+  overflow-wrap: anywhere;
+}
+
+.hd-plate__mounted {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+}

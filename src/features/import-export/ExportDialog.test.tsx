@@ -1,35 +1,53 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
-import * as browseService from "../browse/browseService";
 import type { CollectionState } from "../app/collectionStore";
 import { ExportDialog } from "./ExportDialog";
 import * as importExportService from "./importExportService";
+import type { ExportScope } from "./types";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
-vi.mock("../browse/browseService");
 
 const browse = { query: "", groupBy: undefined, includeDisposed: false, view: "list" } as const;
 
-function renderDialog(
-  firearms: { registeredAs: string | null }[] = [],
-  browseState: Parameters<typeof ExportDialog>[0]["browse"] = browse,
-) {
+/** contracts/tauri-commands.md `get_export_scope`'s output. */
+function scope(overrides: Partial<ExportScope> = {}): ExportScope {
+  return {
+    firearmCount: 3,
+    accessoryCount: 2,
+    includesRegistration: false,
+    includesAccessories: true,
+    ...overrides,
+  };
+}
+
+/** The dialog reads its counts and disclosure from `get_export_scope`
+ * (specs/006-accessory-links contracts/ui-accessories.md §11), not from the
+ * collection's list or `list_firearms`. */
+function mockScope(forAll: ExportScope, forFiltered: ExportScope = forAll) {
+  vi.mocked(importExportService.getExportScope).mockImplementation(async (input) =>
+    input.scope === "filtered" ? forFiltered : forAll,
+  );
+}
+
+function renderDialog(browseState: Parameters<typeof ExportDialog>[0]["browse"] = browse) {
   render(
-    <CollectionContext.Provider value={{ firearms } as unknown as CollectionState}>
+    <CollectionContext.Provider value={{ firearms: [] } as unknown as CollectionState}>
       <ExportDialog open onOpenChange={vi.fn()} browse={browseState} />
     </CollectionContext.Provider>,
   );
 }
 
-describe("ExportDialog disclosure (Constitution V: what leaves the device, and where)", () => {
-  beforeEach(() => {
-    vi.mocked(importExportService.exportCollection).mockReset();
-  });
+beforeEach(() => {
+  vi.mocked(importExportService.exportCollection).mockReset();
+  vi.mocked(importExportService.getExportScope).mockReset();
+  mockScope(scope({ includesAccessories: false }));
+});
 
+describe("ExportDialog disclosure (Constitution V: what leaves the device, and where)", () => {
   it("describes the export as not encrypted and points to encrypted backups (FR-031)", () => {
     renderDialog();
 
@@ -86,43 +104,183 @@ describe("ExportDialog registration disclosure (FR-020, US4-2)", () => {
   const PLAIN = "including serial numbers and values.";
   const WITH_REGISTRATION = "including serial numbers, values and registration details.";
   const filtered = { ...browse, query: "glock" };
+  const none = scope({ includesAccessories: false, includesRegistration: false });
+  const registered = scope({ includesAccessories: false, includesRegistration: true });
 
-  function listing(...registeredAs: (string | null)[]) {
-    vi.mocked(browseService.listFirearms).mockResolvedValue({
-      groups: [{ firearms: registeredAs.map((r) => ({ registeredAs: r })) }],
-    } as unknown as Awaited<ReturnType<typeof browseService.listFirearms>>);
-  }
-
-  it("ends with serial numbers and values when no firearm is registered", () => {
-    renderDialog([{ registeredAs: null }]);
-    expect(screen.getByRole("note")).toHaveTextContent(PLAIN);
+  it("ends with serial numbers and values when no firearm is registered", async () => {
+    mockScope(none);
+    renderDialog();
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(PLAIN));
   });
 
-  it("adds registration details when any firearm in the whole collection is registered", () => {
-    renderDialog([{ registeredAs: null }, { registeredAs: "Suppressor" }]);
-    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+  it("adds registration details when the export includes a registered firearm", async () => {
+    mockScope(registered);
+    renderDialog();
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION));
   });
 
   it("follows the scope: the current results decide it once they are chosen", async () => {
     const user = userEvent.setup();
-    listing(null);
-    renderDialog([{ registeredAs: "Suppressor" }], filtered);
-    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+    mockScope(registered, none);
+    renderDialog(filtered);
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION));
 
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
-    expect(screen.getByRole("note")).toHaveTextContent(PLAIN);
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(PLAIN));
 
     await user.click(screen.getByRole("radio", { name: /Entire collection/ }));
-    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION));
   });
 
   it("adds registration details when the current results hold a registered firearm", async () => {
     const user = userEvent.setup();
-    listing(null, "Machine gun");
-    renderDialog([{ registeredAs: null }], filtered);
-    expect(screen.getByRole("note")).toHaveTextContent(PLAIN);
+    mockScope(none, registered);
+    renderDialog(filtered);
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(PLAIN));
 
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
-    expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION);
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION));
+  });
+});
+
+// specs/006-accessory-links contracts/ui-accessories.md §11 (FR-020, FR-021).
+describe("ExportDialog with accessories (US5)", () => {
+  const filtered = { ...browse, query: "glock" };
+
+  /** The sentence of the privacy note that holds `phrase`. */
+  function sentenceWith(phrase: string): string | undefined {
+    const text = screen.getByRole("note").textContent ?? "";
+    return text.split(/(?<=\.)\s+/).find((sentence) => sentence.includes(phrase));
+  }
+
+  it("reads the whole collection's counts from get_export_scope", async () => {
+    mockScope(scope({ firearmCount: 3, accessoryCount: 2 }));
+    renderDialog();
+
+    expect(await screen.findByText(/3 firearms and 2 accessories/)).toBeInTheDocument();
+    expect(importExportService.getExportScope).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "all" }),
+    );
+  });
+
+  it("shows each scope's own counts, asking for the filtered one with the current filter", async () => {
+    mockScope(
+      scope({ firearmCount: 3, accessoryCount: 2 }),
+      scope({ firearmCount: 5, accessoryCount: 4 }),
+    );
+    renderDialog(filtered);
+
+    expect(
+      await screen.findByRole("radio", { name: /Entire collection.*3 firearms and 2 accessories/ }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("radio", { name: /Current results.*5 firearms and 4 accessories/ }),
+    ).toBeInTheDocument();
+    expect(importExportService.getExportScope).toHaveBeenCalledWith({
+      scope: "filtered",
+      filter: expect.objectContaining({ query: "glock" }),
+    });
+  });
+
+  it("hints that the current results include what is mounted on them, only for that scope", async () => {
+    const user = userEvent.setup();
+    renderDialog(filtered);
+    const hint = "Includes everything mounted on these firearms.";
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole("radio", { name: /Current results/ }));
+    expect(screen.getByText(hint)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /Entire collection/ }));
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+  });
+
+  it("names accessories, with their serial numbers, values and photos, when the export includes one", async () => {
+    mockScope(scope({ includesAccessories: true, includesRegistration: false }));
+    renderDialog();
+
+    await waitFor(() =>
+      expect(screen.getByRole("note")).toHaveTextContent(
+        "accessories, with their serial numbers, values and photos",
+      ),
+    );
+  });
+
+  it("words the accessories and the registration details in one sentence", async () => {
+    mockScope(scope({ includesAccessories: true, includesRegistration: true }));
+    renderDialog();
+
+    await waitFor(() =>
+      expect(screen.getByRole("note")).toHaveTextContent(
+        "accessories, with their serial numbers, values and photos",
+      ),
+    );
+    const sentence = sentenceWith("accessories, with their serial numbers, values and photos");
+    expect(sentence).toContain("registration details");
+  });
+
+  it("says nothing of accessories when the scope has none", async () => {
+    mockScope(scope({ accessoryCount: 0, includesAccessories: false }));
+    renderDialog();
+
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(/serial numbers/));
+    expect(screen.getByRole("note")).not.toHaveTextContent(/accessories/i);
+  });
+
+  it("follows the scope for the accessories disclosure", async () => {
+    const user = userEvent.setup();
+    mockScope(
+      scope({ includesAccessories: true }),
+      scope({ accessoryCount: 0, includesAccessories: false }),
+    );
+    renderDialog(filtered);
+    await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(/accessories, with/));
+
+    await user.click(await screen.findByRole("radio", { name: /Current results/ }));
+    await waitFor(() => expect(screen.getByRole("note")).not.toHaveTextContent(/accessories/i));
+  });
+
+  it("lists both file names when a CSV export wrote an accessory file", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.exportCollection).mockResolvedValue({
+      spreadsheetPath: "/out/hoplodex-export-20261001-120000.csv",
+      accessorySpreadsheetPath: "/out/hoplodex-export-20261001-120000-accessories.csv",
+      photosFolderPath: "/out/hoplodex-export-20261001-120000_photos",
+      exportedFirearmCount: 3,
+      exportedAccessoryCount: 2,
+      exportedPhotoCount: 1,
+    });
+    renderDialog();
+
+    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(
+      await screen.findByText("/out/hoplodex-export-20261001-120000.csv"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("/out/hoplodex-export-20261001-120000-accessories.csv"),
+    ).toBeInTheDocument();
+  });
+
+  it("lists one spreadsheet when there is no accessory file (a workbook, or no accessory)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.exportCollection).mockResolvedValue({
+      spreadsheetPath: "/out/hoplodex-export-20261001-120000.xlsx",
+      accessorySpreadsheetPath: null,
+      photosFolderPath: "/out/hoplodex-export-20261001-120000_photos",
+      exportedFirearmCount: 3,
+      exportedAccessoryCount: 2,
+      exportedPhotoCount: 1,
+    });
+    renderDialog();
+
+    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(
+      await screen.findByText("/out/hoplodex-export-20261001-120000.xlsx"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/-accessories\.csv/)).not.toBeInTheDocument();
   });
 });

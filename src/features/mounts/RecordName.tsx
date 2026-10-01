@@ -19,6 +19,9 @@ export interface RecordNameProps {
   link?: boolean;
   /** Adds the firearm's type after a dot; an accessory always shows its kind. */
   withType?: boolean;
+  /** The id of text that describes the link (the Mounted section's "on …"
+   * line, contracts/ui-accessories.md §5). Only a link takes it. */
+  describedBy?: string;
 }
 
 function NameText({ label, withType }: { label: RecordLabel; withType: boolean }) {
@@ -35,7 +38,12 @@ function NameText({ label, withType }: { label: RecordLabel; withType: boolean }
   return <>{accessoryNameText(label.make, label.model, label.typeName)}</>;
 }
 
-export function RecordName({ label, link = false, withType = false }: RecordNameProps) {
+export function RecordName({
+  label,
+  link = false,
+  withType = false,
+  describedBy,
+}: RecordNameProps) {
   const navigation = useNavigation();
   const text = <NameText label={label} withType={withType} />;
   if (!link) return text;
@@ -46,11 +54,12 @@ export function RecordName({ label, link = false, withType = false }: RecordName
     <button
       type="button"
       className="hd-link"
-      onClick={() =>
-        // A firearm route's `from` is still the two pages it was first
-        // reached from; widening it is the Mounted section's (US2).
-        navigation.open({ page: label.record.kind, id: label.record.id, from } as Route)
-      }
+      aria-describedby={describedBy}
+      onClick={(event) => {
+        // A link inside a clickable row or tile follows the link only.
+        event.stopPropagation();
+        navigation.open({ page: label.record.kind, id: label.record.id, from } as Route);
+      }}
     >
       {text}
     </button>

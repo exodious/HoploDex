@@ -10,6 +10,11 @@ import "./components.css";
 export interface ComboboxOption {
   value: string;
   marker?: string;
+  /** Names the row when two rows can share a value (two records with the
+   * same name); `onPick` receives it in place of the value. */
+  key?: string;
+  /** A second muted line under the row. */
+  detail?: string;
 }
 
 export interface ComboboxProps extends Omit<
@@ -24,7 +29,8 @@ export interface ComboboxProps extends Omit<
    * focus and on every keystroke; an answer for anything but the text now in
    * the field is dropped, so a slow one never replaces a fresh one. */
   loadOptions: (text: string) => Promise<ComboboxOption[]>;
-  /** The user picked a row: the field should take this value. */
+  /** The user picked a row: the field should take this value (the row's
+   * `key` when it has one). */
   onPick: (value: string) => void;
   /** The user left the field (Tab, a click elsewhere). Not called when a
    * row is picked. */
@@ -173,7 +179,7 @@ export function Combobox({
         if (listOpen && active >= 0) {
           // The row is picked; the form's Enter (submit) does not run.
           event.preventDefault();
-          pick(options[active].value);
+          pick(options[active].key ?? options[active].value);
         } else {
           setOpen(false);
         }
@@ -268,25 +274,42 @@ export function Combobox({
             className="hd-combobox__list"
             onMouseDown={(event) => event.preventDefault()}
           >
-            {options.map((option, index) => (
-              <li
-                key={option.value}
-                id={`${listId}-${index}`}
-                role="option"
-                aria-selected={index === active}
-                className="hd-combobox__option"
-                onClick={() => pick(option.value)}
-                onMouseMove={() => index !== active && setActive(index)}
-              >
-                <span className="hd-combobox__value">{option.value}</span>
-                {option.marker && (
-                  <>
-                    {" "}
-                    <span className="hd-combobox__marker">{option.marker}</span>
-                  </>
-                )}
-              </li>
-            ))}
+            {options.map((option, index) => {
+              const rowKey = option.key ?? option.value;
+              const main = (
+                <>
+                  <span className="hd-combobox__value">{option.value}</span>
+                  {option.marker && (
+                    <>
+                      {" "}
+                      <span className="hd-combobox__marker">{option.marker}</span>
+                    </>
+                  )}
+                </>
+              );
+              return (
+                <li
+                  key={rowKey}
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={index === active}
+                  className={["hd-combobox__option", option.detail && "hd-combobox__option--detail"]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => pick(rowKey)}
+                  onMouseMove={() => index !== active && setActive(index)}
+                >
+                  {option.detail ? (
+                    <>
+                      <span className="hd-combobox__row">{main}</span>
+                      <span className="hd-combobox__detail">{option.detail}</span>
+                    </>
+                  ) : (
+                    main
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </Popover.Content>
       </Popover.Portal>

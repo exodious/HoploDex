@@ -34,6 +34,8 @@ const summary = {
   insuranceWarning: "none" as const,
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
+  mountedOn: null,
+  mountedCount: 0,
 };
 
 const collection: CollectionState = {

@@ -52,6 +52,8 @@ function summary(id: number, nickname: string | null): FirearmSummary {
     insuranceWarning: "none",
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
+    mountedOn: null,
+    mountedCount: 0,
   };
 }
 

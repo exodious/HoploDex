@@ -211,6 +211,7 @@ describe("MountChooser searching (§4, FR-012)", () => {
 describe("MountChooser options (§4)", () => {
   async function openList() {
     const user = userEvent.setup();
+    render(<Harness />);
     await user.click(field());
     return { user, options: await screen.findAllByRole("option") };
   }

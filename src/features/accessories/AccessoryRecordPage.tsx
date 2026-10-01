@@ -18,7 +18,11 @@ import { coverageStatus, expiryLabel } from "../insurance/coverage";
 import type { AssignCoverageInput } from "../insurance/types";
 import { DocumentList } from "../media/DocumentList";
 import { PhotoGallery } from "../media/PhotoGallery";
+import { MountedOnChain } from "../mounts/MountedOnChain";
+import { MountedSection } from "../mounts/MountedSection";
+import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
 import { accessoryNameText } from "../mounts/recordNames";
+import type { RecordLabel } from "../mounts/types";
 import { peekResumedDraft } from "../session/usePendingDraft";
 import { AccessoryForm } from "./AccessoryForm";
 import * as accessoriesService from "./accessoriesService";
@@ -26,7 +30,7 @@ import type { Accessory, AccessoryDetail, AccessoryInput } from "./types";
 import "../firearms/record.css";
 import "./accessories.css";
 
-type RecordDialog = "edit" | "dispose" | "restore" | "delete" | "coverage";
+type RecordDialog = "edit" | "dispose" | "restore" | "delete" | "coverage" | "mountNew";
 
 export interface AccessoryRecordPageProps {
   id: number;
@@ -39,7 +43,7 @@ function failureMessage(e: unknown, fallback: string): string {
 /** One accessory's full record (specs/006-accessory-links US1, FR-007a,
  * FR-013; contracts/ui-accessories.md §12): the firearm record page's
  * layout, with photos, documents, value, notes, disposition history and
- * coverage. The Mounted section and the "Mounted on" chain are User Story 2's. */
+ * coverage, and (User Story 2) its "Mounted on" chain and Mounted section. */
 export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   const {
     accessoriesById,
@@ -99,6 +103,16 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   const kindName = kind?.name ?? "Accessory";
   const name = accessoryNameText(accessory.make, accessory.model, kindName);
   const disposed = accessory.status === "disposed";
+  // How mounts name this accessory.
+  const label: RecordLabel = {
+    record: { kind: "accessory", id: accessory.id },
+    make: accessory.make,
+    model: accessory.model,
+    nickname: null,
+    typeName: kindName,
+    serialNumber: accessory.serialNumber,
+    status: accessory.status,
+  };
   const policy =
     accessory.insurancePolicyId != null ? policiesById.get(accessory.insurancePolicyId) : undefined;
   const blanket = valueSummary?.blanket ?? null;
@@ -273,6 +287,11 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
               <Fact label="Serial number">{accessory.serialNumber}</Fact>
               <Fact label="Caliber">{accessory.caliber}</Fact>
               <Fact label="Cartridge">{accessory.cartridge}</Fact>
+              {accessory.mount.chain.length > 0 && (
+                <Fact label="Mounted on">
+                  <MountedOnChain chain={accessory.mount.chain} />
+                </Fact>
+              )}
             </dl>
           </section>
 
@@ -308,6 +327,15 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
               onAdd={() => setDialog("edit")}
             />
           </section>
+
+          {/* specs/006-accessory-links FR-012: after the notes, before the documents. */}
+          {!disposed && (
+            <MountedSection
+              record={label}
+              mounted={accessory.mount.mounted}
+              onNewAccessory={() => setDialog("mountNew")}
+            />
+          )}
 
           <DocumentList owner={{ kind: "accessory", id: accessory.id }} />
 
@@ -426,6 +454,12 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
         onOpenChange={(isOpen) => !isOpen && setDialog(null)}
         accessory={accessory}
         onSave={handleCoverage}
+      />
+
+      <NewAccessoryDialog
+        open={dialog === "mountNew"}
+        onOpenChange={(isOpen) => !isOpen && setDialog(null)}
+        record={label}
       />
 
       <ConfirmDialog

@@ -13,18 +13,24 @@ import { entryTextError, snapNote } from "../firearms/entryText";
 import { settleEntry } from "../firearms/firearmsService";
 import type { DerivedCaliber } from "../firearms/types";
 import "../firearms/forms.css";
+import { MountChooser } from "../mounts/MountChooser";
 import { accessoryNameText } from "../mounts/recordNames";
+import type { MountDetail, RecordLabel } from "../mounts/types";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import type { Accessory, AccessoryInput } from "./types";
 
 // specs/006-accessory-links contracts/ui-accessories.md §3 (FR-001 to FR-005,
-// FR-027): the accessory form, laid out as the firearm form is. The Mounted
-// on row is User Story 2's.
+// FR-027): the accessory form, laid out as the firearm form is.
 
 export interface AccessoryFormProps {
-  /** Present in edit mode; omitted when creating a new record. */
-  initialValues?: Accessory;
+  /** Present in edit mode; omitted when creating a new record. `mount` is
+   * the record's `get_accessory` detail: the form shows `mount.chain[0]`, its
+   * direct host, as Mounted on (specs/006-accessory-links FR-010). */
+  initialValues?: Accessory & { mount?: MountDetail };
+  /** The record whose "Mount > New accessory…" opened the form (§5): Mounted
+   * on starts as this, and can be changed or cleared. */
+  presetMountedOn?: RecordLabel;
   onSubmit: (input: AccessoryInput) => Promise<void>;
   onCancel?: () => void;
 }
@@ -63,6 +69,9 @@ interface FormState {
   caliberPrompt: string;
   cartridge: string;
   serialNumber: string;
+  /** specs/006-accessory-links FR-010: the record it is mounted on, as the
+   * chooser names it; `null` is not mounted. */
+  mountedOn: RecordLabel | null;
   notes: string;
   estimatedValue: string;
   acquisitionSource: string;
@@ -72,7 +81,10 @@ interface FormState {
 
 type Field = keyof FormState;
 
-function toFormState(accessory?: Accessory): FormState {
+function toFormState(
+  accessory?: AccessoryFormProps["initialValues"],
+  preset?: RecordLabel,
+): FormState {
   return {
     accessoryKindId: accessory ? String(accessory.accessoryKindId) : "",
     make: accessory?.make ?? "",
@@ -85,6 +97,11 @@ function toFormState(accessory?: Accessory): FormState {
     caliberPrompt: "",
     cartridge: accessory?.cartridge ?? "",
     serialNumber: accessory?.serialNumber ?? "",
+    mountedOn: accessory
+      ? accessory.mountedOn
+        ? (accessory.mount?.chain[0] ?? null)
+        : null
+      : (preset ?? null),
     notes: accessory?.notes ?? "",
     estimatedValue: dollarsToInput(accessory?.estimatedValue ?? null),
     acquisitionSource: accessory?.acquisitionSource ?? "",
@@ -143,6 +160,7 @@ const FIELD_ORDER: Field[] = [
   "cartridge",
   "caliber",
   "serialNumber",
+  "mountedOn",
   "estimatedValue",
   "acquisitionDate",
   "acquisitionPrice",
@@ -156,7 +174,12 @@ function isEntryField(name: string | undefined): name is AccessoryEntryField {
  * the disposition are set from the record's own panel and dialogs, so a save
  * here carries them over unchanged. Renders its own dialog body and footer
  * (use inside `<Dialog bare>`). */
-export function AccessoryForm({ initialValues, onSubmit, onCancel }: AccessoryFormProps) {
+export function AccessoryForm({
+  initialValues,
+  presetMountedOn,
+  onSubmit,
+  onCancel,
+}: AccessoryFormProps) {
   const kinds = useAccessoryKinds();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
@@ -166,10 +189,10 @@ export function AccessoryForm({ initialValues, onSubmit, onCancel }: AccessoryFo
   };
   // Pending changes the user resumed start as unsaved input (specs/003 FR-039).
   const [form, setForm] = useState<FormState>(() =>
-    resumedValues(target, toFormState(initialValues)),
+    resumedValues(target, toFormState(initialValues, presetMountedOn)),
   );
   useResumedDraftTaken(target);
-  const [pristine] = useState(() => toFormState(initialValues));
+  const [pristine] = useState(() => toFormState(initialValues, presetMountedOn));
   // The latest form, for a settle response to check the field still holds
   // what was sent.
   const latestForm = useRef(form);
@@ -378,8 +401,8 @@ export function AccessoryForm({ initialValues, onSubmit, onCancel }: AccessoryFo
       return false;
     }
 
-    // Status, disposition, coverage and the mount are the record page's and
-    // its dialogs' to change, so a save here keeps what the record has.
+    // Status, disposition and coverage are the record page's and its
+    // dialogs' to change, so a save here keeps what the record has.
     const input: AccessoryInput = {
       accessoryKindId: Number(form.accessoryKindId),
       make: blankToNull(form.make),
@@ -399,7 +422,8 @@ export function AccessoryForm({ initialValues, onSubmit, onCancel }: AccessoryFo
       dispositionPrice: initialValues?.dispositionPrice ?? null,
       insurancePolicyId: initialValues?.insurancePolicyId ?? null,
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
-      mountedOn: initialValues?.mountedOn ?? null,
+      // A disposed record is never mounted (FR-014).
+      mountedOn: initialValues?.status === "disposed" ? null : (form.mountedOn?.record ?? null),
     };
     return submitInput(input);
   }
@@ -548,6 +572,19 @@ export function AccessoryForm({ initialValues, onSubmit, onCancel }: AccessoryFo
               spellCheck={false}
             />
           </div>
+
+          {/* contracts/ui-accessories.md §3 row 5, §4. */}
+          {initialValues?.status !== "disposed" && (
+            <div data-field="mountedOn">
+              <MountChooser
+                value={form.mountedOn}
+                onChange={(label) => update("mountedOn", label)}
+                record={initialValues ? { kind: "accessory", id: initialValues.id } : null}
+                hint="The firearm or accessory it is on now, if any."
+                error={errorFor("mountedOn")}
+              />
+            </div>
+          )}
         </section>
 
         <section className="hd-form-section" aria-labelledby="af-value">

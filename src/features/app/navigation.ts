@@ -1,18 +1,17 @@
 import { createContext, useContext } from "react";
 
+/** Where a record page was reached from (specs/006-accessory-links): a list
+ * page, or for a record reached through a mount the record it was reached
+ * from. "Back" returns there. */
+export type RecordFrom = "accessories" | "collection" | "insurance" | "firearm" | "accessory";
+
 export type Route =
   | { page: "collection" }
   | { page: "accessories" }
   | { page: "insurance" }
   | { page: "policy"; id: number }
-  | { page: "firearm"; id: number; from: "collection" | "insurance" }
-  // specs/006-accessory-links: `from` is where "back" returns to, which for
-  // a record reached through a mount is the record it was reached from.
-  | {
-      page: "accessory";
-      id: number;
-      from: "accessories" | "collection" | "insurance" | "firearm" | "accessory";
-    };
+  | { page: "firearm"; id: number; from: RecordFrom }
+  | { page: "accessory"; id: number; from: RecordFrom };
 
 /** Dialogs the app shell owns, so any page can open them. */
 export type ShellDialog = "addFirearm" | "addAccessory" | "import" | "export";
