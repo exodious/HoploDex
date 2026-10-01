@@ -170,3 +170,91 @@ BEGIN
         new.registered_to
     );
 END;
+
+-- specs/006-accessory-links (data-model.md's "Virtual table: accessories_fts",
+-- research.md §12): the same index over accessories, with the kind's name
+-- looked up the way a firearm's type name is. A search of one or two
+-- characters uses LIKE over the same values.
+CREATE VIRTUAL TABLE accessories_fts USING fts5(
+    kind_name,
+    make,
+    model,
+    serial_number,
+    caliber,
+    cartridge,
+    acquisition_source,
+    notes,
+    content = 'accessories',
+    content_rowid = 'id',
+    tokenize = 'trigram remove_diacritics 1'
+);
+
+CREATE TRIGGER accessories_fts_after_insert AFTER INSERT ON accessories
+BEGIN
+    INSERT INTO accessories_fts (
+        rowid, kind_name, make, model, serial_number, caliber, cartridge, acquisition_source, notes
+    )
+    VALUES (
+        new.id,
+        (SELECT name FROM accessory_kinds WHERE id = new.accessory_kind_id),
+        new.make,
+        new.model,
+        new.serial_number,
+        new.caliber,
+        new.cartridge,
+        new.acquisition_source,
+        new.notes
+    );
+END;
+
+CREATE TRIGGER accessories_fts_after_delete AFTER DELETE ON accessories
+BEGIN
+    INSERT INTO accessories_fts (
+        accessories_fts, rowid, kind_name, make, model, serial_number, caliber, cartridge, acquisition_source, notes
+    )
+    VALUES (
+        'delete',
+        old.id,
+        (SELECT name FROM accessory_kinds WHERE id = old.accessory_kind_id),
+        old.make,
+        old.model,
+        old.serial_number,
+        old.caliber,
+        old.cartridge,
+        old.acquisition_source,
+        old.notes
+    );
+END;
+
+CREATE TRIGGER accessories_fts_after_update AFTER UPDATE ON accessories
+BEGIN
+    INSERT INTO accessories_fts (
+        accessories_fts, rowid, kind_name, make, model, serial_number, caliber, cartridge, acquisition_source, notes
+    )
+    VALUES (
+        'delete',
+        old.id,
+        (SELECT name FROM accessory_kinds WHERE id = old.accessory_kind_id),
+        old.make,
+        old.model,
+        old.serial_number,
+        old.caliber,
+        old.cartridge,
+        old.acquisition_source,
+        old.notes
+    );
+    INSERT INTO accessories_fts (
+        rowid, kind_name, make, model, serial_number, caliber, cartridge, acquisition_source, notes
+    )
+    VALUES (
+        new.id,
+        (SELECT name FROM accessory_kinds WHERE id = new.accessory_kind_id),
+        new.make,
+        new.model,
+        new.serial_number,
+        new.caliber,
+        new.cartridge,
+        new.acquisition_source,
+        new.notes
+    );
+END;

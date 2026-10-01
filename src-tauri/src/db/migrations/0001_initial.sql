@@ -50,6 +50,19 @@ CREATE TABLE registration_classes (
     offered INTEGER NOT NULL DEFAULT 1 CHECK (offered IN (0, 1))
 );
 
+-- specs/006-accessory-links FR-002 (data-model.md's "Entity: Accessory
+-- Kind"): the fixed list of what an accessory can be, seeded in 0003 with
+-- fixed ids and never changed at run time.
+CREATE TABLE accessory_kinds (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    generic_thumbnail_key TEXT NOT NULL,
+    sort_order INTEGER NOT NULL UNIQUE,
+    -- FR-002: 0 = no longer offered for new choices. The row is never
+    -- deleted or renamed while a record can hold it.
+    offered INTEGER NOT NULL DEFAULT 1 CHECK (offered IN (0, 1))
+);
+
 CREATE TABLE insurance_policies (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
@@ -74,6 +87,15 @@ CREATE TABLE insurance_policies (
 -- forward reference (created before the photos table) is valid.
 CREATE TABLE firearms (
     id INTEGER PRIMARY KEY,
+    -- specs/006-accessory-links FR-019/FR-022 (data-model.md "Entity: Record
+    -- Identifier"): a random version 4 UUID, lowercase and hyphenated, set at
+    -- creation and never changed. No IPC output carries it.
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
     make TEXT NOT NULL,
     model TEXT NOT NULL,
     serial_number TEXT,
@@ -300,44 +322,187 @@ CREATE INDEX idx_firearms_original_serial
     ON firearms (original_serial_number COLLATE NOCASE)
     WHERE status = 'active' AND original_serial_number IS NOT NULL;
 
+-- specs/006-accessory-links (data-model.md's "Entity: Accessory (new)"):
+-- a part or add-on that is its own record. It has no nickname, no
+-- serial-or-attestation CHECK, no identity index and no fields-apply trigger
+-- (FR-004). References photos(id) below, like firearms does.
+CREATE TABLE accessories (
+    id INTEGER PRIMARY KEY,
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
+    accessory_kind_id INTEGER NOT NULL REFERENCES accessory_kinds (id),
+    -- FR-001: all optional. 004's entry rules apply on entry only, so no
+    -- length CHECK (an existing longer value stays valid).
+    make TEXT,
+    model TEXT,
+    serial_number TEXT,
+    caliber TEXT,
+    cartridge TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disposed')),
+    estimated_value INTEGER CHECK (estimated_value IS NULL OR estimated_value >= 0),
+    acquisition_source TEXT,
+    acquisition_date TEXT,
+    acquisition_price INTEGER CHECK (acquisition_price IS NULL OR acquisition_price >= 0),
+    disposition_type TEXT
+        CHECK (
+            disposition_type IS NULL
+            OR disposition_type IN ('sold', 'traded', 'gifted', 'destroyed', 'lost_stolen')
+        ),
+    disposition_recipient TEXT,
+    disposition_date TEXT,
+    disposition_price INTEGER CHECK (disposition_price IS NULL OR disposition_price >= 0),
+    thumbnail_photo_id INTEGER REFERENCES photos (id) ON DELETE SET NULL,
+    insurance_policy_id INTEGER REFERENCES insurance_policies (id) ON DELETE RESTRICT,
+    scheduled_coverage_amount INTEGER CHECK (scheduled_coverage_amount IS NULL OR scheduled_coverage_amount >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK ((insurance_policy_id IS NULL) = (scheduled_coverage_amount IS NULL))
+);
+
+CREATE INDEX idx_accessories_kind ON accessories (accessory_kind_id);
+CREATE INDEX idx_accessories_status ON accessories (status);
+CREATE INDEX idx_accessories_insurance_policy ON accessories (insurance_policy_id);
+-- research.md §16: suggest_entries' GROUP BY over both tables.
+CREATE INDEX idx_accessories_make ON accessories (make) WHERE make IS NOT NULL;
+CREATE INDEX idx_accessories_make_model ON accessories (make, model) WHERE model IS NOT NULL;
+CREATE INDEX idx_accessories_caliber ON accessories (caliber) WHERE caliber IS NOT NULL;
+CREATE INDEX idx_accessories_cartridge ON accessories (cartridge) WHERE cartridge IS NOT NULL;
+
+-- FR-019: a record identifier never changes. Backstops, expected never to
+-- fire: `from_db` maps the raised ABORT to INTERNAL_ERROR.
+CREATE TRIGGER firearms_uid_fixed BEFORE UPDATE OF uid ON firearms
+WHEN NEW.uid IS NOT OLD.uid
+BEGIN SELECT RAISE(ABORT, 'a record identifier never changes'); END;
+
+CREATE TRIGGER accessories_uid_fixed BEFORE UPDATE OF uid ON accessories
+WHEN NEW.uid IS NOT OLD.uid
+BEGIN SELECT RAISE(ABORT, 'a record identifier never changes'); END;
+
+-- FR-022: one identifier names one record across both tables.
+CREATE TRIGGER accessories_uid_distinct BEFORE INSERT ON accessories
+BEGIN
+    SELECT RAISE(ABORT, 'record identifier already used by a firearm')
+    WHERE EXISTS (SELECT 1 FROM firearms WHERE uid = NEW.uid);
+END;
+
+CREATE TRIGGER firearms_uid_distinct BEFORE INSERT ON firearms
+BEGIN
+    SELECT RAISE(ABORT, 'record identifier already used by an accessory')
+    WHERE EXISTS (SELECT 1 FROM accessories WHERE uid = NEW.uid);
+END;
+
 CREATE TABLE photos (
     id INTEGER PRIMARY KEY,
-    firearm_id INTEGER NOT NULL REFERENCES firearms (id) ON DELETE CASCADE,
+    -- specs/006-accessory-links: owned by a firearm or by an accessory,
+    -- never both (data-model.md "Entity: Photo, Document Attachment,
+    -- Disposition History").
+    firearm_id INTEGER REFERENCES firearms (id) ON DELETE CASCADE,
+    accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
     original_bytes BLOB NOT NULL,
     original_filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
     thumbnail_bytes BLOB NOT NULL,
     sort_order INTEGER NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    CHECK ((firearm_id IS NULL) <> (accessory_id IS NULL))
 );
 
 CREATE INDEX idx_photos_firearm ON photos (firearm_id);
+CREATE INDEX idx_photos_accessory ON photos (accessory_id) WHERE accessory_id IS NOT NULL;
 
 CREATE TABLE document_attachments (
     id INTEGER PRIMARY KEY,
-    firearm_id INTEGER NOT NULL REFERENCES firearms (id) ON DELETE CASCADE,
+    firearm_id INTEGER REFERENCES firearms (id) ON DELETE CASCADE,
+    accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
     file_bytes BLOB NOT NULL,
     original_filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    CHECK ((firearm_id IS NULL) <> (accessory_id IS NULL))
 );
 
 CREATE INDEX idx_document_attachments_firearm ON document_attachments (firearm_id);
+CREATE INDEX idx_document_attachments_accessory ON document_attachments (accessory_id) WHERE accessory_id IS NOT NULL;
 
 -- FR-033: past dispositions of a firearm that was restored to active, kept
 -- only when the user chose to keep them. Deleted with the firearm.
 CREATE TABLE disposition_history (
     id INTEGER PRIMARY KEY,
-    firearm_id INTEGER NOT NULL REFERENCES firearms (id) ON DELETE CASCADE,
+    firearm_id INTEGER REFERENCES firearms (id) ON DELETE CASCADE,
+    accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
     disposition_type TEXT NOT NULL
         CHECK (disposition_type IN ('sold', 'traded', 'gifted', 'destroyed', 'lost_stolen')),
     disposition_recipient TEXT NOT NULL,
     disposition_date TEXT NOT NULL,
     disposition_price INTEGER CHECK (disposition_price IS NULL OR disposition_price >= 0),
-    reversed_at TEXT NOT NULL
+    reversed_at TEXT NOT NULL,
+    CHECK ((firearm_id IS NULL) <> (accessory_id IS NULL))
 );
 
 CREATE INDEX idx_disposition_history_firearm ON disposition_history (firearm_id);
+CREATE INDEX idx_disposition_history_accessory ON disposition_history (accessory_id) WHERE accessory_id IS NOT NULL;
+
+-- specs/006-accessory-links (data-model.md's "Entity: Mount (new)"): where an
+-- item is mounted. An item has at most one host (UNIQUE item columns); the
+-- command layer moves it by updating its row. Unmounting deletes the row, so
+-- there is no history (secure_delete is on).
+CREATE TABLE mounts (
+    id INTEGER PRIMARY KEY,
+    item_firearm_id   INTEGER UNIQUE REFERENCES firearms (id)    ON DELETE CASCADE,
+    item_accessory_id INTEGER UNIQUE REFERENCES accessories (id) ON DELETE CASCADE,
+    host_firearm_id   INTEGER REFERENCES firearms (id)    ON DELETE CASCADE,
+    host_accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
+    -- Exactly one item and one host.
+    CHECK ((item_firearm_id IS NULL) <> (item_accessory_id IS NULL)),
+    CHECK ((host_firearm_id IS NULL) <> (host_accessory_id IS NULL)),
+    -- FR-010: never mounted on itself (one step; longer loops: the command layer).
+    CHECK (item_firearm_id IS NULL OR item_firearm_id IS NOT host_firearm_id),
+    CHECK (item_accessory_id IS NULL OR item_accessory_id IS NOT host_accessory_id)
+);
+
+CREATE INDEX idx_mounts_host_firearm ON mounts (host_firearm_id) WHERE host_firearm_id IS NOT NULL;
+CREATE INDEX idx_mounts_host_accessory ON mounts (host_accessory_id) WHERE host_accessory_id IS NOT NULL;
+
+-- FR-013 backstops, expected never to fire (the command layer checks first;
+-- `from_db` maps the raised ABORT to INTERNAL_ERROR): a mount needs an active
+-- item and an active host, and a record is never disposed while it is in a
+-- mount (FR-014: the dispose commands delete its mounts first).
+CREATE TRIGGER mounts_active_insert BEFORE INSERT ON mounts
+BEGIN
+    SELECT RAISE(ABORT, 'a mount needs an active item and an active host')
+    WHERE COALESCE((SELECT status FROM firearms WHERE id = NEW.item_firearm_id),
+                   (SELECT status FROM accessories WHERE id = NEW.item_accessory_id)) IS NOT 'active'
+       OR COALESCE((SELECT status FROM firearms WHERE id = NEW.host_firearm_id),
+                   (SELECT status FROM accessories WHERE id = NEW.host_accessory_id)) IS NOT 'active';
+END;
+
+CREATE TRIGGER mounts_active_update BEFORE UPDATE ON mounts
+BEGIN
+    SELECT RAISE(ABORT, 'a mount needs an active item and an active host')
+    WHERE COALESCE((SELECT status FROM firearms WHERE id = NEW.item_firearm_id),
+                   (SELECT status FROM accessories WHERE id = NEW.item_accessory_id)) IS NOT 'active'
+       OR COALESCE((SELECT status FROM firearms WHERE id = NEW.host_firearm_id),
+                   (SELECT status FROM accessories WHERE id = NEW.host_accessory_id)) IS NOT 'active';
+END;
+
+CREATE TRIGGER firearms_disposed_unmounted BEFORE UPDATE OF status ON firearms
+WHEN NEW.status = 'disposed'
+BEGIN
+    SELECT RAISE(ABORT, 'a disposed record cannot be mounted or carry mounts')
+    WHERE EXISTS (SELECT 1 FROM mounts WHERE item_firearm_id = NEW.id OR host_firearm_id = NEW.id);
+END;
+
+CREATE TRIGGER accessories_disposed_unmounted BEFORE UPDATE OF status ON accessories
+WHEN NEW.status = 'disposed'
+BEGIN
+    SELECT RAISE(ABORT, 'a disposed record cannot be mounted or carry mounts')
+    WHERE EXISTS (SELECT 1 FROM mounts WHERE item_accessory_id = NEW.id OR host_accessory_id = NEW.id);
+END;
 
 -- specs/003-database-protection-management (data-model.md "Inside the
 -- database"). The backup and lock settings travel with the database and are
@@ -392,7 +557,7 @@ CREATE TABLE app_state (
 -- time. Housekeeping: never in a backup, and no change-tracking triggers.
 CREATE TABLE pending_changes (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    kind TEXT NOT NULL CHECK (kind IN ('firearm', 'policy')),
+    kind TEXT NOT NULL CHECK (kind IN ('firearm', 'policy', 'accessory')),
     mode TEXT NOT NULL CHECK (mode IN ('add', 'edit', 'dispose', 'restore', 'coverage')),
     -- The record being edited; NULL only when adding. Not a foreign key: the
     -- record may have been deleted on another computer, and then the draft
@@ -403,7 +568,7 @@ CREATE TABLE pending_changes (
     form_version INTEGER NOT NULL,
     values_json TEXT NOT NULL CHECK (length(values_json) <= 1048576),
     saved_at TEXT NOT NULL,
-    CHECK (mode <> 'coverage' OR kind = 'firearm'),
+    CHECK (mode <> 'coverage' OR kind IN ('firearm', 'accessory')),
     CHECK (target_id IS NOT NULL OR mode = 'add')
 );
 
@@ -499,4 +664,32 @@ CREATE TRIGGER collection_settings_marks_backup_due_after_update AFTER UPDATE ON
 BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
 
 CREATE TRIGGER collection_settings_marks_backup_due_after_delete AFTER DELETE ON collection_settings
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER accessory_kinds_marks_backup_due_after_insert AFTER INSERT ON accessory_kinds
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER accessory_kinds_marks_backup_due_after_update AFTER UPDATE ON accessory_kinds
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER accessory_kinds_marks_backup_due_after_delete AFTER DELETE ON accessory_kinds
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER accessories_marks_backup_due_after_insert AFTER INSERT ON accessories
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER accessories_marks_backup_due_after_update AFTER UPDATE ON accessories
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER accessories_marks_backup_due_after_delete AFTER DELETE ON accessories
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+-- specs/006-accessory-links: a mount is collection data.
+CREATE TRIGGER mounts_marks_backup_due_after_insert AFTER INSERT ON mounts
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER mounts_marks_backup_due_after_update AFTER UPDATE ON mounts
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+
+CREATE TRIGGER mounts_marks_backup_due_after_delete AFTER DELETE ON mounts
 BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;

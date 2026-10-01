@@ -55,11 +55,13 @@ const NOT_IMPORTED: &[&str] = &["photo_filenames"];
 /// Tables that hold no user data: migration bookkeeping, the seeded lookup
 /// lists (firearm types, specs/004-cartridges-action-types' action types
 /// and their mapping, research.md §10, and specs/005-regulated-item-types'
-/// registration classifications, research.md §14), and the full-text index's
-/// shadow tables.
+/// registration classifications, research.md §14, and specs/006-accessory-links'
+/// accessory kinds, research.md §23), and the full-text indexes' shadow tables.
 fn is_user_table(name: &str) -> bool {
     !(name.starts_with("sqlite_")
         || name.starts_with("firearms_fts")
+        || name.starts_with("accessories_fts")
+        || name == "accessory_kinds"
         || name == "schema_migrations"
         || name == "firearm_types"
         || name == "registration_classes"

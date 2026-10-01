@@ -17,6 +17,8 @@ fn is_housekeeping(table: &str) -> bool {
     matches!(table, "app_state" | "pending_changes" | "schema_migrations")
         || table == "firearms_fts"
         || table.starts_with("firearms_fts_")
+        || table == "accessories_fts"
+        || table.starts_with("accessories_fts_")
 }
 
 fn changes_waiting(conn: &Connection) -> bool {
@@ -98,13 +100,18 @@ const STEPS: &[(&str, &str)] = &[
     ),
     ("registration_classes delete", "DELETE FROM registration_classes WHERE id = 99"),
     (
+        "accessory_kinds insert",
+        "INSERT INTO accessory_kinds (id, name, generic_thumbnail_key, sort_order) VALUES (99, 'Test kind', 'accessory', 99)",
+    ),
+    ("accessory_kinds update", "UPDATE accessory_kinds SET name = 'Other test kind' WHERE id = 99"),
+    (
         "insurance_policies insert",
         "INSERT INTO insurance_policies (id, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')",
     ),
     ("insurance_policies update", "UPDATE insurance_policies SET notes = 'n' WHERE id = 1"),
     (
         "firearms insert",
-        "INSERT INTO firearms (id, make, model, serial_number, caliber, firearm_type_id, created_at, updated_at) VALUES (1, 'Glock', '19', 'ABC', '9mm', 1, 'now', 'now')",
+        "INSERT INTO firearms (id, uid, make, model, serial_number, caliber, firearm_type_id, created_at, updated_at) VALUES (1, '11111111-1111-4111-8111-111111111111', 'Glock', '19', 'ABC', '9mm', 1, 'now', 'now')",
     ),
     ("firearms update", "UPDATE firearms SET notes = 'n' WHERE id = 1"),
     (
@@ -131,6 +138,19 @@ const STEPS: &[(&str, &str)] = &[
         "UPDATE disposition_history SET disposition_recipient = 'S' WHERE id = 1",
     ),
     ("disposition_history delete", "DELETE FROM disposition_history WHERE id = 1"),
+    (
+        "accessories insert",
+        "INSERT INTO accessories (id, uid, accessory_kind_id, created_at, updated_at) VALUES (1, '22222222-2222-4222-8222-222222222222', 1, 'now', 'now')",
+    ),
+    ("accessories update", "UPDATE accessories SET notes = 'n' WHERE id = 1"),
+    (
+        "mounts insert",
+        "INSERT INTO mounts (id, item_accessory_id, host_firearm_id) VALUES (1, 1, 1)",
+    ),
+    ("mounts update", "UPDATE mounts SET host_firearm_id = 1 WHERE id = 1"),
+    ("mounts delete", "DELETE FROM mounts WHERE id = 1"),
+    ("accessories delete", "DELETE FROM accessories WHERE id = 1"),
+    ("accessory_kinds delete", "DELETE FROM accessory_kinds WHERE id = 99"),
     ("firearms delete", "DELETE FROM firearms WHERE id = 1"),
     ("insurance_policies delete", "DELETE FROM insurance_policies WHERE id = 1"),
     ("firearm_types delete", "DELETE FROM firearm_types WHERE id = 9"),
@@ -191,8 +211,8 @@ fn sqlcipher_export_into_an_attached_copy_does_not_fire_the_triggers() {
     let db = TestDb::new();
     db.conn
         .execute_batch(
-            "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id, created_at, updated_at)
-             VALUES ('Glock', '19', 'ABC', '9mm', 1, 'now', 'now');",
+            "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id, created_at, updated_at)
+             VALUES ('11111111-1111-4111-8111-111111111111', 'Glock', '19', 'ABC', '9mm', 1, 'now', 'now');",
         )
         .unwrap();
     reset(&db.conn);

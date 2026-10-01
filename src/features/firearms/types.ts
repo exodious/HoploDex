@@ -1,6 +1,9 @@
 // Mirrors src-tauri/src/models/firearm.rs's wire shapes (camelCase, per
 // contracts/tauri-commands.md).
 
+// specs/006-accessory-links: a firearm or accessory, as mounts name it.
+export type { RecordRef } from "../mounts/types";
+
 export type FirearmStatus = "active" | "disposed";
 
 export type DispositionType = "sold" | "traded" | "gifted" | "destroyed" | "lost_stolen";
