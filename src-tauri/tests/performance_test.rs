@@ -750,6 +750,7 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
         )
         .unwrap();
         let elapsed = started.elapsed();
+        eprintln!("SC-006: list_firearms grouped by {group_by:?} took {elapsed:?}");
         assert!(result.groups.len() > 1);
         assert!(
             elapsed.as_millis() < BUDGET_MS,
@@ -765,6 +766,7 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
     )
     .unwrap();
     let elapsed = started.elapsed();
+    eprintln!("SC-006: list_firearms registered to search took {elapsed:?}");
     assert!(found.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 10);
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -782,6 +784,7 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
         let started = Instant::now();
         let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
         let elapsed = started.elapsed();
+        eprintln!("SC-006: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
         assert!(!output.suggestions.is_empty());
         assert!(
             elapsed.as_millis() < 50,
