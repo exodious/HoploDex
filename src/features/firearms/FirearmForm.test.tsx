@@ -17,6 +17,7 @@ import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
 import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { DerivedCaliber, Firearm } from "./types";
+import type { RecordLabel } from "../mounts/types";
 
 // specs/005-regulated-item-types: the form reads the firearm types from the
 // collection store, so every render gets the fixture's five seeded types
@@ -44,6 +45,13 @@ vi.mock("./firearmsService", () => ({
     suggestEntries(field, text, make),
 }));
 
+// specs/006-accessory-links US2: the Mounted on chooser searches the mount
+// candidates through the mounts service.
+const listMountCandidates = vi.fn();
+vi.mock("../mounts/mountsService", () => ({
+  listMountCandidates: (input: unknown) => listMountCandidates(input),
+}));
+
 const DERIVED: Record<string, DerivedCaliber> = {
   "9x19mm Parabellum": { caliber: "9mm", source: "catalog" },
   "9mm Luger": { caliber: "9mm", source: "catalog" },
@@ -62,6 +70,8 @@ beforeEach(() => {
     changedBy: null,
     derivedCaliber: field === "cartridge" ? (DERIVED[text.trim()] ?? null) : null,
   }));
+  listMountCandidates.mockReset();
+  listMountCandidates.mockResolvedValue({ candidates: [] });
 });
 
 /** The "Origin and year of manufacture" disclosure's button. Closed, its
@@ -1381,8 +1391,24 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
 describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
   afterEach(() => setResumedDraft(null));
 
-  it("is version 3", () => {
-    expect(FORM_VERSION).toBe(3);
+  // specs/006-accessory-links research.md §19: the Mounted on choice raised it
+  // from 3 to 4.
+  it("is version 4", () => {
+    expect(FORM_VERSION).toBe(4);
+  });
+
+  it("discards a version 3 draft", () => {
+    setResumedDraft({
+      formVersion: 3,
+      kind: "firearm",
+      mode: "add",
+      targetId: null,
+      label: "New firearm",
+      values: { make: "Old draft", caliber: ".22" },
+    });
+    render(<FirearmForm onSubmit={vi.fn()} />);
+    expect(screen.getByLabelText("Make")).toHaveValue("");
+    expect(screen.getByLabelText("Caliber")).toHaveValue("");
   });
 
   it("discards a version 1 draft", () => {
@@ -2766,5 +2792,156 @@ describe("FirearmForm registration (US2)", () => {
       const section = screen.getByRole("group", { name: "Registration" });
       expect(section.textContent ?? "").not.toMatch(/required/i);
     });
+  });
+});
+
+// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §4,
+// FR-010, FR-012): the Mounted on choice, after Type and Action. A saved
+// firearm's current host arrives with its detail (`mount.chain[0]`), which is
+// what the record page passes as `initialValues`; the form sends only the
+// host's `RecordRef` as `mountedOn`.
+describe("FirearmForm Mounted on (US2)", () => {
+  const HINT =
+    "Only if this firearm is mounted on another firearm or an accessory, such as a suppressor on a rifle.";
+
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: "U-100",
+    status: "active",
+  };
+  const rifle: RecordLabel = {
+    record: { kind: "firearm", id: 7 },
+    make: "Winchester",
+    model: "Model 70",
+    nickname: "Deer rifle",
+    typeName: "Rifle",
+    serialNumber: "W70-123",
+    status: "active",
+  };
+
+  const mountedOnField = () => screen.getByRole("combobox", { name: /^Mounted on/ });
+
+  /** A saved Suppressor mounted on the upper. */
+  const mounted = {
+    id: 4,
+    make: "SilencerCo",
+    model: "Omega 300",
+    serialNumber: "S-1",
+    noSerialAttested: false,
+    caliber: ".30",
+    firearmTypeId: 5,
+    status: "active",
+    notes: null,
+    mountedOn: upper.record,
+    mount: { chain: [upper], mounted: [] },
+  } as unknown as Firearm;
+
+  it("puts Mounted on after Type and Action", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    const after = (earlier: HTMLElement) =>
+      earlier.compareDocumentPosition(mountedOnField()) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(after(screen.getByRole("radio", { name: "Handgun" }))).toBeTruthy();
+    expect(after(screen.getByRole("combobox", { name: "Action" }))).toBeTruthy();
+  });
+
+  it("gives the hint about a suppressor on a rifle", () => {
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    expect(mountedOnField()).toHaveAccessibleDescription(expect.stringContaining(HINT));
+  });
+
+  it("reads 'Not mounted' on a new firearm and submits mountedOn null", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    expect(mountedOnField()).toHaveAttribute("placeholder", "Not mounted");
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].mountedOn).toBeNull();
+  });
+
+  it("searches the hosts for a new firearm, with no record to leave out", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm onSubmit={vi.fn()} />);
+
+    await user.click(mountedOnField());
+
+    await waitFor(() =>
+      expect(listMountCandidates).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "host", record: null }),
+      ),
+    );
+  });
+
+  it("sends the chosen host as mountedOn on save", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    listMountCandidates.mockResolvedValue({
+      candidates: [{ label: rifle, mountedOn: null }],
+    });
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(mountedOnField());
+    await user.click(await screen.findByRole("option", { name: /Deer rifle/ }));
+    expect(mountedOnField()).toHaveDisplayValue(/Winchester Model 70/);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "firearm", id: 7 });
+  });
+
+  it("shows the current host when editing, searches without the firearm itself, and keeps it on save", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm initialValues={mounted} onSubmit={onSubmit} />);
+
+    expect(mountedOnField()).toHaveDisplayValue(/BCM upper · Upper receiver/);
+    await user.click(mountedOnField());
+    await waitFor(() =>
+      expect(listMountCandidates).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "host", record: { kind: "firearm", id: 4 } }),
+      ),
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "accessory", id: 11 });
+  });
+
+  it("sends mountedOn null when the host is cleared", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm initialValues={mounted} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: /clear|×/i }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toBeNull();
+  });
+
+  it("shows a mountedOn field error on the Mounted on field", async () => {
+    const user = userEvent.setup();
+    const message = "A firearm can't be mounted on itself, or on something mounted on it.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { mountedOn: message },
+      }),
+    );
+    render(<FirearmForm initialValues={mounted} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(mountedOnField()).toHaveAccessibleDescription(expect.stringContaining(message));
   });
 });

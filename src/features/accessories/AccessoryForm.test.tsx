@@ -9,12 +9,14 @@ import { CommandFailure } from "../../services/tauriClient";
 import { currentDraft, getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
 import type { DerivedCaliber } from "../firearms/types";
 import { AccessoryForm, FORM_VERSION } from "./AccessoryForm";
-import type { Accessory, AccessoryKind } from "./types";
+import type { Accessory, AccessoryDetail, AccessoryKind } from "./types";
+import type { RecordLabel } from "../mounts/types";
 
 // specs/006-accessory-links User Story 1 (contracts/ui-accessories.md §3,
 // FR-001 to FR-005, FR-027). The form is a bare form like `FirearmForm`: the
 // record page and the shell put it in a large `Dialog` titled "Add accessory"
-// or "Edit {name}" (tested with them). The Mounted on row is User Story 2's.
+// or "Edit {name}" (tested with them). The Mounted on row is User Story 2's,
+// tested at the end.
 
 // The kinds come from the collection store (`useAccessoryKinds`), as the
 // firearm types do; each render gets the seeded twelve unless a test says.
@@ -46,11 +48,20 @@ vi.mock("../firearms/firearmsService", () => ({
     suggestEntries(field, text, make),
 }));
 
+// specs/006-accessory-links US2: the Mounted on chooser searches the mount
+// candidates through the mounts service.
+const listMountCandidates = vi.fn();
+vi.mock("../mounts/mountsService", () => ({
+  listMountCandidates: (input: unknown) => listMountCandidates(input),
+}));
+
 const DERIVED: Record<string, DerivedCaliber> = {
   "5.56x45mm NATO": { caliber: "5.56mm", source: "catalog" },
 };
 
 beforeEach(() => {
+  listMountCandidates.mockReset();
+  listMountCandidates.mockResolvedValue({ candidates: [] });
   suggestEntries.mockReset();
   suggestEntries.mockResolvedValue([]);
   settleEntry.mockReset();
@@ -161,11 +172,6 @@ describe("AccessoryForm layout (contracts/ui-accessories.md §3)", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledTimes(1);
-  });
-
-  it("has no Mounted on row yet: that is User Story 2's", () => {
-    render(<AccessoryForm onSubmit={vi.fn()} />);
-    expect(screen.queryByLabelText(/^Mounted on/)).not.toBeInTheDocument();
   });
 });
 
@@ -585,5 +591,165 @@ describe("AccessoryForm structure", () => {
     expect(form).not.toBeNull();
     const first = within(form!).getAllByRole("combobox")[0];
     expect(first).toBe(kindField());
+  });
+});
+
+// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §3
+// row 5, §4; FR-010, FR-012, US2-4). A saved accessory's current host arrives
+// with its detail (`mount.chain[0]`), which is what the record page passes as
+// `initialValues`; `presetMountedOn` (a `RecordLabel`) is the record whose
+// "Mount > New accessory…" opened the form. The form sends only the host's
+// `RecordRef` as `mountedOn`.
+describe("AccessoryForm Mounted on (US2)", () => {
+  const HINT = "The firearm or accessory it is on now, if any.";
+
+  const rifle: RecordLabel = {
+    record: { kind: "firearm", id: 9 },
+    make: "LaRue",
+    model: "PredatAR",
+    nickname: null,
+    typeName: "Rifle",
+    serialNumber: "L-9",
+    status: "active",
+  };
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: null,
+    status: "active",
+  };
+
+  const mountedOnField = () => screen.getByRole("combobox", { name: /^Mounted on/ });
+
+  const mountedOptic: AccessoryDetail = {
+    ...saved,
+    dispositionHistory: [],
+    mountedOn: upper.record,
+    mount: { chain: [upper, rifle], mounted: [] },
+  };
+
+  it("is row 5, after Serial number and before Estimated value", () => {
+    render(<AccessoryForm onSubmit={vi.fn()} />);
+
+    const follows = (a: HTMLElement, b: HTMLElement) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(screen.getByLabelText(/^Serial number/), mountedOnField())).toBe(true);
+    expect(follows(mountedOnField(), screen.getByLabelText(/^Estimated value/))).toBe(true);
+  });
+
+  it("gives the hint 'The firearm or accessory it is on now, if any.'", () => {
+    render(<AccessoryForm onSubmit={vi.fn()} />);
+    expect(mountedOnField()).toHaveAccessibleDescription(expect.stringContaining(HINT));
+  });
+
+  it("reads 'Not mounted' on a new accessory and submits mountedOn null", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<AccessoryForm onSubmit={onSubmit} />);
+
+    expect(mountedOnField()).toHaveAttribute("placeholder", "Not mounted");
+    await chooseKind(user, "Sling");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toBeNull();
+  });
+
+  it("searches the hosts, leaving out this accessory when editing", async () => {
+    const user = userEvent.setup();
+    render(<AccessoryForm initialValues={saved} onSubmit={vi.fn()} />);
+
+    await user.click(mountedOnField());
+
+    await waitFor(() =>
+      expect(listMountCandidates).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "host", record: { kind: "accessory", id: 3 } }),
+      ),
+    );
+  });
+
+  it("sends the chosen host's RecordRef as mountedOn on save", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    listMountCandidates.mockResolvedValue({ candidates: [{ label: rifle, mountedOn: null }] });
+    render(<AccessoryForm onSubmit={onSubmit} />);
+
+    await chooseKind(user, "Optic");
+    await user.click(mountedOnField());
+    await user.click(await screen.findByRole("option", { name: /LaRue PredatAR/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "firearm", id: 9 });
+  });
+
+  it("shows the current host when editing and keeps it on save", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
+
+    expect(mountedOnField()).toHaveDisplayValue(/BCM upper · Upper receiver/);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "accessory", id: 11 });
+  });
+
+  it("sends mountedOn null when the host is cleared", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: /clear|×/i }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toBeNull();
+  });
+
+  it("presets Mounted on to the record it was opened from, and sends it (US2-4)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<AccessoryForm presetMountedOn={rifle} onSubmit={onSubmit} />);
+
+    expect(mountedOnField()).toHaveDisplayValue(/LaRue PredatAR/);
+    await chooseKind(user, "Optic");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "firearm", id: 9 });
+  });
+
+  it("lets the preset be changed or cleared", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    listMountCandidates.mockResolvedValue({ candidates: [{ label: upper, mountedOn: null }] });
+    render(<AccessoryForm presetMountedOn={rifle} onSubmit={onSubmit} />);
+
+    await chooseKind(user, "Optic");
+    await user.click(mountedOnField());
+    await user.click(await screen.findByRole("option", { name: /BCM upper/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "accessory", id: 11 });
+
+    await user.click(screen.getByRole("button", { name: /clear|×/i }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit.mock.calls[1][0].mountedOn).toBeNull();
+  });
+
+  it("shows a mountedOn field error on the Mounted on field", async () => {
+    const user = userEvent.setup();
+    const message = "A firearm can't be mounted on itself, or on something mounted on it.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { mountedOn: message },
+      }),
+    );
+    render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(mountedOnField()).toHaveAccessibleDescription(expect.stringContaining(message));
   });
 });

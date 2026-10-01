@@ -10,10 +10,12 @@ import type { Navigation } from "../app/navigation";
 import type { DispositionHistoryEntry } from "../firearms/types";
 import { AccessoryRecordPage } from "./AccessoryRecordPage";
 import type { AccessoryDetail } from "./types";
+import type { RecordLabel } from "../mounts/types";
 
 // specs/006-accessory-links User Story 1, contracts/ui-accessories.md §12:
 // the accessory's record page has the firearm record page's layout. The
-// Mounted section (§5) and the "Mounted on" chain (§6) are User Story 2's.
+// Mounted section (§5) and the "Mounted on" chain (§6) are User Story 2's,
+// tested at the end.
 
 const getAccessory = vi.fn();
 const deleteAccessory = vi.fn();
@@ -31,6 +33,12 @@ vi.mock("../firearms/firearmsService", () => ({
     derivedCaliber: null,
   }),
   suggestEntries: async () => [],
+}));
+// specs/006-accessory-links US2: the Mounted section's chooser and Mount
+// commands.
+vi.mock("../mounts/mountsService", () => ({
+  listMountCandidates: async () => ({ candidates: [] }),
+  mountRecord: async () => ({ item: null, host: null }),
 }));
 // The media panels talk to Tauri; they aren't under test, but the page's
 // placement of them is, and so is the owner it gives them (FR-007a).
@@ -315,13 +323,6 @@ describe("AccessoryRecordPage layout (§12)", () => {
     expect(history).toHaveTextContent("$800");
   });
 
-  it("has no Mounted section yet: that is User Story 2's", async () => {
-    renderPage();
-
-    await screen.findByRole("heading", { level: 1, name: NAME });
-    expect(screen.queryByRole("region", { name: "Mounted" })).not.toBeInTheDocument();
-  });
-
   it("says nothing about a quantity", async () => {
     renderPage();
 
@@ -446,5 +447,183 @@ describe("AccessoryRecordPage when the accessory can't be loaded", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/couldn't be loaded/);
     expect(screen.getByRole("button", { name: /Accessories/ })).toBeInTheDocument();
+  });
+});
+
+// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §5, §6,
+// §12; US2-10, US2-12).
+describe("AccessoryRecordPage mounts (US2)", () => {
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: null,
+    status: "active",
+  };
+  const rifle: RecordLabel = {
+    record: { kind: "firearm", id: 9 },
+    make: "LaRue",
+    model: "PredatAR",
+    nickname: null,
+    typeName: "Rifle",
+    serialNumber: null,
+    status: "active",
+  };
+  const light: RecordLabel = {
+    record: { kind: "accessory", id: 14 },
+    make: "SureFire",
+    model: "M600",
+    nickname: null,
+    typeName: "Light or laser",
+    serialNumber: null,
+    status: "active",
+  };
+
+  const open = vi.fn();
+
+  function renderWithNavigation() {
+    const navigation: Navigation = {
+      route: { page: "accessory", id: 3, from: "accessories" },
+      navigate: () => {},
+      open,
+      back: { label: "Accessories", go: goBack },
+      openDialog: () => {},
+    };
+    render(
+      <CollectionContext.Provider value={collection}>
+        <NavigationContext.Provider value={navigation}>
+          <AccessoryRecordPage id={3} />
+        </NavigationContext.Provider>
+      </CollectionContext.Provider>,
+    );
+  }
+
+  /** The optic, mounted on the upper, which is on the rifle. */
+  const mountedOptic: AccessoryDetail = {
+    ...optic,
+    mountedOn: upper.record,
+    mount: {
+      chain: [upper, rifle],
+      mounted: [{ label: light, host: { kind: "accessory", id: 3 }, depth: 1 }],
+    },
+  };
+
+  /** A link to a record, whether rendered as a button or an anchor. */
+  const link = (name: string, scope: HTMLElement = document.body) =>
+    within(scope).queryByRole("link", { name }) ?? within(scope).queryByRole("button", { name });
+
+  beforeEach(() => {
+    getAccessory.mockResolvedValue(mountedOptic);
+    open.mockReset();
+  });
+
+  it("shows the 'Mounted on' chain in Details, after the cartridge, each record a link (US2-12)", async () => {
+    const user = userEvent.setup();
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: NAME });
+    const details = screen.getByRole("region", { name: "Details" });
+    const labels = Array.from(details.querySelectorAll("dt")).map((dt) => dt.textContent);
+    expect(labels).toEqual([
+      "Kind",
+      "Make",
+      "Model",
+      "Serial number",
+      "Caliber",
+      "Cartridge",
+      "Mounted on",
+    ]);
+    expect(fact(details, "Mounted on")).toHaveTextContent(
+      /^BCM upper · Upper receiver, on LaRue PredatAR · Rifle$/,
+    );
+    await user.click(link("BCM upper · Upper receiver", details)!);
+    expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "accessory", id: 11 }));
+    await user.click(link("LaRue PredatAR · Rifle", details)!);
+    expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "firearm", id: 9 }));
+  });
+
+  it("shows one host alone as 'Mounted on {host}'", async () => {
+    getAccessory.mockResolvedValue({
+      ...mountedOptic,
+      mount: { ...mountedOptic.mount, chain: [upper] },
+    });
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: NAME });
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(fact(details, "Mounted on")).toHaveTextContent(/^BCM upper · Upper receiver$/);
+  });
+
+  it("has no 'Mounted on' row when the accessory is not mounted", async () => {
+    getAccessory.mockResolvedValue(optic);
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: NAME });
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).queryByText("Mounted on", { selector: "dt" })).not.toBeInTheDocument();
+  });
+
+  it("puts the Mounted section after Notes and before Documents (§12)", async () => {
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: NAME });
+    const main = document.querySelector<HTMLElement>(".hd-record__main")!;
+    const parts = [
+      within(main).getByRole("region", { name: "Notes" }),
+      within(main).getByRole("region", { name: "Mounted" }),
+      within(main).getByTestId("documents"),
+    ];
+    expect(before(parts[0], parts[1])).toBe(true);
+    expect(before(parts[1], parts[2])).toBe(true);
+  });
+
+  it("lists what is mounted on the accessory, with Unmount on a direct entry", async () => {
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    expect(within(section).getByRole("list")).toHaveTextContent("SureFire M600 · Light or laser");
+    expect(within(section).getByRole("button", { name: /^Unmount SureFire/ })).toBeInTheDocument();
+  });
+
+  it("says 'Nothing mounted.' when nothing is mounted on it (US2-10)", async () => {
+    getAccessory.mockResolvedValue(optic);
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    expect(within(section).getByText("Nothing mounted.")).toBeInTheDocument();
+  });
+
+  it("has no Mounted section on a disposed accessory", async () => {
+    getAccessory.mockResolvedValue({
+      ...optic,
+      status: "disposed",
+      dispositionType: "sold",
+      dispositionRecipient: "A buyer",
+      dispositionDate: "2025-06-01",
+      dispositionPrice: 800,
+    });
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: NAME });
+    expect(screen.queryByRole("region", { name: "Mounted" })).not.toBeInTheDocument();
+  });
+
+  it("opens 'Add accessory' with Mounted on preset to this accessory, and changeable, from Mount > New accessory… (US2-4)", async () => {
+    const user = userEvent.setup();
+    getAccessory.mockResolvedValue(optic);
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    await user.click(within(section).getByRole("button", { name: /^Mount/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "New accessory…" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add accessory" });
+    expect(openDialogTitle()).toBe("Add accessory");
+    const chooser = within(dialog).getByRole("combobox", { name: /^Mounted on/ });
+    expect(chooser).toHaveDisplayValue(/Leupold VX-5HD 3-15x44 · Optic/);
+    // Changeable: it can be cleared.
+    expect(within(dialog).getByRole("button", { name: /clear|×/i })).toBeInTheDocument();
   });
 });

@@ -8,11 +8,12 @@ import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
 import { AccessoriesPage } from "./AccessoriesPage";
+import type { RecordLabel } from "../mounts/types";
 import type { AccessoryGroup, AccessorySummary, ListAccessoriesInput } from "./types";
 
 // specs/006-accessory-links User Story 1, contracts/ui-accessories.md §2.
-// Search, grouping and the Mounted on column are User Story 4's and 2's; this
-// is the plain list and tiles.
+// Search and grouping are User Story 4's; this is the plain list and tiles,
+// and at the end the Mounted on column and tile line (User Story 2, §2).
 
 const listAccessories = vi.fn();
 
@@ -414,5 +415,101 @@ describe("AccessoriesPage empty state (§2)", () => {
 
     await screen.findByText(NAMES.optic);
     expect(screen.queryByText("No accessories recorded yet.")).not.toBeInTheDocument();
+  });
+});
+
+// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §2,
+// FR-013, FR-016): the direct host, as a link, in the list's Mounted on
+// column and under the tile's name.
+describe("AccessoriesPage mounted on (US2)", () => {
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: null,
+    status: "active",
+  };
+  const deerRifle: RecordLabel = {
+    record: { kind: "firearm", id: 7 },
+    make: "Winchester",
+    model: "Model 70",
+    nickname: "Deer rifle",
+    typeName: "Rifle",
+    serialNumber: null,
+    status: "active",
+  };
+
+  const onRifle = summary({ id: 1, mountedOn: deerRifle });
+  const onUpper = summary({
+    id: 5,
+    make: "Aimpoint",
+    model: "T-2",
+    estimatedValue: 850,
+    mountedOn: upper,
+  });
+  const loose = summary({
+    id: 2,
+    accessoryKindId: 3,
+    kindName: "Magazine",
+    genericThumbnailKey: "magazine",
+    make: "Walther",
+    model: null,
+    estimatedValue: 180,
+  });
+  const mountedAndLoose = [onRifle, onUpper, loose];
+
+  /** A link to a record, whether rendered as a button or an anchor. */
+  const link = (name: string, scope: HTMLElement) =>
+    within(scope).queryByRole("link", { name }) ?? within(scope).queryByRole("button", { name });
+
+  it("has a Mounted on column between Accessory and Value", async () => {
+    renderPage({}, { active: mountedAndLoose });
+
+    await screen.findByText(NAMES.optic);
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers).toEqual(expect.arrayContaining(["Accessory", "Mounted on", "Value"]));
+    expect(headers.indexOf("Accessory")).toBeLessThan(headers.indexOf("Mounted on"));
+    expect(headers.indexOf("Mounted on")).toBeLessThan(headers.indexOf("Value"));
+  });
+
+  it("shows the direct host's name as a link, and '—' when not mounted", async () => {
+    const user = userEvent.setup();
+    renderPage({}, { active: mountedAndLoose });
+
+    const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent);
+    const column = headers.indexOf("Mounted on");
+    const cellOf = (name: string) =>
+      within(screen.getByText(name).closest("tr")!).getAllByRole("cell")[column];
+
+    expect(cellOf(NAMES.optic)).toHaveTextContent("Winchester Model 70 “Deer rifle”");
+    expect(cellOf("Aimpoint T-2 · Optic")).toHaveTextContent("BCM upper · Upper receiver");
+    expect(cellOf(NAMES.magazine)).toHaveTextContent("—");
+    expect(link("BCM upper · Upper receiver", cellOf("Aimpoint T-2 · Optic"))).not.toBeNull();
+    expect(within(cellOf(NAMES.magazine)).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(cellOf(NAMES.magazine)).queryByRole("link")).not.toBeInTheDocument();
+
+    await user.click(link("Winchester Model 70 “Deer rifle”", cellOf(NAMES.optic))!);
+    expect(open).toHaveBeenLastCalledWith({ page: "firearm", id: 7, from: "accessories" });
+    await user.click(link("BCM upper · Upper receiver", cellOf("Aimpoint T-2 · Optic"))!);
+    expect(open).toHaveBeenLastCalledWith({ page: "accessory", id: 11, from: "accessories" });
+  });
+
+  it("shows the tile's 'Mounted on {host}' as a link under the name, and nothing for an unmounted one", async () => {
+    const user = userEvent.setup();
+    renderPage({ view: "tile" }, { active: mountedAndLoose });
+
+    const tile = (await screen.findByText(NAMES.optic)).closest("li")!;
+    expect(tile).toHaveTextContent(/Mounted on\s*Winchester Model 70 “Deer rifle”/);
+    const hostLink = link("Winchester Model 70 “Deer rifle”", tile)!;
+    expect(hostLink).not.toBeNull();
+    expect(screen.getByText(NAMES.magazine).closest("li")).not.toHaveTextContent(/Mounted on/);
+
+    await user.click(hostLink);
+
+    expect(open).toHaveBeenLastCalledWith({ page: "firearm", id: 7, from: "accessories" });
+    // Following the host's link does not also open this accessory.
+    expect(open).not.toHaveBeenCalledWith(expect.objectContaining({ page: "accessory", id: 1 }));
   });
 });
