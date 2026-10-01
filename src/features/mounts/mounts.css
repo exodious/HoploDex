@@ -103,3 +103,9 @@
   margin: var(--space-2) 0 0;
   padding-left: var(--space-5);
 }
+
+/* The "Mount on" dialog is short: room under the field for its suggestions, so
+   the list opens over empty space rather than over the Cancel button. */
+.hd-mount-picker {
+  min-height: 13rem;
+}

@@ -177,6 +177,62 @@ async function openGroupMenu() {
   await browser.pause(300);
 }
 
+/** Opens a menu whose trigger is the button in `scope` reading `label` (a
+ * menu opens on pointer down, which a plain click doesn't send). */
+async function openMenuButton(scope: string, label: string) {
+  await browser.execute(
+    (within: string, wanted: string) => {
+      const trigger = [...document.querySelectorAll<HTMLElement>(`${within} button`)].find(
+        (b) => b.textContent?.trim() === wanted,
+      );
+      trigger?.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+      );
+    },
+    scope,
+    label,
+  );
+  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+  await browser.pause(300);
+}
+
+/** Chooses the open menu's item whose text is `label`. */
+async function chooseOpenMenuItem(label: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute((wanted: string) => {
+        const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+          (m) => (m.textContent ?? "").trim() === wanted,
+        );
+        item?.click();
+        return Boolean(item);
+      }, label),
+    { timeout: 5000, timeoutMsg: `no menu item "${label}"` },
+  );
+  await browser.pause(400);
+}
+
+/** Opens the "Mount on {name}" dialog from the record page's Mounted section,
+ * and searches it with real key presses for `text` (the list answers to real
+ * input). */
+async function searchMountDialog(text: string) {
+  await openMenuButton(".hd-mounted-section", "Mount");
+  await chooseOpenMenuItem("Existing accessory or firearm…");
+  await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
+  await browser.pause(300);
+  await realClick('[role="dialog"] [role="combobox"]');
+  await typeReal(text);
+  await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
+  await browser.pause(500);
+}
+
+/** Opens the Delete question of the record page (a confirmation, not a form). */
+async function openDeleteQuestion() {
+  await clickButton("Delete");
+  await $('[role="alertdialog"]').waitForExist();
+  await browser.pause(300);
+}
+
 // The app starts at the chooser, listing the seeded databases. It has to be
 // shot in both themes before a database is opened.
 describe("Screenshots: the chooser", () => {
@@ -290,6 +346,8 @@ for (const theme of ["Light", "Dark"] as const) {
       await realKey("Escape");
       await $('[role="listbox"]').waitForExist({ reverse: true });
 
+      // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
+      await centerField("cartridge");
       await realClick('[data-field="cartridge"] input');
       await typeReal("9mm");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
@@ -323,6 +381,8 @@ for (const theme of ["Light", "Dark"] as const) {
       // than replacing the one on record.
       await openRecord("Savage 110");
       await openDialog("Edit");
+      // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
+      await centerField("cartridge");
       await realClick('[data-field="cartridge"] input');
       await realKey("Control_L+a");
       await typeReal("9x19mm Parabellum");
@@ -463,6 +523,138 @@ for (const theme of ["Light", "Dark"] as const) {
       await browser.pause(400);
       await shot(`47-suppressor-tiles-${suffix}`);
       await choose("List");
+    });
+
+    // specs/006-accessory-links contracts/ui-accessories.md §13. The
+    // collection's mount lines, the Mount menu and the export disclosure are
+    // below; the import report with a mount warning is its own walk at the end.
+    it("the Accessories page", async () => {
+      await goTo("Accessories");
+      await $("h1=Accessories").waitForExist();
+      await $(".hd-row__name").waitForExist();
+      await groupBy("Kind");
+      await $("h2.hd-group__title").waitForExist();
+      await browser.pause(300);
+      await shot(`48-accessories-list-${suffix}`);
+
+      await choose("Tiles");
+      await $(".hd-tile__name").waitForExist();
+      await browser.pause(400);
+      await shot(`49-accessories-tiles-${suffix}`);
+      await choose("List");
+
+      await groupBy("Mounted on");
+      await $("h2.hd-group__title").waitForExist();
+      await browser.pause(400);
+      await shot(`50-accessories-grouped-by-mounted-on-${suffix}`, { fullPage: true });
+      await groupBy("Kind");
+    });
+
+    it("the accessory form", async () => {
+      await openDialog("Add accessory");
+      await shot(`51-add-accessory-${suffix}`, { fullPage: true });
+      await browser.setWindowSize(800, 1400);
+      await browser.pause(500);
+      await shot(`52-add-accessory-minimum-width-${suffix}`);
+      await browser.setWindowSize(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
+      await browser.pause(500);
+      await discardForm();
+    });
+
+    it("an accessory record with its chain", async () => {
+      // Red dot on a scope on an upper on a receiver: the chain is three deep.
+      await openRecord("Holosun HS403B");
+      await shot(`53-accessory-record-${suffix}`, { fullPage: true });
+      await back();
+      await goTo("Collection");
+    });
+
+    it("a firearm record with its Mounted section, and mounting", async () => {
+      await openRecord("LaRue Tactical PredatAR lower");
+      await $(".hd-mounted-section").waitForExist();
+      await browser.execute(() =>
+        document.querySelector(".hd-mounted-section")?.scrollIntoView({ block: "center" }),
+      );
+      await browser.pause(300);
+      await shot(`54-firearm-mounted-section-${suffix}`);
+      await back();
+
+      // A rifle with its Mount menu open, and the existing-record dialog
+      // listing a record that is mounted elsewhere, then the move question.
+      await openRecord("Ruger Hawkeye Hunter");
+      await browser.execute(() =>
+        document.querySelector(".hd-mounted-section")?.scrollIntoView({ block: "center" }),
+      );
+      await openMenuButton(".hd-mounted-section", "Mount");
+      await shot(`55-mount-menu-${suffix}`);
+      await realKey("Escape");
+      await $('[role="menu"]').waitForExist({ reverse: true });
+
+      await searchMountDialog("holo");
+      await shot(`56-mount-existing-dialog-${suffix}`);
+      await browser.execute(() => {
+        [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+          .find((o) => (o.textContent ?? "").includes("Holosun"))
+          ?.click();
+      });
+      await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
+      await browser.pause(300);
+      await shot(`57-move-confirmation-${suffix}`);
+      await clickButton("Cancel");
+      await $('[role="alertdialog"]').waitForExist({ reverse: true });
+      // Cancel in the "Mount on" dialog (Escape would close its open list first).
+      await clickButton("Cancel");
+      await $('[role="dialog"]').waitForExist({ reverse: true });
+      await browser.pause(200);
+
+      // Deleting a rifle that carries a suppressor and an optic.
+      await openDeleteQuestion();
+      await shot(`59-delete-with-mounted-${suffix}`);
+      await clickButton("Cancel");
+      await $('[role="alertdialog"]').waitForExist({ reverse: true });
+      await back();
+    });
+
+    it("disposing of a firearm with mounted records", async () => {
+      await openRecord("Aero Precision M4E1 carbine");
+      await openDialog("Mark disposed");
+      await choose("Dispose with it");
+      await browser.pause(400);
+      await shot(`58-dispose-with-mounted-${suffix}`, { fullPage: true });
+      await discardForm();
+      await back();
+    });
+
+    it("the collection with its mount lines", async () => {
+      const showRow = (name: string) =>
+        browser.execute((wanted: string) => {
+          [...document.querySelectorAll<HTMLElement>(".hd-row__name, .hd-tile__name")]
+            .find((n) => n.textContent?.includes(wanted))
+            ?.scrollIntoView({ block: "center" });
+        }, name);
+      await showRow("PredatAR lower");
+      await browser.pause(300);
+      await shot(`60-collection-mount-lines-${suffix}`);
+
+      await choose("Tiles");
+      await $(".hd-tile__name").waitForExist();
+      await showRow("PredatAR lower");
+      await browser.pause(400);
+      await shot(`61-collection-tiles-mount-lines-${suffix}`);
+      await choose("List");
+    });
+
+    it("the value summary and the export disclosure", async () => {
+      await goTo("Insurance");
+      await $(".hd-policy").waitForExist();
+      await browser.pause(300);
+      await shot(`62-value-summary-${suffix}`);
+      await goTo("Collection");
+
+      await openDialog("Export");
+      await browser.pause(500);
+      await shot(`63-export-accessories-disclosure-${suffix}`);
+      await closeDialog();
     });
 
     it("insurance", async () => {
@@ -615,6 +807,32 @@ describe("Screenshots: the import report", () => {
     for (const theme of ["Light", "Dark"] as const) {
       await chooseTheme(theme);
       await shot(`34-import-report-${theme.toLowerCase()}`, { fullPage: true });
+    }
+    await closeDialog();
+    await chooseTheme("Light");
+  });
+});
+
+// specs/006-accessory-links: the import report with the four mount warnings,
+// in both themes, with the report left open.
+describe("Screenshots: the import report with mount warnings", () => {
+  it("lists the mount warnings and the table of each row", async () => {
+    await goTo("Collection");
+    await chooseTheme("Light");
+    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    await clickButton("Import");
+    await fill("Spreadsheet file", path.join(samples, "import-accessory-mount-warnings.csv"));
+    await clickButton("Import");
+    await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
+    await browser.execute(() => {
+      for (const trigger of document.querySelectorAll<HTMLElement>(".hd-disclosure__trigger")) {
+        if (trigger.getAttribute("aria-expanded") === "false") trigger.click();
+      }
+    });
+    await browser.pause(300);
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`64-import-report-mount-warnings-${theme.toLowerCase()}`);
     }
     await closeDialog();
     await chooseTheme("Light");

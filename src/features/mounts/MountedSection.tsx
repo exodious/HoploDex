@@ -127,15 +127,17 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
           </Button>
         }
       >
-        <MountChooser
-          role="item"
-          record={record.record}
-          value={null}
-          label="Accessory or firearm"
-          placeholder="Search by make, model, nickname or serial number"
-          error={error}
-          onChange={(item, mountedOn) => item && void choose(item, mountedOn)}
-        />
+        <div className="hd-mount-picker">
+          <MountChooser
+            role="item"
+            record={record.record}
+            value={null}
+            label="Accessory or firearm"
+            placeholder="Search by make, model, nickname or serial number"
+            error={error}
+            onChange={(item, mountedOn) => item && void choose(item, mountedOn)}
+          />
+        </div>
       </Dialog>
 
       <ConfirmDialog

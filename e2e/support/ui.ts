@@ -102,8 +102,9 @@ export async function isButtonDisabled(text: string): Promise<boolean> {
   );
 }
 
-/** Clicks one of the app's top-bar section tabs ("Collection", "Insurance"). */
-export async function goTo(section: "Collection" | "Insurance") {
+/** Clicks one of the app's top-bar section tabs ("Collection", "Accessories",
+ * "Insurance"). */
+export async function goTo(section: "Collection" | "Accessories" | "Insurance") {
   await browser.execute((name: string) => {
     const tab = [...document.querySelectorAll<HTMLElement>(".hd-tab")].find((t) =>
       t.textContent?.trim().startsWith(name),
