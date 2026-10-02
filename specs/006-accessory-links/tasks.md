@@ -327,9 +327,10 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 
 Done when the pull request is opened, not before (CLAUDE.md; plan.md "Close-out").
 
-- [ ] T122 Comment on issue **#53** with what 006 settled (`uid` on `firearms` and `accessories` as a lowercase v4 UUID from `services::record_id`, set at creation and fixed by trigger; the spreadsheet's `record_id` column and identifier-first matching; a created record keeps the row's identifier and a duplicate gets a new one, a data point for #31; the tests and seed for those two tables) and what is left (`insurance_policies.uid`, required for #54; `photos.uid` and `document_attachments.uid` for #30; whether `disposition_history` needs one; confirming the lookup tables need none; whether cross-table uniqueness matters beyond firearms and accessories; the acceptance tests and seed for those tables), and update the issue body's "To decide" list to match, with `gh issue comment 53` and `gh issue edit 53`
-- [ ] T123 [P] Link the pull request on issue **#50** with `gh issue comment 50`
-- [ ] T124 [P] If anything about FR-003's acquisition source changed during implementation, note it on issue **#55** with `gh issue comment 55`; otherwise record in the PR notes that nothing changed
+- [X] T122 Comment on issue **#53** with what 006 settled (`uid` on `firearms` and `accessories` as a lowercase v4 UUID from `services::record_id`, set at creation and fixed by trigger; the spreadsheet's `record_id` column and identifier-first matching; a created record keeps the row's identifier and a duplicate gets a new one, a data point for #31; the tests and seed for those two tables) and what is left (`insurance_policies.uid`, required for #54; `photos.uid` and `document_attachments.uid` for #30; whether `disposition_history` needs one; confirming the lookup tables need none; whether cross-table uniqueness matters beyond firearms and accessories; the acceptance tests and seed for those tables), and update the issue body's "To decide" list to match, with `gh issue comment 53` and `gh issue edit 53`
+- [X] T123 [P] Link the pull request on issue **#50** with `gh issue comment 50`
+- [X] T124 [P] If anything about FR-003's acquisition source changed during implementation, note it on issue **#55** with `gh issue comment 55`; otherwise record in the PR notes that nothing changed
+  - Nothing changed; recorded in #61's notes
 
 ---
 
