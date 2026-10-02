@@ -40,7 +40,7 @@ starting step 5 to see where it stands.
 | 1 | Performance tests out of the default run, seeded once | −90 s Rust | – | done |
 | 2 | cargo-nextest | −55 s Rust | 1 | done |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | done |
-| 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | 4a done; 4b (specs, screenshot walk) todo |
+| 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | done |
 | 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled | todo |
 | 6 | Split the long E2E spec files | balance for 5 | 5 | todo |
 | 7 | Faster release profile for E2E builds | −50 s per rebuild | – | done |
@@ -348,9 +348,7 @@ covers point 4.
 **Verify.** The full E2E run passes 3 times in a row, and the total drops.
 Compare per-spec times against the baseline with the script in **Measuring**.
 
-**Status.** 4a done; 4b (specs, screenshot walk) todo.
-
-**Result.** _(before → after)_ 4a (the helpers in `ui.ts`; no `browser.pause`
+**Result.** 4a (the helpers in `ui.ts`; no `browser.pause`
 is left there): full run 519 s (baseline) → 433 s (7 m 13 s, three passing
 runs in a row, each with all 14 specs green), measured on a loaded machine
 (three other worktrees building and testing), so the figures are indicative.
