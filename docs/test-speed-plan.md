@@ -75,6 +75,12 @@ Test counts at each feature merge (Rust integration / Vitest / E2E `it`):
 before 003 282 / 228 / 64; 003 545 / 439 / 94; 004 653 / 571 / 103;
 005 699 / 653 / 107; 006 (now) 972 / 968 / 120.
 
+After steps 1–4 and 7, measured the same way on the same host with nothing
+else running (2026-10-02, `ccf73ae4`): Rust 184 s → **45 s** with
+`cargo nextest run` (94 s with plain `cargo test`), 957 passed and the 18 perf
+tests skipped; E2E 519 s → **368 s**, 14 of 14 spec files passed; an E2E
+rebuild after a backend change 70 s → about 4 s.
+
 ## Findings
 
 - **E2E is serial and full of fixed sleeps.** About 390 s of the 519 s sits
