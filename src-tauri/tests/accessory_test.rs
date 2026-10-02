@@ -145,7 +145,10 @@ fn the_fourteen_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
     assert!(orders.windows(2).all(|pair| pair[0] < pair[1]), "in sortOrder: {orders:?}");
     // Trigger and Bipod were added after the first twelve: new ids, listed
     // beside their neighbours, so no existing id changes meaning.
-    assert_eq!(kinds.iter().map(|k| k.id).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6, 13, 7, 8, 9, 14, 10, 11, 12]);
+    assert_eq!(
+        kinds.iter().map(|k| k.id).collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5, 6, 13, 7, 8, 9, 14, 10, 11, 12]
+    );
     assert!(kinds.iter().all(|k| k.offered), "every kind is offered");
     assert_eq!(kinds[0].generic_thumbnail_key, "optic");
     assert_eq!(kinds[6].generic_thumbnail_key, "trigger");
