@@ -29,22 +29,25 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use chrono::{Duration, Local};
+use hoplodex_lib::commands::accessories::{ReverseAccessoryDispositionInput, ops as accessory_ops};
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{
-    DisposeFirearmInput, HistoryChoice, ListFirearmsInput, ReverseDispositionInput,
+    DisposeInput, DisposeWith, HistoryChoice, ListFirearmsInput, ReverseDispositionInput,
 };
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
+use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin,
 };
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups::{self, BackupJob, resolve_folder as backup_folder};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
-use hoplodex_lib::services::spreadsheet::COLUMNS;
+use hoplodex_lib::services::spreadsheet::{ACCESSORY_COLUMNS, FIREARM_COLUMNS};
 use rusqlite::Connection;
 
 #[path = "support/sandbox.rs"]
@@ -83,6 +86,27 @@ const BOLT_ACTION: i64 = 3;
 const LEVER_ACTION: i64 = 4;
 const PUMP_ACTION: i64 = 5;
 const PERCUSSION: i64 = 11;
+
+// Ids seeded by migration 0003_seed_firearm_types (specs/006-accessory-links
+// FR-002): the accessory kinds.
+const KIND_OPTIC: i64 = 1;
+const KIND_LIGHT: i64 = 2;
+const KIND_MAGAZINE: i64 = 3;
+const KIND_STOCK: i64 = 4;
+const KIND_UPPER: i64 = 5;
+const KIND_BARREL: i64 = 6;
+const KIND_MUZZLE: i64 = 7;
+const KIND_CONVERSION: i64 = 8;
+const KIND_MOUNT: i64 = 9;
+const KIND_SLING: i64 = 10;
+const KIND_CASE: i64 = 11;
+const KIND_OTHER: i64 = 12;
+const KIND_TRIGGER: i64 = 13;
+const KIND_BIPOD: i64 = 14;
+
+/// What the unscheduled active accessories may add to the blanket policy's
+/// total: the blanket limit leaves room for them (`seed_accessories` checks).
+const ACCESSORY_BLANKET_ALLOWANCE: i64 = 3_000;
 
 /// A real photo from `seed-photos/`, whose README records where each came
 /// from and its licence, as the `(name, bytes, mime type)` that `photos`
@@ -326,7 +350,7 @@ fn database_id(conn: &Connection) -> String {
 fn seed_shared(conn: &Connection) -> i64 {
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
-        must(firearm_ops::create_firearm(conn, &input, false), &label).id
+        must(firearm_ops::create_firearm(conn, &input, false, None), &label).id
     };
     let beretta = add(FirearmInput {
         estimated_value: Some(650),
@@ -400,6 +424,7 @@ fn base(make: &str, model: &str, serial: &str, caliber: &str, type_id: i64) -> F
         registered_to: None,
         cartridge: None,
         action_type_id: None,
+        mounted_on: None,
     }
 }
 
@@ -511,18 +536,19 @@ pub fn seed(conn: &Connection, extra: usize) {
     let policies = seed_policies(conn);
     let extras = generated_firearms(extra);
     let extras_value: i64 = extras.iter().filter_map(|f| f.estimated_value).sum();
-    seed_blanket(conn, 12_000 + extras_value);
+    seed_blanket(conn, 12_000 + extras_value + ACCESSORY_BLANKET_ALLOWANCE);
 
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
-        must(firearm_ops::create_firearm(conn, &input, false), &label).id
+        must(firearm_ops::create_firearm(conn, &input, false, None), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
-        let input = DisposeFirearmInput {
+        let input = DisposeInput {
             disposition_type: kind,
             recipient: recipient.into(),
             date: date.into(),
             price,
+            with_mounted: Vec::new(),
         };
         must(firearm_ops::dispose_firearm(conn, id, &input), "a disposition");
     };
@@ -530,13 +556,20 @@ pub fn seed(conn: &Connection, extra: usize) {
         images
             .iter()
             .map(|(name, bytes, mime)| {
-                must(photo_ops::add_photo(conn, firearm_id, bytes, name, mime), name).id
+                must(
+                    photo_ops::add_photo(conn, RecordRef::Firearm(firearm_id), bytes, name, mime),
+                    name,
+                )
+                .id
             })
             .collect()
     };
     let documents = |firearm_id: i64, files: &[(&str, Vec<u8>, &str)]| {
         for (name, bytes, mime) in files {
-            must(document_ops::add_document(conn, firearm_id, bytes, name, mime), name);
+            must(
+                document_ops::add_document(conn, RecordRef::Firearm(firearm_id), bytes, name, mime),
+                name,
+            );
         }
     };
 
@@ -806,7 +839,10 @@ pub fn seed(conn: &Connection, extra: usize) {
     let ids =
         photos(s_and_w, &[seed_photo!("sw-686-cylinder.jpg"), seed_photo!("sw-686-side.jpg")]);
     // Not the first photo: a chosen thumbnail rather than the default.
-    must(photo_ops::set_thumbnail_photo(conn, s_and_w, ids[1]), "choosing a thumbnail");
+    must(
+        photo_ops::set_thumbnail_photo(conn, RecordRef::Firearm(s_and_w), ids[1]),
+        "choosing a thumbnail",
+    );
 
     let winchester = add(FirearmInput {
         nickname: text("Elk Rifle"),
@@ -884,7 +920,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         let (extension, mime) = if jpeg { ("jpg", "image/jpeg") } else { ("png", "image/png") };
         let name = format!("presentation-{:02}.{extension}", i + 1);
         let bytes = gradient_image(width, height, i as u32 * 36, jpeg);
-        must(photo_ops::add_photo(conn, commemorative, &bytes, &name, mime), &name);
+        must(
+            photo_ops::add_photo(conn, RecordRef::Firearm(commemorative), &bytes, &name, mime),
+            &name,
+        );
     }
 
     // -- Scheduled under an expired policy: uninsured despite the amount ----
@@ -1028,7 +1067,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power A", "RA-90001", "9mm", HANDGUN)
     };
-    must(firearm_ops::create_firearm(conn, &original_marks_first, false), "original-marks demo 1");
+    must(
+        firearm_ops::create_firearm(conn, &original_marks_first, false, None),
+        "original-marks demo 1",
+    );
     let original_marks_second = FirearmInput {
         notes: text(
             "Original-marks warning demo, firearm 2 of 2 (shares firearm 1's original marks).",
@@ -1047,7 +1089,10 @@ pub fn seed(conn: &Connection, extra: usize) {
         registered_to: None,
         ..base("Ridgeline Arms", "Imported Hi-Power B", "RA-90002", "9mm", HANDGUN)
     };
-    must(firearm_ops::create_firearm(conn, &original_marks_second, true), "original-marks demo 2");
+    must(
+        firearm_ops::create_firearm(conn, &original_marks_second, true, None),
+        "original-marks demo 2",
+    );
 
     // -- Disposed ------------------------------------------------------------
 
@@ -1244,6 +1289,332 @@ pub fn seed(conn: &Connection, extra: usize) {
     for input in extras {
         add(input);
     }
+
+    seed_accessories(conn, &policies);
+    seed_mounts(conn);
+}
+
+/// A valid active accessory with only the required fields.
+fn bare_accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
+    AccessoryInput {
+        accessory_kind_id: kind,
+        make: make.into(),
+        model: model.into(),
+        serial_number: None,
+        caliber: None,
+        cartridge: None,
+        notes: None,
+        status: FirearmStatus::Active,
+        estimated_value: None,
+        acquisition_source: None,
+        acquisition_date: None,
+        acquisition_price: None,
+        disposition_type: None,
+        disposition_recipient: None,
+        disposition_date: None,
+        disposition_price: None,
+        insurance_policy_id: None,
+        scheduled_coverage_amount: None,
+        mounted_on: None,
+    }
+}
+
+/// specs/006-accessory-links: one accessory of every kind, some with every
+/// field and some with only the required ones, a pair of magazines as one
+/// record, one scheduled under a policy, photos and a document, and disposed
+/// accessories with retained history covering every disposition type. The
+/// mounts are `seed_mounts`'.
+fn seed_accessories(conn: &Connection, policies: &Policies) {
+    let bare = bare_accessory;
+    let add = |input: AccessoryInput| {
+        let label = format!("{} {}", input.make, input.model);
+        must(accessory_ops::create_accessory(conn, &input, None), &label).id
+    };
+    let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
+        let input = DisposeInput {
+            disposition_type: kind,
+            recipient: recipient.into(),
+            date: date.into(),
+            price,
+            with_mounted: Vec::new(),
+        };
+        must(accessory_ops::dispose_accessory(conn, id, &input), "an accessory disposition");
+    };
+    let reacquire = |id: i64| {
+        must(
+            accessory_ops::reverse_accessory_disposition(
+                conn,
+                id,
+                &ReverseAccessoryDispositionInput { history: HistoryChoice::Keep },
+            ),
+            "reversing an accessory disposition",
+        );
+    };
+    let photo = |id: i64, name: &str, hue: u32| {
+        let bytes = gradient_image(1200, 800, hue, true);
+        must(photo_ops::add_photo(conn, RecordRef::Accessory(id), &bytes, name, "image/jpeg"), name)
+            .id
+    };
+
+    // -- Active: one of every kind -------------------------------------------
+
+    // Every field, scheduled under the Collector Schedule, with two photos
+    // (the second chosen as its thumbnail) and a receipt.
+    let scope = add(AccessoryInput {
+        serial_number: text("LP-5HD-30211"),
+        notes: text("Illuminated reticle; zeroed at 100 yards with 168 gr match."),
+        estimated_value: Some(1_000),
+        acquisition_source: text("Ridgeline Arms"),
+        acquisition_date: text("2024-03-16"),
+        acquisition_price: Some(1_100),
+        insurance_policy_id: Some(policies.collector),
+        scheduled_coverage_amount: Some(1_200),
+        ..bare(KIND_OPTIC, "Leupold", "VX-5HD 3-15x44")
+    });
+    let scope_photos = [photo(scope, "scope-front.jpg", 200), photo(scope, "scope-side.jpg", 20)];
+    must(
+        photo_ops::set_thumbnail_photo(conn, RecordRef::Accessory(scope), scope_photos[1]),
+        "choosing an accessory thumbnail",
+    );
+    must(
+        document_ops::add_document(
+            conn,
+            RecordRef::Accessory(scope),
+            &simple_pdf(&["Ridgeline Arms", "Sales receipt", "Leupold VX-5HD 3-15x44 - 1,100.00"]),
+            "receipt-leupold.pdf",
+            "application/pdf",
+        ),
+        "an accessory receipt",
+    );
+    add(AccessoryInput {
+        serial_number: text("TL7-004418"),
+        estimated_value: Some(140),
+        acquisition_date: text("2023-11-02"),
+        acquisition_price: Some(130),
+        ..bare(KIND_LIGHT, "Streamlight", "TLR-7 Sub")
+    });
+    // A pair of magazines kept together is one record, with the count in its
+    // model and the value of both (FR-001).
+    let magazines = add(AccessoryInput {
+        caliber: text("9mm"),
+        cartridge: text("9x19mm Parabellum"),
+        notes: text("The two original magazines that came with the pistol."),
+        estimated_value: Some(180),
+        acquisition_source: text("Estate sale"),
+        acquisition_date: text("2020-08-22"),
+        ..bare(KIND_MAGAZINE, "Walther", "P38 magazines, pair")
+    });
+    photo(magazines, "p38-magazines.jpg", 120);
+    add(AccessoryInput { estimated_value: Some(90), ..bare(KIND_STOCK, "Magpul", "MOE SL stock") });
+    add(AccessoryInput {
+        serial_number: text("AP-U-70213"),
+        caliber: text(".223"),
+        cartridge: text(".223 Remington"),
+        estimated_value: Some(350),
+        acquisition_date: text("2022-05-14"),
+        ..bare(KIND_UPPER, "Aero Precision", "M4E1 upper receiver")
+    });
+    add(AccessoryInput {
+        serial_number: text("CB-1160"),
+        caliber: text(".223"),
+        estimated_value: Some(200),
+        ..bare(KIND_BARREL, "Criterion", "Hybrid 16 in barrel")
+    });
+    add(AccessoryInput {
+        estimated_value: Some(240),
+        acquisition_price: Some(255),
+        ..bare(KIND_TRIGGER, "Geissele", "SSA-E two-stage trigger")
+    });
+    add(AccessoryInput {
+        estimated_value: Some(120),
+        acquisition_price: Some(110),
+        ..bare(KIND_MUZZLE, "SureFire", "SOCOM flash hider")
+    });
+    add(AccessoryInput {
+        caliber: text(".22"),
+        cartridge: text(".22 Long Rifle"),
+        estimated_value: Some(300),
+        ..bare(KIND_CONVERSION, "CMMG", "Banshee .22 LR conversion kit")
+    });
+    add(AccessoryInput {
+        estimated_value: Some(150),
+        ..bare(KIND_MOUNT, "Geissele", "Super Precision 30 mm mount")
+    });
+    add(AccessoryInput {
+        estimated_value: Some(110),
+        ..bare(KIND_BIPOD, "Harris", "S-BRM 6-9 in bipod")
+    });
+    // Only the required fields, then a value, then notes.
+    add(AccessoryInput {
+        estimated_value: Some(40),
+        ..bare(KIND_SLING, "Magpul", "MS4 two-point sling")
+    });
+    add(bare(KIND_CASE, "Pelican", "1500 case"));
+    add(AccessoryInput {
+        notes: text("Box of spare springs, pins and a cleaning rod."),
+        estimated_value: Some(25),
+        ..bare(KIND_OTHER, "Real Avid", "Spare parts kit")
+    });
+
+    // -- Disposed, each type once; two keep their earlier dispositions ------
+
+    let red_dot = add(AccessoryInput {
+        estimated_value: Some(150),
+        acquisition_date: text("2021-02-10"),
+        ..bare(KIND_OPTIC, "Vortex", "Strikefire II")
+    });
+    dispose(red_dot, DispositionType::Sold, "Dave Rossi", "2022-06-01", 120);
+    reacquire(red_dot);
+    dispose(red_dot, DispositionType::Traded, "Ridgeline Arms", "2024-09-14", 110);
+
+    let sling = add(AccessoryInput {
+        estimated_value: Some(45),
+        acquisition_date: text("2019-12-12"),
+        ..bare(KIND_SLING, "Blue Force Gear", "Vickers sling")
+    });
+    dispose(sling, DispositionType::Gifted, "Nephew Tom", "2024-12-25", 0);
+
+    let barrel = add(AccessoryInput {
+        serial_number: text("FX-88341"),
+        estimated_value: Some(220),
+        acquisition_date: text("2020-06-30"),
+        ..bare(KIND_BARREL, "Faxon", "Match barrel")
+    });
+    dispose(barrel, DispositionType::LostStolen, "Lost in transit, claim 23-4471", "2023-03-09", 0);
+    reacquire(barrel);
+    dispose(barrel, DispositionType::Sold, "Kestrel Outfitters", "2025-04-18", 190);
+
+    let muzzle = add(AccessoryInput {
+        estimated_value: Some(0),
+        acquisition_date: text("2018-01-20"),
+        ..bare(KIND_MUZZLE, "Noveske", "KX3 flash hider")
+    });
+    dispose(muzzle, DispositionType::Destroyed, "Cracked at the weld; scrapped", "2024-05-05", 0);
+
+    let case = add(AccessoryInput {
+        estimated_value: Some(60),
+        acquisition_date: text("2017-09-01"),
+        ..bare(KIND_CASE, "Plano", "Field locker")
+    });
+    dispose(
+        case,
+        DispositionType::LostStolen,
+        "Stolen from a truck, report 24-9921",
+        "2024-02-02",
+        0,
+    );
+
+    // The blanket policy's limit leaves room for what is unscheduled.
+    let unscheduled: i64 = must(
+        conn.query_row(
+            "SELECT COALESCE(SUM(estimated_value), 0) FROM accessories
+             WHERE status = 'active' AND insurance_policy_id IS NULL",
+            [],
+            |row| row.get(0),
+        ),
+        "the unscheduled accessories' value",
+    );
+    assert!(
+        unscheduled <= ACCESSORY_BLANKET_ALLOWANCE,
+        "raise ACCESSORY_BLANKET_ALLOWANCE to at least {unscheduled}"
+    );
+}
+
+/// specs/006-accessory-links US2 (data-model.md "Seed and coverage"): the
+/// user stories' mounts, with records of their own so the other parts of the
+/// seed stay as they were. Every `mounts` column is set in some row: an
+/// accessory and a firearm each as an item, and each as a host. Unvalued, so
+/// the blanket policy's headroom is unchanged. Mounts are set the way the
+/// forms set them, through `mountedOn` on the record's own input.
+fn seed_mounts(conn: &Connection) {
+    let add_firearm = |input: FirearmInput| {
+        let label = format!("{} {}", input.make, input.model);
+        RecordRef::Firearm(must(firearm_ops::create_firearm(conn, &input, false, None), &label).id)
+    };
+    let add_accessory = |input: AccessoryInput| {
+        let label = format!("{} {}", input.make, input.model);
+        RecordRef::Accessory(must(accessory_ops::create_accessory(conn, &input, None), &label).id)
+    };
+    let accessory = |kind: i64, make: &str, model: &str, host: RecordRef| AccessoryInput {
+        mounted_on: Some(host),
+        ..bare_accessory(kind, make, model)
+    };
+
+    // An optic and a suppressor on the rifle nicknamed "Deer rifle". The
+    // suppressor is a firearm record and so is mounted by the firearm form's
+    // field; the optic by the accessory form's.
+    let deer_rifle = add_firearm(FirearmInput {
+        nickname: text("Deer rifle"),
+        finish: text("Walnut stock, blued"),
+        ..base("Ruger", "Hawkeye Hunter", "RH-39-20417", ".308 Winchester", RIFLE)
+    });
+    add_accessory(accessory(KIND_OPTIC, "Vortex", "Diamondback Tactical 4-16x44", deer_rifle));
+    add_firearm(FirearmInput {
+        mounted_on: Some(deer_rifle),
+        ..base("SilencerCo", "Hybrid 46M", "HY46-10442", ".30", SUPPRESSOR)
+    });
+
+    // A receiver with an upper carrying a scope (carrying a red dot) and a
+    // light: nested mounts three deep.
+    let receiver = add_firearm(FirearmInput {
+        nickname: text("Stripped lower"),
+        ..base("LaRue Tactical", "PredatAR lower", "LT-L-30915", ".223", RIFLE)
+    });
+    let upper = add_accessory(accessory(KIND_UPPER, "BCM", "RECCE-16 upper", receiver));
+    let scope = add_accessory(accessory(KIND_OPTIC, "Primary Arms", "SLx 1-6x24", upper));
+    add_accessory(accessory(KIND_OPTIC, "Holosun", "HS403B micro red dot", scope));
+    add_accessory(accessory(KIND_LIGHT, "SureFire", "M300A Scout", upper));
+
+    // An upper that is not on any receiver, carrying its own optic.
+    let spare_upper = add_accessory(AccessoryInput {
+        serial_number: text("DD-U-55102"),
+        ..bare_accessory(KIND_UPPER, "Daniel Defense", "MK18 upper")
+    });
+    add_accessory(accessory(KIND_OPTIC, "Trijicon", "ACOG TA31 4x32", spare_upper));
+
+    // A firearm mounted on an accessory (FR-009): a pistol kept in its case.
+    let case =
+        add_accessory(AccessoryInput { ..bare_accessory(KIND_CASE, "Pelican", "1170 case") });
+    add_firearm(FirearmInput {
+        mounted_on: Some(case),
+        ..base("Walther", "PPK/S", "PPKS-221903", ".380", HANDGUN)
+    });
+
+    // US3: a rifle carrying a launcher (a firearm) that carries a light, so
+    // disposing of the rifle asks about the launcher and, through it, the
+    // light.
+    let carbine = add_firearm(FirearmInput {
+        nickname: text("Range carbine"),
+        ..base("Aero Precision", "M4E1 carbine", "AP-M4-70318", ".223", RIFLE)
+    });
+    let launcher = add_firearm(FirearmInput {
+        mounted_on: Some(carbine),
+        ..base("Midwest Industries", "40 mm launcher", "MI-L-2210", "40 mm", OTHER)
+    });
+    add_accessory(accessory(KIND_LIGHT, "Streamlight", "TLR-1 HL", launcher));
+
+    // A rifle disposed of with its optic, which went with it and has no
+    // price of its own (FR-014); its light was kept, so it is active and
+    // unmounted.
+    let sold_rifle = add_firearm(FirearmInput {
+        nickname: text("Sold with scope"),
+        ..base("Savage", "110 Storm", "SV-110-46620", ".270 Winchester", RIFLE)
+    });
+    let sold_optic =
+        add_accessory(accessory(KIND_OPTIC, "Leupold", "VX-3HD 3.5-10x40", sold_rifle));
+    add_accessory(accessory(KIND_LIGHT, "Inforce", "WML Gen 2", sold_rifle));
+    let RecordRef::Firearm(sold_rifle_id) = sold_rifle else { unreachable!() };
+    let input = DisposeInput {
+        disposition_type: DispositionType::Sold,
+        recipient: "Dale Whitaker".into(),
+        date: "2025-08-23".into(),
+        price: 650,
+        with_mounted: vec![DisposeWith { record: sold_optic, price: None }],
+    };
+    must(
+        firearm_ops::dispose_firearm(conn, sold_rifle_id, &input),
+        "a rifle disposed of with its optic",
+    );
 }
 
 /// Deterministic filler: plain, valued, unscheduled firearms with distinct
@@ -1362,9 +1733,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
 
     let row = |cells: &[(&str, &str)]| -> Vec<String> {
         for (name, _) in cells {
-            assert!(COLUMNS.contains(name), "unknown spreadsheet column {name}");
+            assert!(FIREARM_COLUMNS.contains(name), "unknown spreadsheet column {name}");
         }
-        COLUMNS
+        FIREARM_COLUMNS
             .iter()
             .map(|column| {
                 cells.iter().find(|(name, _)| name == column).map_or("", |(_, v)| *v).to_owned()
@@ -1373,7 +1744,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     };
     let write = |name: &str, rows: Vec<Vec<String>>| {
         let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
-        writer.write_record(COLUMNS).expect("write the header");
+        writer.write_record(FIREARM_COLUMNS).expect("write the header");
         for record in rows {
             writer.write_record(record).expect("write a row");
         }
@@ -1382,10 +1753,13 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     // specs/004-cartridges-action-types FR-023: a sheet exported before
     // `cartridge` and `action_type` existed, so its header lacks both.
     let write_without = |name: &str, dropped: &[&str], rows: Vec<Vec<String>>| {
-        let kept: Vec<usize> =
-            (0..COLUMNS.len()).filter(|&index| !dropped.contains(&COLUMNS[index])).collect();
+        let kept: Vec<usize> = (0..FIREARM_COLUMNS.len())
+            .filter(|&index| !dropped.contains(&FIREARM_COLUMNS[index]))
+            .collect();
         let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
-        writer.write_record(kept.iter().map(|&index| COLUMNS[index])).expect("write the header");
+        writer
+            .write_record(kept.iter().map(|&index| FIREARM_COLUMNS[index]))
+            .expect("write the header");
         for record in rows {
             writer.write_record(kept.iter().map(|&index| &record[index])).expect("write a row");
         }
@@ -1892,7 +2266,336 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         ])],
     );
 
+    write_accessory_import_samples(dir, &row);
+
+    // Issue #56: a row matching the seeded "Stripped lower" by make, model
+    // and serial number marks it sold, so choosing "Replace existing" asks
+    // which of the records mounted on it (an upper carrying a scope, which
+    // carries a red dot, and a light) go with it.
+    write(
+        "import-dispose-receiver.csv",
+        vec![row(&[
+            ("make", "LaRue Tactical"),
+            ("model", "PredatAR lower"),
+            ("nickname", "Stripped lower"),
+            ("serial_number", "LT-L-30915"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".223"),
+            ("firearm_type", "Rifle"),
+            ("status", "disposed"),
+            ("disposition_type", "sold"),
+            ("disposition_recipient", "Kestrel Outfitters"),
+            ("disposition_date", "2025-09-12"),
+            ("disposition_price", "400"),
+        ])],
+    );
+
+    // specs/006-accessory-links US5-7: a sheet exported before this feature
+    // has neither `record_id` nor `mounted_on`, and imports as it always did.
+    write_without(
+        "import-before-accessories.csv",
+        &["record_id", "mounted_on"],
+        vec![row(&[
+            ("make", "Remington"),
+            ("model", "870 Express"),
+            ("serial_number", "A-001"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", "12 gauge"),
+            ("firearm_type", "Shotgun"),
+            ("notes", "From a sheet exported before accessories were recorded."),
+        ])],
+    );
+
     dir.to_path_buf()
+}
+
+/// Builds a sample row from named cells.
+type RowBuilder = dyn Fn(&[(&str, &str)]) -> Vec<String>;
+
+/// Record identifiers the accessory samples name each other by. They are
+/// fixed so a sample's rows can be mounted on one another; they exist in no
+/// seeded database, so no sample matches a seeded record by identifier.
+mod sample_ids {
+    pub const RIFLE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c01";
+    pub const SUPPRESSOR: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c02";
+    pub const OPTIC: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c11";
+    pub const MAGAZINE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c12";
+    pub const BARREL: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c13";
+    pub const SLING: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c14";
+    pub const UPPER: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c15";
+    pub const RAIL: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c16";
+    /// Held by no record anywhere.
+    pub const NOBODY: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7cff";
+    pub const WARN_A: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c21";
+    pub const WARN_DISPOSED: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c22";
+    pub const WARN_LOOP_1: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c23";
+    pub const WARN_LOOP_2: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c24";
+    pub const WARN_ITEM: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c25";
+    pub const ERROR_TWICE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c31";
+}
+
+/// specs/006-accessory-links US5: the accessory table and the record
+/// identifier and mount columns of both tables.
+/// - `import-mounts-firearms.csv` + `import-accessories.csv`: pick the two
+///   files together. A rifle, an optic on it, a suppressor on an upper, and
+///   more; every accessory column but `photo_filenames` is filled.
+/// - `import-collection.xlsx`: both tables as the two sheets of one workbook.
+/// - `import-accessory-mount-warnings.csv`: each of the four mount warnings
+///   and a disposed record that can't be mounted.
+/// - `import-accessory-errors.csv`: accessory row errors.
+fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
+    use sample_ids as id;
+
+    let row = |cells: &[(&str, &str)]| -> Vec<String> {
+        for (name, _) in cells {
+            assert!(ACCESSORY_COLUMNS.contains(name), "unknown spreadsheet column {name}");
+        }
+        ACCESSORY_COLUMNS
+            .iter()
+            .map(|column| {
+                cells.iter().find(|(name, _)| name == column).map_or("", |(_, v)| *v).to_owned()
+            })
+            .collect()
+    };
+    let write = |name: &str, columns: &[&str], rows: &[Vec<String>]| {
+        let mut writer = csv::Writer::from_path(dir.join(name)).expect("create an import sample");
+        writer.write_record(columns).expect("write the header");
+        for record in rows {
+            writer.write_record(record).expect("write a row");
+        }
+        writer.flush().expect("flush an import sample");
+    };
+
+    let firearms = vec![
+        firearm_row(&[
+            ("record_id", id::RIFLE),
+            ("make", "Daniel Defense"),
+            ("model", "DDM4 V7"),
+            ("serial_number", "DD-70011"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", "5.56mm"),
+            ("firearm_type", "Rifle"),
+            ("estimated_value", "1800"),
+        ]),
+        // A firearm on an accessory (an upper) of the accessory file.
+        firearm_row(&[
+            ("record_id", id::SUPPRESSOR),
+            ("make", "Dead Air"),
+            ("model", "Wolfman"),
+            ("serial_number", "DA-60021"),
+            ("no_serial_attested", "FALSE"),
+            ("caliber", ".30"),
+            ("firearm_type", "Suppressor"),
+            ("estimated_value", "950"),
+            ("mounted_on", id::UPPER),
+        ]),
+    ];
+    write("import-mounts-firearms.csv", FIREARM_COLUMNS, &firearms);
+
+    let accessories = vec![
+        // Every column but photo_filenames, on an optic mounted on the rifle.
+        row(&[
+            ("record_id", id::OPTIC),
+            ("kind", "Optic"),
+            ("make", "Leupold"),
+            ("model", "VX-5HD"),
+            ("serial_number", "OP-5521"),
+            ("caliber", ".308 Winchester"),
+            ("cartridge", ".308 Winchester"),
+            ("notes", "Mounted for the match season."),
+            ("status", "active"),
+            ("estimated_value", "1100"),
+            ("acquisition_source", "Online"),
+            ("acquisition_date", "2023-05-01"),
+            ("acquisition_price", "1000"),
+            ("insurance_policy_name", "Vault Schedule"),
+            ("scheduled_coverage_amount", "900"),
+            ("mounted_on", id::RIFLE),
+        ]),
+        // A blank caliber, worked out from the cartridge and listed in the
+        // report.
+        row(&[
+            ("record_id", id::MAGAZINE),
+            ("kind", "Magazine"),
+            ("make", "Magpul"),
+            ("model", "PMAG"),
+            ("cartridge", "9x19mm Parabellum"),
+            ("estimated_value", "20"),
+        ]),
+        row(&[
+            ("record_id", id::BARREL),
+            ("kind", "Barrel"),
+            ("make", "Criterion"),
+            ("model", "Hybrid barrel"),
+        ]),
+        // A disposed accessory, with its disposition.
+        row(&[
+            ("record_id", id::SLING),
+            ("kind", "Sling"),
+            ("make", "Blue Force Gear"),
+            ("model", "Vickers sling"),
+            ("status", "disposed"),
+            ("disposition_type", "sold"),
+            ("disposition_recipient", "Sam Example"),
+            ("disposition_date", "2025-07-01"),
+            ("disposition_price", "15"),
+        ]),
+        row(&[
+            ("record_id", id::UPPER),
+            ("kind", "Upper receiver"),
+            ("make", "Daniel Defense"),
+            ("model", "DDM4 Upper"),
+            ("estimated_value", "700"),
+        ]),
+        // An accessory on an accessory.
+        row(&[
+            ("record_id", id::RAIL),
+            ("kind", "Mount or rail"),
+            ("make", "ADM"),
+            ("model", "AD-RECON mount"),
+            ("mounted_on", id::OPTIC),
+        ]),
+        // No identifier: gets a new one. The kind is matched ignoring case.
+        row(&[("kind", "case"), ("make", "Pelican"), ("model", "1750")]),
+    ];
+    write("import-accessories.csv", ACCESSORY_COLUMNS, &accessories);
+
+    // Both tables in one workbook (FR-022), the accessory sheet mounted on
+    // the firearm sheet and the reverse.
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    for (name, columns, rows) in
+        [("Firearms", FIREARM_COLUMNS, &firearms), ("Accessories", ACCESSORY_COLUMNS, &accessories)]
+    {
+        let sheet = workbook.add_worksheet();
+        sheet.set_name(name).expect("name a sheet");
+        for (c, header) in columns.iter().enumerate() {
+            sheet.write_string(0, c as u16, *header).expect("write a header");
+        }
+        for (r, record) in rows.iter().enumerate() {
+            for (c, cell) in record.iter().enumerate() {
+                sheet.write_string((r + 1) as u32, c as u16, cell).expect("write a cell");
+            }
+        }
+    }
+    workbook.save(dir.join("import-collection.xlsx")).expect("save the sample workbook");
+
+    // Each mount warning, in the report's Warnings (FR-023). Every row
+    // imports, unmounted.
+    let disposed = [
+        ("status", "disposed"),
+        ("disposition_type", "gifted"),
+        ("disposition_recipient", "Sam Example"),
+        ("disposition_date", "2025-07-01"),
+    ];
+    let mut host_gone = vec![
+        ("record_id", id::WARN_DISPOSED),
+        ("kind", "Sling"),
+        ("make", "Magpul"),
+        ("model", "MS1 sling"),
+    ];
+    host_gone.extend_from_slice(&disposed);
+    let mut item_gone = vec![
+        ("record_id", id::WARN_ITEM),
+        ("kind", "Optic"),
+        ("make", "Burris"),
+        ("model", "Fullfield IV"),
+    ];
+    item_gone.extend_from_slice(&disposed);
+    item_gone.push(("mounted_on", id::WARN_A));
+    write(
+        "import-accessory-mount-warnings.csv",
+        ACCESSORY_COLUMNS,
+        &[
+            // No record has this identifier.
+            row(&[
+                ("record_id", id::WARN_A),
+                ("kind", "Optic"),
+                ("make", "Nikon"),
+                ("model", "Monarch 3"),
+                ("mounted_on", id::NOBODY),
+            ]),
+            row(&host_gone),
+            // Its host is disposed.
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Bushnell"),
+                ("model", "Elite 4500"),
+                ("mounted_on", id::WARN_DISPOSED),
+            ]),
+            // Not an identifier at all.
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Sig Sauer"),
+                ("model", "Romeo5"),
+                ("mounted_on", "not-a-record-id"),
+            ]),
+            // Two rows mounted on each other: the later is left unmounted.
+            row(&[
+                ("record_id", id::WARN_LOOP_1),
+                ("kind", "Light or laser"),
+                ("make", "Streamlight"),
+                ("model", "TLR-1"),
+                ("mounted_on", id::WARN_LOOP_2),
+            ]),
+            row(&[
+                ("record_id", id::WARN_LOOP_2),
+                ("kind", "Light or laser"),
+                ("make", "Crimson Trace"),
+                ("model", "LiNQ"),
+                ("mounted_on", id::WARN_LOOP_1),
+            ]),
+            // A disposed record is never mounted.
+            row(&item_gone),
+        ],
+    );
+
+    write(
+        "import-accessory-errors.csv",
+        ACCESSORY_COLUMNS,
+        &[
+            row(&[("make", "No Kind Given"), ("model", "X")]),
+            row(&[("kind", "Optic"), ("model", "No Make Given")]),
+            row(&[("kind", "Optic"), ("make", "No Model Given")]),
+            row(&[("kind", "Frobnicator"), ("make", "Unknown Kind"), ("model", "X")]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Fractional"),
+                ("model", "X"),
+                ("estimated_value", "12.50"),
+            ]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Bad Date"),
+                ("model", "X"),
+                ("acquisition_date", "next week"),
+            ]),
+            row(&[
+                ("record_id", "xyz"),
+                ("kind", "Optic"),
+                ("make", "Bad Record ID"),
+                ("model", "X"),
+            ]),
+            row(&[
+                ("record_id", id::ERROR_TWICE),
+                ("kind", "Optic"),
+                ("make", "First Use"),
+                ("model", "X"),
+            ]),
+            row(&[
+                ("record_id", id::ERROR_TWICE),
+                ("kind", "Optic"),
+                ("make", "Second Use"),
+                ("model", "X"),
+            ]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Disposed Without Details"),
+                ("model", "X"),
+                ("status", "disposed"),
+            ]),
+            row(&[("kind", "Optic"), ("make", "Good Row Among The Bad"), ("model", "X")]),
+        ],
+    );
 }
 
 // ---------------------------------------------------------------------------

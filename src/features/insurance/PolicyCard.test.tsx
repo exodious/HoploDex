@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
+import type { AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
 import { PolicyCard } from "./PolicyCard";
 import type { BlanketSummary, InsurancePolicy, PolicySummary } from "./types";
@@ -35,8 +37,34 @@ const blanketInForce: BlanketSummary = {
   limit: 10_000,
   total: 4_000,
   firearmCount: 3,
+  accessoryCount: 2,
   underInsured: false,
 };
+
+// specs/006-accessory-links FR-009: an accessory is scheduled on a policy as
+// a firearm is, and is listed with the scheduled firearms by `RecordName`.
+function accessorySummary(id: number, overrides: Partial<AccessorySummary> = {}): AccessorySummary {
+  return {
+    id,
+    accessoryKindId: 1,
+    kindName: "Optic",
+    genericThumbnailKey: "optic",
+    make: "Leupold",
+    model: "VX-5HD 3-15x44",
+    serialNumber: null,
+    caliber: null,
+    cartridge: null,
+    status: "active",
+    thumbnailPhotoId: null,
+    estimatedValue: 1_000,
+    insuranceWarning: "none",
+    insurancePolicyId: null,
+    scheduledCoverageAmount: null,
+    mountedOn: null,
+    mountedCounts: { firearms: 0, accessories: 0 },
+    ...overrides,
+  };
+}
 
 function firearmSummary(id: number, overrides: Partial<FirearmSummary> = {}): FirearmSummary {
   return {
@@ -57,6 +85,8 @@ function firearmSummary(id: number, overrides: Partial<FirearmSummary> = {}): Fi
     insuranceWarning: "none",
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
+    mountedOn: null,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -67,6 +97,7 @@ function renderCard(
     blanket?: BlanketSummary | null;
     summary?: PolicySummary;
     firearms?: FirearmSummary[];
+    accessories?: AccessorySummary[];
   } = {},
 ) {
   render(
@@ -76,6 +107,7 @@ function renderCard(
         blanket={options.blanket ?? null}
         summary={options.summary}
         firearms={options.firearms ?? []}
+        accessories={options.accessories ?? []}
         onEdit={() => {}}
         onDelete={() => {}}
       />
@@ -92,7 +124,129 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.getByText("$4,000")).toBeInTheDocument();
     expect(screen.getByText(/\$10,000/)).toBeInTheDocument();
     expect(screen.getByText(/3 firearms/)).toBeInTheDocument();
-    expect(screen.getByText(/every firearm not scheduled/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/every firearm and accessory not scheduled individually/i),
+    ).toBeInTheDocument();
+  });
+
+  it("counts the accessories the blanket policy covers beside its firearms (FR-009)", () => {
+    renderCard(base, { blanket: blanketInForce });
+
+    expect(screen.getByText("3 firearms and 2 accessories")).toBeInTheDocument();
+  });
+
+  it("says 1 accessory, not 1 accessories", () => {
+    renderCard(base, { blanket: { ...blanketInForce, firearmCount: 1, accessoryCount: 1 } });
+
+    expect(screen.getByText("1 firearm and 1 accessory")).toBeInTheDocument();
+  });
+
+  it("lists scheduled accessories with the scheduled firearms, each by its name", async () => {
+    const user = userEvent.setup();
+    const firearm = firearmSummary(5, { insurancePolicyId: 1, scheduledCoverageAmount: 1_500 });
+    const optic = accessorySummary(8, {
+      insurancePolicyId: 1,
+      scheduledCoverageAmount: 900,
+      insuranceWarning: "under_insured",
+    });
+    const sling = accessorySummary(9, {
+      accessoryKindId: 10,
+      kindName: "Sling",
+      genericThumbnailKey: "sling",
+      make: "Magpul",
+      model: "MS1",
+      estimatedValue: 100,
+      insurancePolicyId: 1,
+      scheduledCoverageAmount: 100,
+    });
+    renderCard(
+      { ...base, blanketCoverageLimit: null },
+      {
+        firearms: [firearm],
+        accessories: [optic, sling],
+        summary: {
+          policyId: 1,
+          policyName: base.name,
+          isExpired: false,
+          isExpiringSoon: false,
+          individuallyScheduled: [
+            {
+              record: { kind: "firearm", id: 5 },
+              estimatedValue: 2_000,
+              scheduledAmount: 1_500,
+              underInsured: false,
+            },
+            {
+              record: { kind: "accessory", id: 8 },
+              estimatedValue: 1_000,
+              scheduledAmount: 900,
+              underInsured: true,
+            },
+            {
+              record: { kind: "accessory", id: 9 },
+              estimatedValue: 100,
+              scheduledAmount: 100,
+              underInsured: false,
+            },
+          ],
+        },
+      },
+    );
+
+    const table = screen.getByRole("table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent("Colt Model 5");
+    expect(rows[1]).toHaveTextContent("Leupold VX-5HD 3-15x44 · Optic");
+    // The scheduled amount and the shortfall are keyed by the record, not
+    // by an id that a firearm and an accessory might share.
+    expect(rows[1]).toHaveTextContent("$900");
+    expect(rows[1]).toHaveTextContent("$100 short");
+    expect(rows[2]).toHaveTextContent(/^Magpul MS1 · Sling/);
+
+    await user.click(screen.getByRole("button", { name: "Leupold VX-5HD 3-15x44 · Optic" }));
+    expect(navigation.open).toHaveBeenCalledWith({
+      page: "accessory",
+      id: 8,
+      from: "insurance",
+    });
+  });
+
+  it("does not mix up a firearm and an accessory that share an id", () => {
+    const firearm = firearmSummary(5, { insurancePolicyId: 1, scheduledCoverageAmount: 1_500 });
+    const optic = accessorySummary(5, { insurancePolicyId: 1, scheduledCoverageAmount: 900 });
+    renderCard(
+      { ...base, blanketCoverageLimit: null },
+      {
+        firearms: [firearm],
+        accessories: [optic],
+        summary: {
+          policyId: 1,
+          policyName: base.name,
+          isExpired: false,
+          isExpiringSoon: false,
+          individuallyScheduled: [
+            {
+              record: { kind: "firearm", id: 5 },
+              estimatedValue: 2_000,
+              scheduledAmount: 1_500,
+              underInsured: false,
+            },
+            {
+              record: { kind: "accessory", id: 5 },
+              estimatedValue: 1_000,
+              scheduledAmount: 900,
+              underInsured: false,
+            },
+          ],
+        },
+      },
+    );
+
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("$1,500");
+    expect(rows[0]).not.toHaveTextContent("$900");
+    expect(rows[1]).toHaveTextContent("$900");
   });
 
   it("flags a blanket total over its limit", () => {
@@ -138,7 +292,12 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
           isExpired: false,
           isExpiringSoon: false,
           individuallyScheduled: [
-            { firearmId: 5, estimatedValue: 2_000, scheduledAmount: 1_500, underInsured: true },
+            {
+              record: { kind: "firearm", id: 5 },
+              estimatedValue: 2_000,
+              scheduledAmount: 1_500,
+              underInsured: true,
+            },
           ],
         },
       },

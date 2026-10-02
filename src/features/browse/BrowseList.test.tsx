@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { NavigationContext } from "../app/navigation";
+import type { Navigation } from "../app/navigation";
+import type { RecordLabel } from "../mounts/types";
 import { BrowseList } from "./BrowseList";
 import { GROUP_BY_OPTIONS } from "./types";
 import type { FirearmSummary, GroupBy, VisibleGroup } from "./types";
@@ -26,6 +30,9 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     insuranceWarning: "none",
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
+    // specs/006-accessory-links US2: not mounted, nothing mounted on it.
+    mountedOn: null,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -138,5 +145,144 @@ describe("BrowseList action", () => {
       "Registered to",
     ]);
     expect(GROUP_BY_OPTIONS.find((option) => option.label === "Action")?.value).toBe("action_type");
+  });
+});
+
+// specs/006-accessory-links US2-11, FR-016a, contracts/ui-accessories.md §9:
+// a mounted firearm names its host under its name; a firearm with records
+// mounted on it counts them.
+describe("BrowseList mount details (US2-11)", () => {
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: null,
+    status: "active",
+  };
+  const deerRifle: RecordLabel = {
+    record: { kind: "firearm", id: 7 },
+    make: "Winchester",
+    model: "Model 70",
+    nickname: "Deer rifle",
+    typeName: "Rifle",
+    serialNumber: null,
+    status: "active",
+  };
+
+  const open = vi.fn();
+  const onSelect = vi.fn();
+
+  function renderMounts(items: FirearmSummary[]) {
+    const navigation: Navigation = {
+      route: { page: "collection" },
+      navigate: () => {},
+      open,
+      back: null,
+      openDialog: () => {},
+    };
+    const groups: VisibleGroup[] = [{ key: "All", firearms: items, total: items.length }];
+    render(
+      <NavigationContext.Provider value={navigation}>
+        <BrowseList groups={groups} groupBy={undefined} onSelect={onSelect} />
+      </NavigationContext.Provider>,
+    );
+  }
+
+  const mounted = summary({ id: 1, make: "Gemtech", model: "GM-45", mountedOn: deerRifle });
+  const carrying = summary({
+    id: 2,
+    make: "Ruger",
+    model: "10/22",
+    mountedCounts: { firearms: 1, accessories: 2 },
+  });
+  const both = summary({
+    id: 3,
+    make: "Springfield",
+    model: "Saint",
+    mountedOn: upper,
+    mountedCounts: { firearms: 0, accessories: 2 },
+  });
+  const neither = summary({ id: 4, make: "Hawken", model: "Plains" });
+
+  /** The cell holding the firearm's name. */
+  const nameCell = (name: RegExp) =>
+    within(screen.getByRole("row", { name })).getAllByRole("cell")[0];
+
+  beforeEach(() => {
+    open.mockReset();
+    onSelect.mockReset();
+  });
+
+  it("shows 'Mounted on {host's name}' under a mounted firearm's name, the host a link", async () => {
+    const user = userEvent.setup();
+    renderMounts([mounted, carrying, both, neither]);
+
+    const cell = nameCell(/Gemtech GM-45/);
+    expect(cell).toHaveTextContent(/Mounted on\s*Winchester Model 70 “Deer rifle”/);
+    const link =
+      within(cell).queryByRole("link", { name: "Winchester Model 70 “Deer rifle”" }) ??
+      within(cell).getByRole("button", { name: "Winchester Model 70 “Deer rifle”" });
+
+    await user.click(link);
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ page: "firearm", id: 7 }));
+    // Following the host's link does not also open this row's firearm.
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("names an accessory host by its name and kind, and links it to the accessory", async () => {
+    const user = userEvent.setup();
+    renderMounts([both]);
+
+    const cell = nameCell(/Springfield Saint/);
+    expect(cell).toHaveTextContent(/Mounted on\s*BCM upper · Upper receiver/);
+    const link =
+      within(cell).queryByRole("link", { name: "BCM upper · Upper receiver" }) ??
+      within(cell).getByRole("button", { name: "BCM upper · Upper receiver" });
+    await user.click(link);
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ page: "accessory", id: 11 }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("shows what is mounted under a firearm's name by kind, not linked", () => {
+    renderMounts([carrying]);
+
+    const cell = nameCell(/Ruger 10\/22/);
+    const text = within(cell).getByText("1 firearm and 2 accessories mounted");
+    expect(text.closest("a, button")).toBeNull();
+    expect(cell).not.toHaveTextContent(/Mounted on/);
+  });
+
+  it("shows both lines, 'Mounted on …' first, for a firearm that is mounted and carrying", () => {
+    renderMounts([both]);
+
+    const cell = nameCell(/Springfield Saint/);
+    const hostLine = within(cell).getByText(/Mounted on/);
+    const countLine = within(cell).getByText("2 accessories mounted");
+    expect(
+      Boolean(hostLine.compareDocumentPosition(countLine) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+  });
+
+  it("shows neither line for a firearm that is neither", () => {
+    renderMounts([neither]);
+
+    const cell = nameCell(/Hawken Plains/);
+    expect(cell).not.toHaveTextContent(/Mounted on|\bmounted\b/);
+  });
+
+  it("puts the lines under the name, with the serial number still shown", () => {
+    renderMounts([both]);
+
+    const cell = nameCell(/Springfield Saint/);
+    const name = within(cell).getByRole("button", { name: /Springfield Saint/ });
+    const hostLine = within(cell).getByText(/Mounted on/);
+    expect(Boolean(name.compareDocumentPosition(hostLine) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
+    expect(cell).toHaveTextContent("G-1");
   });
 });

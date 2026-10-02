@@ -39,6 +39,8 @@ _Amended by [spec 003](../../003-database-protection-management/contracts/tauri-
 
 ### `create_firearm`
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmInput` gains `mountedOn`, and the returned `Firearm` carries it._
+
 - **Input**: `FirearmInput` — all `Firearm` fields from data-model.md
   except `id`, `created_at`, `updated_at`, `thumbnail_photo_id`. This includes
   the FR-039 physical details, which cross the boundary as the stored scaled
@@ -70,6 +72,8 @@ actions._
 
 ### `update_firearm`
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmInput` gains `mountedOn`; a host the mount rules do not allow is a `VALIDATION_ERROR` on `mountedOn`._
+
 - **Input**: `id: number`, `FirearmInput` (partial or full; validation
   rules from data-model.md apply to the resulting record).
 - **Output**: `Firearm` (as `create_firearm`).
@@ -82,6 +86,8 @@ as `create_firearm`._
 _Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-commands.md): as `create_firearm`._
 
 ### `dispose_firearm`
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): the input gains `withMounted`, the records mounted on the firearm that are disposed with it; the firearm is unmounted, and `dispositionPrice` is no longer required by `validate_firearm_input`._
 
 - **Input**: `id: number`, `{ dispositionType, recipient, date, price }`.
 - **Output**: `Firearm` (status now `disposed`).
@@ -121,6 +127,8 @@ same transaction as the status change and history insert._
 
 ### `get_firearm`
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmDetail` gains `mount`._
+
 - **Input**: `id: number`.
 - **Output**: `FirearmDetail`: the `Firearm` plus `dispositionHistory`, its
   retained `DispositionHistory` rows (newest first, FR-033). Photos and
@@ -132,6 +140,8 @@ same transaction as the status change and history insert._
 ## Browse, search, group (User Story 2)
 
 ### `list_firearms`
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmSummary` gains `mountedOn` and `mountedCounts`; search and `groupBy` are unchanged._
 
 - **Input**:
   ```ts
@@ -192,6 +202,8 @@ also matches both._
 
 ### `get_policy_deletion_impact`
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#insurance-amended): `scheduledFirearms` becomes `scheduledRecords`, and the counts cover firearms and accessories together._
+
 - **Input**: `id: number`.
 - **Output**: `{ isExpired: boolean, isBlanketInForce: boolean, scheduledFirearmCount: number, scheduledFirearms: { id: number; make: string; model: string; nickname: string | null }[], blanketFirearmCount: number, unscheduleOutcome: "blanket" | "uninsured", otherPolicies: { id: number; name: string; isExpired: boolean }[] }`.
 - **Errors**: `NOT_FOUND`.
@@ -204,6 +216,8 @@ also matches both._
   changes.
 
 ### `delete_insurance_policy`
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#insurance-amended): moving or unscheduling covers the policy's accessories as well as its firearms._
 
 - **Input**: `id: number`, `confirmed: true`, and, when the policy has
   scheduled firearms, `scheduledFirearms`:
@@ -221,6 +235,8 @@ also matches both._
 
 ### `assign_firearm_coverage`
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#insurance-amended): unchanged for firearms; an accessory is scheduled through the added `assign_accessory_coverage`._
+
 - **Input**: `firearmId: number`, `{ policyId: number | null, scheduledCoverageAmount?: number }`.
   A non-null `policyId` schedules the firearm under that policy and requires
   `scheduledCoverageAmount`; `policyId: null` makes it unscheduled, i.e.
@@ -230,6 +246,8 @@ also matches both._
 - **Errors**: `VALIDATION_ERROR`.
 
 ### `get_value_summary`
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#insurance-amended): `ValueSummary` gains the firearms and accessories subtotals, `blanket.accessoryCount`, and `RecordRef`s in place of `firearmId`._
 
 - **Input**: `{}` (always reflects current active, non-disposed firearms per FR-025).
 - **Output**:
@@ -266,6 +284,8 @@ also matches both._
   "refresh" action exists.
 
 ## Photos & documents (User Story 4)
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#photos-and-documents-amended): the commands that take a `firearmId` take an `owner: RecordRef`, a firearm or an accessory._
 
 ### `list_photos` / `list_documents`
 
@@ -364,6 +384,8 @@ also matches both._
 
 ### `export_collection`
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): the record set comes from the added `get_export_scope`, and `ExportResult` gains `accessorySpreadsheetPath` and `exportedAccessoryCount`._
+
 - **Input**: `{ format: "csv" | "xlsx", destinationFolder: string, scope: "all" | "filtered", filter?: ListFirearmsInput }`.
 - **Output (progress events, then)**: `{ spreadsheetPath: string, photosFolderPath: string, exportedFirearmCount: number, exportedPhotoCount: number }`.
 - **Behavior**: `scope` resolves the Edge Case "export while a filter is
@@ -373,6 +395,8 @@ also matches both._
   sibling folder of original-format photo files.
 
 ### `import_collection`
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): the input is one or two files; `ImportResult` and its row reports gain `table`, conflicts gain `existingRecord`, and mount warnings arrive in `warnings`._
 
 - **Input**: `{ filePath: string, format: "csv" | "xlsx" }`.
 - **Output (progress events, then)**: `{ sessionId: string, importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], conflicts: ImportConflict[] }`.
@@ -397,6 +421,8 @@ _Amended by [spec 004](../../004-cartridges-action-types/contracts/tauri-command
 are snapped._
 
 ### `resolve_import_conflicts`
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): an `overwrite` or `duplicate` applies the row's mount, and its warnings arrive in `warnings`._
 
 - **Input**: `{ importSessionId: string, resolutions: { conflictId: string; action: "skip" | "overwrite" | "duplicate" }[], applyToRemaining?: "skip" | "overwrite" | "duplicate" }`.
 - **Output**: `{ resolvedCount: number, unresolved: { row: number; message: string }[] }`.

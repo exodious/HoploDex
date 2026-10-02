@@ -138,6 +138,7 @@ svg {
   background: none;
   border: 0;
   padding: 0;
+  text-align: left; /* a button's text is centred, so a long name that wraps would be */
   cursor: pointer;
 }
 

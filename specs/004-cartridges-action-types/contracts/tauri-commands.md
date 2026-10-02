@@ -83,6 +83,8 @@ validated and stored (research.md §9).
 The suggestion list for one field, computed at call time (FR-009 to FR-012,
 FR-016; research.md §4–§5).
 
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#entries-amended-content): the suggestions for `make`, `model`, `caliber` and `cartridge` are drawn from firearms and accessories together, and `make` narrows model suggestions across both (006 FR-003)._
+
 - **Input**:
 
   ```ts
@@ -120,6 +122,8 @@ FR-016; research.md §4–§5).
 
 What a value becomes when the user finishes entering it (FR-013), and for a
 cartridge, the caliber it derives (FR-003, FR-005). Research.md §6–§7.
+
+_Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#entries-amended-content): a value snaps to a spelling already used by a firearm or an accessory (006 FR-003)._
 
 - **Input**:
 

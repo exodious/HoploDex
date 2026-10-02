@@ -15,6 +15,7 @@ use hoplodex_lib::commands::documents::ops as documents;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::photos::ops as photos;
 use hoplodex_lib::db::{self, OpenError};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 use rusqlite::Connection;
@@ -80,13 +81,13 @@ fn the_fixture_opens_with_its_passphrase_and_holds_the_known_records() {
     assert_eq!(firearm.acquisition_date, expected.acquisition_date);
     assert_eq!(firearm.acquisition_price, expected.acquisition_price);
 
-    let photos = photos::list_photos(&conn, firearm.id).unwrap();
+    let photos = photos::list_photos(&conn, RecordRef::Firearm(firearm.id)).unwrap();
     assert_eq!(photos.len(), 1);
     assert_eq!(photos[0].original_filename, portable_fixture::PHOTO_NAME);
     assert_eq!(photos[0].original_bytes, portable_fixture::PHOTO_PNG);
     assert!(!photos[0].thumbnail_bytes.is_empty());
 
-    let documents = documents::list_documents(&conn, firearm.id).unwrap();
+    let documents = documents::list_documents(&conn, RecordRef::Firearm(firearm.id)).unwrap();
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].original_filename, portable_fixture::DOCUMENT_NAME);
     assert_eq!(documents[0].file_bytes, portable_fixture::DOCUMENT);

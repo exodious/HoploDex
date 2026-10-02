@@ -3,6 +3,13 @@ import { Button, Dialog, useToast } from "../../components";
 import { CollectionPage } from "../browse/CollectionPage";
 import { DatabaseMenu } from "../databases/DatabaseMenu";
 import { DatabaseNotes } from "../databases/DatabaseNotes";
+import { AccessoriesPage } from "../accessories/AccessoriesPage";
+import type { AccessoryBrowseState } from "../accessories/AccessoriesPage";
+import { AccessoryForm } from "../accessories/AccessoryForm";
+import { AccessoryRecordPage } from "../accessories/AccessoryRecordPage";
+import * as accessoriesService from "../accessories/accessoriesService";
+import type { AccessoryInput } from "../accessories/types";
+import { accessoryNameText } from "../mounts/recordNames";
 import type { BrowseState } from "../browse/types";
 import { FirearmForm } from "../firearms/FirearmForm";
 import { FirearmRecordPage } from "../firearms/FirearmRecordPage";
@@ -23,14 +30,22 @@ import "./AppShell.css";
 
 const VIEW_PREFERENCE_KEY = "hoplodex.browseView";
 
-function initialBrowseState(): BrowseState {
-  let view: BrowseState["view"] = "list";
+function initialView(): BrowseState["view"] {
   try {
-    if (localStorage.getItem(VIEW_PREFERENCE_KEY) === "tile") view = "tile";
+    if (localStorage.getItem(VIEW_PREFERENCE_KEY) === "tile") return "tile";
   } catch {
     // storage unavailable — default to list
   }
-  return { query: "", groupBy: undefined, includeDisposed: false, view };
+  return "list";
+}
+
+function initialBrowseState(): BrowseState {
+  return { query: "", groupBy: undefined, includeDisposed: false, view: initialView() };
+}
+
+/** The Accessories page starts in the layout the collection page does. */
+function initialAccessoryBrowseState(): AccessoryBrowseState {
+  return { query: "", groupBy: undefined, includeDisposed: false, view: initialView() };
 }
 
 /** A page left behind by following a link, with how far it was scrolled. */
@@ -44,9 +59,14 @@ interface Visit {
  * a search, grouping, or scroll position survives opening a record and
  * coming back. Following a link (a policy from a firearm, a firearm from a
  * policy) pushes onto a trail, so "back" retraces the path taken. */
-/** Where the form of resumed pending changes is: the firearm's record, or
- * the policy's page, whose own dialogs then open with them. */
+/** Where the form of resumed pending changes is: the firearm's or
+ * accessory's record, or the policy's page, whose own dialogs then open with
+ * them. A new accessory's form opens over the Accessories page. */
 function resumedRoute(resumed: Draft | null): Route {
+  if (resumed?.kind === "accessory")
+    return resumed.targetId != null
+      ? { page: "accessory", id: resumed.targetId, from: "accessories" }
+      : { page: "accessories" };
   if (resumed?.kind === "firearm" && resumed.targetId != null)
     return { page: "firearm", id: resumed.targetId, from: "collection" };
   if (resumed?.kind === "policy")
@@ -57,15 +77,28 @@ function resumedRoute(resumed: Draft | null): Route {
 }
 
 export function AppShell() {
-  const { firearmsById, firearms, policiesById, refresh } = useCollection();
+  const {
+    firearmsById,
+    accessoriesById,
+    accessories,
+    accessoryKinds,
+    firearms,
+    policiesById,
+    refresh,
+  } = useCollection();
   const notify = useToast();
   // Resumed pending changes open where their form is (FR-039).
   const [route, setRoute] = useState<Route>(() => resumedRoute(peekResumedDraft()));
   const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
+  const [accessoryBrowse, setAccessoryBrowse] = useState<AccessoryBrowseState>(
+    initialAccessoryBrowseState,
+  );
   const [dialog, setDialog] = useState<ShellDialog | null>(() => {
     const resumed = peekResumedDraft();
-    return resumed?.kind === "firearm" && resumed.mode === "add" ? "addFirearm" : null;
+    if (resumed?.mode !== "add") return null;
+    if (resumed.kind === "firearm") return "addFirearm";
+    return resumed.kind === "accessory" ? "addAccessory" : null;
   });
   const scrollMemory = useRef<Partial<Record<Route["page"], number>>>({});
   // Set when going back, to restore the scroll position of the page returned to.
@@ -101,6 +134,15 @@ export function AppShell() {
           const firearm = firearmsById.get(target.id);
           return firearm ? firearmName(firearm) : "Firearm";
         }
+        case "accessories":
+          return "Accessories";
+        case "accessory": {
+          // FR-005: "{make} {model} · {kind}".
+          const accessory = accessoriesById.get(target.id);
+          return accessory
+            ? accessoryNameText(accessory.make, accessory.model, accessory.kindName)
+            : "Accessory";
+        }
       }
     };
     const previous = trail[trail.length - 1];
@@ -116,11 +158,23 @@ export function AppShell() {
     }
     // A record reached without a trail returns to the list it belongs to.
     if (route.page === "firearm") {
-      const list: Route = { page: route.from };
+      // Reached through a mount, it returns to the collection.
+      const list = (
+        ["accessories", "collection", "insurance"].includes(route.from)
+          ? { page: route.from }
+          : { page: "collection" }
+      ) as Route;
+      return { label: labelFor(list), go: () => navigate(list) };
+    }
+    if (
+      route.page === "accessory" &&
+      ["accessories", "collection", "insurance"].includes(route.from)
+    ) {
+      const list = { page: route.from } as Route;
       return { label: labelFor(list), go: () => navigate(list) };
     }
     return null;
-  }, [trail, route, firearmsById, policiesById, navigate]);
+  }, [trail, route, firearmsById, accessoriesById, policiesById, navigate]);
 
   useLayoutEffect(() => {
     if (restore.current?.route === route) {
@@ -128,7 +182,8 @@ export function AppShell() {
       return;
     }
     // Records always open at the top; list pages return to where they were.
-    const isRecord = route.page === "firearm" || route.page === "policy";
+    const isRecord =
+      route.page === "firearm" || route.page === "policy" || route.page === "accessory";
     window.scrollTo(0, isRecord ? 0 : (scrollMemory.current[route.page] ?? 0));
   }, [route]);
 
@@ -179,6 +234,7 @@ export function AppShell() {
   );
 
   const activeCount = firearms.filter((f) => f.status === "active").length;
+  const accessoryCount = accessories.filter((a) => a.status === "active").length;
   // Only firearms are counted: lapsing policies are called out on the
   // Insurance page itself, and mixing them in made the number keep
   // counting a policy after the firearm that prompted it was gone.
@@ -194,8 +250,27 @@ export function AppShell() {
     open({ page: "firearm", id: created.id, from: "collection" });
   }
 
+  async function handleCreateAccessory(input: AccessoryInput) {
+    const created = await accessoriesService.createAccessory(input);
+    setDialog(null);
+    await refresh();
+    const kindName = accessoryKinds.kinds.find((k) => k.id === created.accessoryKindId)?.name;
+    notify(
+      `Added ${accessoryNameText(created.make, created.model, kindName ?? "accessory")} to the accessories.`,
+    );
+    open({ page: "accessory", id: created.id, from: "accessories" });
+  }
+
   const section =
-    route.page === "firearm" ? route.from : route.page === "policy" ? "insurance" : route.page;
+    route.page === "firearm"
+      ? route.from === "insurance"
+        ? "insurance"
+        : "collection"
+      : route.page === "policy"
+        ? "insurance"
+        : route.page === "accessory"
+          ? "accessories"
+          : route.page;
 
   return (
     <NavigationContext.Provider value={navigation}>
@@ -221,6 +296,15 @@ export function AppShell() {
               >
                 Collection
                 <span className="hd-tab__count hd-num">{activeCount}</span>
+              </button>
+              <button
+                type="button"
+                className="hd-tab"
+                aria-current={section === "accessories" ? "page" : undefined}
+                onClick={() => navigate({ page: "accessories" })}
+              >
+                Accessories
+                <span className="hd-tab__count hd-num">{accessoryCount}</span>
               </button>
               <button
                 type="button"
@@ -259,9 +343,13 @@ export function AppShell() {
               <CollectionPage browse={browse} onBrowseChange={setBrowse} />
             </>
           )}
+          {route.page === "accessories" && (
+            <AccessoriesPage browse={accessoryBrowse} onBrowseChange={setAccessoryBrowse} />
+          )}
           {route.page === "insurance" && <InsurancePage />}
           {route.page === "policy" && <PolicyPage key={route.id} id={route.id} />}
           {route.page === "firearm" && <FirearmRecordPage key={route.id} id={route.id} />}
+          {route.page === "accessory" && <AccessoryRecordPage key={route.id} id={route.id} />}
         </main>
 
         <Dialog
@@ -273,6 +361,16 @@ export function AppShell() {
           bare
         >
           <FirearmForm onSubmit={handleCreate} onCancel={() => setDialog(null)} />
+        </Dialog>
+
+        <Dialog
+          open={dialog === "addAccessory"}
+          onOpenChange={(open) => !open && setDialog(null)}
+          title="Add accessory"
+          size="lg"
+          bare
+        >
+          <AccessoryForm onSubmit={handleCreateAccessory} onCancel={() => setDialog(null)} />
         </Dialog>
 
         <ExportDialog

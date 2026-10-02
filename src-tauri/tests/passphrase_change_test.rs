@@ -17,6 +17,7 @@ use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::photos::ops as photos;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{CloseReason, PassphraseChanged};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::file_swap;
@@ -75,10 +76,23 @@ impl World {
                     conn,
                     &support::firearm("Colt", "Python", serial),
                     false,
+                    None,
                 )?;
-                photos::add_photo(conn, firearm.id, &sample_png_bytes(), "front.png", "image/png")?;
-                documents::add_document(conn, firearm.id, PDF_BYTES, "bill.pdf", "application/pdf")
-                    .map(|_| ())
+                photos::add_photo(
+                    conn,
+                    RecordRef::Firearm(firearm.id),
+                    &sample_png_bytes(),
+                    "front.png",
+                    "image/png",
+                )?;
+                documents::add_document(
+                    conn,
+                    RecordRef::Firearm(firearm.id),
+                    PDF_BYTES,
+                    "bill.pdf",
+                    "application/pdf",
+                )
+                .map(|_| ())
             })
             .unwrap();
     }

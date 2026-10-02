@@ -14,7 +14,7 @@ describe("DispositionHistoryList (FR-033)", () => {
         entries={[
           {
             id: 2,
-            firearmId: 1,
+            owner: { kind: "firearm", id: 1 },
             dispositionType: "traded",
             dispositionRecipient: "Second Buyer",
             dispositionDate: "2025-02-20",
@@ -23,7 +23,7 @@ describe("DispositionHistoryList (FR-033)", () => {
           },
           {
             id: 1,
-            firearmId: 1,
+            owner: { kind: "firearm", id: 1 },
             dispositionType: "sold",
             dispositionRecipient: "First Buyer",
             dispositionDate: "2024-01-10",

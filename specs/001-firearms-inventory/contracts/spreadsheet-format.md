@@ -11,6 +11,8 @@ spreadsheet, matched by a `photo_filenames` column referencing files in the
 sibling photos folder.
 
 ## Columns
+_Amended by [spec 006](../../006-accessory-links/contracts/spreadsheet-format.md): the firearm table gains `record_id` and `mounted_on`, and an accessory table is added ("Two tables")._
+
 _Amended by [spec 005](../../005-regulated-item-types/spec.md): four registration columns follow `original_serial_number`; see 005's spreadsheet contract._
 
 
@@ -92,6 +94,8 @@ columns sit after `scheduled_coverage_amount` and before `photo_filenames`.
   tauri-commands.md.
 
 ## Import behavior
+
+_Amended by [spec 006](../../006-accessory-links/contracts/spreadsheet-format.md): a row is matched by its `record_id` ahead of make, model and serial number, and `mounted_on` is resolved against the rows and records on file ("Record ID", "Mounted on"); a disposed row's price may be blank ("Disposition price")._
 
 - Each row is validated independently; a failing row is recorded in
   `rowErrors` with a 1-based row number and human-readable reason, and

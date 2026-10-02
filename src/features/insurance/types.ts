@@ -3,6 +3,9 @@
 // valuation}.rs's wire shapes (camelCase, per contracts/tauri-commands.md),
 // User Story 3.
 
+import type { RecordCounts } from "../mounts/recordCounts";
+import type { RecordLabel, RecordRef } from "../mounts/types";
+
 export interface InsurancePolicy {
   id: number;
   name: string;
@@ -51,7 +54,8 @@ export interface AssignCoverageInput {
 }
 
 export interface IndividualCoverage {
-  firearmId: number;
+  /** specs/006-accessory-links: a firearm or an accessory. */
+  record: RecordRef;
   estimatedValue: number;
   scheduledAmount: number;
   underInsured: boolean;
@@ -74,20 +78,26 @@ export interface BlanketSummary {
   limit: number;
   total: number;
   firearmCount: number;
+  accessoryCount: number;
   underInsured: boolean;
 }
 
-/** An unscheduled firearm with no blanket policy in force to cover it. */
-export interface UninsuredFirearm {
-  firearmId: number;
+/** An unscheduled firearm or accessory with no blanket policy in force to
+ * cover it. */
+export interface UninsuredRecord {
+  record: RecordRef;
   estimatedValue: number;
 }
 
 export interface ValueSummary {
+  /** `firearmsTotal + accessoriesTotal` (006 SC-005). */
   collectionTotal: number;
+  firearmsTotal: number;
+  /** 006 FR-008: the active accessories' subtotal. */
+  accessoriesTotal: number;
   blanket: BlanketSummary | null;
   byPolicy: PolicySummary[];
-  uninsured: UninsuredFirearm[];
+  uninsured: UninsuredRecord[];
 }
 
 /** `get_policy_deletion_impact`'s output: what deleting a policy would do,
@@ -95,17 +105,18 @@ export interface ValueSummary {
 export interface PolicyDeletionImpact {
   isExpired: boolean;
   isBlanketInForce: boolean;
-  scheduledFirearmCount: number;
-  scheduledFirearms: { id: number; make: string; model: string; nickname: string | null }[];
-  /** Unscheduled firearms that lose blanket coverage if this is the blanket
-   * policy in force (0 otherwise). */
-  blanketFirearmCount: number;
+  /** Firearms and accessories (006 FR-009), counted by kind (issue #56). */
+  scheduledCounts: RecordCounts;
+  scheduledRecords: RecordLabel[];
+  /** Unscheduled firearms and accessories that lose blanket coverage if this
+   * is the blanket policy in force (none otherwise). */
+  blanketCounts: RecordCounts;
   /** What becomes of firearms left unscheduled. */
   unscheduleOutcome: "blanket" | "uninsured";
   otherPolicies: { id: number; name: string; isExpired: boolean }[];
 }
 
-/** How the firearms scheduled under a deleted policy are resolved (FR-034). */
+/** How the firearms and accessories scheduled under a deleted policy are resolved (FR-034). */
 export type ScheduledFirearmsAction =
   { action: "move"; targetPolicyId: number } | { action: "unschedule"; confirmUnschedule?: true };
 

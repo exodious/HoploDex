@@ -1,6 +1,10 @@
 // Mirrors src-tauri/src/models/firearm.rs's wire shapes (camelCase, per
 // contracts/tauri-commands.md).
 
+// specs/006-accessory-links: a firearm or accessory, as mounts name it.
+import type { MountDetail, RecordRef } from "../mounts/types";
+export type { RecordRef };
+
 export type FirearmStatus = "active" | "disposed";
 
 export type DispositionType = "sold" | "traded" | "gifted" | "destroyed" | "lost_stolen";
@@ -72,14 +76,19 @@ export interface Firearm {
   registrationApproved: string | null;
   /** FR-009: e.g. "Smith Family Trust". Only with a classification. */
   registeredTo: string | null;
+  /** specs/006-accessory-links FR-010: the direct host, if mounted. The
+   * forms always send it; `null` = not mounted. */
+  mountedOn: RecordRef | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** A retained past disposition of a firearm restored to active (FR-033). */
+/** A retained past disposition of a firearm or accessory restored to active
+ * (FR-033; 006 FR-006). */
 export interface DispositionHistoryEntry {
   id: number;
-  firearmId: number;
+  /** The record it belonged to (006 data-model.md). */
+  owner: RecordRef;
   dispositionType: DispositionType;
   dispositionRecipient: string;
   dispositionDate: string;
@@ -89,7 +98,11 @@ export interface DispositionHistoryEntry {
 
 /** `get_firearm`'s output: the record plus its retained dispositions,
  * newest first. */
-export type FirearmDetail = Firearm & { dispositionHistory: DispositionHistoryEntry[] };
+export type FirearmDetail = Firearm & {
+  dispositionHistory: DispositionHistoryEntry[];
+  /** specs/006-accessory-links FR-013: the chain above and everything below. */
+  mount: MountDetail;
+};
 
 /** What to do with the disposition being reversed (FR-033). */
 export type HistoryChoice = "keep" | "discard";
@@ -157,11 +170,16 @@ export interface SettleEntryOutput {
   derivedCaliber: DerivedCaliber | null;
 }
 
-export interface DisposeFirearmInput {
+/** `dispose_firearm`'s and `dispose_accessory`'s input (006 contracts/tauri-commands.md). */
+export interface DisposeInput {
   dispositionType: DispositionType;
   recipient: string;
   date: string;
+  /** The record's own price, required as before. */
   price: number;
+  /** Records mounted below it that are disposed with it, each with its own
+   * optional price (`null`: none was received). Default none. */
+  withMounted?: { record: RecordRef; price: number | null }[];
 }
 
 /** specs/005-regulated-item-types FR-001/FR-003. Mirrors `FirearmTypeInfo` in

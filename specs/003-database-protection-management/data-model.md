@@ -60,6 +60,8 @@ the marker is set or cleared as a whole.
 
 ### `pending_changes` (housekeeping; never in a backup)
 
+_Amended by [spec 006](../006-accessory-links/data-model.md#entity-pending-changes-extended): `kind` also allows `'accessory'`, with the same modes as `'firearm'`._
+
 At most one row (FR-039: one form open for editing at a time).
 
 | Column | Type | Rules |

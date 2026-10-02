@@ -194,7 +194,8 @@ fn assign_firearm_coverage_schedules_a_firearm_and_null_unschedules_it() {
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-01-01", None))
             .unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "INS-1"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "INS-1"), false, None)
+            .unwrap();
 
     let scheduled =
         insurance_ops::assign_firearm_coverage(&db.conn, created.id, Some(rider.id), Some(60_000))
@@ -215,7 +216,8 @@ fn scheduling_requires_an_amount_and_an_existing_policy() {
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-01-01", None))
             .unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "INS-1"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "INS-1"), false, None)
+            .unwrap();
 
     let no_amount =
         insurance_ops::assign_firearm_coverage(&db.conn, created.id, Some(rider.id), None)
@@ -237,7 +239,8 @@ fn a_negative_scheduled_amount_is_rejected_with_a_field_error() {
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-01-01", None))
             .unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "NEG-1"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "NEG-1"), false, None)
+            .unwrap();
 
     let err =
         insurance_ops::assign_firearm_coverage(&db.conn, created.id, Some(rider.id), Some(-60_000))
@@ -312,7 +315,8 @@ fn the_database_itself_refuses_a_negative_limit_or_scheduled_amount() {
         insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-01-01", None))
             .unwrap();
     let created =
-        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "CHK-1"), false).unwrap();
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "CHK-1"), false, None)
+            .unwrap();
 
     assert!(
         db.conn

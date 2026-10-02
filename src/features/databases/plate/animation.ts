@@ -401,14 +401,11 @@ export function applyPlateAnimation(svg: SVGSVGElement, k: PlateTiming): () => v
     `plate-fade ${s(k.PUPIL_TIME)} ${s(owl + k.OWL_LINES_TIME + k.PUPIL_PAUSE)} ease-in forwards`,
   );
 
-  // 5. captions, scale bars and the rifle's centreline
+  // 5. captions and scale bars
   set(
-    ".axis, text, rect:not(.clip)",
+    "text, rect:not(.clip)",
     `plate-fade ${s(k.LABELS_TIME)} ${s(k.LABELS_START)} linear forwards`,
   );
-  svg.querySelectorAll<SVGElement>(".art .axis").forEach((el) => {
-    el.style.display = k.BORE_AXIS ? "" : "none";
-  });
 
   // 6. the cycle through entry 2's drawings, forever
   const stops: Animation[] = [];

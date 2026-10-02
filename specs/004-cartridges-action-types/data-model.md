@@ -200,7 +200,7 @@ chosen `actionTypeId`. These are part of a pending-changes draft's
 | `actionTypeId` names an action (FK) and is allowed for the type (FR-017) | command, trigger | "Pump action doesn't apply to a Handgun." |
 | Import: `caliber` blank and no caliber can be derived (FR-025) | import | "caliber: Caliber is required; it couldn't be worked out from the cartridge "…"." or "caliber: Caliber is required." |
 | Import: `action_type` unknown (FR-024) | import | "action_type: unknown action type "…"" |
-| Import: a header names a column twice (research.md §12) | import (file) | `VALIDATION_ERROR`, "The import file has two "caliber" columns." |
+| Import: a header names a column twice (research.md §12) | import (file) | `VALIDATION_ERROR`, "The import file has two "caliber" columns." Amended by 006: the message names the file, as in "collection.csv: the header has two "caliber" columns." |
 
 ## Relationship to 001 and 002
 

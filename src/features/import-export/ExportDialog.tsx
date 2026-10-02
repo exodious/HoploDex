@@ -5,10 +5,9 @@ import { withIdlePaused } from "../session/useIdleActivity";
 import { Button, ChoiceCards, Dialog, Icon, ProgressBar, TextField } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
-import * as browseService from "../browse/browseService";
 import type { BrowseState } from "../browse/types";
 import * as importExportService from "./importExportService";
-import type { ExportResult, SpreadsheetFormat } from "./types";
+import type { ExportResult, ExportScope, SpreadsheetFormat } from "./types";
 import "./importExport.css";
 
 export interface ExportDialogProps {
@@ -18,6 +17,20 @@ export interface ExportDialogProps {
    * export scope (Edge Case: "export while a filter is active"). */
   browse: BrowseState;
 }
+
+/** "3 firearms and 2 accessories" (specs/006-accessory-links FR-020). */
+function scopeCounts(scope: ExportScope): string {
+  const firearms = `${scope.firearmCount} ${scope.firearmCount === 1 ? "firearm" : "firearms"}`;
+  const accessories = `${scope.accessoryCount} ${
+    scope.accessoryCount === 1 ? "accessory" : "accessories"
+  }`;
+  return `${firearms} and ${accessories}`;
+}
+
+/** A scope's counts and disclosure once read, `unknown` when reading them
+ * failed (the note then names everything rather than leave it out), and
+ * `null` while they load. */
+type ScopeState = ExportScope | "unknown" | null;
 
 /** Export to a spreadsheet plus a sibling folder of original photos in a
  * single action (US5, FR-018, SC-005). */
@@ -46,8 +59,8 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   const [format, setFormat] = useState<SpreadsheetFormat>("csv");
   const [scope, setScope] = useState<"all" | "filtered">("all");
   const [folder, setFolder] = useState("");
-  const [filteredCount, setFilteredCount] = useState<number | null>(null);
-  const [filteredRegistered, setFilteredRegistered] = useState(false);
+  const [allScope, setAllScope] = useState<ScopeState>(null);
+  const [filteredScope, setFilteredScope] = useState<ScopeState>(null);
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,29 +71,38 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   const disposedCount = firearms.filter((f) => f.status === "disposed").length;
   const filterActive = query !== "" || (!browse.includeDisposed && disposedCount > 0);
 
+  // The counts and the disclosure come from the backend (get_export_scope),
+  // which also follows what is mounted on the filtered firearms.
+  useEffect(() => {
+    let current = true;
+    importExportService
+      .getExportScope({ scope: "all" })
+      .then((r) => current && setAllScope(r))
+      .catch(() => current && setAllScope("unknown"));
+    return () => {
+      current = false;
+    };
+  }, []);
   useEffect(() => {
     if (!filterActive) return;
-    browseService
-      .listFirearms(filter)
-      .then((r) => {
-        const found = r.groups.flatMap((g) => g.firearms);
-        setFilteredCount(found.length);
-        setFilteredRegistered(found.some((f) => f.registeredAs));
-      })
-      .catch(() => {
-        setFilteredCount(null);
-        // Unknown: say so rather than leave the disclosure out (FR-020).
-        setFilteredRegistered(true);
-      });
+    let current = true;
+    importExportService
+      .getExportScope({ scope: "filtered", filter })
+      .then((r) => current && setFilteredScope(r))
+      .catch(() => current && setFilteredScope("unknown"));
+    return () => {
+      current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterActive, query, browse.includeDisposed]);
 
-  // FR-020: registration details leave the database too, so the note names
-  // them whenever a firearm in the chosen scope has a classification.
-  const includesRegistration =
-    filterActive && scope === "filtered"
-      ? filteredRegistered
-      : firearms.some((f) => f.registeredAs);
+  const chosen = filterActive && scope === "filtered" ? filteredScope : allScope;
+  // FR-020, FR-021: registration details and accessories leave the database
+  // too, so the note names them whenever the chosen scope holds either.
+  const includesRegistration = chosen === "unknown" || (chosen?.includesRegistration ?? false);
+  const includesAccessories = chosen === "unknown" || (chosen?.includesAccessories ?? false);
+  const countsOf = (state: ScopeState) =>
+    state && state !== "unknown" ? ` (${scopeCounts(state)})` : "";
 
   async function chooseFolder() {
     const selected = await withIdlePaused(() =>
@@ -128,15 +150,23 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
             <Icon name="check" size={22} />
             <p className="hd-outcome__headline">
               Exported {result.exportedFirearmCount}{" "}
-              {result.exportedFirearmCount === 1 ? "firearm" : "firearms"} and{" "}
+              {result.exportedFirearmCount === 1 ? "firearm" : "firearms"},{" "}
+              {result.exportedAccessoryCount}{" "}
+              {result.exportedAccessoryCount === 1 ? "accessory" : "accessories"} and{" "}
               {result.exportedPhotoCount} {result.exportedPhotoCount === 1 ? "photo" : "photos"}.
             </p>
           </div>
           <dl className="hd-paths">
             <div>
-              <dt>Spreadsheet</dt>
+              <dt>{result.accessorySpreadsheetPath ? "Firearms" : "Spreadsheet"}</dt>
               <dd>{result.spreadsheetPath}</dd>
             </div>
+            {result.accessorySpreadsheetPath && (
+              <div>
+                <dt>Accessories</dt>
+                <dd>{result.accessorySpreadsheetPath}</dd>
+              </div>
+            )}
             <div>
               <dt>Photos</dt>
               <dd>{result.photosFolderPath}</dd>
@@ -174,27 +204,35 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
           ]}
         />
 
-        {filterActive && (
-          <ChoiceCards<"all" | "filtered">
-            label="Firearms to include"
-            value={scope}
-            onChange={setScope}
-            minCardWidth={180}
-            options={[
-              {
-                value: "all",
-                label: `Entire collection (${firearms.length})`,
-                description: "Every record, including disposed firearms.",
-              },
-              {
-                value: "filtered",
-                label: `Current results${filteredCount != null ? ` (${filteredCount})` : ""}`,
-                description: query
-                  ? `Firearms matching “${query}”${browse.includeDisposed ? "" : ", not counting disposed ones"}.`
-                  : "Active firearms only.",
-              },
-            ]}
-          />
+        {filterActive ? (
+          <>
+            <ChoiceCards<"all" | "filtered">
+              label="What to include"
+              value={scope}
+              onChange={setScope}
+              minCardWidth={180}
+              options={[
+                {
+                  value: "all",
+                  label: `Entire collection${countsOf(allScope)}`,
+                  description: "Every firearm and accessory, including disposed ones.",
+                },
+                {
+                  value: "filtered",
+                  label: `Current results${countsOf(filteredScope)}`,
+                  description: query
+                    ? `Firearms matching “${query}”${browse.includeDisposed ? "" : ", not counting disposed ones"}.`
+                    : "Active firearms only.",
+                },
+              ]}
+            />
+            {scope === "filtered" && (
+              <p className="hd-form-note">Includes everything mounted on these firearms.</p>
+            )}
+          </>
+        ) : (
+          allScope &&
+          allScope !== "unknown" && <p className="hd-form-note">Exports {scopeCounts(allScope)}.</p>
         )}
 
         <TextField
@@ -224,17 +262,18 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
               "the folder you choose"
             )}
             , unencrypted and outside HoploDex’s encrypted database. Anyone who can open that folder
-            can read these records, including serial numbers
-            {includesRegistration ? ", values and registration details." : " and values."}
+            can read these records, including{" "}
+            {includesRegistration
+              ? "serial numbers, values and registration details"
+              : "serial numbers and values"}
+            {includesAccessories &&
+              ", and accessories, with their serial numbers, values and photos"}
+            .
           </span>
         </p>
 
         {exporting && (
-          <ProgressBar
-            eventName="export_collection:progress"
-            label="Export progress"
-            unit="firearms"
-          />
+          <ProgressBar eventName="export_collection:progress" label="Export progress" unit="rows" />
         )}
         {error && (
           <p className="hd-banner hd-banner--error" role="alert">

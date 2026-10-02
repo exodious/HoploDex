@@ -69,7 +69,7 @@ fn a_suppressor_saves_and_reopens_intact() {
         condition: Some(hoplodex_lib::models::firearm::Condition::Excellent),
         ..suppressor("ABC123")
     };
-    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false, None).unwrap();
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
     assert_eq!(fetched.firearm_type_id, SUPPRESSOR);
     assert_eq!(fetched.make, "SilencerCo");
@@ -90,7 +90,7 @@ fn a_suppressor_with_an_inapplicable_field_is_refused_per_field() {
     // FR-003, FR-022.
     let db = TestDb::new();
     let action = FirearmInput { action_type_id: Some(1), ..suppressor("S-1") };
-    let err = ops::create_firearm(&db.conn, &action, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &action, false, None).unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert_eq!(
         field_error(&err, "actionTypeId").as_deref(),
@@ -99,7 +99,7 @@ fn a_suppressor_with_an_inapplicable_field_is_refused_per_field() {
     assert_eq!(err.field_errors.as_ref().unwrap().len(), 1);
 
     let barrel = FirearmInput { barrel_length_hundredths: Some(500), ..suppressor("S-2") };
-    let err = ops::create_firearm(&db.conn, &barrel, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &barrel, false, None).unwrap_err();
     assert_eq!(
         field_error(&err, "barrelLengthHundredths").as_deref(),
         Some("Barrel length doesn't apply to a Suppressor.")
@@ -107,7 +107,7 @@ fn a_suppressor_with_an_inapplicable_field_is_refused_per_field() {
     assert_eq!(err.field_errors.as_ref().unwrap().len(), 1);
 
     let capacity = FirearmInput { capacity: Some(5), ..suppressor("S-3") };
-    let err = ops::create_firearm(&db.conn, &capacity, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &capacity, false, None).unwrap_err();
     assert_eq!(
         field_error(&err, "capacity").as_deref(),
         Some("Capacity doesn't apply to a Suppressor.")
@@ -120,7 +120,7 @@ fn a_suppressor_with_an_inapplicable_field_is_refused_per_field() {
         capacity: Some(5),
         ..suppressor("S-4")
     };
-    let err = ops::create_firearm(&db.conn, &all, false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &all, false, None).unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert_eq!(err.field_errors.as_ref().unwrap().len(), 3);
 
@@ -145,7 +145,7 @@ fn changing_a_rifle_to_a_suppressor_needs_the_fields_cleared() {
         capacity: Some(5),
         ..firearm("Ruger", "American", "R-1")
     };
-    let created = ops::create_firearm(&db.conn, &rifle, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &rifle, false, None).unwrap();
 
     let still_set = FirearmInput { firearm_type_id: SUPPRESSOR, ..FirearmInput::from(&created) };
     let err = ops::update_firearm(&db.conn, created.id, &still_set, false).unwrap_err();
@@ -191,8 +191,8 @@ fn a_suppressor_takes_a_cartridge_and_needs_none() {
         caliber: "9mm".into(),
         ..suppressor("C-1")
     };
-    assert!(ops::create_firearm(&db.conn, &with, false).is_ok());
-    assert!(ops::create_firearm(&db.conn, &suppressor("C-2"), false).is_ok());
+    assert!(ops::create_firearm(&db.conn, &with, false, None).is_ok());
+    assert!(ops::create_firearm(&db.conn, &suppressor("C-2"), false, None).is_ok());
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn a_suppressor_keeps_its_bore_and_rated_cartridge_apart() {
         cartridge: Some(".22 WMR".into()),
         ..suppressor("BORE-1")
     };
-    let created = ops::create_firearm(&db.conn, &input, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &input, false, None).unwrap();
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
     assert_eq!(fetched.caliber, ".22");
     assert_eq!(fetched.cartridge.as_deref(), Some(".22 WMR"));
@@ -218,7 +218,7 @@ fn a_suppressor_keeps_its_bore_and_rated_cartridge_apart() {
         cartridge: Some(".300 Winchester Magnum".into()),
         ..suppressor("BORE-2")
     };
-    let created = ops::create_firearm(&db.conn, &wide, false).unwrap();
+    let created = ops::create_firearm(&db.conn, &wide, false, None).unwrap();
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
     assert_eq!(fetched.caliber, ".46");
     assert_eq!(fetched.cartridge.as_deref(), Some(".300 Winchester Magnum"));
@@ -231,9 +231,10 @@ fn the_triggers_refuse_a_raw_write_the_command_layer_would_have_caught() {
     let insert = |type_id: i64, column: &str, serial: &str| {
         db.conn.execute(
             &format!(
-                "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id,
+                "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id,
                                        {column}, created_at, updated_at)
-                 VALUES ('M', 'X', ?1, '9mm', ?2, 1, datetime('now'), datetime('now'))"
+                 VALUES ('{}', 'M', 'X', ?1, '9mm', ?2, 1, datetime('now'), datetime('now'))",
+                support::uid()
             ),
             rusqlite::params![serial, type_id],
         )
@@ -249,10 +250,10 @@ fn the_triggers_refuse_a_raw_write_the_command_layer_would_have_caught() {
     // A raw UPDATE of the type onto a row that holds a barrel length.
     db.conn
         .execute(
-            "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id,
+            "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id,
                                    barrel_length_hundredths, created_at, updated_at)
-             VALUES ('M', 'Y', 'UPD-1', '9mm', 2, 2000, datetime('now'), datetime('now'))",
-            [],
+             VALUES (?1, 'M', 'Y', 'UPD-1', '9mm', 2, 2000, datetime('now'), datetime('now'))",
+            [support::uid()],
         )
         .unwrap();
     let err = db

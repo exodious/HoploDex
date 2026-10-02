@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
+import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
+import type { Accessory } from "../accessories/types";
+import { CollectionContext } from "../app/collectionStore";
+import type { CollectionState } from "../app/collectionStore";
+import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
 import { RestoreDialog } from "./RestoreDialog";
 import type { Firearm } from "./types";
 
@@ -140,5 +145,104 @@ describe("RestoreDialog (FR-033)", () => {
     await user.click(restoreAnyway);
 
     expect(onRestore).toHaveBeenLastCalledWith({ history: "keep", confirmedWarnings: true });
+  });
+});
+
+// specs/006-accessory-links FR-006, FR-009, FR-027: given an accessory, the
+// dialog names it by `RecordName`, hands the same input to `onRestore`, which
+// the accessory's page sends as `reverse_accessory_disposition`, and keeps
+// its draft as `kind: "accessory"`. An accessory has no nickname to clash.
+describe("RestoreDialog for an accessory", () => {
+  const accessory = {
+    id: 3,
+    accessoryKindId: 1,
+    make: "Leupold",
+    model: "VX-5HD 3-15x44",
+    status: "disposed",
+    dispositionType: "sold",
+    dispositionRecipient: "Jane Doe",
+    dispositionDate: "2025-06-15",
+    dispositionPrice: 800,
+  } as Accessory;
+  const NAME = "Leupold VX-5HD 3-15x44 · Optic";
+
+  const collection = {
+    firearms: [],
+    firearmsById: new Map(),
+    accessories: [],
+    accessoriesById: new Map(),
+    policies: [],
+    policiesById: new Map(),
+    summary: null,
+    accessoryKinds: { kinds: ACCESSORY_KINDS },
+    accessoryKindsFailed: false,
+    loaded: true,
+    error: null,
+    revision: 1,
+    refresh: async () => {},
+  } as unknown as CollectionState;
+
+  function renderAccessoryDialog(onRestore = vi.fn().mockResolvedValue(undefined)) {
+    const onOpenChange = vi.fn();
+    render(
+      <CollectionContext.Provider value={collection}>
+        <RestoreDialog
+          open
+          onOpenChange={onOpenChange}
+          accessory={accessory}
+          onRestore={onRestore}
+        />
+      </CollectionContext.Provider>,
+    );
+    return { onRestore, onOpenChange };
+  }
+
+  it("names the accessory and shows the disposition being decided on", () => {
+    renderAccessoryDialog();
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent(NAME);
+    expect(dialog).toHaveTextContent(/Jane Doe/);
+    expect(dialog).not.toHaveTextContent(/firearm/i);
+  });
+
+  it("asks what to do with the disposition, as for a firearm", async () => {
+    const user = userEvent.setup();
+    const { onRestore } = renderAccessoryDialog();
+
+    expect(screen.getByRole("button", { name: "Restore to collection" })).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+
+    expect(onRestore).toHaveBeenCalledWith({ history: "keep" });
+  });
+
+  it("sends no nickname, which an accessory doesn't have", async () => {
+    const user = userEvent.setup();
+    const { onRestore } = renderAccessoryDialog();
+
+    await user.click(screen.getByRole("radio", { name: /Discard/ }));
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+
+    expect(onRestore).toHaveBeenCalledWith({ history: "discard" });
+    expect(screen.queryByLabelText("New nickname")).not.toBeInTheDocument();
+  });
+
+  it("keeps its unsaved choice as a draft of the accessory (FR-027)", async () => {
+    const user = userEvent.setup();
+    renderAccessoryDialog();
+    expect(getDirtyForm()).toBeNull();
+
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+
+    expect(getDirtyForm()?.label).toBe(`${NAME} (restore)`);
+    expect(currentDraft()).toMatchObject({
+      formVersion: 1,
+      kind: "accessory",
+      mode: "restore",
+      targetId: 3,
+      label: `${NAME} (restore)`,
+      values: { history: "keep" },
+    });
   });
 });

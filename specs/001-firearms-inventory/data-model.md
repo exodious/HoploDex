@@ -34,6 +34,8 @@ lookup and the type-to-action mapping for these types (`0003_seed_firearm_types.
 
 ## Entity: Firearm
 
+_Amended by [spec 006](../006-accessory-links/data-model.md#entity-firearm-extended): `FirearmSummary` and `Firearm` gain `mountedOn`; a `uid` column carries the record identifier; mounts are stored in the added `mounts` table._
+
 Primary record; corresponds directly to the spec's **Firearm** entity.
 
 _Amended by [spec 002](../002-firearm-identification/data-model.md): seven
@@ -160,6 +162,8 @@ available from either state (FR-006), requiring confirmation.
 
 ## Entity: DispositionHistory
 
+_Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-document-attachment-disposition-history-owner-extended): the owner is a firearm or an accessory (`firearm_id` or `accessory_id`)._
+
 Retained past dispositions of a firearm that was restored to active
 (FR-033). Written only by `reverse_disposition` with `keep`; never edited.
 
@@ -178,6 +182,8 @@ row per firearm; see contracts/spreadsheet-format.md).
 
 ## Entity: Photo
 
+_Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-document-attachment-disposition-history-owner-extended): the owner is a firearm or an accessory (`firearm_id` or `accessory_id`)._
+
 | Field | Type | Notes |
 |---|---|---|
 | `id` | INTEGER PK | |
@@ -194,6 +200,8 @@ the thumbnail; `sort_order = 0` is only the default at insert time (US4
 Acceptance Scenario 1–2).
 
 ## Entity: DocumentAttachment
+
+_Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-document-attachment-disposition-history-owner-extended): the owner is a firearm or an accessory (`firearm_id` or `accessory_id`)._
 
 | Field | Type | Notes |
 |---|---|---|

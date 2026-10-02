@@ -40,6 +40,7 @@ text_enum!(OperationKind {
 
 text_enum!(DraftKind {
     Firearm => "firearm",
+    Accessory => "accessory",
     Policy => "policy",
 });
 

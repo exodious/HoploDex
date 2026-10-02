@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { CommandFailure } from "../../services/tauriClient";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { ImportDialog } from "./ImportDialog";
 import * as importExportService from "./importExportService";
+import type { RecordLabel } from "../mounts/types";
 import type { ImportResult } from "./types";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
@@ -16,6 +19,7 @@ const collection = { refresh: vi.fn().mockResolvedValue(undefined) } as unknown 
 const result: ImportResult = {
   sessionId: "import-1",
   importedCount: 1,
+  importedAccessoryCount: 0,
   updatedCount: 0,
   skippedCount: 0,
   rowErrors: [],
@@ -25,8 +29,11 @@ const result: ImportResult = {
   conflicts: [
     {
       conflictId: "c1",
+      table: "firearms",
       row: 2,
-      existingFirearmId: 10,
+      existingRecord: { kind: "firearm", id: 10 },
+      kindName: null,
+      mounted: [],
       duplicateAllowed: false,
       make: "Glock",
       model: "19",
@@ -34,8 +41,11 @@ const result: ImportResult = {
     },
     {
       conflictId: "c2",
+      table: "firearms",
       row: 3,
-      existingFirearmId: 11,
+      existingRecord: { kind: "firearm", id: 11 },
+      kindName: null,
+      mounted: [],
       duplicateAllowed: true,
       make: "Glock",
       model: "26",
@@ -64,12 +74,12 @@ describe("ImportDialog (FR-026, FR-032)", () => {
     const user = userEvent.setup();
     await importTheFile(user);
 
-    const blocked = screen.getByRole("radiogroup", { name: "Row 2: Glock 19" });
+    const blocked = screen.getByRole("radiogroup", { name: "Firearms, row 2: Glock 19" });
     expect(within(blocked).queryByRole("radio", { name: "Add as new" })).not.toBeInTheDocument();
     expect(within(blocked).getByRole("radio", { name: "Keep existing" })).toBeInTheDocument();
     expect(within(blocked).getByRole("radio", { name: "Replace existing" })).toBeInTheDocument();
 
-    const allowed = screen.getByRole("radiogroup", { name: "Row 3: Glock 26" });
+    const allowed = screen.getByRole("radiogroup", { name: "Firearms, row 3: Glock 26" });
     expect(within(allowed).getByRole("radio", { name: "Add as new" })).toBeInTheDocument();
   });
 
@@ -80,9 +90,12 @@ describe("ImportDialog (FR-026, FR-032)", () => {
     await user.click(screen.getByRole("button", { name: "Add as new" }));
 
     expect(
-      within(screen.getByRole("radiogroup", { name: "Row 3: Glock 26" })).getByRole("radio", {
-        name: "Add as new",
-      }),
+      within(screen.getByRole("radiogroup", { name: "Firearms, row 3: Glock 26" })).getByRole(
+        "radio",
+        {
+          name: "Add as new",
+        },
+      ),
     ).toBeChecked();
     expect(screen.getByText("1 row still needs a decision.")).toBeInTheDocument();
   });
@@ -91,7 +104,13 @@ describe("ImportDialog (FR-026, FR-032)", () => {
     const user = userEvent.setup();
     vi.mocked(importExportService.resolveImportConflicts).mockResolvedValue({
       resolvedCount: 1,
-      unresolved: [{ row: 2, message: "nickname: That nickname is already used by Sig P226." }],
+      unresolved: [
+        {
+          table: "firearms",
+          row: 2,
+          message: "nickname: That nickname is already used by Sig P226.",
+        },
+      ],
       warnings: [],
     });
     await importTheFile(user);
@@ -100,8 +119,12 @@ describe("ImportDialog (FR-026, FR-032)", () => {
     await user.click(screen.getByRole("button", { name: "Apply decisions" }));
 
     expect(await screen.findByText(/That nickname is already used/)).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "Row 2: Glock 19" })).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup", { name: "Row 3: Glock 26" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("radiogroup", { name: "Firearms, row 2: Glock 19" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Firearms, row 3: Glock 26" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -113,6 +136,7 @@ describe("ImportDialog warnings (US4-6, FR-009)", () => {
       conflicts: [],
       warnings: [
         {
+          table: "firearms",
           row: 4,
           message:
             "Ridgeline Arms Hi-Power (serial RA-1) already has these original maker's marks.",
@@ -128,7 +152,7 @@ describe("ImportDialog warnings (US4-6, FR-009)", () => {
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(await screen.findByRole("heading", { name: "Warnings" })).toBeInTheDocument();
-    expect(screen.getByText("Row 4")).toBeInTheDocument();
+    expect(screen.getByText("Firearms, row 4")).toBeInTheDocument();
     expect(screen.getByText(/already has these original maker's marks/)).toBeInTheDocument();
     const warningsTally = screen.getByText("warnings").closest(".hd-tally__item");
     expect(within(warningsTally as HTMLElement).getByText("1")).toBeInTheDocument();
@@ -177,8 +201,20 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
   it("lists the calibers filled in from the cartridge in row order, saying which were guessed", async () => {
     const user = await importWith({
       derivedCalibers: [
-        { row: 4, cartridge: "9x19mm Parabellum", caliber: "9mm", source: "catalog" },
-        { row: 7, cartridge: ".30 Custom Improved", caliber: ".30", source: "guess" },
+        {
+          table: "firearms",
+          row: 4,
+          cartridge: "9x19mm Parabellum",
+          caliber: "9mm",
+          source: "catalog",
+        },
+        {
+          table: "firearms",
+          row: 7,
+          cartridge: ".30 Custom Improved",
+          caliber: ".30",
+          source: "guess",
+        },
       ],
     });
 
@@ -190,16 +226,28 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
       .getAllByRole("listitem")
       .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
     expect(rows).toEqual([
-      ["Row 4", "9x19mm Parabellum → 9mm (built-in)"],
-      ["Row 7", ".30 Custom Improved → .30 (guessed)"],
+      ["Firearms, row 4", "9x19mm Parabellum → 9mm (built-in)"],
+      ["Firearms, row 7", ".30 Custom Improved → .30 (guessed)"],
     ]);
   });
 
   it('labels a snapped registration form and "Registered to" by name (US4)', async () => {
     const user = await importWith({
       snappedValues: [
-        { row: 2, field: "registrationForm", sheetValue: "FORM 4", recordedValue: "Form 4" },
-        { row: 3, field: "registeredTo", sheetValue: "jane doe", recordedValue: "Jane Doe" },
+        {
+          table: "firearms",
+          row: 2,
+          field: "registrationForm",
+          sheetValue: "FORM 4",
+          recordedValue: "Form 4",
+        },
+        {
+          table: "firearms",
+          row: 3,
+          field: "registeredTo",
+          sheetValue: "jane doe",
+          recordedValue: "Jane Doe",
+        },
       ],
     });
 
@@ -211,8 +259,8 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
       .getAllByRole("listitem")
       .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
     expect(rows).toEqual([
-      ["Row 2", "Form: “FORM 4” → “Form 4”"],
-      ["Row 3", "Registered to: “jane doe” → “Jane Doe”"],
+      ["Firearms, row 2", "Form: “FORM 4” → “Form 4”"],
+      ["Firearms, row 3", "Registered to: “jane doe” → “Jane Doe”"],
     ]);
   });
 
@@ -220,12 +268,14 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
     const user = await importWith({
       snappedValues: [
         {
+          table: "firearms",
           row: 2,
           field: "make",
           sheetValue: "springfield armory",
           recordedValue: "Springfield Armory",
         },
         {
+          table: "firearms",
           row: 5,
           field: "cartridge",
           sheetValue: "9X19mm Parabellum",
@@ -242,15 +292,21 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
       .getAllByRole("listitem")
       .map((item) => [...item.querySelectorAll("span")].map((part) => part.textContent));
     expect(rows).toEqual([
-      ["Row 2", "make: “springfield armory” → “Springfield Armory”"],
-      ["Row 5", "cartridge: “9X19mm Parabellum” → “9x19mm Parabellum”"],
+      ["Firearms, row 2", "make: “springfield armory” → “Springfield Armory”"],
+      ["Firearms, row 5", "cartridge: “9X19mm Parabellum” → “9x19mm Parabellum”"],
     ]);
   });
 
   it("shows each section only when it has rows", async () => {
     await importWith({
       derivedCalibers: [
-        { row: 4, cartridge: "9x19mm Parabellum", caliber: "9mm", source: "catalog" },
+        {
+          table: "firearms",
+          row: 4,
+          cartridge: "9x19mm Parabellum",
+          caliber: "9mm",
+          source: "catalog",
+        },
       ],
     });
 
@@ -265,5 +321,435 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
 
     expect(screen.queryByText(/Calibers filled in from the cartridge/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Spellings matched to existing values/)).not.toBeInTheDocument();
+  });
+});
+
+// specs/006-accessory-links contracts/ui-accessories.md §11 (FR-022, US5).
+describe("ImportDialog files and the two tables (US5)", () => {
+  const FIREARMS = "/data/firearms.csv";
+  const ACCESSORIES = "/data/accessories.xlsx";
+
+  function renderDialog() {
+    render(
+      <CollectionContext.Provider value={collection}>
+        <ImportDialog open onOpenChange={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+  }
+
+  /** The picker returns what the user selected, as the dialog plugin does
+   * when it is asked for several files. */
+  function picks(...paths: string[]) {
+    vi.mocked(openDialog).mockResolvedValueOnce(paths);
+  }
+
+  async function choose(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Choose…" }));
+  }
+
+  beforeEach(() => {
+    vi.mocked(openDialog).mockReset();
+    vi.mocked(importExportService.importCollection).mockReset();
+    vi.mocked(importExportService.resolveImportConflicts).mockReset();
+  });
+
+  it("says that one file, or the firearm and accessory files together, may be chosen", () => {
+    renderDialog();
+
+    expect(
+      screen.getByText(/Choose one file, or the firearm and accessory files together/),
+    ).toBeInTheDocument();
+  });
+
+  it("lets the picker select more than one file", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    renderDialog();
+
+    await choose(user);
+
+    expect(openDialog).toHaveBeenCalledWith(expect.objectContaining({ multiple: true }));
+  });
+
+  it("lists the chosen files and imports them together, each with its format", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockResolvedValue({
+      ...result,
+      conflicts: [],
+    });
+    picks(FIREARMS, ACCESSORIES);
+    renderDialog();
+
+    await choose(user);
+    expect(screen.getByText(FIREARMS)).toBeInTheDocument();
+    expect(screen.getByText(ACCESSORIES)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(importExportService.importCollection).toHaveBeenCalledWith({
+      files: [
+        { filePath: FIREARMS, format: "csv" },
+        { filePath: ACCESSORIES, format: "xlsx" },
+      ],
+    });
+  });
+
+  it("adds a second file to the first", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    picks("/data/accessories.csv");
+    renderDialog();
+
+    await choose(user);
+    await choose(user);
+
+    expect(screen.getByText(FIREARMS)).toBeInTheDocument();
+    expect(screen.getByText("/data/accessories.csv")).toBeInTheDocument();
+  });
+
+  // Issue #56: the picker never takes the import past its two files.
+  it("offers no more files once two are chosen, until one is removed", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS, ACCESSORIES);
+    renderDialog();
+
+    await choose(user);
+
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeDisabled();
+    expect(screen.getByLabelText(/Spreadsheet file/)).toBeDisabled();
+    expect(screen.getByText(/Two files chosen, the most one import takes/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: `Remove ${ACCESSORIES}` }));
+
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeEnabled();
+    expect(screen.getByLabelText(/Spreadsheet file/)).toBeEnabled();
+  });
+
+  it("counts a typed path as one of the two files", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    renderDialog();
+
+    await choose(user);
+    await user.type(screen.getByLabelText(/Spreadsheet file/), "/data/typed.csv");
+
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeDisabled();
+  });
+
+  it("adds nothing, and says so, when a pick would make more than two files", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    picks(ACCESSORIES, "/data/other.csv");
+    renderDialog();
+
+    await choose(user);
+    await choose(user);
+
+    expect(screen.getByText(/An import takes at most two files/)).toBeInTheDocument();
+    expect(screen.getByText(FIREARMS)).toBeInTheDocument();
+    expect(screen.queryByText(ACCESSORIES)).not.toBeInTheDocument();
+    expect(screen.queryByText("/data/other.csv")).not.toBeInTheDocument();
+  });
+
+  it("adds nothing when three files are picked at once", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS, ACCESSORIES, "/data/other.csv");
+    renderDialog();
+
+    await choose(user);
+
+    expect(screen.getByText(/An import takes at most two files/)).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Files to import" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the selection when the picker is cancelled", async () => {
+    const user = userEvent.setup();
+    picks(FIREARMS);
+    vi.mocked(openDialog).mockResolvedValueOnce(null);
+    renderDialog();
+
+    await choose(user);
+    await choose(user);
+
+    expect(screen.getByText(FIREARMS)).toBeInTheDocument();
+  });
+
+  it("shows the stop message that names the file, and stays on the file step", async () => {
+    const user = userEvent.setup();
+    const message =
+      "firearms.csv and more-firearms.csv both hold firearms. Pick one firearm table and at most one accessory table.";
+    vi.mocked(importExportService.importCollection).mockRejectedValue(
+      new CommandFailure({ code: "VALIDATION_ERROR", message }),
+    );
+    picks("/data/firearms.csv", "/data/more-firearms.csv");
+    renderDialog();
+
+    await choose(user);
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
+  });
+
+  async function importWith(overrides: Partial<ImportResult>) {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockResolvedValue({
+      ...result,
+      conflicts: [],
+      ...overrides,
+    });
+    picks(FIREARMS, ACCESSORIES);
+    renderDialog();
+    await choose(user);
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    return user;
+  }
+
+  it("names each failed row's table, whichever table it is in", async () => {
+    await importWith({
+      rowErrors: [
+        { table: "firearms", row: 2, message: "make: Enter the make." },
+        { table: "accessories", row: 4, message: "kind: Choose a kind." },
+      ],
+    });
+
+    expect(await screen.findByText("Firearms, row 2")).toBeInTheDocument();
+    expect(screen.getByText("Accessories, row 4")).toBeInTheDocument();
+    expect(screen.getByText("kind: Choose a kind.")).toBeInTheDocument();
+  });
+
+  it("lists the mount warnings with the other warnings, each naming its table and row", async () => {
+    await importWith({
+      warnings: [
+        {
+          table: "firearms",
+          row: 3,
+          message:
+            "Ridgeline Arms Hi-Power (serial RA-1) already has these original maker's marks.",
+        },
+        {
+          table: "accessories",
+          row: 4,
+          message:
+            "Mounted on 3f2a9c1e-5b7d-4e8a-9c0f-1a2b3c4d5e6f: no firearm or accessory has this record ID. Imported unmounted.",
+        },
+      ],
+    });
+
+    const heading = await screen.findByRole("heading", { name: "Warnings" });
+    const section = heading.closest("section") as HTMLElement;
+    expect(within(section).getByText("Firearms, row 3")).toBeInTheDocument();
+    expect(within(section).getByText("Accessories, row 4")).toBeInTheDocument();
+    expect(within(section).getByText(/Imported unmounted\./)).toBeInTheDocument();
+    expect(within(section).getAllByRole("listitem")).toHaveLength(2);
+    const tally = screen.getByText("warnings").closest(".hd-tally__item") as HTMLElement;
+    expect(within(tally).getByText("2")).toBeInTheDocument();
+  });
+
+  it("names the table of a snapped spelling and of a derived caliber", async () => {
+    const user = await importWith({
+      derivedCalibers: [
+        {
+          table: "accessories",
+          row: 5,
+          cartridge: "9x19mm Parabellum",
+          caliber: "9mm",
+          source: "catalog",
+        },
+      ],
+      snappedValues: [
+        {
+          table: "accessories",
+          row: 2,
+          field: "make",
+          sheetValue: "leupold",
+          recordedValue: "Leupold",
+        },
+      ],
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: /Calibers filled in from the cartridge \(1\)/ }),
+    );
+    expect(screen.getByText("Accessories, row 5")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /Spellings matched to existing values \(1\)/ }),
+    );
+    expect(screen.getByText("Accessories, row 2")).toBeInTheDocument();
+  });
+
+  it("shows an accessory conflict by its record name, with its table and row", async () => {
+    const user = await importWith({
+      conflicts: [
+        {
+          conflictId: "c9",
+          table: "accessories",
+          row: 4,
+          existingRecord: { kind: "accessory", id: 7 },
+          duplicateAllowed: true,
+          make: "Leupold",
+          model: "VX-5HD",
+          serialNumber: null,
+          kindName: "Optic",
+          mounted: [],
+        },
+      ],
+    });
+    vi.mocked(importExportService.resolveImportConflicts).mockResolvedValue({
+      resolvedCount: 1,
+      unresolved: [],
+      warnings: [],
+    });
+
+    expect(await screen.findByText("Leupold VX-5HD · Optic")).toBeInTheDocument();
+    const group = screen.getByRole("radiogroup", {
+      name: "Accessories, row 4: Leupold VX-5HD · Optic",
+    });
+    // An accessory has no uniqueness rule, so "Add as new" is always offered.
+    expect(within(group).getByRole("radio", { name: "Add as new" })).toBeInTheDocument();
+
+    await user.click(within(group).getByRole("radio", { name: "Keep existing" }));
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+    expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        importSessionId: "import-1",
+        resolutions: [{ conflictId: "c9", action: "skip" }],
+      }),
+    );
+  });
+});
+
+describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-014)", () => {
+  const label = (
+    id: number,
+    kind: "firearm" | "accessory",
+    make: string,
+    model: string,
+    typeName: string,
+  ): RecordLabel => ({
+    record: { kind, id },
+    make,
+    model,
+    nickname: null,
+    typeName,
+    serialNumber: null,
+    status: "active",
+  });
+  const rifle = { kind: "firearm", id: 10 } as const;
+  const optic = label(12, "accessory", "Leupold", "Mark 5HD", "Optic");
+  const cap = label(15, "accessory", "Leupold", "Flip cap", "Other");
+  const sling = label(16, "accessory", "Magpul", "MS1", "Sling");
+  const OPTIC = "Leupold Mark 5HD · Optic";
+  const CAP = "Leupold Flip cap · Other";
+  const SLING = "Magpul MS1 · Sling";
+
+  /** Row 2 marks the Ruger disposed, which carries an optic (with a cap on it)
+   * and a sling; row 3 matches a Glock with nothing mounted. */
+  const disposing: ImportResult = {
+    ...result,
+    conflicts: [
+      {
+        ...result.conflicts[0],
+        make: "Ruger",
+        model: "Precision",
+        mounted: [
+          { label: optic, host: rifle, depth: 1 },
+          { label: cap, host: optic.record, depth: 2 },
+          { label: sling, host: rifle, depth: 1 },
+        ],
+      },
+      result.conflicts[1],
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(importExportService.importCollection).mockResolvedValue(disposing);
+    vi.mocked(importExportService.resolveImportConflicts).mockReset();
+    vi.mocked(importExportService.resolveImportConflicts).mockResolvedValue({
+      resolvedCount: 2,
+      unresolved: [],
+      warnings: [],
+    });
+  });
+
+  async function replaceBoth(user: ReturnType<typeof userEvent.setup>) {
+    await importTheFile(user);
+    for (const name of ["Firearms, row 2: Ruger Precision", "Firearms, row 3: Glock 26"]) {
+      const group = screen.getByRole("radiogroup", { name });
+      await user.click(within(group).getByRole("radio", { name: "Replace existing" }));
+    }
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+    return screen.findByRole("alertdialog");
+  }
+
+  it("lists what is mounted on the record, each kept by default, and only for that row", async () => {
+    const user = userEvent.setup();
+    const confirm = await replaceBoth(user);
+
+    const group = within(confirm).getByRole("group", {
+      name: "Mounted on Ruger Precision (Firearms, row 2)",
+    });
+    for (const name of [OPTIC, CAP, SLING]) {
+      const choice = within(group).getByRole("radiogroup", { name });
+      expect(within(choice).getByRole("radio", { name: "Keep" })).toBeChecked();
+    }
+    expect(within(confirm).getAllByRole("group")).toHaveLength(1);
+    // Issue #56: what is replaced, and what goes with it, by kind.
+    expect(
+      within(confirm).getByRole("heading", { name: "Replace 2 firearms?" }),
+    ).toBeInTheDocument();
+    expect(confirm).toHaveTextContent(
+      "This row marks Ruger Precision disposed. Accessories disposed with it take the row's type, recipient and date, with no price.",
+    );
+    expect(group).toHaveTextContent(
+      "Kept accessories mounted on Ruger Precision will be unmounted.",
+    );
+    expect(group).toHaveTextContent("The accessory kept with what it is mounted on stays mounted.");
+    // No price: the row has none for a record disposed with it.
+    expect(within(confirm).queryByLabelText(/Price for/)).not.toBeInTheDocument();
+  });
+
+  it("sends the records chosen to go with it, and none for a row without any", async () => {
+    const user = userEvent.setup();
+    const confirm = await replaceBoth(user);
+    const group = within(confirm).getByRole("group", {
+      name: "Mounted on Ruger Precision (Firearms, row 2)",
+    });
+
+    await user.click(
+      within(within(group).getByRole("radiogroup", { name: OPTIC })).getByRole("radio", {
+        name: "Dispose with it",
+      }),
+    );
+    expect(group).toHaveTextContent(
+      "The kept accessory mounted on Leupold Mark 5HD · Optic will be unmounted.",
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Replace firearms" }));
+
+    expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith({
+      importSessionId: "import-1",
+      resolutions: [
+        { conflictId: "c1", action: "overwrite", withMounted: [optic.record] },
+        { conflictId: "c2", action: "overwrite" },
+      ],
+    });
+  });
+
+  it("asks nothing more when the rows being replaced dispose of nothing that carries records", async () => {
+    vi.mocked(importExportService.importCollection).mockResolvedValue(result);
+    const user = userEvent.setup();
+    await importTheFile(user);
+    const group = screen.getByRole("radiogroup", { name: "Firearms, row 2: Glock 19" });
+    await user.click(within(group).getByRole("radio", { name: "Replace existing" }));
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Firearms, row 3: Glock 26" })).getByRole(
+        "radio",
+        { name: "Keep existing" },
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+
+    const confirm = await screen.findByRole("alertdialog");
+    expect(within(confirm).queryByRole("group")).not.toBeInTheDocument();
   });
 });

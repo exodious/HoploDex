@@ -19,7 +19,6 @@ export interface PlateTiming {
   KEY_UNIT_TIME: number;
   RIFLE_START: number;
   RIFLE_TIME: number;
-  BORE_AXIS: boolean;
   RIM_START: number;
   RIM_TIME: number;
   RIM_EASE: [number, number, number, number];
@@ -63,7 +62,6 @@ export const PLATE_TIMING: PlateTiming = {
   //    tuner, and whichever drawing the startup shuffle put first in the app.
   RIFLE_START: 1.3,
   RIFLE_TIME: 2.1, // eased: most of it is drawn in the first half
-  BORE_AXIS: false, // the dashed centreline along the bore; it fades in with the captions
 
   // 3. The shield's rim. One sweep draws its circles, braid, beads and
   //    tongues together, from 12 o'clock clockwise back to 12.

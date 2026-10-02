@@ -1,0 +1,123 @@
+/* Styles for the mount pickers and Mounted sections: contracts/ui-accessories.md. */
+
+/* ── The mounted outline: research.md §14 ───────────────────────────────
+   One flat list. A direct entry sits at the edge; everything below it sits
+   one fixed step in whatever its depth, joined to the direct entry above by
+   a rail, so the eye sees what travels with what. */
+
+.hd-mounted {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hd-mounted__entry {
+  padding: var(--space-3) 0;
+}
+
+/* A new direct entry starts a new group, set off by a hairline. */
+.hd-mounted__entry--direct + .hd-mounted__entry--direct,
+.hd-mounted__entry--nested + .hd-mounted__entry--direct {
+  border-top: 1px solid var(--rule);
+}
+
+.hd-mounted__entry--direct {
+  padding-bottom: var(--space-2);
+}
+
+.hd-mounted__entry--nested {
+  margin-left: var(--space-2);
+  padding: var(--space-2) 0 var(--space-2) var(--space-5);
+  border-left: 2px solid var(--rule-strong);
+}
+
+/* A nested entry's rail runs into the next nested one without a break. */
+.hd-mounted__entry--nested:last-child,
+.hd-mounted__entry--nested + .hd-mounted__entry--direct {
+  margin-bottom: var(--space-2);
+}
+
+.hd-mounted__line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hd-mounted__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+/* The name is a link; keep it reading as the entry's name, not as prose. */
+.hd-mounted__name .hd-link {
+  font: inherit;
+  text-align: left;
+}
+
+.hd-mounted__entry--nested .hd-mounted__name {
+  font-weight: 550;
+}
+
+.hd-mounted__actions {
+  flex: none;
+}
+
+.hd-mounted__on {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* ── "Mounted on" chain ──────────────────────────────────────────────── */
+
+.hd-mounted-chain {
+  overflow-wrap: anywhere;
+}
+
+.hd-plate__mounted {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+}
+
+/* The dispose dialog's keep or dispose choice and price under an entry (§7). */
+.hd-mounted__choice {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  margin-top: var(--space-2);
+}
+
+.hd-mounted__choice > .hd-field {
+  justify-self: stretch;
+}
+
+/* The Mounted group's choices (MountedChoices), in the dispose dialog and
+   the import's Replace confirmation (§7, issue #56). */
+.hd-dispose-mounted {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.hd-dispose-mounted__note {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+/* The delete confirmation's list of records that stay behind (§8). */
+.hd-mounted-stay {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
+/* The "Mount on" dialog is short: room under the field for its suggestions, so
+   the list opens over empty space rather than over the Cancel button. */
+.hd-mount-picker {
+  min-height: 13rem;
+}

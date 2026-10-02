@@ -309,7 +309,12 @@ mod through_commands {
         world
             .session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Colt", "Python", "V1"), false)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", "V1"),
+                    false,
+                    None,
+                )
             })
             .unwrap();
         world.close();

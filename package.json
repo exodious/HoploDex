@@ -75,6 +75,7 @@
   },
   "overrides": {
     "serialize-javascript": "^7.0.7",
+    "basic-ftp": "^6.2.1",
     "cheerio": {
       "encoding-sniffer": "^1.0.2"
     }

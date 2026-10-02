@@ -4,7 +4,7 @@ import { DRAWINGS } from "./typeDrawings";
 
 /*
  * Generic per-type thumbnails (FR-009) drawn as technical line art, like a
- * patent drawing: outlined parts over a dash-dot bore axis. Parts are
+ * patent drawing: outlined parts with finer detail lines. Parts are
  * filled with the frame's paper color and painted back to front, so nearer
  * parts occlude the outlines behind them. Vector, theme-aware, and needing
  * no IPC round trip, unlike the bundled placeholder PNGs they replace.
@@ -30,7 +30,6 @@ export function TypeDrawing({ typeKey, className, animate, crop }: TypeDrawingPr
   // The key of the drawing in use, which is "other" for an unknown key.
   const drawingKey = typeKey in DRAWINGS ? typeKey : "other";
   const drawing = DRAWINGS[drawingKey];
-  const [x0, y, x1] = drawing.axis;
   const ref = useRef<SVGSVGElement>(null);
   const [viewBox, setViewBox] = useState(FULL_BOX);
 
@@ -72,7 +71,6 @@ export function TypeDrawing({ typeKey, className, animate, crop }: TypeDrawingPr
           <path key={i} d={part.d} className={`hd-drawing__${part.role}`} pathLength={1} />
         ),
       )}
-      <path d={`M${x0} ${y}H${x1}`} className="hd-drawing__axis" />
     </svg>
   );
 }

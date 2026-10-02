@@ -278,27 +278,64 @@
   display: flex;
 }
 
-.hd-tile {
+/* The card is the tile's frame: its button, and under that the mount lines
+   when there are any (specs/006-accessory-links §9), which hold a link and so
+   cannot sit inside the button. */
+.hd-tile-card {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 0;
+  min-width: 0;
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
   background: var(--sheet);
-  text-align: left;
   overflow: hidden;
-  cursor: pointer;
   transition:
     border-color 120ms var(--ease-out),
     box-shadow 120ms var(--ease-out),
     transform 120ms var(--ease-out);
 }
 
-.hd-tile:hover {
+.hd-tile-card:hover {
   border-color: var(--rule-strong);
   box-shadow: var(--shadow-raised);
   transform: translateY(-1px);
+}
+
+.hd-tile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The card clips its contents, so the focus ring goes inside the edge. */
+.hd-tile:focus-visible {
+  outline-offset: -3px;
+}
+
+.hd-tile__mounts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--rule);
+}
+
+/* A mount line: muted, under a name (list row or tile). */
+.hd-mountline {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.hd-mountline .hd-link {
+  font: inherit;
+  text-align: left;
 }
 
 .hd-tile__image {
@@ -361,6 +398,18 @@
 
   .hd-table th:nth-child(3),
   .hd-table td:nth-child(3) {
+    display: none;
+  }
+
+  /* The accessories table has the Mounted on column before Value, so the
+     narrow layout drops Coverage, its fourth, instead. */
+  .hd-table--accessories th:nth-child(3),
+  .hd-table--accessories td:nth-child(3) {
+    display: table-cell;
+  }
+
+  .hd-table--accessories th:nth-child(4),
+  .hd-table--accessories td:nth-child(4) {
     display: none;
   }
 }

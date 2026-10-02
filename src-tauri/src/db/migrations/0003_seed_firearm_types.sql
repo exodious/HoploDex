@@ -1,8 +1,9 @@
--- Seeds the type, action and classification lists: the initial FirearmType set per spec.md's
+-- Seeds the type, action, classification and accessory-kind lists: the initial FirearmType set per spec.md's
 -- Assumptions and research.md §10 (generic per-type thumbnails), and
 -- specs/004-cartridges-action-types' action types with their mapping to the
 -- seeded types (FR-018; research.md §10), and specs/005-regulated-item-types'
--- Suppressor type and registration classifications. The file keeps its name because
+-- Suppressor type and registration classifications, and
+-- specs/006-accessory-links' accessory kinds. The file keeps its name because
 -- `schema_migrations` records it.
 
 -- Fixed ids (005 research.md §4), listed in `sort_order`, which puts Other,
@@ -55,3 +56,24 @@ SELECT 2, id FROM action_types;
 -- Shotgun (3): all but Rolling block.
 INSERT INTO firearm_type_actions (firearm_type_id, action_type_id)
 SELECT 3, id FROM action_types WHERE id <> 8;
+
+-- specs/006-accessory-links FR-002 (data-model.md's "Entity: Accessory
+-- Kind"): fixed ids, so an id means the same kind in every build; listed in
+-- `sort_order`, all offered. Trigger and Bipod came after the first twelve,
+-- so they take the next ids and `sort_order` puts them beside their
+-- neighbours. There is no Suppressor kind.
+INSERT INTO accessory_kinds (id, name, generic_thumbnail_key, sort_order, offered) VALUES
+    (1, 'Optic', 'optic', 1, 1),
+    (2, 'Light or laser', 'light', 2, 1),
+    (3, 'Magazine', 'magazine', 3, 1),
+    (4, 'Stock or brace', 'stock', 4, 1),
+    (5, 'Upper receiver', 'upper', 5, 1),
+    (6, 'Barrel', 'barrel', 6, 1),
+    (13, 'Trigger', 'trigger', 7, 1),
+    (7, 'Muzzle device', 'muzzle', 8, 1),
+    (8, 'Conversion kit', 'conversion', 9, 1),
+    (9, 'Mount or rail', 'mount', 10, 1),
+    (14, 'Bipod', 'bipod', 11, 1),
+    (10, 'Sling', 'sling', 12, 1),
+    (11, 'Case', 'case', 13, 1),
+    (12, 'Other', 'accessory', 14, 1);

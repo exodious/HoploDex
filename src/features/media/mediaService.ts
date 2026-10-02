@@ -1,27 +1,30 @@
 import { invoke } from "../../services/tauriClient";
-import type { Firearm } from "../firearms/types";
+import type { RecordRef } from "../mounts/types";
 import type { DocumentSummary, PhotoSummary } from "./types";
 
-export function listPhotos(firearmId: number): Promise<PhotoSummary[]> {
-  return invoke<PhotoSummary[]>("list_photos", { firearmId });
+export function listPhotos(owner: RecordRef): Promise<PhotoSummary[]> {
+  return invoke<PhotoSummary[]>("list_photos", { owner });
 }
 
 export function addPhoto(
-  firearmId: number,
+  owner: RecordRef,
   fileBytes: number[],
   originalFilename: string,
   mimeType: string,
 ): Promise<PhotoSummary> {
-  return invoke<PhotoSummary>("add_photo", { firearmId, fileBytes, originalFilename, mimeType });
+  return invoke<PhotoSummary>("add_photo", { owner, fileBytes, originalFilename, mimeType });
 }
 
 /** Adds a photo from a file on disk — what a drop onto the window delivers. */
-export function addPhotoFromPath(firearmId: number, path: string): Promise<PhotoSummary> {
-  return invoke<PhotoSummary>("add_photo_from_path", { firearmId, path });
+export function addPhotoFromPath(owner: RecordRef, path: string): Promise<PhotoSummary> {
+  return invoke<PhotoSummary>("add_photo_from_path", { owner, path });
 }
 
-export function setThumbnailPhoto(firearmId: number, photoId: number): Promise<Firearm> {
-  return invoke<Firearm>("set_thumbnail_photo", { firearmId, photoId });
+export function setThumbnailPhoto(
+  owner: RecordRef,
+  photoId: number,
+): Promise<{ thumbnailPhotoId: number }> {
+  return invoke<{ thumbnailPhotoId: number }>("set_thumbnail_photo", { owner, photoId });
 }
 
 export function deletePhoto(photoId: number, confirmed: boolean): Promise<{ deleted: boolean }> {
@@ -37,18 +40,18 @@ export function getPhotoOriginal(photoId: number): Promise<ArrayBuffer> {
   return invoke<ArrayBuffer>("get_photo_original", { photoId });
 }
 
-export function listDocuments(firearmId: number): Promise<DocumentSummary[]> {
-  return invoke<DocumentSummary[]>("list_documents", { firearmId });
+export function listDocuments(owner: RecordRef): Promise<DocumentSummary[]> {
+  return invoke<DocumentSummary[]>("list_documents", { owner });
 }
 
 export function addDocument(
-  firearmId: number,
+  owner: RecordRef,
   fileBytes: number[],
   originalFilename: string,
   mimeType: string,
 ): Promise<DocumentSummary> {
   return invoke<DocumentSummary>("add_document", {
-    firearmId,
+    owner,
     fileBytes,
     originalFilename,
     mimeType,
@@ -56,8 +59,8 @@ export function addDocument(
 }
 
 /** Attaches a document from a file on disk — what a drop onto the window delivers. */
-export function addDocumentFromPath(firearmId: number, path: string): Promise<DocumentSummary> {
-  return invoke<DocumentSummary>("add_document_from_path", { firearmId, path });
+export function addDocumentFromPath(owner: RecordRef, path: string): Promise<DocumentSummary> {
+  return invoke<DocumentSummary>("add_document_from_path", { owner, path });
 }
 
 /** Opens the document in the OS default app for its file type (FR-010). */

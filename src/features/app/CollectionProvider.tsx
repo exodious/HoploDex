@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { CommandFailure } from "../../services/tauriClient";
+import { listAccessories, listAccessoryKinds } from "../accessories/accessoriesService";
+import type { AccessoryKindsOutput, AccessorySummary } from "../accessories/types";
 import * as browseService from "../browse/browseService";
 import type { FirearmSummary } from "../browse/types";
 import {
@@ -17,6 +19,7 @@ import * as insuranceService from "../insurance/insuranceService";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
 import {
   CollectionContext,
+  NO_ACCESSORY_KINDS,
   NO_ACTION_TYPES,
   NO_FIREARM_TYPES,
   NO_REGISTRATION_CLASSES,
@@ -27,10 +30,13 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   const [firearms, setFirearms] = useState<FirearmSummary[]>([]);
   // The list is fixed at run time (FR-017), so it is fetched once, beside the
   // policies but not with every refresh.
+  const [accessories, setAccessories] = useState<AccessorySummary[]>([]);
   const [actionTypes, setActionTypes] = useState<ActionTypesOutput>(NO_ACTION_TYPES);
   const [actionTypesFailed, setActionTypesFailed] = useState(false);
   const [firearmTypes, setFirearmTypes] = useState<FirearmTypesOutput>(NO_FIREARM_TYPES);
   const [firearmTypesFailed, setFirearmTypesFailed] = useState(false);
+  const [accessoryKinds, setAccessoryKinds] = useState<AccessoryKindsOutput>(NO_ACCESSORY_KINDS);
+  const [accessoryKindsFailed, setAccessoryKindsFailed] = useState(false);
   const [registrationClasses, setRegistrationClasses] =
     useState<RegistrationClassesOutput>(NO_REGISTRATION_CLASSES);
   const [registrationClassesFailed, setRegistrationClassesFailed] = useState(false);
@@ -42,12 +48,14 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [listing, valueSummary, policyList] = await Promise.all([
+      const [listing, accessoryListing, valueSummary, policyList] = await Promise.all([
         browseService.listFirearms({ includeDisposed: true }),
+        listAccessories({ includeDisposed: true }),
         insuranceService.getValueSummary(),
         insuranceService.listInsurancePolicies(),
       ]);
       setFirearms(listing.groups.flatMap((group) => group.firearms));
+      setAccessories(accessoryListing.groups.flatMap((group) => group.accessories));
       setSummary(valueSummary);
       setPolicies(policyList);
       setError(null);
@@ -95,6 +103,19 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let current = true;
+    listAccessoryKinds().then(
+      (list) => current && setAccessoryKinds(list),
+      // Without it Kind offers nothing and the form says so; the backend
+      // still checks every save.
+      () => current && setAccessoryKindsFailed(true),
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let current = true;
     listRegistrationClasses().then(
       (list) => current && setRegistrationClasses(list),
       // Without it Registered as offers only Unspecified and the form says
@@ -110,6 +131,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     () => ({
       firearms,
       firearmsById: new Map(firearms.map((f) => [f.id, f])),
+      accessories,
+      accessoriesById: new Map(accessories.map((a) => [a.id, a])),
       summary,
       policies,
       policiesById: new Map(policies.map((p) => [p.id, p])),
@@ -117,6 +140,8 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       actionTypesFailed,
       firearmTypes,
       firearmTypesFailed,
+      accessoryKinds,
+      accessoryKindsFailed,
       registrationClasses,
       registrationClassesFailed,
       loaded,
@@ -126,12 +151,15 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     }),
     [
       firearms,
+      accessories,
       summary,
       policies,
       actionTypes,
       actionTypesFailed,
       firearmTypes,
       firearmTypesFailed,
+      accessoryKinds,
+      accessoryKindsFailed,
       registrationClasses,
       registrationClassesFailed,
       loaded,

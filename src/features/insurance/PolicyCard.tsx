@@ -2,20 +2,25 @@ import type { Ref } from "react";
 import { Badge, Button, InsuranceWarningBadge } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
-import { firearmName } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
+import type { AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
+import { RecordName } from "../mounts/RecordName";
+import type { RecordLabel } from "../mounts/types";
 import { expiryLabel } from "./coverage";
+import { countKinds, kindHeading } from "../mounts/recordCounts";
+import { accessoryRecord, firearmRecord, refKey, type InsuranceRecord } from "./records";
 import type { BlanketSummary, InsurancePolicy, PolicySummary } from "./types";
 
 /** One policy: its term, its blanket usage when it is the blanket policy in
- * force, the firearms scheduled under it, and contacts (FR-015, FR-027,
+ * force, the firearms and accessories scheduled under it, and contacts (FR-015, FR-027,
  * FR-028, FR-036). */
 export function PolicyCard({
   policy,
   blanket,
   summary,
   firearms,
+  accessories,
   onOpen,
   onEdit,
   onDelete,
@@ -29,14 +34,17 @@ export function PolicyCard({
   summary: PolicySummary | undefined;
   /** The active firearms scheduled under this policy. */
   firearms: FirearmSummary[];
+  /** The active accessories scheduled under this policy (006 FR-009). */
+  accessories: AccessorySummary[];
   onEdit: () => void;
   onDelete: () => void;
   /** The card's header: the policy page pins a strip once it scrolls away. */
   headRef?: Ref<HTMLElement>;
 }) {
   const scheduledAmounts = new Map(
-    (summary?.individuallyScheduled ?? []).map((s) => [s.firearmId, s]),
+    (summary?.individuallyScheduled ?? []).map((s) => [refKey(s.record), s]),
   );
+  const scheduled = [...firearms.map(firearmRecord), ...accessories.map(accessoryRecord)];
   const limit = policy.blanketCoverageLimit;
   const inForce = blanket?.policyId === policy.id ? blanket : null;
 
@@ -85,8 +93,8 @@ export function PolicyCard({
       </div>
       {policy.isExpired && policy.expiredWarning && (
         <p className="hd-policy__alert">
-          {firearms.length > 0
-            ? "Every firearm scheduled on an expired policy counts as uninsured. If it has been renewed, edit the end date."
+          {scheduled.length > 0
+            ? "Every firearm or accessory scheduled on an expired policy counts as uninsured. If it has been renewed, edit the end date."
             : "If it has been renewed, edit the end date."}
         </p>
       )}
@@ -97,7 +105,7 @@ export function PolicyCard({
             <div className="hd-policy__block-head">
               <span className="hd-eyebrow">Blanket coverage</span>
               <span className="hd-muted hd-num">
-                {inForce.firearmCount} {inForce.firearmCount === 1 ? "firearm" : "firearms"}
+                {`${plural(inForce.firearmCount, "firearm", "firearms")} and ${plural(inForce.accessoryCount, "accessory", "accessories")}`}
               </span>
             </div>
             <Meter value={inForce.total} limit={limit} />
@@ -119,7 +127,9 @@ export function PolicyCard({
                 </span>
               )}
             </p>
-            <p className="hd-policy__note">Covers every firearm not scheduled individually.</p>
+            <p className="hd-policy__note">
+              Covers every firearm and accessory not scheduled individually.
+            </p>
           </div>
         ) : (
           <p className="hd-policy__block hd-muted">
@@ -128,13 +138,13 @@ export function PolicyCard({
           </p>
         ))}
 
-      {firearms.length > 0 && (
+      {scheduled.length > 0 && (
         <div className="hd-policy__block">
           <div className="hd-policy__block-head">
             <span className="hd-eyebrow">Scheduled individually</span>
           </div>
           <ScheduledTable
-            firearms={firearms}
+            records={scheduled}
             amounts={scheduledAmounts}
             expired={policy.isExpired}
           />
@@ -197,21 +207,41 @@ function Meter({ value, limit }: { value: number; limit: number }) {
   );
 }
 
+/** A record's name as a link to its page, back to the Insurance page. */
+export function RecordLink({ label, onNavigate }: { label: RecordLabel; onNavigate?: () => void }) {
+  const { open } = useNavigation();
+  return (
+    <button
+      type="button"
+      className="hd-link"
+      onClick={() => {
+        onNavigate?.();
+        open({ page: label.record.kind, id: label.record.id, from: "insurance" });
+      }}
+    >
+      <RecordName label={label} />
+    </button>
+  );
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 function ScheduledTable({
-  firearms,
+  records,
   amounts,
   expired,
 }: {
-  firearms: FirearmSummary[];
-  amounts: Map<number, { scheduledAmount: number; estimatedValue: number; underInsured: boolean }>;
+  records: InsuranceRecord[];
+  amounts: Map<string, { scheduledAmount: number; estimatedValue: number; underInsured: boolean }>;
   expired: boolean;
 }) {
-  const { open } = useNavigation();
   return (
     <table className="hd-mini-table">
       <thead>
         <tr>
-          <th scope="col">Firearm</th>
+          <th scope="col">
+            {kindHeading(countKinds(records.map((record) => record.label.record)))}
+          </th>
           <th scope="col" className="hd-table__num">
             Value
           </th>
@@ -224,36 +254,33 @@ function ScheduledTable({
         </tr>
       </thead>
       <tbody>
-        {firearms.map((firearm) => {
-          const entry = amounts.get(firearm.id);
+        {records.map((record) => {
+          const key = refKey(record.label.record);
+          const entry = amounts.get(key);
           const shortfall = entry ? entry.estimatedValue - entry.scheduledAmount : 0;
           return (
-            <tr key={firearm.id}>
+            <tr key={key}>
               <td>
-                <button
-                  type="button"
-                  className="hd-link"
-                  onClick={() => open({ page: "firearm", id: firearm.id, from: "insurance" })}
-                >
-                  {firearmName(firearm)}
-                </button>
-                {firearm.serialNumber && (
-                  <span className="hd-serial hd-mini-table__serial">{firearm.serialNumber}</span>
+                <RecordLink label={record.label} />
+                {record.label.serialNumber && (
+                  <span className="hd-serial hd-mini-table__serial">
+                    {record.label.serialNumber}
+                  </span>
                 )}
               </td>
-              <td className="hd-table__num hd-num">{formatDollars(firearm.estimatedValue)}</td>
+              <td className="hd-table__num hd-num">{formatDollars(record.estimatedValue)}</td>
               <td className="hd-table__num hd-num">
                 {formatDollars(entry?.scheduledAmount ?? null)}
               </td>
               <td className="hd-mini-table__status">
                 {expired ? (
                   <InsuranceWarningBadge kind="uninsured" />
-                ) : firearm.insuranceWarning === "under_insured" ? (
+                ) : record.insuranceWarning === "under_insured" ? (
                   <InsuranceWarningBadge
                     kind="under_insured"
                     label={`${formatDollars(shortfall)} short`}
                   />
-                ) : firearm.estimatedValue ? (
+                ) : record.estimatedValue ? (
                   <Badge tone="ok">Covered</Badge>
                 ) : (
                   <span className="hd-muted">No value set</span>
@@ -267,46 +294,41 @@ function ScheduledTable({
   );
 }
 
-export function FirearmLinkList({
-  firearms,
+/** A titled list of records that link to their pages; the Insurance page's
+ * "Not covered" lists. */
+export function RecordLinkList({
+  records,
   title,
   note,
   showValue,
   inline,
   onNavigate,
 }: {
-  firearms: FirearmSummary[];
+  records: InsuranceRecord[];
   title?: string;
   note?: string;
   showValue?: boolean;
   inline?: boolean;
   onNavigate?: () => void;
 }) {
-  const { open } = useNavigation();
-  const openRecord = (id: number) => {
-    onNavigate?.();
-    open({ page: "firearm", id, from: "insurance" });
-  };
   return (
     <div className={inline ? "hd-linklist hd-linklist--inline" : "hd-linklist"}>
       {title && (
         <h3 className="hd-linklist__title">
-          {title} <span className="hd-muted hd-num">{firearms.length}</span>
+          {title} <span className="hd-muted hd-num">{records.length}</span>
         </h3>
       )}
       {note && <p className="hd-linklist__note">{note}</p>}
       <ul>
-        {firearms.map((firearm) => (
-          <li key={firearm.id}>
-            <button type="button" className="hd-link" onClick={() => openRecord(firearm.id)}>
-              {firearmName(firearm)}
-            </button>
-            {!inline && firearm.serialNumber && (
-              <span className="hd-serial hd-linklist__serial">{firearm.serialNumber}</span>
+        {records.map((record) => (
+          <li key={refKey(record.label.record)}>
+            <RecordLink label={record.label} onNavigate={onNavigate} />
+            {!inline && record.label.serialNumber && (
+              <span className="hd-serial hd-linklist__serial">{record.label.serialNumber}</span>
             )}
             {showValue && (
               <span className="hd-linklist__value hd-num">
-                {formatDollars(firearm.estimatedValue)}
+                {formatDollars(record.estimatedValue)}
               </span>
             )}
           </li>

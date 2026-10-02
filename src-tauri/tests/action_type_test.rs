@@ -102,14 +102,19 @@ fn a_type_added_later_allows_every_action_and_a_renamed_type_keeps_its_mapping()
         )
         .unwrap();
     let crossbow = db.conn.last_insert_rowid();
-    let created =
-        ops::create_firearm(&db.conn, &with_action(crossbow, Some(PUMP_ACTION), "X-1"), false)
-            .unwrap();
+    let created = ops::create_firearm(
+        &db.conn,
+        &with_action(crossbow, Some(PUMP_ACTION), "X-1"),
+        false,
+        None,
+    )
+    .unwrap();
     assert_eq!(created.action_type_id, Some(PUMP_ACTION));
 
     db.conn.execute("UPDATE firearm_types SET name = 'Pistol' WHERE id = 1", []).unwrap();
-    let err = ops::create_firearm(&db.conn, &with_action(HANDGUN, Some(PUMP_ACTION), "X-2"), false)
-        .unwrap_err();
+    let err =
+        ops::create_firearm(&db.conn, &with_action(HANDGUN, Some(PUMP_ACTION), "X-2"), false, None)
+            .unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert_eq!(
         field_error(&err, "actionTypeId").as_deref(),
@@ -124,7 +129,7 @@ fn the_action_round_trips_and_none_saves_normally() {
     // US3-6, FR-021.
     let db = TestDb::new();
     let created =
-        ops::create_firearm(&db.conn, &with_action(RIFLE, Some(LEVER_ACTION), "A-1"), false)
+        ops::create_firearm(&db.conn, &with_action(RIFLE, Some(LEVER_ACTION), "A-1"), false, None)
             .unwrap();
     assert_eq!(ops::get_firearm(&db.conn, created.id).unwrap().action_type_id, Some(LEVER_ACTION));
 
@@ -137,7 +142,8 @@ fn the_action_round_trips_and_none_saves_normally() {
     .unwrap();
     assert_eq!(cleared.action_type_id, None);
 
-    let plain = ops::create_firearm(&db.conn, &with_action(HANDGUN, None, "A-2"), false).unwrap();
+    let plain =
+        ops::create_firearm(&db.conn, &with_action(HANDGUN, None, "A-2"), false, None).unwrap();
     assert_eq!(ops::get_firearm(&db.conn, plain.id).unwrap().action_type_id, None);
 
     let changed = ops::update_firearm(
@@ -155,23 +161,34 @@ fn mapped_oddities_save_and_disallowed_actions_are_field_errors() {
     // Spec clarification: Lever action on a Handgun and Falling block on a
     // Shotgun are allowed; Pump action on a Handgun is not.
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &with_action(HANDGUN, Some(LEVER_ACTION), "L-1"), false).unwrap();
-    ops::create_firearm(&db.conn, &with_action(SHOTGUN, Some(FALLING_BLOCK), "F-1"), false)
+    ops::create_firearm(&db.conn, &with_action(HANDGUN, Some(LEVER_ACTION), "L-1"), false, None)
         .unwrap();
-    ops::create_firearm(&db.conn, &with_action(OTHER, Some(INLINE_MUZZLELOADER), "O-1"), false)
+    ops::create_firearm(&db.conn, &with_action(SHOTGUN, Some(FALLING_BLOCK), "F-1"), false, None)
         .unwrap();
+    ops::create_firearm(
+        &db.conn,
+        &with_action(OTHER, Some(INLINE_MUZZLELOADER), "O-1"),
+        false,
+        None,
+    )
+    .unwrap();
 
-    let err = ops::create_firearm(&db.conn, &with_action(HANDGUN, Some(PUMP_ACTION), "P-1"), false)
-        .unwrap_err();
+    let err =
+        ops::create_firearm(&db.conn, &with_action(HANDGUN, Some(PUMP_ACTION), "P-1"), false, None)
+            .unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert_eq!(
         field_error(&err, "actionTypeId").as_deref(),
         Some("Pump action doesn't apply to a Handgun.")
     );
 
-    let err =
-        ops::create_firearm(&db.conn, &with_action(SHOTGUN, Some(ROLLING_BLOCK), "P-2"), false)
-            .unwrap_err();
+    let err = ops::create_firearm(
+        &db.conn,
+        &with_action(SHOTGUN, Some(ROLLING_BLOCK), "P-2"),
+        false,
+        None,
+    )
+    .unwrap_err();
     assert_eq!(
         field_error(&err, "actionTypeId").as_deref(),
         Some("Rolling block doesn't apply to a Shotgun.")
@@ -182,8 +199,9 @@ fn mapped_oddities_save_and_disallowed_actions_are_field_errors() {
 fn an_unknown_action_id_is_choose_an_action_from_the_list() {
     let db = TestDb::new();
     for unknown in [0, 14, 9_999, -1] {
-        let err = ops::create_firearm(&db.conn, &with_action(RIFLE, Some(unknown), "U-1"), false)
-            .unwrap_err();
+        let err =
+            ops::create_firearm(&db.conn, &with_action(RIFLE, Some(unknown), "U-1"), false, None)
+                .unwrap_err();
         assert_eq!(err.code, "VALIDATION_ERROR");
         assert_eq!(
             field_error(&err, "actionTypeId").as_deref(),
@@ -191,8 +209,8 @@ fn an_unknown_action_id_is_choose_an_action_from_the_list() {
         );
     }
     // A type that maps nothing still refuses an id that names no action.
-    let err =
-        ops::create_firearm(&db.conn, &with_action(OTHER, Some(99), "U-2"), false).unwrap_err();
+    let err = ops::create_firearm(&db.conn, &with_action(OTHER, Some(99), "U-2"), false, None)
+        .unwrap_err();
     assert_eq!(
         field_error(&err, "actionTypeId").as_deref(),
         Some("Choose an action from the list.")
@@ -204,8 +222,9 @@ fn changing_the_type_to_one_that_disallows_the_action_is_rejected() {
     // US3-3 at the command layer: the form clears the action, and the
     // backend refuses a save that doesn't.
     let db = TestDb::new();
-    let rifle = ops::create_firearm(&db.conn, &with_action(RIFLE, Some(PUMP_ACTION), "T-1"), false)
-        .unwrap();
+    let rifle =
+        ops::create_firearm(&db.conn, &with_action(RIFLE, Some(PUMP_ACTION), "T-1"), false, None)
+            .unwrap();
 
     let err = ops::update_firearm(
         &db.conn,
@@ -248,17 +267,17 @@ fn the_trigger_backstop_refuses_raw_writes_that_break_the_rule() {
     const RULE: &str = "action type not allowed for this firearm type";
 
     let insert = message(db.conn.execute(
-        "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
-         VALUES ('M', 'X', 'S-1', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
-        [HANDGUN, PUMP_ACTION],
+        "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
+         VALUES (?3, 'M', 'X', 'S-1', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
+        rusqlite::params![HANDGUN, PUMP_ACTION, support::uid()],
     ));
     assert!(insert.contains(RULE), "{insert}");
 
     db.conn
         .execute(
-            "INSERT INTO firearms (make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
-             VALUES ('M', 'X', 'S-2', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
-            [HANDGUN, LEVER_ACTION],
+            "INSERT INTO firearms (uid, make, model, serial_number, caliber, firearm_type_id, action_type_id, created_at, updated_at)
+             VALUES (?3, 'M', 'X', 'S-2', '9mm', ?1, ?2, datetime('now'), datetime('now'))",
+            rusqlite::params![HANDGUN, LEVER_ACTION, support::uid()],
         )
         .unwrap();
     let id = db.conn.last_insert_rowid();
@@ -291,9 +310,13 @@ fn automatic_or_select_fire_saves_with_or_without_a_classification() {
     for (type_id, serial) in
         [(HANDGUN, "AU-1"), (RIFLE, "AU-2"), (SHOTGUN, "AU-3"), (OTHER, "AU-4")]
     {
-        let plain =
-            ops::create_firearm(&db.conn, &with_action(type_id, Some(AUTOMATIC), serial), false)
-                .unwrap();
+        let plain = ops::create_firearm(
+            &db.conn,
+            &with_action(type_id, Some(AUTOMATIC), serial),
+            false,
+            None,
+        )
+        .unwrap();
         assert_eq!(plain.action_type_id, Some(AUTOMATIC));
         assert_eq!(plain.registration_class_id, None);
 
@@ -301,7 +324,7 @@ fn automatic_or_select_fire_saves_with_or_without_a_classification() {
             registration_class_id: Some(MACHINE_GUN),
             ..with_action(type_id, Some(AUTOMATIC), &format!("{serial}-R"))
         };
-        let saved = ops::create_firearm(&db.conn, &registered, false).unwrap();
+        let saved = ops::create_firearm(&db.conn, &registered, false, None).unwrap();
         assert_eq!(saved.action_type_id, Some(AUTOMATIC));
         assert_eq!(saved.registration_class_id, Some(MACHINE_GUN));
     }
@@ -315,16 +338,20 @@ fn a_machine_gun_rifle_may_have_a_semi_automatic_action() {
         registration_class_id: Some(MACHINE_GUN),
         ..with_action(RIFLE, Some(SEMI_AUTOMATIC), "MG-1")
     };
-    let saved = ops::create_firearm(&db.conn, &input, false).unwrap();
+    let saved = ops::create_firearm(&db.conn, &input, false, None).unwrap();
     assert_eq!(saved.action_type_id, Some(SEMI_AUTOMATIC));
 }
 
 #[test]
 fn a_suppressor_refuses_the_automatic_action() {
     let db = TestDb::new();
-    let err =
-        ops::create_firearm(&db.conn, &with_action(SUPPRESSOR, Some(AUTOMATIC), "S-1"), false)
-            .unwrap_err();
+    let err = ops::create_firearm(
+        &db.conn,
+        &with_action(SUPPRESSOR, Some(AUTOMATIC), "S-1"),
+        false,
+        None,
+    )
+    .unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(field_error(&err, "actionTypeId").is_some());
 }

@@ -5,17 +5,29 @@ export interface SearchBarProps {
   value: string;
   onChange: (value: string) => void;
   busy?: boolean;
+  /** The box's accessible name. */
+  label?: string;
+  placeholder?: string;
 }
 
 /** Free-text search across all recorded firearm information, including
  * free-form notes (FR-013, US2 Acceptance Scenarios 3-4). Escape clears. */
 export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
-  ({ value, onChange, busy }, ref) => {
+  (
+    {
+      value,
+      onChange,
+      busy,
+      label = "Search the collection",
+      placeholder = "Search make, model, serial, caliber, notes…",
+    },
+    ref,
+  ) => {
     const id = useId();
     return (
       <div className="hd-search">
         <label htmlFor={id} className="hd-sr-only">
-          Search the collection
+          {label}
         </label>
         <div className="hd-input hd-search__box">
           <Icon name="search" className="hd-search__icon" />
@@ -24,7 +36,7 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
             id={id}
             type="search"
             className="hd-input__control"
-            placeholder="Search make, model, serial, caliber, notes…"
+            placeholder={placeholder}
             autoComplete="off"
             spellCheck={false}
             value={value}

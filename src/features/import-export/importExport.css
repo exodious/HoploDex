@@ -91,6 +91,13 @@
   gap: var(--space-2);
 }
 
+/* The Replace confirmation's Mounted groups, one per row that disposes of a
+   record with records mounted on it (issue #56). */
+.hd-io-disposing {
+  display: grid;
+  gap: var(--space-5);
+}
+
 .hd-io-section__title {
   font-size: var(--text-lg);
   font-weight: 700;
@@ -105,7 +112,8 @@
 
 .hd-row-errors li {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
+  /* Wide enough for "Accessories, row 12". */
+  grid-template-columns: 9.5rem minmax(0, 1fr);
   gap: var(--space-3);
   padding: 8px 0;
   border-bottom: 1px solid var(--rule);
@@ -175,4 +183,28 @@
 .hd-conflicts__serial {
   font-size: 0.75rem;
   color: var(--ink-2);
+}
+
+/* ── Files chosen for an import (specs/006-accessory-links FR-022) ───── */
+
+.hd-io-files {
+  margin: calc(-1 * var(--space-3)) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.hd-io-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.hd-io-files__path {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
 }

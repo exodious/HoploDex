@@ -1,3 +1,4 @@
+import type { AccessoryKind } from "../features/accessories/types";
 import type { ActionType, FirearmTypeInfo, RegistrationClass } from "../features/firearms/types";
 
 /** The seeded firearm types (src-tauri/src/db/migrations/0003_seed_firearm_types.sql),
@@ -53,3 +54,30 @@ export const ACTION_TYPES: ActionType[] = [
   [11, "Percussion"],
   [12, "Inline muzzleloader"],
 ].map(([id, name]) => ({ id: id as number, name: name as string }));
+
+/** The fourteen seeded accessory kinds (specs/006-accessory-links/data-model.md;
+ * src-tauri/src/db/migrations/0003_seed_firearm_types.sql), as
+ * `list_accessory_kinds` returns them, in `sortOrder`, all offered, so every
+ * frontend test builds its state from one copy of the seed. */
+export const ACCESSORY_KINDS: AccessoryKind[] = [
+  [1, "Optic", "optic"],
+  [2, "Light or laser", "light"],
+  [3, "Magazine", "magazine"],
+  [4, "Stock or brace", "stock"],
+  [5, "Upper receiver", "upper"],
+  [6, "Barrel", "barrel"],
+  [13, "Trigger", "trigger"],
+  [7, "Muzzle device", "muzzle"],
+  [8, "Conversion kit", "conversion"],
+  [9, "Mount or rail", "mount"],
+  [14, "Bipod", "bipod"],
+  [10, "Sling", "sling"],
+  [11, "Case", "case"],
+  [12, "Other", "accessory"],
+].map(([id, name, key], index) => ({
+  id: id as number,
+  name: name as string,
+  genericThumbnailKey: key as string,
+  sortOrder: index + 1,
+  offered: true,
+}));

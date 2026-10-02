@@ -119,8 +119,13 @@ impl World {
     fn add_firearm(&self, serial: &str) {
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Colt", "Python", serial), false)
-                    .map(|_| ())
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", serial),
+                    false,
+                    None,
+                )
+                .map(|_| ())
             })
             .unwrap();
     }

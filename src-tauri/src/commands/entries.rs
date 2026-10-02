@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::commands::CommandError;
+use crate::models::accessory_kind::{AccessoryKind, AccessoryKindsOutput};
 use crate::models::action_type::{ActionType, ActionTypesOutput};
 use crate::models::firearm_type::{FirearmTypeInfo, FirearmTypesOutput};
 use crate::models::registration::{RegistrationClass, RegistrationClassesOutput};
@@ -181,6 +182,32 @@ pub mod ops {
             .map_err(CommandError::from_db)?;
         Ok(RegistrationClassesOutput { classes })
     }
+
+    /// The fixed accessory kinds in list order (`sort_order`), offered or
+    /// not (FR-002): a record that holds a kind no longer offered still shows
+    /// it, and the frontend reads the list instead of copying it.
+    pub fn list_accessory_kinds(conn: &Connection) -> Result<AccessoryKindsOutput, CommandError> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, generic_thumbnail_key, sort_order, offered
+                 FROM accessory_kinds ORDER BY sort_order",
+            )
+            .map_err(CommandError::from_db)?;
+        let kinds = stmt
+            .query_map([], |row| {
+                Ok(AccessoryKind {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    generic_thumbnail_key: row.get(2)?,
+                    sort_order: row.get(3)?,
+                    offered: row.get(4)?,
+                })
+            })
+            .map_err(CommandError::from_db)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CommandError::from_db)?;
+        Ok(AccessoryKindsOutput { kinds })
+    }
 }
 
 #[tauri::command]
@@ -218,4 +245,11 @@ pub async fn list_registration_classes(
     session: State<'_, Session>,
 ) -> Result<RegistrationClassesOutput, CommandError> {
     session.read(ops::list_registration_classes)
+}
+
+#[tauri::command]
+pub async fn list_accessory_kinds(
+    session: State<'_, Session>,
+) -> Result<AccessoryKindsOutput, CommandError> {
+    session.read(ops::list_accessory_kinds)
 }

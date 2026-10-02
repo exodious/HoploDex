@@ -231,3 +231,11 @@ pub fn check_entry_text(field: EntryField, value: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// [`check_entry_text`] for a field that may be left blank on this record
+/// (an accessory's make and model, specs/006-accessory-links FR-001): a blank
+/// value passes whatever the field's own requirement, and any other is
+/// judged by the same rules.
+pub fn check_optional_entry_text(field: EntryField, value: &str) -> Result<(), String> {
+    if value.trim().is_empty() { Ok(()) } else { check_entry_text(field, value) }
+}

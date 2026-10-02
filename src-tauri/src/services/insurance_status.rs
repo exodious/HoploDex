@@ -43,8 +43,8 @@ pub struct PolicyStatus {
 }
 
 /// The blanket policy in force on the day, with the total value of the
-/// active firearms that fall under it (every active firearm that is not
-/// individually scheduled).
+/// active records that fall under it (every active firearm and accessory that
+/// is not individually scheduled, FR-009), and how many of each.
 #[derive(Debug, Clone)]
 pub struct BlanketInForce {
     pub policy_id: i64,
@@ -52,6 +52,7 @@ pub struct BlanketInForce {
     pub limit: i64,
     pub total: i64,
     pub firearm_count: i64,
+    pub accessory_count: i64,
 }
 
 /// Everything needed to evaluate any firearm's coverage, loaded once per
@@ -125,25 +126,34 @@ pub fn load_context_as_of(
     let blanket = match in_force {
         None => None,
         Some(policy) => {
-            let (total, firearm_count) = conn
-                .query_row(
-                    "SELECT COALESCE(SUM(COALESCE(estimated_value, 0)), 0), COUNT(*)
-                     FROM firearms WHERE status = 'active' AND insurance_policy_id IS NULL",
-                    [],
-                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-                )
-                .map_err(CommandError::from_db)?;
+            let (firearm_total, firearm_count) = unscheduled_active(conn, "firearms")?;
+            let (accessory_total, accessory_count) = unscheduled_active(conn, "accessories")?;
             Some(BlanketInForce {
                 policy_id: policy.id,
                 policy_name: policy.name.clone(),
                 limit: policy.blanket_limit.unwrap_or(0),
-                total,
+                total: firearm_total + accessory_total,
                 firearm_count,
+                accessory_count,
             })
         }
     };
 
     Ok(InsuranceContext { policies: statuses, blanket })
+}
+
+/// The summed value and the count of a table's active records that no policy
+/// schedules. `table` is one of the two fixed table names, never user input.
+fn unscheduled_active(conn: &Connection, table: &str) -> Result<(i64, i64), CommandError> {
+    conn.query_row(
+        &format!(
+            "SELECT COALESCE(SUM(COALESCE(estimated_value, 0)), 0), COUNT(*)
+             FROM {table} WHERE status = 'active' AND insurance_policy_id IS NULL"
+        ),
+        [],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+    )
+    .map_err(CommandError::from_db)
 }
 
 fn status_of(policy: &PolicyDates, all: &[PolicyDates], today: NaiveDate) -> PolicyStatus {
@@ -179,10 +189,11 @@ fn status_of(policy: &PolicyDates, all: &[PolicyDates], today: NaiveDate) -> Pol
     }
 }
 
-/// The single source of truth for a firearm's insurance-warning flag,
-/// shared by `list_firearms` (US2) and `get_value_summary` (US3) so the
-/// browse view and the value summary never disagree.
-pub fn firearm_warning(
+/// The single source of truth for a record's insurance-warning flag (a
+/// firearm's or an accessory's), shared by `list_firearms`, `list_accessories`
+/// and `get_value_summary` so the browse views and the value summary never
+/// disagree.
+pub fn record_warning(
     estimated_value: Option<i64>,
     insurance_policy_id: Option<i64>,
     scheduled_coverage_amount: Option<i64>,

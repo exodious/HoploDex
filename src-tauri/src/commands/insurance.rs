@@ -3,11 +3,13 @@ use serde::Deserialize;
 use tauri::State;
 
 use crate::commands::CommandError;
-use crate::commands::firearms;
-use crate::models::firearm::Firearm;
+use crate::commands::{accessories, firearms};
+use crate::models::accessory::Accessory;
+use crate::models::firearm::{Firearm, FirearmStatus};
 use crate::models::insurance_policy::{
     InsurancePolicy, InsurancePolicyInput, validate_insurance_policy_input,
 };
+use crate::models::record::{RecordCounts, RecordLabel, RecordRef};
 use crate::services::insurance_status::{PolicyStatus, load_context};
 use crate::services::valuation::{self, ValueSummary};
 use crate::session::Session;
@@ -20,7 +22,7 @@ pub struct AssignCoverageInput {
     pub scheduled_coverage_amount: Option<i64>,
 }
 
-/// How the firearms scheduled under a policy being deleted are resolved
+/// How the firearms and accessories scheduled under a policy being deleted are resolved
 /// (FR-034): moved to another policy, keeping their scheduled amounts, or
 /// left unscheduled — covered by the blanket policy in force, or uninsured.
 #[derive(Debug, Clone, Deserialize)]
@@ -48,15 +50,6 @@ pub struct DeletePolicyResult {
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScheduledFirearmRef {
-    pub id: i64,
-    pub make: String,
-    pub model: String,
-    pub nickname: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct OtherPolicy {
     pub id: i64,
     pub name: String,
@@ -70,12 +63,13 @@ pub struct OtherPolicy {
 pub struct PolicyDeletionImpact {
     pub is_expired: bool,
     pub is_blanket_in_force: bool,
-    pub scheduled_firearm_count: i64,
-    pub scheduled_firearms: Vec<ScheduledFirearmRef>,
-    /// Active unscheduled firearms that lose blanket coverage because this is
-    /// the blanket policy in force (0 otherwise).
-    pub blanket_firearm_count: i64,
-    /// What becomes of firearms left unscheduled: `"blanket"` if another
+    /// Active firearms and accessories (FR-009), by kind (issue #56).
+    pub scheduled_counts: RecordCounts,
+    pub scheduled_records: Vec<RecordLabel>,
+    /// Active unscheduled firearms and accessories that lose blanket coverage
+    /// because this is the blanket policy in force (none otherwise).
+    pub blanket_counts: RecordCounts,
+    /// What becomes of records left unscheduled: `"blanket"` if another
     /// blanket policy is in force once this one is gone, else `"uninsured"`.
     pub unschedule_outcome: &'static str,
     pub other_policies: Vec<OtherPolicy>,
@@ -286,18 +280,30 @@ pub mod ops {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, make, model, nickname FROM firearms
-                 WHERE insurance_policy_id = :id AND status = 'active'
-                 ORDER BY make, model, id",
+                "SELECT 0, f.id, f.make, f.model, f.nickname, t.name, f.serial_number, f.status
+                 FROM firearms f JOIN firearm_types t ON t.id = f.firearm_type_id
+                 WHERE f.insurance_policy_id = :id AND f.status = 'active'
+                 UNION ALL
+                 SELECT 1, a.id, a.make, a.model, NULL, k.name, a.serial_number, a.status
+                 FROM accessories a JOIN accessory_kinds k ON k.id = a.accessory_kind_id
+                 WHERE a.insurance_policy_id = :id AND a.status = 'active'
+                 ORDER BY 3, 4, 1, 2",
             )
             .map_err(CommandError::from_db)?;
-        let scheduled_firearms = stmt
+        let scheduled_records = stmt
             .query_map(named_params! { ":id": id }, |row| {
-                Ok(ScheduledFirearmRef {
-                    id: row.get(0)?,
-                    make: row.get(1)?,
-                    model: row.get(2)?,
-                    nickname: row.get(3)?,
+                let record_id = row.get(1)?;
+                Ok(RecordLabel {
+                    record: match row.get::<_, i64>(0)? {
+                        0 => RecordRef::Firearm(record_id),
+                        _ => RecordRef::Accessory(record_id),
+                    },
+                    make: row.get(2)?,
+                    model: row.get(3)?,
+                    nickname: row.get(4)?,
+                    type_name: row.get(5)?,
+                    serial_number: row.get(6)?,
+                    status: row.get::<_, FirearmStatus>(7)?,
                 })
             })
             .map_err(CommandError::from_db)?
@@ -318,9 +324,12 @@ pub mod ops {
         Ok(PolicyDeletionImpact {
             is_expired: status.is_expired,
             is_blanket_in_force: in_force.is_some(),
-            scheduled_firearm_count: scheduled_firearms.len() as i64,
-            scheduled_firearms,
-            blanket_firearm_count: in_force.map_or(0, |b| b.firearm_count),
+            scheduled_counts: RecordCounts::of(scheduled_records.iter().map(|label| label.record)),
+            scheduled_records,
+            blanket_counts: in_force.map_or_else(RecordCounts::default, |b| RecordCounts {
+                firearms: b.firearm_count as usize,
+                accessories: b.accessory_count as usize,
+            }),
             unschedule_outcome: if another_blanket_in_force { "blanket" } else { "uninsured" },
             other_policies,
         })
@@ -345,17 +354,18 @@ pub mod ops {
             ));
         }
         let impact = get_policy_deletion_impact(conn, id)?;
-        let active = impact.scheduled_firearm_count;
+        let active = impact.scheduled_counts;
 
         let tx = conn.unchecked_transaction().map_err(CommandError::from_db)?;
         let (mut moved_count, mut unscheduled_count) = (0, 0);
         match resolution {
-            None if active > 0 => {
+            None if active.total() > 0 => {
                 return Err(CommandError::new(
                     "POLICY_HAS_FIREARMS",
                     format!(
-                        "This policy still covers {active} firearm(s). Move them to another \
-                         policy, or leave them unscheduled, before deleting it."
+                        "This policy still covers {}. Move them to another policy, or leave \
+                         them unscheduled, before deleting it.",
+                        active.describe()
                     ),
                 ));
             }
@@ -363,21 +373,26 @@ pub mod ops {
                 if *target_policy_id == id || get_policy(conn, *target_policy_id).is_err() {
                     return Err(CommandError::new(
                         "VALIDATION_ERROR",
-                        "Choose another existing policy to move the firearms to.",
+                        format!("Choose another existing policy to move the {} to.", active.noun()),
                     ));
                 }
-                moved_count = conn
-                    .execute(
-                        "UPDATE firearms SET insurance_policy_id = :target, updated_at = datetime('now')
-                         WHERE insurance_policy_id = :id",
-                        named_params! { ":target": target_policy_id, ":id": id },
-                    )
-                    .map_err(CommandError::from_db)?;
+                for table in ["firearms", "accessories"] {
+                    moved_count += conn
+                        .execute(
+                            &format!(
+                                "UPDATE {table} SET insurance_policy_id = :target,
+                                    updated_at = datetime('now')
+                                 WHERE insurance_policy_id = :id"
+                            ),
+                            named_params! { ":target": target_policy_id, ":id": id },
+                        )
+                        .map_err(CommandError::from_db)?;
+                }
             }
             resolution => {
                 if let Some(ScheduledFirearmsAction::Unschedule { confirm_unschedule }) = resolution
                     && !impact.is_expired
-                    && active > 0
+                    && active.total() > 0
                     && *confirm_unschedule != Some(true)
                 {
                     let outcome = if impact.unschedule_outcome == "blanket" {
@@ -388,19 +403,24 @@ pub mod ops {
                     return Err(CommandError::new(
                         "VALIDATION_ERROR",
                         format!(
-                            "Leaving {active} firearm(s) unscheduled removes their scheduled \
-                                 coverage; they would be {outcome}. Confirm to continue."
+                            "Leaving {} unscheduled removes their scheduled coverage; they \
+                             would be {outcome}. Confirm to continue.",
+                            active.describe()
                         ),
                     ));
                 }
-                unscheduled_count = conn
-                    .execute(
-                        "UPDATE firearms SET insurance_policy_id = NULL,
-                            scheduled_coverage_amount = NULL, updated_at = datetime('now')
-                         WHERE insurance_policy_id = :id",
-                        named_params! { ":id": id },
-                    )
-                    .map_err(CommandError::from_db)?;
+                for table in ["firearms", "accessories"] {
+                    unscheduled_count += conn
+                        .execute(
+                            &format!(
+                                "UPDATE {table} SET insurance_policy_id = NULL,
+                                    scheduled_coverage_amount = NULL, updated_at = datetime('now')
+                                 WHERE insurance_policy_id = :id"
+                            ),
+                            named_params! { ":id": id },
+                        )
+                        .map_err(CommandError::from_db)?;
+                }
             }
         }
 
@@ -432,6 +452,26 @@ pub mod ops {
         // Never touches an identifying field, so FR-009's warning never
         // applies here (research.md §5); `confirmed_warnings: true` skips it.
         firearms::ops::update_firearm(conn, firearm_id, &input, true)
+    }
+
+    /// [`assign_firearm_coverage`] for an accessory (FR-009).
+    pub fn assign_accessory_coverage(
+        conn: &Connection,
+        accessory_id: i64,
+        policy_id: Option<i64>,
+        scheduled_coverage_amount: Option<i64>,
+    ) -> Result<Accessory, CommandError> {
+        let current = accessories::ops::get_accessory(conn, accessory_id)?.accessory;
+        if let Some(policy_id) = policy_id {
+            get_policy(conn, policy_id)?;
+        }
+        let input = crate::models::accessory::AccessoryInput {
+            insurance_policy_id: policy_id,
+            // Unscheduling clears the amount along with the policy.
+            scheduled_coverage_amount: policy_id.and(scheduled_coverage_amount),
+            ..crate::models::accessory::AccessoryInput::from(&current)
+        };
+        accessories::ops::update_accessory(conn, accessory_id, &input)
     }
 
     pub fn get_value_summary(conn: &Connection) -> Result<ValueSummary, CommandError> {
@@ -497,6 +537,22 @@ pub async fn assign_firearm_coverage(
         ops::assign_firearm_coverage(
             conn,
             firearm_id,
+            input.policy_id,
+            input.scheduled_coverage_amount,
+        )
+    })
+}
+
+#[tauri::command]
+pub async fn assign_accessory_coverage(
+    accessory_id: i64,
+    input: AssignCoverageInput,
+    session: State<'_, Session>,
+) -> Result<Accessory, CommandError> {
+    session.write(|conn| {
+        ops::assign_accessory_coverage(
+            conn,
+            accessory_id,
             input.policy_id,
             input.scheduled_coverage_amount,
         )

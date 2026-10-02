@@ -12,7 +12,7 @@ import "./insurance.css";
  * card the Insurance page lists, with the same edit and delete actions,
  * which a pinned strip keeps in reach once the card's header scrolls away. */
 export function PolicyPage({ id }: { id: number }) {
-  const { firearms, summary, policiesById } = useCollection();
+  const { firearms, accessories, summary, policiesById } = useCollection();
   const { navigate, back } = useNavigation();
   const { edit, remove, dialogs } = usePolicyEditors(() => navigate({ page: "insurance" }));
   const [head, setHead] = useState<HTMLElement | null>(null);
@@ -33,6 +33,9 @@ export function PolicyPage({ id }: { id: number }) {
             summary={summary?.byPolicy.find((p) => p.policyId === policy.id)}
             firearms={firearms.filter(
               (f) => f.insurancePolicyId === policy.id && f.status === "active",
+            )}
+            accessories={accessories.filter(
+              (a) => a.insurancePolicyId === policy.id && a.status === "active",
             )}
             onEdit={() => edit(policy)}
             onDelete={() => remove(policy)}

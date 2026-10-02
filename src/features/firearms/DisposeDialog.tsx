@@ -4,11 +4,17 @@ import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from ".
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
-import { firearmName } from "../app/collectionStore";
+import { MountedChoices } from "../mounts/MountedChoices";
+import { mountedStatements } from "../mounts/mountedStatements";
+import { recordKey } from "../mounts/recordKey";
+import { recordNameWithType } from "../mounts/recordNames";
+import type { MountDetail, MountedEntry } from "../mounts/types";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
+import { useRecordSubject } from "./recordSubject";
+import type { RecordSubject, RecordSubjectProps } from "./recordSubject";
 import { DISPOSITION_TYPE_OPTIONS } from "./types";
-import type { DisposeFirearmInput, DispositionType, Firearm } from "./types";
+import type { DisposeInput, DispositionType } from "./types";
 import "./forms.css";
 
 const RECIPIENT_HINTS: Record<DispositionType, string> = {
@@ -19,30 +25,53 @@ const RECIPIENT_HINTS: Record<DispositionType, string> = {
   lost_stolen: "Where it was lost, or the police report number.",
 };
 
-export interface DisposeDialogProps {
+export type DisposeDialogProps = RecordSubjectProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  firearm: Firearm;
-  onDispose: (input: DisposeFirearmInput) => Promise<void>;
-}
+  onDispose: (input: DisposeInput) => Promise<void>;
+  /** What the record is mounted on and what is mounted on it (FR-014); none
+   * when the page has not loaded it. */
+  mount?: MountDetail;
+  /** Called when the backend reports that what is mounted has changed, so the
+   * page reloads `mount`. */
+  onMountChanged?: () => void | Promise<void>;
+};
 
-/** Marks a firearm disposed (US1 Scenario 4). The record keeps its full
- * history but leaves the active collection, its totals, and coverage
- * checks (FR-023, FR-025). */
-export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: DisposeDialogProps) {
+/** Marks a firearm or an accessory disposed (US1 Scenario 4; 006 FR-006). The
+ * record keeps its full history but leaves the active collection, its totals,
+ * and coverage checks (FR-023, FR-025). */
+export function DisposeDialog({
+  open,
+  onOpenChange,
+  onDispose,
+  mount,
+  onMountChanged,
+  ...record
+}: DisposeDialogProps) {
+  const subject = useRecordSubject(record as RecordSubjectProps);
+  const host = mount?.chain[0];
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title="Mark as disposed"
-      description={`${firearmName(firearm)} stays in your records with its full history, but leaves the active collection, its value totals, and coverage checks.`}
+      description={
+        <>
+          {`${subject.name} stays in your records with its full history, but leaves the active collection, its value totals, and coverage checks.`}
+          {host && (
+            <span className="hd-dialog__note">
+              {`${subject.name} will be unmounted from ${recordNameWithType(host)}.`}
+            </span>
+          )}
+        </>
+      }
       bare
     >
       {/* Mounted only while open, so every opening starts from a blank form. */}
       <DisposeForm
-        firearmId={firearm.id}
-        label={`${firearmName(firearm)} (disposal)`}
-        acquisitionDate={firearm.acquisitionDate}
+        subject={subject}
+        mounted={mount?.mounted ?? []}
+        onMountChanged={onMountChanged}
         onDispose={onDispose}
         onCancel={() => onOpenChange(false)}
       />
@@ -52,7 +81,7 @@ export function DisposeDialog({ open, onOpenChange, firearm, onDispose }: Dispos
 
 /** The version of this form's kept drafts (research.md §16). Raise it when
  * {@link DisposeValues} changes shape, so older drafts are only discarded. */
-export const FORM_VERSION = 1;
+export const FORM_VERSION = 2;
 
 /** The form's input, as a kept draft holds it. */
 interface DisposeValues {
@@ -60,27 +89,31 @@ interface DisposeValues {
   recipient: string;
   date: string;
   price: string;
+  /** The records disposed with it, by `recordKey`, each with the price typed
+   * for it (blank: none). A record not here is kept (FR-014). */
+  disposeWith: Record<string, string>;
 }
 
 function DisposeForm({
-  firearmId,
-  label,
-  acquisitionDate,
+  subject,
+  mounted,
+  onMountChanged,
   onDispose,
   onCancel,
 }: {
-  firearmId: number;
-  label: string;
-  acquisitionDate: string | null;
-  onDispose: (input: DisposeFirearmInput) => Promise<void>;
+  subject: RecordSubject;
+  mounted: MountedEntry[];
+  onMountChanged: (() => void | Promise<void>) | undefined;
+  onDispose: (input: DisposeInput) => Promise<void>;
   onCancel: () => void;
 }) {
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
-    kind: "firearm",
+    kind: subject.kind,
     mode: "dispose",
-    targetId: firearmId,
+    targetId: subject.id,
   };
+  const label = `${subject.name} (disposal)`;
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [today] = useState(todayIso);
   const [resumed] = useState(() =>
@@ -89,6 +122,7 @@ function DisposeForm({
       recipient: "",
       date: today,
       price: "",
+      disposeWith: {},
     }),
   );
   useResumedDraftTaken(target);
@@ -98,6 +132,15 @@ function DisposeForm({
   const [recipient, setRecipient] = useState(resumed.recipient);
   const [date, setDate] = useState(resumed.date);
   const [price, setPrice] = useState(resumed.price);
+  // A resumed choice for a record no longer below this one is dropped.
+  const [disposeWith, setDisposeWith] = useState<Record<string, string>>(() => {
+    const here = new Set(mounted.map((entry) => recordKey(entry.label.record)));
+    return Object.fromEntries(
+      Object.entries(resumed.disposeWith).filter(
+        ([key, text]) => here.has(key) && typeof text === "string",
+      ),
+    );
+  });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -112,7 +155,7 @@ function DisposeForm({
       : !parsedDate.iso
         ? "Enter the date."
         : (futureDateError(parsedDate.iso, "Disposition date") ??
-          dispositionOrderError(acquisitionDate, parsedDate.iso)),
+          dispositionOrderError(subject.acquisitionDate, parsedDate.iso)),
     price: !parsedPrice.ok
       ? parsedPrice.error
       : parsedPrice.dollars == null
@@ -121,12 +164,48 @@ function DisposeForm({
   };
   const shown = (error: string | undefined) => (submitted ? error : undefined);
 
+  // What is disposed with it, in the list's order. Only what is still below
+  // it counts, since a reload can take records away.
+  const disposed = mounted.filter((entry) => recordKey(entry.label.record) in disposeWith);
+  const parsedWith = disposed.map((entry) => ({
+    entry,
+    price: parseDollars(disposeWith[recordKey(entry.label.record)]),
+  }));
+  const withErrors = new Map(
+    parsedWith.flatMap(({ entry, price: parsed }) =>
+      parsed.ok ? [] : [[recordKey(entry.label.record), parsed.error] as const],
+    ),
+  );
+  // A record disposed with it is checked against its own acquisition date, as
+  // the record's own is (FR-014, US3/AC2); the error names it.
+  const dateErrors = new Map(
+    parsedWith.flatMap(({ entry }) => {
+      const error =
+        parsedDate.ok && parsedDate.iso
+          ? dispositionOrderError(entry.acquisitionDate ?? null, parsedDate.iso)
+          : undefined;
+      return error
+        ? [[recordKey(entry.label.record), `${recordNameWithType(entry.label)}: ${error}`] as const]
+        : [];
+    }),
+  );
+  const statements = mountedStatements(
+    subject.name,
+    mounted,
+    Object.fromEntries(disposed.map((entry) => [recordKey(entry.label.record), true])),
+  );
+
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
   // and a lock keeps it (FR-039).
-  const values: DisposeValues = { dispositionType, recipient, date, price };
+  const values: DisposeValues = { dispositionType, recipient, date, price, disposeWith };
   useDirtyForm({
     label,
-    isDirty: dispositionType !== "" || recipient !== "" || date !== today || price !== "",
+    isDirty:
+      dispositionType !== "" ||
+      recipient !== "" ||
+      date !== today ||
+      price !== "" ||
+      Object.keys(disposeWith).length > 0,
     submit: save,
     draft: { ...target, values },
   });
@@ -139,7 +218,15 @@ function DisposeForm({
   /** Validates and saves; resolves whether it was saved. */
   async function save(): Promise<boolean> {
     setSubmitted(true);
-    if (Object.values(errors).some(Boolean) || !parsedDate.ok || !parsedPrice.ok) return false;
+    if (
+      Object.values(errors).some(Boolean) ||
+      !parsedDate.ok ||
+      !parsedPrice.ok ||
+      withErrors.size > 0 ||
+      dateErrors.size > 0
+    ) {
+      return false;
+    }
 
     setSubmitting(true);
     setServerError(null);
@@ -149,11 +236,22 @@ function DisposeForm({
         recipient: recipient.trim(),
         date: parsedDate.iso as string,
         price: parsedPrice.dollars as number,
+        withMounted: parsedWith.map(({ entry, price: parsed }) => ({
+          record: entry.label.record,
+          price: parsed.ok ? parsed.dollars : null,
+        })),
       });
       return true;
     } catch (e) {
+      // What is mounted changed under the dialog (FR-014): say so, and have the
+      // page reload the list.
+      const stale = e instanceof CommandFailure ? e.fieldErrors?.withMounted : undefined;
+      if (stale) void onMountChanged?.();
       setServerError(
-        e instanceof CommandFailure ? e.message : "The firearm couldn't be marked disposed.",
+        stale ??
+          (e instanceof CommandFailure
+            ? e.message
+            : `The ${subject.noun} couldn't be marked disposed.`),
       );
       return false;
     } finally {
@@ -204,6 +302,17 @@ function DisposeForm({
             error={shown(errors.price)}
           />
         </div>
+        {mounted.length > 0 && (
+          <MountedChoices
+            mounted={mounted}
+            withPrices
+            disposeWith={disposeWith}
+            onChange={setDisposeWith}
+            errors={submitted ? withErrors : undefined}
+            dateErrors={submitted ? dateErrors : undefined}
+            statements={statements}
+          />
+        )}
       </div>
       <footer className="hd-dialog__footer">
         <Button variant="secondary" onClick={onCancel} disabled={submitting}>

@@ -286,3 +286,10 @@
   font-size: var(--text-sm);
   color: var(--ink-2);
 }
+
+/* specs/006-accessory-links contracts/ui-accessories.md §7: the dispose
+   dialog's note under its title. Its Mounted group is in mounts.css. */
+.hd-dialog__note {
+  display: block;
+  margin-top: var(--space-2);
+}

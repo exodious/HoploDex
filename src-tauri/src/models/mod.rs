@@ -37,6 +37,8 @@ macro_rules! text_enum {
     };
 }
 
+pub mod accessory;
+pub mod accessory_kind;
 pub mod action_type;
 pub mod database;
 pub mod disposition_history;
@@ -45,7 +47,9 @@ pub mod firearm;
 pub mod firearm_type;
 pub mod insurance_policy;
 pub mod photo;
+pub mod record;
 pub mod registration;
+pub(crate) mod rules;
 
 pub use document_attachment::DocumentAttachment;
 pub use firearm::{DispositionType, Firearm, FirearmInput, FirearmStatus};

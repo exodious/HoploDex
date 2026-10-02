@@ -354,17 +354,21 @@ pub fn reclaim_freed_space(conn: &Connection) {
     reclaim(conn);
 }
 
-/// [`reclaim_freed_space`] after deleting a firearm, which also had an entry
-/// in the full-text index. FTS5 records a delete as a marker beside the old
+/// [`reclaim_freed_space`] after deleting a firearm or an accessory, which
+/// also had an entry in its full-text index. FTS5 records a delete as a marker beside the old
 /// entry, both holding the deleted words, until its segments are merged; the
 /// merge (`optimize`) drops both, so no word of a deleted firearm stays in
 /// the file (specs/004-cartridges-action-types SC-005, research.md §14).
-/// Failures are logged, as in [`reclaim_freed_space`].
-pub fn reclaim_deleted_firearm(conn: &Connection) {
-    if let Err(err) =
-        conn.execute("INSERT INTO firearms_fts (firearms_fts) VALUES ('optimize')", [])
-    {
-        log::warn!("could not merge the search index after a delete: {err}");
+/// Both indexes are merged, since a delete cascades through a mount and
+/// either record's words may be in either one (specs/006-accessory-links
+/// SC-006). Failures are logged, as in [`reclaim_freed_space`].
+pub fn reclaim_deleted_record(conn: &Connection) {
+    for index in ["firearms_fts", "accessories_fts"] {
+        if let Err(err) =
+            conn.execute(&format!("INSERT INTO {index} ({index}) VALUES ('optimize')"), [])
+        {
+            log::warn!("could not merge the search index {index} after a delete: {err}");
+        }
     }
     reclaim(conn);
 }

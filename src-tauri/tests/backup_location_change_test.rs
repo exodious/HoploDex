@@ -82,7 +82,12 @@ impl World {
         let serial = db::random_hex(4).unwrap();
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Colt", "Python", &serial), false)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", &serial),
+                    false,
+                    None,
+                )
             })
             .unwrap();
     }

@@ -1250,3 +1250,28 @@
   color: var(--ink-2);
   white-space: nowrap;
 }
+
+/* A row with a second line (the mount chooser: "Mounted on {host}"). */
+.hd-combobox__option--detail {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  padding-block: var(--space-1);
+}
+
+.hd-combobox__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hd-combobox__detail {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

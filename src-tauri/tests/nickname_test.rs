@@ -4,10 +4,11 @@
 
 mod support;
 
-use hoplodex_lib::commands::firearms::{DisposeFirearmInput, ListFirearmsInput, ops};
+use hoplodex_lib::commands::firearms::{DisposeInput, ListFirearmsInput, ops};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, csv_file, csv_firearm, firearm};
 use tempfile::TempDir;
@@ -20,11 +21,12 @@ fn dispose(db: &TestDb, id: i64) {
     ops::dispose_firearm(
         &db.conn,
         id,
-        &DisposeFirearmInput {
+        &DisposeInput {
             disposition_type: DispositionType::Sold,
             recipient: "Jane Doe".into(),
             date: "2025-06-15".into(),
             price: 40000,
+            with_mounted: Vec::new(),
         },
     )
     .unwrap();
@@ -42,10 +44,12 @@ fn field_error(err: &hoplodex_lib::commands::CommandError, field: &str) -> Strin
 fn scenario_8_two_identical_firearms_are_told_apart_by_nickname() {
     let db = TestDb::new();
     let a =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Range gun"), false).unwrap();
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Range gun"), false, None)
+            .unwrap();
     let b =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "B2", "Carry gun"), false).unwrap();
-    let c = ops::create_firearm(&db.conn, &firearm("Glock", "19", "C3"), false).unwrap();
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "B2", "Carry gun"), false, None)
+            .unwrap();
+    let c = ops::create_firearm(&db.conn, &firearm("Glock", "19", "C3"), false, None).unwrap();
 
     assert_eq!(a.nickname.as_deref(), Some("Range gun"));
     assert_eq!(b.nickname.as_deref(), Some("Carry gun"));
@@ -62,11 +66,16 @@ fn scenario_8_two_identical_firearms_are_told_apart_by_nickname() {
 fn a_blank_nickname_is_stored_as_null_and_others_are_trimmed() {
     let db = TestDb::new();
     let blank =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "   "), false).unwrap();
-    let empty = ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "B2", ""), false).unwrap();
-    let padded =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "C3", "  Old Faithful "), false)
-            .unwrap();
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "   "), false, None).unwrap();
+    let empty =
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "B2", ""), false, None).unwrap();
+    let padded = ops::create_firearm(
+        &db.conn,
+        &nicknamed("Glock", "19", "C3", "  Old Faithful "),
+        false,
+        None,
+    )
+    .unwrap();
 
     assert_eq!(blank.nickname, None);
     assert_eq!(empty.nickname, None);
@@ -76,11 +85,16 @@ fn a_blank_nickname_is_stored_as_null_and_others_are_trimmed() {
 #[test]
 fn scenario_9_a_duplicate_nickname_is_blocked_ignoring_case_and_whitespace() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false).unwrap();
+    ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
+        .unwrap();
 
-    let err =
-        ops::create_firearm(&db.conn, &nicknamed("Sig", "P226", "B2", "  old FAITHFUL "), false)
-            .expect_err("duplicate nickname must be blocked");
+    let err = ops::create_firearm(
+        &db.conn,
+        &nicknamed("Sig", "P226", "B2", "  old FAITHFUL "),
+        false,
+        None,
+    )
+    .expect_err("duplicate nickname must be blocked");
 
     assert_eq!(err.code, "VALIDATION_ERROR");
     let message = field_error(&err, "nickname");
@@ -96,10 +110,11 @@ fn scenario_9_a_duplicate_nickname_is_blocked_ignoring_case_and_whitespace() {
 fn a_record_can_keep_its_own_nickname_on_edit_but_not_take_another_s() {
     let db = TestDb::new();
     let first =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false)
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
             .unwrap();
     let second =
-        ops::create_firearm(&db.conn, &nicknamed("Sig", "P226", "B2", "Backup"), false).unwrap();
+        ops::create_firearm(&db.conn, &nicknamed("Sig", "P226", "B2", "Backup"), false, None)
+            .unwrap();
 
     let mut edit = nicknamed("Glock", "19", "A1", "old faithful");
     edit.notes = Some("re-blued".into());
@@ -118,12 +133,12 @@ fn a_record_can_keep_its_own_nickname_on_edit_but_not_take_another_s() {
 fn disposing_a_firearm_releases_its_nickname() {
     let db = TestDb::new();
     let first =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false)
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
             .unwrap();
     dispose(&db, first.id);
 
     let reused =
-        ops::create_firearm(&db.conn, &nicknamed("Sig", "P226", "B2", "Old Faithful"), false);
+        ops::create_firearm(&db.conn, &nicknamed("Sig", "P226", "B2", "Old Faithful"), false, None);
     assert!(reused.is_ok(), "a disposed firearm's nickname can be reused");
     // The disposed record keeps its own nickname as history.
     assert_eq!(
@@ -135,8 +150,9 @@ fn disposing_a_firearm_releases_its_nickname() {
 #[test]
 fn the_nickname_is_searchable_like_any_other_field() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false).unwrap();
-    ops::create_firearm(&db.conn, &firearm("Sig", "P226", "B2"), false).unwrap();
+    ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
+        .unwrap();
+    ops::create_firearm(&db.conn, &firearm("Sig", "P226", "B2"), false, None).unwrap();
 
     let found = ops::list_firearms(
         &db.conn,
@@ -152,7 +168,7 @@ fn the_nickname_is_searchable_like_any_other_field() {
 fn changing_a_nickname_updates_the_search_index() {
     let db = TestDb::new();
     let created =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false)
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
             .unwrap();
     ops::update_firearm(&db.conn, created.id, &nicknamed("Glock", "19", "A1", "Retired"), false)
         .unwrap();
@@ -176,9 +192,9 @@ fn changing_a_nickname_updates_the_search_index() {
 fn the_database_itself_refuses_a_second_active_firearm_with_the_same_nickname() {
     let db = TestDb::new();
     let first =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false)
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
             .unwrap();
-    let other = ops::create_firearm(&db.conn, &firearm("Sig", "P226", "B2"), false).unwrap();
+    let other = ops::create_firearm(&db.conn, &firearm("Sig", "P226", "B2"), false, None).unwrap();
     let rename = "UPDATE firearms SET nickname = 'OLD FAITHFUL' WHERE id = ?1";
 
     assert!(
@@ -199,8 +215,7 @@ fn import(db: &TestDb, rows: &[String]) -> hoplodex_lib::commands::import_export
     std::fs::write(&path, csv_file(rows)).unwrap();
     import_export_ops::import_collection(
         &db.conn,
-        &path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -210,29 +225,35 @@ fn import(db: &TestDb, rows: &[String]) -> hoplodex_lib::commands::import_export
 #[test]
 fn the_nickname_round_trips_through_export_and_import() {
     let source = TestDb::new();
-    let created =
-        ops::create_firearm(&source.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false)
-            .unwrap();
+    let created = ops::create_firearm(
+        &source.conn,
+        &nicknamed("Glock", "19", "A1", "Old Faithful"),
+        false,
+        None,
+    )
+    .unwrap();
     let dest = TempDir::new().unwrap();
     let exported = import_export_ops::export_collection(
         &source.conn,
         dest.path(),
         "backup",
         SpreadsheetFormat::Csv,
-        &[created.id],
+        &support::firearm_records(&[created.id]),
         &mut |_, _| {},
     )
     .unwrap();
     let text = std::fs::read_to_string(&exported.spreadsheet_path).unwrap();
     let header = text.lines().next().unwrap();
-    assert!(header.starts_with("make,model,nickname,"), "nickname follows model: {header}");
+    assert!(
+        header.starts_with("record_id,make,model,nickname,"),
+        "nickname follows model: {header}"
+    );
     assert!(text.contains("Old Faithful"));
 
     let target = TestDb::new();
     let result = import_export_ops::import_collection(
         &target.conn,
-        &exported.spreadsheet_path,
-        SpreadsheetFormat::Csv,
+        &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -257,7 +278,8 @@ fn a_blank_nickname_cell_imports_as_no_nickname() {
 #[test]
 fn a_duplicate_nickname_is_a_row_error() {
     let db = TestDb::new();
-    ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false).unwrap();
+    ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
+        .unwrap();
 
     let result = import(
         &db,
@@ -279,7 +301,7 @@ fn a_duplicate_nickname_is_a_row_error() {
 fn nickname_plays_no_part_in_import_matching() {
     let db = TestDb::new();
     let existing =
-        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false)
+        ops::create_firearm(&db.conn, &nicknamed("Glock", "19", "A1", "Old Faithful"), false, None)
             .unwrap();
 
     // Same make/model/serial, different nickname: still a conflict on the
@@ -288,5 +310,5 @@ fn nickname_plays_no_part_in_import_matching() {
 
     assert_eq!(result.imported_count, 0);
     assert_eq!(result.conflicts.len(), 1);
-    assert_eq!(result.conflicts[0].existing_firearm_id, existing.id);
+    assert_eq!(result.conflicts[0].existing_record, RecordRef::Firearm(existing.id));
 }

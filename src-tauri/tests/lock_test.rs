@@ -98,8 +98,13 @@ impl World {
         let serial = db::random_hex(4).unwrap();
         self.session
             .write(|conn| {
-                firearms::create_firearm(conn, &support::firearm("Glock", "19", &serial), false)
-                    .map(|created| created.id)
+                firearms::create_firearm(
+                    conn,
+                    &support::firearm("Glock", "19", &serial),
+                    false,
+                    None,
+                )
+                .map(|created| created.id)
             })
             .unwrap()
     }
@@ -510,8 +515,7 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
     let imported = world.session.write(|conn| {
         import_export::import_collection_stoppable(
             conn,
-            &file,
-            SpreadsheetFormat::Csv,
+            &support::import_files(&file, SpreadsheetFormat::Csv),
             &store,
             &mut |processed, _| {
                 if processed == 2 && sleeper.is_none() {
@@ -553,7 +557,7 @@ fn a_sleep_abandons_an_export_and_removes_what_it_wrote() {
             destination.path(),
             "export",
             SpreadsheetFormat::Csv,
-            &ids,
+            &support::firearm_records(&ids),
             &mut |processed, _| {
                 if processed == 1 && sleeper.is_none() {
                     sleeper = Some(world.sleep_from_another_thread());

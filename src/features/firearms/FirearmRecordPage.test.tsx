@@ -9,11 +9,31 @@ import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectio
 import { FirearmRecordPage } from "./FirearmRecordPage";
 import { ORIGIN_OPTIONS } from "./types";
 import type { FirearmDetail, Origin } from "./types";
-import { FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
+import type { RecordLabel } from "../mounts/types";
+import {
+  FIREARM_TYPES,
+  REGISTRATION_CLASSES,
+  ACCESSORY_KINDS,
+} from "../../test/collectionFixtures";
 
 const getFirearm = vi.fn();
 
-vi.mock("./firearmsService", () => ({ getFirearm: (id: number) => getFirearm(id) }));
+vi.mock("./firearmsService", () => ({
+  getFirearm: (id: number) => getFirearm(id),
+  // The accessory form (Mount > New accessory…) suggests and settles entries.
+  suggestEntries: async () => [],
+  settleEntry: async (_field: string, text: string) => ({
+    value: text.trim(),
+    changedBy: null,
+    derivedCaliber: null,
+  }),
+}));
+// specs/006-accessory-links US2: the Mounted section's chooser and Mount
+// commands.
+vi.mock("../mounts/mountsService", () => ({
+  listMountCandidates: async () => ({ candidates: [] }),
+  mountRecord: async () => ({ item: null, host: null }),
+}));
 // The media panels and the thumbnail talk to Tauri; they aren't under test.
 vi.mock("../media/PhotoGallery", () => ({ PhotoGallery: () => null }));
 vi.mock("../media/DocumentList", () => ({ DocumentList: () => null }));
@@ -64,11 +84,16 @@ const firearm: FirearmDetail = {
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
+  // specs/006-accessory-links US2: not mounted, nothing mounted on it.
+  mountedOn: null,
+  mount: { chain: [], mounted: [] },
 };
 
 const collection: CollectionState = {
   firearms: [],
   firearmsById: new Map(),
+  accessories: [],
+  accessoriesById: new Map(),
   summary: null,
   policies: [],
   policiesById: new Map(),
@@ -82,6 +107,8 @@ const collection: CollectionState = {
   actionTypesFailed: false,
   firearmTypes: { types: FIREARM_TYPES },
   firearmTypesFailed: false,
+  accessoryKinds: { kinds: ACCESSORY_KINDS },
+  accessoryKindsFailed: false,
   registrationClasses: { classes: REGISTRATION_CLASSES },
   registrationClassesFailed: false,
   loaded: true,
@@ -605,5 +632,256 @@ describe("FirearmRecordPage registration (US2)", () => {
       .replace("Registered to", "");
     expect(text).not.toMatch(/regulat|\bNFA\b|pending|unregistered|compliant|required/i);
     expect(text).not.toMatch(/register/i);
+  });
+});
+
+// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §5, §6;
+// US2-10): the "Mounted on" chain in the header facts and the Mounted section.
+describe("FirearmRecordPage mounts (US2)", () => {
+  const upper: RecordLabel = {
+    record: { kind: "accessory", id: 11 },
+    make: "BCM",
+    model: "upper",
+    nickname: null,
+    typeName: "Upper receiver",
+    serialNumber: null,
+    status: "active",
+  };
+  const rifle: RecordLabel = {
+    record: { kind: "firearm", id: 9 },
+    make: "LaRue",
+    model: "PredatAR",
+    nickname: null,
+    typeName: "Rifle",
+    serialNumber: null,
+    status: "active",
+  };
+  const optic: RecordLabel = {
+    record: { kind: "accessory", id: 12 },
+    make: "Leupold",
+    model: "Mark 5HD",
+    nickname: null,
+    typeName: "Optic",
+    serialNumber: null,
+    status: "active",
+  };
+
+  const open = vi.fn();
+
+  function renderWithNavigation() {
+    const navigation: Navigation = {
+      route: { page: "firearm", id: 1, from: "collection" },
+      navigate: () => {},
+      open,
+      back: { label: "Collection", go: vi.fn() },
+      openDialog: () => {},
+    };
+    render(
+      <CollectionContext.Provider value={collection}>
+        <NavigationContext.Provider value={navigation}>
+          <FirearmRecordPage id={1} />
+        </NavigationContext.Provider>
+      </CollectionContext.Provider>,
+    );
+  }
+
+  /** A mounted firearm: on the upper, which is on the rifle. */
+  const mountedFirearm = {
+    ...firearm,
+    mountedOn: upper.record,
+    mount: {
+      chain: [upper, rifle],
+      mounted: [{ label: optic, host: { kind: "firearm", id: 1 }, depth: 1 }],
+    },
+  } as FirearmDetail;
+
+  const plate = () => document.querySelector<HTMLElement>(".hd-plate")!;
+  /** A link to a record, whether rendered as a button or an anchor. */
+  const link = (name: string, scope: HTMLElement = document.body) =>
+    within(scope).queryByRole("link", { name }) ?? within(scope).queryByRole("button", { name });
+  const before = (a: Element, b: Element) =>
+    Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  beforeEach(() => {
+    getFirearm.mockReset().mockResolvedValue(mountedFirearm);
+    open.mockReset();
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("shows 'Mounted on {host}, on {its host}' in the header facts, each a link (§6, US2-12)", async () => {
+    const user = userEvent.setup();
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(plate().textContent).toMatch(
+      /Mounted on\s*BCM upper · Upper receiver, on LaRue PredatAR · Rifle/,
+    );
+    const hostLink = link("BCM upper · Upper receiver", plate())!;
+    expect(hostLink).not.toBeNull();
+    expect(link("LaRue PredatAR · Rifle", plate())).not.toBeNull();
+
+    await user.click(hostLink);
+    expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "accessory", id: 11 }));
+    await user.click(link("LaRue PredatAR · Rifle", plate())!);
+    expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "firearm", id: 9 }));
+  });
+
+  it("shows one host alone as 'Mounted on {host}'", async () => {
+    getFirearm.mockResolvedValue({
+      ...mountedFirearm,
+      mount: { ...mountedFirearm.mount, chain: [upper] },
+    });
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(plate().textContent).toMatch(/Mounted on\s*BCM upper · Upper receiver(?!,)/);
+  });
+
+  it("shows nothing about a host when the firearm is not mounted", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(plate().textContent).not.toMatch(/Mounted on/);
+  });
+
+  it("has a Mounted section listing what is mounted on the firearm", async () => {
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    expect(within(section).getByRole("list")).toHaveTextContent("Leupold Mark 5HD · Optic");
+    expect(within(section).getByRole("button", { name: /^Unmount Leupold/ })).toBeInTheDocument();
+  });
+
+  it("says 'Nothing mounted.' in the Mounted section when nothing is (US2-10)", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    expect(within(section).getByText("Nothing mounted.")).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: /^Mount/ })).toBeInTheDocument();
+  });
+
+  it("puts the Mounted section after Notes and before the free-text Accessories subsection, which is unchanged (US2-10)", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    const notes = screen.getByText("No notes recorded.");
+    const accessories = screen.getByText("No accessories recorded.");
+    expect(before(notes, section)).toBe(true);
+    expect(before(section, accessories)).toBe(true);
+    // The subsection is still there with its Add link.
+    expect(screen.getByRole("heading", { name: "Accessories" })).toBeInTheDocument();
+    expect(accessories.closest("p")!.querySelector("button")).not.toBeNull();
+  });
+
+  it("has no Mounted section on a disposed firearm", async () => {
+    getFirearm.mockResolvedValue({
+      ...firearm,
+      status: "disposed",
+      dispositionType: "sold",
+      dispositionDate: "2025-06-01",
+    });
+    renderWithNavigation();
+
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(screen.queryByRole("region", { name: "Mounted" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing mounted.")).not.toBeInTheDocument();
+  });
+
+  it("opens the accessory form with Mounted on preset to this firearm from Mount > New accessory…", async () => {
+    const user = userEvent.setup();
+    getFirearm.mockResolvedValue(firearm);
+    renderWithNavigation();
+
+    const section = await screen.findByRole("region", { name: "Mounted" });
+    await user.click(within(section).getByRole("button", { name: /^Mount/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "New accessory…" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add accessory" });
+    expect(within(dialog).getByRole("combobox", { name: /^Mounted on/ })).toHaveDisplayValue(
+      /Colt Python/,
+    );
+  });
+});
+
+// specs/006-accessory-links User Story 3 (contracts/ui-accessories.md §8,
+// US3-5, US3-9): the delete confirmation names what stays behind, unmounted.
+describe("FirearmRecordPage delete confirmation with mounted records (US3)", () => {
+  const label = (id: number, make: string, model: string, typeName: string): RecordLabel => ({
+    record: { kind: "accessory", id },
+    make,
+    model,
+    nickname: null,
+    typeName,
+    serialNumber: null,
+    status: "active",
+  });
+  const optic = label(12, "Leupold", "Mark 5HD", "Optic");
+  const light = label(14, "SureFire", "M600", "Light or laser");
+  const cap = label(15, "Leupold", "Flip cap", "Other");
+
+  async function openDelete() {
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    const bar = document.querySelector<HTMLElement>(".hd-record__actions")!;
+    await user.click(within(bar).getByRole("button", { name: "Delete" }));
+    return await screen.findByRole("alertdialog");
+  }
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("lists the records mounted directly on it, and not those further down", async () => {
+    getFirearm.mockReset().mockResolvedValue({
+      ...firearm,
+      mount: {
+        chain: [],
+        mounted: [
+          { label: optic, host: { kind: "firearm", id: 1 }, depth: 1 },
+          { label: cap, host: optic.record, depth: 2 },
+          { label: light, host: { kind: "firearm", id: 1 }, depth: 1 },
+        ],
+      },
+    });
+    renderPage();
+
+    const dialog = await openDelete();
+
+    expect(dialog).toHaveTextContent(
+      "2 accessories mounted on it will stay in the collection, unmounted:",
+    );
+    const items = within(within(dialog).getByRole("list")).getAllByRole("listitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      "Leupold Mark 5HD · Optic",
+      "SureFire M600 · Light or laser",
+    ]);
+    expect(dialog).not.toHaveTextContent("Flip cap");
+    // The record's own wording is unchanged.
+    expect(dialog).toHaveTextContent("This erases the record entirely");
+  });
+
+  it("says '1 accessory' for one, naming the kind (issue #56)", async () => {
+    getFirearm.mockReset().mockResolvedValue({
+      ...firearm,
+      mount: { chain: [], mounted: [{ label: optic, host: { kind: "firearm", id: 1 }, depth: 1 }] },
+    });
+    renderPage();
+
+    expect(await openDelete()).toHaveTextContent(
+      "1 accessory mounted on it will stay in the collection, unmounted:",
+    );
+  });
+
+  it("leaves the wording unchanged when nothing is mounted on it", async () => {
+    getFirearm.mockReset().mockResolvedValue(firearm);
+    renderPage();
+
+    const dialog = await openDelete();
+
+    expect(dialog).not.toHaveTextContent(/stay in the collection/);
+    expect(within(dialog).queryByRole("list")).not.toBeInTheDocument();
   });
 });

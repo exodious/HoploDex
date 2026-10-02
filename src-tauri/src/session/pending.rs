@@ -17,8 +17,8 @@ const MAX_LABEL_CHARS: usize = 200;
 
 /// Checks a draft (data-model.md "Validation rules") and returns its values
 /// serialized, as `pending_changes.values_json` keeps them: at most 1 MiB,
-/// a kind and mode that go together (`coverage` only for a firearm, a
-/// policy only added or edited), and a target for everything but an add.
+/// a kind and mode that go together (a firearm or an accessory in any
+/// mode, a policy only added or edited), and a target for everything but an add.
 pub fn validate_draft(draft: &Draft) -> Result<String, CommandError> {
     let invalid = |field: &str, message: &str| {
         Err(CommandError::validation(
@@ -27,7 +27,7 @@ pub fn validate_draft(draft: &Draft) -> Result<String, CommandError> {
         ))
     };
     let pair_valid = match draft.kind {
-        DraftKind::Firearm => true,
+        DraftKind::Firearm | DraftKind::Accessory => true,
         DraftKind::Policy => matches!(draft.mode, DraftMode::Add | DraftMode::Edit),
     };
     if !pair_valid {
@@ -128,6 +128,7 @@ pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError
         Some(id) => {
             let table = match kind {
                 DraftKind::Firearm => "firearms",
+                DraftKind::Accessory => "accessories",
                 DraftKind::Policy => "insurance_policies",
             };
             conn.query_row(
