@@ -9,13 +9,20 @@ import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
-// Built app binary produced by `cargo build --release --features custom-protocol
-// --manifest-path src-tauri/Cargo.toml` (the flag makes the app load bundled
-// frontendDist assets via Tauri's custom protocol, matching what `cargo
-// tauri build` does, instead of trying to hit the devUrl dev server).
+// The E2E build: `cargo build --profile e2e --features custom-protocol,e2e`
+// (custom-protocol makes the app load bundled frontendDist assets, matching
+// what `cargo tauri build` does, instead of trying to hit the devUrl dev
+// server; `e2e` is the in-memory keyring and the other E2E-only settings).
+// The `e2e` profile is the release one without fat LTO, so a backend change
+// rebuilds in seconds. HOPLODEX_E2E_PROFILE=release builds and drives the
+// shipping profile instead, as a release check (DEVELOPMENT.md, "Test").
+const buildProfile = process.env.HOPLODEX_E2E_PROFILE || "e2e";
+if (buildProfile !== "e2e" && buildProfile !== "release") {
+  throw new Error(`HOPLODEX_E2E_PROFILE must be "e2e" or "release", not "${buildProfile}"`);
+}
 const application = path.resolve(
   repoRoot,
-  "src-tauri/target/release/hoplodex" + (process.platform === "win32" ? ".exe" : ""),
+  `src-tauri/target/${buildProfile}/hoplodex` + (process.platform === "win32" ? ".exe" : ""),
 );
 
 let tauriDriver: ChildProcess | undefined;
@@ -79,9 +86,10 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
     [
       "run",
       "--quiet",
-      "--release",
+      "--profile",
+      buildProfile,
       "--features",
-      "custom-protocol,mock-keyring",
+      "custom-protocol,e2e",
       "--manifest-path",
       "src-tauri/Cargo.toml",
       "--example",
@@ -197,12 +205,14 @@ export const config: WebdriverIO.Config = {
       "cargo",
       [
         "build",
-        "--release",
+        "--profile",
+        buildProfile,
         "--features",
-        // mock-keyring swaps the OS keyring for an in-memory store, for
-        // saved passphrases: headless environments have no way to unlock a
-        // real one.
-        "custom-protocol,mock-keyring",
+        // e2e implies mock-keyring, which swaps the OS keyring for an
+        // in-memory store, for saved passphrases: headless environments have
+        // no way to unlock a real one. It also lets a spec shorten the idle
+        // lock's minute.
+        "custom-protocol,e2e",
         "--manifest-path",
         "src-tauri/Cargo.toml",
       ],
@@ -214,6 +224,13 @@ export const config: WebdriverIO.Config = {
       process.env.HOPLODEX_E2E_KEYRING = "unavailable";
     } else {
       delete process.env.HOPLODEX_E2E_KEYRING;
+    }
+    // The idle lock's minute lasts 3 s in the locking spec, so its test
+    // doesn't wait a real minute; every other spec keeps the real one.
+    if (specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts"))) {
+      process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = "3";
+    } else {
+      delete process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS;
     }
     const nativeDriver = findNativeDriver();
     const args = nativeDriver ? ["--native-driver", nativeDriver] : [];

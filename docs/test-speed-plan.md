@@ -39,11 +39,11 @@ starting step 5 to see where it stands.
 |---|---|---|---|---|
 | 1 | Performance tests out of the default run, seeded once | −90 s Rust | – | done |
 | 2 | cargo-nextest | −55 s Rust | 1 | todo |
-| 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | todo |
+| 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | done |
 | 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | todo |
 | 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled | todo |
 | 6 | Split the long E2E spec files | balance for 5 | 5 | todo |
-| 7 | Faster release profile for E2E builds | −50 s per rebuild | – | todo |
+| 7 | Faster release profile for E2E builds | −50 s per rebuild | – | done |
 | 8 | Test-level policy for new features (SDD) | stops E2E growth | – | todo |
 | 9 | Optional: one integration-test binary; cheaper test databases | −15 s build, CPU | 2 | todo |
 
@@ -281,7 +281,13 @@ E2E-only environment variable behind `#[cfg(feature = "mock-keyring")]`),
 **Verify.** us9 drops from about 72 s to about 15 s, and still passes 3 runs
 in a row.
 
-**Result.** _(before → after)_
+**Result.** us9 72 s → 14 s of test time (5 passing in 13.5, 13.6, 13.7 s on
+three runs in a row; 17–18 s wall with the binary already built; the first
+run's 95 s included a cold build). Measured with the machine loaded by two
+other implementers' builds and tests. New `e2e` Cargo feature (implies
+`mock-keyring`; meant for #29's embedded WebDriver server too).
+`HOPLODEX_E2E_IDLE_MINUTE_SECONDS=3` is set for us9 only. Unit tests in
+`session/idle.rs` run with `--features e2e --lib`.
 
 ## Step 4 — Replace fixed E2E sleeps with an "app is idle" wait
 
@@ -439,7 +445,12 @@ the build.
 **Verify.** Touch `src-tauri/src/lib.rs` and time the E2E build (baseline
 70 s). The full E2E run still passes.
 
-**Result.** _(before → after)_
+**Result.** E2E rebuild after touching `lib.rs`: 70 s → 2–4 s (a comment-only
+edit 2.3 s, a new function 3.9–4.1 s). Release relink measured the same way
+in the same loaded session: 117 s. Full E2E run passed (14 of 14 spec files)
+in 475 s against a 519 s baseline; the saving there is mostly step 3, since
+this step only shortens rebuilds. `HOPLODEX_E2E_PROFILE=release` checked with
+us6 (passes; builds `target/release`). Profile named `e2e`.
 
 ## Step 8 — Test-level policy for new features (SDD)
 

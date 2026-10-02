@@ -291,10 +291,35 @@ CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.to
 for the tests with unwinding and for the binary with the profile's
 `panic = "abort"`, and the two then fail to link.
 
-`npm run test:e2e` builds a release binary with `cargo build --release
---features custom-protocol,mock-keyring` and drives it via `tauri-driver`.
-That binary embeds whatever is in `dist/`, so **run `npm run build` first**
-(the same goes for `npm run screenshots`). On Linux it runs under an isolated
+`npm run test:e2e` builds the app with `cargo build --profile e2e --features
+custom-protocol,e2e` and drives it via `tauri-driver`. That binary embeds
+whatever is in `dist/`, so **run `npm run build` first** (the same goes for
+`npm run screenshots`).
+
+The `e2e` profile (`[profile.e2e]` in `src-tauri/Cargo.toml`) is the release
+profile without fat LTO, with 16 codegen units and incremental builds, so
+touching the backend rebuilds in seconds instead of a minute. It keeps
+`panic = "abort"`. The trade-off: E2E doesn't drive a byte-identical copy of
+the shipping binary. (It never did, because of the in-memory keyring.) Before
+a release, run the suite once against the shipping profile:
+
+```bash
+npm run build && HOPLODEX_E2E_PROFILE=release npm run test:e2e
+```
+
+`HOPLODEX_E2E_PROFILE` is `e2e` (the default) or `release`; it picks the
+profile `wdio.conf.ts` builds the app and the seed with, and the binary it
+launches (`target/<profile>/hoplodex`).
+
+The `e2e` Cargo feature is for builds that must never reach a shipped one. It
+implies `mock-keyring` and, besides that, lets
+`HOPLODEX_E2E_IDLE_MINUTE_SECONDS` set how many seconds the idle lock counts
+as one minute (default 60). The harness sets it to 3 for
+`us9-locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
+the notice and the settings still say "1 minute". The scaling's unit tests
+(`session/idle.rs`) run in the default `cargo test`.
+
+On Linux the E2E suite runs under an isolated
 `xvfb` virtual display (via `xvfb-run`), so it never touches your real
 desktop, and it self-heals after an interrupted prior run (killing anything
 left over on its ports before starting).
@@ -370,8 +395,8 @@ of it:
   with its passphrase (`unlock()`). There is no database key in the
   environment: a database opens with its passphrase alone, as in the app.
   E2E builds use the
-  `mock-keyring` feature, an in-memory keyring for saved passphrases, since a
-  headless session can't unlock a real one. The harness keeps it in
+  `e2e` feature, which includes `mock-keyring`, an in-memory keyring for saved
+  passphrases, since a headless session can't unlock a real one. The harness keeps it in
   `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
   passphrase survives a relaunch, and launches any `*-no-keyring.e2e.ts` spec
   with `HOPLODEX_E2E_KEYRING=unavailable`, a computer without a keyring.

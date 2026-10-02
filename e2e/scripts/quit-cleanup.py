@@ -11,7 +11,7 @@ temporary copies, quits the app, and looks at what is left.
 
 Needs Xvfb, libX11 and python3 only. Build the E2E binary first:
 
-    npm run build && cargo build --release --features custom-protocol,mock-keyring \
+    npm run build && cargo build --profile e2e --features custom-protocol,e2e \
         --manifest-path src-tauri/Cargo.toml
     xvfb-run -a python3 e2e/scripts/quit-cleanup.py
 """
@@ -28,7 +28,7 @@ import time
 from ctypes import POINTER, Structure, Union, byref, c_char_p, c_int, c_long, c_uint, c_ulong, c_void_p
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-BINARY = os.environ.get("HOPLODEX_BIN", os.path.join(ROOT, "src-tauri", "target", "release", "hoplodex"))
+BINARY = os.environ.get("HOPLODEX_BIN", os.path.join(ROOT, "src-tauri", "target", "e2e", "hoplodex"))
 WINDOW_TITLE = "HoploDex"
 
 x11 = ctypes.cdll.LoadLibrary(ctypes.util.find_library("X11"))

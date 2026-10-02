@@ -153,12 +153,11 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
     });
 
     await browser.waitUntil(async () => $(".hd-chooser__title").isExisting(), {
-      timeout: 90000,
-      interval: 1000,
+      timeout: 20000,
+      interval: 500,
       timeoutMsg: "the idle lock never locked",
     });
 
     expect(await chooserSays("HoploDex locked “Locked” after 1 minute without use.")).toBe(true);
-    // A minute of waiting, beyond the usual limit.
-  }).timeout(150000);
+  });
 });
