@@ -15,6 +15,7 @@
 - Q: Is the database's Settings dialog in scope? It edits saved settings and applies them with Save, but holds no record and keeps nothing at a lock. → A: Yes. It gets the changed markers, per-field revert and a Save button disabled until something differs from the saved settings. Its unsaved settings are still not kept at a lock and the quit question still doesn't ask about them (003 FR-039) (FR-001).
 - Q: Do forms that create something new (add firearm, add policy, add accessory) keep Save disabled until something is entered? → A: Save is disabled until every required field is filled in; on a form with no required fields, until at least one field is set. They have no markers or revert, since nothing on them is saved yet (FR-001, FR-015a). (This replaces an earlier answer of the same session that kept Save enabled from the start.)
 - Q: When does an add form count as having unsaved changes for the quit question and for pending changes kept at a lock, given that its Save can be disabled while it holds input? → A: As soon as anything is entered, judged by FR-002's comparison against the form as it opened, whether or not Save is enabled. FR-019's "exactly when Save is enabled" applies to the forms that edit something saved (FR-019a).
+- Q: When the user closes a form that has unsaved changes with Cancel, Escape or the dialog's close button, should it ask before discarding them? → A: Yes. Any such close asks "Discard changes?" with Discard and Keep editing; a form with no unsaved changes closes at once (FR-021a).
 - Q: Should the record page's mount changes (Unmount, Mount → Existing accessory or firearm…) be held until the record is saved, and where? → A: Yes, in the edit form. A firearm's or accessory's edit form gains a **Mounted** list of what is mounted directly on it, where existing records are added and removed; each change is held as an unsaved change with its own marker and revert and is saved with the form's Save. The record page's Mounted section becomes a read-only list, with a way to open the edit form at that list, and keeps Mount → New accessory…, which creates a record. This keeps 003's rule that every form holding unsaved changes is a dialog (FR-024 to FR-028, User Story 5).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -102,6 +103,8 @@ The collector edits a record, changes a field, then types it back. Nothing diffe
 5. **Given** a form with changes, **When** the user quits, **Then** the question asks to save, discard or cancel exactly as today.
 6. **Given** the add firearm form with only a make entered, so Save is disabled, **When** the user quits, **Then** they are asked to save, discard or cancel, and choosing to save shows the required fields' errors without saving; **and When** the database locks instead, **Then** the make is kept as pending changes and resuming brings it back with Save still disabled (FR-019a).
 7. **Given** the add firearm form with a make typed and then deleted, **When** the user quits or the database locks, **Then** nothing is asked and no pending changes are kept.
+8. **Given** a firearm's edit form with Notes changed, **When** the user presses Cancel, Escape or the dialog's close button, **Then** they are asked "Discard changes?"; **When** they choose Keep editing, **Then** the form stays open with Notes still changed; **and When** they choose Discard, **Then** the form closes and nothing is saved.
+9. **Given** an edit form whose only edit has been reverted, or an add form left as it opened, **When** the user presses Cancel, Escape or the close button, **Then** the form closes at once, with no question.
 
 ---
 
@@ -147,7 +150,8 @@ A collector reworks a rifle: the old scope comes off and a red dot they already 
 - **The record was changed after the form opened**: not possible within one computer, since only one form is open and the database is held by one computer at a time; a take-over closes the session (003).
 - **An add form with input but a required field still empty**: Save is disabled (FR-015a), but the input is unsaved: quitting asks about it and a lock keeps it as pending changes (FR-019a).
 - **An add form whose only required field becomes optional** (checking "no serial number"): Save follows what is required now, so it may become enabled without anything else being typed.
-- **Cancel, Escape or the dialog's close button with changes**: behaves as today (the form closes and the edits are dropped); this feature adds no question there.
+- **Cancel, Escape or the dialog's close button with changes**: asks "Discard changes?" first (FR-021a); with no unsaved changes the form closes at once, as today.
+- **Escape that closes something inside the form** (an open suggestion list, menu, date picker or chooser): closes only that, as today, and doesn't ask; the next Escape is the form's.
 - **Photos and documents added or removed while a record is open**: not form changes; they are saved at once on the record page, as today, and never mark a field or enable Save (FR-022).
 - **A Mounted list entry disposed of or deleted while the form is open**: not possible, since only one form is open at a time and those actions are taken from outside it.
 - **Adding to the Mounted list the record this one is mounted on**: not offered, since it would form a loop (FR-026); the same holds if the form's own "Mounted on" was changed to one of the list's entries.
@@ -205,6 +209,10 @@ A collector reworks a rifle: the old scope comes off and a red dot they already 
 - **FR-020**: When the user resumes pending changes (003 FR-039), the form MUST open with exactly the fields that differ from the saved record marked as changed, Save enabled if any do, and each revert restoring the saved record's value.
 - **FR-021**: Reverting MUST update the kept pending changes as any other edit does; reverting the last change MUST remove them.
 
+**Closing a form with unsaved changes**
+
+- **FR-021a**: When the user closes a form that has unsaved changes (FR-019, FR-019a, or for the Mark disposed and Restore dialogs as 003 already judges them) with its Cancel button, Escape or the dialog's close button, the system MUST first ask "Discard changes?" with two choices: Discard, which closes the form and drops its input without saving, and Keep editing, which returns to the form as it was, with focus where it was. The Settings dialog asks the same when a setting differs from what is saved. A form with no unsaved changes MUST close at once without asking. Saving, the quit question (003 FR-010) and a lock (003 FR-039) don't go through this question.
+
 **Photos and documents**
 
 - **FR-022**: Adding, removing or choosing the thumbnail of a photo or document MUST NOT count as a form change. They stay saved at once from the record page as today, never show a changed marker, never enable Save, and are never part of pending changes.
@@ -220,7 +228,7 @@ A collector reworks a rifle: the old scope comes off and a red dot they already 
 
 **Consistency**
 
-- **FR-029**: The marker, the revert control, their wording and the disabled Save MUST look and behave the same in every form in scope, as part of the shared form components (constitution III), and MUST meet WCAG 2.1 AA, including contrast and visible focus for the revert control.
+- **FR-029**: The marker, the revert control, their wording, the disabled Save and the "Discard changes?" question MUST look and behave the same in every form in scope, as part of the shared form components (constitution III), and MUST meet WCAG 2.1 AA, including contrast and visible focus for the revert control.
 
 ### Key Entities
 
@@ -246,7 +254,7 @@ A collector reworks a rifle: the old scope comes off and a red dot they already 
 
 - **Comparison is against the value as saved, not as first shown**: the saved record is the reference even when a form opens with resumed pending changes, so the markers say what a save would change in the database.
 - **No "revert all" and no undo of a revert**: the request asks for a revert per change. Cancel already drops every edit at once, and a reverted value is the user's own unsaved typing, small enough to retype, so reverting asks no confirmation.
-- **Cancel stays as it is**: closing an edit form with changes drops them without a question today, and the request doesn't ask to change that. The markers make it visible what would be lost.
+- **Closing asks only when something would be lost**: closing a form with unsaved changes drops them without a question today; with mount changes now held in the edit form, a stray Escape could lose a whole set of edits, so a close asks first (FR-021a, clarification of 2026-10-02). Forms opened only to look close at once, as they have no unsaved changes.
 - **New-record forms**: everything on an add form is new, so there is nothing to mark or revert there. Its Save waits for the required fields instead, which the forms already mark as "Required" (clarification of 2026-10-02).
 - **Settings and passphrases**: the Settings dialog's unsaved settings are still not kept at a lock and the quit question still doesn't ask about them (003 FR-039 keeps only record and policy forms); only its markers, revert and Save change. Passphrase fields are never compared or marked.
 - **Photos and documents are not form input**: they are added and deleted from the record page and saved at once, and a file dropped on the window is ignored while a form is open, so nothing can change under an open form. This feature doesn't change that.
@@ -260,7 +268,7 @@ A collector reworks a rifle: the old scope comes off and a red dot they already 
 
 This feature **amends**:
 
-- `specs/003-database-protection-management/`: FR-010 and FR-039 ask about and keep "unsaved changes" without saying when a form has any; FR-019 here defines it, so a form typed back to its saved values no longer asks at quit or leaves pending changes. US6-6 and SC-010 (resuming reproduces the input) are unchanged; FR-020 adds the markers on resume.
+- `specs/003-database-protection-management/`: FR-010 and FR-039 ask about and keep "unsaved changes" without saying when a form has any; FR-019 and FR-019a here define it, so a form typed back to its saved values (or an add form back to empty) no longer asks at quit or leaves pending changes. Closing a form with unsaved changes now asks before discarding them (FR-021a). US6-6 and SC-010 (resuming reproduces the input) are unchanged; FR-020 adds the markers on resume.
 - `specs/001-firearms-inventory/` FR-006 (edit a firearm record) and the insurance policy forms (FR-014, FR-036): their Save buttons are disabled until something changes, and on the add forms until the required fields are filled in (FR-015a).
 - `specs/002-firearm-identification/` FR-010 and `specs/005-regulated-item-types/` FR-012: their confirmations before discarding details are unchanged, and reverting Origin or "Registered as" restores what they discarded (FR-012).
 - `specs/004-cartridges-action-types/`: a reverted entry field drops its re-spelling note and isn't re-spelled until edited again (FR-011); FR-014's "text equal to the saved value is not settled" is unchanged.
