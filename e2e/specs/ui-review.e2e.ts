@@ -1,4 +1,4 @@
-import { $, addFirearm, back, browser, clickButton, clickEl, expect, fill } from "../support/ui";
+import { $, addFirearm, back, browser, clickButton, clickEl, expect, fill, settle } from "../support/ui";
 import { goTo, openFirearm, selectOption } from "../support/ui";
 import { createDatabase } from "../support/ui";
 
@@ -24,7 +24,7 @@ async function schedule(policyName: string, amountDollars: string) {
   await fill("Scheduled amount", amountDollars);
   await clickButton("Save coverage");
   await $('[role="dialog"]').waitForExist({ reverse: true });
-  await browser.pause(400);
+  await settle();
 }
 
 /** The number on the Insurance tab, or 0 when it shows none. */
@@ -42,7 +42,7 @@ async function chooseTheme(label: string) {
   await browser.execute((title: string) => {
     document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`)?.click();
   }, label);
-  await browser.pause(300);
+  await settle();
 }
 
 describe("UI review follow-ups", () => {
@@ -128,7 +128,7 @@ describe("UI review follow-ups", () => {
     await clickButton("Delete");
     await clickButton("Delete firearm");
     await $("#record-name").waitForExist({ reverse: true });
-    await browser.pause(400);
+    await settle();
 
     expect(await insuranceTabCount()).toBe(2);
   });

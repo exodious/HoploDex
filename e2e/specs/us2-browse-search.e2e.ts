@@ -1,4 +1,4 @@
-import { $, addFirearm, back, browser, choose, expect, groupBy, listedNames } from "../support/ui";
+import { $, addFirearm, back, choose, expect, groupBy, listedNames } from "../support/ui";
 import { openFirearm, search } from "../support/ui";
 import { createDatabase } from "../support/ui";
 
@@ -64,7 +64,6 @@ describe("User Story 2 - Browse, Search, and Group", () => {
 
   it("groups firearms by type (Scenario 2)", async () => {
     await groupBy("Type");
-    await browser.pause(300);
 
     await expect($("h2.hd-group__title*=Handgun")).toExist();
     await expect($("h2.hd-group__title*=Rifle")).toExist();

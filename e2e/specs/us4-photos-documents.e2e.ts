@@ -9,6 +9,7 @@ import {
   clickButton,
   clickEl,
   expect,
+  settle,
 } from "../support/ui";
 import { openFirearm, rowThumbnail } from "../support/ui";
 import { createDatabase } from "../support/ui";
@@ -120,7 +121,8 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     await clickButton("Use as thumbnail");
     await expect($("button=Current thumbnail")).toExist();
     await browser.keys(["Escape"]);
-    await browser.pause(300);
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await settle();
 
     const tagsAfter = await browser.execute(() =>
       [...document.querySelectorAll(".hd-photo")].map((p) =>
@@ -139,7 +141,9 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     await expect($(".hd-doc__name=receipt.pdf")).toExist();
     await clickButton("Open");
-    await browser.pause(800);
+    // `open_document` has answered (and any failure toast is up) once the
+    // app is idle.
+    await settle();
     await expect($(".hd-toast--error")).not.toExist();
 
     // Reopening hands the OS a temporary copy of the stored bytes. When the

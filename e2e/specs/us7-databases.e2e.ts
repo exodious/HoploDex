@@ -307,7 +307,19 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
       ) as HTMLElement | undefined;
       setTimeout(() => discard?.click(), 100);
     });
-    await browser.pause(1500);
+    // The app is gone once WebDriver can no longer reach it, and its close
+    // (with the automatic backup) is done.
+    await browser.waitUntil(
+      async () => {
+        try {
+          await browser.execute(() => true);
+          return false;
+        } catch {
+          return true;
+        }
+      },
+      { timeout: 15000, timeoutMsg: "the app never quit after discarding" },
+    );
     await relaunch();
     expect(await selectedChooserRow()).toBe("Club");
     await unlock(club.passphrase);

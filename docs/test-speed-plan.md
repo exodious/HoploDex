@@ -380,6 +380,27 @@ only differences are the per-run sandbox path and clock times in text (14, 16,
 also varies between two runs of the new walk), and 08-add-firearm, where the
 list photos behind the dialog are now loaded.
 
+4b, specs (the 17 `browser.pause` calls in `e2e/specs/`, none left; the
+screenshot walk is the other half): 16 became `settle()` and one a
+`waitUntil` on the app having quit (us7's discard-and-quit, which polls until
+WebDriver can no longer reach it); us1's Scenario 15 `isFieldInView` is now a
+`waitUntil` too. us9's draft-staging pause became a dispatched window `blur`
+(which stages the draft at once, the way `usePendingDraft` does) plus
+`settle()`. No pause was kept, since none was "nothing happens for N ms".
+Counting the draft's 250 ms debounce in `busy.ts` was tried and dropped: it
+made every `fill` in every form wait it out, and us1 went from 45 s to 74 s.
+Full run, three in a row, 14 of 14 spec files green each time, on the
+combined branch (steps 3, 4a, 7 and 4b): 6 m 09 s, 6 m 01 s, 6 m 02 s (the
+binary already built; the first run after a code change adds the cargo
+build). Per spec, wdio wall time of the last run: us12 89 s, us1 44, us3 38,
+us11 36, us7-databases 32, us8 23, us9 15, ui-review 14, us5 13, us2 10, us10
+10, us4 8, us7-no-keyring 8, us6 7; their sum is 347 s, against 4a's 433 s
+total and the 519 s baseline. The 4b edits themselves are worth only about
+10 to 15 s (us3 43 → 38, us4, us8 and us2 a second or so each); most of the
+drop from 4a's figure is a quieter machine, so compare the baseline and this
+line, not 4a's. Remaining time is us12's real key presses, `settle()`
+(about 50 ms a call at best) and each spec's own work.
+
 ## Step 5 — Run E2E specs in parallel workers
 
 **Why.** 14 spec files run one at a time. With N workers, the run is bounded

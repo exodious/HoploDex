@@ -19,6 +19,7 @@ import {
   unlock,
   waitForChooser,
   waitForCollection,
+  settle,
 } from "../support/ui";
 import { realClick } from "../support/realInput";
 
@@ -54,7 +55,7 @@ async function closeDatabase() {
 async function restorable(): Promise<number> {
   await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
   await $('[role="dialog"] .hd-dialog__body').waitForExist();
-  await browser.pause(300);
+  await settle();
   const count = (await $$('[role="dialog"] input[type="radio"]')).length;
   await clickButton("Cancel");
   await $('[role="dialog"]').waitForExist({ reverse: true });
@@ -175,7 +176,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     // Regression: WebKitGTK counted the backup list's <fieldset> legend twice
     // when the dialog first sized itself, leaving it too tall until focus
     // moved. The body fits its content exactly once the entrance is over.
-    await browser.pause(300);
+    await settle();
     const slack = await browser.execute(() => {
       const body = document.querySelector<HTMLElement>('[role="dialog"] .hd-dialog__body')!;
       const style = getComputedStyle(body);
