@@ -367,6 +367,18 @@ key through `x11-input.py`) and `settle()` itself, about 50 ms a call at best
 `settle()` skips animations longer than 1 s (the firearm drawing's draw-in,
 the form section highlight): the highlight made us1's Scenario 15 fail,
 because `settle()` waited out the 1.8 s highlight the test then looked for.
+Screenshot walk: all 51 `browser.pause` calls in `screens.e2e.ts` are gone, and
+so are the three in `screenshots.ts`'s `shot()` and `chooseTheme()`, which
+the walk also paid for on each of its 132 shots. The walk's screens spec took
+4 m 07 s → 2 m 42 s (the whole `npm run screenshots` 4 m 25 s → 2 m 57 s, build
+excluded; three passing runs in a row). No pause is kept. `shot()` now ends in
+`settleForShot()` (`settle()` plus waiting for every finite animation,
+decorative ones included), and `resizeWindow()` waits for the window to change
+size. Compared image by image with the walk before: 132 files, of which the
+only differences are the per-run sandbox path and clock times in text (14, 16,
+17, 19, 21, 22, 27), the overlay scrollbar thumb's fade shade (02, 30, 32; it
+also varies between two runs of the new walk), and 08-add-firearm, where the
+list photos behind the dialog are now loaded.
 
 ## Step 5 — Run E2E specs in parallel workers
 

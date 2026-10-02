@@ -13,6 +13,7 @@ import {
   openPhysicalGroup,
   search,
   selectOption,
+  settle,
 } from "../support/ui";
 import {
   chooseMenuItem,
@@ -23,7 +24,7 @@ import {
   unlock,
   waitForChooser,
 } from "../support/ui";
-import { SCREENSHOT_WINDOW, chooseTheme, shot } from "../support/screenshots";
+import { SCREENSHOT_WINDOW, chooseTheme, resizeWindow, shot } from "../support/screenshots";
 import { realClick, realKey } from "../support/realInput";
 
 /**
@@ -53,7 +54,7 @@ async function openRecord(name: string) {
     { timeout: 5000, timeoutMsg: `no firearm "${name}" in the list` },
   );
   await $("#record-name").waitForExist();
-  await browser.pause(300);
+  await settle();
 }
 
 /** Scrolls to the bottom of a long page, so the pinned strip (the
@@ -61,7 +62,6 @@ async function openRecord(name: string) {
 async function shotScrolled(name: string) {
   await browser.execute(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await $(".hd-runhead").waitForExist();
-  await browser.pause(300);
   await shot(name);
   await browser.execute(() => window.scrollTo(0, 0));
   await $(".hd-runhead").waitForExist({ reverse: true });
@@ -70,25 +70,27 @@ async function shotScrolled(name: string) {
 async function openDialog(button: string) {
   await clickButton(button);
   await $('[role="dialog"]').waitForExist();
-  await browser.pause(300);
+  await settle();
 }
 
 /** Sends `event` to the page as if the backend had, for a state the
- * seeded collection doesn't reach on its own. */
+ * seeded collection doesn't reach on its own. Returns once the emit call has
+ * resolved and the page has settled; a caller waits for what it expects to
+ * appear. (This call bypasses `invoke()`, so the busy count doesn't see it.) */
 async function emitFromBackend(event: string, payload: unknown) {
-  await browser.execute(
-    (name: string, data: unknown) => {
+  await browser.executeAsync(
+    (name: string, data: unknown, done: () => void) => {
       const internals = (
         window as unknown as {
           __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
         }
       ).__TAURI_INTERNALS__;
-      void internals.invoke("plugin:event|emit", { event: name, payload: data });
+      internals.invoke("plugin:event|emit", { event: name, payload: data }).finally(done);
     },
     event,
     payload,
   );
-  await browser.pause(300);
+  await settle();
 }
 
 /** Dismisses the open dialog the way Escape would, without saving. It must
@@ -101,7 +103,7 @@ async function closeDialog() {
     ),
   );
   await $('[role="dialog"]').waitForExist({ reverse: true });
-  await browser.pause(200);
+  await settle();
 }
 
 /** Types `text` with real key presses into the focused field (an X keysym
@@ -117,7 +119,16 @@ async function typeReal(text: string) {
 /** Tab lands in Caliber and brings its list up, which the shots don't want.
  * Escape closes the list only if it is up: with none, it would close the form. */
 async function closeListIfOpen() {
-  await browser.pause(600);
+  // The list comes up when Tab's focus lands in Caliber, and its options come
+  // from the backend: wait for the focus, then for the app to be idle.
+  await browser.waitUntil(
+    () =>
+      browser.execute(() =>
+        Boolean(document.activeElement?.closest('[role="dialog"] [data-field="caliber"]')),
+      ),
+    { timeout: 5000, timeoutMsg: "Tab never reached Caliber" },
+  );
+  await settle();
   if (await $('[role="listbox"]').isDisplayed()) {
     await realKey("Escape");
     await $('[role="listbox"]').waitForExist({ reverse: true });
@@ -131,10 +142,18 @@ async function discardForm() {
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     ),
   );
-  await browser.pause(400);
+  // The form closes at once, or asks first: wait for either.
+  await browser.waitUntil(() =>
+    browser.execute(
+      () =>
+        !document.querySelector('[role="dialog"]') ||
+        Boolean(document.querySelector('[role="alertdialog"]')),
+    ),
+  );
+  await settle();
   if (await $('[role="alertdialog"]').isExisting()) await clickButton("Discard changes");
   await $('[role="dialog"]').waitForExist({ reverse: true });
-  await browser.pause(200);
+  await settle();
 }
 
 /** Scrolls a form field to the middle of the window, so its list or note is in view. */
@@ -144,7 +163,7 @@ async function centerField(field: string) {
       .querySelector(`[role="dialog"] [data-field="${name}"]`)
       ?.scrollIntoView({ block: "center" });
   }, field);
-  await browser.pause(300);
+  await settle();
 }
 
 /** Opens or closes a folded form group (a heading holding a button with
@@ -160,7 +179,7 @@ async function setGroup(title: string, open: boolean) {
     title,
     open,
   );
-  await browser.pause(400);
+  await settle();
 }
 
 /** Opens the "Group by" menu (it opens on pointer down, which a plain click
@@ -174,7 +193,7 @@ async function openGroupMenu() {
     );
   }, trigger);
   await $('[role="menu"]').waitForExist({ timeout: 5000 });
-  await browser.pause(300);
+  await settle();
 }
 
 /** Opens a menu whose trigger is the button in `scope` reading `label` (a
@@ -193,7 +212,7 @@ async function openMenuButton(scope: string, label: string) {
     label,
   );
   await $('[role="menu"]').waitForExist({ timeout: 5000 });
-  await browser.pause(300);
+  await settle();
 }
 
 /** Chooses the open menu's item whose text is `label`. */
@@ -209,7 +228,7 @@ async function chooseOpenMenuItem(label: string) {
       }, label),
     { timeout: 5000, timeoutMsg: `no menu item "${label}"` },
   );
-  await browser.pause(400);
+  await settle();
 }
 
 /** Opens the "Mount on {name}" dialog from the record page's Mounted section,
@@ -219,18 +238,24 @@ async function searchMountDialog(text: string) {
   await openMenuButton(".hd-mounted-section", "Mount");
   await chooseOpenMenuItem("Existing accessory or firearm…");
   await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
-  await browser.pause(300);
+  await settle();
   await realClick('[role="dialog"] [role="combobox"]');
   await typeReal(text);
+  // Real key presses reach the page a moment after they are sent, and the list
+  // answers each one: wait for the whole text, then for the last answer.
+  await browser.waitUntil(
+    async () => (await $('[role="dialog"] [role="combobox"]').getValue()) === text,
+    { timeout: 5000, timeoutMsg: "the search text was not typed as sent" },
+  );
   await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
-  await browser.pause(500);
+  await settle();
 }
 
 /** Opens the Delete question of the record page (a confirmation, not a form). */
 async function openDeleteQuestion() {
   await clickButton("Delete");
   await $('[role="alertdialog"]').waitForExist();
-  await browser.pause(300);
+  await settle();
 }
 
 // The app starts at the chooser, listing the seeded databases. It has to be
@@ -314,7 +339,6 @@ for (const theme of ["Light", "Dark"] as const) {
       await fill("Notes", "Swapped the grips for the walnut set.");
       await requestQuit();
       await $('[role="alertdialog"]').waitForExist();
-      await browser.pause(300);
       await shot(`25-unsaved-changes-${suffix}`);
       await clickButton("Cancel");
       await $('[role="alertdialog"]').waitForExist({ reverse: true });
@@ -333,7 +357,6 @@ for (const theme of ["Light", "Dark"] as const) {
     it("suggestions, guesses and notes in the firearm form", async () => {
       await groupBy("Cartridge");
       await $("h2.hd-group__title").waitForExist();
-      await browser.pause(300);
       await shot(`31-grouped-by-cartridge-${suffix}`);
       await groupBy("Type");
 
@@ -427,12 +450,10 @@ for (const theme of ["Light", "Dark"] as const) {
       await openDialog("Edit");
       await openPhysicalGroup();
       await shot(`35-suppressor-form-${suffix}`, { fullPage: true });
-      await browser.setWindowSize(800, 1400);
-      await browser.pause(500);
+      await resizeWindow(800, 1400);
       await centerField("caliber");
       await shot(`36-suppressor-form-minimum-width-${suffix}`);
-      await browser.setWindowSize(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
-      await browser.pause(500);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
       await discardForm();
       await back();
 
@@ -453,7 +474,6 @@ for (const theme of ["Light", "Dark"] as const) {
       await openRecord("Mossberg 500");
       await openDialog("Edit");
       await choose("Suppressor");
-      await browser.pause(400);
       await centerField("firearmTypeId");
       await shot(`37-type-change-clearing-note-${suffix}`);
       await discardForm();
@@ -480,14 +500,14 @@ for (const theme of ["Light", "Dark"] as const) {
       await $('[role="listbox"]').waitForExist({ reverse: true });
       await selectOption("Registered as", "Unspecified");
       await $('[role="alertdialog"]').waitForExist();
-      await browser.pause(300);
       await shot(`43-clear-classification-${suffix}`);
       await clickButton("Keep them");
       await $('[role="alertdialog"]').waitForExist({ reverse: true });
 
       // The guide at "Registered items", from the form's own link.
       await clickButton("How to record registrations");
-      await browser.pause(500);
+      await $(".hd-origin-guide__part").waitForDisplayed({ timeout: 5000 });
+      await settle();
       await shot(`44-registered-items-guide-${suffix}`);
       // Only the guide closes: the form under it stays open.
       await browser.execute(() =>
@@ -495,7 +515,7 @@ for (const theme of ["Light", "Dark"] as const) {
           new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
         ),
       );
-      await browser.pause(500);
+      await $(".hd-origin-guide__part").waitForExist({ reverse: true });
       await discardForm();
       await back();
     });
@@ -509,7 +529,6 @@ for (const theme of ["Light", "Dark"] as const) {
           ?.click();
       });
       await $("h2.hd-group__title").waitForExist();
-      await browser.pause(400);
       await shot(`46-grouped-by-registered-as-${suffix}`);
       await groupBy("Type");
 
@@ -520,7 +539,6 @@ for (const theme of ["Light", "Dark"] as const) {
           .find((t) => t.textContent?.includes("Sparrow 22"))
           ?.scrollIntoView({ block: "center" });
       });
-      await browser.pause(400);
       await shot(`47-suppressor-tiles-${suffix}`);
       await choose("List");
     });
@@ -534,18 +552,15 @@ for (const theme of ["Light", "Dark"] as const) {
       await $(".hd-row__name").waitForExist();
       await groupBy("Kind");
       await $("h2.hd-group__title").waitForExist();
-      await browser.pause(300);
       await shot(`48-accessories-list-${suffix}`);
 
       await choose("Tiles");
       await $(".hd-tile__name").waitForExist();
-      await browser.pause(400);
       await shot(`49-accessories-tiles-${suffix}`);
       await choose("List");
 
       await groupBy("Mounted on");
       await $("h2.hd-group__title").waitForExist();
-      await browser.pause(400);
       await shot(`50-accessories-grouped-by-mounted-on-${suffix}`, { fullPage: true });
       await groupBy("Kind");
     });
@@ -553,11 +568,9 @@ for (const theme of ["Light", "Dark"] as const) {
     it("the accessory form", async () => {
       await openDialog("Add accessory");
       await shot(`51-add-accessory-${suffix}`, { fullPage: true });
-      await browser.setWindowSize(800, 1400);
-      await browser.pause(500);
+      await resizeWindow(800, 1400);
       await shot(`52-add-accessory-minimum-width-${suffix}`);
-      await browser.setWindowSize(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
-      await browser.pause(500);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
       await discardForm();
     });
 
@@ -575,7 +588,6 @@ for (const theme of ["Light", "Dark"] as const) {
       await browser.execute(() =>
         document.querySelector(".hd-mounted-section")?.scrollIntoView({ block: "center" }),
       );
-      await browser.pause(300);
       await shot(`54-firearm-mounted-section-${suffix}`);
       await back();
 
@@ -598,14 +610,13 @@ for (const theme of ["Light", "Dark"] as const) {
           ?.click();
       });
       await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
-      await browser.pause(300);
       await shot(`57-move-confirmation-${suffix}`);
       await clickButton("Cancel");
       await $('[role="alertdialog"]').waitForExist({ reverse: true });
       // Cancel in the "Mount on" dialog (Escape would close its open list first).
       await clickButton("Cancel");
       await $('[role="dialog"]').waitForExist({ reverse: true });
-      await browser.pause(200);
+      await settle();
 
       // Deleting a rifle that carries a suppressor and an optic.
       await openDeleteQuestion();
@@ -619,7 +630,6 @@ for (const theme of ["Light", "Dark"] as const) {
       await openRecord("Aero Precision M4E1 carbine");
       await openDialog("Mark disposed");
       await choose("Dispose with it");
-      await browser.pause(400);
       await shot(`58-dispose-with-mounted-${suffix}`, { fullPage: true });
       await discardForm();
       await back();
@@ -633,13 +643,11 @@ for (const theme of ["Light", "Dark"] as const) {
             ?.scrollIntoView({ block: "center" });
         }, name);
       await showRow("PredatAR lower");
-      await browser.pause(300);
       await shot(`60-collection-mount-lines-${suffix}`);
 
       await choose("Tiles");
       await $(".hd-tile__name").waitForExist();
       await showRow("PredatAR lower");
-      await browser.pause(400);
       await shot(`61-collection-tiles-mount-lines-${suffix}`);
       await choose("List");
     });
@@ -647,12 +655,10 @@ for (const theme of ["Light", "Dark"] as const) {
     it("the value summary and the export disclosure", async () => {
       await goTo("Insurance");
       await $(".hd-policy").waitForExist();
-      await browser.pause(300);
       await shot(`62-value-summary-${suffix}`);
       await goTo("Collection");
 
       await openDialog("Export");
-      await browser.pause(500);
       await shot(`63-export-accessories-disclosure-${suffix}`);
       await closeDialog();
     });
@@ -686,7 +692,6 @@ for (const theme of ["Light", "Dark"] as const) {
     it("database settings, passphrase change and restore", async () => {
       await chooseMenuItem("button.hd-db-menu", "Database settings…");
       await $('[role="dialog"]').waitForExist();
-      await browser.pause(300);
       await shot(`19-database-settings-${suffix}`, { fullPage: true });
       // The seeded backups are at a custom location, so going back to the
       // default asks what to do with them (FR-026). Cancelled: nothing is
@@ -694,7 +699,6 @@ for (const theme of ["Light", "Dark"] as const) {
       await clickButton("Use the default");
       await clickButton("Save");
       await $("h2=Backups at the old location").waitForExist();
-      await browser.pause(300);
       await shot(`27-backup-location-change-${suffix}`);
       await clickButton("Cancel");
       await $("h2=Backups at the old location").waitForExist({ reverse: true });
@@ -702,25 +706,21 @@ for (const theme of ["Light", "Dark"] as const) {
 
       await chooseMenuItem("button.hd-db-menu", "Change passphrase…");
       await $('[role="dialog"] input[autocomplete="current-password"]').waitForExist();
-      await browser.pause(300);
       await shot(`20-change-passphrase-${suffix}`);
       await closeDialog();
 
       await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
       await $('[role="dialog"] input[type="radio"]').waitForExist();
-      await browser.pause(300);
       await shot(`21-restore-backup-${suffix}`, { fullPage: true });
       await closeDialog();
 
       await chooseMenuItem("button.hd-db-menu", "About databases and security");
       await $('[role="dialog"] .hd-db-guide').waitForExist();
-      await browser.pause(300);
       await shot(`23-database-guide-${suffix}`);
       // How this database is set up, beside the defaults.
       await browser.execute(() =>
         document.querySelector(".hd-db-guide__settings")?.scrollIntoView({ block: "center" }),
       );
-      await browser.pause(300);
       await shot(`26-database-guide-settings-${suffix}`);
       await closeDialog();
     });
@@ -731,7 +731,12 @@ for (const theme of ["Light", "Dark"] as const) {
       await openRecord(RECORD);
       await openDialog("Edit");
       await fill("Notes", "Swapped the grips for the walnut set.");
-      await browser.pause(400);
+      // The form stages its draft 250 ms after the last edit, or at once when
+      // the window loses focus (usePendingDraft.ts), a timer the busy count
+      // doesn't see. Send that blur, so the staging call is in flight for
+      // settle() to wait on.
+      await browser.execute(() => window.dispatchEvent(new Event("blur")));
+      await settle();
       await browser.execute(() =>
         (document.activeElement ?? document.body).dispatchEvent(
           new KeyboardEvent("keydown", {
@@ -745,13 +750,12 @@ for (const theme of ["Light", "Dark"] as const) {
       await waitForChooser();
       await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
       await $("button=Resume editing").waitForExist({ timeout: 10000 });
-      await browser.pause(300);
       await shot(`22-pending-changes-${suffix}`);
       await clickButton("Discard changes");
       await $('[role="alertdialog"]').waitForExist();
       await clickButton("Discard changes");
       await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
-      await browser.pause(300);
+      await settle();
     });
 
     it("closing with a backup", async () => {
@@ -803,7 +807,7 @@ describe("Screenshots: the import report", () => {
         if (trigger?.getAttribute("aria-expanded") === "false") trigger.click();
       }, title);
     }
-    await browser.pause(300);
+    await settle();
     for (const theme of ["Light", "Dark"] as const) {
       await chooseTheme(theme);
       await shot(`34-import-report-${theme.toLowerCase()}`, { fullPage: true });
@@ -829,7 +833,7 @@ describe("Screenshots: the import report with mount warnings", () => {
         if (trigger.getAttribute("aria-expanded") === "false") trigger.click();
       }
     });
-    await browser.pause(300);
+    await settle();
     for (const theme of ["Light", "Dark"] as const) {
       await chooseTheme(theme);
       await shot(`64-import-report-mount-warnings-${theme.toLowerCase()}`);
@@ -857,7 +861,6 @@ describe("Screenshots: replacing a record with a disposed row", () => {
     await clickButton("Apply decisions");
     await $('[role="alertdialog"]').waitForExist();
     await choose("Dispose with it");
-    await browser.pause(300);
     for (const theme of ["Light", "Dark"] as const) {
       await chooseTheme(theme);
       await shot(`65-import-replace-disposed-${theme.toLowerCase()}`);
