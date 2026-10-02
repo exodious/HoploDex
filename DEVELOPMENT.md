@@ -274,13 +274,17 @@ npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                  
 ```
 
 The performance budgets (search 500 ms, actions 1 s, suggestions 50 ms at
-10,000 records) are timed only in a release build. Run them one at a time so
-that none is timed while another seeds, and read the timings with
+10,000 records) are timed only in a release build, so `performance_test.rs`
+is `#[ignore]`d and the default `cargo test` skips it. **Run it before opening
+any pull request that touches search, listing, persistence or the `ops` layer
+(the pull request must note its impact against the budgets, per the
+constitution), and before every release.** Run the tests one at a time so that
+none is timed while another copies a database, and read the timings with
 `--nocapture`:
 
 ```bash
 CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.toml \
-  --release --test performance_test -- --nocapture --test-threads=1
+  --release --test performance_test -- --ignored --nocapture --test-threads=1
 ```
 
 `panic=unwind` is needed because `cargo test --release` builds the library

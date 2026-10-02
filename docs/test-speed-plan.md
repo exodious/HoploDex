@@ -37,7 +37,7 @@ starting step 5 to see where it stands.
 
 | Step | What | Est. saving | Depends on | State |
 |---|---|---|---|---|
-| 1 | Performance tests out of the default run, seeded once | −90 s Rust | – | todo |
+| 1 | Performance tests out of the default run, seeded once | −90 s Rust | – | done |
 | 2 | cargo-nextest | −55 s Rust | 1 | todo |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | todo |
 | 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | todo |
@@ -194,7 +194,19 @@ before (one seeding instead of 18).
 **Done when.** The default run skips the perf tests, the release run passes,
 and DEVELOPMENT.md shows both commands.
 
-**Result.** _(before → after)_
+**Result.** Default `cargo test`: 14 unit + 972 integration → 14 unit + 940
+integration passed, 18 ignored (the perf tests); the 90 s `performance_test`
+binary now finishes in 0.00 s. Total 184 s → 213 s wall, but that run was a
+cold build in a fresh container volume with three other implementers
+building on the same machine, so it says nothing about the saving; expect
+about 90 s off the warm 184 s. Release perf run (`--ignored`), all 18
+budgets pass: test time 65.6 s → 57.6 s (loaded machine). The gain is small
+because the seeded-once change covers only the 12 plain tests; the
+session-based and 10k+10k fixtures (6 tests) still seed per test, as the
+step said. The release command is in DEVELOPMENT.md "Test", with the rule to
+run it before a pull request that touches search, listing, persistence or
+`ops`, and before every release. `TestDb::copy_of(template)` and
+`TestDb::FILE_NAME` are new; the template is removed by an `atexit` hook.
 
 ## Step 2 — cargo-nextest
 
