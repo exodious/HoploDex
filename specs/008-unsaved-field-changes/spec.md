@@ -8,6 +8,14 @@
 
 **Input**: User description: GitHub issue #17, "Show unsaved changes per field, with per-field revert and a save button enabled only when something changed". While a saved record is being edited, each input that differs from what is saved shows that it has changed and offers a way to put back the saved value, and the form's Save button is enabled only while the form differs from what is saved. The request, the notes recorded on the issue and the follow-up about the Mounted section from feature 006 are reproduced under [Source Request](#source-request) so this spec stands on its own.
 
+## Clarifications
+
+### Session 2026-10-02
+
+- Q: Is the database's Settings dialog in scope? It edits saved settings and applies them with Save, but holds no record and keeps nothing at a lock. → A: Yes. It gets the changed markers, per-field revert and a Save button disabled until something differs from the saved settings. Its unsaved settings are still not kept at a lock and the quit question still doesn't ask about them (003 FR-039) (FR-001).
+- Q: Do forms that create something new (add firearm, add policy, add accessory) keep Save disabled until something is entered? → A: No. Add forms stay as they are: Save is enabled from the start, and pressing it on an empty form shows which fields are required. They have no markers or revert, since nothing on them is saved yet (FR-001).
+- Q: Should the record page's mount changes (Unmount, Mount → Existing accessory or firearm…) be held until the record is saved, and where? → A: Yes, in the edit form. A firearm's or accessory's edit form gains a **Mounted** list of what is mounted directly on it, where existing records are added and removed; each change is held as an unsaved change with its own marker and revert and is saved with the form's Save. The record page's Mounted section becomes a read-only list, with a way to open the edit form at that list, and keeps Mount → New accessory…, which creates a record. This keeps 003's rule that every form holding unsaved changes is a dialog (FR-024 to FR-028, User Story 5).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See Which Fields I Have Changed (Priority: P1)
@@ -92,17 +100,28 @@ The collector edits a record, changes a field, then types it back. Nothing diffe
 
 ---
 
-### User Story 5 - Mount Changes from the Record Page (Priority: P5)
+### User Story 5 - Change What Is Mounted, and Save It with the Record (Priority: P5)
 
-*Depends on feature 006 (accessories and mounts) and on the answer to the clarification in FR-024.*
+*Depends on feature 006 (accessories and mounts).*
 
-On a firearm's or accessory's record page, the Mounted section lists what is mounted on it, with Unmount and Mount → Existing accessory or firearm…. In 006 each of these saves as soon as it is confirmed. The follow-up on issue #17 asks whether these changes should instead be held as unsaved changes, marked, revertible one by one, and saved only with the record's Save.
+A collector reworks a rifle: the old scope comes off and a red dot they already own goes on. On the rifle's record page the Mounted section lists what is mounted on it, read-only, with a way to change it. That opens the rifle's edit form at its Mounted list. They remove the scope and add the red dot, which is currently mounted on a pistol. Both rows are marked as changed: the scope "will be unmounted", the red dot "will be mounted here, moving from" the pistol. Nothing has changed in the collection yet. They change their mind about the scope and revert its row; then they save, and only the red dot moves.
 
-**Why this priority**: It is a follow-up to the original request, it depends on another feature that is not yet merged, and the scope of the change depends on the clarification below.
+**Why this priority**: It answers the follow-up comment on the issue, and it depends on feature 006, which is not yet merged. It reuses the markers, revert and Save of User Stories 1 to 4.
 
-**Independent Test**: Defined once FR-024 is settled.
+**Independent Test**: On a firearm and on an accessory, add an unmounted record, add one mounted elsewhere, and remove one in the edit form's Mounted list; confirm nothing changes until Save, each row is marked and revertible, Save's state follows the list, a lock keeps the list's changes as pending changes and resuming restores them, and Save stores all of them at once with the form's other fields.
 
-**Acceptance Scenarios**: Defined once FR-024 is settled.
+**Acceptance Scenarios**:
+
+1. **Given** a firearm's record page with a scope mounted on it, **When** the user looks at the Mounted section, **Then** it lists the scope (each entry a link) with no Unmount control, offers a way to change what is mounted that opens the edit form at its Mounted list, and still offers Mount → New accessory….
+2. **Given** that firearm's edit form, **When** the user looks at its Mounted list, **Then** it lists what is mounted directly on the firearm, with a way to add an existing accessory or firearm and a way to remove each entry, and Save is disabled.
+3. **Given** the Mounted list, **When** the user removes the scope, **Then** the scope's row stays in the list marked as changed and saying it will be unmounted, with a revert; nothing is saved and nothing is asked; and Save is enabled.
+4. **Given** the Mounted list, **When** the user adds a red dot that is mounted on a pistol, **Then** a row for it appears, marked as changed and saying it will move here from the pistol, along with anything mounted on it; nothing is asked or saved.
+5. **Given** the added red dot, **When** the user reverts its row, **Then** the row disappears and the red dot stays mounted on the pistol; **and Given** the removed scope, **When** the user reverts its row, **Then** it is listed as mounted again with no marker.
+6. **Given** the scope removed and added back, or the red dot added and then removed, **When** the user looks at the form, **Then** the list shows no change for it, and Save is disabled if nothing else changed.
+7. **Given** the scope removed, the red dot added and the firearm's notes changed, **When** the user saves, **Then** the notes, the unmount and the mount are all saved together; the scope is no longer mounted, the red dot and everything on it are mounted on the firearm, and the pistol no longer lists the red dot; **and When** the save does not go through, **Then** none of them is saved.
+8. **Given** the add chooser, **When** the user looks for something to add, **Then** it offers only active records that could be mounted here without forming a loop, judged against what the form currently holds (including its own changed "Mounted on").
+9. **Given** changes in the Mounted list, **When** the database locks and is reopened and the user resumes editing, **Then** the form opens with the same rows marked; **and When** the user quits instead, **Then** they are asked to save, discard or cancel.
+10. **Given** the record page's Mount → New accessory…, **When** the user saves the new accessory, **Then** it is created mounted on this record, as in 006.
 
 ---
 
@@ -123,6 +142,9 @@ On a firearm's or accessory's record page, the Mounted section lists what is mou
 - **The record was changed after the form opened**: not possible within one computer, since only one form is open and the database is held by one computer at a time; a take-over closes the session (003).
 - **Cancel, Escape or the dialog's close button with changes**: behaves as today (the form closes and the edits are dropped); this feature adds no question there.
 - **Photos and documents added or removed while a record is open**: not form changes; they are saved at once on the record page, as today, and never mark a field or enable Save (FR-022).
+- **A Mounted list entry disposed of or deleted while the form is open**: not possible, since only one form is open at a time and those actions are taken from outside it.
+- **Adding to the Mounted list the record this one is mounted on**: not offered, since it would form a loop (FR-026); the same holds if the form's own "Mounted on" was changed to one of the list's entries.
+- **Removing an entry and changing "Mounted on" in the same form**: both are ordinary changes with their own markers and reverts, saved together (FR-027).
 - **A change to a setting that the dialog applies only on Save** (backups location chosen through Change…, then "Use the default"): judged against the saved setting like any field (FR-001).
 
 ## Requirements *(mandatory)*
@@ -136,9 +158,8 @@ On a firearm's or accessory's record page, the Mounted section lists what is mou
   - an insurance policy's edit form;
   - a firearm's coverage dialog;
   - once feature 006 is merged, an accessory's edit form and the "Mounted on" field of every edit form (FR-023);
-  - [NEEDS CLARIFICATION: Does the database's Settings dialog count? It edits saved settings and applies them with Save "like every other form" (003 ui-databases.md §7), but holds no record and keeps nothing at a lock.]
-  - [NEEDS CLARIFICATION: Do forms that create something new (add firearm, add policy, add accessory) also keep Save disabled until something is entered, or stay as they are?]
-  Forms that perform an action rather than edit saved values are out of scope and keep their current buttons: Mark disposed, Restore, Delete policy, Import, Export, Change passphrase, Create database, Restore backup and the pending-changes prompt.
+  - the database's Settings dialog, for the settings it applies with Save (not its immediate actions: restoring from or deleting backups, remembering or forgetting the passphrase).
+  Forms that create something new (add firearm, add policy, add accessory) keep their current Save, enabled from the start, and show no markers or revert. Forms that perform an action rather than edit saved values are also out of scope and keep their current buttons: Mark disposed, Restore, Delete policy, Import, Export, Change passphrase, Create database, Restore backup and the pending-changes prompt.
 
 **What counts as changed**
 
@@ -182,11 +203,15 @@ On a firearm's or accessory's record page, the Mounted section lists what is mou
 **Mounts (feature 006)**
 
 - **FR-023**: Once feature 006 is merged, the "Mounted on" field of a firearm's or accessory's edit form MUST be a field like any other: marked when changed, revertible to the saved mount, and counted for Save, the quit question and pending changes.
-- **FR-024**: The record page's Mounted section (Unmount, and Mount → Existing accessory or firearm…) MUST [NEEDS CLARIFICATION: keep saving each change at once after 006's confirmation, or hold the changes as unsaved changes saved only with the record's Save — and if held, in the edit form or on the record page itself?]. Mount → New accessory… creates a record, so it saves when that new accessory is saved, as in 006.
+- **FR-024**: Once feature 006 is merged, a firearm's or accessory's edit form MUST have a **Mounted** list showing what is mounted directly on that record, from which the user can add an existing active accessory or firearm and remove any entry. Adding and removing MUST change only the form: nothing is saved, and no confirmation is asked, until the form is saved.
+- **FR-025**: Each added or removed entry MUST be marked as changed and say what saving will do: a removed entry stays listed and says it will be unmounted; an added entry says it will be mounted here and, if it is mounted elsewhere now, that it will move from there with everything mounted on it. Each MUST have a revert that undoes that one change. An entry removed and added back, or added and removed, MUST show no change. The list's changes MUST count for Save, the quit question and pending changes like any field (FR-015, FR-019 to FR-021).
+- **FR-026**: The add chooser MUST offer only active records that can be mounted on this one without forming a loop, judged against what the form currently holds, including a changed "Mounted on" and the list's own changes.
+- **FR-027**: Saving the form MUST save the Mounted list's changes together with its other fields, all or none.
+- **FR-028**: The record page's Mounted section MUST become read-only: it lists what is mounted on the record, each a link as in 006, and offers a way to change what is mounted that opens the edit form at its Mounted list. Unmount and Mount → Existing accessory or firearm… MUST no longer act from the page, and their confirmations ("Unmount {name}?", "Move {name}?") are no longer needed. Mount → New accessory… MUST stay, since it creates a record and its mount is saved when that accessory is saved, as in 006.
 
 **Consistency**
 
-- **FR-025**: The marker, the revert control, their wording and the disabled Save MUST look and behave the same in every form in scope, as part of the shared form components (constitution III), and MUST meet WCAG 2.1 AA, including contrast and visible focus for the revert control.
+- **FR-029**: The marker, the revert control, their wording and the disabled Save MUST look and behave the same in every form in scope, as part of the shared form components (constitution III), and MUST meet WCAG 2.1 AA, including contrast and visible focus for the revert control.
 
 ### Key Entities
 
@@ -206,17 +231,20 @@ On a firearm's or accessory's record page, the Mounted section lists what is mou
 - **SC-005**: The quit question is asked, and pending changes are kept at a lock, in exactly the cases where the form's Save is enabled: never for a form with no field changes, always for one with at least one.
 - **SC-006**: A screen-reader user can find every changed field and revert it using the keyboard alone, and hears for each one that it is changed and what value revert restores.
 - **SC-007**: In a test with a collector editing a record, they can say which fields a save will change by looking at the form, without opening the record page to compare.
+- **SC-008**: Once feature 006 is merged, no mount or unmount of an existing record takes effect before the user saves the edit form that holds it, and after a save every change in its Mounted list has taken effect, or none has.
 
 ## Assumptions
 
 - **Comparison is against the value as saved, not as first shown**: the saved record is the reference even when a form opens with resumed pending changes, so the markers say what a save would change in the database.
 - **No "revert all" and no undo of a revert**: the request asks for a revert per change. Cancel already drops every edit at once, and a reverted value is the user's own unsaved typing, small enough to retype, so reverting asks no confirmation.
 - **Cancel stays as it is**: closing an edit form with changes drops them without a question today, and the request doesn't ask to change that. The markers make it visible what would be lost.
-- **New-record forms**: everything on an add form is new, so there is nothing to mark or revert there; whether their Save should wait for an entry is part of the FR-001 clarification.
-- **Settings and passphrases**: if the Settings dialog is in scope, its unsaved settings are still not kept at a lock and the quit question still doesn't ask about them (003 FR-039 keeps only record and policy forms); only its markers, revert and Save change. Passphrase fields are never compared or marked.
+- **New-record forms**: everything on an add form is new, so there is nothing to mark or revert there, and Save stays enabled so an empty form can still show which fields are required (clarification of 2026-10-02).
+- **Settings and passphrases**: the Settings dialog's unsaved settings are still not kept at a lock and the quit question still doesn't ask about them (003 FR-039 keeps only record and policy forms); only its markers, revert and Save change. Passphrase fields are never compared or marked.
 - **Photos and documents are not form input**: they are added and deleted from the record page and saved at once, and a file dropped on the window is ignored while a form is open, so nothing can change under an open form. This feature doesn't change that.
 - **Disposition fields**: the edit form of a disposed firearm shows its disposition details, which are ordinary fields of that form and are covered like the others.
-- **Feature 006 is merged first or alongside**: requirements naming accessories, the "Mounted on" field and the Mounted section apply once 006 is on the main branch; nothing else in this feature depends on it.
+- **Feature 006 is merged first or alongside**: requirements naming accessories, the "Mounted on" field and the Mounted list (FR-023 to FR-028, User Story 5) apply once 006 is on the main branch; nothing else in this feature depends on it.
+- **The Mounted list holds only what is mounted directly on the record**: what is mounted on those entries moves with them, as in 006, and is changed from their own forms. Moving an entry no longer asks first, because nothing happens until Save and the row says what Save will do.
+- **No data changes for mounts**: a mount is stored as in 006; only when it is saved changes.
 - **No data changes**: no stored record, setting or pending-changes layout changes; this feature is the forms' behavior only.
 
 ## Relationship to Other Features
@@ -227,7 +255,8 @@ This feature **amends**:
 - `specs/001-firearms-inventory/` FR-006 (edit a firearm record) and the insurance policy forms (FR-014, FR-036): their Save buttons are disabled until something changes.
 - `specs/002-firearm-identification/` FR-010 and `specs/005-regulated-item-types/` FR-012: their confirmations before discarding details are unchanged, and reverting Origin or "Registered as" restores what they discarded (FR-012).
 - `specs/004-cartridges-action-types/`: a reverted entry field drops its re-spelling note and isn't re-spelled until edited again (FR-011); FR-014's "text equal to the saved value is not settled" is unchanged.
-- `specs/006-accessory-links/` (not yet merged): the AccessoryForm and the "Mounted on" field are covered (FR-001, FR-023); FR-012 and contracts/ui-accessories.md §5 left "staging such changes until the record is saved" to this feature (FR-024).
+- `specs/006-accessory-links/` (not yet merged): the AccessoryForm and the "Mounted on" field are covered (FR-001, FR-023). FR-012 and contracts/ui-accessories.md §5, which left "staging such changes until the record is saved" to this feature, are amended: the record page's Unmount and Mount → Existing accessory or firearm… move into the edit form's Mounted list, held until Save (FR-024 to FR-028); Mount → New accessory… is unchanged. The draft kept as pending changes for these forms gains the list's changes.
+- `specs/003-database-protection-management/` ui-databases.md §7 (Settings): its Save is disabled until a setting differs from what is saved (FR-001).
 
 ## Source Request
 
@@ -239,7 +268,7 @@ This feature was filed as GitHub issue #17, "Show unsaved changes per field, wit
 
 **Notes recorded on the issue, with where this spec answers them:**
 
-- "It's a UI pattern, so under the UI-consistency principle it applies to every form and dialog that edits a saved record: FirearmForm, InsurancePolicyForm, DisposeDialog, RestoreDialog, CoverageDialog and the rest. Decide which of them count as 'editing an existing record'." → The firearm and policy edit forms, the coverage dialog and (with 006) the accessory edit form; Dispose, Restore and the other action dialogs are not edits of saved values (FR-001; the Settings dialog and add forms are an open question there).
+- "It's a UI pattern, so under the UI-consistency principle it applies to every form and dialog that edits a saved record: FirearmForm, InsurancePolicyForm, DisposeDialog, RestoreDialog, CoverageDialog and the rest. Decide which of them count as 'editing an existing record'." → The firearm and policy edit forms, the coverage dialog and (with 006) the accessory edit form; Dispose, Restore and the other action dialogs are not edits of saved values (FR-001). The Settings dialog is also in scope; add forms are not (clarifications of 2026-10-02).
 - "'Changed' compares against the saved value, so a field edited and then typed back to its saved value shows no change, and the save button is disabled again." → FR-002, FR-004, FR-015.
 - "Photos and documents: decide whether adding or removing an attachment counts as a form change, given that attachments are saved as they're added today." → It doesn't; they stay saved at once (FR-022).
 - "Interaction with feature 003's unsaved-changes handling: closing the window, a lock, and the pending changes kept after a lock. The per-field 'changed' state should agree with what those flows treat as unsaved." → One definition for all of them (FR-019 to FR-021).
@@ -251,7 +280,7 @@ This feature was filed as GitHub issue #17, "Show unsaved changes per field, wit
 
 The comment records that 006 now asks before Unmount (and before a Move), still saving as soon as it is confirmed, and leaves to this issue "whether a record page's mount changes (Unmount, and mounting an existing record from the Mount menu) should be **staged**, shown as pending and saved only with the record's Save". Its questions, and where this spec answers them:
 
-- "A record page isn't a form today: edits go through the edit dialog, and the Mounted section acts on the page itself. Staging would need a save/discard bar (or similar) on the page, or would have to move mount changes into the edit form, where 'Mounted on' already saves with the form." → Open (FR-024).
-- "Mount → New accessory… creates a record, so it probably stays immediate." → It does (FR-024).
-- "Staged mount changes would need to fit feature 003's unsaved-changes flows: the close/quit question, and pending changes kept at a lock." → FR-019 to FR-021 apply to whatever form holds them.
-- "Per-item revert: a staged unmount or mount would need its own 'changed' marker and a way to revert it, as each field has." → FR-006, FR-010 apply once FR-024 is settled.
+- "A record page isn't a form today: edits go through the edit dialog, and the Mounted section acts on the page itself. Staging would need a save/discard bar (or similar) on the page, or would have to move mount changes into the edit form, where 'Mounted on' already saves with the form." → Move them into the edit form, as a Mounted list held until Save; the record page's section becomes read-only (FR-024, FR-028, clarification of 2026-10-02).
+- "Mount → New accessory… creates a record, so it probably stays immediate." → It does (FR-028).
+- "Staged mount changes would need to fit feature 003's unsaved-changes flows: the close/quit question, and pending changes kept at a lock." → They are held by the edit form, so FR-019 to FR-021 apply (FR-025).
+- "Per-item revert: a staged unmount or mount would need its own 'changed' marker and a way to revert it, as each field has." → Each added or removed entry has its own marker and revert (FR-025).
