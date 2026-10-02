@@ -20,12 +20,13 @@
  * `case` and `accessory` (the kind "Other"). They were drawn for this
  * project from the published dimensions of common patterns (an AR-15
  * magazine and its 5.56 cartridge, a bolt-action rifle stock, a carbine
- * barrel's profile, the AR-15 trigger group, a 30 mm scope), each at a
+ * barrel's profile, an AR-15 drop-in trigger, a 30 mm scope), each at a
  * stated scale so its parts keep their real proportions, with no brand
  * marks, in the same 320×200 box and line roles. Each is a side elevation,
  * muzzle or objective right, except the bipod, which is seen from the
- * front so both legs show, and the case, which lies flat. Like the rest of
- * the source they are GPL-3.0-only.
+ * front so both legs show, the case, which lies flat, and the box of
+ * parts for "Other", seen from a little above so its opening shows. Like
+ * the rest of the source they are GPL-3.0-only.
  */
 
 export type Part =
@@ -523,6 +524,63 @@ const [SLING_BUCKLE, SLING_TAB] = (() => {
 /** Where each baffle's cone meets its skirt; the first is the blast baffle. */
 const BAFFLES = [130, 145, 160, 175, 190, 205, 220, 235];
 
+/** A drop-in trigger's point in drawing units from millimetres, at 2.8
+ * units to the millimetre: x forward, y down, the trigger pin at 0, 0. */
+function tgAt([x, y]: Point): Point {
+  return [r(142 + x * 2.8), r(92 + y * 2.8)];
+}
+
+/** `tgAt` as path coordinates. */
+function tg(p: Point): string {
+  return tgAt(p).join(" ");
+}
+
+/** One step of a path: a command letter (M, L, Q or C) and its points. */
+type Step = [string, ...Point[]];
+
+/** A closed path through millimetre points, each mapped by `at`. */
+function pathOf(at: (p: Point) => string, steps: Step[]): string {
+  return steps.map(([cmd, ...points]) => cmd + points.map(at).join(" ")).join("") + "Z";
+}
+
+/** Points along a circle from angle a0 to a1 in degrees (y down). */
+function arcPoints(cx: number, cy: number, rad: number, a0: number, a1: number): Point[] {
+  const out: Point[] = [];
+  for (let i = 0; i <= 8; i++) {
+    const a = ((a0 + ((a1 - a0) * i) / 8) * Math.PI) / 180;
+    out.push([cx + rad * Math.cos(a), cy + rad * Math.sin(a)]);
+  }
+  return out;
+}
+
+/** The AR-15 pins through the cassette, in millimetres from the trigger
+ * pin: the hammer pin 20.5 forward and 1.5 higher. */
+const HAMMER_PIN: Point = [20.5, -1.5];
+
+/** A point on the hammer, given in millimetres along it (u forward, w up
+ * from its pin), standing 10° forward of upright. */
+function onHammer([u, w]: Point): string {
+  const lean = (10 * Math.PI) / 180;
+  return tg([
+    HAMMER_PIN[0] + u * Math.cos(lean) + w * Math.sin(lean),
+    HAMMER_PIN[1] - w * Math.cos(lean) + u * Math.sin(lean),
+  ]);
+}
+
+/** The cassette's housing: a flat bottom, the front corner chamfered, and
+ * at the back a deck stepped down under the safety selector, scooped out
+ * to clear its drum. */
+const CASSETTE_HOUSING = pathOf(tg, [
+  ["M", [-17, 9.5]],
+  ["L", [-17, 3]],
+  ["Q", [-17, 1.5], [-15.5, 1.5]],
+  ["L", ...arcPoints(-14, -6, 7.5, 90, -15.5)],
+  ["L", [26, -8]],
+  ["Q", [28, -8], [28, -6]],
+  ["L", [28, 8], [25, 11], [-15.5, 11]],
+  ["Q", [-17, 11], [-17, 9.5]],
+]);
+
 export const DRAWINGS: Record<string, Drawing> = {
   // Glock 17, right side: ejection port and extractor show; the slide stop
   // lever and magazine catch are on the left side only.
@@ -870,33 +928,55 @@ export const DRAWINGS: Record<string, Drawing> = {
       { d: threads(bx(411), bx(423), 1.4, 95.7, 104.3), role: "detail" },
     ],
   },
-  // An AR-15 trigger group, assembled and out of the receiver, at 2.6
-  // units to the millimetre: the hammer standing (fired) on the front pin,
-  // its hook at the back of its head; the trigger on the rear pin, its
-  // tail reaching back to where the safety selector stops it, its nose
-  // forward under the hammer, and a curved blade; the disconnector riding
-  // on top of the trigger; and the hammer spring round the front pin with
-  // its leg resting on the trigger pin.
+  // A drop-in cassette trigger for the AR-15, at 2.8 units to the
+  // millimetre: the housing that carries the whole group, with the
+  // receiver's two pins through it, the hammer pin forward and the trigger
+  // pin behind; the hammer standing on its pin out of the housing's top,
+  // its rounded striking face forward and the disconnector's hook under
+  // the back of its head; the curved blade hanging from the floor between
+  // the pins; and the trigger's tail on the stepped-down deck at the back,
+  // where the safety selector bears on it.
   trigger: {
     parts: [
       {
-        d: "M112 106V98Q112 94 116 94H166L172 87Q174 85 177 87L176 94L170 106Z",
+        d: pathOf(onHammer, [
+          ["M", [4.5, 0]],
+          ["L", [4.6, 16]],
+          ["Q", [5.4, 24.5], [0.6, 25.6]],
+          ["L", [-4, 25.4]],
+          ["Q", [-5.4, 25.2], [-5.4, 23.6]],
+          ["L", [-5.4, 21.4], [-3.6, 21.6], [-3.6, 19.5]],
+          ["C", [-3.6, 13], [-6, 7], [-6.5, 0]],
+        ]),
         role: "part",
       },
       {
-        d: "M98 104L128 101L176 104L182 99L186 101L184 112L164 118C158 134 154 150 160 166Q164 174 158 175C148 170 142 146 144 120L104 116Q96 115 96 110Q96 105 98 104Z",
+        d: pathOf(tg, [
+          ["M", [4, 9]],
+          ["L", [4, 11]],
+          ["C", [3, 18], [3.8, 27], [6.8, 31.6]],
+          ["Q", [8.6, 33], [10.2, 31.4]],
+          ["C", [7.6, 26], [7.8, 18], [10.6, 11]],
+          ["L", [10.6, 9]],
+        ]),
         role: "part",
       },
-      { d: "M150 120C149 138 151 154 157 168", role: "detail" },
       {
-        d: "M181 108Q180 96 185 92L183 50H188L187.5 45H182.5L182 38Q183 30 192 29.5L206 30Q212 30.5 212 36.5L211 52L204 70L203 96Q205 104 202 112Q194 118 186 115Q181 112 181 108Z",
+        d: pathOf(tg, [
+          ["M", [-4, 4]],
+          ["L", [-15.5, 4]],
+          ["Q", [-16.8, 4], [-16.8, 2.4]],
+          ["L", [-16.8, 0.2]],
+          ["Q", [-16.8, -1.2], [-15.4, -1.2]],
+          ["L", [-4, -1.2]],
+        ]),
         role: "part",
       },
-      { d: "M211 37L210.2 52", role: "detail" },
-      { d: ring(192, 104, 6.5) + ring(137, 108, 6), role: "detail" },
-      { d: "M186 101Q164 97 138 104", role: "open" },
-      { circle: [192, 104, 3.2], role: "part" },
-      { circle: [137, 108, 3.2], role: "part" },
+      { d: CASSETTE_HOUSING, role: "part" },
+      ...[[0, 0] as Point, HAMMER_PIN].map(tgAt).flatMap<Part>(([x, y]) => [
+        { d: ring(x, y, 9.5), role: "detail" },
+        { circle: [x, y, 5.5], role: "part" },
+      ]),
     ],
   },
   // A ported muzzle brake on a barrel's threaded end, at 3.6 units to the
@@ -1070,25 +1150,29 @@ export const DRAWINGS: Record<string, Drawing> = {
     ],
   },
   // The generic accessory, for the kind "Other": an open cardboard box of
-  // spare parts, its back and side flaps up and the front flap folded
-  // down, with a coil spring, a bolt and a punch standing out of it and an
-  // inventory label on the front.
+  // spare parts, seen from a little above so its opening shows. The back
+  // flap stands up, each side flap is hinged along its side wall's top
+  // edge and splayed outward, and the front flap hangs folded forward over
+  // the front. A coil spring, a bolt and a punch stand out of it, and an
+  // inventory label is on the front.
   accessory: {
     parts: [
-      { d: "M102 100V70L218 66V100Z", role: "part" },
-      { d: "M96 100L62 82L66 76L99 95Z", role: "part" },
-      { d: "M224 100L258 82L254 76L221 95Z", role: "part" },
-      { d: spring(128, 104, 112, 52, 7, 5), role: "open" },
-      { d: tube(156, 104, 156, 76, 3.5), role: "part" },
-      { d: "M152.5 80H159.5M152.5 83.5H159.5M152.5 87H159.5M152.5 90.5H159.5", role: "detail" },
-      { d: "M147 68H165V76H147Z", role: "part" },
-      { d: "M153 68V76M159 68V76", role: "detail" },
-      { d: tube(178, 104, 196, 60, 3), role: "part" },
-      { d: tube(196, 60, 198.6, 53.6, 1.6), role: "part" },
-      { d: "M96 100H224V172H96Z", role: "part" },
-      { d: "M96 100L90 128H230L224 100Z", role: "part" },
-      { d: "M180 140H214V162H180Z", role: "part" },
-      { d: "M185 146H209M185 151H209M185 156H201", role: "detail" },
+      { d: "M106 78L110 48H210L214 78Z", role: "part" },
+      { d: "M96 98L106 78L76 56L66 76Z", role: "part" },
+      { d: "M224 98L214 78L244 56L254 76Z", role: "part" },
+      { d: "M96 98L106 78H214L224 98Z", role: "part" },
+      { d: "M106 78V98M214 78V98", role: "detail" },
+      { d: spring(132, 102, 120, 48, 7, 5), role: "open" },
+      { d: tube(156, 102, 156, 70, 3.5), role: "part" },
+      { d: "M152.5 74H159.5M152.5 77.5H159.5M152.5 81H159.5M152.5 84.5H159.5", role: "detail" },
+      { d: "M147 62H165V70H147Z", role: "part" },
+      { d: "M153 62V70M159 62V70", role: "detail" },
+      { d: tube(180, 102, 196, 58, 3), role: "part" },
+      { d: tube(196, 58, 198.6, 51.6, 1.6), role: "part" },
+      { d: "M96 98H224V166H96Z", role: "part" },
+      { d: "M96 98L90 124H230L224 98Z", role: "part" },
+      { d: "M180 136H214V158H180Z", role: "part" },
+      { d: "M185 142H209M185 147H209M185 152H201", role: "detail" },
     ],
   },
 };

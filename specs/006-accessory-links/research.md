@@ -414,9 +414,11 @@ stays readable at any depth without assuming an indent per level (FR-013).
     each at a stated scale, with no brand marks, and their source note is
     recorded in the file (Licensing; as 005's suppressor). Each must be
     recognisable for what it is: the bipod is seen from the front so both
-    legs show, the case lies flat, and Other's drawing (a box of spare
-    parts) suggests no particular accessory (redrawn 2026-10-02, from
-    manual testing).
+    legs show, the case lies flat, the trigger is an AR-15 drop-in
+    cassette (hammer on the front pin, blade between the pins), and
+    Other's drawing (an open box of spare parts, seen from a little above
+    so its flaps hinge on its walls) suggests no particular accessory
+    (redrawn 2026-10-02, from manual testing).
   - Like a firearm type, a kind carries no rules (spec Assumptions). Every
     kind has the same fields.
 - **Rationale**: FR-002, and FR-007a's "a generic picture for its kind".
