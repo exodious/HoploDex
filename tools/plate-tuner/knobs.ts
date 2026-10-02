@@ -92,12 +92,6 @@ export const GROUPS: [string, Knob[]][] = [
         unit: "s",
         hint: "Eased, so it looks finished early. The timeline shades the tail.",
       },
-      {
-        name: "BORE_AXIS",
-        label: "Bore axis line",
-        kind: "switch",
-        hint: "The dashed centreline along the barrel. It fades in with the captions.",
-      },
     ],
   ],
   [

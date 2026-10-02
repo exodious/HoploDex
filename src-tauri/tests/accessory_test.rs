@@ -115,7 +115,7 @@ fn count(db: &TestDb, table: &str) -> i64 {
 // --- The kinds (US1-2, FR-002) ------------------------------------------------
 
 #[test]
-fn the_twelve_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
+fn the_fourteen_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
     let db = TestDb::new();
 
     let kinds = entry_ops::list_accessory_kinds(&db.conn).unwrap().kinds;
@@ -130,9 +130,11 @@ fn the_twelve_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
             "Stock or brace",
             "Upper receiver",
             "Barrel",
+            "Trigger",
             "Muzzle device",
             "Conversion kit",
             "Mount or rail",
+            "Bipod",
             "Sling",
             "Case",
             "Other",
@@ -141,10 +143,14 @@ fn the_twelve_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
     assert!(!names.iter().any(|name| name.contains("Suppressor")));
     let orders: Vec<i64> = kinds.iter().map(|k| k.sort_order).collect();
     assert!(orders.windows(2).all(|pair| pair[0] < pair[1]), "in sortOrder: {orders:?}");
-    assert_eq!(kinds.iter().map(|k| k.id).collect::<Vec<_>>(), (1..=12).collect::<Vec<_>>());
+    // Trigger and Bipod were added after the first twelve: new ids, listed
+    // beside their neighbours, so no existing id changes meaning.
+    assert_eq!(kinds.iter().map(|k| k.id).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 6, 13, 7, 8, 9, 14, 10, 11, 12]);
     assert!(kinds.iter().all(|k| k.offered), "every kind is offered");
     assert_eq!(kinds[0].generic_thumbnail_key, "optic");
-    assert_eq!(kinds[11].generic_thumbnail_key, "accessory");
+    assert_eq!(kinds[6].generic_thumbnail_key, "trigger");
+    assert_eq!(kinds[10].generic_thumbnail_key, "bipod");
+    assert_eq!(kinds[13].generic_thumbnail_key, "accessory");
 }
 
 #[test]
@@ -156,7 +162,7 @@ fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_th
     db.conn.execute("UPDATE accessory_kinds SET offered = 0 WHERE id = 8", []).unwrap();
 
     let kinds = entry_ops::list_accessory_kinds(&db.conn).unwrap().kinds;
-    assert_eq!(kinds.len(), 12);
+    assert_eq!(kinds.len(), 14);
     for kind in &kinds {
         assert_eq!(kind.offered, kind.id != CONVERSION_KIT, "kind {}", kind.id);
     }

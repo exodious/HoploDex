@@ -118,7 +118,7 @@ and light.
 photos.
 
 1. Open Accessories and choose Tiles.
-   **Expected**: each of the 12 tiles shows its kind's drawing, centred and
+   **Expected**: each of the 14 tiles shows its kind's drawing, centred and
    uncropped, in light theme.
 2. Switch to dark theme.
    **Expected**: every drawing stays legible against the tile.

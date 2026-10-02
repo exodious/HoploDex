@@ -112,13 +112,6 @@ describe("CataloguePlate", () => {
     }
   });
 
-  it("hides the bore axis unless BORE_AXIS is on", () => {
-    const axis = (k: typeof PLATE_TIMING) =>
-      (plate(k).querySelector(".art .axis") as SVGElement).style.display;
-    expect(axis({ ...PLATE_TIMING, BORE_AXIS: false })).toBe("none");
-    expect(axis({ ...PLATE_TIMING, BORE_AXIS: true })).toBe("");
-  });
-
   it("starts the cycle once the draw-in has held for CYCLE_HOLD, and repeats it forever", () => {
     const animate = mockAnimate();
     plate();

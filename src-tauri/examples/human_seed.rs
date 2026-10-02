@@ -101,6 +101,8 @@ const KIND_MOUNT: i64 = 9;
 const KIND_SLING: i64 = 10;
 const KIND_CASE: i64 = 11;
 const KIND_OTHER: i64 = 12;
+const KIND_TRIGGER: i64 = 13;
+const KIND_BIPOD: i64 = 14;
 
 /// What the unscheduled active accessories may add to the blanket policy's
 /// total: the blanket limit leaves room for them (`seed_accessories` checks).
@@ -1419,6 +1421,11 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         ..bare(KIND_BARREL, "Criterion", "Hybrid 16 in barrel")
     });
     add(AccessoryInput {
+        estimated_value: Some(240),
+        acquisition_price: Some(255),
+        ..bare(KIND_TRIGGER, "Geissele", "SSA-E two-stage trigger")
+    });
+    add(AccessoryInput {
         estimated_value: Some(120),
         acquisition_price: Some(110),
         ..bare(KIND_MUZZLE, "SureFire", "SOCOM flash hider")
@@ -1432,6 +1439,10 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
     add(AccessoryInput {
         estimated_value: Some(150),
         ..bare(KIND_MOUNT, "Geissele", "Super Precision 30 mm mount")
+    });
+    add(AccessoryInput {
+        estimated_value: Some(110),
+        ..bare(KIND_BIPOD, "Harris", "S-BRM 6-9 in bipod")
     });
     // Only the required fields, then a value, then notes.
     add(AccessoryInput {

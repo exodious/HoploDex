@@ -84,7 +84,9 @@ CREATE TABLE accessory_kinds (
 ```
 
 The seed (`0003_seed_firearm_types.sql`) uses fixed ids, so an id means the
-same kind in every build:
+same kind in every build. Trigger and Bipod were added after the first
+twelve (2026-10-02), so they take the next ids, and `sort_order` lists them
+beside their neighbours:
 
 | id | name | generic_thumbnail_key | sort_order |
 |---|---|---|---|
@@ -94,12 +96,14 @@ same kind in every build:
 | 4 | Stock or brace | `stock` | 4 |
 | 5 | Upper receiver | `upper` | 5 |
 | 6 | Barrel | `barrel` | 6 |
-| 7 | Muzzle device | `muzzle` | 7 |
-| 8 | Conversion kit | `conversion` | 8 |
-| 9 | Mount or rail | `mount` | 9 |
-| 10 | Sling | `sling` | 10 |
-| 11 | Case | `case` | 11 |
-| 12 | Other | `accessory` | 12 |
+| 13 | Trigger | `trigger` | 7 |
+| 7 | Muzzle device | `muzzle` | 8 |
+| 8 | Conversion kit | `conversion` | 9 |
+| 9 | Mount or rail | `mount` | 10 |
+| 14 | Bipod | `bipod` | 11 |
+| 10 | Sling | `sling` | 12 |
+| 11 | Case | `case` | 13 |
+| 12 | Other | `accessory` | 14 |
 
 All are offered. There is no Suppressor kind (FR-002). The table gets the
 three `*_marks_backup_due_*` triggers.

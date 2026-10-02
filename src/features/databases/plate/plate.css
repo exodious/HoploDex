@@ -90,14 +90,6 @@
   stroke-linejoin: miter;
 }
 
-.hd-catalogue .axis {
-  fill: none;
-  stroke: var(--niter);
-  stroke-width: calc(1px * var(--u, 1));
-  stroke-dasharray: 18 4 3 4;
-  opacity: 0.7;
-}
-
 .hd-catalogue .sb-fill {
   fill: var(--ink-2);
 }
@@ -173,7 +165,6 @@
 .hd-catalogue--animate .device .pfi,
 .hd-catalogue--animate .device .wash,
 .hd-catalogue--animate .device .pf,
-.hd-catalogue--animate .axis,
 .hd-catalogue--animate text,
 .hd-catalogue--animate rect:not(.clip) {
   opacity: 0;
