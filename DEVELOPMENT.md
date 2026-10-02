@@ -415,6 +415,13 @@ of it:
   `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
   passphrase survives a relaunch, and launches any `*-no-keyring.e2e.ts` spec
   with `HOPLODEX_E2E_KEYRING=unavailable`, a computer without a keyring.
+- E2E steps don't sleep. The frontend counts its backend calls and pending
+  search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
+  helpers in `e2e/support/ui.ts` call `settle()` after each action, which
+  waits for that count to reach 0, for finite animations shorter than a
+  second to end, and for two painted frames. Anything it can't see (a smooth
+  scroll, a thing appearing) gets a `waitUntil` on that condition, not a
+  `browser.pause()`.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
   app at `.human-testing/` via `XDG_*_HOME`. The seed writes only into a
   directory that is new, empty or holds the `.hoplodex-sandbox` marker it

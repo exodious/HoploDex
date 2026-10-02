@@ -1,16 +1,32 @@
 import { useEffect, useState } from "react";
 import type { RefObject } from "react";
+import { begin, end } from "../../lib/busy";
 
 /** How long typing pauses before a search is sent. */
 export const SEARCH_DEBOUNCE_MS = 150;
 
-/** `value`, once it has stopped changing for `delayMs`. */
+/** `value`, once it has stopped changing for `delayMs`. The app counts as
+ * busy (`lib/busy.ts`) from the change until the new value is handed on, so
+ * a test can wait for the search it started. */
 export function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [value, delayMs]);
+    if (Object.is(value, debounced)) return;
+    begin();
+    let pending = true;
+    const settle = () => {
+      if (pending) end();
+      pending = false;
+    };
+    const timer = window.setTimeout(() => {
+      setDebounced(value);
+      settle();
+    }, delayMs);
+    return () => {
+      window.clearTimeout(timer);
+      settle();
+    };
+  }, [value, debounced, delayMs]);
   return debounced;
 }
 

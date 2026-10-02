@@ -1,9 +1,12 @@
+import { track } from "./busy";
+
 /** Reads a browser `File` into a plain number array — the shape a Tauri
  * command's `Vec<u8>` parameter deserializes from over IPC (a typed array
- * would serialize as an object with numeric keys, not a JSON array). */
+ * would serialize as an object with numeric keys, not a JSON array). The app
+ * counts as busy (`lib/busy.ts`) while it reads, as the upload that follows
+ * is one more call. */
 export async function fileToByteArray(file: File): Promise<number[]> {
-  const buffer = await file.arrayBuffer();
-  return Array.from(new Uint8Array(buffer));
+  return track(async () => Array.from(new Uint8Array(await file.arrayBuffer())));
 }
 
 /** Converts bytes returned from a Tauri command into a data: URL for

@@ -40,7 +40,7 @@ starting step 5 to see where it stands.
 | 1 | Performance tests out of the default run, seeded once | −90 s Rust | – | done |
 | 2 | cargo-nextest | −55 s Rust | 1 | done |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | done |
-| 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | todo |
+| 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | 4a done; 4b (specs, screenshot walk) todo |
 | 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled | todo |
 | 6 | Split the long E2E spec files | balance for 5 | 5 | todo |
 | 7 | Faster release profile for E2E builds | −50 s per rebuild | – | done |
@@ -348,7 +348,25 @@ covers point 4.
 **Verify.** The full E2E run passes 3 times in a row, and the total drops.
 Compare per-spec times against the baseline with the script in **Measuring**.
 
-**Result.** _(before → after)_
+**Status.** 4a done; 4b (specs, screenshot walk) todo.
+
+**Result.** _(before → after)_ 4a (the helpers in `ui.ts`; no `browser.pause`
+is left there): full run 519 s (baseline) → 433 s (7 m 13 s, three passing
+runs in a row, each with all 14 specs green), measured on a loaded machine
+(three other worktrees building and testing), so the figures are indicative.
+us9's one-minute wait is step 3's and is still in this number (72 s). Per
+spec, wdio's own times, before → after, from back-to-back runs on that
+machine: us3-value-insurance 70 → 43 s, us1-record-firearm 65 → 45,
+us5-export-import 21 → 12, us2-browse-search 15 → 10, ui-review 22 → 15,
+us4-photos-documents 11 → 8, the other specs unchanged (us11 37 → 36, us12
+91 → 88, us7-databases 34 → 33, us8-backups 24 → 24, us10 9 → 9). The
+13 specs other than us9 sum to 405 s → 336 s. What is left is mostly in the
+specs' own pauses (4b), the real-key-press specs (us11, us12: about 200 ms a
+key through `x11-input.py`) and `settle()` itself, about 50 ms a call at best
+(two frames) and longer while a backend call such as a key derivation runs.
+`settle()` skips animations longer than 1 s (the firearm drawing's draw-in,
+the form section highlight): the highlight made us1's Scenario 15 fail,
+because `settle()` waited out the 1.8 s highlight the test then looked for.
 
 ## Step 5 — Run E2E specs in parallel workers
 

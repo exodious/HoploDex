@@ -2,6 +2,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { track } from "../lib/busy";
 
 /**
  * Mirrors src-tauri/src/commands/error.rs's `CommandError` — the one error
@@ -50,7 +51,7 @@ function isCommandError(value: unknown): value is CommandError {
  */
 export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    return await tauriInvoke<T>(command, args);
+    return await track(() => tauriInvoke<T>(command, args));
   } catch (error) {
     if (isCommandError(error)) {
       throw new CommandFailure(error);
