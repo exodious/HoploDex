@@ -8,7 +8,7 @@ owns the UI.
 
 The repo's `Dockerfile` (Debian trixie) has everything below already
 installed: Rust, Node 24 LTS with npm 12, the Tauri/WebKitGTK and SQLCipher
-build dependencies, `tauri-driver` and `WebKitWebDriver`, `cargo-deny`, Xvfb,
+build dependencies, `tauri-driver` and `WebKitWebDriver`, `cargo-deny`, `cargo-nextest`, Xvfb,
 gnome-keyring, the GitHub CLI, Claude Code, Spec Kit's `specify`, and
 `python3-gi` for GTK drag-and-drop tests. It's built for rootless [podman](https://podman.io) and
 runs as a non-root `dev` user. The only thing to install on the host is
@@ -81,6 +81,10 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Linux/macOS
 ```
 
 On Windows, download and run [`rustup-init.exe`](https://win.rustup.rs).
+
+**cargo-nextest**, the Rust test runner (`cargo install cargo-nextest --locked`,
+or [a prebuilt binary](https://nexte.st/docs/installation/pre-built-binaries/)).
+`cargo test` still works without it, only slower.
 
 **Node.js 24 LTS** and **npm 12+** (npm 12 writes the lockfile format the
 repo uses) — via
@@ -259,23 +263,27 @@ fixed one shows the chooser.
 ## Test
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust unit + integration tests, real temp SQLCipher DB
-npm test                                          # Vitest frontend unit tests (jsdom)
-npm run build && npm run test:e2e                 # WebdriverIO E2E, driven against the built app
+cargo nextest run --manifest-path src-tauri/Cargo.toml   # Rust unit + integration tests, real temp SQLCipher DB
+cargo test --manifest-path src-tauri/Cargo.toml --doc    # Rust doctests (nextest doesn't run them; there are none today)
+npm test                                                 # Vitest frontend unit tests (jsdom)
+npm run build && npm run test:e2e                        # WebdriverIO E2E, driven against the built app
 ```
 
 To run part of a suite:
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test         # one integration-test file
-cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test <name>  # tests whose name contains <name>
-npx vitest run src/features/firearms/FirearmForm.test.tsx                            # one Vitest file
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                       # one E2E spec
+cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test)'                 # one integration-test file
+cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test) & test(<name>)'  # tests in it whose name contains <name>
+cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                              # tests anywhere whose name contains <name>
+npx vitest run src/features/firearms/FirearmForm.test.tsx                                                 # one Vitest file
+npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                            # one E2E spec
+
+cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test <name>  # the same without nextest
 ```
 
 The performance budgets (search 500 ms, actions 1 s, suggestions 50 ms at
 10,000 records) are timed only in a release build, so `performance_test.rs`
-is `#[ignore]`d and the default `cargo test` skips it. **Run it before opening
+is `#[ignore]`d and the default run skips it. **Run it before opening
 any pull request that touches search, listing, persistence or the `ops` layer
 (the pull request must note its impact against the budgets, per the
 constitution), and before every release.** Run the tests one at a time so that
@@ -290,6 +298,13 @@ CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.to
 `panic=unwind` is needed because `cargo test --release` builds the library
 for the tests with unwinding and for the binary with the profile's
 `panic = "abort"`, and the two then fail to link.
+
+This command stays on `cargo test` on purpose: nextest runs each test in its
+own process, so it would repeat the 10,000-record seeding that
+`performance_test.rs` does once per process under `cargo test`. If you do run
+it with `cargo nextest run --release --run-ignored all`, `.config/nextest.toml`
+puts `performance_test` in a one-at-a-time group that also holds every CPU
+slot, so no other test runs beside it.
 
 `npm run test:e2e` builds the app with `cargo build --profile e2e --features
 custom-protocol,e2e` and drives it via `tauri-driver`. That binary embeds
@@ -317,7 +332,7 @@ implies `mock-keyring` and, besides that, lets
 as one minute (default 60). The harness sets it to 3 for
 `us9-locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
 the notice and the settings still say "1 minute". The scaling's unit tests
-(`session/idle.rs`) run in the default `cargo test`.
+(`session/idle.rs`) run in the default Rust test run.
 
 On Linux the E2E suite runs under an isolated
 `xvfb` virtual display (via `xvfb-run`), so it never touches your real
@@ -386,7 +401,7 @@ of it:
   `MachineSettings::load` starts with the keyring off, so they never reach the
   OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
   with `--features mock-keyring`, against keyring-core's in-memory store:
-  `cargo test --manifest-path src-tauri/Cargo.toml --features mock-keyring --test keyring_test`.
+  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'binary(keyring_test)'`.
 - `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories, a
   `user-dirs.dirs` whose documents folder (the suggested place for a new
   database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at

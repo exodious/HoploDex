@@ -1,0 +1,17 @@
+# cargo-nextest settings; see DEVELOPMENT.md "Test". Nextest runs every test
+# in its own process, so the `static Mutex`es that keep `portability_test.rs`
+# and `performance_test.rs` one-at-a-time under `cargo test` no longer
+# serialize anything here. They stay for anyone still running `cargo test`.
+
+[test-groups]
+# At most one performance test at a time.
+performance = { max-threads = 1 }
+
+# The performance budgets are timings, so no other test may run beside them
+# (and the tests are `#[ignore]`d, so they run only with `--run-ignored`).
+# `threads-required = "num-cpus"` takes every slot, which keeps the rest of the
+# run out while one of them is going; the group keeps them one at a time.
+[[profile.default.overrides]]
+filter = 'binary(performance_test)'
+test-group = 'performance'
+threads-required = 'num-cpus'

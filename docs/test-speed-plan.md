@@ -38,7 +38,7 @@ starting step 5 to see where it stands.
 | Step | What | Est. saving | Depends on | State |
 |---|---|---|---|---|
 | 1 | Performance tests out of the default run, seeded once | −90 s Rust | – | done |
-| 2 | cargo-nextest | −55 s Rust | 1 | todo |
+| 2 | cargo-nextest | −55 s Rust | 1 | done |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | done |
 | 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | todo |
 | 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled | todo |
@@ -246,7 +246,20 @@ still works under the test group.
 **Done when.** The documented commands use nextest, and it runs in the
 container without a manual install.
 
-**Result.** _(before → after)_
+**Result.** Warm `cargo test` 96 s → warm `cargo nextest run` 45 s (about
+−50 s), run back to back in one container on a loaded machine (three other
+implementers building); 14 unit + 940 integration passed, 18 skipped, same
+counts under both. `cargo test --doc` runs 0 doctests (none exist), so nextest
+loses nothing and no second command is needed; DEVELOPMENT.md lists it as a
+one-line optional check. `cargo-nextest` 0.9.146 is in the Dockerfile
+(`CARGO_NEXTEST_VERSION`, `--locked`). `src-tauri/.config/nextest.toml` puts
+`performance_test` in a `performance` group with `max-threads = 1` and
+`threads-required = "num-cpus"`, so it takes every slot and nothing runs
+beside it; `cargo nextest run --run-ignored all` (debug) ran all 18
+contiguously after the other tests and `show-config test-groups` reports the
+group. The release perf command stays on `cargo test`: under nextest each test
+is its own process, so the once-per-process 10,000-record seeding of step 1
+would repeat 12 times. The two `static Mutex`es stay for `cargo test`.
 
 ## Step 3 — Settable idle-lock duration for E2E builds
 
