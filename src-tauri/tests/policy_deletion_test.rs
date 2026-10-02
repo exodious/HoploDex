@@ -79,7 +79,7 @@ fn the_impact_lists_what_the_dialog_needs_before_anything_changes() {
     assert!(!impact.is_blanket_in_force);
     assert_eq!(impact.scheduled_counts.total(), 1);
     assert_eq!(impact.scheduled_records[0].record, RecordRef::Firearm(f.id));
-    assert_eq!(impact.scheduled_records[0].make.as_deref(), Some("Colt"));
+    assert_eq!(impact.scheduled_records[0].make, "Colt");
     assert_eq!(impact.scheduled_records[0].nickname.as_deref(), Some("Range gun"));
     let mut others: Vec<_> = impact.other_policies.iter().map(|p| (p.id, p.is_expired)).collect();
     others.sort();
@@ -421,8 +421,8 @@ fn the_impact_lists_scheduled_firearms_and_accessories_together_by_label() {
     let label = impact.scheduled_records.iter().find(|l| l.record == RecordRef::Accessory(a));
     let label = label.unwrap();
     assert_eq!(label.type_name, "Optic", "an accessory's label carries its kind's name");
-    assert_eq!(label.make.as_deref(), Some("Leupold"));
-    assert_eq!(label.model.as_deref(), Some("VX-5HD"));
+    assert_eq!(label.make, "Leupold");
+    assert_eq!(label.model, "VX-5HD");
 }
 
 #[test]

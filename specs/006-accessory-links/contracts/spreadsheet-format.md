@@ -108,8 +108,8 @@ In export order (`ACCESSORY_COLUMNS`):
 |---|---|---|---|
 | 1 | `record_id` | identifier | as "Record ID" below |
 | 2 | `kind` | the kind's name, e.g. `Optic` | **required**: a kind name, matched ignoring letter case and surrounding whitespace, against every kind, including one no longer offered |
-| 3 | `make` | text | optional; 004's entry rules; snapped |
-| 4 | `model` | text | optional; 004's entry rules; snapped |
+| 3 | `make` | text | **required** (FR-001); 004's entry rules; snapped |
+| 4 | `model` | text | **required** (FR-001); 004's entry rules; snapped |
 | 5 | `serial_number` | text | optional; trimmed |
 | 6 | `caliber` | text | optional; 004's entry rules; snapped; derived from `cartridge` when blank, reported as for a firearm |
 | 7 | `cartridge` | text | optional; 004's entry rules; snapped |

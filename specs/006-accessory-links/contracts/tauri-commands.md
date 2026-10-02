@@ -39,8 +39,8 @@ type RecordRef = { kind: RecordKind; id: number };
  *  firearm by make, model and nickname, 001 FR-031) and link to it. */
 type RecordLabel = {
   record: RecordRef;
-  make: string | null;          // always set for a firearm
-  model: string | null;         // always set for a firearm
+  make: string;                 // required on both tables (006 FR-001)
+  model: string;
   nickname: string | null;      // firearms only
   typeName: string;             // the firearm type's or the accessory kind's name
   serialNumber: string | null;  // shown only where FR-012 searches by it
@@ -155,8 +155,8 @@ type AccessoryKind = {
 
 type AccessoryInput = {
   accessoryKindId: number;             // required; any kind that exists
-  make: string | null;                 // 004 entry rules when set
-  model: string | null;
+  make: string;                        // required (FR-001); 004 entry rules
+  model: string;                       // required (FR-001); 004 entry rules
   serialNumber: string | null;         // free text; no uniqueness (FR-004)
   caliber: string | null;              // 004 entry rules; derived from cartridge on the form
   cartridge: string | null;
@@ -198,8 +198,8 @@ type AccessorySummary = {
   accessoryKindId: number;
   kindName: string;
   genericThumbnailKey: string;
-  make: string | null;
-  model: string | null;
+  make: string;
+  model: string;
   serialNumber: string | null;
   caliber: string | null;
   cartridge: string | null;
@@ -210,11 +210,13 @@ type AccessorySummary = {
   insurancePolicyId: number | null;
   scheduledCoverageAmount: number | null;
   mountedOn: RecordLabel | null;     // direct host only (FR-013)
+  mountedCounts: RecordCounts;       // FR-016: everything below it, at any depth
 };
 
 type AccessoryGroup = {
   key: string;                // the group's heading: a kind, make, caliber,
-                              // cartridge, "Unspecified", "Not mounted", or "All"
+                              // cartridge, "Unspecified" (caliber or cartridge),
+                              // "Not mounted", or "All"
   host: RecordLabel | null;   // set only when grouped by mounted_on, for a host's group
   accessories: AccessorySummary[];
 };
@@ -222,7 +224,8 @@ type AccessoryGroup = {
 
 **Group order** (FR-017):
 - `kind`: the kind list's order.
-- `make`, `caliber`, `cartridge`: alphabetical, with "Unspecified" last.
+- `make`: alphabetical (every accessory has one, FR-001).
+- `caliber`, `cartridge`: alphabetical, with "Unspecified" last.
 - `mounted_on`: one group per host **record**, sorted by its name, with
   "Not mounted" last. Two hosts with the same name are two groups.
 - No grouping: one group, "All".
@@ -384,8 +387,9 @@ input: { files: { filePath: string; format: "csv" | "xlsx" }[] }   // 1 or 2 fil
     they carry it too.
   - `ImportConflict` gains `table` and
     `existingRecord: RecordRef`, replacing `existingFirearmId`. For an
-    accessory conflict, `duplicateAllowed` is always `true`, and `make`,
-    `model` and `serialNumber` may be `null`; it gains `kindName` (the
+    accessory conflict, `duplicateAllowed` is always `true`, and
+    `serialNumber` may be `null` (`make` and `model` are `string`, both
+    tables requiring them); it gains `kindName` (the
     accessory's kind name, `null` for a firearm). A conflict's id is
     `{session}-{table}-row-{n}`.
   - `ImportConflict` gains `mounted: MountedEntry[]` (issue #56): when the

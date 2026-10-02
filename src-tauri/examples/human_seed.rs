@@ -1292,12 +1292,12 @@ pub fn seed(conn: &Connection, extra: usize) {
     seed_mounts(conn);
 }
 
-/// A valid active accessory of a kind with only the required fields.
-fn bare_accessory(kind: i64) -> AccessoryInput {
+/// A valid active accessory with only the required fields.
+fn bare_accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
     AccessoryInput {
         accessory_kind_id: kind,
-        make: None,
-        model: None,
+        make: make.into(),
+        model: model.into(),
         serial_number: None,
         caliber: None,
         cartridge: None,
@@ -1318,14 +1318,14 @@ fn bare_accessory(kind: i64) -> AccessoryInput {
 }
 
 /// specs/006-accessory-links: one accessory of every kind, some with every
-/// field and some with almost none, a pair of magazines as one record, one
-/// scheduled under a policy, photos and a document, and disposed accessories
-/// with retained history covering every disposition type. The mounts are
-/// `seed_mounts`'.
+/// field and some with only the required ones, a pair of magazines as one
+/// record, one scheduled under a policy, photos and a document, and disposed
+/// accessories with retained history covering every disposition type. The
+/// mounts are `seed_mounts`'.
 fn seed_accessories(conn: &Connection, policies: &Policies) {
     let bare = bare_accessory;
     let add = |input: AccessoryInput| {
-        let label = format!("{:?} {:?}", input.make, input.model);
+        let label = format!("{} {}", input.make, input.model);
         must(accessory_ops::create_accessory(conn, &input, None), &label).id
     };
     let dispose = |id: i64, kind: DispositionType, recipient: &str, date: &str, price: i64| {
@@ -1359,8 +1359,6 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
     // Every field, scheduled under the Collector Schedule, with two photos
     // (the second chosen as its thumbnail) and a receipt.
     let scope = add(AccessoryInput {
-        make: text("Leupold"),
-        model: text("VX-5HD 3-15x44"),
         serial_number: text("LP-5HD-30211"),
         notes: text("Illuminated reticle; zeroed at 100 yards with 168 gr match."),
         estimated_value: Some(1_000),
@@ -1369,7 +1367,7 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         acquisition_price: Some(1_100),
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_200),
-        ..bare(KIND_OPTIC)
+        ..bare(KIND_OPTIC, "Leupold", "VX-5HD 3-15x44")
     });
     let scope_photos = [photo(scope, "scope-front.jpg", 200), photo(scope, "scope-side.jpg", 20)];
     must(
@@ -1387,13 +1385,11 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         "an accessory receipt",
     );
     add(AccessoryInput {
-        make: text("Streamlight"),
-        model: text("TLR-7 Sub"),
         serial_number: text("TL7-004418"),
         estimated_value: Some(140),
         acquisition_date: text("2023-11-02"),
         acquisition_price: Some(130),
-        ..bare(KIND_LIGHT)
+        ..bare(KIND_LIGHT, "Streamlight", "TLR-7 Sub")
     });
     // A pair of magazines kept together is one record, with the count in its
     // model and the value of both (FR-001).
@@ -1404,118 +1400,90 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         estimated_value: Some(180),
         acquisition_source: text("Estate sale"),
         acquisition_date: text("2020-08-22"),
-        make: text("Walther"),
-        model: text("P38 magazines, pair"),
-        ..bare(KIND_MAGAZINE)
+        ..bare(KIND_MAGAZINE, "Walther", "P38 magazines, pair")
     });
     photo(magazines, "p38-magazines.jpg", 120);
+    add(AccessoryInput { estimated_value: Some(90), ..bare(KIND_STOCK, "Magpul", "MOE SL stock") });
     add(AccessoryInput {
-        make: text("Magpul"),
-        model: text("MOE SL stock"),
-        estimated_value: Some(90),
-        ..bare(KIND_STOCK)
-    });
-    add(AccessoryInput {
-        make: text("Aero Precision"),
-        model: text("M4E1 upper receiver"),
         serial_number: text("AP-U-70213"),
         caliber: text(".223"),
         cartridge: text(".223 Remington"),
         estimated_value: Some(350),
         acquisition_date: text("2022-05-14"),
-        ..bare(KIND_UPPER)
+        ..bare(KIND_UPPER, "Aero Precision", "M4E1 upper receiver")
     });
     add(AccessoryInput {
-        make: text("Criterion"),
-        model: text("Hybrid 16 in barrel"),
         serial_number: text("CB-1160"),
         caliber: text(".223"),
         estimated_value: Some(200),
-        ..bare(KIND_BARREL)
+        ..bare(KIND_BARREL, "Criterion", "Hybrid 16 in barrel")
     });
     add(AccessoryInput {
-        make: text("SureFire"),
-        model: text("SOCOM flash hider"),
         estimated_value: Some(120),
         acquisition_price: Some(110),
-        ..bare(KIND_MUZZLE)
+        ..bare(KIND_MUZZLE, "SureFire", "SOCOM flash hider")
     });
     add(AccessoryInput {
-        make: text("CMMG"),
-        model: text("Banshee .22 LR conversion kit"),
         caliber: text(".22"),
         cartridge: text(".22 Long Rifle"),
         estimated_value: Some(300),
-        ..bare(KIND_CONVERSION)
+        ..bare(KIND_CONVERSION, "CMMG", "Banshee .22 LR conversion kit")
     });
     add(AccessoryInput {
-        make: text("Geissele"),
-        model: text("Super Precision 30 mm mount"),
         estimated_value: Some(150),
-        ..bare(KIND_MOUNT)
+        ..bare(KIND_MOUNT, "Geissele", "Super Precision 30 mm mount")
     });
-    // A model and no make, then a make and no model, then only a value.
+    // Only the required fields, then a value, then notes.
     add(AccessoryInput {
-        model: text("Two-point sling"),
         estimated_value: Some(40),
-        ..bare(KIND_SLING)
+        ..bare(KIND_SLING, "Magpul", "MS4 two-point sling")
     });
-    add(AccessoryInput { make: text("Pelican"), ..bare(KIND_CASE) });
+    add(bare(KIND_CASE, "Pelican", "1500 case"));
     add(AccessoryInput {
         notes: text("Box of spare springs, pins and a cleaning rod."),
         estimated_value: Some(25),
-        ..bare(KIND_OTHER)
+        ..bare(KIND_OTHER, "Real Avid", "Spare parts kit")
     });
 
     // -- Disposed, each type once; two keep their earlier dispositions ------
 
     let red_dot = add(AccessoryInput {
-        make: text("Vortex"),
-        model: text("Strikefire II"),
         estimated_value: Some(150),
         acquisition_date: text("2021-02-10"),
-        ..bare(KIND_OPTIC)
+        ..bare(KIND_OPTIC, "Vortex", "Strikefire II")
     });
     dispose(red_dot, DispositionType::Sold, "Dave Rossi", "2022-06-01", 120);
     reacquire(red_dot);
     dispose(red_dot, DispositionType::Traded, "Ridgeline Arms", "2024-09-14", 110);
 
     let sling = add(AccessoryInput {
-        make: text("Blue Force Gear"),
-        model: text("Vickers sling"),
         estimated_value: Some(45),
         acquisition_date: text("2019-12-12"),
-        ..bare(KIND_SLING)
+        ..bare(KIND_SLING, "Blue Force Gear", "Vickers sling")
     });
     dispose(sling, DispositionType::Gifted, "Nephew Tom", "2024-12-25", 0);
 
     let barrel = add(AccessoryInput {
-        make: text("Faxon"),
-        model: text("Match barrel"),
         serial_number: text("FX-88341"),
         estimated_value: Some(220),
         acquisition_date: text("2020-06-30"),
-        ..bare(KIND_BARREL)
+        ..bare(KIND_BARREL, "Faxon", "Match barrel")
     });
     dispose(barrel, DispositionType::LostStolen, "Lost in transit, claim 23-4471", "2023-03-09", 0);
     reacquire(barrel);
     dispose(barrel, DispositionType::Sold, "Kestrel Outfitters", "2025-04-18", 190);
 
     let muzzle = add(AccessoryInput {
-        make: text("Noveske"),
-        model: text("KX3 flash hider"),
         estimated_value: Some(0),
         acquisition_date: text("2018-01-20"),
-        ..bare(KIND_MUZZLE)
+        ..bare(KIND_MUZZLE, "Noveske", "KX3 flash hider")
     });
     dispose(muzzle, DispositionType::Destroyed, "Cracked at the weld; scrapped", "2024-05-05", 0);
 
     let case = add(AccessoryInput {
-        make: text("Plano"),
-        model: text("Field locker"),
         estimated_value: Some(60),
         acquisition_date: text("2017-09-01"),
-        ..bare(KIND_CASE)
+        ..bare(KIND_CASE, "Plano", "Field locker")
     });
     dispose(
         case,
@@ -1553,14 +1521,12 @@ fn seed_mounts(conn: &Connection) {
         RecordRef::Firearm(must(firearm_ops::create_firearm(conn, &input, false, None), &label).id)
     };
     let add_accessory = |input: AccessoryInput| {
-        let label = format!("{:?} {:?}", input.make, input.model);
+        let label = format!("{} {}", input.make, input.model);
         RecordRef::Accessory(must(accessory_ops::create_accessory(conn, &input, None), &label).id)
     };
     let accessory = |kind: i64, make: &str, model: &str, host: RecordRef| AccessoryInput {
-        make: text(make),
-        model: text(model),
         mounted_on: Some(host),
-        ..bare_accessory(kind)
+        ..bare_accessory(kind, make, model)
     };
 
     // An optic and a suppressor on the rifle nicknamed "Deer rifle". The
@@ -1590,19 +1556,14 @@ fn seed_mounts(conn: &Connection) {
 
     // An upper that is not on any receiver, carrying its own optic.
     let spare_upper = add_accessory(AccessoryInput {
-        make: text("Daniel Defense"),
-        model: text("MK18 upper"),
         serial_number: text("DD-U-55102"),
-        ..bare_accessory(KIND_UPPER)
+        ..bare_accessory(KIND_UPPER, "Daniel Defense", "MK18 upper")
     });
     add_accessory(accessory(KIND_OPTIC, "Trijicon", "ACOG TA31 4x32", spare_upper));
 
     // A firearm mounted on an accessory (FR-009): a pistol kept in its case.
-    let case = add_accessory(AccessoryInput {
-        make: text("Pelican"),
-        model: text("1170 case"),
-        ..bare_accessory(KIND_CASE)
-    });
+    let case =
+        add_accessory(AccessoryInput { ..bare_accessory(KIND_CASE, "Pelican", "1170 case") });
     add_firearm(FirearmInput {
         mounted_on: Some(case),
         ..base("Walther", "PPK/S", "PPKS-221903", ".380", HANDGUN)
@@ -2450,12 +2411,18 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
             ("cartridge", "9x19mm Parabellum"),
             ("estimated_value", "20"),
         ]),
-        row(&[("record_id", id::BARREL), ("kind", "Barrel"), ("make", "Criterion")]),
+        row(&[
+            ("record_id", id::BARREL),
+            ("kind", "Barrel"),
+            ("make", "Criterion"),
+            ("model", "Hybrid barrel"),
+        ]),
         // A disposed accessory, with its disposition.
         row(&[
             ("record_id", id::SLING),
             ("kind", "Sling"),
             ("make", "Blue Force Gear"),
+            ("model", "Vickers sling"),
             ("status", "disposed"),
             ("disposition_type", "sold"),
             ("disposition_recipient", "Sam Example"),
@@ -2474,6 +2441,7 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
             ("record_id", id::RAIL),
             ("kind", "Mount or rail"),
             ("make", "ADM"),
+            ("model", "AD-RECON mount"),
             ("mounted_on", id::OPTIC),
         ]),
         // No identifier: gets a new one. The kind is matched ignoring case.
@@ -2508,9 +2476,19 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
         ("disposition_recipient", "Sam Example"),
         ("disposition_date", "2025-07-01"),
     ];
-    let mut host_gone = vec![("record_id", id::WARN_DISPOSED), ("kind", "Sling")];
+    let mut host_gone = vec![
+        ("record_id", id::WARN_DISPOSED),
+        ("kind", "Sling"),
+        ("make", "Magpul"),
+        ("model", "MS1 sling"),
+    ];
     host_gone.extend_from_slice(&disposed);
-    let mut item_gone = vec![("record_id", id::WARN_ITEM), ("kind", "Optic")];
+    let mut item_gone = vec![
+        ("record_id", id::WARN_ITEM),
+        ("kind", "Optic"),
+        ("make", "Burris"),
+        ("model", "Fullfield IV"),
+    ];
     item_gone.extend_from_slice(&disposed);
     item_gone.push(("mounted_on", id::WARN_A));
     write(
@@ -2518,21 +2496,41 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
         ACCESSORY_COLUMNS,
         &[
             // No record has this identifier.
-            row(&[("record_id", id::WARN_A), ("kind", "Optic"), ("mounted_on", id::NOBODY)]),
+            row(&[
+                ("record_id", id::WARN_A),
+                ("kind", "Optic"),
+                ("make", "Nikon"),
+                ("model", "Monarch 3"),
+                ("mounted_on", id::NOBODY),
+            ]),
             row(&host_gone),
             // Its host is disposed.
-            row(&[("kind", "Optic"), ("mounted_on", id::WARN_DISPOSED)]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Bushnell"),
+                ("model", "Elite 4500"),
+                ("mounted_on", id::WARN_DISPOSED),
+            ]),
             // Not an identifier at all.
-            row(&[("kind", "Optic"), ("mounted_on", "not-a-record-id")]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Sig Sauer"),
+                ("model", "Romeo5"),
+                ("mounted_on", "not-a-record-id"),
+            ]),
             // Two rows mounted on each other: the later is left unmounted.
             row(&[
                 ("record_id", id::WARN_LOOP_1),
                 ("kind", "Light or laser"),
+                ("make", "Streamlight"),
+                ("model", "TLR-1"),
                 ("mounted_on", id::WARN_LOOP_2),
             ]),
             row(&[
                 ("record_id", id::WARN_LOOP_2),
                 ("kind", "Light or laser"),
+                ("make", "Crimson Trace"),
+                ("model", "LiNQ"),
                 ("mounted_on", id::WARN_LOOP_1),
             ]),
             // A disposed record is never mounted.
@@ -2544,15 +2542,47 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
         "import-accessory-errors.csv",
         ACCESSORY_COLUMNS,
         &[
-            row(&[("make", "No Kind Given")]),
-            row(&[("kind", "Frobnicator"), ("make", "Unknown Kind")]),
-            row(&[("kind", "Optic"), ("make", "Fractional"), ("estimated_value", "12.50")]),
-            row(&[("kind", "Optic"), ("make", "Bad Date"), ("acquisition_date", "next week")]),
-            row(&[("record_id", "xyz"), ("kind", "Optic"), ("make", "Bad Record ID")]),
-            row(&[("record_id", id::ERROR_TWICE), ("kind", "Optic"), ("make", "First Use")]),
-            row(&[("record_id", id::ERROR_TWICE), ("kind", "Optic"), ("make", "Second Use")]),
-            row(&[("kind", "Optic"), ("make", "Disposed Without Details"), ("status", "disposed")]),
-            row(&[("kind", "Optic"), ("make", "Good Row Among The Bad")]),
+            row(&[("make", "No Kind Given"), ("model", "X")]),
+            row(&[("kind", "Optic"), ("model", "No Make Given")]),
+            row(&[("kind", "Optic"), ("make", "No Model Given")]),
+            row(&[("kind", "Frobnicator"), ("make", "Unknown Kind"), ("model", "X")]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Fractional"),
+                ("model", "X"),
+                ("estimated_value", "12.50"),
+            ]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Bad Date"),
+                ("model", "X"),
+                ("acquisition_date", "next week"),
+            ]),
+            row(&[
+                ("record_id", "xyz"),
+                ("kind", "Optic"),
+                ("make", "Bad Record ID"),
+                ("model", "X"),
+            ]),
+            row(&[
+                ("record_id", id::ERROR_TWICE),
+                ("kind", "Optic"),
+                ("make", "First Use"),
+                ("model", "X"),
+            ]),
+            row(&[
+                ("record_id", id::ERROR_TWICE),
+                ("kind", "Optic"),
+                ("make", "Second Use"),
+                ("model", "X"),
+            ]),
+            row(&[
+                ("kind", "Optic"),
+                ("make", "Disposed Without Details"),
+                ("model", "X"),
+                ("status", "disposed"),
+            ]),
+            row(&[("kind", "Optic"), ("make", "Good Row Among The Bad"), ("model", "X")]),
         ],
     );
 }

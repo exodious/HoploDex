@@ -48,7 +48,7 @@ New backend test files are marked *(new)*. Every backend test runs the real
 
 | Story / criterion | What is checked | Where it is automated |
 |---|---|---|
-| US1-1, 3, 4, 5: record an accessory | Kind required, all else optional; saves and reopens intact; a pair-of-magazines record; kind alone | `tests/accessory_test.rs` *(new)*; `AccessoryForm.test.tsx` (fields, no quantity field, "Choose a kind.") |
+| US1-1, 3, 4, 5: record an accessory | Kind, make and model required, all else optional; saves and reopens intact; a pair-of-magazines record | `tests/accessory_test.rs` *(new)*; `AccessoryForm.test.tsx` (fields, no quantity field, "Choose a kind.") |
 | US1-2, FR-002: kinds | The 12 kinds in order, no Suppressor, the hint; a kind no longer offered stays on its record and is accepted on save and import | `tests/accessory_test.rs` (`list_accessory_kinds`; raw `UPDATE accessory_kinds SET offered = 0`); `AccessoryForm.test.tsx` |
 | US1-6, FR-003: entry rules | Caliber derived from cartridge; make suggestions from both tables; snapping | `tests/entry_suggestions_test.rs` (+ suggestions and `settle_entry` over both tables); `tests/accessory_test.rs` (entry rules on save); `AccessoryForm.test.tsx` (derivation row) |
 | FR-004, FR-005: no identity, naming | Two accessories with the same make, model and serial number both save; naming with and without make and model | `tests/accessory_test.rs`; `RecordName.test.tsx` *(new)* |

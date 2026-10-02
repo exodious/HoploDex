@@ -15,7 +15,7 @@ use crate::commands::firearms::{
 use crate::models::accessory::{Accessory, AccessoryInput, validate_accessory_input};
 use crate::models::disposition_history::DispositionHistoryEntry;
 use crate::models::firearm::FirearmStatus;
-use crate::models::record::{MountDetail, RecordLabel, RecordRef};
+use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
 use crate::services::insurance_status::InsuranceWarning;
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
@@ -46,7 +46,7 @@ pub struct AccessoryDetail {
 pub enum AccessoryGroupBy {
     /// The kind list's order.
     Kind,
-    /// Alphabetical, "Unspecified" last.
+    /// Alphabetical.
     Make,
     /// Alphabetical, "Unspecified" last.
     Caliber,
@@ -78,8 +78,8 @@ pub struct AccessorySummary {
     pub accessory_kind_id: i64,
     pub kind_name: String,
     pub generic_thumbnail_key: String,
-    pub make: Option<String>,
-    pub model: Option<String>,
+    pub make: String,
+    pub model: String,
     pub serial_number: Option<String>,
     pub caliber: Option<String>,
     pub cartridge: Option<String>,
@@ -91,6 +91,9 @@ pub struct AccessorySummary {
     pub scheduled_coverage_amount: Option<i64>,
     /// The direct host only (FR-013).
     pub mounted_on: Option<RecordLabel>,
+    /// FR-016: everything below it, at any depth, by kind, as a firearm's
+    /// `mounted_counts` on the collection page (FR-016a).
+    pub mounted_counts: RecordCounts,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -527,6 +530,7 @@ pub mod ops {
                         insurance_policy_id,
                         scheduled_coverage_amount,
                         mounted_on: None,
+                        mounted_counts: RecordCounts::default(),
                     };
                     let kind_order: i64 = row.get(14)?;
                     Ok((summary, kind_order))
@@ -536,8 +540,9 @@ pub mod ops {
             .collect::<Result<Vec<_>, _>>()
             .map_err(CommandError::from_db)?;
 
-        // FR-013: the direct host's label, from the whole graph once and one
-        // label query per table (research.md §5, §22).
+        // FR-013, FR-016: the direct host's label and the counts below, from
+        // the whole graph once and one label query per table (research.md
+        // §5, §22).
         let graph = MountGraph::load(conn)?;
         let hosts: Vec<RecordRef> = rows
             .iter()
@@ -552,10 +557,12 @@ pub mod ops {
         let mut groups: Vec<AccessoryGroup> = Vec::new();
         let mut order: Vec<GroupOrder> = Vec::new();
         let mut group_index: HashMap<GroupKey, usize> = HashMap::new();
+        let mut counts = HashMap::new();
         for (mut summary, kind_order) in rows {
-            summary.mounted_on = graph
-                .host_of(RecordRef::Accessory(summary.id))
-                .and_then(|host| host_labels.get(&host).cloned());
+            let record = RecordRef::Accessory(summary.id);
+            summary.mounted_on =
+                graph.host_of(record).and_then(|host| host_labels.get(&host).cloned());
+            summary.mounted_counts = graph.count_below(record, &mut counts);
             let unspecified = |text: &Option<String>| {
                 text.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)
             };
@@ -572,11 +579,13 @@ pub mod ops {
                     | AccessoryGroupBy::Caliber
                     | AccessoryGroupBy::Cartridge),
                 ) => {
-                    let value = unspecified(match by {
-                        AccessoryGroupBy::Make => &summary.make,
-                        AccessoryGroupBy::Caliber => &summary.caliber,
-                        _ => &summary.cartridge,
-                    });
+                    // A make is always there (FR-001); caliber and cartridge
+                    // may be blank.
+                    let value = match by {
+                        AccessoryGroupBy::Make => Some(summary.make.clone()),
+                        AccessoryGroupBy::Caliber => unspecified(&summary.caliber),
+                        _ => unspecified(&summary.cartridge),
+                    };
                     match value {
                         Some(text) => (
                             GroupKey::Text(text.clone()),
@@ -594,7 +603,7 @@ pub mod ops {
                 }
                 Some(AccessoryGroupBy::MountedOn) => match &summary.mounted_on {
                     Some(label) => {
-                        let name = record_name(label);
+                        let name = mounts::record_name(label);
                         (
                             GroupKey::Host(label.record),
                             name.clone(),
@@ -674,29 +683,6 @@ pub mod ops {
     impl CaseFolded {
         fn cmp_key(&self) -> (&str, &str) {
             (&self.0, &self.1)
-        }
-    }
-
-    /// A record's name as the Accessories page shows it (FR-005): a firearm
-    /// "{make} {model} “{nickname}”", an accessory "{make} {model} · {kind}"
-    /// with the kind alone when make and model are both blank.
-    fn record_name(label: &RecordLabel) -> String {
-        let make_model = [label.make.as_deref(), label.model.as_deref()]
-            .into_iter()
-            .flatten()
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ");
-        match label.record {
-            RecordRef::Accessory(_) if make_model.is_empty() => label.type_name.clone(),
-            RecordRef::Accessory(_) => format!("{make_model} · {}", label.type_name),
-            RecordRef::Firearm(_) => match label.nickname.as_deref() {
-                Some(nickname) if !nickname.is_empty() => {
-                    format!("{make_model} \u{201C}{nickname}\u{201D}")
-                }
-                _ => make_model,
-            },
         }
     }
 }

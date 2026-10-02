@@ -70,8 +70,8 @@ export interface ImportConflict {
   /** False where FR-032 would block a duplicate record (FR-026); always
    * true for an accessory. */
   duplicateAllowed: boolean;
-  make: string | null;
-  model: string | null;
+  make: string;
+  model: string;
   serialNumber: string | null;
   /** An accessory's kind; null for a firearm. */
   kindName: string | null;

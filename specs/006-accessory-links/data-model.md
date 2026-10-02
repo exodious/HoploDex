@@ -111,10 +111,12 @@ CREATE TABLE accessories (
     id INTEGER PRIMARY KEY,
     uid TEXT NOT NULL UNIQUE CHECK (...),            -- as above
     accessory_kind_id INTEGER NOT NULL REFERENCES accessory_kinds (id),
-    -- FR-001: all optional. 004's entry rules apply on entry only, so no
-    -- length CHECK (an existing longer value stays valid).
-    make TEXT,
-    model TEXT,
+    -- FR-001: make and model required, as a firearm's, so every accessory
+    -- has a name of its own (FR-005); the rest optional. 004's entry rules
+    -- apply on entry only, so no length CHECK (an existing longer value
+    -- stays valid).
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
     serial_number TEXT,
     caliber TEXT,
     cartridge TEXT,
@@ -164,7 +166,8 @@ and import, FR-024):
 | Field | Rule | Message (field key) |
 |---|---|---|
 | `accessoryKindId` | Required; must exist in `accessory_kinds` (offered or not; the command checks) | "Choose a kind." (`accessoryKindId`) |
-| `make`, `model`, `caliber`, `cartridge` | Optional; otherwise 004's entry rules (FR-015), checked only when changed from the stored value | as 004 |
+| `make`, `model` | Required; trimmed; 004's entry rules (FR-015), checked only when changed from the stored value | "Make is required." / "Model is required." (`make`, `model`), else as 004 |
+| `caliber`, `cartridge` | Optional; otherwise 004's entry rules (FR-015), checked only when changed from the stored value | as 004 |
 | `serialNumber`, `acquisitionSource`, `notes` | Optional free text; trimmed; blank → `null` | none |
 | `estimatedValue`, `acquisitionPrice`, `dispositionPrice`, `scheduledCoverageAmount` | Whole dollars, not negative (001 FR-037) | as for a firearm |
 | `acquisitionDate` | `YYYY-MM-DD`, not after today (local) | as for a firearm |
@@ -174,8 +177,8 @@ and import, FR-024):
 | `mountedOn` | `null`, or an allowed host (FR-010); checked by the command, not here | see Mount |
 
 **Naming** (FR-005, done in the frontend's `RecordName`): "{make} {model} ·
-{kind}". Either of make and model alone is used as it is. When both are
-blank, the kind alone.
+{kind}". Both are required (FR-001), so an accessory is never named by its
+kind alone.
 
 ## Entity: Mount (new)
 

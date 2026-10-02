@@ -120,6 +120,9 @@ function blankToNull(value: string): string | null {
 function validate(form: FormState): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (form.accessoryKindId === "") errors.accessoryKindId = "Choose a kind.";
+  // FR-001: required, as a firearm's, so the accessory has a name of its own.
+  if (form.make.trim() === "") errors.make = "Enter the make.";
+  if (form.model.trim() === "") errors.model = "Enter the model.";
   for (const [field, label] of [
     ["make", "Make"],
     ["model", "Model"],
@@ -405,8 +408,8 @@ export function AccessoryForm({
     // dialogs' to change, so a save here keeps what the record has.
     const input: AccessoryInput = {
       accessoryKindId: Number(form.accessoryKindId),
-      make: blankToNull(form.make),
-      model: blankToNull(form.model),
+      make: form.make.trim(),
+      model: form.model.trim(),
       serialNumber: blankToNull(form.serialNumber),
       caliber: blankToNull(form.caliber),
       cartridge: blankToNull(form.cartridge),
@@ -479,6 +482,7 @@ export function AccessoryForm({
               <EntryField
                 field="make"
                 label="Make"
+                required
                 value={form.make}
                 onValueChange={(text) => editEntry("make", text)}
                 onPick={(value) => pickEntry("make", value)}
@@ -492,6 +496,7 @@ export function AccessoryForm({
               <EntryField
                 field="model"
                 label="Model"
+                required
                 make={form.make}
                 value={form.model}
                 onValueChange={(text) => editEntry("model", text)}

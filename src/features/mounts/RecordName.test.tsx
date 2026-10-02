@@ -9,8 +9,7 @@ import type { RecordLabel } from "./types";
 // specs/006-accessory-links FR-005, contracts/ui-accessories.md (rules): a
 // record of either kind is named by `RecordName`. A firearm is named as
 // `FirearmName` names it (make, model and “nickname”, 001 FR-031); an
-// accessory by "{make} {model} · {kind}", one of make and model alone as it
-// is, and the kind alone when both are blank.
+// accessory by "{make} {model} · {kind}" (both required, FR-001).
 
 function firearmLabel(overrides: Partial<RecordLabel> = {}): RecordLabel {
   return {
@@ -70,34 +69,6 @@ describe("RecordName for an accessory (FR-005)", () => {
   it("reads the same with the type asked for, which an accessory always has", () => {
     const { container } = render(<RecordName label={accessoryLabel()} withType />);
     expect(container).toHaveTextContent(/^Leupold VX-5HD 3-15x44 · Optic$/);
-  });
-
-  it("reads a make alone as it is, followed by the kind", () => {
-    const { container } = render(
-      <RecordName label={accessoryLabel({ model: null, typeName: "Magazine", make: "Walther" })} />,
-    );
-    expect(container).toHaveTextContent(/^Walther · Magazine$/);
-  });
-
-  it("reads a model alone as it is, followed by the kind", () => {
-    const { container } = render(
-      <RecordName label={accessoryLabel({ make: null, model: "P38 magazines, pair" })} />,
-    );
-    expect(container).toHaveTextContent(/^P38 magazines, pair · Optic$/);
-  });
-
-  it("reads the kind alone when make and model are both blank", () => {
-    const { container } = render(
-      <RecordName label={accessoryLabel({ make: null, model: null, typeName: "Sling" })} />,
-    );
-    expect(container).toHaveTextContent(/^Sling$/);
-  });
-
-  it("treats blank text like none", () => {
-    const { container } = render(
-      <RecordName label={accessoryLabel({ make: "  ", model: "", typeName: "Sling" })} />,
-    );
-    expect(container).toHaveTextContent(/^Sling$/);
   });
 
   it("never shows a nickname", () => {

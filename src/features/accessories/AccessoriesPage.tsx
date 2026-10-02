@@ -11,6 +11,7 @@ import { GroupByMenu } from "../browse/GroupByMenu";
 import type { GroupByOption } from "../browse/GroupByMenu";
 import { SearchBar } from "../browse/SearchBar";
 import { SEARCH_DEBOUNCE_MS, useDebounced, useSearchShortcut } from "../browse/searchHooks";
+import { hasAny } from "../mounts/recordCounts";
 import { RecordName } from "../mounts/RecordName";
 import { accessoryNameText, recordNameText } from "../mounts/recordNames";
 import * as accessoriesService from "./accessoriesService";
@@ -401,6 +402,10 @@ function AccessoryList({
                               <span className="hd-serial">{accessory.serialNumber}</span>
                             </span>
                           )}
+                          {/* FR-016: what is mounted on it, counted as the
+                              collection's rows count it; its own host has
+                              the Mounted on column. */}
+                          <MountLines mountedOn={null} mountedCounts={accessory.mountedCounts} />
                         </div>
                       </div>
                     </td>
@@ -479,9 +484,12 @@ function AccessoryTiles({ groups, grouped, onSelect }: LayoutProps & { grouped: 
                         </span>
                       </span>
                     </button>
-                    {accessory.mountedOn && (
+                    {(accessory.mountedOn || hasAny(accessory.mountedCounts)) && (
                       <div className="hd-tile__mounts">
-                        <MountLines mountedOn={accessory.mountedOn} />
+                        <MountLines
+                          mountedOn={accessory.mountedOn}
+                          mountedCounts={accessory.mountedCounts}
+                        />
                       </div>
                     )}
                   </div>

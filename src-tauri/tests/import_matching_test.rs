@@ -620,11 +620,10 @@ mod record_id_matching {
     }
 
     fn add_accessory(db: &TestDb, make: &str, model: &str, serial: &str) -> RecordRef {
-        let mut input: AccessoryInput =
-            serde_json::from_value(json!({ "accessoryKindId": OPTIC, "status": "active" }))
-                .unwrap();
-        input.make = Some(make.into());
-        input.model = Some(model.into());
+        let mut input: AccessoryInput = serde_json::from_value(
+            json!({ "accessoryKindId": OPTIC, "make": make, "model": model, "status": "active" }),
+        )
+        .unwrap();
         input.serial_number = Some(serial.into());
         RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, &input, None).unwrap().id)
     }

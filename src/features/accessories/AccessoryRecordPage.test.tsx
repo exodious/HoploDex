@@ -196,13 +196,6 @@ describe("AccessoryRecordPage bar (§12)", () => {
     expect(labels[2]).toBe("Delete");
     expect(screen.queryByRole("button", { name: "Mark disposed" })).not.toBeInTheDocument();
   });
-
-  it("names an accessory with neither make nor model by its kind", async () => {
-    getAccessory.mockResolvedValue({ ...optic, make: null, model: null, accessoryKindId: 10 });
-    renderPage();
-
-    expect(await screen.findByRole("heading", { level: 1, name: "Sling" })).toBeInTheDocument();
-  });
 });
 
 describe("AccessoryRecordPage layout (§12)", () => {

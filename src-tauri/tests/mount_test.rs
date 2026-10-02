@@ -62,11 +62,10 @@ fn suppressor(serial: &str) -> FirearmInput {
 }
 
 fn accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
-    let mut input: AccessoryInput =
-        serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
-    input.make = Some(make.into());
-    input.model = Some(model.into());
-    input
+    serde_json::from_value(
+        json!({ "accessoryKindId": kind, "make": make, "model": model, "status": "active" }),
+    )
+    .unwrap()
 }
 
 fn add_firearm(db: &TestDb, input: &FirearmInput) -> RecordRef {
@@ -706,12 +705,8 @@ fn candidates_also_match_the_make_and_model_together_and_an_accessorys_kind() {
     let scope = plain_accessory(&db, OPTIC, "Leupold", "VX-3HD");
     let other_scope = plain_accessory(&db, OPTIC, "Vortex", "Razor");
     let strap = plain_accessory(&db, SLING, "Magpul", "MS1");
-    let bare_sling = add_accessory(&db, &{
-        let mut input = accessory(SLING, "x", "x");
-        input.make = None;
-        input.model = None;
-        input
-    });
+    // Found by its kind alone: "sling" is in neither its make nor its model.
+    let vickers = plain_accessory(&db, SLING, "Vickers", "Combat Applications");
 
     let query = |text: &str| {
         candidate_records(&db, json!({ "role": "host", "record": null, "query": text }))
@@ -720,7 +715,7 @@ fn candidates_also_match_the_make_and_model_together_and_an_accessorys_kind() {
     assert_eq!(query("Leupold VX"), [scope], "make and model together");
     assert_eq!(query("leupold vx-3hd"), [scope]);
     assert_eq!(query("Glock 19"), [glock], "a firearm's make and model together");
-    assert_eq!(query("sling"), [strap, bare_sling], "an accessory's kind, by name then id");
+    assert_eq!(query("sling"), [strap, vickers], "an accessory's kind, by name then id");
     assert_eq!(query("Optic"), [scope, other_scope], "the kind of several records");
     assert!(query("Leupold Razor").is_empty(), "the words must be together, in order");
 
@@ -730,7 +725,7 @@ fn candidates_also_match_the_make_and_model_together_and_an_accessorys_kind() {
         candidate_records(&db, json!({ "role": "item", "record": rifle, "query": text }))
     };
     assert_eq!(item_query("Leupold VX"), [scope]);
-    assert_eq!(item_query("sling"), [strap, bare_sling]);
+    assert_eq!(item_query("sling"), [strap, vickers]);
 }
 
 #[test]

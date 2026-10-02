@@ -102,8 +102,8 @@ pub struct ImportConflict {
     /// Whether "create a duplicate" may be offered: false where FR-032 would
     /// block the resulting record (FR-026). Always true for an accessory.
     pub duplicate_allowed: bool,
-    pub make: Option<String>,
-    pub model: Option<String>,
+    pub make: String,
+    pub model: String,
     pub serial_number: Option<String>,
     /// An accessory row's kind name; `None` for a firearm.
     pub kind_name: Option<String>,
@@ -686,8 +686,8 @@ pub mod ops {
             accessory_rows.push(AccessoryExportRow {
                 record_id: accessory.uid.clone(),
                 kind: name_of(&kinds, Some(accessory.accessory_kind_id)),
-                make: accessory.make.clone().unwrap_or_default(),
-                model: accessory.model.clone().unwrap_or_default(),
+                make: accessory.make.clone(),
+                model: accessory.model.clone(),
                 serial_number: accessory.serial_number.clone().unwrap_or_default(),
                 caliber: accessory.caliber.clone().unwrap_or_default(),
                 cartridge: accessory.cartridge.clone().unwrap_or_default(),
@@ -1248,6 +1248,8 @@ pub mod ops {
         raw: &RawAccessoryRow,
     ) -> Result<(AccessoryInput, String), String> {
         let wanted = raw.kind.clone().ok_or("kind: Choose a kind.")?;
+        let make = raw.make.clone().ok_or("Missing required field: make")?;
+        let model = raw.model.clone().ok_or("Missing required field: model")?;
         // By name among every kind, offered or not, ignoring letter case and
         // surrounding whitespace.
         let (accessory_kind_id, kind_name): (i64, String) = conn
@@ -1283,8 +1285,8 @@ pub mod ops {
 
         let input = AccessoryInput {
             accessory_kind_id,
-            make: raw.make.clone(),
-            model: raw.model.clone(),
+            make,
+            model,
             serial_number: raw.serial_number.clone(),
             caliber: raw.caliber.clone(),
             cartridge: raw.cartridge.clone(),
@@ -1345,8 +1347,8 @@ pub mod ops {
             existing: RecordRef,
             input: PendingInput,
             duplicate_allowed: bool,
-            make: Option<String>,
-            model: Option<String>,
+            make: String,
+            model: String,
             serial_number: Option<String>,
             kind_name: Option<String>,
         },
@@ -1432,8 +1434,8 @@ pub mod ops {
                 landed: Landed::Conflict {
                     existing: RecordRef::Firearm(id),
                     duplicate_allowed: firearm_ops::check_uniqueness(conn, None, &input).is_ok(),
-                    make: Some(input.make.clone()),
-                    model: Some(input.model.clone()),
+                    make: input.make.clone(),
+                    model: input.model.clone(),
                     serial_number: input.serial_number.clone(),
                     kind_name: None,
                     input: PendingInput::Firearm(Box::new(input)),
@@ -1508,11 +1510,9 @@ pub mod ops {
         cell: String,
     }
 
-    /// The name a warning gives a record: make and model, else its kind.
+    /// The name a warning gives a record: its make and model.
     fn record_name(label: &RecordLabel) -> String {
-        let name: Vec<&str> =
-            [label.make.as_deref(), label.model.as_deref()].into_iter().flatten().collect();
-        if name.is_empty() { label.type_name.clone() } else { name.join(" ") }
+        format!("{} {}", label.make, label.model)
     }
 
     /// Every record's identifier, and which records are active, from two

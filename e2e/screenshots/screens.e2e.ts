@@ -577,6 +577,18 @@ for (const theme of ["Light", "Dark"] as const) {
       );
       await browser.pause(300);
       await shot(`54-firearm-mounted-section-${suffix}`);
+
+      // The unmount question, for the upper that carries a scope and a light.
+      await browser.execute(() => {
+        document
+          .querySelector<HTMLElement>('.hd-mounted-section button[aria-label^="Unmount BCM"]')
+          ?.click();
+      });
+      await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
+      await browser.pause(300);
+      await shot(`66-unmount-confirmation-${suffix}`);
+      await clickButton("Cancel");
+      await $('[role="alertdialog"]').waitForExist({ reverse: true });
       await back();
 
       // A rifle with its Mount menu open, and the existing-record dialog

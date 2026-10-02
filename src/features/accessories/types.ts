@@ -3,6 +3,7 @@
 
 import type { DispositionHistoryEntry, DispositionType } from "../firearms/types";
 import type { MountDetail, RecordLabel, RecordRef } from "../mounts/types";
+import type { RecordCounts } from "../mounts/recordCounts";
 
 export type AccessoryKind = {
   id: number;
@@ -16,9 +17,9 @@ export type AccessoryKind = {
 export type AccessoryInput = {
   /** Required; any kind that exists. */
   accessoryKindId: number;
-  /** 004 entry rules when set. */
-  make: string | null;
-  model: string | null;
+  /** Required, as a firearm's (FR-001); 004 entry rules. */
+  make: string;
+  model: string;
   /** Free text; no uniqueness (FR-004). */
   serialNumber: string | null;
   /** 004 entry rules; derived from the cartridge on the form. */
@@ -71,8 +72,8 @@ export type AccessorySummary = {
   accessoryKindId: number;
   kindName: string;
   genericThumbnailKey: string;
-  make: string | null;
-  model: string | null;
+  make: string;
+  model: string;
   serialNumber: string | null;
   caliber: string | null;
   cartridge: string | null;
@@ -84,11 +85,13 @@ export type AccessorySummary = {
   scheduledCoverageAmount: number | null;
   /** Direct host only (FR-013). */
   mountedOn: RecordLabel | null;
+  /** FR-016: everything below it, at any depth, by kind. */
+  mountedCounts: RecordCounts;
 };
 
 export type AccessoryGroup = {
-  /** The group's heading: a kind, make, caliber, cartridge, "Unspecified",
-   * "Not mounted", or "All". */
+  /** The group's heading: a kind, make, caliber, cartridge, "Unspecified"
+   * (caliber or cartridge), "Not mounted", or "All". */
   key: string;
   /** Set only when grouped by mounted_on, for a host's group. */
   host: RecordLabel | null;

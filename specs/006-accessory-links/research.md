@@ -428,8 +428,9 @@ stays readable at any depth without assuming an indent per level (FR-013).
     of the four fields. The model suggestions' "same make" rule reads both
     tables. Partial indexes on `accessories (make)`, `(make, model)`,
     `(caliber)` and `(cartridge)` keep `suggest_entries` within 004's 50 ms.
-  - Make and model are optional on an accessory, so `check_entry_text` for
-    an accessory treats a blank make or model as "none". The caps and
+  - Make and model are required on an accessory, as on a firearm
+    (amended 2026-10-02); the caliber is optional, so `check_entry_text`
+    for an accessory treats a blank caliber as "none". The caps and
     character rules still apply.
   - A blank caliber is derived from the cartridge with 004's
     `derive_caliber`, on the form and on import, for every kind. There is no

@@ -19,6 +19,7 @@ use hoplodex_lib::commands::entries::ops as entry_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::insurance::ops as insurance;
 use hoplodex_lib::models::accessory::{Accessory, AccessoryInput};
+use hoplodex_lib::models::firearm::FirearmStatus;
 use serde_json::{Value, json};
 use support::TestDb;
 
@@ -27,14 +28,18 @@ const MAGAZINE: i64 = 3;
 const CONVERSION_KIT: i64 = 8;
 const SLING: i64 = 10;
 
-/// An active accessory of `kind` with every optional field empty.
+/// An active accessory of `kind` with its required make and model and every
+/// optional field empty.
 fn accessory(kind: i64) -> AccessoryInput {
-    serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap()
+    serde_json::from_value(
+        json!({ "accessoryKindId": kind, "make": "Make", "model": "Model", "status": "active" }),
+    )
+    .unwrap()
 }
 
 /// A disposed accessory of `kind` whose disposition fields the test sets.
 fn disposed_accessory(kind: i64) -> AccessoryInput {
-    serde_json::from_value(json!({ "accessoryKindId": kind, "status": "disposed" })).unwrap()
+    AccessoryInput { status: FirearmStatus::Disposed, ..accessory(kind) }
 }
 
 /// The contract's `DisposeInput`: sold to Jane on 2025-06-15 for $400.
@@ -171,7 +176,8 @@ fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_th
 // --- Saving and reopening (US1-3 to US1-5, FR-001) ------------------------------
 
 #[test]
-fn an_accessory_with_only_a_kind_saves_and_reopens_with_every_optional_field_empty() {
+fn an_accessory_with_only_a_kind_make_and_model_saves_and_reopens_with_every_optional_field_empty()
+{
     // US1-5.
     let mut db = TestDb::new();
     let created = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
@@ -181,10 +187,10 @@ fn an_accessory_with_only_a_kind_saves_and_reopens_with_every_optional_field_emp
 
     assert_eq!(shown["id"], created.id);
     assert_eq!(shown["accessoryKindId"], SLING);
+    assert_eq!(shown["make"], "Make");
+    assert_eq!(shown["model"], "Model");
     assert_eq!(shown["status"], "active");
     for field in [
-        "make",
-        "model",
         "serialNumber",
         "caliber",
         "cartridge",
@@ -211,8 +217,8 @@ fn an_optic_saves_and_every_value_comes_back() {
     // US1-3.
     let mut db = TestDb::new();
     let mut input = accessory(OPTIC);
-    input.make = Some("Leupold".into());
-    input.model = Some("VX-5HD 3-15x44".into());
+    input.make = "Leupold".into();
+    input.model = "VX-5HD 3-15x44".into();
     input.serial_number = Some("LEU-5521".into());
     input.estimated_value = Some(1000);
     input.acquisition_price = Some(1100);
@@ -239,8 +245,8 @@ fn a_pair_of_magazines_saves_as_one_record() {
     // US1-4.
     let db = TestDb::new();
     let mut input = accessory(MAGAZINE);
-    input.make = Some("Walther".into());
-    input.model = Some("P38 magazines, pair".into());
+    input.make = "Walther".into();
+    input.model = "P38 magazines, pair".into();
     input.estimated_value = Some(180);
 
     let created = ops::create_accessory(&db.conn, &input, None).unwrap();
@@ -256,7 +262,7 @@ fn editing_saves_the_new_values() {
     let db = TestDb::new();
     let created = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let mut edited = accessory(MAGAZINE);
-    edited.make = Some("Magpul".into());
+    edited.make = "Magpul".into();
     edited.estimated_value = Some(25);
 
     let saved = ops::update_accessory(&db.conn, created.id, &edited).unwrap();
@@ -305,8 +311,8 @@ fn a_missing_or_unknown_kind_fails_on_the_kind_field_with_the_exact_message() {
 fn two_accessories_with_the_same_make_model_and_serial_number_both_save() {
     let db = TestDb::new();
     let mut input = accessory(OPTIC);
-    input.make = Some("Leupold".into());
-    input.model = Some("VX-5HD".into());
+    input.make = "Leupold".into();
+    input.model = "VX-5HD".into();
     input.serial_number = Some("SN-1".into());
 
     let first = ops::create_accessory(&db.conn, &input, None).unwrap();
@@ -324,7 +330,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     let too_long = "a".repeat(101);
 
     let mut make = accessory(OPTIC);
-    make.make = Some(too_long.clone());
+    make.make = too_long.clone();
     assert_field_error(
         ops::create_accessory(&db.conn, &make, None).unwrap_err(),
         "make",
@@ -332,7 +338,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     );
 
     let mut model = accessory(OPTIC);
-    model.model = Some(too_long.clone());
+    model.model = too_long.clone();
     assert_field_error(
         ops::create_accessory(&db.conn, &model, None).unwrap_err(),
         "model",
@@ -356,8 +362,8 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
     );
 
     let mut control = accessory(OPTIC);
-    control.make = Some("Leu\u{7}pold".into());
-    control.model = Some("VX\u{0}5".into());
+    control.make = "Leu\u{7}pold".into();
+    control.model = "VX\u{0}5".into();
     let err = ops::create_accessory(&db.conn, &control, None).unwrap_err();
     assert_eq!(
         field_error(&err, "make").as_deref(),
@@ -370,24 +376,49 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
 
     // Exactly 100 characters, counted after trimming, is fine.
     let mut limit = accessory(OPTIC);
-    limit.make = Some(format!("  {}  ", "a".repeat(100)));
+    limit.make = format!("  {}  ", "a".repeat(100));
     assert!(ops::create_accessory(&db.conn, &limit, None).is_ok());
     assert_eq!(count(&db, "accessories"), 1, "the refused ones saved nothing");
 }
 
 #[test]
-fn a_blank_make_or_model_is_accepted_and_stored_as_null() {
+fn a_blank_make_or_model_is_refused_on_create_and_on_update() {
+    // FR-001: so that no two accessories are named by their kind alone.
     let db = TestDb::new();
     let mut input = accessory(OPTIC);
-    input.make = Some("   ".into());
-    input.model = Some(String::new());
+    input.make = "   ".into();
+    input.model = String::new();
+
+    let err = ops::create_accessory(&db.conn, &input, None).unwrap_err();
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert_eq!(field_error(&err, "make").as_deref(), Some("Make is required."));
+    assert_eq!(field_error(&err, "model").as_deref(), Some("Model is required."));
+    assert_eq!(count(&db, "accessories"), 0);
+
+    let held = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
+    let mut blanked = accessory(OPTIC);
+    blanked.model = " ".into();
+    assert_field_error(
+        ops::update_accessory(&db.conn, held.id, &blanked).unwrap_err(),
+        "model",
+        "Model is required.",
+    );
+    assert_eq!(detail(&db, held.id)["model"], "Model");
+}
+
+#[test]
+fn a_blank_caliber_or_cartridge_is_accepted_and_stored_as_null() {
+    let db = TestDb::new();
+    let mut input = accessory(OPTIC);
+    input.make = "  Leupold ".into();
     input.caliber = Some(" ".into());
     input.cartridge = Some("".into());
 
     let created = ops::create_accessory(&db.conn, &input, None).unwrap();
 
     let shown = detail(&db, created.id);
-    for field in ["make", "model", "caliber", "cartridge"] {
+    assert_eq!(shown["make"], "Leupold", "trimmed");
+    for field in ["caliber", "cartridge"] {
         assert_eq!(shown[field], Value::Null, "{field}");
     }
 }
@@ -400,20 +431,20 @@ fn an_unchanged_over_long_stored_value_passes_on_update_but_a_changed_one_does_n
     let long_make = "M".repeat(120);
     db.conn
         .execute(
-            "INSERT INTO accessories (id, uid, accessory_kind_id, make, created_at, updated_at)
-             VALUES (1, ?1, 1, ?2, 'now', 'now')",
+            "INSERT INTO accessories (id, uid, accessory_kind_id, make, model, created_at, updated_at)
+             VALUES (1, ?1, 1, ?2, 'Model', 'now', 'now')",
             rusqlite::params![support::uid(), long_make],
         )
         .unwrap();
 
     let mut unchanged = accessory(OPTIC);
-    unchanged.make = Some(long_make.clone());
+    unchanged.make = long_make.clone();
     unchanged.notes = Some("Only the note changed.".into());
     assert!(ops::update_accessory(&db.conn, 1, &unchanged).is_ok());
     assert_eq!(detail(&db, 1)["make"], long_make.as_str());
 
     let mut changed = accessory(OPTIC);
-    changed.make = Some("M".repeat(121));
+    changed.make = "M".repeat(121);
     assert_field_error(
         ops::update_accessory(&db.conn, 1, &changed).unwrap_err(),
         "make",
@@ -650,8 +681,8 @@ fn restoring_does_not_recheck_identity_so_a_duplicate_of_an_active_one_comes_bac
     // FR-006: no nickname, key or marks re-check for an accessory.
     let db = TestDb::new();
     let mut input = accessory(OPTIC);
-    input.make = Some("Leupold".into());
-    input.model = Some("VX".into());
+    input.make = "Leupold".into();
+    input.model = "VX".into();
     input.serial_number = Some("SN-1".into());
     let first = ops::create_accessory(&db.conn, &input, None).unwrap();
     dispose(&db, first.id);
@@ -696,7 +727,7 @@ fn a_firearms_free_text_accessories_stays_unchanged_and_creates_no_accessory() {
 
     ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let mut other = accessory(MAGAZINE);
-    other.make = Some("Leupold".into());
+    other.make = "Leupold".into();
     ops::create_accessory(&db.conn, &other, None).unwrap();
 
     let after = firearm_ops::get_firearm(&db.conn, firearm.id).unwrap();

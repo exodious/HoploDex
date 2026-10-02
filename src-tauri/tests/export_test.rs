@@ -402,11 +402,10 @@ const ACCESSORY_HEADER: [&str; 21] = [
 ];
 
 fn accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
-    let mut input: AccessoryInput =
-        serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
-    input.make = Some(make.into());
-    input.model = Some(model.into());
-    input
+    serde_json::from_value(
+        json!({ "accessoryKindId": kind, "make": make, "model": model, "status": "active" }),
+    )
+    .unwrap()
 }
 
 fn on(input: AccessoryInput, host: RecordRef) -> AccessoryInput {

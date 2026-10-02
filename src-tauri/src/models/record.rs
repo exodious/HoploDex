@@ -188,10 +188,8 @@ impl std::ops::AddAssign for RecordCounts {
 #[serde(rename_all = "camelCase")]
 pub struct RecordLabel {
     pub record: RecordRef,
-    /// Always set for a firearm.
-    pub make: Option<String>,
-    /// Always set for a firearm.
-    pub model: Option<String>,
+    pub make: String,
+    pub model: String,
     /// Firearms only.
     pub nickname: Option<String>,
     /// The firearm type's or the accessory kind's name.

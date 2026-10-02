@@ -51,10 +51,10 @@ fn add_launcher(db: &TestDb, serial: &str) -> RecordRef {
 }
 
 fn add_accessory(db: &TestDb, kind: i64, make: &str, model: &str) -> RecordRef {
-    let mut input: AccessoryInput =
-        serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
-    input.make = Some(make.into());
-    input.model = Some(model.into());
+    let input: AccessoryInput = serde_json::from_value(
+        json!({ "accessoryKindId": kind, "make": make, "model": model, "status": "active" }),
+    )
+    .unwrap();
     RecordRef::Accessory(accessory_ops::create_accessory(&db.conn, &input, None).unwrap().id)
 }
 

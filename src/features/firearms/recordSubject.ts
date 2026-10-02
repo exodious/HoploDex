@@ -1,5 +1,6 @@
 import type { Accessory, AccessoryKind } from "../accessories/types";
 import { firearmName, useAccessoryKinds } from "../app/collectionStore";
+import { accessoryNameText } from "../mounts/recordNames";
 import type { RecordKind } from "../mounts/types";
 import type { Firearm } from "./types";
 
@@ -30,18 +31,13 @@ export interface RecordSubject {
   dispositionPrice: number | null;
 }
 
-/** "{make} {model} · {kind}"; one of make and model alone as it is, and the
- * kind alone when both are blank (FR-005). */
+/** "{make} {model} · {kind}" (FR-005). */
 export function accessoryName(
   accessory: Pick<Accessory, "make" | "model" | "accessoryKindId">,
   kinds: AccessoryKind[],
 ): string {
   const kind = kinds.find((k) => k.id === accessory.accessoryKindId)?.name ?? "Accessory";
-  const makeModel = [accessory.make, accessory.model]
-    .map((part) => part?.trim() ?? "")
-    .filter((part) => part !== "")
-    .join(" ");
-  return makeModel ? `${makeModel} · ${kind}` : kind;
+  return accessoryNameText(accessory.make, accessory.model, kind);
 }
 
 export function useRecordSubject({ firearm, accessory }: RecordSubjectProps): RecordSubject {

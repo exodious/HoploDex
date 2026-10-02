@@ -224,7 +224,13 @@ fn accessory_uid_in_database(conn: &Connection, id: i64) -> String {
 }
 
 fn plain_accessory() -> AccessoryInput {
-    serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "status": "active" })).unwrap()
+    serde_json::from_value(serde_json::json!({
+        "accessoryKindId": 1,
+        "make": "Leupold",
+        "model": "VX-5HD",
+        "status": "active",
+    }))
+    .unwrap()
 }
 
 fn create_accessory(db: &TestDb) -> Accessory {
@@ -234,8 +240,8 @@ fn create_accessory(db: &TestDb) -> Accessory {
 /// Inserts an accessory row with `uid` by raw SQL.
 fn insert_accessory_row(conn: &Connection, uid: &str) -> rusqlite::Result<usize> {
     conn.execute(
-        "INSERT INTO accessories (uid, accessory_kind_id, created_at, updated_at)
-         VALUES (?1, 1, 'now', 'now')",
+        "INSERT INTO accessories (uid, accessory_kind_id, make, model, created_at, updated_at)
+         VALUES (?1, 1, 'Leupold', 'VX-5HD', 'now', 'now')",
         [uid],
     )
 }

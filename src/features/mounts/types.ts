@@ -8,10 +8,8 @@ export type RecordRef = { kind: RecordKind; id: number };
  *  firearm by make, model and nickname, 001 FR-031) and link to it. */
 export type RecordLabel = {
   record: RecordRef;
-  /** Always set for a firearm. */
-  make: string | null;
-  /** Always set for a firearm. */
-  model: string | null;
+  make: string;
+  model: string;
   /** Firearms only. */
   nickname: string | null;
   /** The firearm type's or the accessory kind's name. */

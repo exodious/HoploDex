@@ -69,13 +69,14 @@ const SUPPRESSOR: i64 = 5;
 // --- Building a collection ---------------------------------------------------------------------
 
 fn accessory(kind: i64) -> AccessoryInput {
-    serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap()
+    accessory_with(kind, json!({}))
 }
 
-/// An accessory of `kind` with the optional fields named in `fields` (the
-/// contract's camelCase names).
+/// An accessory of `kind` with the fields named in `fields` (the contract's
+/// camelCase names); make and model are "Make" and "Model" unless named.
 fn accessory_with(kind: i64, fields: Value) -> AccessoryInput {
-    let mut value = json!({ "accessoryKindId": kind, "status": "active" });
+    let mut value =
+        json!({ "accessoryKindId": kind, "make": "Make", "model": "Model", "status": "active" });
     for (name, field) in fields.as_object().unwrap() {
         value[name] = field.clone();
     }
@@ -798,7 +799,7 @@ struct DisposedRowFixture {
 
 fn disposed_row_fixture(db: &TestDb, optic_acquired: Option<&str>) -> DisposedRowFixture {
     let rifle = new_firearm(db, &support::firearm("Ruger", "Precision", "R1"));
-    let mut optic_fields = json!({ "make": "Leupold" });
+    let mut optic_fields = json!({ "make": "Leupold", "model": "VX-5HD" });
     if let Some(date) = optic_acquired {
         optic_fields["acquisitionDate"] = json!(date);
     }
@@ -1001,7 +1002,7 @@ fn a_record_chosen_with_it_that_fails_its_own_checks_leaves_the_conflict_open_an
         vec![(
             "firearms".to_owned(),
             1,
-            "Leupold · Optic: Disposition date can't be earlier than the acquisition date."
+            "Leupold VX-5HD · Optic: Disposition date can't be earlier than the acquisition date."
                 .to_owned()
         )]
     );
@@ -1329,7 +1330,8 @@ fn skip_leaves_the_record_and_its_mount_and_warns_of_nothing() {
 // --- Row errors (US5-6, FR-022, FR-024) ---------------------------------------------------------------------
 
 #[test]
-fn accessory_rows_with_a_blank_or_unknown_kind_a_bad_amount_or_a_bad_date_fail_alone() {
+fn accessory_rows_with_a_blank_or_unknown_kind_make_or_model_a_bad_amount_or_a_bad_date_fail_alone()
+{
     let db = TestDb::new();
     let dir = TempDir::new().unwrap();
     let path = sheets::csv_in(
@@ -1340,6 +1342,8 @@ fn accessory_rows_with_a_blank_or_unknown_kind_a_bad_amount_or_a_bad_date_fail_a
             accessory_cells("Frobnicator", &[("make", "Unknown")]),
             accessory_cells("Optic", &[("make", "Amount"), ("estimated_value", "12.5")]),
             accessory_cells("Optic", &[("make", "Date"), ("acquisition_date", "2026-13-45")]),
+            accessory_cells("Optic", &[("make", "")]),
+            accessory_cells("Optic", &[("make", "No model"), ("model", "  ")]),
             accessory_cells("Optic", &[("make", "Good")]),
         ]),
     );
@@ -1351,12 +1355,21 @@ fn accessory_rows_with_a_blank_or_unknown_kind_a_bad_amount_or_a_bad_date_fail_a
     let rows: Vec<_> = errors.iter().map(|(table, row, _)| (table.as_str(), *row)).collect();
     assert_eq!(
         rows,
-        [("accessories", 1), ("accessories", 2), ("accessories", 3), ("accessories", 4)]
+        [
+            ("accessories", 1),
+            ("accessories", 2),
+            ("accessories", 3),
+            ("accessories", 4),
+            ("accessories", 5),
+            ("accessories", 6)
+        ]
     );
     assert!(errors[0].2.contains("kind"), "{errors:?}");
     assert!(errors[1].2.contains("kind"), "{errors:?}");
     assert!(errors[2].2.contains("estimated_value"), "{errors:?}");
     assert!(errors[3].2.contains("acquisition_date"), "{errors:?}");
+    assert!(errors[4].2.contains("make"), "{errors:?}");
+    assert!(errors[5].2.contains("model"), "{errors:?}");
     assert_eq!(count(&db.conn, "accessories"), 1);
 }
 

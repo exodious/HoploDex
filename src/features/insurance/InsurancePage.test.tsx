@@ -89,6 +89,7 @@ function accessory(id: number, overrides: Partial<AccessorySummary>): AccessoryS
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
     mountedOn: null,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -111,8 +112,8 @@ const disposed = accessory(10, {
   accessoryKindId: 10,
   kindName: "Sling",
   genericThumbnailKey: "sling",
-  make: null,
-  model: null,
+  make: "Magpul",
+  model: "MS1",
   estimatedValue: 50,
   status: "disposed",
 });
@@ -289,7 +290,7 @@ describe("InsurancePage policies (FR-009)", () => {
   it("does not list a disposed accessory", () => {
     renderPage(collectionWith(summaryWith()));
 
-    expect(screen.queryByRole("button", { name: "Sling" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Magpul MS1 · Sling" })).not.toBeInTheDocument();
   });
 });
 

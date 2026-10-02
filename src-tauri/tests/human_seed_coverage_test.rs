@@ -381,7 +381,10 @@ fn the_accessory_import_samples_show_each_part_of_the_report() {
     let db = fresh();
     let errors = import(&db, &["import-accessory-errors.csv"]);
     assert_eq!(errors.imported_count, 2, "{:?}", errors.row_errors);
-    assert_eq!(errors.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(), [1, 2, 3, 4, 5, 7, 8]);
+    assert_eq!(
+        errors.row_errors.iter().map(|e| e.row).collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5, 6, 7, 9, 10]
+    );
 
     let db = fresh();
     let before = import(&db, &["import-before-accessories.csv"]);
@@ -421,18 +424,13 @@ fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
 
     assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
     assert_eq!(result.conflicts.len(), 1);
-    let below: Vec<(Option<String>, u32)> = result.conflicts[0]
+    let below: Vec<(&str, u32)> = result.conflicts[0]
         .mounted
         .iter()
-        .map(|entry| (entry.label.model.clone(), entry.depth))
+        .map(|entry| (entry.label.model.as_str(), entry.depth))
         .collect();
     assert_eq!(
         below,
-        [
-            (Some("RECCE-16 upper".to_owned()), 1),
-            (Some("SLx 1-6x24".to_owned()), 2),
-            (Some("HS403B micro red dot".to_owned()), 3),
-            (Some("M300A Scout".to_owned()), 2),
-        ]
+        [("RECCE-16 upper", 1), ("SLx 1-6x24", 2), ("HS403B micro red dot", 3), ("M300A Scout", 2)]
     );
 }

@@ -81,6 +81,12 @@ async function chooseKind(user: ReturnType<typeof userEvent.setup>, name: string
   await user.click(await screen.findByRole("option", { name }));
 }
 
+/** Types the required make and model (FR-001), for a test about the rest. */
+async function nameIt(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText(/^Make/), "Magpul");
+  await user.type(screen.getByLabelText(/^Model/), "MS1");
+}
+
 const saved: Accessory = {
   id: 3,
   accessoryKindId: 1,
@@ -255,6 +261,7 @@ describe("AccessoryForm kind (US1, FR-001, FR-002)", () => {
     render(<AccessoryForm onSubmit={onSubmit} />);
 
     await chooseKind(user, "Magazine");
+    await nameIt(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -289,18 +296,20 @@ describe("AccessoryForm kind (US1, FR-001, FR-002)", () => {
 });
 
 describe("AccessoryForm saving (US1-1, US1-2)", () => {
-  it("saves with only a kind: every other field is optional", async () => {
+  it("saves with only a kind, make and model: every other field is optional", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<AccessoryForm onSubmit={onSubmit} />);
 
     await chooseKind(user, "Sling");
+    await user.type(screen.getByLabelText(/^Make/), "Magpul");
+    await user.type(screen.getByLabelText(/^Model/), "MS1");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(onSubmit).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
-      make: null,
-      model: null,
+      make: "Magpul",
+      model: "MS1",
       serialNumber: null,
       caliber: null,
       cartridge: null,
@@ -314,6 +323,24 @@ describe("AccessoryForm saving (US1-1, US1-2)", () => {
       scheduledCoverageAmount: null,
       mountedOn: null,
     });
+  });
+
+  it("requires a make and a model, as a firearm's form does (FR-001)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<AccessoryForm onSubmit={onSubmit} />);
+
+    expect(screen.getByLabelText(/^Make/)).toBeRequired();
+    expect(screen.getByLabelText(/^Model/)).toBeRequired();
+
+    await chooseKind(user, "Sling");
+    await user.type(screen.getByLabelText(/^Model/), "   ");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter the make.")).toBeInTheDocument();
+    expect(screen.getByText("Enter the model.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Make/)).toHaveFocus();
   });
 
   it("submits trimmed text and whole dollars", async () => {
@@ -385,6 +412,7 @@ describe("AccessoryForm saving (US1-1, US1-2)", () => {
     render(<AccessoryForm onSubmit={onSubmit} />);
 
     await chooseKind(user, "Sling");
+    await nameIt(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     const error = await screen.findByText(message);
@@ -441,6 +469,7 @@ describe("AccessoryForm cartridge and caliber (US1-6)", () => {
     render(<AccessoryForm onSubmit={onSubmit} />);
 
     await chooseKind(user, "Magazine");
+    await nameIt(user);
     await user.type(cartridgeField(), "5.56x45mm NATO");
     await user.tab();
     await waitFor(() => expect(caliberField()).toHaveValue("5.56mm"));
@@ -496,20 +525,6 @@ describe("AccessoryForm unsaved changes (FR-027)", () => {
     });
   });
 
-  it("names an edit of a record with neither make nor model by its kind", async () => {
-    const user = userEvent.setup();
-    render(
-      <AccessoryForm
-        initialValues={{ ...saved, make: null, model: null, accessoryKindId: 10 }}
-        onSubmit={vi.fn()}
-      />,
-    );
-
-    await user.type(screen.getByLabelText(/^Notes/), " More.");
-
-    expect(getDirtyForm()?.label).toBe("Sling (edit)");
-  });
-
   it("keeps the draft's values, so a lock can write them as pending changes", async () => {
     const user = userEvent.setup();
     render(<AccessoryForm onSubmit={vi.fn()} />);
@@ -526,6 +541,7 @@ describe("AccessoryForm unsaved changes (FR-027)", () => {
     render(<AccessoryForm onSubmit={onSubmit} />);
 
     await chooseKind(user, "Sling");
+    await nameIt(user);
     expect(getDirtyForm()).not.toBeNull();
 
     await expect(getDirtyForm()!.submit()).resolves.toBe(true);
@@ -652,6 +668,7 @@ describe("AccessoryForm Mounted on (US2)", () => {
 
     expect(mountedOnField()).toHaveAttribute("placeholder", "Not mounted");
     await chooseKind(user, "Sling");
+    await nameIt(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSubmit.mock.calls[0][0].mountedOn).toBeNull();
@@ -677,6 +694,7 @@ describe("AccessoryForm Mounted on (US2)", () => {
     render(<AccessoryForm onSubmit={onSubmit} />);
 
     await chooseKind(user, "Optic");
+    await nameIt(user);
     await user.click(mountedOnField());
     await user.click(await screen.findByRole("option", { name: /LaRue PredatAR/ }));
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -713,6 +731,7 @@ describe("AccessoryForm Mounted on (US2)", () => {
 
     expect(mountedOnField()).toHaveDisplayValue(/LaRue PredatAR/);
     await chooseKind(user, "Optic");
+    await nameIt(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "firearm", id: 9 });
@@ -725,6 +744,7 @@ describe("AccessoryForm Mounted on (US2)", () => {
     render(<AccessoryForm presetMountedOn={rifle} onSubmit={onSubmit} />);
 
     await chooseKind(user, "Optic");
+    await nameIt(user);
     await user.click(mountedOnField());
     await user.click(await screen.findByRole("option", { name: /BCM upper/ }));
     await user.click(screen.getByRole("button", { name: "Save" }));

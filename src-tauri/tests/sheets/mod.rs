@@ -70,10 +70,11 @@ pub fn firearm_cells(make: &str, model: &str, serial: &str, extra: &[(&str, &str
     firearm_row(&cells)
 }
 
-/// A complete, valid accessory row of `kind` (a kind's name), with `extra`
-/// cells layered on top.
+/// A complete, valid accessory row of `kind` (a kind's name), its required
+/// make and model "Make" and "Model", with `extra` cells layered on top.
 pub fn accessory_cells(kind: &str, extra: &[(&str, &str)]) -> Vec<String> {
-    let mut cells = vec![("kind", kind), ("status", "active")];
+    let mut cells =
+        vec![("kind", kind), ("make", "Make"), ("model", "Model"), ("status", "active")];
     cells.extend_from_slice(extra);
     accessory_row(&cells)
 }

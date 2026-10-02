@@ -335,10 +335,12 @@ CREATE TABLE accessories (
         AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
     ),
     accessory_kind_id INTEGER NOT NULL REFERENCES accessory_kinds (id),
-    -- FR-001: all optional. 004's entry rules apply on entry only, so no
-    -- length CHECK (an existing longer value stays valid).
-    make TEXT,
-    model TEXT,
+    -- FR-001: make and model required, as a firearm's, so every accessory
+    -- has a name of its own (FR-005); the rest optional. 004's entry rules
+    -- apply on entry only, so no length CHECK (an existing longer value
+    -- stays valid).
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
     serial_number TEXT,
     caliber TEXT,
     cartridge TEXT,

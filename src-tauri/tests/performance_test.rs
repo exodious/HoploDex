@@ -890,9 +890,8 @@ fn seed_10k_accessories(conn: &Connection) -> Vec<i64> {
             stmt.execute(params![
                 support::uid(),
                 1 + (i % 12) as i64,
-                // A tenth carry no make and no model: the kind names them.
-                (i % 10 != 9).then(|| makes[i % makes.len()]),
-                (i % 10 != 9).then(|| format!("Acc Model {i}")),
+                makes[i % makes.len()],
+                format!("Acc Model {i}"),
                 (i % 4 != 0).then(|| format!("ACC-{i}")),
                 calibers[i % calibers.len()],
                 cartridges[i % cartridges.len()],
@@ -940,11 +939,10 @@ fn count(output: &ListAccessoriesOutput) -> usize {
 }
 
 fn accessory_input(kind: i64, make: &str, model: &str) -> AccessoryInput {
-    let mut input: AccessoryInput =
-        serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
-    input.make = Some(make.into());
-    input.model = Some(model.into());
-    input
+    serde_json::from_value(
+        json!({ "accessoryKindId": kind, "make": make, "model": model, "status": "active" }),
+    )
+    .unwrap()
 }
 
 /// The actions of FR-026 (research.md §22): each within the 1s budget.

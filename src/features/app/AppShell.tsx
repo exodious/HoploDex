@@ -137,11 +137,11 @@ export function AppShell() {
         case "accessories":
           return "Accessories";
         case "accessory": {
-          // FR-005: "{make} {model} · {kind}", or the kind alone.
+          // FR-005: "{make} {model} · {kind}".
           const accessory = accessoriesById.get(target.id);
-          if (!accessory) return "Accessory";
-          const name = [accessory.make, accessory.model].filter(Boolean).join(" ");
-          return name ? `${name} · ${accessory.kindName}` : accessory.kindName;
+          return accessory
+            ? accessoryNameText(accessory.make, accessory.model, accessory.kindName)
+            : "Accessory";
         }
       }
     };
