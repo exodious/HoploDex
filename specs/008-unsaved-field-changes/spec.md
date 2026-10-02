@@ -17,6 +17,7 @@
 - Q: When does an add form count as having unsaved changes for the quit question and for pending changes kept at a lock, given that its Save can be disabled while it holds input? → A: As soon as anything is entered, judged by FR-002's comparison against the form as it opened, whether or not Save is enabled. FR-019's "exactly when Save is enabled" applies to the forms that edit something saved (FR-019a).
 - Q: When the user closes a form that has unsaved changes with Cancel, Escape or the dialog's close button, should it ask before discarding them? → A: Yes. Any such close asks "Discard changes?" with Discard and Keep editing; a form with no unsaved changes closes at once (FR-021a).
 - Q: How should a changed field's marker and its revert control look? → A: A small "Changed" text tag beside the field's label, followed by an icon-only revert button (↺) whose tooltip says "Revert to “Glock”" (FR-006, FR-010).
+- Q: How should a disabled Save show why it is disabled? → A: Save looks disabled but stays focusable; its tooltip and accessible description give the reason ("No changes to save", or on an add form "Fill in the required fields to save"), and activating it does nothing. No extra text in the form's footer (FR-016, FR-015a).
 - Q: Should the record page's mount changes (Unmount, Mount → Existing accessory or firearm…) be held until the record is saved, and where? → A: Yes, in the edit form. A firearm's or accessory's edit form gains a **Mounted** list of what is mounted directly on it, where existing records are added and removed; each change is held as an unsaved change with its own marker and revert and is saved with the form's Save. The record page's Mounted section becomes a read-only list, with a way to open the edit form at that list, and keeps Mount → New accessory…, which creates a record. This keeps 003's rule that every form holding unsaved changes is a dialog (FR-024 to FR-028, User Story 5).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -67,7 +68,7 @@ Halfway through a long edit, the collector realizes they overwrote the notes by 
 
 ### User Story 3 - Save Only When There Is Something to Save (Priority: P3)
 
-The collector opens a record's edit form just to look something up. Save is disabled, and the form says there are no changes to save. When they change a field, Save becomes available; when they revert it, or type it back, Save is disabled again. The same holds in every form that edits something already saved.
+The collector opens a record's edit form just to look something up. Save is disabled, and hovering over it or tabbing to it says there are no changes to save. When they change a field, Save becomes available; when they revert it, or type it back, Save is disabled again. The same holds in every form that edits something already saved.
 
 **Why this priority**: It is the third part of the request and the simplest. It is most useful once the markers show what Save would do, but it can be tested on its own.
 
@@ -75,14 +76,14 @@ The collector opens a record's edit form just to look something up. Save is disa
 
 **Acceptance Scenarios**:
 
-1. **Given** any form in scope, just opened, **When** the user looks at its Save button, **Then** it is disabled, and it is perceivable (including to assistive technology) that there are no changes to save.
+1. **Given** any form in scope, just opened, **When** the user looks at its Save button, **Then** it looks disabled but can still be reached with Tab, and its tooltip and its description to assistive technology say "No changes to save"; **and When** they activate it, **Then** nothing happens.
 2. **Given** that form, **When** the user changes any field, **Then** Save is enabled at once.
 3. **Given** a single changed field, **When** the user reverts it or types it back to the saved value, **Then** Save is disabled again.
 4. **Given** Save disabled, **When** the user presses Enter in a field, **Then** nothing is saved and no confirmation or "saved" message appears.
 5. **Given** a changed field with a value that fails validation (for example an approved date in the future), **When** the user looks at Save, **Then** it is enabled, and pressing it shows the errors as today without saving.
 6. **Given** a save that fails (validation from the system, or a warning the user cancels), **When** the form returns, **Then** the markers and Save's state are as they were before the attempt.
 7. **Given** a firearm's coverage dialog showing "Scheduled on Policy A, $2,000", **When** the user changes the amount and back again, **Then** Save is enabled and then disabled again, and the amount shows a marker in between.
-8. **Given** the add firearm form, just opened, **When** the user looks at Save, **Then** it is disabled and it is perceivable that required fields are still empty; **When** they fill in every required field, **Then** Save is enabled; **and When** they empty one of them again, **Then** Save is disabled; no field shows a changed marker or revert at any point.
+8. **Given** the add firearm form, just opened, **When** the user looks at Save, **Then** it is disabled and its tooltip and description say "Fill in the required fields to save"; **When** they fill in every required field, **Then** Save is enabled; **and When** they empty one of them again, **Then** Save is disabled; no field shows a changed marker or revert at any point.
 9. **Given** an add form with no required fields, just opened, **When** the user sets any one field, **Then** Save is enabled; **and When** they clear it again, **Then** Save is disabled.
 
 ---
@@ -198,8 +199,8 @@ A collector reworks a rifle: the old scope comes off and a red dot they already 
 **The Save button**
 
 - **FR-015**: A form's Save button MUST be disabled while no field is changed and enabled while at least one is, updating as the user edits and reverts.
-- **FR-015a**: On a form that creates something new (add firearm, add policy, add accessory), Save MUST be disabled until every field that is required, given what the form currently holds (for example the serial number unless "no serial number" is checked), is filled in, and MUST be disabled again when one is emptied. On such a form with no required fields, Save MUST be disabled until at least one field differs from how the form opened (FR-002). A filled-in value that fails validation still counts as filled in; pressing Save shows the errors and saves nothing (FR-017). While Save is disabled, pressing Enter MUST NOT save, and the form MUST make it perceivable, including to assistive technology, that required fields are still empty.
-- **FR-016**: While Save is disabled, pressing Enter in the form MUST NOT save, and the form MUST make it perceivable, including to assistive technology, that there are no changes to save.
+- **FR-015a**: On a form that creates something new (add firearm, add policy, add accessory), Save MUST be disabled until every field that is required, given what the form currently holds (for example the serial number unless "no serial number" is checked), is filled in, and MUST be disabled again when one is emptied. On such a form with no required fields, Save MUST be disabled until at least one field differs from how the form opened (FR-002). A filled-in value that fails validation still counts as filled in; pressing Save shows the errors and saves nothing (FR-017). While Save is disabled, pressing Enter or activating Save MUST NOT save, and Save MUST say why as FR-016 does, with the reason "Fill in the required fields to save" (on a form with no required fields, "Enter something to save").
+- **FR-016**: While Save is disabled, pressing Enter in the form or activating Save MUST NOT save, and Save MUST say why: it looks disabled but stays in the keyboard's tab order, and its tooltip and its description to assistive technology read "No changes to save". The form's footer MUST NOT add other text for this.
 - **FR-017**: While at least one field is changed, Save MUST stay enabled even if the form has errors; pressing it MUST show the errors and save nothing, as today.
 - **FR-018**: Saving MUST behave as today in every other respect: the confirmations and overridable warnings (002's original-marks match, 005's classification clearing, the serial number attestation) still apply, and if a save does not go through the form's markers and Save state MUST be as they were before the attempt.
 
