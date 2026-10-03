@@ -64,19 +64,44 @@ function running(child: ChildProcess | undefined): child is ChildProcess {
  * interrupted runs self-healing.
  */
 function clearPort(taken: number) {
-  if (process.platform !== "linux") return;
+  let pids: string[];
   try {
-    const out = execFileSync("ss", ["-ltnp", `sport = :${taken}`], { encoding: "utf-8" });
-    for (const match of out.matchAll(/pid=(\d+)/g)) {
-      try {
-        process.kill(Number(match[1]), "SIGKILL");
-      } catch {
-        // already gone
-      }
+    if (process.platform === "linux") {
+      const out = execFileSync("ss", ["-ltnp", `sport = :${taken}`], { encoding: "utf-8" });
+      pids = [...out.matchAll(/pid=(\d+)/g)].map((match) => match[1]);
+    } else if (process.platform === "darwin") {
+      const out = execFileSync("lsof", ["-t", `-iTCP:${taken}`, "-sTCP:LISTEN"], {
+        encoding: "utf-8",
+      });
+      pids = out.split(/\s+/).filter(Boolean);
+    } else {
+      return;
     }
   } catch {
-    // ss unavailable, or no matching socket: nothing to clean up
+    // ss or lsof unavailable, or no matching socket: nothing to clean up
+    return;
   }
+  for (const pid of pids) {
+    try {
+      process.kill(Number(pid), "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+}
+
+/** The app's own environment. On macOS that includes the sandbox's HOME
+ * (wdio.conf.ts), which only the app gets; a launch without one would use
+ * the developer's real Application Support folder, so it refuses. */
+function appEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, TAURI_WEBDRIVER_PORT: String(port) };
+  if (process.platform === "darwin") {
+    const home = process.env.HOPLODEX_E2E_HOME;
+    if (!home) throw new Error("HOPLODEX_E2E_HOME is unset: the app would see the real home");
+    env.HOME = home;
+    env.CFFIXED_USER_HOME = home;
+  }
+  return env;
 }
 
 /**
@@ -88,7 +113,7 @@ export async function launchApp(timeout = 30000) {
   if (running(app)) throw new Error("the app is already running");
   clearPort(port);
   const child = spawn(application, [], {
-    env: { ...process.env, TAURI_WEBDRIVER_PORT: String(port) },
+    env: appEnv(),
     stdio: ["ignore", "inherit", "inherit"],
   });
   app = child;
