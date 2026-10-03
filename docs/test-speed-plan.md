@@ -52,7 +52,7 @@ fade and anti-aliasing. Do step 5 the embedded way (its "First, check issue
 | 2 | cargo-nextest | −55 s Rust | 1 | done |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | done |
 | 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | done |
-| 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled (trial passed) | todo |
+| 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled (trial passed) | done |
 | 6 | Split the long E2E spec files | balance for 5 | 5 | todo |
 | 7 | Faster release profile for E2E builds | −50 s per rebuild | – | done |
 | 8 | Test-level policy for new features (SDD) | stops E2E growth | – | todo |
@@ -477,7 +477,32 @@ ahead with `tauri-driver`, which means rewriting point 2 later.
 **Verify.** The full run passes 3 times in a row with 4 workers and once with
 1 worker. The total is close to max(longest spec, total ÷ 4).
 
-**Result.** _(before → after)_
+**Result.** Full run 326 s (one worker, after #29) → **98–99 s** with 4
+workers, 14 of 14 spec files passing on three runs in a row (wdio's own
+total; 100 s wall each, binary already built), measured in the dev container
+on the 24-core host with nothing else running. With `HOPLODEX_E2E_WORKERS=1`
+the same suite passed in 323 s, so running one at a time costs nothing
+extra. Per spec under 4 workers: us12 88 s, us1 39, us11 36, us3 31,
+us7-databases 29, us8 21, us9 14, ui-review 12, us5 12, us10 9, us2 9, us4 8,
+us7-no-keyring 8, us6 6; their sum is 322 s, so parallel load slows a spec
+little. The run is now us12 plus the ~10 s before a worker frees up for it:
+max(88, 322 ÷ 4) = 88 against 99, which step 6 attacks. Screenshot walk
+(`npm run screenshots`, its two specs now side by side) 2 m 32 s → 2 m 20 s,
+134 images as before. How it's done: `onPrepare` builds the app and the
+`human_seed` example once (a failed build ends the run), and the screenshot
+seeding runs the built example instead of `cargo run`. Each worker takes port
+4445 + its worker number from `cid` (`assignWorkerPort` in
+`e2e/support/app.ts`); WebdriverIO does honour a `config.port` set in
+`beforeSession`, since it connects with that same config object (the log
+shows "Connecting to existing driver at http://127.0.0.1:4446/" for worker
+`0-1`). Each worker starts its own `Xvfb -displayfd` and sets `DISPLAY`
+(`e2e/support/display.ts`); `run-e2e.mjs` no longer wraps the run in
+`xvfb-run`, and `autoXvfb: false` stops WebdriverIO wrapping workers in its
+own when `DISPLAY` is unset. `x11-input.py` opens `$DISPLAY`, so real input
+follows the worker. `maxInstances` is `HOPLODEX_E2E_WORKERS`, by default half
+the CPUs, at most 4. Isolation: the sandbox, keyring file and documents folder
+were already per worker; us5's export folders are `mkdtemp`s; the two
+screenshot specs write different file names into the shared output folder.
 
 ## Step 6 — Split the long E2E spec files
 

@@ -280,6 +280,17 @@ custom-protocol,e2e` and drives it through the WebDriver server compiled
 into it. That binary embeds whatever is in `dist/`, so **run `npm run build`
 first** (the same goes for `npm run screenshots`).
 
+Spec files run in parallel, each in a WebdriverIO worker of its own: up to
+`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 4. Each
+worker runs its own app (a few hundred MB for WebKitGTK), so more workers
+than that gain little and slow every step. `wdio.conf.ts` builds the app and
+the human-testing seed once, in `onPrepare`, before any worker starts. For
+debugging, run one spec file at a time, so the log isn't interleaved:
+
+```bash
+HOPLODEX_E2E_WORKERS=1 npm run test:e2e
+```
+
 The `e2e` profile (`[profile.e2e]` in `src-tauri/Cargo.toml`) is the release
 profile without fat LTO, with 16 codegen units and incremental builds, so
 touching the backend rebuilds in seconds instead of a minute. It keeps
@@ -311,19 +322,23 @@ the notice and the settings still say "1 minute". The scaling's unit tests
 The harness, not a driver, owns the app's process (`e2e/support/app.ts`):
 `wdio.conf.ts` launches the app before each spec file's session, with the
 sandbox's environment and `TAURI_WEBDRIVER_PORT`, waits for its server to
-answer, and kills it afterwards. A spec that relaunches the app calls
+answer, and kills it afterwards. Each worker has a port of its own: 4445 for
+the run's first worker, and one up for each later one (worker `0-5` uses
+4450). A spec that relaunches the app calls
 `relaunchApp()`, which kills it (SIGKILL, so no exit handler runs, like a
-crash), starts it again on the same sandbox and opens a new session.
+crash), starts it again on the same sandbox, display and port, and opens a
+new session.
 Ending a WebDriver session alone doesn't close the app. The server runs
 scripts and dispatches keys in the page, so key presses are synthetic
 (untrusted) `KeyboardEvent`s; `e2e/support/ui.ts` already clicks and fills
 through page scripts. For genuine input, see "Real keyboard and mouse
 input" below.
 
-On Linux the E2E suite runs under an isolated
-`xvfb` virtual display (via `xvfb-run`), so it never touches your real
-desktop, and it self-heals after an interrupted prior run (killing anything
-left over on its port before starting).
+On Linux each worker starts an isolated Xvfb virtual display of its own
+(`e2e/support/display.ts`) and points `DISPLAY` at it, so the app never
+touches your real desktop and parallel workers never share a screen, a
+pointer or a keyboard. The harness self-heals after an interrupted prior run,
+killing anything left over on a worker's port before launching the app.
 
 The E2E suite kills the app rather than quitting it, so
 `e2e/scripts/quit-cleanup.py` checks that decrypted document
@@ -339,7 +354,7 @@ that shows or doesn't (`:focus-visible` after a script moves focus), or a
 dialog whose layout only corrects itself on the next real key press. When a
 report says "after a mouse click" or "when I press Tab" and a spec can't
 reproduce it, send real X11 input instead. `e2e/scripts/x11-input.py` sends
-it through XTest to the harness's Xvfb display, and `e2e/support/realInput.ts`
+it through XTest to the worker's Xvfb display (`DISPLAY`), and `e2e/support/realInput.ts`
 wraps it for specs:
 
 ```ts
@@ -388,7 +403,8 @@ of it:
   OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
   with `--features mock-keyring`, against keyring-core's in-memory store:
   `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'binary(keyring_test)'`.
-- `e2e/wdio.conf.ts` gives each session throwaway `XDG_*` directories, a
+- `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
+  own) throwaway `XDG_*` directories, a
   `user-dirs.dirs` whose documents folder (the suggested place for a new
   database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at
   a first run and creates its database by typing a location in the sandbox

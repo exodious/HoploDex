@@ -31,8 +31,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # - Tauri/WebKitGTK build deps and rusqlite's bundled SQLCipher (perl, libssl)
 # - xdg-utils: the AppImage bundler copies /usr/bin/xdg-open into the bundle
 #   and fails `tauri build` without it
-# - E2E: Xvfb + xauth for xvfb-run, iproute2 for `ss` (the harness clears a
-#   stale app's WebDriver port); the E2E build carries its own WebDriver server
+# - E2E: Xvfb (each worker starts its own display) + xauth for xvfb-run
+#   (quit-cleanup.py), iproute2 for `ss` (the harness clears a stale app's
+#   WebDriver port); the E2E build carries its own WebDriver server
 # - human testing: a session D-Bus and gnome-keyring for the real keyring
 # - python3-gi + GTK typelibs for the native drag-and-drop test technique
 # - imagemagick to crop screenshots, fonts for anything the app doesn't bundle

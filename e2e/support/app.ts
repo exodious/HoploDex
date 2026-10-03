@@ -6,8 +6,8 @@ import { browser } from "@wdio/globals";
 /**
  * Starts, ends and restarts the app under test. An E2E build (the `e2e`
  * Cargo feature) carries its own WebDriver server, `tauri-plugin-wdio-webdriver`,
- * on 127.0.0.1 at `TAURI_WEBDRIVER_PORT` (#29), so WebdriverIO talks to the
- * app directly and the harness, not a driver, owns the app's process: it
+ * on 127.0.0.1 at `TAURI_WEBDRIVER_PORT` (#29), a port per worker, so
+ * WebdriverIO talks to the app directly and the harness, not a driver, owns the app's process: it
  * launches the app before a session, and ending a session only makes the
  * server forget it.
  */
@@ -27,8 +27,25 @@ export const application = path.resolve(
   `src-tauri/target/${buildProfile}/hoplodex` + (process.platform === "win32" ? ".exe" : ""),
 );
 
-/** Where the app's WebDriver server listens. */
-export const WEBDRIVER_PORT = 4445;
+/** The first worker's WebDriver port; each later worker of a run takes the
+ * next one up. */
+const FIRST_PORT = 4445;
+
+/** Where this worker's app's WebDriver server listens. */
+let port = FIRST_PORT;
+
+/**
+ * Gives this worker a WebDriver port of its own, so the apps of workers
+ * running side by side don't collide, and returns it. `cid` is WebdriverIO's
+ * worker id, "<capability>-<worker>"; a run numbers its workers from 0 and
+ * never reuses a number, so the port is the first one plus the worker's.
+ */
+export function assignWorkerPort(cid: string): number {
+  const worker = Number(cid.split("-")[1]);
+  if (!Number.isInteger(worker) || worker < 0) throw new Error(`unexpected worker id "${cid}"`);
+  port = FIRST_PORT + worker;
+  return port;
+}
 
 let app: ChildProcess | undefined;
 
@@ -38,14 +55,14 @@ function running(child: ChildProcess | undefined): child is ChildProcess {
 
 /**
  * An app from an earlier run that was interrupted (Ctrl+C, a crash) before
- * `afterSession` ended it can still hold the WebDriver port, and the new app
- * would then fail to bind it. Clearing the port first keeps repeated or
+ * `afterSession` ended it can still hold this worker's WebDriver port, and the
+ * new app would then fail to bind it. Clearing the port first keeps repeated or
  * interrupted runs self-healing.
  */
-function clearPort(port: number) {
+function clearPort(taken: number) {
   if (process.platform !== "linux") return;
   try {
-    const out = execFileSync("ss", ["-ltnp", `sport = :${port}`], { encoding: "utf-8" });
+    const out = execFileSync("ss", ["-ltnp", `sport = :${taken}`], { encoding: "utf-8" });
     for (const match of out.matchAll(/pid=(\d+)/g)) {
       try {
         process.kill(Number(match[1]), "SIGKILL");
@@ -59,15 +76,15 @@ function clearPort(port: number) {
 }
 
 /**
- * Launches the app with this process's environment (the sandbox and the
- * per-spec settings `wdio.conf.ts` sets) and waits until its WebDriver
- * server answers.
+ * Launches the app with this process's environment (the sandbox, the
+ * worker's display and the per-spec settings `wdio.conf.ts` sets) and waits
+ * until its WebDriver server answers on the worker's port.
  */
 export async function launchApp(timeout = 30000) {
   if (running(app)) throw new Error("the app is already running");
-  clearPort(WEBDRIVER_PORT);
+  clearPort(port);
   const child = spawn(application, [], {
-    env: { ...process.env, TAURI_WEBDRIVER_PORT: String(WEBDRIVER_PORT) },
+    env: { ...process.env, TAURI_WEBDRIVER_PORT: String(port) },
     stdio: ["ignore", "inherit", "inherit"],
   });
   app = child;
@@ -77,7 +94,7 @@ export async function launchApp(timeout = 30000) {
       throw new Error(`the app exited at launch (${child.exitCode ?? child.signalCode})`);
     }
     try {
-      const status = await fetch(`http://127.0.0.1:${WEBDRIVER_PORT}/status`);
+      const status = await fetch(`http://127.0.0.1:${port}/status`);
       if (status.ok) return;
     } catch {
       // not listening yet
@@ -116,7 +133,8 @@ export async function killApp() {
 
 /**
  * Ends the app (killing it if it is still running) and starts it again
- * against the same sandbox, with a new WebDriver session on it.
+ * against the same sandbox, display and port, with a new WebDriver session
+ * on it.
  */
 export async function relaunchApp() {
   await killApp();

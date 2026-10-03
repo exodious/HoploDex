@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { browser } from "@wdio/globals";
 import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
-import { WEBDRIVER_PORT, buildProfile, killApp, launchApp } from "./support/app";
+import { assignWorkerPort, buildProfile, killApp, launchApp } from "./support/app";
+import { startDisplay, stopDisplay } from "./support/display";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -17,7 +18,51 @@ const repoRoot = path.resolve(__dirname, "..");
 // the other E2E-only settings). The `e2e` profile is the release one without
 // fat LTO, so a backend change rebuilds in seconds. HOPLODEX_E2E_PROFILE=release
 // builds and drives the shipping profile instead, as a release check
-// (DEVELOPMENT.md, "Test"). support/app.ts launches the binary.
+// (DEVELOPMENT.md, "Test"). `onPrepare` builds it, and the human-testing seed,
+// once before any worker starts; support/app.ts launches the binary.
+//
+// Spec files run in parallel workers (HOPLODEX_E2E_WORKERS, see
+// `workerCount`). Each worker is its own process, with its own sandbox,
+// WebDriver port and, on Linux, X display (support/display.ts).
+
+const cargoArgs = [
+  "--profile",
+  buildProfile,
+  "--features",
+  // e2e compiles in the WebDriver server. It implies mock-keyring, which
+  // swaps the OS keyring for an in-memory store, for saved passphrases:
+  // headless environments have no way to unlock a real one. It also lets a
+  // spec shorten the idle lock's minute.
+  "custom-protocol,e2e",
+  "--manifest-path",
+  "src-tauri/Cargo.toml",
+];
+
+/** The human-testing seed (src-tauri/examples/human_seed.rs), built with the
+ * app's profile and features in `onPrepare`. */
+const seedBinary = path.resolve(
+  repoRoot,
+  `src-tauri/target/${buildProfile}/examples/human_seed` +
+    (process.platform === "win32" ? ".exe" : ""),
+);
+
+/**
+ * How many spec files run at once: HOPLODEX_E2E_WORKERS, or half the CPUs,
+ * at most 4. Each worker runs its own app (a few hundred MB for WebKitGTK),
+ * and more than 4 gains little while making every step slower.
+ * HOPLODEX_E2E_WORKERS=1 runs one spec file at a time, for debugging.
+ */
+function workerCount(): number {
+  const set = process.env.HOPLODEX_E2E_WORKERS;
+  if (set) {
+    const count = Number(set);
+    if (!Number.isInteger(count) || count < 1) {
+      throw new Error(`HOPLODEX_E2E_WORKERS must be a whole number of at least 1, not "${set}"`);
+    }
+    return count;
+  }
+  return Math.max(1, Math.min(4, Math.floor(os.availableParallelism() / 2)));
+}
 
 let sandbox: string | undefined;
 
@@ -71,27 +116,13 @@ function isolateAppData() {
   }
 }
 
-/** Runs the human-testing seed (src-tauri/examples/human_seed.rs) with the
- * build's features, so it shares the app's build. */
+/** Runs the human-testing seed `onPrepare` built. */
 function runSeed(args: string[], stdio: "inherit" | "pipe") {
-  return spawnSync(
-    "cargo",
-    [
-      "run",
-      "--quiet",
-      "--profile",
-      buildProfile,
-      "--features",
-      "custom-protocol,e2e",
-      "--manifest-path",
-      "src-tauri/Cargo.toml",
-      "--example",
-      "human_seed",
-      "--",
-      ...args,
-    ],
-    { cwd: repoRoot, stdio: ["ignore", stdio, "inherit"], encoding: "utf-8" },
-  );
+  return spawnSync(seedBinary, args, {
+    cwd: repoRoot,
+    stdio: ["ignore", stdio, "inherit"],
+    encoding: "utf-8",
+  });
 }
 
 /**
@@ -120,7 +151,11 @@ function seedCollection() {
 export const config: WebdriverIO.Config = {
   runner: "local",
   specs: ["./specs/**/*.e2e.ts"],
-  maxInstances: 1,
+  maxInstances: workerCount(),
+  // Each worker starts its own display in beforeSession (Linux), so
+  // WebdriverIO mustn't wrap the workers in xvfb-run, which it does whenever
+  // DISPLAY is unset.
+  autoXvfb: false,
   capabilities: [
     {
       // The embedded server ignores capabilities; the name is what the spec
@@ -139,29 +174,30 @@ export const config: WebdriverIO.Config = {
     timeout: 60000,
   },
   hostname: "127.0.0.1",
-  port: WEBDRIVER_PORT,
   path: "/",
 
-  beforeSession: async (_config, _capabilities, specs) => {
-    isolateAppData();
-    delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
-    spawnSync(
+  // One build before any worker starts, so workers neither build nor wait on
+  // cargo's lock. A failed build ends the run (WebdriverIO only logs other
+  // errors from this hook).
+  onPrepare: () => {
+    const build = spawnSync(
       "cargo",
-      [
-        "build",
-        "--profile",
-        buildProfile,
-        "--features",
-        // e2e compiles in the WebDriver server. It implies mock-keyring,
-        // which swaps the OS keyring for an in-memory store, for saved
-        // passphrases: headless environments have no way to unlock a real
-        // one. It also lets a spec shorten the idle lock's minute.
-        "custom-protocol,e2e",
-        "--manifest-path",
-        "src-tauri/Cargo.toml",
-      ],
+      ["build", ...cargoArgs, "--bin", "hoplodex", "--example", "human_seed"],
       { cwd: repoRoot, stdio: "inherit" },
     );
+    if (build.status !== 0) {
+      const error = new Error("building the app for E2E failed");
+      error.name = "SevereServiceError";
+      throw error;
+    }
+  },
+
+  beforeSession: async (config, _capabilities, specs, cid) => {
+    isolateAppData();
+    delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
+    // WebdriverIO connects with this same config object once the hook
+    // returns, so the session goes to this worker's app.
+    config.port = assignWorkerPort(cid);
     if (specs.some((spec) => spec.endsWith("/e2e/screenshots/screens.e2e.ts"))) seedCollection();
     // A computer with no keyring service (FR-019).
     if (specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts"))) {
@@ -176,11 +212,13 @@ export const config: WebdriverIO.Config = {
     } else {
       delete process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS;
     }
+    await startDisplay();
     await launchApp();
   },
 
   afterSession: async () => {
     await killApp();
+    await stopDisplay();
     if (!sandbox) return;
     // The app and its webview are still shutting down, and write cache files
     // as they go, so removing the directory once can leave some behind.
