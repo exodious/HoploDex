@@ -87,11 +87,8 @@ Other findings:
   `RTCPeerConnection` doesn't exist. Turning it off explicitly costs nothing.
   `enable-dns-prefetching` is deprecated and ignored; with the proxy or the
   filter, no lookups happened anyway.
-- **WebKit's own web-process sandbox is off** (`get_sandbox_enabled` = 0),
-  though `bwrap` is installed. The 4.1 API leaves it off unless the app
-  turns it on before the context starts its first web process. Turning it on
-  for the preview's context would add OS-level confinement (no network
-  namespace, a restricted filesystem) under all of this. Not tried yet.
+- **WebKit's own web-process sandbox is off** by default; see "WebKit's
+  sandbox" below.
 - The compiled content filter is written to a store directory (rules only,
   no document content).
 
@@ -105,6 +102,45 @@ WebView2's `WebResourceRequested`, and on macOS a `WKContentRuleList`.
 A test that keeps it blocked: open a PDF in the preview, have a frame script
 make every attempt above against a local test service, and fail if the
 service or the tripwire sees a connection or the DNS log shows a lookup.
+
+## WebKit's sandbox
+
+WebKitGTK can run each web process (the one that parses the PDF and runs
+PDF.js) under bubblewrap. The 4.1 API leaves it off unless the app turns it
+on, and `webkit_web_context_set_sandbox_enabled` must be called before the
+context has any web process: later, it ends the program (`g_error`). wry
+creates the preview's context and loads the first URL inside `build()`
+(`wry/src/webkitgtk/mod.rs:372`), so a Tauri-made web view can't turn it on
+for itself. What can: `WEBKIT_FORCE_SANDBOX=1` in the environment before the
+first context exists, which turns it on for every web view, the main
+window's included.
+
+| Where | Result |
+|---|---|
+| Dev container | Not testable. WebKit skips bwrap where `/run/.containerenv` exists (`get_sandbox_enabled` = 1, but the web process ran unconfined). With that file hidden, bwrap couldn't mount `/proc` (podman forbids it), and **the whole app crashed** (`Trace/breakpoint trap`): WebKit doesn't fall back to running unsandboxed |
+| Host (Arch, WebKitGTK 2.52), sandbox off | Web process shares every namespace with the app, no seccomp, and sees `HOME` (the canary file), `/home`, `/run/user` and all of `/tmp` |
+| Host, `WEBKIT_FORCE_SANDBOX=1` | Web process runs under bwrap: **its own user, pid, network and mount namespaces**, `NoNewPrivs`, a seccomp filter. **`HOME` (the canary), `/home` and `/run/user` are gone**, and `/tmp` holds only what WebKit binds in. The viewer works as before (both pages, text layer), and every network and IPC check gives the same result as without it |
+
+The network process stays outside the sandbox (WebKit's design): it is the
+one that makes requests, so it is the one the proxy and filter govern. With
+the web process in its own network namespace, a compromised viewer can't
+open a socket of its own; it can only ask the network process, which goes
+through the filter and the tripwire.
+
+**What this means for a design**:
+- **Turning it on is all-or-nothing through Tauri**: `WEBKIT_FORCE_SANDBOX`
+  in `main()` before Tauri starts sandboxes the main window too. That needs
+  a full E2E run on a host (the container can't run it). The alternative is
+  a preview web view HoploDex creates itself, outside Tauri, on its own
+  context with the sandbox on (and with no Tauri IPC in it at all). Not
+  tried.
+- **It must never be forced where bwrap can't run**, or HoploDex crashes at
+  its first web view. That rules out forcing it blindly: HoploDex would have
+  to check first that bwrap works (it can't in containers, inside Flatpak,
+  which has its own sandbox, or, possibly, on Ubuntu 24.04 and later, whose
+  AppArmor restricts unprivileged user namespaces; not verified). And it
+  needs a decision for when it can't: preview with the other layers only,
+  or no in-app preview on that computer.
 
 ## What a design on this needs
 
@@ -122,6 +158,9 @@ service or the tripwire sees a connection or the DNS log shows a lookup.
 4. **Serve from memory** through a custom protocol with
    `Cache-Control: no-store`; a one-time path per preview so nothing else can
    fetch it.
+
+5. **WebKit's sandbox, where it can run** (Linux; see above), with a check
+   that bwrap works before turning it on.
 
 TIFF (which no web view but WebKit on macOS shows) and text keep the plan's
 own decoders.
