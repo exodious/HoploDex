@@ -16,7 +16,7 @@
 mod support;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
@@ -56,6 +56,43 @@ const BUDGET_MS: u128 = 500;
 fn one_at_a_time() -> MutexGuard<'static, ()> {
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
     ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A closed database holding the 10,000 seeded firearms, made once for the
+/// whole test binary (seeding is most of a test's time) and copied for each
+/// test that needs only that.
+fn seeded_firearms() -> TestDb {
+    static TEMPLATE: OnceLock<PathBuf> = OnceLock::new();
+    let template = TEMPLATE.get_or_init(|| {
+        let template = TestDb::new();
+        seed_10k_firearms(&template.conn);
+        let (conn, dir) = template.into_parts();
+        // Closed, so that the copies are of a file nothing holds open.
+        drop(conn);
+        let dir = dir.keep();
+        // Statics are never dropped, so the directory is removed as the
+        // process exits.
+        static REMOVE_AT_EXIT: OnceLock<PathBuf> = OnceLock::new();
+        extern "C" fn remove_template() {
+            if let Some(dir) = REMOVE_AT_EXIT.get() {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+        REMOVE_AT_EXIT.set(dir.clone()).unwrap();
+        // SAFETY: `remove_template` is a plain function that touches only a
+        // static it reads.
+        unsafe { libc::atexit(remove_template) };
+        dir.join(TestDb::FILE_NAME)
+    });
+    TestDb::copy_of(template)
+}
+
+fn firearm_ids(conn: &Connection) -> Vec<i64> {
+    let mut ids_stmt = conn.prepare("SELECT id FROM firearms").unwrap();
+    let ids: Vec<i64> =
+        ids_stmt.query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(ids.len(), RECORD_COUNT);
+    ids
 }
 
 fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
@@ -159,18 +196,14 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
     }
     tx.commit().unwrap();
 
-    let mut ids_stmt = conn.prepare("SELECT id FROM firearms").unwrap();
-    let ids: Vec<i64> =
-        ids_stmt.query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
-    assert_eq!(ids.len(), RECORD_COUNT);
-    ids
+    firearm_ids(conn)
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let result = firearm_ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
@@ -186,10 +219,10 @@ fn list_firearms_completes_within_budget_at_10k_records() {
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_search_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let result = firearm_ops::list_firearms(
@@ -209,10 +242,10 @@ fn list_firearms_search_completes_within_budget_at_10k_records() {
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_finish_search_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let result = firearm_ops::list_firearms(
@@ -246,10 +279,10 @@ fn list_firearms_finish_search_completes_within_budget_at_10k_records() {
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_grouped_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let result = firearm_ops::list_firearms(
@@ -324,10 +357,10 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
 /// cartridge within the 1s action budget, and a search by a cartridge
 /// within the 500ms search budget.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let grouped = firearm_ops::list_firearms(
@@ -366,10 +399,10 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
 /// the 1s action budget, and a search by an action's name within the 500ms
 /// search budget.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let grouped = firearm_ops::list_firearms(
@@ -408,10 +441,10 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
 /// firearms with 10,000 distinct models (the worst case), within 50ms: half
 /// of the 100ms budget, the rest being IPC and rendering.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     for (field, text, make) in [
         (EntryField::Make, "sw", None),
@@ -436,10 +469,10 @@ fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_nickname_search_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
 
     let started = Instant::now();
     let result = firearm_ops::list_firearms(
@@ -462,10 +495,11 @@ fn list_firearms_nickname_search_completes_within_budget_at_10k_records() {
 /// force totals every unscheduled firearm, a fifth of the collection is
 /// scheduled under a schedule-only policy, and most carry a value.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn get_value_summary_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    let ids = seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
+    let ids = firearm_ids(&db.conn);
 
     insurance_ops::create_policy(
         &db.conn,
@@ -500,10 +534,10 @@ fn get_value_summary_completes_within_budget_at_10k_records() {
 /// Browse rows carry each firearm's insurance warning, which needs the
 /// blanket computation too.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn list_firearms_with_blanket_coverage_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
     insurance_ops::create_policy(
         &db.conn,
         &policy("Perf blanket", "2020-01-01", "2099-01-01", Some(1_000_000)),
@@ -530,12 +564,13 @@ fn list_firearms_with_blanket_coverage_completes_within_budget_at_10k_records() 
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn deleting_a_firearm_completes_within_the_interactive_budget_at_10k_records() {
     let _alone = one_at_a_time();
     // Deleting vacuums the file to return the freed space (Constitution V),
     // which must stay inside the 1s completion budget (Constitution IV).
-    let db = TestDb::new();
-    let ids = seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
+    let ids = firearm_ids(&db.conn);
 
     let started = Instant::now();
     firearm_ops::delete_firearm(&db.conn, ids[RECORD_COUNT / 2], true).unwrap();
@@ -631,6 +666,7 @@ fn assert_progress_in_time(event: &str, waited: Duration) {
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_derivation() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
@@ -649,6 +685,7 @@ fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_deriv
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
@@ -709,6 +746,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
 }
 
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budgets() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
@@ -737,10 +775,10 @@ fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budget
 /// "Registered to" value within the 500ms search budget, and the form and
 /// "Registered to" suggestions within 50ms.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
-    let db = TestDb::new();
-    seed_10k_firearms(&db.conn);
+    let db = seeded_firearms();
     db.conn
         .execute_batch(
             "UPDATE firearms SET
@@ -947,6 +985,7 @@ fn accessory_input(kind: i64, make: &str, model: &str) -> AccessoryInput {
 
 /// The actions of FR-026 (research.md §22): each within the 1s budget.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let scale = MountedScale::new();
@@ -1039,6 +1078,7 @@ fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_re
 /// The browse and search operations of FR-026 (research.md §22): each within
 /// the 500ms budget.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let scale = MountedScale::new();
@@ -1161,6 +1201,7 @@ fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_
 /// research.md §22: the suggestion lists now read both tables, still within
 /// the 50ms of SC-004.
 #[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
 fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let scale = MountedScale::new();

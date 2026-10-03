@@ -1,4 +1,4 @@
-import { $, addFirearm, back, browser, clickButton, choose, expect, fill } from "../support/ui";
+import { $, addFirearm, back, browser, clickButton, choose, expect, fill, settle } from "../support/ui";
 import {
   backLinkShown,
   clickEl,
@@ -28,7 +28,7 @@ import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 1's acceptance scenarios (spec.md),
- * driven against the real built app via tauri-driver / WebKitWebDriver —
+ * driven against the real built app through its embedded WebDriver server —
  * no mocks, exercising the full stack (React UI -> Tauri IPC -> SQLCipher).
  * See e2e/support/ui.ts for why interactions go through page JS.
  *
@@ -122,7 +122,7 @@ describe("User Story 1 - Record a Firearm", () => {
 
     // Deleting returns to the collection, without the firearm.
     await $(".hd-page-title").waitForExist();
-    await browser.pause(300);
+    await settle();
     expect(await listedNames()).not.toContain("ToDelete X");
   });
 
@@ -178,7 +178,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await fill("Price received", price);
     await clickButton("Mark as disposed");
     await $('[role="alertdialog"], [role="dialog"]').waitForExist({ reverse: true });
-    await browser.pause(400);
+    await settle();
   }
 
   it("tells identical firearms apart by nickname, and leaves a blank one alone (Scenario 8)", async () => {
@@ -354,7 +354,11 @@ describe("User Story 1 - Record a Firearm", () => {
       await browser.waitUntil(async () => (await focusedFieldLabel()) === label, {
         timeoutMsg: `the ${label} field was not focused`,
       });
-      expect(await isFieldInView(label)).toBe(true);
+      // The dialog scrolls the field into view smoothly, which `settle()`
+      // can't see: wait for the scroll to land.
+      await browser.waitUntil(() => isFieldInView(label), {
+        timeoutMsg: `the ${label} field was not scrolled into view`,
+      });
       expect(await hasHighlightedSection()).toBe(true);
       await clickButton("Cancel");
     }

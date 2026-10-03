@@ -9,6 +9,7 @@ import {
   fill,
   focusedFieldLabel,
   groupBy,
+  settle,
 } from "../support/ui";
 import { realClick, realKey } from "../support/realInput";
 
@@ -73,7 +74,7 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
 
     await clickButton("Add firearm");
     await $("#record-name").waitForExist({ timeout: 8000 });
-    await browser.pause(300);
+    await settle();
   });
 
   it("finds the firearm under its cartridge when grouped by Cartridge", async () => {

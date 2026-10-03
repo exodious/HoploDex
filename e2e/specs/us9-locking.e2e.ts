@@ -16,6 +16,7 @@ import {
   submitPassphrase,
   waitForChooser,
   waitForCollection,
+  settle,
 } from "../support/ui";
 
 /**
@@ -51,8 +52,12 @@ async function editNotes(notes: string) {
   await clickButton("Edit");
   await $('[role="dialog"]').waitForExist();
   await fill("Notes", notes);
-  // Past the draft's 250 ms staging.
-  await browser.pause(400);
+  // Stage the draft now instead of sleeping past its 250 ms debounce, the way
+  // the window losing focus does (usePendingDraft.ts); `settle()` then waits
+  // for the backend call. (The debounce itself is not counted as busy: that
+  // would make every `fill` in every form wait 250 ms.)
+  await browser.execute(() => window.dispatchEvent(new Event("blur")));
+  await settle();
 }
 
 /** Waits for the open dialog titled `title`, and returns its text. */
@@ -153,12 +158,11 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
     });
 
     await browser.waitUntil(async () => $(".hd-chooser__title").isExisting(), {
-      timeout: 90000,
-      interval: 1000,
+      timeout: 20000,
+      interval: 500,
       timeoutMsg: "the idle lock never locked",
     });
 
     expect(await chooserSays("HoploDex locked “Locked” after 1 minute without use.")).toBe(true);
-    // A minute of waiting, beyond the usual limit.
-  }).timeout(150000);
+  });
 });

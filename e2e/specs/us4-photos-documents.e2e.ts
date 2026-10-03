@@ -9,13 +9,15 @@ import {
   clickButton,
   clickEl,
   expect,
+  settle,
 } from "../support/ui";
 import { openFirearm, rowThumbnail } from "../support/ui";
 import { createDatabase } from "../support/ui";
+import { relaunchApp } from "../support/app";
 
 /**
  * End-to-end coverage of User Story 4's acceptance scenarios (spec.md),
- * driven against the real built app via tauri-driver / WebKitWebDriver.
+ * driven against the real built app through its embedded WebDriver server.
  * See e2e/support/ui.ts for why interactions go through page JS.
  */
 
@@ -120,7 +122,8 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     await clickButton("Use as thumbnail");
     await expect($("button=Current thumbnail")).toExist();
     await browser.keys(["Escape"]);
-    await browser.pause(300);
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await settle();
 
     const tagsAfter = await browser.execute(() =>
       [...document.querySelectorAll(".hd-photo")].map((p) =>
@@ -139,7 +142,9 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     await expect($(".hd-doc__name=receipt.pdf")).toExist();
     await clickButton("Open");
-    await browser.pause(800);
+    // `open_document` has answered (and any failure toast is up) once the
+    // app is idle.
+    await settle();
     await expect($(".hd-toast--error")).not.toExist();
 
     // Reopening hands the OS a temporary copy of the stored bytes. When the
@@ -157,18 +162,18 @@ describe("User Story 4 - Attach Photos and Documents", () => {
   });
 
   // Scenario 5: no decrypted copy outlives the session (FR-035, SC-010).
-  // Ending a WebDriver session kills the app without letting it run its exit
+  // relaunchApp() kills the app with SIGKILL, without letting it run its exit
   // handler, which makes it a faithful crash: whatever Scenario 4's "Open"
   // left behind must be swept at the next launch. Clean exit (window closed, or
-  // SIGTERM/SIGHUP/SIGINT) can't be observed through WebDriver and is checked
-  // against the real binary by e2e/scripts/quit-cleanup.py.
+  // SIGTERM/SIGHUP/SIGINT) is checked against the real binary by
+  // e2e/scripts/quit-cleanup.py.
   it("deletes the opened copy at the next launch after an abrupt termination (Scenario 5)", async function () {
     if (!openedRoot) return this.skip();
     expect(filesUnder(openedRoot).length).toBe(1);
 
     // The relaunch opens no database: the sweep runs at startup, before the
     // chooser (FR-035).
-    await browser.reloadSession();
+    await relaunchApp();
 
     await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {
       timeout: 10000,

@@ -2,23 +2,68 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { browser } from "@wdio/globals";
 import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
+import { assignWorkerPort, buildProfile, killApp, launchApp } from "./support/app";
+import { startDisplay, stopDisplay } from "./support/display";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
-// Built app binary produced by `cargo build --release --features custom-protocol
-// --manifest-path src-tauri/Cargo.toml` (the flag makes the app load bundled
-// frontendDist assets via Tauri's custom protocol, matching what `cargo
-// tauri build` does, instead of trying to hit the devUrl dev server).
-const application = path.resolve(
+// The E2E build: `cargo build --profile e2e --features custom-protocol,e2e`
+// (custom-protocol makes the app load bundled frontendDist assets, matching
+// what `cargo tauri build` does, instead of trying to hit the devUrl dev
+// server; `e2e` is the embedded WebDriver server, the in-memory keyring and
+// the other E2E-only settings). The `e2e` profile is the release one without
+// fat LTO, so a backend change rebuilds in seconds. HOPLODEX_E2E_PROFILE=release
+// builds and drives the shipping profile instead, as a release check
+// (DEVELOPMENT.md, "Test"). `onPrepare` builds it, and the human-testing seed,
+// once before any worker starts; support/app.ts launches the binary.
+//
+// Spec files run in parallel workers (HOPLODEX_E2E_WORKERS, see
+// `workerCount`). Each worker is its own process, with its own sandbox,
+// WebDriver port and, on Linux, X display (support/display.ts).
+
+const cargoArgs = [
+  "--profile",
+  buildProfile,
+  "--features",
+  // e2e compiles in the WebDriver server. It implies mock-keyring, which
+  // swaps the OS keyring for an in-memory store, for saved passphrases:
+  // headless environments have no way to unlock a real one. It also lets a
+  // spec shorten the idle lock's minute.
+  "custom-protocol,e2e",
+  "--manifest-path",
+  "src-tauri/Cargo.toml",
+];
+
+/** The human-testing seed (src-tauri/examples/human_seed.rs), built with the
+ * app's profile and features in `onPrepare`. */
+const seedBinary = path.resolve(
   repoRoot,
-  "src-tauri/target/release/hoplodex" + (process.platform === "win32" ? ".exe" : ""),
+  `src-tauri/target/${buildProfile}/examples/human_seed` +
+    (process.platform === "win32" ? ".exe" : ""),
 );
 
-let tauriDriver: ChildProcess | undefined;
+/**
+ * How many spec files run at once: HOPLODEX_E2E_WORKERS, or half the CPUs,
+ * at most 4. Each worker runs its own app (a few hundred MB for WebKitGTK),
+ * and more than 4 gains little while making every step slower.
+ * HOPLODEX_E2E_WORKERS=1 runs one spec file at a time, for debugging.
+ */
+function workerCount(): number {
+  const set = process.env.HOPLODEX_E2E_WORKERS;
+  if (set) {
+    const count = Number(set);
+    if (!Number.isInteger(count) || count < 1) {
+      throw new Error(`HOPLODEX_E2E_WORKERS must be a whole number of at least 1, not "${set}"`);
+    }
+    return count;
+  }
+  return Math.max(1, Math.min(4, Math.floor(os.availableParallelism() / 2)));
+}
+
 let sandbox: string | undefined;
 
 /** Where the documents folder, and so the suggested location for a new
@@ -37,9 +82,9 @@ function writeUserDirs(configDir: string, documents: string) {
  * so even accepting the suggested location for a new database stays inside
  * it.
  *
- * Set on this process's environment, which tauri-driver, and through it the
- * app, inherits. Specs read HOPLODEX_E2E_DOCUMENTS to type locations inside
- * the sandbox.
+ * Set on this process's environment, which the app, launched from here
+ * (support/app.ts), inherits. Specs read HOPLODEX_E2E_DOCUMENTS to type
+ * locations inside the sandbox.
  */
 function isolateAppData() {
   sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-"));
@@ -68,29 +113,26 @@ function isolateAppData() {
   } else if (process.platform === "win32") {
     process.env.APPDATA = data;
     process.env.LOCALAPPDATA = cache;
+  } else if (process.platform === "darwin") {
+    // macOS ignores XDG_*: Tauri builds every directory (Application Support,
+    // Caches, Documents) from HOME, so the app gets a home of its own inside
+    // the sandbox (#28). Only the app: cargo, run from here, keeps the real one.
+    const home = path.join(sandbox, "home");
+    const documents = path.join(home, "Documents");
+    fs.mkdirSync(path.join(home, "Library", "Application Support"), { recursive: true });
+    fs.mkdirSync(documents, { recursive: true });
+    process.env.HOPLODEX_E2E_HOME = home;
+    process.env.HOPLODEX_E2E_DOCUMENTS = documents;
   }
 }
 
-/** Runs the human-testing seed (src-tauri/examples/human_seed.rs) with the
- * build's features, so it shares the app's build. */
+/** Runs the human-testing seed `onPrepare` built. */
 function runSeed(args: string[], stdio: "inherit" | "pipe") {
-  return spawnSync(
-    "cargo",
-    [
-      "run",
-      "--quiet",
-      "--release",
-      "--features",
-      "custom-protocol,mock-keyring",
-      "--manifest-path",
-      "src-tauri/Cargo.toml",
-      "--example",
-      "human_seed",
-      "--",
-      ...args,
-    ],
-    { cwd: repoRoot, stdio: ["ignore", stdio, "inherit"], encoding: "utf-8" },
-  );
+  return spawnSync(seedBinary, args, {
+    cwd: repoRoot,
+    stdio: ["ignore", stdio, "inherit"],
+    encoding: "utf-8",
+  });
 }
 
 /**
@@ -112,70 +154,32 @@ function seedCollection() {
   process.env.HOPLODEX_E2E_SEED_PASSPHRASE = printed.stdout.trim();
 
   const config = path.join(dir, "config");
-  process.env.XDG_CONFIG_HOME = config;
-  writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
-}
-
-/**
- * A prior run's tauri-driver/WebKitWebDriver can be left holding these
- * ports if it was interrupted (Ctrl+C, crash) before `afterSession` had a
- * chance to kill it — the next run would otherwise fail to bind and every
- * session request would get rejected. Clearing them first makes repeated
- * or previously-interrupted runs self-healing.
- */
-function killProcessesOnPorts(ports: number[]) {
-  if (process.platform !== "linux") return;
-  for (const port of ports) {
-    try {
-      const out = execSync(`ss -ltnp "sport = :${port}"`, { encoding: "utf-8" });
-      for (const match of out.matchAll(/pid=(\d+)/g)) {
-        try {
-          process.kill(Number(match[1]), "SIGKILL");
-        } catch {
-          // already gone
-        }
-      }
-    } catch {
-      // ss unavailable, or no matching socket — nothing to clean up
-    }
-  }
-}
-
-/**
- * On Linux, tauri-driver wraps WebKitWebDriver, which isn't always on
- * $PATH (e.g. when only available via a Flatpak runtime). Falls back to
- * undefined so tauri-driver uses its own $PATH lookup on other platforms.
- */
-function findNativeDriver(): string | undefined {
-  if (process.platform !== "linux") return undefined;
-  try {
-    return execSync("which WebKitWebDriver", { encoding: "utf-8" }).trim();
-  } catch {
-    try {
-      return (
-        execSync("find / -maxdepth 20 -iname WebKitWebDriver -type f 2>/dev/null | head -1", {
-          encoding: "utf-8",
-        }).trim() || undefined
-      );
-    } catch {
-      return undefined;
-    }
+  if (process.platform === "darwin") {
+    const support = path.join(process.env.HOPLODEX_E2E_HOME!, "Library", "Application Support");
+    fs.rmSync(support, { recursive: true, force: true });
+    fs.symlinkSync(config, support);
+  } else {
+    process.env.XDG_CONFIG_HOME = config;
+    writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
   }
 }
 
 export const config: WebdriverIO.Config = {
   runner: "local",
   specs: ["./specs/**/*.e2e.ts"],
-  maxInstances: 1,
+  maxInstances: workerCount(),
+  // Each worker starts its own display in beforeSession (Linux), so
+  // WebdriverIO mustn't wrap the workers in xvfb-run, which it does whenever
+  // DISPLAY is unset.
+  autoXvfb: false,
   capabilities: [
     {
-      // @ts-expect-error tauri-driver uses a custom capability shape, not a standard webdriver browser
-      "tauri:options": { application },
+      // The embedded server ignores capabilities; the name is what the spec
+      // reporter prints ("RUNNING in wry").
       browserName: "wry",
       // WebdriverIO defaults to requesting a Bidi session (webSocketUrl:
-      // true) unless this flag opts back into plain WebDriver classic —
-      // tauri-driver only speaks classic and otherwise rejects the whole
-      // session with "Failed to match capabilities".
+      // true) unless this flag opts back into plain WebDriver classic, the
+      // only protocol the embedded server speaks.
       "wdio:enforceWebDriverClassic": true,
     },
   ],
@@ -186,28 +190,30 @@ export const config: WebdriverIO.Config = {
     timeout: 60000,
   },
   hostname: "127.0.0.1",
-  port: 4444,
   path: "/",
 
-  beforeSession: (_config, _capabilities, specs) => {
-    killProcessesOnPorts([4444, 4445]);
-    isolateAppData();
-    delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
-    spawnSync(
+  // One build before any worker starts, so workers neither build nor wait on
+  // cargo's lock. A failed build ends the run (WebdriverIO only logs other
+  // errors from this hook).
+  onPrepare: () => {
+    const build = spawnSync(
       "cargo",
-      [
-        "build",
-        "--release",
-        "--features",
-        // mock-keyring swaps the OS keyring for an in-memory store, for
-        // saved passphrases: headless environments have no way to unlock a
-        // real one.
-        "custom-protocol,mock-keyring",
-        "--manifest-path",
-        "src-tauri/Cargo.toml",
-      ],
+      ["build", ...cargoArgs, "--bin", "hoplodex", "--example", "human_seed"],
       { cwd: repoRoot, stdio: "inherit" },
     );
+    if (build.status !== 0) {
+      const error = new Error("building the app for E2E failed");
+      error.name = "SevereServiceError";
+      throw error;
+    }
+  },
+
+  beforeSession: async (config, _capabilities, specs, cid) => {
+    isolateAppData();
+    delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
+    // WebdriverIO connects with this same config object once the hook
+    // returns, so the session goes to this worker's app.
+    config.port = assignWorkerPort(cid);
     if (specs.some((spec) => spec.endsWith("/e2e/screenshots/screens.e2e.ts"))) seedCollection();
     // A computer with no keyring service (FR-019).
     if (specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts"))) {
@@ -215,15 +221,20 @@ export const config: WebdriverIO.Config = {
     } else {
       delete process.env.HOPLODEX_E2E_KEYRING;
     }
-    const nativeDriver = findNativeDriver();
-    const args = nativeDriver ? ["--native-driver", nativeDriver] : [];
-    tauriDriver = spawn("tauri-driver", args, {
-      stdio: [null, process.stdout, process.stderr],
-    });
+    // The idle lock's minute lasts 3 s in the locking spec, so its test
+    // doesn't wait a real minute; every other spec keeps the real one.
+    if (specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts"))) {
+      process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = "3";
+    } else {
+      delete process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS;
+    }
+    await startDisplay();
+    await launchApp();
   },
 
   afterSession: async () => {
-    tauriDriver?.kill();
+    await killApp();
+    await stopDisplay();
     if (!sandbox) return;
     // The app and its webview are still shutting down, and write cache files
     // as they go, so removing the directory once can leave some behind.

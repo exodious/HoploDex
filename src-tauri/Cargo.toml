@@ -30,6 +30,16 @@ custom-protocol = ["tauri/custom-protocol"]
 # reach the developer's real keyring. `HOPLODEX_E2E_KEYRING=unavailable`
 # makes it behave like a computer with no keyring (research.md §10).
 mock-keyring = ["dep:keyring-core"]
+# Enabled for E2E builds, and meant for everything that must never reach a
+# shipped build: it implies `mock-keyring`; it compiles in the embedded
+# WebDriver server the E2E suite drives the app through (main.rs, #29), which
+# has no authentication and runs any script in the page; and
+# `HOPLODEX_E2E_IDLE_MINUTE_SECONDS` then sets how long the idle lock counts
+# as one minute, so a spec doesn't wait a real one (session/idle.rs).
+# `scripts/check-no-webdriver.sh` (in `npm run audit`, and on the release
+# binary in build-appimage.sh) checks that a build without it has none of the
+# server.
+e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -40,6 +50,8 @@ serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher", "chrono"] }
 keyring = "4"
 keyring-core = { version = "1", optional = true }
+# The embedded W3C WebDriver server, E2E builds only (the `e2e` feature).
+tauri-plugin-wdio-webdriver = { version = "1.4.0", optional = true }
 rust_xlsxwriter = "0.96"
 calamine = "0.36"
 csv = "1.4"
@@ -105,3 +117,14 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+# E2E builds (`cargo build --profile e2e`): the release profile without fat
+# LTO and its single codegen unit, so a backend change relinks in seconds
+# rather than a minute. Keeps `panic = "abort"`, so a panic behaves as in the
+# shipped app. Set HOPLODEX_E2E_PROFILE=release to drive the shipping profile
+# instead (DEVELOPMENT.md, "Test").
+[profile.e2e]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

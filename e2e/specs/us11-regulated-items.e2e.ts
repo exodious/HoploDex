@@ -7,6 +7,7 @@ import {
   createDatabase,
   expect,
   focusedFieldLabel,
+  settle,
 } from "../support/ui";
 import { realClick, realKey } from "../support/realInput";
 
@@ -112,8 +113,8 @@ describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
     await tabTo("Rated cartridge");
     await typeReal(".300 Winchester Magnum");
     await tabTo("Caliber");
-    // The cartridge settles on leaving; give a derived caliber time to land.
-    await browser.pause(800);
+    // The cartridge settles on leaving; wait for a derived caliber to land.
+    await settle();
     expect(await focusedValue()).toBe("");
     await typeReal(".30");
     await tabTo("Serial number");

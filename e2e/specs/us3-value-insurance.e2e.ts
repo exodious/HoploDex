@@ -9,6 +9,7 @@ import {
   expect,
   fieldValue,
   fill,
+  settle,
 } from "../support/ui";
 import { goTo, isButtonDisabled, openFirearm, policyCardText, selectOption } from "../support/ui";
 import { titleBlock, toggle } from "../support/ui";
@@ -23,7 +24,7 @@ import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 3's acceptance scenarios (spec.md),
- * driven against the real built app via tauri-driver / WebKitWebDriver.
+ * driven against the real built app through its embedded WebDriver server.
  * Coverage is implicit: a firearm is scheduled on a policy with its own
  * amount, or left unscheduled and covered by the one blanket policy in force
  * (FR-036). Seeds its own uniquely-named policies and firearms rather than
@@ -74,7 +75,7 @@ async function editPolicy(name: string, fields: Record<string, string>) {
   for (const [label, value] of Object.entries(fields)) await fill(label, value);
   await clickButton("Save changes");
   await $('[role="dialog"]').waitForExist({ reverse: true });
-  await browser.pause(400);
+  await settle();
 }
 
 async function addFirearmWithValue(opts: {
@@ -94,7 +95,7 @@ async function assignCoverage(opts: { policyName: string | null; amountDollars?:
   if (opts.amountDollars) await fill("Scheduled amount", opts.amountDollars);
   await clickButton("Save coverage");
   await $('[role="dialog"]').waitForExist({ reverse: true });
-  await browser.pause(400);
+  await settle();
 }
 
 /** The collection's total estimated value, in dollars, from the page header. */
@@ -522,5 +523,5 @@ async function clickInPolicyCard(policyName: string, button: string) {
     button,
   );
   if (!clicked) throw new Error(`no "${button}" button on the ${policyName} card`);
-  await browser.pause(300);
+  await settle();
 }

@@ -15,8 +15,8 @@ FROM docker.io/library/debian:trixie-slim
 ARG NODE_VERSION=24.21.0
 ARG NPM_VERSION=12
 ARG RUST_TOOLCHAIN=stable
-ARG TAURI_DRIVER_VERSION=2.0.6
 ARG CARGO_DENY_VERSION=0.20.2
+ARG CARGO_NEXTEST_VERSION=0.9.146
 ARG SPEC_KIT_VERSION=v1.0.8
 ARG USERNAME=dev
 ARG USER_UID=1000
@@ -31,8 +31,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # - Tauri/WebKitGTK build deps and rusqlite's bundled SQLCipher (perl, libssl)
 # - xdg-utils: the AppImage bundler copies /usr/bin/xdg-open into the bundle
 #   and fails `tauri build` without it
-# - E2E: WebKitWebDriver (webkit2gtk-driver), Xvfb + xauth for xvfb-run,
-#   iproute2 for `ss` (the harness clears stale driver ports)
+# - E2E: Xvfb (each worker starts its own display) + xauth for xvfb-run
+#   (quit-cleanup.py), iproute2 for `ss` (the harness clears a stale app's
+#   WebDriver port); the E2E build carries its own WebDriver server
 # - human testing: a session D-Bus and gnome-keyring for the real keyring
 # - python3-gi + GTK typelibs for the native drag-and-drop test technique
 # - imagemagick to crop screenshots, fonts for anything the app doesn't bundle
@@ -72,7 +73,6 @@ RUN apt-get update \
         python3 \
         python3-gi \
         sudo \
-        webkit2gtk-driver \
         wget \
         xauth \
         xdg-utils \
@@ -131,7 +131,7 @@ RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
 # Rust, owned by the dev user so `rustup` works from inside the container.
 # CARGO_HOME points at $HOME/.cargo at run time (the crate cache and the
 # RustSec advisory database persist in the home volume); /opt/rust/cargo/bin
-# keeps the rustup proxies, tauri-driver and cargo-deny.
+# keeps the rustup proxies, cargo-deny and cargo-nextest.
 USER ${USERNAME}
 ENV RUSTUP_HOME=/opt/rust/rustup \
     PATH=/opt/rust/cargo/bin:/usr/local/bin:/usr/bin:/bin
@@ -140,8 +140,8 @@ RUN set -eux; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --no-modify-path --profile minimal \
             --default-toolchain "${RUST_TOOLCHAIN}" --component rustfmt,clippy; \
-    cargo install tauri-driver --version "${TAURI_DRIVER_VERSION}" --locked; \
     cargo install cargo-deny --version "${CARGO_DENY_VERSION}" --locked; \
+    cargo install cargo-nextest --version "${CARGO_NEXTEST_VERSION}" --locked; \
     rm -rf /opt/rust/cargo/registry /opt/rust/cargo/git
 ENV CARGO_HOME=/home/${USERNAME}/.cargo \
     PATH=/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.local/bin:/opt/rust/cargo/bin:/usr/local/bin:/usr/bin:/bin \

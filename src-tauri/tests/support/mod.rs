@@ -47,18 +47,37 @@ pub struct TestDb {
 }
 
 impl TestDb {
+    /// The database file's name in the temp directory.
+    #[allow(dead_code)]
+    pub const FILE_NAME: &'static str = "test.hoplodex";
+
     pub fn new() -> Self {
         let dir = TempDir::new().expect("failed to create temp dir for test DB");
         let conn =
-            db::create_database(&dir.path().join("test.hoplodex"), &passphrase(), &test_machine())
+            db::create_database(&dir.path().join(Self::FILE_NAME), &passphrase(), &test_machine())
                 .expect("failed to create the test database");
+        Self { conn, dir }
+    }
+
+    /// A copy of the closed database file `template` (made by a `TestDb`,
+    /// so with [`TEST_PASSPHRASE`] and the test machine), opened as the app
+    /// would. For a test that needs a large fixture, made once and copied,
+    /// instead of seeded again. The file must be closed: an open database
+    /// holds an exclusive lock on its file.
+    #[allow(dead_code)]
+    pub fn copy_of(template: &Path) -> Self {
+        let dir = TempDir::new().expect("failed to create temp dir for test DB");
+        let path = dir.path().join(Self::FILE_NAME);
+        std::fs::copy(template, &path).expect("failed to copy the template database");
+        let conn = db::open_database(&path, &passphrase(), &test_machine(), false)
+            .expect("failed to open the copy of the template database");
         Self { conn, dir }
     }
 
     /// The database file.
     #[allow(dead_code)]
     pub fn path(&self) -> PathBuf {
-        self.dir.path().join("test.hoplodex")
+        self.dir.path().join(Self::FILE_NAME)
     }
 
     /// The temp directory holding the database, for files a test makes

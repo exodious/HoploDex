@@ -1,22 +1,82 @@
 import { $, $$, browser } from "@wdio/globals";
 
 /**
- * Shared helpers for driving the HoploDex UI through tauri-driver /
- * WebKitWebDriver.
+ * Shared helpers for driving the HoploDex UI through the WebDriver server
+ * compiled into E2E builds (`tauri-plugin-wdio-webdriver`, #29; the harness
+ * launches the app, support/app.ts).
  *
- * Clicks and value changes go through plain JS in the page rather than
- * WebDriver's native pointer/keyboard actions: WebKitWebDriver's native
- * click pipeline in this environment has a driver-level "element click
- * intercepted" / "did not become interactable" quirk even when the element
- * is independently verified (via elementFromPoint at the same
- * coordinates) to be on top and clickable, and its keystroke-based
- * setValue() can't clear a field or reliably fire React's change events.
- * None of the app's interactions depend on real pointer coordinates, so JS
- * clicks and native value setters are behaviorally equivalent for React's
- * handlers.
+ * Clicks and value changes go through plain JS in the page: `element.click()`,
+ * and the native value setter plus `input`/`change` events. That is also all
+ * the embedded server does for WebDriver's own click and send-keys, and it
+ * is the same on every platform. None of the app's interactions depend on
+ * real pointer coordinates, so JS clicks and native value setters are
+ * behaviorally equivalent for React's handlers. Key presses
+ * (`browser.keys`) are untrusted `KeyboardEvent`s dispatched in the page:
+ * Radix listens for Escape on the whole document and accepts them, but a
+ * native `<dialog>` would not, so the app keeps to Radix dialogs. For
+ * genuine input, see support/realInput.ts.
  */
 
-const SETTLE_MS = 200;
+/** Animations longer than this are decorative (a firearm drawing drawing
+ * itself in, a form section's highlight, 1.4 to 1.8 s) and nothing waits on
+ * them: `settle()` leaves them running. A test that is about one waits for it
+ * by name. The interface's own transitions (a dialog or toast easing in,
+ * 120 to 240 ms) are shorter and do count. */
+const DECORATIVE_MS = 1000;
+
+/**
+ * Waits until the app is idle, in place of a fixed sleep after an action.
+ * Idle means all of: no backend call or debounce in flight
+ * (`window.__hoplodexBusy` is 0, src/lib/busy.ts); no finite, non-decorative
+ * animation or transition running (the chooser plate's endless cycle doesn't
+ * count either); and two animation frames have passed in that state, so
+ * React has committed and the browser has painted. Fails, saying what was
+ * still going, after `timeout` ms.
+ *
+ * It sees what the app reports as work. For anything else a step must wait
+ * for (a thing appearing, a window closing, a smooth scroll ending) wait for
+ * that condition.
+ */
+export async function settle(timeout = 10000) {
+  const state = await browser.executeAsync(
+    (limit: number, decorativeMs: number, done: (outcome: string) => void) => {
+      const unsettled = () => {
+        const busy = (window as unknown as { __hoplodexBusy?: number }).__hoplodexBusy ?? 0;
+        const animating = document.getAnimations().filter((a) => {
+          const timing = a.effect?.getComputedTiming();
+          return (
+            a.playState === "running" &&
+            timing?.iterations !== Infinity &&
+            Number(timing?.endTime ?? 0) <= decorativeMs
+          );
+        }).length;
+        return busy || animating ? `busy ${busy}, animations ${animating}` : "";
+      };
+      let calm = 0;
+      let last = "";
+      let over = false;
+      const deadline = window.setTimeout(() => {
+        over = true;
+        done(`never settled: ${last}`);
+      }, limit);
+      const frame = () => {
+        if (over) return;
+        last = unsettled();
+        calm = last ? 0 : calm + 1;
+        if (calm >= 2) {
+          window.clearTimeout(deadline);
+          done("");
+        } else {
+          requestAnimationFrame(frame);
+        }
+      };
+      requestAnimationFrame(frame);
+    },
+    timeout,
+    DECORATIVE_MS,
+  );
+  if (state) throw new Error(`The app ${state}`);
+}
 
 // Runs in the page: the innermost open dialog, else the whole document —
 // so a field label shared with the page underneath resolves to the one
@@ -30,7 +90,7 @@ export async function clickEl(selector: string) {
   const el = await $(selector);
   await el.waitForExist();
   await browser.execute((element: HTMLElement) => element.click(), el);
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Clicks the button whose visible text is exactly `text`, inside the
@@ -52,7 +112,7 @@ export async function clickButton(text: string) {
       ),
     { timeout: 5000, timeoutMsg: `no enabled button "${text}"` },
   );
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Opens the firearm form's disclosure group with this title if it is
@@ -73,7 +133,7 @@ async function openFormGroup(title: string) {
       ),
     { timeout: 5000, timeoutMsg: `no "${title}" group` },
   );
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Opens the "Origin and year of manufacture" group. */
@@ -111,7 +171,7 @@ export async function goTo(section: "Collection" | "Accessories" | "Insurance") 
     );
     tab?.click();
   }, section);
-  await browser.pause(400);
+  await settle();
 }
 
 /** Sets a text, amount, or date field by its visible label. */
@@ -136,7 +196,7 @@ export async function fill(label: string, value: string) {
     value,
   );
   if (!found) throw new Error(`no field labelled "${label}"`);
-  await browser.pause(100);
+  await settle();
 }
 
 /** The current text of a labelled field in the open dialog. */
@@ -188,7 +248,7 @@ export async function pasteInto(label: string, text: string) {
     text,
   );
   if (!found) throw new Error(`no field labelled "${label}"`);
-  await browser.pause(150);
+  await settle();
 }
 
 /** The visible label of the field that has keyboard focus, or null. */
@@ -232,7 +292,7 @@ export async function followAddLink(emptyText: string) {
     return Boolean(link);
   }, emptyText);
   if (!found) throw new Error(`no "Add" link beside "${emptyText}"`);
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Whether a form section in the open dialog is currently highlighted (FR-038). */
@@ -278,7 +338,7 @@ export async function choose(text: string) {
       ),
     { timeout: 5000, timeoutMsg: `no choice "${text}"` },
   );
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Regroups the collection through the "Group by" menu (specs/005-regulated-item-types
@@ -305,7 +365,7 @@ export async function groupBy(label: string) {
       }, label),
     { timeout: 5000, timeoutMsg: `no grouping "${label}"` },
   );
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Toggles a checkbox by its visible label. */
@@ -322,7 +382,7 @@ export async function toggle(label: string) {
     label,
   );
   if (!found) throw new Error(`no checkbox labelled "${label}"`);
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Opens a labelled dropdown (e.g. "Policy") and picks an option by name. */
@@ -351,7 +411,7 @@ export async function selectOption(label: string, option: string) {
       }, option),
     { timeout: 5000, timeoutMsg: `no option "${option}" in "${label}"` },
   );
-  await browser.pause(300);
+  await settle();
 }
 
 /** Types into the collection search box and waits out its debounce. */
@@ -361,7 +421,7 @@ export async function search(term: string) {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }, term);
-  await browser.pause(600);
+  await settle();
 }
 
 /** Opens a firearm's record from the collection list by its "Make Model"
@@ -379,19 +439,19 @@ export async function openFirearm(name: string) {
     { timeout: 5000, timeoutMsg: `no firearm "${name}" in the list` },
   );
   await $("#record-name").waitForExist();
-  await browser.pause(300);
+  await settle();
 }
 
 /** Leaves a record for the page it was opened from. */
 export async function back() {
   await clickEl(".hd-backlink");
-  await browser.pause(300);
+  await settle();
 }
 
 /** Presses Escape as the user would, on whatever has focus. */
 export async function pressEscape() {
   await browser.keys(["Escape"]);
-  await browser.pause(300);
+  await settle();
 }
 
 /** Scrolls a long record or policy page to the bottom and waits for the
@@ -399,7 +459,7 @@ export async function pressEscape() {
 export async function scrollToPinnedStrip() {
   await browser.execute(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await $(".hd-runhead").waitForExist({ timeoutMsg: "the pinned strip never showed" });
-  await browser.pause(200);
+  await settle();
 }
 
 // Runs in the page: `reachable(el)` is true when `el` is on screen below the
@@ -478,7 +538,7 @@ export async function clickPinned(name: string) {
     return Boolean(button);
   }, name);
   if (!clicked) throw new Error(`no "${name}" button in the pinned strip`);
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Names ("Make Model") of every firearm currently listed. */
@@ -543,7 +603,7 @@ export async function attachFile(
     file.type,
     file.base64,
   );
-  await browser.pause(800);
+  await settle();
 }
 
 export interface NewFirearm {
@@ -622,7 +682,7 @@ export async function addFirearm(firearm: NewFirearm) {
       (await $("#record-name").getText()).replace(/\s+/g, " ") === expected,
     { timeout: 8000, timeoutMsg: `record for ${expected} never opened` },
   );
-  await browser.pause(300);
+  await settle();
 }
 
 /** The passphrase of every database a spec creates. */
@@ -644,7 +704,7 @@ export function scratchDocuments(): string {
 /** Waits for the chooser, the screen shown whenever no database is open. */
 export async function waitForChooser() {
   await $(".hd-chooser__title").waitForExist({ timeout: 10000 });
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Finishes the chooser plate's draw-in, stops its cycle through the
@@ -665,13 +725,13 @@ export async function settleChooserPlate() {
       });
     });
   });
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Waits for an open database's collection. */
 export async function waitForCollection() {
   await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Creates a database from the chooser by typing its location, and waits
@@ -707,7 +767,7 @@ export async function submitPassphrase(passphrase: string) {
     return true;
   }, passphrase);
   if (!found) throw new Error("no database is selected in the chooser");
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Opens the chooser's selected database with `passphrase` and waits for
@@ -740,7 +800,7 @@ export async function chooseMenuItem(triggerSelector: string, item: string) {
       }, item),
     { timeout: 5000, timeoutMsg: `no menu item "${item}"` },
   );
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 /** Leaves the open database the way the database menu does, by locking it,
@@ -799,7 +859,7 @@ export async function requestQuit() {
     ).__TAURI_INTERNALS__;
     void internals.invoke("plugin:event|emit", { event: "app:quit-requested", payload: {} });
   });
-  await browser.pause(SETTLE_MS);
+  await settle();
 }
 
 export { $, $$, browser };

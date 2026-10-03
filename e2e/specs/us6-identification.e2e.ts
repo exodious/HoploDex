@@ -16,7 +16,7 @@ import { createDatabase } from "../support/ui";
  * guide's re-imported M1 Carbine example, saves with no further prompt,
  * reopens the record, and confirms every value shows labeled.
  *
- * Driven against the real built app via tauri-driver / WebKitWebDriver — no
+ * Driven against the real built app through its embedded WebDriver server — no
  * mocks. See e2e/support/ui.ts for why interactions go through page JS.
  */
 describe("User Story 1 - Identification (specs/002-firearm-identification)", () => {

@@ -83,3 +83,25 @@ describe("listen", () => {
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("invoke and the busy counter", () => {
+  it("counts a call as busy until it resolves", async () => {
+    let finish!: (value: string) => void;
+    vi.mocked(tauriInvoke).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+    const call = invoke<string>("list_firearms");
+    expect(window.__hoplodexBusy).toBe(1);
+    finish("ok");
+    await call;
+
+    expect(window.__hoplodexBusy).toBe(0);
+  });
+
+  it("stops counting a call that fails", async () => {
+    vi.mocked(tauriInvoke).mockRejectedValue({ code: "NOT_FOUND", message: "Gone." });
+
+    await invoke("get_firearm").catch(() => undefined);
+
+    expect(window.__hoplodexBusy).toBe(0);
+  });
+});
