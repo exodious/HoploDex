@@ -22,27 +22,32 @@
 - Q: When a firearm is found only because one of its documents' names matched, does the search result say which document matched? → A: No. The firearm appears like any other match; the search shows no field it matched on, for document names as for the firearm's own text (FR-015).
 - Q: Can a screen reader read the text of a PDF shown in the preview, though the user cannot select or copy it? → A: Yes. A PDF page's text is available to screen readers but cannot be selected or copied; an image or a scanned page with no text is announced by the document's name and page number (FR-005).
 
+### Session 2026-10-03
+
+- Q: Since 006 a document can belong to an accessory as well as a firearm. When previewing, do "previous" and "next document" move only through the documents of the record it belongs to, or also through those of records mounted on it? → A: Only that record's own documents: a firearm's on a firearm's record, an accessory's on an accessory's record, as the photo viewer does. Documents of records mounted on it are not included. Preview and "Open in another app…" work on an accessory's documents exactly as on a firearm's (FR-007, FR-008).
+- Q: Does the Accessories page search also find an accessory by the filenames of its attached documents, as the collection search finds a firearm by its own? → A: Yes. Each page searches its own records' document names: the collection page a firearm's, the Accessories page an accessory's. Neither finds a record through the documents of records mounted on it, as neither finds one through the mounted records' own fields (006 FR-018) (FR-015).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Preview a Document Inside the Application (Priority: P1)
 
-A collector opens a firearm's record and chooses its attached purchase receipt, a PDF. The receipt appears inside HoploDex, in a viewer over the record. They page through it, zoom in on the serial number printed on page 2, and close the viewer to return to the record. No other program was started, and no readable copy of the receipt was written to the computer's disk. They do the same with a photographed appraisal (a JPEG) and a plain-text note.
+A collector opens a firearm's record and chooses its attached purchase receipt, a PDF. The receipt appears inside HoploDex, in a viewer over the record. They page through it, zoom in on the serial number printed on page 2, and close the viewer to return to the record. No other program was started, and no readable copy of the receipt was written to the computer's disk. They do the same with a photographed appraisal (a JPEG) and a plain-text note, and then with the receipt attached to the optic mounted on that firearm, from the optic's own record.
 
 **Why this priority**: It is the request's main ask ("ideally it would be previewable within the program"). Today every document leaves the application as a decrypted file on disk, readable by any program, to be shown in whatever program the computer picks. Previewing inside the application keeps the most common documents (receipts, appraisals, registration approvals, manuals) under the database's protection while they are read.
 
-**Independent Test**: Attach a multi-page PDF, a JPEG, a PNG and a text file to a firearm; open each from the record and confirm it is shown inside the application with page and zoom controls as appropriate, that no other program starts, and that no file holding the document's content appears anywhere on disk while it is shown or after it is closed.
+**Independent Test**: Attach a multi-page PDF, a JPEG, a PNG and a text file to a firearm, and some of them to an accessory; open each from its record and confirm it is shown inside the application with page and zoom controls as appropriate, that no other program starts, and that no file holding the document's content appears anywhere on disk while it is shown or after it is closed.
 
 **Acceptance Scenarios**:
 
-1. **Given** a firearm with a 3-page PDF attached, **When** the user opens it from the record, **Then** it is shown inside the application window with its first page visible, a "page 1 of 3" indicator, controls to move between pages and to zoom, and the document's name and the date it was attached.
+1. **Given** a firearm or an accessory with a 3-page PDF attached, **When** the user opens it from the record, **Then** it is shown inside the application window with its first page visible, a "page 1 of 3" indicator, controls to move between pages and to zoom, and the document's name and the date it was attached.
 2. **Given** an attached JPEG, PNG, GIF, WebP or TIFF image, **When** the user opens it, **Then** it is shown inside the application fitted to the viewer, and the user can zoom in, zoom out and return to the fitted size.
 3. **Given** an attached TIFF holding 4 scanned pages, **When** the user opens it, **Then** it is shown with a "page 1 of 4" indicator and the same page and zoom controls as a PDF.
 4. **Given** an attached plain-text or CSV file, **When** the user opens it, **Then** its text is shown as plain text, with nothing in it interpreted as formatting, links or instructions.
 5. **Given** a document is shown in the preview, **When** anything on the computer's disk is inspected (the application's own folders, the system's temporary folders and caches), **Then** no file holding the document's content exists, and none is left after the preview closes.
-6. **Given** a firearm with several documents, **When** the user is previewing one, **Then** they can move to the firearm's previous and next document without closing the preview, as in the photo viewer.
+6. **Given** a firearm or an accessory with several documents, **When** the user is previewing one, **Then** they can move to that record's previous and next document without closing the preview, as in the photo viewer; **and Given** a firearm with an accessory mounted on it that has documents of its own, **Then** moving through the firearm's documents never reaches the accessory's.
 7. **Given** a preview is open, **When** the user presses Escape or the close control, **Then** the preview closes and the record is shown as it was.
 8. **Given** a preview is open, **When** the application locks (any cause), the database is closed or switched, the computer goes to sleep, or the application quits, **Then** the preview is closed and its content removed from the screen and from memory along with the rest of the collection's data.
-9. **Given** a firearm with "2024 appraisal.pdf" attached, **When** the user searches the collection for "appraisal", **Then** that firearm is found; **and When** the document is deleted, **Then** the same search no longer finds it by that name.
+9. **Given** a firearm with "2024 appraisal.pdf" attached, **When** the user searches the collection for "appraisal", **Then** that firearm is found; **and When** the document is deleted, **Then** the same search no longer finds it by that name; **and Given** an accessory with "Optic receipt.pdf" attached and mounted on a firearm, **When** the user searches the Accessories page for "receipt", **Then** the accessory is found, **and When** the user searches the collection for "receipt", **Then** the firearm is not found through it.
 
 ---
 
@@ -97,7 +102,7 @@ A collector who always prints their documents, or simply prefers their own PDF r
 - **The other program still has the document open when the database closes or locks**: HoploDex deletes its copy as today; where the operating system refuses because the file is in use, the deletion is retried at the next launch (001 FR-035). The confirmation tells the user that the other program may lose the file.
 - **Opening the same document in another app twice in a session**: with the default setting each open asks; with "Open in another app" only the session's first does (FR-012). Either way the one copy is reused or replaced rather than several being left.
 - **The setting on another computer** (a database carried between computers): the setting belongs to each computer (FR-011), so on a computer where it was never changed, documents open in the preview and every external open asks.
-- **Searching for a file extension or a common word** (for example "pdf" or "scan"): finds every firearm with a document whose name contains it, as any search term matching many records does.
+- **Searching for a file extension or a common word** (for example "pdf" or "scan"): the collection search finds every firearm, and the Accessories page every accessory, with a document whose name contains it, as any search term matching many records does.
 - **Several databases on one computer**: they share the computer's setting; the once-per-session confirmation is per database session, so switching to another database asks again.
 
 ## Requirements *(mandatory)*
@@ -112,7 +117,7 @@ A collector who always prints their documents, or simply prefers their own PDF r
 - **FR-004**: The preview MUST treat a document as inert content to be displayed. Nothing in a document may run (scripts, actions on opening), fetch anything from the network or the computer's files, follow a link, submit a form, open an embedded file, or start a program. Whatever a document contains, the preview MUST NOT be able to reach the application's data or commands beyond the one document it is showing.
 - **FR-005**: The preview MUST offer, for a PDF or a TIFF holding more than one page: every page, an indicator of the current page and the page count, moving to the next, previous, first and last page, and zooming in, out, to fit the width and to fit the page; for any other image (including a single-page TIFF): fitting to the viewer, zooming in and out, and actual size; for text, CSV included: the whole text exactly as written, wrapped, as plain text, with nothing in it (formulas included) interpreted and no layout into rows and columns. Every control MUST be usable from the keyboard. A PDF page's text MUST be available to screen readers without being selectable or copyable; an image, or a page with no text, MUST be announced by the document's name and, where it has pages, the page number (constitution III, WCAG 2.1 AA).
 - **FR-006**: When a previewable type cannot be shown (damaged, content not matching its type, protected by its own password, or failing to render), the preview MUST say so in plain words, saying which of those it is where known, and offer "Open in another app…" (FR-008). It MUST NOT fall back to showing the content as another type.
-- **FR-007**: The preview MUST be a viewer over the firearm's record, consistent with the photo viewer (constitution III): titled with the document's name, described with its kind, the date it was attached and, for a PDF or multi-page TIFF, its page count; moving to the firearm's previous and next document; offering "Open in another app…" and deleting the document (with the same confirmation as from the list); and closing with Escape or its close control, returning to the record unchanged.
+- **FR-007**: The preview MUST be a viewer over the record the document belongs to, a firearm's or an accessory's (006 FR-007a), consistent with the photo viewer (constitution III): titled with the document's name, described with its kind, the date it was attached and, for a PDF or multi-page TIFF, its page count; moving to that record's previous and next document, and never to the documents of records mounted on it; offering "Open in another app…" and deleting the document (with the same confirmation as from the list); and closing with Escape or its close control, returning to the record unchanged.
 
 **Opening in another program**
 
@@ -132,11 +137,11 @@ A collector who always prints their documents, or simply prefers their own PDF r
 
 **Finding documents**
 
-- **FR-015**: The collection search (001 FR-013) MUST also match the original filenames of each firearm's attached documents, in the same way it matches the firearm's own text, and within the same time budget (search within 500 ms at 10,000 items). Attaching or deleting a document MUST update this at once. A firearm found by a document's name is shown like any other match, without saying which document matched. Photo filenames are not searched. The preview itself offers no search within a document.
+- **FR-015**: The collection search (001 FR-013) MUST also match the original filenames of each firearm's attached documents, and the Accessories page search (006 FR-018) those of each accessory's, in the same way each matches the record's own text, and within the same time budget (search within 500 ms at 10,000 firearms and 10,000 accessories, 006 FR-026). Each page matches only the documents of its own records: a firearm is not found through the documents of an accessory or firearm mounted on it, nor an accessory through those of a record mounted on it (006 FR-018). Attaching or deleting a document MUST update this at once. A record found by a document's name is shown like any other match, without saying which document matched. Photo filenames are not searched. The preview itself offers no search within a document.
 
 ### Key Entities
 
-- **Document Attachment** (unchanged from 001): a file attached to a firearm. Whether it is previewable is derived from its recorded type and its content (FR-001); nothing new is stored on it. Its original filename becomes part of what the collection search covers for its firearm (FR-015).
+- **Document Attachment** (unchanged from 001 and 006): a file attached to a firearm or to an accessory (006 FR-007a). Whether it is previewable is derived from its recorded type and its content (FR-001); nothing new is stored on it. Its original filename becomes part of what the search covers for the record it belongs to: the collection search for a firearm's, the Accessories page search for an accessory's (FR-015).
 - **Document opening setting**: how documents open on this computer, "Preview in HoploDex" or "Open in another app"; kept with the computer's other settings, not in any database (FR-011).
 - **Session confirmation**: whether the user has confirmed the consequences in the current database session; held only while the database is open and forgotten at close, switch or lock (FR-012). It is never stored.
 
@@ -148,9 +153,9 @@ A collector who always prints their documents, or simply prefers their own PDF r
 - **SC-002**: After previewing one document of every previewable type, no file containing any of their content exists anywhere on disk, checked by searching the application's folders and the system's temporary and cache folders for each document's bytes.
 - **SC-003**: Across a test set of hostile and malformed documents (PDFs with scripts, actions on opening, external links, remote images and fonts, embedded files and launch actions; truncated and corrupted files; files whose names misstate their type), none runs anything, makes a network request, reads another file, or ends the application; each is either shown inertly or reported as unpreviewable.
 - **SC-004**: With the default setting, every opening of a document in another program is preceded by the confirmation; with "Open in another app", the first in every database session is; and in every cancelled confirmation nothing is written to disk.
-- **SC-005**: A user can read any previewable attachment with a single choice from the firearm's record, without any other program.
+- **SC-005**: A user can read any previewable attachment with a single choice from its firearm's or accessory's record, without any other program.
 - **SC-006**: When the application locks while a preview is open, the preview's content is off the screen before the chooser is shown, in every case covered by the lock tests of feature 003.
-- **SC-007**: Searching the collection for a word in an attached document's name finds its firearm, within the 500 ms search budget at 10,000 items.
+- **SC-007**: Searching the collection for a word in a firearm's attached document's name finds that firearm, and searching the Accessories page for a word in an accessory's finds that accessory, each within the 500 ms search budget at 10,000 firearms and 10,000 accessories.
 
 ## Assumptions
 
@@ -159,7 +164,7 @@ A collector who always prints their documents, or simply prefers their own PDF r
 - **A document's own password** is not asked for or stored; a protected PDF is opened in another program.
 - **Links in documents** are shown but not followed. Opening a link in a browser would send data off the device and is out of scope.
 - **The external path is unchanged**: where the copy goes, when it is deleted and how (secure deletion where supported) stay as 001 FR-035 and 003 FR-022 and FR-037 define them; this feature only puts a confirmation in front of it and makes the preview the default.
-- **No change to stored records**: documents are stored as they are today; the only changes are that the collection's search index covers document names (FR-015) and the computer's new setting (FR-011).
+- **No change to stored records**: documents are stored as they are today; the only changes are that the firearm and accessory search indexes cover their own records' document names (FR-015) and the computer's new setting (FR-011).
 - **Security review**: rendering documents inside the application is new attack surface (malicious PDFs, what the preview can reach, the content security policy). The plan MUST record how FR-003 and FR-004 are met, and the release security review (issue #21) MUST cover the preview once built.
 - **Design**: the preview and the document list's actions follow the existing photo viewer and dialogs (constitution III), and the preview is added to the screenshot walk.
 - **Unreleased application**: any schema change is made in place.
@@ -172,6 +177,11 @@ This feature extends `specs/001-firearms-inventory/`. It **amends**:
 - **User Story 4, scenario 4** ("can be reopened from it"): as FR-010 above.
 - **FR-013** (search): the search also matches the names of attached documents (FR-015).
 - **FR-035** and **SC-010** are unchanged and still govern the copy made for another program. The clarification that "previewing documents inside the application, and warning the user before opening one externally, are a separate future feature" is resolved by this feature.
+
+It also amends `specs/006-accessory-links/`:
+
+- **FR-007a** (an accessory's documents "exactly as a firearm" has them, 001 FR-010) and **User Story 1, scenario 12** ("the receipt opens in the system's viewer"): an accessory's documents are previewed inside the application by default and opened in another program only after the confirmation, exactly as a firearm's (FR-007, FR-008, FR-013).
+- **FR-018** (the Accessories page searches every recorded accessory field): it also matches the names of the accessory's attached documents (FR-015). Its rule that a firearm is not found through the records mounted on it is unchanged and extends to their documents.
 
 It also touches `specs/003-database-protection-management/`: FR-022, FR-036 and FR-037 (deleting decrypted document copies) are unchanged, and a preview is part of the collection data removed from the screen at a lock (FR-014). 003 FR-013's list of settings kept on each computer gains how documents open (FR-011).
 
