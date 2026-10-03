@@ -184,9 +184,21 @@ returned from SS API`. Verify it registered correctly
 with `busctl --user list | grep org.freedesktop.secrets` before re-running
 `npm run test:e2e`.
 
-The E2E suite hasn't been run on Windows or macOS yet. The embedded
-WebDriver server works there too, so they need no driver either, only their
-platform-specific harness parts (#27, #28).
+The E2E suite hasn't been run on Windows yet. The embedded WebDriver server
+works there too, so it needs no driver either, only its platform-specific
+harness parts (#27).
+
+**macOS (partly ported, #28):** the harness gives the app a `HOME` inside
+the sandbox (only the app; cargo keeps the real one), since macOS builds
+Application Support, Caches and Documents from `HOME` and ignores `XDG_*`.
+It runs on the host, with the app's window on the real desktop. It needs an
+unlocked, logged-in session: while the screen is locked, WKWebView reports
+every page as hidden and gives it no animation frames, so every step times
+out with "The app never settled". The specs that use real input
+(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8, us10, us11,
+us12), the `xdg-open` stub and `quit-cleanup.py` aren't ported yet, and the
+screenshot walk is untested (its seed is wired up; full-page captures need a
+display taller than the page).
 
 ## Install dependencies
 

@@ -68,6 +68,16 @@ function isolateAppData() {
   } else if (process.platform === "win32") {
     process.env.APPDATA = data;
     process.env.LOCALAPPDATA = cache;
+  } else if (process.platform === "darwin") {
+    // macOS ignores XDG_*: Tauri builds every directory (Application Support,
+    // Caches, Documents) from HOME, so the app gets a home of its own inside
+    // the sandbox (#28). Only the app: cargo, run from here, keeps the real one.
+    const home = path.join(sandbox, "home");
+    const documents = path.join(home, "Documents");
+    fs.mkdirSync(path.join(home, "Library", "Application Support"), { recursive: true });
+    fs.mkdirSync(documents, { recursive: true });
+    process.env.HOPLODEX_E2E_HOME = home;
+    process.env.HOPLODEX_E2E_DOCUMENTS = documents;
   }
 }
 
@@ -113,8 +123,14 @@ function seedCollection() {
   process.env.HOPLODEX_E2E_SEED_PASSPHRASE = printed.stdout.trim();
 
   const config = path.join(dir, "config");
-  process.env.XDG_CONFIG_HOME = config;
-  writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
+  if (process.platform === "darwin") {
+    const support = path.join(process.env.HOPLODEX_E2E_HOME!, "Library", "Application Support");
+    fs.rmSync(support, { recursive: true, force: true });
+    fs.symlinkSync(config, support);
+  } else {
+    process.env.XDG_CONFIG_HOME = config;
+    writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
+  }
 }
 
 export const config: WebdriverIO.Config = {
