@@ -8,7 +8,7 @@ import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
- * driven against the real built app via tauri-driver / WebKitWebDriver.
+ * driven against the real built app through its embedded WebDriver server.
  *
  * The folder and file fields accept typed paths (not only native pickers)
  * specifically so this spec can drive them — native OS file dialogs run

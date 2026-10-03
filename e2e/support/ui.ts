@@ -1,19 +1,20 @@
 import { $, $$, browser } from "@wdio/globals";
 
 /**
- * Shared helpers for driving the HoploDex UI through tauri-driver /
- * WebKitWebDriver.
+ * Shared helpers for driving the HoploDex UI through the WebDriver server
+ * compiled into E2E builds (`tauri-plugin-wdio-webdriver`, #29; the harness
+ * launches the app, support/app.ts).
  *
- * Clicks and value changes go through plain JS in the page rather than
- * WebDriver's native pointer/keyboard actions: WebKitWebDriver's native
- * click pipeline in this environment has a driver-level "element click
- * intercepted" / "did not become interactable" quirk even when the element
- * is independently verified (via elementFromPoint at the same
- * coordinates) to be on top and clickable, and its keystroke-based
- * setValue() can't clear a field or reliably fire React's change events.
- * None of the app's interactions depend on real pointer coordinates, so JS
- * clicks and native value setters are behaviorally equivalent for React's
- * handlers.
+ * Clicks and value changes go through plain JS in the page: `element.click()`,
+ * and the native value setter plus `input`/`change` events. That is also all
+ * the embedded server does for WebDriver's own click and send-keys, and it
+ * is the same on every platform. None of the app's interactions depend on
+ * real pointer coordinates, so JS clicks and native value setters are
+ * behaviorally equivalent for React's handlers. Key presses
+ * (`browser.keys`) are untrusted `KeyboardEvent`s dispatched in the page:
+ * Radix listens for Escape on the whole document and accepts them, but a
+ * native `<dialog>` would not, so the app keeps to Radix dialogs. For
+ * genuine input, see support/realInput.ts.
  */
 
 /** Animations longer than this are decorative (a firearm drawing drawing

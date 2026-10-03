@@ -115,7 +115,13 @@ fn tick_idle_clock(app: AppHandle) {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The E2E suite's WebDriver server, on 127.0.0.1 at
+    // `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs any
+    // script in the page, so it must never reach a shipped build.
+    #[cfg(feature = "e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {

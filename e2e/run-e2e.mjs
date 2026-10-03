@@ -25,8 +25,8 @@ if (screenshotDir && !extraArgs.some((arg) => arg === "--spec" || arg.startsWith
 // On Linux, run under an isolated Xvfb virtual display so the app never
 // renders on the developer's real desktop (wdio's own auto-Xvfb detection
 // only kicks in when $DISPLAY is unset, which isn't true when DISPLAY
-// points at a real desktop session via XWayland). Windows/macOS use their
-// own native WebView drivers and have no equivalent concern.
+// points at a real desktop session via XWayland). Windows and macOS have no
+// equivalent concern.
 const useXvfb = process.platform === "linux";
 
 // GTK3 prefers a Wayland connection over X11 when $WAYLAND_DISPLAY is

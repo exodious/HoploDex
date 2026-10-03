@@ -8,7 +8,7 @@ owns the UI.
 
 The repo's `Dockerfile` (Debian trixie) has everything below already
 installed: Rust, Node 24 LTS with npm 12, the Tauri/WebKitGTK and SQLCipher
-build dependencies, `tauri-driver` and `WebKitWebDriver`, `cargo-deny`, `cargo-nextest`, Xvfb,
+build dependencies, `cargo-deny`, `cargo-nextest`, Xvfb,
 gnome-keyring, the GitHub CLI, Claude Code, Spec Kit's `specify`, and
 `python3-gi` for GTK drag-and-drop tests. It's built for rootless [podman](https://podman.io) and
 runs as a non-root `dev` user. The only thing to install on the host is
@@ -151,46 +151,14 @@ your platform's package manager.
   `OPENSSL_STATIC=1` before building. The build stops with "Missing
   environment variable OPENSSL_DIR" otherwise.
 
-**End-to-end (E2E) testing extras — Linux only:**
-
-Debian/Ubuntu:
-
-```bash
-sudo apt install -y webkit2gtk-driver xvfb   # provides WebKitWebDriver + an isolated virtual display
-cargo install tauri-driver
-```
-
-Arch:
+**End-to-end (E2E) testing extras — Linux only:** an isolated virtual
+display. The E2E build carries its own WebDriver server (see "Test"), so
+there is no driver to install.
 
 ```bash
-sudo pacman -S --needed xorg-server-xvfb   # isolated virtual display
-cargo install tauri-driver
+sudo apt install -y xvfb xauth               # Debian/Ubuntu
+sudo pacman -S --needed xorg-server-xvfb     # Arch
 ```
-
-Unlike Debian's `webkit2gtk-driver` package, Arch's `webkit2gtk-4.1` package
-does **not** include the `WebKitWebDriver` binary, so it must be built from
-source, matching the exact version of `webkit2gtk-4.1` you have installed:
-
-```bash
-sudo pacman -S --needed ninja cmake clang lld ruby gperf python unifdef
-gem install getoptlong
-
-ver=$(pacman -Q webkit2gtk-4.1 | awk '{print $2}' | cut -d- -f1)
-curl -LO "https://webkitgtk.org/releases/webkitgtk-$ver.tar.xz"
-tar xf "webkitgtk-$ver.tar.xz"
-mkdir webkitgtk-build && cd webkitgtk-build
-cmake "../webkitgtk-$ver" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DPORT=GTK -DENABLE_WEBDRIVER=ON \
-  -DENABLE_MINIBROWSER=OFF -DENABLE_API_TESTS=OFF -DUSE_GTK4=OFF -DUSE_SOUP2=ON \
-  -DENABLE_INTROSPECTION=OFF -DENABLE_SPEECH_SYNTHESIS=OFF -DUSE_LIBBACKTRACE=OFF
-ninja WebKitWebDriver
-sudo install -m755 bin/WebKitWebDriver /usr/local/bin/
-```
-
-Re-run this after every `pacman` update to `webkit2gtk-4.1`, since a
-version-mismatched `WebKitWebDriver` will fail to drive the installed
-library. `npm run test:e2e` locates the binary via `which WebKitWebDriver`
-(falling back to a filesystem search), so anywhere on `$PATH` works.
 
 **Headless/SSH sessions only:** HoploDex reads/writes its SQLCipher database
 key via the OS credential store (the `keyring` crate), which on Linux talks
@@ -216,8 +184,9 @@ returned from SS API`. Verify it registered correctly
 with `busctl --user list | grep org.freedesktop.secrets` before re-running
 `npm run test:e2e`.
 
-On Windows/macOS, E2E tests use their platform's own native WebView driver
-instead (no extra install beyond the prerequisites above).
+The E2E suite hasn't been run on Windows or macOS yet. The embedded
+WebDriver server works there too, so they need no driver either, only their
+platform-specific harness parts (#27, #28).
 
 ## Install dependencies
 
@@ -307,9 +276,9 @@ puts `performance_test` in a one-at-a-time group that also holds every CPU
 slot, so no other test runs beside it.
 
 `npm run test:e2e` builds the app with `cargo build --profile e2e --features
-custom-protocol,e2e` and drives it via `tauri-driver`. That binary embeds
-whatever is in `dist/`, so **run `npm run build` first** (the same goes for
-`npm run screenshots`).
+custom-protocol,e2e` and drives it through the WebDriver server compiled
+into it. That binary embeds whatever is in `dist/`, so **run `npm run build`
+first** (the same goes for `npm run screenshots`).
 
 The `e2e` profile (`[profile.e2e]` in `src-tauri/Cargo.toml`) is the release
 profile without fat LTO, with 16 codegen units and incremental builds, so
@@ -327,20 +296,37 @@ profile `wdio.conf.ts` builds the app and the seed with, and the binary it
 launches (`target/<profile>/hoplodex`).
 
 The `e2e` Cargo feature is for builds that must never reach a shipped one. It
-implies `mock-keyring` and, besides that, lets
+compiles in `tauri-plugin-wdio-webdriver`, a W3C WebDriver server on
+`127.0.0.1` at `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs
+any script in the page, so `scripts/check-no-webdriver.sh` checks that a
+shipped build has none of it: the dependency graph in `npm run audit`, and the
+release binary in `scripts/build-appimage.sh`. The feature also implies
+`mock-keyring`, and lets
 `HOPLODEX_E2E_IDLE_MINUTE_SECONDS` set how many seconds the idle lock counts
 as one minute (default 60). The harness sets it to 3 for
 `us9-locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
 the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
+The harness, not a driver, owns the app's process (`e2e/support/app.ts`):
+`wdio.conf.ts` launches the app before each spec file's session, with the
+sandbox's environment and `TAURI_WEBDRIVER_PORT`, waits for its server to
+answer, and kills it afterwards. A spec that relaunches the app calls
+`relaunchApp()`, which kills it (SIGKILL, so no exit handler runs, like a
+crash), starts it again on the same sandbox and opens a new session.
+Ending a WebDriver session alone doesn't close the app. The server runs
+scripts and dispatches keys in the page, so key presses are synthetic
+(untrusted) `KeyboardEvent`s; `e2e/support/ui.ts` already clicks and fills
+through page scripts. For genuine input, see "Real keyboard and mouse
+input" below.
+
 On Linux the E2E suite runs under an isolated
 `xvfb` virtual display (via `xvfb-run`), so it never touches your real
 desktop, and it self-heals after an interrupted prior run (killing anything
-left over on its ports before starting).
+left over on its port before starting).
 
-The E2E suite can't watch the app exit (WebKitWebDriver ends a session by
-killing it), so `e2e/scripts/quit-cleanup.py` checks that decrypted document
+The E2E suite kills the app rather than quitting it, so
+`e2e/scripts/quit-cleanup.py` checks that decrypted document
 copies are removed when the app quits — window closed, SIGTERM, SIGHUP or
 SIGINT — against the built binary: `xvfb-run -a python3
 e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).

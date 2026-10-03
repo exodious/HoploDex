@@ -19,25 +19,31 @@ function send(...args: string[]) {
   execFileSync("python3", [SCRIPT, ...args]);
 }
 
-/** Moves the real pointer onto the window once and reads where the page saw
- * it, so page coordinates can be turned into screen ones. */
+/** Moves the real pointer onto the window, then by a known step, and reads
+ * where the page saw the step land, so page coordinates can be turned into
+ * screen ones. Whether the first move reaches the page as a `mousemove` of
+ * its own depends on the driver, so the reading is the first one after the
+ * step. */
 async function calibrate() {
   await browser.execute(() => {
-    const seen = window as unknown as { __hdPointer?: [number, number] };
-    window.addEventListener("mousemove", (e) => (seen.__hdPointer = [e.clientX, e.clientY]), {
-      once: true,
-    });
+    const seen = window as unknown as { __hdPointer?: [number, number] | null };
+    seen.__hdPointer = null;
+    window.addEventListener("mousemove", (e) => (seen.__hdPointer = [e.clientX, e.clientY]));
   });
+  const pointer = () =>
+    browser.execute(
+      () => (window as unknown as { __hdPointer?: [number, number] | null }).__hdPointer ?? false,
+    );
   send("move", "400", "400");
   await browser.pause(100);
+  await browser.execute(() => {
+    (window as unknown as { __hdPointer?: [number, number] | null }).__hdPointer = null;
+  });
   send("move", "410", "410");
-  const seen = await browser.waitUntil(
-    () =>
-      browser.execute(
-        () => (window as unknown as { __hdPointer?: [number, number] }).__hdPointer ?? false,
-      ),
-    { timeout: 3000, timeoutMsg: "the page saw no real pointer move" },
-  );
+  const seen = await browser.waitUntil(pointer, {
+    timeout: 3000,
+    timeoutMsg: "the page saw no real pointer move",
+  });
   offset = { x: 410 - seen[0], y: 410 - seen[1] };
 }
 

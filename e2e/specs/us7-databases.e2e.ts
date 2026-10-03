@@ -27,6 +27,8 @@ import {
   waitForChooser,
   waitForCollection,
 } from "../support/ui";
+import { relaunchApp, waitForAppToQuit } from "../support/app";
+import { realClick } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's
@@ -41,7 +43,7 @@ const ACKNOWLEDGEMENT =
 /** Ends the app and starts it again against the same sandbox, as quitting
  * and relaunching would. */
 async function relaunch() {
-  await browser.reloadSession();
+  await relaunchApp();
   await browser.waitUntil(
     async () => (await browser.execute(() => document.readyState)) === "complete",
     { timeout: 10000, timeoutMsg: "the relaunched app never finished loading" },
@@ -111,7 +113,10 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
 
   it("blinks the owl when its beak is clicked, once its pupils are in", async () => {
     await settleChooserPlate();
-    await $(".hd-catalogue .device .beak").click();
+    // A real pointer click: it also shows the beak is what the pointer hits
+    // there. (WebDriver's own click is `element.click()`, which an SVG
+    // element doesn't have.)
+    await realClick(".hd-catalogue .device .beak");
     const blinks = await browser.execute(() =>
       [...document.querySelectorAll(".hd-catalogue .device .pf")].map(
         (pupil) => pupil.getAnimations().filter((a) => !("animationName" in a)).length,
@@ -307,19 +312,9 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
       ) as HTMLElement | undefined;
       setTimeout(() => discard?.click(), 100);
     });
-    // The app is gone once WebDriver can no longer reach it, and its close
-    // (with the automatic backup) is done.
-    await browser.waitUntil(
-      async () => {
-        try {
-          await browser.execute(() => true);
-          return false;
-        } catch {
-          return true;
-        }
-      },
-      { timeout: 15000, timeoutMsg: "the app never quit after discarding" },
-    );
+    // Once the app's process has ended, its close (with the automatic
+    // backup) is done.
+    await waitForAppToQuit(15000);
     await relaunch();
     expect(await selectedChooserRow()).toBe("Club");
     await unlock(club.passphrase);

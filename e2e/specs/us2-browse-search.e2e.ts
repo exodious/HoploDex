@@ -4,7 +4,7 @@ import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 2's acceptance scenarios (spec.md),
- * driven against the real built app via tauri-driver / WebKitWebDriver.
+ * driven against the real built app through its embedded WebDriver server.
  * Seeds its own uniquely-named records rather than assuming an empty
  * collection. See e2e/support/ui.ts for why interactions go through page JS.
  */

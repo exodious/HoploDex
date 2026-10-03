@@ -2,10 +2,10 @@
 """Checks FR-035 / SC-010 on the real app: a decrypted copy of an opened
 document must be gone once the app exits, however it is asked to quit.
 
-The WebDriver E2E suite can't check this. WebKitWebDriver tears the app down
-when a session ends without letting it run its exit handler, so the wdio specs
-verify the crash/relaunch half (the startup sweep) and this script verifies the
-exit half. It launches the app on a virtual display with scratch data/cache
+The WebDriver E2E suite doesn't check this. Its harness kills the app with
+SIGKILL (e2e/support/app.ts) without letting it run its exit handler, so the
+wdio specs verify the crash/relaunch half (the startup sweep) and this script
+verifies the exit half. It launches the app on a virtual display with scratch data/cache
 dirs (never the real ones), plants a file where `open_document` writes its
 temporary copies, quits the app, and looks at what is left.
 

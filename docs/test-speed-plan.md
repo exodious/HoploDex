@@ -33,6 +33,17 @@ E2E order is therefore:
 If #29's trial fails, do step 5 as written. Run `gh issue view 29` before
 starting step 5 to see where it stands.
 
+**#29's Linux trial passed** (2026-10-03, branch `embedded-webdriver`):
+`tauri-driver` is gone. E2E builds carry `tauri-plugin-wdio-webdriver` behind
+the `e2e` feature, and `e2e/support/app.ts` launches the app with
+`TAURI_WEBDRIVER_PORT`, kills it, and relaunches it (`relaunchApp()`, used by
+us4 and us7). `@wdio/tauri-service` isn't used. Full run 14 of 14 spec
+files in 5 m 26 s (368 s with `tauri-driver`); us7 3 runs in a row; the
+screenshot walk 2 m 32 s (4 m 00 s), its 134 images the same as
+`tauri-driver`'s but for the sandbox path in text, the scrollbar thumb's
+fade and anti-aliasing. Do step 5 the embedded way (its "First, check issue
+#29" list).
+
 ## Status
 
 | Step | What | Est. saving | Depends on | State |
@@ -41,7 +52,7 @@ starting step 5 to see where it stands.
 | 2 | cargo-nextest | −55 s Rust | 1 | done |
 | 3 | Settable idle-lock duration for E2E builds | −60 s E2E | – | done |
 | 4 | Replace fixed E2E sleeps with an "app is idle" wait | −150 to −250 s E2E | – | done |
-| 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled | todo |
+| 5 | Run E2E specs in parallel workers | E2E ≈ ÷3 | 4 recommended; #29 settled (trial passed) | todo |
 | 6 | Split the long E2E spec files | balance for 5 | 5 | todo |
 | 7 | Faster release profile for E2E builds | −50 s per rebuild | – | done |
 | 8 | Test-level policy for new features (SDD) | stops E2E growth | – | todo |
@@ -410,7 +421,8 @@ line, not 4a's. Remaining time is us12's real key presses, `settle()`
 **Why.** 14 spec files run one at a time. With N workers, the run is bounded
 by roughly max(longest spec, total ÷ N).
 
-**Read.** `e2e/wdio.conf.ts`, `e2e/run-e2e.mjs`, `e2e/support/realInput.ts`
+**Read.** `e2e/wdio.conf.ts`, `e2e/support/app.ts` (the app's port is
+`WEBDRIVER_PORT` there), `e2e/run-e2e.mjs`, `e2e/support/realInput.ts`
 and `e2e/scripts/x11-input.py` (how real input finds the display and
 window), DEVELOPMENT.md "Test" and "Test isolation".
 

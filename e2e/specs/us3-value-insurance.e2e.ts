@@ -24,7 +24,7 @@ import { createDatabase } from "../support/ui";
 
 /**
  * End-to-end coverage of User Story 3's acceptance scenarios (spec.md),
- * driven against the real built app via tauri-driver / WebKitWebDriver.
+ * driven against the real built app through its embedded WebDriver server.
  * Coverage is implicit: a firearm is scheduled on a policy with its own
  * amount, or left unscheduled and covered by the one blanket policy in force
  * (FR-036). Seeds its own uniquely-named policies and firearms rather than
