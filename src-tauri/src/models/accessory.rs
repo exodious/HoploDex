@@ -12,7 +12,7 @@ use crate::models::record::RecordRef;
 use crate::models::rules::{
     DispositionFields, check_amounts, check_coverage_pair, check_dates_and_disposition,
 };
-use crate::services::entry_text::{EntryField, check_optional_entry_text};
+use crate::services::entry_text::{EntryField, check_entry_text, check_optional_entry_text};
 
 /// A stored accessory: every column of `accessories`.
 #[derive(Debug, Clone, Serialize)]
@@ -24,8 +24,8 @@ pub struct Accessory {
     #[serde(skip)]
     pub uid: String,
     pub accessory_kind_id: i64,
-    pub make: Option<String>,
-    pub model: Option<String>,
+    pub make: String,
+    pub model: String,
     pub serial_number: Option<String>,
     pub caliber: Option<String>,
     pub cartridge: Option<String>,
@@ -86,10 +86,8 @@ impl Accessory {
 #[serde(rename_all = "camelCase")]
 pub struct AccessoryInput {
     pub accessory_kind_id: i64,
-    #[serde(default)]
-    pub make: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
+    pub make: String,
+    pub model: String,
     #[serde(default)]
     pub serial_number: Option<String>,
     #[serde(default)]
@@ -161,8 +159,8 @@ impl AccessoryInput {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
         };
         Self {
-            make: trimmed(&self.make),
-            model: trimmed(&self.model),
+            make: self.make.trim().to_owned(),
+            model: self.model.trim().to_owned(),
             serial_number: trimmed(&self.serial_number),
             caliber: trimmed(&self.caliber),
             cartridge: trimmed(&self.cartridge),
@@ -189,16 +187,30 @@ pub fn validate_accessory_input(
     let mut errors: HashMap<String, String> = HashMap::new();
 
     for (field, value, stored_value) in [
-        (EntryField::Make, &input.make, stored.map(|a| &a.make)),
-        (EntryField::Model, &input.model, stored.map(|a| &a.model)),
-        (EntryField::Cartridge, &input.cartridge, stored.map(|a| &a.cartridge)),
-        (EntryField::Caliber, &input.caliber, stored.map(|a| &a.caliber)),
+        (EntryField::Make, input.make.as_str(), stored.map(|a| a.make.as_str())),
+        (EntryField::Model, input.model.as_str(), stored.map(|a| a.model.as_str())),
+        (
+            EntryField::Cartridge,
+            input.cartridge.as_deref().unwrap_or(""),
+            stored.map(|a| a.cartridge.as_deref().unwrap_or("")),
+        ),
+        (
+            EntryField::Caliber,
+            input.caliber.as_deref().unwrap_or(""),
+            stored.map(|a| a.caliber.as_deref().unwrap_or("")),
+        ),
     ] {
-        let value = value.as_deref().unwrap_or("").trim();
-        if stored_value.is_some_and(|stored| stored.as_deref().unwrap_or("").trim() == value) {
+        if stored_value.is_some_and(|stored| stored.trim() == value.trim()) {
             continue;
         }
-        if let Err(message) = check_optional_entry_text(field, value) {
+        // FR-001: make and model are required, as a firearm's are; a
+        // caliber, required of a firearm, is optional here.
+        let checked = if field == EntryField::Caliber {
+            check_optional_entry_text(field, value)
+        } else {
+            check_entry_text(field, value)
+        };
+        if let Err(message) = checked {
             errors.insert(field.ipc_name().into(), message);
         }
     }

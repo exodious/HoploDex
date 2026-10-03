@@ -65,6 +65,7 @@ function summary(overrides: Partial<AccessorySummary>): AccessorySummary {
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
     mountedOn: null,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -76,7 +77,7 @@ const magazine = summary({
   kindName: "Magazine",
   genericThumbnailKey: "magazine",
   make: "Walther",
-  model: null,
+  model: "P38",
   estimatedValue: 180,
 });
 const sling = summary({
@@ -84,8 +85,8 @@ const sling = summary({
   accessoryKindId: 10,
   kindName: "Sling",
   genericThumbnailKey: "sling",
-  make: null,
-  model: null,
+  make: "Magpul",
+  model: "MS1",
   estimatedValue: null,
   insuranceWarning: "under_insured",
 });
@@ -188,8 +189,8 @@ function renderPage(
 
 const NAMES = {
   optic: "Leupold VX-5HD 3-15x44 · Optic",
-  magazine: "Walther · Magazine",
-  sling: "Sling",
+  magazine: "Walther P38 · Magazine",
+  sling: "Magpul MS1 · Sling",
   light: "SureFire M600 · Light or laser",
 };
 
@@ -470,7 +471,7 @@ describe("AccessoriesPage mounted on (US2)", () => {
     kindName: "Magazine",
     genericThumbnailKey: "magazine",
     make: "Walther",
-    model: null,
+    model: "P38",
     estimatedValue: 180,
   });
   const mountedAndLoose = [onRifle, onUpper, loose];
@@ -526,6 +527,38 @@ describe("AccessoriesPage mounted on (US2)", () => {
     expect(open).toHaveBeenLastCalledWith({ page: "firearm", id: 7, from: "accessories" });
     // Following the host's link does not also open this accessory.
     expect(open).not.toHaveBeenCalledWith(expect.objectContaining({ page: "accessory", id: 1 }));
+  });
+
+  // FR-016, as the collection page's FR-016a: what is mounted on an accessory,
+  // at any depth, counted by kind and not named.
+  const carrying = summary({
+    id: 11,
+    accessoryKindId: 5,
+    kindName: "Upper receiver",
+    genericThumbnailKey: "upper",
+    make: "BCM",
+    model: "upper",
+    mountedOn: deerRifle,
+    mountedCounts: { firearms: 1, accessories: 2 },
+  });
+
+  it("counts what is mounted on an accessory under its name in the list, and nothing when none is", async () => {
+    renderPage({}, { active: [carrying, loose] });
+
+    const row = (await screen.findByText("BCM upper · Upper receiver")).closest("tr")!;
+    expect(row).toHaveTextContent("1 firearm and 2 accessories mounted");
+    // Its Mounted on cell says "Not mounted"; the count line is absent.
+    expect(screen.getByText(NAMES.magazine).closest("tr")).not.toHaveTextContent(/\d+ \w+ mounted/);
+  });
+
+  it("counts it on the tile too, below 'Mounted on {host}'", async () => {
+    renderPage({ view: "tile" }, { active: [carrying, loose] });
+
+    const tile = (await screen.findByText("BCM upper · Upper receiver")).closest("li")!;
+    expect(tile).toHaveTextContent(
+      /Mounted on\s*Winchester Model 70 “Deer rifle”\s*1 firearm and 2 accessories mounted/,
+    );
+    expect(screen.getByText(NAMES.magazine).closest("li")).not.toHaveTextContent(/mounted/i);
   });
 });
 

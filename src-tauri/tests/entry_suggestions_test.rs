@@ -595,10 +595,8 @@ fn accessory_record(
     caliber: Option<&str>,
 ) -> i64 {
     let mut input: AccessoryInput =
-        serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "status": "active" }))
+        serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "make": make, "model": model, "status": "active" }))
             .unwrap();
-    input.make = Some(make.into());
-    input.model = Some(model.into());
     input.cartridge = cartridge.map(str::to_owned);
     input.caliber = caliber.map(str::to_owned);
     accessory_ops::create_accessory(&db.conn, &input, None).unwrap().id

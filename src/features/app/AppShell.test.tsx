@@ -176,6 +176,7 @@ const opticSummary: AccessorySummary = {
   insurancePolicyId: null,
   scheduledCoverageAmount: null,
   mountedOn: null,
+  mountedCounts: { firearms: 0, accessories: 0 },
 };
 
 const opticDetail: AccessoryDetail = {

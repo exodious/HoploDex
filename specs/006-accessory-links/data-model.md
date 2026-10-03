@@ -84,7 +84,9 @@ CREATE TABLE accessory_kinds (
 ```
 
 The seed (`0003_seed_firearm_types.sql`) uses fixed ids, so an id means the
-same kind in every build:
+same kind in every build. Trigger and Bipod were added after the first
+twelve (2026-10-02), so they take the next ids, and `sort_order` lists them
+beside their neighbours:
 
 | id | name | generic_thumbnail_key | sort_order |
 |---|---|---|---|
@@ -94,12 +96,14 @@ same kind in every build:
 | 4 | Stock or brace | `stock` | 4 |
 | 5 | Upper receiver | `upper` | 5 |
 | 6 | Barrel | `barrel` | 6 |
-| 7 | Muzzle device | `muzzle` | 7 |
-| 8 | Conversion kit | `conversion` | 8 |
-| 9 | Mount or rail | `mount` | 9 |
-| 10 | Sling | `sling` | 10 |
-| 11 | Case | `case` | 11 |
-| 12 | Other | `accessory` | 12 |
+| 13 | Trigger | `trigger` | 7 |
+| 7 | Muzzle device | `muzzle` | 8 |
+| 8 | Conversion kit | `conversion` | 9 |
+| 9 | Mount or rail | `mount` | 10 |
+| 14 | Bipod | `bipod` | 11 |
+| 10 | Sling | `sling` | 12 |
+| 11 | Case | `case` | 13 |
+| 12 | Other | `accessory` | 14 |
 
 All are offered. There is no Suppressor kind (FR-002). The table gets the
 three `*_marks_backup_due_*` triggers.
@@ -111,10 +115,12 @@ CREATE TABLE accessories (
     id INTEGER PRIMARY KEY,
     uid TEXT NOT NULL UNIQUE CHECK (...),            -- as above
     accessory_kind_id INTEGER NOT NULL REFERENCES accessory_kinds (id),
-    -- FR-001: all optional. 004's entry rules apply on entry only, so no
-    -- length CHECK (an existing longer value stays valid).
-    make TEXT,
-    model TEXT,
+    -- FR-001: make and model required, as a firearm's, so every accessory
+    -- has a name of its own (FR-005); the rest optional. 004's entry rules
+    -- apply on entry only, so no length CHECK (an existing longer value
+    -- stays valid).
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
     serial_number TEXT,
     caliber TEXT,
     cartridge TEXT,
@@ -164,7 +170,8 @@ and import, FR-024):
 | Field | Rule | Message (field key) |
 |---|---|---|
 | `accessoryKindId` | Required; must exist in `accessory_kinds` (offered or not; the command checks) | "Choose a kind." (`accessoryKindId`) |
-| `make`, `model`, `caliber`, `cartridge` | Optional; otherwise 004's entry rules (FR-015), checked only when changed from the stored value | as 004 |
+| `make`, `model` | Required; trimmed; 004's entry rules (FR-015), checked only when changed from the stored value | "Make is required." / "Model is required." (`make`, `model`), else as 004 |
+| `caliber`, `cartridge` | Optional; otherwise 004's entry rules (FR-015), checked only when changed from the stored value | as 004 |
 | `serialNumber`, `acquisitionSource`, `notes` | Optional free text; trimmed; blank → `null` | none |
 | `estimatedValue`, `acquisitionPrice`, `dispositionPrice`, `scheduledCoverageAmount` | Whole dollars, not negative (001 FR-037) | as for a firearm |
 | `acquisitionDate` | `YYYY-MM-DD`, not after today (local) | as for a firearm |
@@ -174,8 +181,8 @@ and import, FR-024):
 | `mountedOn` | `null`, or an allowed host (FR-010); checked by the command, not here | see Mount |
 
 **Naming** (FR-005, done in the frontend's `RecordName`): "{make} {model} ·
-{kind}". Either of make and model alone is used as it is. When both are
-blank, the kind alone.
+{kind}". Both are required (FR-001), so an accessory is never named by its
+kind alone.
 
 ## Entity: Mount (new)
 

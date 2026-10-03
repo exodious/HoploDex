@@ -398,19 +398,27 @@ stays readable at any depth without assuming an indent per level (FR-013).
 - **Decision**:
   - `accessory_kinds (id, name, generic_thumbnail_key, sort_order,
     offered)` is seeded in `0003_seed_firearm_types.sql` with fixed ids
-    1–12 in FR-002's order. Other is last, and all are offered. Like
+    1–12 in FR-002's first order, then 13 Trigger and 14 Bipod, added
+    later, which `sort_order` lists beside their neighbours. Other is
+    last, and all are offered. Like
     `registration_classes`, the `offered` flag lets a later version stop
     offering a kind without removing it (FR-002).
   - `list_accessory_kinds` exposes the list, so the frontend never hard-codes
     it, following 005's `list_firearm_types`.
   - Each kind gets its own drawing in `typeDrawings.ts`, keyed by
     `generic_thumbnail_key` (`optic`, `light`, `magazine`, `stock`,
-    `upper`, `barrel`, `muzzle`, `conversion`, `mount`, `sling`, `case`,
-    `accessory`). The drawings use the same 320×200 box, muzzle-right
-    convention and line roles. They are drawn for the project, traced
-    from side-on photographs for proportion, with no brand marks, and
-    their source note is recorded in the file (Licensing; as 005's
-    suppressor).
+    `upper`, `barrel`, `trigger`, `muzzle`, `conversion`, `mount`,
+    `bipod`, `sling`, `case`, `accessory`). The drawings use the same
+    320×200 box, muzzle-right convention and line roles. They are drawn
+    for the project from the published dimensions of common patterns,
+    each at a stated scale, with no brand marks, and their source note is
+    recorded in the file (Licensing; as 005's suppressor). Each must be
+    recognisable for what it is: the bipod is seen from the front so both
+    legs show, the case lies flat, the trigger is an AR-15 drop-in
+    cassette (hammer on the front pin, blade between the pins), and
+    Other's drawing (an open box of spare parts, seen from a little above
+    so its flaps hinge on its walls) suggests no particular accessory
+    (redrawn 2026-10-02, from manual testing).
   - Like a firearm type, a kind carries no rules (spec Assumptions). Every
     kind has the same fields.
 - **Rationale**: FR-002, and FR-007a's "a generic picture for its kind".
@@ -428,8 +436,9 @@ stays readable at any depth without assuming an indent per level (FR-013).
     of the four fields. The model suggestions' "same make" rule reads both
     tables. Partial indexes on `accessories (make)`, `(make, model)`,
     `(caliber)` and `(cartridge)` keep `suggest_entries` within 004's 50 ms.
-  - Make and model are optional on an accessory, so `check_entry_text` for
-    an accessory treats a blank make or model as "none". The caps and
+  - Make and model are required on an accessory, as on a firearm
+    (amended 2026-10-02); the caliber is optional, so `check_entry_text`
+    for an accessory treats a blank caliber as "none". The caps and
     character rules still apply.
   - A blank caliber is derived from the cartridge with 004's
     `derive_caliber`, on the form and on import, for every kind. There is no

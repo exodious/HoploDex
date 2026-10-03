@@ -160,15 +160,19 @@ export function drawingBounds(key: keyof typeof DRAWINGS): [number, number, numb
           const rx = next();
           next();
           next();
-          next();
+          const large = next();
           next();
           const ex = next();
           const ey = next();
+          const [sx, sy] = [x, y];
           x = command === "a" ? x + ex : ex;
           y = command === "a" ? y + ey : ey;
-          // a small arc: its radius either side of the end point covers it
-          xs.push(x - 2 * rx, x + 2 * rx);
-          ys.push(y - 2 * rx, y + 2 * rx);
+          // An arc of under half a circle bulges from its chord by at most
+          // its sagitta; a larger one stays within its diameter of the end.
+          const half = Math.hypot(x - sx, y - sy) / 2;
+          const bulge = large ? 2 * rx : rx - Math.sqrt(Math.max(0, rx * rx - half * half));
+          xs.push(Math.min(sx, x) - bulge, Math.max(sx, x) + bulge);
+          ys.push(Math.min(sy, y) - bulge, Math.max(sy, y) + bulge);
           break;
         }
         default:

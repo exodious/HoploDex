@@ -21,7 +21,7 @@ describe("the tuner's Save", () => {
     expect(out).toMatch(/^ {2}CYCLE_STYLE: "straightedge", \/\/ "slide", "redraw"/m);
     // and nothing else
     expect(out.split("\n").length).toBe(source.split("\n").length);
-    expect(out).toMatch(/^ {2}BORE_AXIS: false,/m);
+    expect(out).toMatch(/^ {2}CYCLE: true,/m);
   });
 
   it("refuses a name the file doesn't have, saving nothing", () => {

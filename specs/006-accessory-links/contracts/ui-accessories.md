@@ -56,20 +56,24 @@ Requirement IDs refer to [spec.md](../spec.md), and commands to
   remembered for the session as the collection page's is.
 - **Grouping menu**: "Group by" opens a radio menu with **No grouping**,
   **Kind**, **Make**, **Caliber**, **Cartridge** and **Mounted on** (FR-017).
-  - Empty groups are "Unspecified", and the unmounted group is "Not
+  - An empty caliber or cartridge is grouped as "Unspecified" (every
+    accessory has a make, FR-001), and the unmounted group is "Not
     mounted", always last.
   - Grouped by Mounted on, each heading is the host's `RecordName` as a
     link to its record. Two hosts with the same name are two groups, each
     heading followed by the host's serial number in muted text when it has
     one.
-- **List columns**: Accessory (its `RecordName`, linking to its record),
-  Mounted on (the direct host's `RecordName` as a link, or "—"), Value,
+- **List columns**: Accessory (its `RecordName`, linking to its record,
+  with "{counts} mounted" under it when anything is mounted on it, as §9's
+  collection rows have, FR-016), Mounted on (the direct host's `RecordName` as a link, or "—"), Value,
   and Coverage (the `InsuranceWarningBadge` the collection uses). A
   column whose value is the group heading is left out, as the collection
   page does for type.
 - **Tiles**: the thumbnail, or the kind's `TypeDrawing` when the accessory
   has no photo (FR-007a), then its name and value. A mounted accessory
-  shows "Mounted on {host}" as a link under its name.
+  shows "Mounted on {host}" as a link under its name, and one carrying
+  anything shows "{counts} mounted" (FR-016), both as §9's collection
+  tiles do (`MountLines`).
 - **Search**: every accessory text field, as the collection's search
   matches (FR-018). No result reads "No accessories match "{query}"."
 - **Empty**: with no accessories at all, "No accessories recorded yet."
@@ -84,7 +88,7 @@ A `Dialog` with the large form layout, as `FirearmForm`'s add and edit:
 | Row | Fields | Notes |
 |---|---|---|
 | 1 | **Kind** (`Select`, required) | Offered kinds in list order. A saved record whose kind is no longer offered keeps it, shown as the selected option. The hint reads "A suppressor is recorded as a firearm." (FR-002) |
-| 2 | **Make**, **Model** (`EntryField`s) | 004's suggestions, from firearms and accessories together (FR-003) |
+| 2 | **Make**, **Model** (`EntryField`s, required) | 004's suggestions, from firearms and accessories together (FR-003). Blank on save: "Enter the make." / "Enter the model.", as the firearm form says (FR-001) |
 | 3 | **Cartridge**, **Caliber** (`EntryField`s) | 004's row: a blank caliber is filled from the cartridge, with its hints |
 | 4 | **Serial number** (`TextField`, `hd-field--third`) | No "no serial number" box (FR-004) |
 | 5 | **Mounted on** (`MountChooser`, §4) | Optional. The hint reads "The firearm or accessory it is on now, if any." |
@@ -171,8 +175,13 @@ section.
       `ConfirmDialog`: "Move {name}?", with the body "It is mounted on {X}.
       Moving it takes everything mounted on it along." and the buttons
       **Move** and **Cancel**. Cancel leaves it where it is (US2-3a).
-- **Unmount** asks nothing: the change is easily undone. It shows the
-  standard toast "{name} unmounted."
+- **Unmount** first asks a `ConfirmDialog`: "Unmount {name}?", with the
+  body "It will no longer be mounted on {this record}." followed, when
+  something is mounted on it, by "Everything mounted on it stays mounted
+  on it.", and the buttons **Unmount** and **Cancel** (FR-012). Cancel
+  leaves it mounted. Unmounting shows the standard toast "{name}
+  unmounted." (Amended 2026-10-02: it used to ask nothing. Staging the
+  section's changes until the record is saved is issue #17's.)
 - **Mounting or moving** shows the toast "{name} mounted on {this
   record}."
 
@@ -336,11 +345,14 @@ and dark:
 - a firearm record page with a nested Mounted section;
 - the Mount menu open;
 - the "Existing accessory or firearm…" dialog with a mounted candidate;
-- the move confirmation;
+- the move confirmation, and the unmount confirmation for a record that
+  carries others (66, amended 2026-10-02);
 - the dispose dialog with nested mounted records, one set to "Dispose
   with it";
 - the delete confirmation naming mounted records;
-- the collection list and tiles with "Mounted on" and "{counts} mounted";
+- the collection list and tiles with "Mounted on" and "{counts} mounted"
+  (the Accessories page's list and tiles show "{counts} mounted" too, in
+  its shots above);
 - the value summary with the accessories subtotal;
 - the export dialog with the accessories disclosure;
 - the import report with a mount warning;

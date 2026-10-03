@@ -26,11 +26,10 @@ const SLING: i64 = 10;
 const UPPER: i64 = 5;
 
 fn accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
-    let mut input: AccessoryInput =
-        serde_json::from_value(json!({ "accessoryKindId": kind, "status": "active" })).unwrap();
-    input.make = Some(make.into());
-    input.model = Some(model.into());
-    input
+    serde_json::from_value(
+        json!({ "accessoryKindId": kind, "make": make, "model": model, "status": "active" }),
+    )
+    .unwrap()
 }
 
 fn create(db: &TestDb, input: &AccessoryInput) -> i64 {
@@ -364,13 +363,8 @@ fn kind_groups_follow_the_kind_lists_order_not_the_alphabet() {
 }
 
 #[test]
-fn make_groups_are_alphabetical_with_unspecified_last() {
+fn make_groups_are_alphabetical() {
     let db = TestDb::new();
-    let none = create(&db, &{
-        let mut input = accessory(SLING, "x", "y");
-        input.make = None;
-        input
-    });
     let walther = create(&db, &accessory(MAGAZINE, "Walther", "P38"));
     let magpul_b = create(&db, &accessory(SLING, "Magpul", "B"));
     let magpul_a = create(&db, &accessory(OPTIC, "Magpul", "A"));
@@ -378,10 +372,10 @@ fn make_groups_are_alphabetical_with_unspecified_last() {
 
     let output = list(&db, json!({ "groupBy": "make" }));
 
-    assert_eq!(keys(&output), ["aimpoint", "Magpul", "Walther", "Unspecified"]);
+    assert_eq!(keys(&output), ["aimpoint", "Magpul", "Walther"]);
     assert_eq!(
         group_ids(&output),
-        [vec![aimpoint], vec![magpul_a, magpul_b], vec![walther], vec![none]],
+        [vec![aimpoint], vec![magpul_a, magpul_b], vec![walther]],
         "within a group: make, model, then kind"
     );
 }

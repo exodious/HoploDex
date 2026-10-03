@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
 import { TypeDrawing } from "./TypeDrawing";
+import { drawingBounds } from "../databases/plate/entries";
 import { DRAWINGS } from "./typeDrawings";
 
 // specs/005-regulated-item-types FR-001: every firearm type has its own
@@ -18,9 +19,8 @@ describe("TypeDrawing", () => {
 
     const svg = container.querySelector("svg");
     expect(svg).toHaveAttribute("data-drawing", "suppressor");
-    const parts = container.querySelectorAll("[class^='hd-drawing__']:not(.hd-drawing__axis)");
+    const parts = container.querySelectorAll("[class^='hd-drawing__']");
     expect(parts).toHaveLength(DRAWINGS.suppressor.parts.length);
-    expect(container.querySelector(".hd-drawing__axis")).not.toBeNull();
   });
 
   // specs/006-accessory-links FR-007a: an accessory with no photo shows its
@@ -42,12 +42,11 @@ describe("TypeDrawing", () => {
 
     const svg = container.querySelector("svg");
     expect(svg).toHaveAttribute("data-drawing", "optic");
-    const parts = container.querySelectorAll("[class^='hd-drawing__']:not(.hd-drawing__axis)");
+    const parts = container.querySelectorAll("[class^='hd-drawing__']");
     expect(parts).toHaveLength(DRAWINGS.optic.parts.length);
-    expect(container.querySelector(".hd-drawing__axis")).not.toBeNull();
   });
 
-  it("draws each of the twelve kinds as its own drawing", () => {
+  it("draws each of the fourteen kinds as its own drawing", () => {
     for (const kind of ACCESSORY_KINDS) {
       const { container, unmount } = render(<TypeDrawing typeKey={kind.genericThumbnailKey} />);
       expect(container.querySelector("svg"), kind.name).toHaveAttribute(
@@ -55,6 +54,24 @@ describe("TypeDrawing", () => {
         kind.genericThumbnailKey,
       );
       unmount();
+    }
+  });
+
+  // A drawing is its parts and nothing else: no bore line under it.
+  it("draws each drawing's parts and nothing else", () => {
+    for (const [key, drawing] of Object.entries(DRAWINGS)) {
+      const { container, unmount } = render(<TypeDrawing typeKey={key} />);
+      expect(container.querySelector("svg")?.children, key).toHaveLength(drawing.parts.length);
+      unmount();
+    }
+  });
+
+  it("keeps every drawing inside its 320×200 box", () => {
+    for (const key of Object.keys(DRAWINGS) as (keyof typeof DRAWINGS)[]) {
+      const [x0, y0, x1, y1] = drawingBounds(key);
+      expect(Math.min(x0, y0), key).toBeGreaterThanOrEqual(0);
+      expect(x1, key).toBeLessThanOrEqual(320);
+      expect(y1, key).toBeLessThanOrEqual(200);
     }
   });
 

@@ -61,6 +61,7 @@ function accessorySummary(id: number, overrides: Partial<AccessorySummary> = {})
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
     mountedOn: null,
+    mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
@@ -152,8 +153,8 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
       accessoryKindId: 10,
       kindName: "Sling",
       genericThumbnailKey: "sling",
-      make: null,
-      model: null,
+      make: "Magpul",
+      model: "MS1",
       estimatedValue: 100,
       insurancePolicyId: 1,
       scheduledCoverageAmount: 100,
@@ -201,7 +202,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     // by an id that a firearm and an accessory might share.
     expect(rows[1]).toHaveTextContent("$900");
     expect(rows[1]).toHaveTextContent("$100 short");
-    expect(rows[2]).toHaveTextContent(/^Sling/);
+    expect(rows[2]).toHaveTextContent(/^Magpul MS1 · Sling/);
 
     await user.click(screen.getByRole("button", { name: "Leupold VX-5HD 3-15x44 · Optic" }));
     expect(navigation.open).toHaveBeenCalledWith({

@@ -14,7 +14,8 @@ import type { MountedEntry, RecordLabel, RecordRef } from "./types";
 // them: `record: RecordLabel` (the record whose page it is on), `mounted:
 // MountedEntry[]` (`MountDetail.mounted`, depth-first) and `onNewAccessory()`
 // (the page opens the accessory form with Mounted on preset). It mounts and
-// unmounts through `mountRecord` and refreshes the collection afterwards.
+// unmounts (after asking) through `mountRecord` and refreshes the collection
+// afterwards.
 
 const mountRecord = vi.fn();
 const listMountCandidates = vi.fn();
@@ -26,8 +27,8 @@ vi.mock("./mountsService", () => ({
 
 function label(
   record: RecordRef,
-  make: string | null,
-  model: string | null,
+  make: string,
+  model: string,
   typeName: string,
   extra: Partial<RecordLabel> = {},
 ): RecordLabel {
@@ -350,17 +351,44 @@ describe("MountedSection mounting an existing record (FR-012, US2-3a)", () => {
 });
 
 describe("MountedSection Unmount (§5)", () => {
-  it("unmounts without asking and toasts '{name} unmounted.'", async () => {
+  it("first asks 'Unmount {name}?', saying what stays mounted on it, and unmounts nothing yet", async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` }));
+
+    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.upper}?` });
+    expect(ask).toHaveAccessibleDescription(
+      `It will no longer be mounted on ${NAMES.rifle}. Everything mounted on it stays mounted on it.`,
+    );
+    expect(within(ask).getByRole("button", { name: "Unmount" })).toBeInTheDocument();
+    expect(within(ask).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(ask.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
+    expect(mountRecord).not.toHaveBeenCalled();
+  });
+
+  it("says only where it is mounted when nothing is mounted on it", async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole("button", { name: /^Unmount Gemtech/ }));
+
+    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.suppressor}?` });
+    expect(ask).toHaveAccessibleDescription(`It will no longer be mounted on ${NAMES.rifle}.`);
+  });
+
+  it("unmounts on Unmount and toasts '{name} unmounted.'", async () => {
     const user = userEvent.setup();
     mountRecord.mockResolvedValue({ item: upper, host: null });
     renderSection();
 
     await user.click(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` }));
+    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.upper}?` });
+    await user.click(within(ask).getByRole("button", { name: "Unmount" }));
 
     await waitFor(() => expect(mountRecord).toHaveBeenCalledTimes(1));
     expect(mountRecord).toHaveBeenCalledWith(upper.record, null);
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(await screen.findByText(`${NAMES.upper} unmounted.`)).toBeInTheDocument();
     expect(refresh).toHaveBeenCalled();
   });
@@ -371,9 +399,24 @@ describe("MountedSection Unmount (§5)", () => {
     renderSection();
 
     await user.click(screen.getByRole("button", { name: /^Unmount Gemtech/ }));
+    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.suppressor}?` });
+    await user.click(within(ask).getByRole("button", { name: "Unmount" }));
 
     await waitFor(() => expect(mountRecord).toHaveBeenCalledWith(suppressor.record, null));
     expect(await screen.findByText("Gemtech GM-45 “Quiet one” unmounted.")).toBeInTheDocument();
+  });
+
+  it("unmounts nothing on Cancel, leaving it mounted", async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` }));
+    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.upper}?` });
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(mountRecord).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 

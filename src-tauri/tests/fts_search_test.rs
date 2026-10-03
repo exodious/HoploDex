@@ -607,10 +607,8 @@ fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_
     )
     .unwrap();
     let mut optic: AccessoryInput =
-        serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "status": "active" }))
+        serde_json::from_value(serde_json::json!({ "accessoryKindId": 1, "make": "Trijicon", "model": "Accupoint", "status": "active" }))
             .unwrap();
-    optic.make = Some("Trijicon".into());
-    optic.model = Some("Accupoint".into());
     optic.serial_number = Some("TJ-7788".into());
     let optic = accessory_ops::create_accessory(&db.conn, &optic, None).unwrap();
     mount_ops::mount_record(

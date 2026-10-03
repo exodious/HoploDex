@@ -5,14 +5,16 @@ import { useCollection } from "../app/collectionStore";
 import { MountedList } from "./MountedList";
 import { MountChooser } from "./MountChooser";
 import { mountRecord } from "./mountsService";
+import { recordKey } from "./recordKey";
 import { recordNameText } from "./recordNames";
 import type { MountedEntry, RecordLabel } from "./types";
 import "./mounts.css";
 
 // specs/006-accessory-links contracts/ui-accessories.md §5 (FR-012, FR-013):
 // the Mounted section of an active record's page. The list (research.md §14),
-// the Mount menu, the "Mount on {name}" dialog and the move question. The
-// wording is "mount" and "Mounted", never "item" or "host".
+// the Mount menu, the "Mount on {name}" dialog, the move question and the
+// unmount question. The wording is "mount" and "Mounted", never "item" or
+// "host".
 
 export interface MountedSectionProps {
   /** The record whose page this is. */
@@ -35,6 +37,11 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
   const [picking, setPicking] = useState(false);
   // The record the user chose that is mounted elsewhere, and where.
   const [moving, setMoving] = useState<{ item: RecordLabel; from: RecordLabel } | null>(null);
+  // The directly mounted record whose Unmount the user pressed, and whether
+  // anything is mounted on it in turn.
+  const [unmounting, setUnmounting] = useState<{ item: RecordLabel; carries: boolean } | null>(
+    null,
+  );
   const [error, setError] = useState<string>();
   const hostName = recordNameText(record);
 
@@ -107,7 +114,14 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
                 size="sm"
                 variant="ghost"
                 aria-label={`Unmount ${recordNameText(entry.label)}`}
-                onClick={() => void place(entry.label, false)}
+                onClick={() =>
+                  setUnmounting({
+                    item: entry.label,
+                    carries: mounted.some(
+                      (other) => recordKey(other.host) === recordKey(entry.label.record),
+                    ),
+                  })
+                }
               >
                 Unmount
               </Button>
@@ -153,6 +167,24 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
         destructive={false}
         onConfirm={async () => {
           if (moving && (await place(moving.item, true))) setPicking(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={unmounting !== null}
+        onOpenChange={(open) => !open && setUnmounting(null)}
+        title={unmounting ? `Unmount ${recordNameText(unmounting.item)}?` : "Unmount?"}
+        description={
+          unmounting
+            ? `It will no longer be mounted on ${hostName}.${
+                unmounting.carries ? " Everything mounted on it stays mounted on it." : ""
+              }`
+            : ""
+        }
+        confirmLabel="Unmount"
+        destructive={false}
+        onConfirm={async () => {
+          if (unmounting) await place(unmounting.item, false);
         }}
       />
     </section>

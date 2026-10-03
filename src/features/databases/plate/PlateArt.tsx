@@ -347,11 +347,10 @@ function ScaleBar({
   );
 }
 
-/** One firearm drawing, its parts painted back to front, then its bore axis. */
+/** One firearm drawing, its parts painted back to front. */
 function EntryDrawing({ entry }: { entry: PlateEntry }) {
   const drawing = DRAWINGS[entry.key];
   const { transform, scale } = entryLayout(entry);
-  const [x0, y, x1] = drawing.axis;
   return (
     <g transform={transform} style={unit(scale)}>
       {drawing.parts.flatMap((part, i) =>
@@ -370,7 +369,6 @@ function EntryDrawing({ entry }: { entry: PlateEntry }) {
           lines(part.role, part.d, `${i}-`)
         ),
       )}
-      <path className="axis" d={`M${x0} ${y}H${x1}`} />
     </g>
   );
 }

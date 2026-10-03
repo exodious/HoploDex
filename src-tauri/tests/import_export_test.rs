@@ -1524,8 +1524,8 @@ mod cartridge_spreadsheet {
         .unwrap();
         assert_eq!(result.imported_count, 0);
         assert_eq!(result.conflicts.len(), 1, "{:?}", result.row_errors);
-        assert_eq!(result.conflicts[0].make.as_deref(), Some("Smith & Wesson"));
-        assert_eq!(result.conflicts[0].model.as_deref(), Some("Model 10"));
+        assert_eq!(result.conflicts[0].make, "Smith & Wesson");
+        assert_eq!(result.conflicts[0].model, "Model 10");
         // The conflict row is listed too.
         assert!(result.snapped_values.iter().any(|s| s.field == EntryField::Make));
         assert!(result.snapped_values.iter().any(|s| s.field == EntryField::Cartridge));

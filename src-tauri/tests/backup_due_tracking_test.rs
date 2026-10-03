@@ -140,7 +140,7 @@ const STEPS: &[(&str, &str)] = &[
     ("disposition_history delete", "DELETE FROM disposition_history WHERE id = 1"),
     (
         "accessories insert",
-        "INSERT INTO accessories (id, uid, accessory_kind_id, created_at, updated_at) VALUES (1, '22222222-2222-4222-8222-222222222222', 1, 'now', 'now')",
+        "INSERT INTO accessories (id, uid, accessory_kind_id, make, model, created_at, updated_at) VALUES (1, '22222222-2222-4222-8222-222222222222', 1, 'Leupold', 'VX-5HD', 'now', 'now')",
     ),
     ("accessories update", "UPDATE accessories SET notes = 'n' WHERE id = 1"),
     (

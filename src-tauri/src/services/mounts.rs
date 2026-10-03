@@ -448,22 +448,14 @@ fn acquisition_dates(
 }
 
 /// A record's name as a message gives it (FR-005): a firearm "{make} {model}
-/// “{nickname}”", an accessory "{make} {model} · {kind}", or the kind alone
-/// when both are blank.
+/// “{nickname}”", an accessory "{make} {model} · {kind}".
 pub fn record_name(label: &RecordLabel) -> String {
-    let make_model: Vec<&str> = [label.make.as_deref(), label.model.as_deref()]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect();
-    let make_model = make_model.join(" ");
+    let make_model = format!("{} {}", label.make, label.model);
     match label.record {
         RecordRef::Firearm(_) => match label.nickname.as_deref().filter(|n| !n.is_empty()) {
             Some(nickname) => format!("{make_model} “{nickname}”"),
             None => make_model,
         },
-        RecordRef::Accessory(_) if make_model.is_empty() => label.type_name.clone(),
         RecordRef::Accessory(_) => format!("{make_model} · {}", label.type_name),
     }
 }
