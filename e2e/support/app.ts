@@ -49,8 +49,12 @@ export function assignWorkerPort(cid: string): number {
 
 let app: ChildProcess | undefined;
 
+function exited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 function running(child: ChildProcess | undefined): child is ChildProcess {
-  return child !== undefined && child.exitCode === null && child.signalCode === null;
+  return child !== undefined && !exited(child);
 }
 
 /**
@@ -90,7 +94,7 @@ export async function launchApp(timeout = 30000) {
   app = child;
   const deadline = Date.now() + timeout;
   for (;;) {
-    if (!running(child)) {
+    if (exited(child)) {
       throw new Error(`the app exited at launch (${child.exitCode ?? child.signalCode})`);
     }
     try {
