@@ -20,6 +20,7 @@ cargo build --example pdf_spike 2>&1 | tail -1
 S=$(mktemp -d /tmp/spike-XXXX)
 mkdir -p "$S"/{home,data,cache,config,state,runtime,dl}
 chmod 700 "$S/runtime"
+cc -shared -fPIC -o "$S/dnslog.so" /workspace/src-tauri/examples/pdf_spike_dns.c -ldl
 touch "$S/stamp"
 sleep 1
 
@@ -27,7 +28,7 @@ sleep 1
 # Save button at 950,16.
 env -i PATH="$PATH" HOME="$S/home" XDG_DATA_HOME="$S/data" XDG_CACHE_HOME="$S/cache" \
   XDG_CONFIG_HOME="$S/config" XDG_STATE_HOME="$S/state" XDG_RUNTIME_DIR="$S/runtime" \
-  SPIKE_DOWNLOAD_DIR="$S/dl" "$@" \
+  SPIKE_DOWNLOAD_DIR="$S/dl" LD_PRELOAD="$S/dnslog.so" "$@" \
   xvfb-run -a -s "-screen 0 1280x1000x24" bash -c "
     /workspace/src-tauri/target/debug/examples/pdf_spike &
     P=\$!
@@ -49,5 +50,7 @@ PRUNE=(\( -path /proc -o -path /sys -o -path /workspace/src-tauri/target -o -pat
   echo "== of those, files holding the marker =="
   find / "${PRUNE[@]}" -type f -newer "$S/stamp" -print0 2>/dev/null | xargs -0 grep -l -a HDSPIKEMARKER 2>/dev/null
 } > "$OUT/$NAME.disk.txt"
-grep -a "SPIKE" "$OUT/$NAME.log" | grep -v "protocol request"
+grep -a "SPIKE" "$OUT/$NAME.log" | grep -v "protocol request\|SPIKE DNS"
+echo "== hostnames looked up (all processes) =="
+grep -a "SPIKE DNS" "$OUT/$NAME.log" | awk '{print $4}' | sort | uniq -c
 sed -n '/holding the marker/,$p' "$OUT/$NAME.disk.txt"

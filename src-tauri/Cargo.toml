@@ -111,6 +111,12 @@ windows-sys = { version = "0.61", features = [
 [dev-dependencies]
 tempfile = "3"
 
+# The PDF preview spike (examples/pdf_spike.rs) sets WebKitGTK's settings and
+# content filters. Already in the tree through wry, at the version and
+# features wry uses.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
