@@ -670,7 +670,8 @@ of it:
   scroll, a thing appearing) gets a `waitUntil` on that condition, not a
   `browser.pause()`.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
-  app at `.human-testing/` via `XDG_*_HOME`. The seed writes only into a
+  app at `.human-testing/`: via `XDG_*_HOME` on Linux, and on macOS via a
+  `HOME` of its own there (cargo, rustup and npm keep the real one). The seed writes only into a
   directory that is new, empty or holds the `.hoplodex-sandbox` marker it
   left there, refuses anything inside the real data, config or documents
   directory, and never touches the keyring.
@@ -804,9 +805,12 @@ script prints; two backups of "Main collection" in `Backups/`, its custom
 backup folder; the `machine.json` listing both databases; and three
 spreadsheets in
 `import-samples/` (clean, conflicting and invalid rows) to try File > Import
-with. The app is pointed at it through `XDG_*_HOME` and a `user-dirs.dirs`
-whose documents folder is the sandbox, so your real collections are never
-opened. Linux only. A `.human-testing/` made before the passphrase model has
+with. The app is pointed at it, so your real collections are never opened:
+on Linux through `XDG_*_HOME` and a `user-dirs.dirs` whose documents folder
+is the sandbox; on macOS through a `HOME` of its own, `.human-testing/home/`,
+whose `Library/Application Support` is `config/` and whose `Documents` is the
+sandbox (the web view's data and caches land in it too). Linux and macOS
+only. A `.human-testing/` made before the passphrase model has
 no sandbox marker, and the seed refuses it: delete it and run the script
 again.
 

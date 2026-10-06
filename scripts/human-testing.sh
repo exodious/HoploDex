@@ -15,11 +15,13 @@
 #                                         the recent list naming both
 #   import-samples/                       spreadsheets to import
 # Both databases open with the passphrase this script prints. The app is
-# pointed at the sandbox through XDG_*_HOME and a user-dirs.dirs whose
-# documents folder is the sandbox, so your real collections, their recent
-# list and your Documents folder are never used. Linux only: other
-# platforms have no equivalent override. The seed refuses a directory it
-# did not make, and never touches the keyring.
+# pointed at the sandbox, so your real collections, their recent list and
+# your Documents folder are never used: on Linux through XDG_*_HOME and a
+# user-dirs.dirs whose documents folder is the sandbox, and on macOS through
+# a HOME of its own, home/, whose Library/Application Support is config/ and
+# whose Documents is the sandbox. (cargo, rustup and npm keep the real home.)
+# Linux and macOS only: Windows has no such override. The seed refuses a
+# directory it did not make, and never touches the keyring.
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,13 +40,14 @@ for arg in "$@"; do
   esac
 done
 
-if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "human-testing.sh only supports Linux (it relies on XDG_*_HOME)." >&2
+os="$(uname -s)"
+if [[ "$os" != "Linux" && "$os" != "Darwin" ]]; then
+  echo "human-testing.sh supports Linux and macOS only." >&2
   exit 1
 fi
 
 if [[ $reset -eq 1 || ! -f "$db" ]]; then
-  "${seed[@]}" --dir "$dir" "${seed_args[@]}"
+  "${seed[@]}" --dir "$dir" ${seed_args[@]+"${seed_args[@]}"}
 else
   echo "Using the existing test data in $dir (pass --reset to start over)."
 fi
@@ -57,6 +60,17 @@ echo "Passphrase for both databases: $("${seed[@]}" --print-passphrase)"
 
 if [[ $launch -eq 1 ]]; then
   cd "$repo"
+  if [[ "$os" == "Darwin" ]]; then
+    # macOS ignores XDG_*: Application Support, Caches, Documents and the
+    # web view's data all come from HOME.
+    home="$dir/home"
+    mkdir -p "$home/Library"
+    ln -sfn "$dir/config" "$home/Library/Application Support"
+    ln -sfn "$dir" "$home/Documents"
+    CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+      npm_config_cache="$(npm config get cache)" HOME="$home" CFFIXED_USER_HOME="$home" \
+      exec npm run tauri dev
+  fi
   XDG_DATA_HOME="$dir/data" XDG_CONFIG_HOME="$dir/config" XDG_CACHE_HOME="$dir/cache" \
     exec npm run tauri dev
 fi
