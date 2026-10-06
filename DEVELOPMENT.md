@@ -201,6 +201,25 @@ pending. The `xdg-open` stub and `quit-cleanup.py` aren't ported yet, and the
 screenshot walk is untested (its seed is wired up; full-page captures need a
 display taller than the page).
 
+**macOS in a VM:** to test macOS without your own account's data nearby,
+use a [tart](https://tart.run) VM made from a Cirrus Labs image with Xcode
+(`ghcr.io/cirruslabs/macos-tahoe-xcode`), install the prerequisites in it,
+and leave it logged in at its desktop. Copy the checkout in with
+`rsync -a --exclude .git --exclude src-tauri/target --exclude node_modules
+--exclude dist --exclude e2e/screenshots-out ./ <user>@$(tart ip <vm>):HoploDex/`.
+Over SSH, mind where a GUI app starts. A program started from an SSH session
+runs in launchd's `Background` session (`launchctl managername` says so) and
+never gets a window: the app starts, logs, and waits forever. Run the E2E
+suite from a Terminal in the VM, or from SSH start the app through Terminal
+(`open -a Terminal run.command`) and drive it from SSH, as
+`src-tauri/examples/pdf_spike_mac.sh` does. Whatever posts mouse input or
+takes screenshots (`sshd-session` over SSH, or Terminal) needs Accessibility
+and Screen Recording in the VM's Privacy & Security settings. Until someone
+answers it, the first request's prompt sits over the middle of the screen
+and catches the clicks. The tart VM and podman's VM together can need more
+memory than a host has; if so, run the dev container's checks on another
+computer.
+
 ## Install dependencies
 
 ```bash
