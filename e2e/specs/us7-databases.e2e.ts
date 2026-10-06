@@ -28,7 +28,7 @@ import {
   waitForCollection,
 } from "../support/ui";
 import { relaunchApp, waitForAppToQuit } from "../support/app";
-import { realClick } from "../support/realInput";
+import { realClick, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's
@@ -111,7 +111,8 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     );
   });
 
-  it("blinks the owl when its beak is clicked, once its pupils are in", async () => {
+  it("blinks the owl when its beak is clicked, once its pupils are in", async function () {
+    skipWithoutRealInput(this);
     await settleChooserPlate();
     // A real pointer click: it also shows the beak is what the pointer hits
     // there. (WebDriver's own click is `element.click()`, which an SVG

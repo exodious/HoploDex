@@ -194,9 +194,10 @@ Application Support, Caches and Documents from `HOME` and ignores `XDG_*`.
 It runs on the host, with the app's window on the real desktop. It needs an
 unlocked, logged-in session: while the screen is locked, WKWebView reports
 every page as hidden and gives it no animation frames, so every step times
-out with "The app never settled". The specs that use real input
-(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8, us10, us11,
-us12), the `xdg-open` stub and `quit-cleanup.py` aren't ported yet, and the
+out with "The app never settled". The tests that use real input
+(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore and the
+tests after it, all of us10, us11 and us12) are skipped, and reported as
+pending. The `xdg-open` stub and `quit-cleanup.py` aren't ported yet, and the
 screenshot walk is untested (its seed is wired up; full-page captures need a
 display taller than the page).
 
@@ -381,6 +382,13 @@ await realKey("Shift_L+Tab"); // + for a chord
 It needs `libX11`, `libXtst` and `python3` (all in the dev container) and
 runs on Linux only. The first call moves the pointer once to find where the
 window sits on the screen. Keys go to the window under the pointer.
+
+A test that sends real input starts with `skipWithoutRealInput(this)` (from
+`realInput.ts`, in an `async function`, not an arrow, for Mocha's `this`),
+which skips it on other platforms. A block whose tests all do calls it from a
+`before` hook. So does a test that needs what such a test did (a record it
+added, a database it left open). Off Linux, `realClick` and `realKey` throw
+if a test reaches them without it.
 
 To track down a bug of this kind, write a throwaway spec that opens the
 screen with real input and logs what you need from the page with

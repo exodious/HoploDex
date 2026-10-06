@@ -21,7 +21,7 @@ import {
   waitForCollection,
   settle,
 } from "../support/ui";
-import { realClick } from "../support/realInput";
+import { realClick, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's User
@@ -156,12 +156,14 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(backupFiles()).toHaveLength(1);
   });
 
-  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async () => {
+  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async function () {
+    skipWithoutRealInput(this);
     await unlock(E2E_PASSPHRASE);
     expect(await listed("AfterBackup")).toBe(true);
 
     // Opened with a real click, as a person does: WebDriver's own clicks
-    // don't bring out the focus ring.
+    // don't bring out the focus ring. The tests after this one need the
+    // database it leaves open, so they are skipped with it.
     await realClick("button.hd-db-menu");
     await realClick('[role="menuitem"]*=Restore from a backup');
     await $('[role="dialog"] input[type="radio"]').waitForExist();
@@ -206,7 +208,8 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     });
   });
 
-  it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async () => {
+  it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async function () {
+    skipWithoutRealInput(this);
     // Still open after the restore, with both backups in the default folder.
     expect(backupFiles()).toHaveLength(2);
     fs.mkdirSync(elsewhere, { recursive: true });
@@ -223,7 +226,8 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(await restorable()).toBe(0);
   });
 
-  it("moves the backups to the new location (FR-026, US3-4a)", async () => {
+  it("moves the backups to the new location (FR-026, US3-4a)", async function () {
+    skipWithoutRealInput(this);
     // Their folder chosen again: they are the database's backups again.
     await useElsewhere();
     const made = backupFiles(elsewhere);
@@ -237,7 +241,8 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(await restorable()).toBe(made.length);
   });
 
-  it("shows what it knows of the selected database only (FR-040)", async () => {
+  it("shows what it knows of the selected database only (FR-040)", async function () {
+    skipWithoutRealInput(this);
     await closeDatabase();
     await createDatabase({ folder: elsewhere, name: "Other" });
     await closeDatabase();

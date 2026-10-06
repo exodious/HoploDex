@@ -15,7 +15,7 @@ import {
   toggle,
 } from "../support/ui";
 import type { NewFirearm } from "../support/ui";
-import { realClick, realKey } from "../support/realInput";
+import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/006-accessory-links' User Story 2 (SC-001,
@@ -328,6 +328,9 @@ const SUPPRESSOR: NewFirearm = {
 };
 
 describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
+  before(function () {
+    skipWithoutRealInput(this);
+  });
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
@@ -408,6 +411,9 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
 });
 
 describe("User Story 4 - Browsing accessories by what they are mounted on (specs/006-accessory-links)", () => {
+  before(function () {
+    skipWithoutRealInput(this);
+  });
   it("groups the Accessories page by Mounted on from the keyboard: the Rifle's group, then Not mounted (US4-2)", async () => {
     // Setup, not timed: an unmounted Sling, added from the Accessories page.
     await realClick("#record-name");
@@ -473,6 +479,9 @@ describe("User Story 4 - Browsing accessories by what they are mounted on (specs
 });
 
 describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-links)", () => {
+  before(function () {
+    skipWithoutRealInput(this);
+  });
   it("marks the Rifle disposed with its Optic, from the keyboard, and leaves the rest unmounted (US3-1, US3-2)", async () => {
     // Setup, not timed: the Rifle carries the Optic already; mount the AR on
     // it too, so that the AR (with the Suppressor on it) can be kept.
@@ -560,6 +569,9 @@ describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-lin
 });
 
 describe("User Story 1 - Recording accessories (specs/006-accessory-links)", () => {
+  before(function () {
+    skipWithoutRealInput(this);
+  });
   it("adds an Optic, schedules it under a policy below its value, adds a photo and edits it, from the keyboard (SC-001, US1-1, US1/AC8)", async () => {
     // Setup, not timed: a schedule-only policy, from the Insurance page.
     await goTo("Insurance");

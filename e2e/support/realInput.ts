@@ -6,16 +6,32 @@ import { $, browser } from "@wdio/globals";
  * Real keyboard and mouse input for a spec, through the X server
  * (e2e/scripts/x11-input.py), for WebKitGTK behaviour WebDriver's own input
  * doesn't reproduce: whether a focus shows its ring, or a relayout that only
- * a real key press forces. Linux (Xvfb) only. See "Real keyboard and mouse
- * input" in DEVELOPMENT.md.
+ * a real key press forces. Linux (Xvfb) only: a test that uses it starts
+ * with {@link skipWithoutRealInput}, so other platforms skip it. See "Real
+ * keyboard and mouse input" in DEVELOPMENT.md.
  */
 
 const SCRIPT = fileURLToPath(new URL("../scripts/x11-input.py", import.meta.url));
+
+/** Whether this computer can send real input: an X server, so Linux only for
+ * now (#28). */
+export const HAS_REAL_INPUT = process.platform === "linux";
+
+/** Skips the test, or from a `before` hook the whole block, where there is no
+ * real input, so the run reports it pending rather than failed. Call it from
+ * a `function`, not an arrow, to have Mocha's `this`, in every test that
+ * sends real input or needs what such a test did. */
+export function skipWithoutRealInput(context: Mocha.Context) {
+  if (!HAS_REAL_INPUT) context.skip();
+}
 
 /** Where the page's (0, 0) is on the X screen, found by {@link calibrate}. */
 let offset: { x: number; y: number } | null = null;
 
 function send(...args: string[]) {
+  if (!HAS_REAL_INPUT) {
+    throw new Error("real input needs Linux (X11): start the test with skipWithoutRealInput");
+  }
   execFileSync("python3", [SCRIPT, ...args]);
 }
 
