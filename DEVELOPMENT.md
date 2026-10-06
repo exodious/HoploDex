@@ -233,7 +233,8 @@ section, skipping what's already there, so they can be run again:
 ```powershell
 # 1. Once per computer, from an elevated PowerShell; -AutoLogon (test machines) and -GitHubCli optional
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1 -User alice
-# 2. Signed in as that user, from a new PowerShell that isn't elevated; -ClaudeCode optional
+# 2. Signed in as that user, from a new PowerShell that isn't elevated;
+#    -ClaudeCode or -ClaudeRemoteControl <checkout> optional
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1
 ```
 
@@ -327,6 +328,37 @@ What they install, to set it up by hand instead:
 - **npm 12:** `npm install --global npm@12`. It lands in `%APPDATA%\npm`,
   and Node's own `npm.cmd` hands off to it, for this account only.
 - **cargo-nextest and cargo-deny:** `cargo install --locked cargo-nextest cargo-deny`.
+
+**Claude Code on a test machine (`-ClaudeRemoteControl <checkout>`).**
+Claude can't live in an SSH session on Windows: `sshd` ends every process
+in a session when it disconnects (there's no `tmux` or `nohup` to escape
+it), and the session has no desktop, so the app's window can't open for
+E2E. So it runs in the auto-logon desktop session instead, and you reach
+it through [Remote Control](https://code.claude.com/docs/en/remote-control)
+from claude.ai/code, the Claude app or another Claude session. The option
+installs Claude Code, copies `scripts/windows/claude-remote-control.ps1`
+to `%LOCALAPPDATA%\HoploDex`, and adds a Startup-folder shortcut that runs
+it minimized at each sign-in. The script keeps `claude remote-control`
+running in the checkout: it starts it again whenever it stops, 30 seconds
+later. Before the first sign-in, answer Claude Code's one-time questions
+over SSH, since the minimized window would wait on them: in the checkout,
+run `claude` and `/login`, then `claude remote-control`, trust the folder,
+enable Remote Control, and stop it with Ctrl+C.
+
+Claude Code downloads updates in the background, but a running `claude`
+keeps its version until it restarts. So during one hour a day (`-UpdateHour`
+on the script, 5 a.m. by default, `-1` for never) the script restarts it
+if a newer version is installed. To restart it now, from SSH:
+
+```powershell
+powershell -File $env:LOCALAPPDATA\HoploDex\claude-remote-control.ps1 -Restart
+```
+
+Either way it stops `claude` with Ctrl+C, and forcibly only if that
+doesn't work within 30 seconds, and the new `claude remote-control` brings
+back the sessions the old one served (for about four hours after it
+stopped). Whatever a session was doing at that moment stops, so restart
+between tasks. To stop it until the next sign-in, close its window.
 
 **Not yet on Windows:** the E2E suite and the screenshot walk haven't run
 there. The embedded WebDriver server works on Windows, so there's no driver

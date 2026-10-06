@@ -18,17 +18,27 @@ It installs, skipping or updating whatever is already there:
   - npm 12 (%APPDATA%\npm; Node's own npm.cmd hands off to it).
   - cargo-nextest and cargo-deny, built from source with --locked.
   - With -ClaudeCode, Claude Code, from its own installer.
+  - With -ClaudeRemoteControl <checkout>, for a test machine with
+    auto-logon: Claude Code, and claude-remote-control.ps1 (copied to
+    %LOCALAPPDATA%\HoploDex) started minimized from the Startup folder at
+    each sign-in, serving Remote Control sessions in that checkout from the
+    desktop session. It needs claude-remote-control.ps1 next to this script.
 
 It checks first that setup-system.ps1 has run: the C++ tools, Git, Node.js
 24 and OPENSSL_DIR.
 
 .PARAMETER ClaudeCode
 Also install Claude Code (https://claude.ai/install.ps1).
+
+.PARAMETER ClaudeRemoteControl
+A HoploDex checkout to serve Claude Code Remote Control sessions in, from
+the desktop session, starting at each sign-in. Implies -ClaudeCode.
 #>
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [switch]$ClaudeCode
+    [switch]$ClaudeCode,
+    [string]$ClaudeRemoteControl
 )
 
 Set-StrictMode -Version Latest
@@ -72,6 +82,16 @@ function Get-Major([string]$Version) {
 }
 
 Write-Host "Setting up $env:USERDOMAIN\$env:USERNAME ($env:USERPROFILE)."
+
+if ($ClaudeRemoteControl) {
+    $ClaudeCode = $true
+    if (-not (Test-Path (Join-Path $ClaudeRemoteControl '.git'))) {
+        throw "$ClaudeRemoteControl isn't a git checkout. Clone HoploDex there first."
+    }
+    $ClaudeRemoteControl = (Resolve-Path $ClaudeRemoteControl).Path
+    $wrapperSource = Join-Path $PSScriptRoot 'claude-remote-control.ps1'
+    if (-not (Test-Path $wrapperSource)) { throw "$wrapperSource is missing; copy it next to this script." }
+}
 
 Write-Step 'Checking the machine-wide setup'
 Update-SessionPath
@@ -142,9 +162,40 @@ if ($ClaudeCode) {
         Invoke-WebRequest https://claude.ai/install.ps1 -OutFile $installer -UseBasicParsing
         & $installer
         Remove-Item $installer
+        Update-SessionPath
+        $claudeBin = Join-Path $env:USERPROFILE '.local\bin'
+        if (($env:Path -split ';') -notcontains $claudeBin) { $env:Path = "$claudeBin;$env:Path" }
     }
+}
+
+if ($ClaudeRemoteControl) {
+    Write-Step 'Claude Code Remote Control at sign-in'
+    # A copy outside the checkout, so switching branches there can't remove it.
+    $stateDir = Join-Path $env:LOCALAPPDATA 'HoploDex'
+    New-Item -ItemType Directory -Force $stateDir | Out-Null
+    $wrapper = Join-Path $stateDir 'claude-remote-control.ps1'
+    Copy-Item $wrapperSource $wrapper -Force
+    $startup = [Environment]::GetFolderPath('Startup')
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut(
+        (Join-Path $startup 'HoploDex Claude remote control.lnk'))
+    $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$wrapper`" -Checkout `"$ClaudeRemoteControl`""
+    $shortcut.WorkingDirectory = $ClaudeRemoteControl
+    # Minimized.
+    $shortcut.WindowStyle = 7
+    $shortcut.Save()
+    Write-Host "At each sign-in, claude remote-control starts in $ClaudeRemoteControl."
 }
 
 Write-Host ''
 Write-Host 'Done. Open a new terminal so PATH and OPENSSL_DIR apply, then in the' -ForegroundColor Green
 Write-Host 'checkout run "npm install" and the build and test commands in DEVELOPMENT.md.' -ForegroundColor Green
+if ($ClaudeRemoteControl) {
+    Write-Host ''
+    Write-Host 'Before the next sign-in, answer Claude Code''s one-time questions, which the' -ForegroundColor Green
+    Write-Host 'minimized window would otherwise wait on. In a new terminal:' -ForegroundColor Green
+    Write-Host "  cd `"$ClaudeRemoteControl`""
+    Write-Host '  claude                 # sign in with /login, then /exit'
+    Write-Host '  claude remote-control  # trust the folder, enable Remote Control, then Ctrl+C'
+    Write-Host 'Then restart Windows (or sign out and in) to start it.' -ForegroundColor Green
+}
