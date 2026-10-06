@@ -182,9 +182,11 @@ every page as hidden and gives it no animation frames, so every step times
 out with "The app never settled". The tests that use real input
 (`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore-dialog
 regressions, all of us10, us11 and us12) are skipped, and reported as
-pending. `quit-cleanup.py` isn't ported yet, and the
-screenshot walk is untested (its seed is wired up; full-page captures need a
-display taller than the page).
+pending. `quit-cleanup.py` runs there too (see below), and so does the
+screenshot walk, but macOS keeps a window within the screen, so the
+full-page shots are cut off at the screen's height unless the display is
+taller than the page (`scripts/tart-vm.sh` gives its VM 1920×4200, as Linux's
+Xvfb screen).
 
 **macOS in a VM:** to test macOS without your own account's data nearby,
 use a [tart](https://tart.run) VM made from a Cirrus Labs image with Xcode
@@ -549,13 +551,18 @@ built E2E binary:
 
 - **Linux:** `xvfb-run -a python3 e2e/scripts/quit-cleanup.py` (needs Xvfb,
   no other packages). Window closed, SIGTERM, SIGHUP and SIGINT.
+- **macOS:** `python3 e2e/scripts/quit-cleanup.py`, in a logged-in desktop
+  session (in a tart VM, `scripts/tart-vm.sh gui python3
+  e2e/scripts/quit-cleanup.py`). Window closed, Cmd+Q, SIGTERM, SIGHUP and
+  SIGINT. It presses the close button through the Accessibility API and
+  posts Cmd+Q to the app, so whatever runs it needs Accessibility.
 - **Windows:** `powershell -ExecutionPolicy Bypass -File
-  e2escriptsquit-cleanup.ps1`, in a desktop session. Window closed,
+  e2e/scripts/quit-cleanup.ps1`, in a desktop session. Window closed,
   `taskkill` without /F, and a log-off (`WM_QUERYENDSESSION` and
   `WM_ENDSESSION` to every window, then the process ended at once, as
   Windows may).
 
-Neither needs the real directories: each launch gets a scratch sandbox. An
+None needs the real directories: each launch gets a scratch sandbox. An
 E2E build never hands an opened document to the OS either, so no real
 viewer starts: `open_document` writes the copy's path to
 `HOPLODEX_E2E_OPENED_LOG` instead, which us4 checks.

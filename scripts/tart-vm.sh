@@ -167,8 +167,10 @@ cmd_setup() {
   if [[ "$(vm_state)" != running ]]; then
     # px, not pt: on a Retina host pt gives the VM a 2x framebuffer. The
     # default 1024x768 shrinks the E2E window (1200x800) and the screenshot
-    # walk's resizeWindow times out.
-    tart set "$vm" --cpu "$cpus" --memory "$memory" --display 1920x1600px
+    # walk's resizeWindow times out. 4200 tall, as Linux's Xvfb screen, since
+    # macOS keeps a window within the screen and the walk's full-page shots
+    # grow to 4000.
+    tart set "$vm" --cpu "$cpus" --memory "$memory" --display 1920x4200px
   fi
 
   if [[ ! -f "$key" ]]; then
