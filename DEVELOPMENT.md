@@ -393,8 +393,12 @@ leaves the previous test programs and incremental caches behind in
 
 ```bash
 cargo clean --manifest-path src-tauri/Cargo.toml                                # on the host
-scripts/dev-container.sh cargo clean --manifest-path src-tauri/Cargo.toml       # the container's target volume
+scripts/dev-container.sh find src-tauri/target -mindepth 1 -delete             # the container's target volume
 ```
+
+In the container, `src-tauri/target` is the volume's mount point. `cargo
+clean` empties it, then fails because it can't remove the mount point
+itself, so the container command empties the volume with `find` instead.
 
 ### Linux AppImage
 
