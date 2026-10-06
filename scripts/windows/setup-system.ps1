@@ -30,7 +30,9 @@ It installs, skipping whatever is already there:
   - With -AutoLogon, a test machine's unattended desktop session (E2E and
     screenshots need one): Windows signs -User in at startup, its password
     kept as an LSA secret rather than in the registry, and the session
-    never locks, blanks or sleeps when idle.
+    never locks, blanks or sleeps when idle. Windows' animations are on in
+    it: with them off, WebView2 reports reduced motion and the E2E tests
+    of the app's animations fail.
   - With -GitHubCli, the GitHub CLI.
 
 It can be run again: it adds only what's missing. For x64 Windows 10 or 11
@@ -45,8 +47,9 @@ administrator: a local account (alice) or a domain one (DOMAIN\alice).
 Where to clone vcpkg. Defaults to C:\vcpkg.
 
 .PARAMETER AutoLogon
-Sign -User in automatically at startup, and turn off the idle lock, screen
-saver, display timeout and sleep. For a test machine only: anyone who can
+Sign -User in automatically at startup, turn off the idle lock, screen
+saver, display timeout and sleep, and turn on -User's Windows animations
+("Show animations in Windows"). For a test machine only: anyone who can
 reach its console gets -User's session.
 
 .PARAMETER Password
@@ -244,11 +247,10 @@ public static class HoploDexLsaSecret {
     }
 }
 
-# Sets REG_SZ values under a key in -User's own registry hive, loading the
+# Runs Action with the reg.exe path of -User's own registry hive, loading the
 # hive while they're signed out. Returns $false if they've never signed in,
 # so they have no hive yet.
-function Set-UserRegistryValue {
-    param([string]$Key, [hashtable]$Values)
+function Invoke-InUserHive([scriptblock]$Action) {
     $hive = "HKU\$UserSid"
     $loaded = $false
     if (-not (Test-Path "Registry::HKEY_USERS\$UserSid")) {
@@ -260,14 +262,46 @@ function Set-UserRegistryValue {
         $loaded = $true
     }
     try {
-        foreach ($name in $Values.Keys) {
-            Invoke-Checked reg @('add', "$hive\$Key", '/v', $name, '/t', 'REG_SZ',
-                '/d', $Values[$name], '/f') | Out-Null
-        }
+        & $Action $hive | Out-Null
     } finally {
         if ($loaded) { Invoke-Checked reg @('unload', $hive) | Out-Null }
     }
     return $true
+}
+
+# Sets REG_SZ values under a key in -User's own registry hive.
+function Set-UserRegistryValue {
+    param([string]$Key, [hashtable]$Values)
+    return Invoke-InUserHive {
+        param($hive)
+        foreach ($name in $Values.Keys) {
+            Invoke-Checked reg @('add', "$hive\$Key", '/v', $name, '/t', 'REG_SZ',
+                '/d', $Values[$name], '/f') | Out-Null
+        }
+    }
+}
+
+# Turns on "Show animations in Windows" (Settings > Accessibility > Visual
+# effects) for -User, from their next sign-in. It's one bit of
+# UserPreferencesMask, the one SPI_SETCLIENTAREAANIMATION sets; the rest of
+# the mask stays as it is.
+function Enable-UserAnimations {
+    return Invoke-InUserHive {
+        param($hive)
+        $key = "$hive\Control Panel\Desktop"
+        $ErrorActionPreference = 'Continue'
+        $query = reg query $key /v UserPreferencesMask
+        $ErrorActionPreference = 'Stop'
+        if ($LASTEXITCODE -ne 0 -or "$query" -notmatch 'REG_BINARY\s+([0-9A-Fa-f]+)') {
+            throw "No UserPreferencesMask in $key."
+        }
+        $hex = $Matches[1]
+        $mask = [byte[]](0..($hex.Length / 2 - 1) | ForEach-Object { [Convert]::ToByte($hex.Substring($_ * 2, 2), 16) })
+        if ($mask.Length -lt 5) { throw "UserPreferencesMask in $key is only $($mask.Length) bytes." }
+        $mask[4] = $mask[4] -bor 0x02
+        Invoke-Checked reg @('add', $key, '/v', 'UserPreferencesMask', '/t', 'REG_BINARY',
+            '/d', (($mask | ForEach-Object { $_.ToString('X2') }) -join ''), '/f') | Out-Null
+    }
 }
 
 function Test-WindowsSdk {
@@ -511,13 +545,19 @@ if ($AutoLogon) {
     $screenSaver = Set-UserRegistryValue -Key 'Software\Policies\Microsoft\Windows\Control Panel\Desktop' `
         -Values @{ ScreenSaveActive = '0'; ScreenSaverIsSecure = '0' }
     if (-not $screenSaver) { $script:SignInFirst = $true }
+
+    Write-Step 'Windows animations on'
+    # Windows Server starts with them off, and WebView2 then reports
+    # prefers-reduced-motion, so the app skips its animations and the E2E
+    # tests that check them fail.
+    if (-not (Enable-UserAnimations)) { $script:SignInFirst = $true }
 }
 
 Write-Host ''
 Write-Host "Machine-wide setup is done. Next, signed in as $User, open a new" -ForegroundColor Green
 Write-Host 'PowerShell (not elevated) and run setup-user.ps1.' -ForegroundColor Green
 if ($script:SignInFirst) {
-    Write-Warning ("$User has never signed in, so their screen saver can't be turned off yet. " +
+    Write-Warning ("$User has never signed in, so their screen saver and animations can't be set yet. " +
         'Restart (auto-logon signs them in), then run this script again.')
 } elseif ($AutoLogon) {
     Write-Host "Restart Windows, and it signs in as $User." -ForegroundColor Green

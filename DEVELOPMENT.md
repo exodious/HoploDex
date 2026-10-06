@@ -312,8 +312,10 @@ What they install, to set it up by hand instead:
   session never locks, blanks or sleeps when idle: display, sleep and
   hibernate timeouts are off, no password on wakeup, no machine
   inactivity limit, and the user's screen saver is off by policy. The
-  screen saver lives in the user's own registry, so if they've never
-  signed in, restart (auto-logon signs them in) and run the script again.
+  user's "Show animations in Windows" is turned on (a bit of
+  `UserPreferencesMask`): Windows Server starts with it off, and WebView2
+  then reports reduced motion, so us7's catalogue-plate test fails. Both
+  live in the user's own registry, so if they've never signed in, restart (auto-logon signs them in) and run the script again.
   Avoid connecting with Remote Desktop as that user before a test run: it
   takes over the console session, which stops drawing once you
   disconnect.
@@ -368,7 +370,7 @@ the harness is ported yet (#27): the real-input tests skip themselves, opening
 a document starts its real viewer, and the screenshot walk hasn't run there.
 With Windows' "Show animations in Windows" off (Settings › Accessibility ›
 Visual effects), WebView2 reports reduced motion and us7's catalogue-plate
-test fails.
+test fails; `setup-system.ps1 -AutoLogon` turns it on.
 
 ## Install dependencies
 
