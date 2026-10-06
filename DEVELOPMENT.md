@@ -231,7 +231,7 @@ x64 Windows 10 or 11 (Pro, Enterprise or Education), or Windows Server
 section, skipping what's already there, so they can be run again:
 
 ```powershell
-# 1. Once per computer, from an elevated PowerShell; -GitHubCli optional
+# 1. Once per computer, from an elevated PowerShell; -AutoLogon (test machines) and -GitHubCli optional
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1 -User alice
 # 2. Signed in as that user, from a new PowerShell that isn't elevated; -ClaudeCode optional
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1
@@ -295,9 +295,27 @@ What they install, to set it up by hand instead:
   (`sshd`, built into Server 2025, an optional capability elsewhere)
   started automatically and open on port 22; and the user in the "Remote
   Desktop Users" and "OpenSSH Users" groups. Windows Home has no Remote
-  Desktop host, so the script refuses it. The default `sshd_config` lets
-  any local account sign in; "OpenSSH Users" restricts that only with an
-  `AllowGroups` line there.
+  Desktop host, so the script refuses it. SSH is restricted to that group
+  with `AllowGroups "openssh users"` in `%ProgramData%\ssh\sshd_config`,
+  before its first `Match` block (Windows' `sshd` wants names in lower
+  case), so an administrator who isn't in the group can't sign in over
+  SSH. The script keeps the old file as `sshd_config.before-hoplodex`.
+- **Windows Server:** Server Manager doesn't open at sign-in (its
+  scheduled task is off, and the `DoNotOpenAtLogon` policy is set).
+- **Auto-logon (`-AutoLogon`, test machines only):** E2E and screenshot
+  runs need a desktop session that stays signed in and drawing. Windows
+  signs the user in at startup (`AutoAdminLogon`, `DefaultUserName` and
+  `DefaultDomainName` under `HKLM\...\Winlogon`). The password is kept
+  as the `DefaultPassword` LSA secret, as Sysinternals Autologon does,
+  rather than in the registry, where any local user can read it. The
+  session never locks, blanks or sleeps when idle: display, sleep and
+  hibernate timeouts are off, no password on wakeup, no machine
+  inactivity limit, and the user's screen saver is off by policy. The
+  screen saver lives in the user's own registry, so if they've never
+  signed in, restart (auto-logon signs them in) and run the script again.
+  Avoid connecting with Remote Desktop as that user before a test run: it
+  takes over the console session, which stops drawing once you
+  disconnect.
 
 **Per user** (`setup-user.ps1`), after a new shell picks up the new `PATH`:
 

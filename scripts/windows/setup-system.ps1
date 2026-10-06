@@ -7,7 +7,7 @@ The machine-wide half of a Windows development setup (DEVELOPMENT.md,
 "Windows"). Run it once per computer, from an elevated PowerShell, then run
 setup-user.ps1 as each account that builds:
 
-  powershell -ExecutionPolicy Bypass -File setup-system.ps1 -User alice
+  powershell -ExecutionPolicy Bypass -File setup-system.ps1 -User alice [-AutoLogon]
 
 It installs, skipping whatever is already there:
   - Visual Studio Build Tools 2026 with the "Desktop development with C++"
@@ -23,7 +23,14 @@ It installs, skipping whatever is already there:
   - Remote access for -User: Remote Desktop (with Network Level
     Authentication) and the OpenSSH server, both on and open in the
     firewall, and -User in the "Remote Desktop Users" and "OpenSSH Users"
-    groups.
+    groups. SSH is restricted to "OpenSSH Users" (AllowGroups in
+    sshd_config), so administrators can't sign in over SSH unless they're
+    in it too.
+  - On Windows Server, Server Manager no longer opens at sign-in.
+  - With -AutoLogon, a test machine's unattended desktop session (E2E and
+    screenshots need one): Windows signs -User in at startup, its password
+    kept as an LSA secret rather than in the registry, and the session
+    never locks, blanks or sleeps when idle.
   - With -GitHubCli, the GitHub CLI.
 
 It can be run again: it adds only what's missing. For x64 Windows 10 or 11
@@ -37,6 +44,14 @@ administrator: a local account (alice) or a domain one (DOMAIN\alice).
 .PARAMETER VcpkgRoot
 Where to clone vcpkg. Defaults to C:\vcpkg.
 
+.PARAMETER AutoLogon
+Sign -User in automatically at startup, and turn off the idle lock, screen
+saver, display timeout and sleep. For a test machine only: anyone who can
+reach its console gets -User's session.
+
+.PARAMETER Password
+-User's password for -AutoLogon. Asked for when it's left out.
+
 .PARAMETER GitHubCli
 Also install the GitHub CLI (gh).
 #>
@@ -47,6 +62,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$User,
     [string]$VcpkgRoot = 'C:\vcpkg',
+    [switch]$AutoLogon,
+    [SecureString]$Password,
     [switch]$GitHubCli
 )
 
@@ -60,6 +77,7 @@ $VcTools = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
 # Builtin\Remote Desktop Users, whose name depends on the Windows language.
 $RemoteDesktopUsersSid = 'S-1-5-32-555'
 $OpenSshUsers = 'OpenSSH Users'
+$Winlogon = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
 # winget's "reboot needed to finish installation" (0x8A150109).
 $WingetRebootNeeded = -1978334967
 $script:RebootNeeded = $false
@@ -126,6 +144,132 @@ function Add-GroupMember {
     }
 }
 
+# Whether Password is Domain\Name's password.
+function Test-Password {
+    param([string]$Domain, [string]$Name, [SecureString]$Password)
+    Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+    $contextType = [System.DirectoryServices.AccountManagement.ContextType]::Domain
+    if ($Domain -eq $env:COMPUTERNAME) {
+        $contextType = [System.DirectoryServices.AccountManagement.ContextType]::Machine
+    }
+    $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext($contextType, $Domain)
+    try {
+        $plain = (New-Object System.Net.NetworkCredential('', $Password)).Password
+        return $context.ValidateCredentials($Name, $plain)
+    } finally {
+        $context.Dispose()
+    }
+}
+
+# Stores Password as the LSA secret Winlogon reads for auto-logon
+# (DefaultPassword), as Sysinternals Autologon does, so it isn't left in the
+# registry, where any local user can read Winlogon's values.
+function Set-AutoLogonSecret([SecureString]$Password) {
+    if (-not ('HoploDexLsaSecret' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class HoploDexLsaSecret {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LsaUnicodeString {
+        public ushort Length;
+        public ushort MaximumLength;
+        public IntPtr Buffer;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LsaObjectAttributes {
+        public int Length;
+        public IntPtr RootDirectory;
+        public IntPtr ObjectName;
+        public uint Attributes;
+        public IntPtr SecurityDescriptor;
+        public IntPtr SecurityQualityOfService;
+    }
+
+    [DllImport("advapi32.dll")]
+    private static extern uint LsaOpenPolicy(IntPtr systemName, ref LsaObjectAttributes attributes,
+        uint access, out IntPtr policy);
+
+    [DllImport("advapi32.dll")]
+    private static extern uint LsaStorePrivateData(IntPtr policy, ref LsaUnicodeString keyName,
+        ref LsaUnicodeString privateData);
+
+    [DllImport("advapi32.dll")]
+    private static extern uint LsaClose(IntPtr policy);
+
+    [DllImport("advapi32.dll")]
+    private static extern int LsaNtStatusToWinError(uint status);
+
+    private const uint PolicyCreateSecret = 0x20;
+
+    // Stores the UTF-16 buffer secret, length characters long, under keyName.
+    public static void Store(string keyName, IntPtr secret, int length) {
+        LsaObjectAttributes attributes = new LsaObjectAttributes();
+        attributes.Length = Marshal.SizeOf(typeof(LsaObjectAttributes));
+        IntPtr policy;
+        Check(LsaOpenPolicy(IntPtr.Zero, ref attributes, PolicyCreateSecret, out policy));
+        IntPtr keyBuffer = Marshal.StringToHGlobalUni(keyName);
+        try {
+            LsaUnicodeString key = new LsaUnicodeString();
+            key.Length = (ushort)(keyName.Length * 2);
+            key.MaximumLength = (ushort)(keyName.Length * 2 + 2);
+            key.Buffer = keyBuffer;
+            LsaUnicodeString data = new LsaUnicodeString();
+            data.Length = (ushort)(length * 2);
+            data.MaximumLength = (ushort)(length * 2);
+            data.Buffer = secret;
+            Check(LsaStorePrivateData(policy, ref key, ref data));
+        } finally {
+            Marshal.FreeHGlobal(keyBuffer);
+            LsaClose(policy);
+        }
+    }
+
+    private static void Check(uint status) {
+        if (status != 0) {
+            throw new Win32Exception(LsaNtStatusToWinError(status));
+        }
+    }
+}
+'@
+    }
+    $buffer = [Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($Password)
+    try {
+        [HoploDexLsaSecret]::Store('DefaultPassword', $buffer, $Password.Length)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeGlobalAllocUnicode($buffer)
+    }
+}
+
+# Sets REG_SZ values under a key in -User's own registry hive, loading the
+# hive while they're signed out. Returns $false if they've never signed in,
+# so they have no hive yet.
+function Set-UserRegistryValue {
+    param([string]$Key, [hashtable]$Values)
+    $hive = "HKU\$UserSid"
+    $loaded = $false
+    if (-not (Test-Path "Registry::HKEY_USERS\$UserSid")) {
+        $profileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$UserSid"
+        $profileDir = (Get-ItemProperty $profileKey -ErrorAction SilentlyContinue).ProfileImagePath
+        if (-not $profileDir) { return $false }
+        $hive = 'HKU\HoploDexSetup'
+        Invoke-Checked reg @('load', $hive, (Join-Path $profileDir 'NTUSER.DAT')) | Out-Null
+        $loaded = $true
+    }
+    try {
+        foreach ($name in $Values.Keys) {
+            Invoke-Checked reg @('add', "$hive\$Key", '/v', $name, '/t', 'REG_SZ',
+                '/d', $Values[$name], '/f') | Out-Null
+        }
+    } finally {
+        if ($loaded) { Invoke-Checked reg @('unload', $hive) | Out-Null }
+    }
+    return $true
+}
+
 function Test-WindowsSdk {
     $lib = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Lib\*\um\x64\kernel32.Lib'
     return [bool](Get-ChildItem $lib -ErrorAction SilentlyContinue)
@@ -143,6 +287,16 @@ try {
         [System.Security.Principal.SecurityIdentifier]).Value
 } catch [System.Security.Principal.IdentityNotMappedException] {
     throw "There's no account named $User on this computer."
+}
+# The account's own spelling, DOMAIN\name or COMPUTER\name, for Winlogon.
+$LogonDomain, $LogonName = (New-Object System.Security.Principal.SecurityIdentifier($UserSid)).Translate(
+    [System.Security.Principal.NTAccount]).Value.Split('\', 2)
+if ($AutoLogon) {
+    # Ask now, so the rest runs unattended.
+    if (-not $Password) { $Password = Read-Host "$User's password, for auto-logon" -AsSecureString }
+    if (-not (Test-Password -Domain $LogonDomain -Name $LogonName -Password $Password)) {
+        throw "That isn't $User's password."
+    }
 }
 if (-not (Test-Command winget)) {
     throw 'winget is missing. Install "App Installer" from the Microsoft Store, then run this again.'
@@ -283,10 +437,91 @@ if (-not (Get-LocalGroup -Name $OpenSshUsers -ErrorAction SilentlyContinue)) {
     New-LocalGroup -Name $OpenSshUsers -Description 'Members may sign in through OpenSSH.' | Out-Null
 }
 Add-GroupMember -Description $OpenSshUsers -Group @{ Name = $OpenSshUsers } -Sid $UserSid
+# Only "OpenSSH Users" may sign in. Windows' sshd wants account names in lower
+# case, and AllowGroups has to come before the first Match block, or it
+# applies only inside it. sshd wrote the default config when it first started.
+$sshdConfig = Join-Path $env:ProgramData 'ssh\sshd_config'
+$allowGroups = "AllowGroups `"$($OpenSshUsers.ToLowerInvariant())`""
+$current = @(Get-Content $sshdConfig)
+$updated = New-Object System.Collections.Generic.List[string]
+$inMatch = $false
+foreach ($line in $current) {
+    if (-not $inMatch -and $line -match '^\s*Match\s') {
+        $updated.Add($allowGroups)
+        $inMatch = $true
+    }
+    if (-not $inMatch -and $line -match '^\s*AllowGroups\s') { continue }
+    $updated.Add($line)
+}
+if (-not $inMatch) { $updated.Add($allowGroups) }
+if (($updated -join "`n") -ne ($current -join "`n")) {
+    $backup = "$sshdConfig.before-hoplodex"
+    if (-not (Test-Path $backup)) { Copy-Item $sshdConfig $backup }
+    # Without a byte order mark, which sshd would read as part of the first line.
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [IO.File]::WriteAllLines($sshdConfig, [string[]]$updated, $utf8)
+    $sshd = (Get-CimInstance Win32_Service -Filter "Name='sshd'").PathName.Trim('"')
+    if ((Invoke-Checked $sshd @('-t') -OkCodes (0..255)) -ne 0) {
+        [IO.File]::WriteAllLines($sshdConfig, [string[]]$current, $utf8)
+        throw "sshd rejected the new $sshdConfig, so it's been put back."
+    }
+    Restart-Service sshd
+    Write-Host "SSH is restricted to $OpenSshUsers (the old config is $backup)."
+} else {
+    Write-Host "SSH is already restricted to $OpenSshUsers."
+}
+
+$serverManager = Get-ScheduledTask -TaskName ServerManager -ErrorAction SilentlyContinue
+if ($serverManager) {
+    Write-Step 'Server Manager'
+    $serverManager | Disable-ScheduledTask | Out-Null
+    # The "Do not display Server Manager automatically at logon" policy.
+    $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Server\ServerManager'
+    New-Item $policy -Force | Out-Null
+    Set-ItemProperty $policy -Name DoNotOpenAtLogon -Value 1 -Type DWord
+    Write-Host "Server Manager won't open at sign-in."
+}
+
+$script:SignInFirst = $false
+if ($AutoLogon) {
+    Write-Step "Auto-logon as $LogonDomain\$LogonName"
+    Set-AutoLogonSecret $Password
+    Set-ItemProperty $Winlogon -Name AutoAdminLogon -Value '1' -Type String
+    Set-ItemProperty $Winlogon -Name DefaultUserName -Value $LogonName -Type String
+    Set-ItemProperty $Winlogon -Name DefaultDomainName -Value $LogonDomain -Type String
+    # A password here would win over the LSA secret, and a count would end
+    # auto-logon after that many sign-ins.
+    Remove-ItemProperty $Winlogon -Name DefaultPassword, AutoLogonCount -ErrorAction SilentlyContinue
+
+    Write-Step 'No idle lock, screen saver, display timeout or sleep'
+    foreach ($setting in 'monitor', 'standby', 'hibernate') {
+        foreach ($power in 'ac', 'dc') {
+            Invoke-Checked powercfg @('/change', "$setting-timeout-$power", '0') | Out-Null
+        }
+    }
+    # "Require a password on wakeup".
+    Invoke-Checked powercfg @('/setacvalueindex', 'SCHEME_CURRENT', 'SUB_NONE', 'CONSOLELOCK', '0') | Out-Null
+    Invoke-Checked powercfg @('/setdcvalueindex', 'SCHEME_CURRENT', 'SUB_NONE', 'CONSOLELOCK', '0') | Out-Null
+    Invoke-Checked powercfg @('/setactive', 'SCHEME_CURRENT') | Out-Null
+    # "Interactive logon: Machine inactivity limit".
+    Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
+        -Name InactivityTimeoutSecs -Value 0 -Type DWord
+    # The screen saver is a per-user setting, so it's set as a policy in the
+    # user's hive, which exists once they've signed in.
+    $screenSaver = Set-UserRegistryValue -Key 'Software\Policies\Microsoft\Windows\Control Panel\Desktop' `
+        -Values @{ ScreenSaveActive = '0'; ScreenSaverIsSecure = '0' }
+    if (-not $screenSaver) { $script:SignInFirst = $true }
+}
 
 Write-Host ''
 Write-Host "Machine-wide setup is done. Next, signed in as $User, open a new" -ForegroundColor Green
 Write-Host 'PowerShell (not elevated) and run setup-user.ps1.' -ForegroundColor Green
+if ($script:SignInFirst) {
+    Write-Warning ("$User has never signed in, so their screen saver can't be turned off yet. " +
+        'Restart (auto-logon signs them in), then run this script again.')
+} elseif ($AutoLogon) {
+    Write-Host "Restart Windows, and it signs in as $User." -ForegroundColor Green
+}
 if ($script:RebootNeeded) {
     Write-Warning 'An installer asked for a restart. Restart Windows before building.'
 }
