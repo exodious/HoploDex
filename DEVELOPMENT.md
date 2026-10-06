@@ -203,10 +203,29 @@ display taller than the page).
 
 **macOS in a VM:** to test macOS without your own account's data nearby,
 use a [tart](https://tart.run) VM made from a Cirrus Labs image with Xcode
-(`ghcr.io/cirruslabs/macos-tahoe-xcode`), install the prerequisites in it,
-and leave it logged in at its desktop. Copy the checkout in with
+(`ghcr.io/cirruslabs/macos-tahoe-xcode`). `scripts/tart-vm.sh` sets one up
+and runs the tests in it as a standard (non-admin) user:
+
+```bash
+scripts/tart-vm.sh setup                   # clone, create hoplotest, install the toolchain, log it in at boot
+scripts/tart-vm.sh test                    # copy the checkout in, lint and test over SSH, E2E in its desktop
+scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.test.tsx   # one command
+scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
+scripts/tart-vm.sh fetch e2e/screenshots-out   # copy results back
+```
+
+`setup` uses the image's `admin` only to create the user, turn off sleep,
+skip the user's Setup Assistant, log it in automatically at boot and give
+Terminal Accessibility and Screen Recording. The toolchain (rustup,
+cargo-nextest, Node and npm at the `Dockerfile`'s versions) goes in the
+user's home. Running it again finishes what's left. The script's header lists
+its settings (`HOPLODEX_VM` and friends, for a VM you already have). The rest
+of this paragraph is what it does for you. To set a VM up by hand, install the
+prerequisites in it and leave it logged in at its desktop. Copy the checkout in with
 `rsync -a --exclude .git --exclude src-tauri/target --exclude node_modules
---exclude dist --exclude e2e/screenshots-out ./ <user>@$(tart ip <vm>):HoploDex/`.
+--exclude dist --exclude e2e/screenshots-out ./ <user>@$(tart ip <vm>):HoploDex/`
+(with `--delete`, exclude those by name even if `.gitignore` is a filter too:
+macOS's rsync deletes files a dir-merge filter alone matches).
 Over SSH, mind where a GUI app starts. A program started from an SSH session
 runs in launchd's `Background` session (`launchctl managername` says so) and
 never gets a window: the app starts, logs, and waits forever. Run the E2E
