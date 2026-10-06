@@ -103,19 +103,15 @@ function isolateAppData() {
   // The E2E build's in-memory keyring is kept here between launches, so a
   // remembered passphrase outlives a relaunch (research.md §10).
   process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(sandbox, "keyring.json");
+  // An E2E build never hands an opened document to the OS, which would start
+  // a real viewer: it writes the copy's path here instead (open_document, #27).
+  process.env.HOPLODEX_E2E_OPENED_LOG = path.join(sandbox, "opened.log");
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;
     process.env.XDG_CACHE_HOME = cache;
     process.env.XDG_CONFIG_HOME = config;
     writeUserDirs(config, documents);
-    // The document test opens a PDF through xdg-open, which would start a real
-    // viewer. Mapping the type to a no-op in mimeapps.list isn't reliable (the
-    // desktop environment's own defaults win), so put a stub first on PATH.
-    const bin = path.join(sandbox, "bin");
-    fs.mkdirSync(bin, { recursive: true });
-    fs.writeFileSync(path.join(bin, "xdg-open"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-    process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
   } else if (process.platform === "win32") {
     // WebView2 keeps its profile (local storage, and so the theme) in the
     // app's real local data folder, which every worker would share. Its

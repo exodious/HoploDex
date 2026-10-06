@@ -182,7 +182,7 @@ every page as hidden and gives it no animation frames, so every step times
 out with "The app never settled". The tests that use real input
 (`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore-dialog
 regressions, all of us10, us11 and us12) are skipped, and reported as
-pending. The `xdg-open` stub and `quit-cleanup.py` aren't ported yet, and the
+pending. `quit-cleanup.py` isn't ported yet, and the
 screenshot walk is untested (its seed is wired up; full-page captures need a
 display taller than the page).
 
@@ -367,9 +367,8 @@ restart between tasks. To stop it until the next sign-in, close its window.
 
 **E2E on Windows:** `npm run test:e2e` runs there, through the embedded
 WebDriver server, with no driver to install, and is isolated from your real
-data like everywhere else (see [Test isolation](#test-isolation)). Not all of
-the harness is ported yet (#27): opening a document starts its real viewer.
-The real-input tests skip themselves, by decision (see
+data like everywhere else (see [Test isolation](#test-isolation)). The
+real-input tests skip themselves, by decision (see
 [Real keyboard and mouse input](#real-keyboard-and-mouse-input)).
 `npm run screenshots` runs there too, with the window on the desktop. Its
 frame takes some of the 1200×800, so the shots are 1184×761. Full-page shots
@@ -544,11 +543,22 @@ touches your real desktop and parallel workers never share a screen, a
 pointer or a keyboard. The harness self-heals after an interrupted prior run,
 killing anything left over on a worker's port before launching the app.
 
-The E2E suite kills the app rather than quitting it, so
-`e2e/scripts/quit-cleanup.py` checks that decrypted document
-copies are removed when the app quits — window closed, SIGTERM, SIGHUP or
-SIGINT — against the built binary: `xvfb-run -a python3
-e2e/scripts/quit-cleanup.py` (Linux; needs Xvfb, no other packages).
+The E2E suite kills the app rather than quitting it, so a script checks
+that decrypted document copies are removed when the app quits, against the
+built E2E binary:
+
+- **Linux:** `xvfb-run -a python3 e2e/scripts/quit-cleanup.py` (needs Xvfb,
+  no other packages). Window closed, SIGTERM, SIGHUP and SIGINT.
+- **Windows:** `powershell -ExecutionPolicy Bypass -File
+  e2escriptsquit-cleanup.ps1`, in a desktop session. Window closed,
+  `taskkill` without /F, and a log-off (`WM_QUERYENDSESSION` and
+  `WM_ENDSESSION` to every window, then the process ended at once, as
+  Windows may).
+
+Neither needs the real directories: each launch gets a scratch sandbox. An
+E2E build never hands an opened document to the OS either, so no real
+viewer starts: `open_document` writes the copy's path to
+`HOPLODEX_E2E_OPENED_LOG` instead, which us4 checks.
 
 ### Real keyboard and mouse input
 
@@ -633,7 +643,7 @@ of it:
   (`src-tauri/src/app_dirs.rs`; every command gets its directories there).
   That's what isolates Windows, whose known folders ignore `APPDATA` and the
   like. The webview's own data goes into the sandbox too: through `XDG_*`
-  directories on Linux (with a `user-dirs.dirs` and a stub `xdg-open`),
+  directories on Linux (with a `user-dirs.dirs`),
   `HOME` on macOS, and `WEBVIEW2_USER_DATA_FOLDER` on Windows. Each spec starts at
   a first run and creates its database by typing a location in the sandbox
   (`createDatabase()` in `e2e/support/ui.ts`), or unlocks the seeded one

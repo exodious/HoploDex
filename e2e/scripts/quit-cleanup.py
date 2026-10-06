@@ -9,7 +9,8 @@ verifies the exit half. It launches the app on a virtual display with scratch da
 dirs (never the real ones), plants a file where `open_document` writes its
 temporary copies, quits the app, and looks at what is left.
 
-Needs Xvfb, libX11 and python3 only. Build the E2E binary first:
+Linux only; quit-cleanup.ps1 is its Windows counterpart (#27). Needs Xvfb,
+libX11 and python3 only. Build the E2E binary first:
 
     npm run build && cargo build --profile e2e --features custom-protocol,e2e \
         --manifest-path src-tauri/Cargo.toml
@@ -86,8 +87,13 @@ def close_window(dpy, windows):
 
 def run(how):
     scratch = tempfile.mkdtemp(prefix="hoplodex-quit-")
+    os.makedirs(scratch + "/documents")
+    # An E2E build takes its directories from the HOPLODEX_E2E_* variables,
+    # never from the OS, and won't start without them (src-tauri/src/app_dirs.rs).
     env = dict(os.environ, GDK_BACKEND="x11", XDG_DATA_HOME=scratch + "/data",
-               XDG_CACHE_HOME=scratch + "/cache", XDG_CONFIG_HOME=scratch + "/config")
+               XDG_CACHE_HOME=scratch + "/cache", XDG_CONFIG_HOME=scratch + "/config",
+               HOPLODEX_E2E_CONFIG_HOME=scratch + "/config", HOPLODEX_E2E_CACHE_HOME=scratch + "/cache",
+               HOPLODEX_E2E_DOCUMENTS=scratch + "/documents", TAURI_WEBDRIVER_PORT="4440")
     env.pop("WAYLAND_DISPLAY", None)
     opened = scratch + "/cache/io.github.exodious.HoploDex/opened-documents"
     planted = opened + "/7/receipt.pdf"

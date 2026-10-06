@@ -74,6 +74,17 @@ function clearPort(taken: number) {
         encoding: "utf-8",
       });
       pids = out.split(/\s+/).filter(Boolean);
+    } else if (process.platform === "win32") {
+      // Proto, local address, foreign address, state, PID. A listening row's
+      // foreign address is a zero one; the state's name is in the system's
+      // language.
+      const out = execFileSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf-8" });
+      pids = out
+        .split(/\r?\n/)
+        .map((line) => line.trim().split(/\s+/))
+        .filter(([, local, foreign]) => local?.endsWith(`:${taken}`) && /:0$/.test(foreign ?? ""))
+        .map((columns) => columns[columns.length - 1])
+        .filter((pid) => pid !== "0");
     } else {
       return;
     }

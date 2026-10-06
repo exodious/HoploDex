@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use tauri::{AppHandle, State};
-use tauri_plugin_opener::OpenerExt;
 
 use crate::app_dirs;
 use crate::commands::CommandError;
@@ -190,9 +189,39 @@ pub async fn open_document(
         .join(OPENED_DOCUMENTS_DIR)
         .join(id.to_string());
     let path = ops::write_document_copy(&dir, &document)?;
+    hand_to_os(&app, &path)
+}
+
+/// Opens `path` in the OS default app for its file type.
+#[cfg(not(feature = "e2e"))]
+fn hand_to_os(app: &AppHandle, path: &Path) -> Result<(), CommandError> {
+    use tauri_plugin_opener::OpenerExt;
+
     app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| {
         CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}"))
     })
+}
+
+/// An E2E build never hands the copy on, which would start a real viewer on
+/// the test machine, and no harness can stub the default app everywhere:
+/// Windows and macOS look it up in their own registrations, not on `PATH`
+/// (#27). It appends the copy's path to `HOPLODEX_E2E_OPENED_LOG` instead,
+/// a file in the sandbox, for the specs to check.
+#[cfg(feature = "e2e")]
+fn hand_to_os(_app: &AppHandle, path: &Path) -> Result<(), CommandError> {
+    use std::io::Write;
+
+    let Some(log) = std::env::var_os("HOPLODEX_E2E_OPENED_LOG") else {
+        return Ok(());
+    };
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)
+        .and_then(|mut file| writeln!(file, "{}", path.display()))
+        .map_err(|e| {
+            CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}"))
+        })
 }
 
 #[tauri::command]

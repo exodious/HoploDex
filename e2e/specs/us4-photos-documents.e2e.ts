@@ -149,15 +149,17 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     // Reopening hands the OS a temporary copy of the stored bytes. When the
     // run isolates its cache (HOPLODEX_E2E_CACHE_HOME), check that copy directly.
-    const cacheHome = process.env.HOPLODEX_E2E_CACHE_HOME;
-    if (cacheHome) {
-      const openedRoot = path.join(cacheHome, "io.github.exodious.HoploDex", "opened-documents");
+    if (openedRoot) {
       const copies = fs
         .readdirSync(openedRoot)
         .map((dir) => path.join(openedRoot, dir, "receipt.pdf"))
         .filter((file) => fs.existsSync(file));
       expect(copies.length).toBe(1);
       expect(fs.readFileSync(copies[0], "utf-8")).toBe("%PDF-1.4 sample receipt contents");
+      // An E2E build logs the copy it would have handed to the OS
+      // (wdio.conf.ts), rather than start a real viewer.
+      const log = process.env.HOPLODEX_E2E_OPENED_LOG;
+      expect(log && fs.readFileSync(log, "utf-8").trim().split(/\r?\n/)).toEqual(copies);
     }
   });
 
