@@ -101,11 +101,8 @@ fn build_pdf() -> Vec<u8> {
         out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
     }
     out.extend_from_slice(
-        format!(
-            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
-            objs.len() + 1
-        )
-        .as_bytes(),
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1)
+            .as_bytes(),
     );
     out
 }
@@ -198,10 +195,8 @@ fn main() {
     let download_dir = std::env::var("SPIKE_DOWNLOAD_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::temp_dir().join("spike-dl"));
-    let exit_after: u64 = std::env::var("SPIKE_EXIT_SECONDS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(30);
+    let exit_after: u64 =
+        std::env::var("SPIKE_EXIT_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
     let base = base_url();
     eprintln!(
         "SPIKE base={base} proxy={proxy:?} harden={harden} blocker={blocker} noscript={noscript} allow_blob={allow_blob} incognito={incognito}"
@@ -418,7 +413,13 @@ mod linux {
     };
 
     /// Settings, then (optionally) the content filter, then the document.
-    pub fn configure(wv: &webkit2gtk::WebView, harden: bool, blocker: bool, store: &Path, url: String) {
+    pub fn configure(
+        wv: &webkit2gtk::WebView,
+        harden: bool,
+        blocker: bool,
+        store: &Path,
+        url: String,
+    ) {
         if let Some(settings) = WebViewExt::settings(wv) {
             if harden {
                 settings.set_enable_webrtc(false);
@@ -435,7 +436,10 @@ mod linux {
         let raw: *mut ffi::WebKitWebView = wv.to_glib_none().0;
         unsafe {
             let ctx = ffi::webkit_web_view_get_context(raw);
-            eprintln!("SPIKE web process sandbox enabled={}", ffi::webkit_web_context_get_sandbox_enabled(ctx));
+            eprintln!(
+                "SPIKE web process sandbox enabled={}",
+                ffi::webkit_web_context_get_sandbox_enabled(ctx)
+            );
         }
         if !blocker {
             wv.load_uri(&url);
@@ -478,8 +482,11 @@ mod linux {
             let data = Box::from_raw(data.cast::<(*mut ffi::WebKitWebView, CString)>());
             let (raw, url) = *data;
             let mut error: *mut glib_ffi::GError = ptr::null_mut();
-            let filter =
-                ffi::webkit_user_content_filter_store_save_finish(source.cast(), result, &mut error);
+            let filter = ffi::webkit_user_content_filter_store_save_finish(
+                source.cast(),
+                result,
+                &mut error,
+            );
             if filter.is_null() {
                 let message = std::ffi::CStr::from_ptr((*error).message).to_string_lossy();
                 eprintln!("SPIKE content filter FAILED: {message}");

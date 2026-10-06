@@ -1,4 +1,14 @@
-import { $, addFirearm, back, browser, clickButton, choose, expect, fill, settle } from "../support/ui";
+import {
+  $,
+  addFirearm,
+  back,
+  browser,
+  clickButton,
+  choose,
+  expect,
+  fill,
+  settle,
+} from "../support/ui";
 import {
   backLinkShown,
   clickEl,
