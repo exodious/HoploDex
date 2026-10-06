@@ -93,6 +93,12 @@ function isolateAppData() {
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   });
+  // An E2E build takes its config and cache directories (and the app
+  // identifier's folder in each) and its documents folder from these, on
+  // every platform, and won't start without them (src-tauri/src/app_dirs.rs):
+  // Windows' known folders ignore APPDATA and the like (#27).
+  process.env.HOPLODEX_E2E_CONFIG_HOME = config;
+  process.env.HOPLODEX_E2E_CACHE_HOME = cache;
   process.env.HOPLODEX_E2E_DOCUMENTS = documents;
   // The E2E build's in-memory keyring is kept here between launches, so a
   // remembered passphrase outlives a relaunch (research.md §10).
@@ -111,8 +117,10 @@ function isolateAppData() {
     fs.writeFileSync(path.join(bin, "xdg-open"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
   } else if (process.platform === "win32") {
-    process.env.APPDATA = data;
-    process.env.LOCALAPPDATA = cache;
+    // WebView2 keeps its profile (local storage, and so the theme) in the
+    // app's real local data folder, which every worker would share. Its
+    // loader takes this variable over the folder Tauri passes.
+    process.env.WEBVIEW2_USER_DATA_FOLDER = path.join(data, "webview2");
   } else if (process.platform === "darwin") {
     // macOS ignores XDG_*: Tauri builds every directory (Application Support,
     // Caches, Documents) from HOME, so the app gets a home of its own inside
@@ -153,15 +161,7 @@ function seedCollection() {
   if (printed.status !== 0) throw new Error("reading the seed's passphrase failed");
   process.env.HOPLODEX_E2E_SEED_PASSPHRASE = printed.stdout.trim();
 
-  const config = path.join(dir, "config");
-  if (process.platform === "darwin") {
-    const support = path.join(process.env.HOPLODEX_E2E_HOME!, "Library", "Application Support");
-    fs.rmSync(support, { recursive: true, force: true });
-    fs.symlinkSync(config, support);
-  } else {
-    process.env.XDG_CONFIG_HOME = config;
-    writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
-  }
+  process.env.HOPLODEX_E2E_CONFIG_HOME = path.join(dir, "config");
 }
 
 export const config: WebdriverIO.Config = {

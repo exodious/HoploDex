@@ -6,6 +6,7 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use hoplodex_lib::app_dirs;
 use hoplodex_lib::commands::documents::{OPENED_DOCUMENTS_DIR, clear_opened_documents_cache};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::db;
@@ -133,11 +134,11 @@ fn main() {
             db::cipher::silence_cipher_log();
             // No database is open at startup: the user chooses one and gives
             // its passphrase (specs/003-database-protection-management).
-            let opened_documents = app.path().app_cache_dir()?.join(OPENED_DOCUMENTS_DIR);
+            let opened_documents = app_dirs::cache_dir(app.handle())?.join(OPENED_DOCUMENTS_DIR);
             app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents)));
             // Saved passphrases (FR-017); the keyring itself is first asked
             // about when the chooser needs to know whether it is there.
-            let machine = MachineSettings::load(&app.path().app_config_dir()?)?
+            let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
                 .with_keyring(Keyring::system());
             // A backup a crash or forced quit cut short (research.md §7).
             backups::sweep_unfinished(&machine);

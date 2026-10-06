@@ -6,8 +6,9 @@
 //! its paths and `machine.json` from the caller so the tests use throwaway
 //! ones.
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
+use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::models::database::{
     BackupLocationInput, BackupSettingsInput, BackupSettingsSaved, ChooserState, CloseOutcome,
@@ -760,8 +761,8 @@ pub async fn get_chooser_state(
     Ok(ops::chooser_state(
         &session,
         &machine,
-        app.path().document_dir().ok(),
-        app.path().home_dir().ok(),
+        app_dirs::document_dir(&app).ok(),
+        app_dirs::home_dir(&app).ok(),
     ))
 }
 
@@ -866,7 +867,7 @@ pub async fn save_passphrase(
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
     let passphrase = Passphrase::from_input(passphrase);
-    let scratch = app.path().app_cache_dir().map_err(|err| {
+    let scratch = app_dirs::cache_dir(&app).map_err(|err| {
         log::error!("no cache directory for the passphrase check: {err}");
         CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked.")
     })?;

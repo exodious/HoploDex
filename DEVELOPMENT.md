@@ -361,15 +361,14 @@ doesn't work within 30 seconds, and the new `claude` starts a new
 conversation under the same name. Whatever the old one was doing stops, so
 restart between tasks. To stop it until the next sign-in, close its window.
 
-**Not yet on Windows:** the E2E suite and the screenshot walk haven't run
-there. The embedded WebDriver server works on Windows, so there's no driver
-to install, but the harness's platform-specific parts aren't ported (#27).
-**An E2E run on Windows isn't isolated from your real data**.
-Tauri finds the app's folders through `SHGetKnownFolderPath`, which ignores
-the `APPDATA` and `LOCALAPPDATA` the harness sets, so a run would write your
-real `%APPDATA%` config (#27). Until that's fixed, run `test:e2e` and
-`screenshots` only on a throwaway VM. The build, `cargo nextest run`,
-`npm test`, lint and the audits are safe anywhere.
+**E2E on Windows:** `npm run test:e2e` runs there, through the embedded
+WebDriver server, with no driver to install, and is isolated from your real
+data like everywhere else (see [Test isolation](#test-isolation)). Not all of
+the harness is ported yet (#27): the real-input tests skip themselves, opening
+a document starts its real viewer, and the screenshot walk hasn't run there.
+With Windows' "Show animations in Windows" off (Settings › Accessibility ›
+Visual effects), WebView2 reports reduced motion and us7's catalogue-plate
+test fails.
 
 ## Install dependencies
 
@@ -607,9 +606,15 @@ of it:
   with `--features mock-keyring`, against keyring-core's in-memory store:
   `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'binary(keyring_test)'`.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
-  own) throwaway `XDG_*` directories, a
-  `user-dirs.dirs` whose documents folder (the suggested place for a new
-  database) is in the sandbox too, and a stub `xdg-open`. Each spec starts at
+  own) a throwaway sandbox. An E2E build takes its config and cache
+  directories and its documents folder (the suggested place for a new
+  database) from `HOPLODEX_E2E_CONFIG_HOME`, `HOPLODEX_E2E_CACHE_HOME` and
+  `HOPLODEX_E2E_DOCUMENTS`, never from the OS, and won't start without them
+  (`src-tauri/src/app_dirs.rs`; every command gets its directories there).
+  That's what isolates Windows, whose known folders ignore `APPDATA` and the
+  like. The webview's own data goes into the sandbox too: through `XDG_*`
+  directories on Linux (with a `user-dirs.dirs` and a stub `xdg-open`),
+  `HOME` on macOS, and `WEBVIEW2_USER_DATA_FOLDER` on Windows. Each spec starts at
   a first run and creates its database by typing a location in the sandbox
   (`createDatabase()` in `e2e/support/ui.ts`), or unlocks the seeded one
   with its passphrase (`unlock()`). There is no database key in the

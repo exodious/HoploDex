@@ -3,7 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const wdioBin = path.resolve(__dirname, "../node_modules/.bin/wdio");
+// wdio's own entry, run with this Node: node_modules/.bin/wdio is a shell
+// script, which Windows can't start (it has wdio.cmd instead).
+const wdioBin = path.resolve(__dirname, "../node_modules/@wdio/cli/bin/wdio.js");
 const repoRoot = path.resolve(__dirname, "..");
 
 // --screenshots[=<dir>] turns on e2e/support/screenshots.ts's shot() (default
@@ -37,7 +39,7 @@ const env = { ...process.env, GDK_BACKEND: "x11" };
 delete env.WAYLAND_DISPLAY;
 if (screenshotDir) env.HOPLODEX_SCREENSHOTS = screenshotDir;
 
-const result = spawnSync(wdioBin, ["run", "e2e/wdio.conf.ts", ...extraArgs], {
+const result = spawnSync(process.execPath, [wdioBin, "run", "e2e/wdio.conf.ts", ...extraArgs], {
   stdio: "inherit",
   env,
 });

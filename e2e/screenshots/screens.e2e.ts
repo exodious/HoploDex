@@ -802,7 +802,10 @@ describe("Screenshots: the import report", () => {
     await goTo("Collection");
     await chooseTheme("Light");
     // The seed keeps its import samples beside the config directory.
-    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
     await clickButton("Import");
     await fill("Spreadsheet file", path.join(samples, "import-cartridges.csv"));
     await clickButton("Import");
@@ -834,7 +837,10 @@ describe("Screenshots: the import report with mount warnings", () => {
   it("lists the mount warnings and the table of each row", async () => {
     await goTo("Collection");
     await chooseTheme("Light");
-    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
     await clickButton("Import");
     await fill("Spreadsheet file", path.join(samples, "import-accessory-mount-warnings.csv"));
     await clickButton("Import");
@@ -863,7 +869,10 @@ describe("Screenshots: replacing a record with a disposed row", () => {
   it("asks about each record mounted on it", async () => {
     await goTo("Collection");
     await chooseTheme("Light");
-    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
     await clickButton("Import");
     await fill("Spreadsheet file", path.join(samples, "import-dispose-receiver.csv"));
     await clickButton("Import");

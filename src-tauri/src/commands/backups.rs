@@ -5,8 +5,9 @@
 //! is in [`ops`], which the tests call directly. Each passphrase becomes a
 //! [`Passphrase`] at once and is wiped when the command returns (FR-007).
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
+use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::databases::PROBE_DIR;
 use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged};
@@ -850,7 +851,7 @@ pub async fn change_passphrase(
 ) -> Result<PassphraseChanged, CommandError> {
     let current_passphrase = Passphrase::from_input(current_passphrase);
     let new_passphrase = Passphrase::from_input(new_passphrase);
-    let scratch = app.path().app_cache_dir().map_err(|err| {
+    let scratch = app_dirs::cache_dir(&app).map_err(|err| {
         log::error!("no cache directory for the passphrase check: {err}");
         CommandError::new("INTERNAL_ERROR", "The current passphrase couldn't be checked.")
     })?;

@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, named_params};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
@@ -167,7 +168,7 @@ pub const OPENED_DOCUMENTS_DIR: &str = "opened-documents";
 /// (never failing on) anything that couldn't be deleted — the next startup
 /// sweep retries it.
 pub fn clear_opened_documents_cache(app: &AppHandle) {
-    let Ok(cache_dir) = app.path().app_cache_dir() else {
+    let Ok(cache_dir) = app_dirs::cache_dir(app) else {
         return;
     };
     for path in ops::clear_opened_documents(&cache_dir.join(OPENED_DOCUMENTS_DIR)) {
@@ -184,9 +185,7 @@ pub async fn open_document(
     session: State<'_, Session>,
 ) -> Result<(), CommandError> {
     let document = session.read(|conn| ops::get_document(conn, id))?;
-    let dir = app
-        .path()
-        .app_cache_dir()
+    let dir = app_dirs::cache_dir(&app)
         .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?
         .join(OPENED_DOCUMENTS_DIR)
         .join(id.to_string());

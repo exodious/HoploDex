@@ -1,3 +1,4 @@
+pub mod app_dirs;
 pub mod commands;
 pub mod db;
 pub mod models;
