@@ -6,7 +6,7 @@
 #   scripts/tart-vm.sh setup        clone the VM, create the test user, install
 #                                   the toolchain in its home, log it in
 #   scripts/tart-vm.sh start        start the VM (with its window) and wait for SSH
-#   scripts/tart-vm.sh stop         shut it down
+#   scripts/tart-vm.sh stop         shut it down (from inside, as admin)
 #   scripts/tart-vm.sh sync         copy this checkout in (~/HoploDex, no .git)
 #   scripts/tart-vm.sh test         sync, then lint, unit and Rust tests over SSH,
 #                                   and the E2E suite in the user's desktop
@@ -125,11 +125,25 @@ start_vm() {
   esac
 }
 
+# tart stop cuts a macOS guest's power at once, so whatever the guest hasn't
+# written to disk yet is lost, such as the files setup writes just before it
+# restarts the VM. So shut the guest down from inside, as admin, and fall back
+# to tart stop only if that doesn't finish.
 stop_vm() {
-  if [[ "$(vm_state)" == running ]]; then
-    say "stopping $vm"
-    tart stop "$vm" --timeout 120
+  [[ "$(vm_state)" == running ]] || return 0
+  say "shutting $vm down"
+  mkdir -p "$state"
+  local ip i
+  if ip="$(tart ip "$vm" 2>/dev/null)"; then
+    # The connection may drop before ssh sees the command's status.
+    admin_ssh "admin@$ip" 'sudo -n shutdown -h now' >/dev/null 2>&1 || true
+    for i in $(seq 1 60); do
+      [[ "$(vm_state)" == running ]] || return 0
+      sleep 2
+    done
   fi
+  say "$vm didn't shut down; stopping it"
+  tart stop "$vm" --timeout 30
 }
 
 # Whether the test user has a desktop session (logged in at the VM's screen).

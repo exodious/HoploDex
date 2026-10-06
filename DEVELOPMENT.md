@@ -203,7 +203,9 @@ scripts/tart-vm.sh fetch e2e/screenshots-out   # copy results back
 skip the user's Setup Assistant, log it in automatically at boot and give
 Terminal Accessibility and Screen Recording. The toolchain (rustup,
 cargo-nextest, Node and npm at the `Dockerfile`'s versions) goes in the
-user's home. Running it again finishes what's left. The script's header lists
+user's home. Running it again finishes what's left. Shut the VM down with
+`scripts/tart-vm.sh stop`, not `tart stop`, which cuts a macOS guest's power
+and loses whatever it hasn't written to disk yet. The script's header lists
 its settings (`HOPLODEX_VM` and friends, for a VM you already have). The rest
 of this paragraph is what it does for you. To set a VM up by hand, install the
 prerequisites in it and leave it logged in at its desktop. Copy the checkout in with
