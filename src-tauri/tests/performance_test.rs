@@ -79,9 +79,13 @@ fn seeded_firearms() -> TestDb {
             }
         }
         REMOVE_AT_EXIT.set(dir.clone()).unwrap();
+        // The C runtime's, on every platform (`libc` is a Unix-only dependency).
+        unsafe extern "C" {
+            fn atexit(callback: extern "C" fn()) -> std::ffi::c_int;
+        }
         // SAFETY: `remove_template` is a plain function that touches only a
         // static it reads.
-        unsafe { libc::atexit(remove_template) };
+        unsafe { atexit(remove_template) };
         dir.join(TestDb::FILE_NAME)
     });
     TestDb::copy_of(template)

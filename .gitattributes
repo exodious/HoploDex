@@ -1,0 +1,4 @@
+# Text files are LF in every checkout, whatever core.autocrlf says (Git for
+# Windows sets it to true): Prettier checks for LF, and the shell scripts
+# don't run with CRLF.
+* text=auto eol=lf

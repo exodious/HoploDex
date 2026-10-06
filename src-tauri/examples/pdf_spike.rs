@@ -211,6 +211,7 @@ setTimeout(async () => {
 
 /// The content filter: blocks every URL but the preview's own (and the
 /// spike's reports). The same rules on Linux and macOS.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const BLOCK_RULES: &str = r#"[
   {"trigger":{"url-filter":".*"},"action":{"type":"block"}},
   {"trigger":{"url-filter":"^hdpreview:"},"action":{"type":"ignore-previous-rules"}},

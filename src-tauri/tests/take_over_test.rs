@@ -5,6 +5,7 @@
 
 mod support;
 
+#[cfg(unix)]
 use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,6 +14,7 @@ use std::sync::Arc;
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::db::{self, OpenError};
+#[cfg(unix)]
 use hoplodex_lib::models::database::{BackupFailureReason, BackupOutcome, CloseReason};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -105,6 +107,7 @@ impl World {
         self.dir.path().join("Mine.hoplodex")
     }
 
+    #[cfg(unix)]
     fn path_text(&self) -> String {
         self.path().to_string_lossy().into_owned()
     }
@@ -137,6 +140,8 @@ impl World {
     /// Another computer's copy of the file, as a sync client delivers it:
     /// renamed over the path. Returns a second name for the file this
     /// session had open, to see that nothing more is written to it.
+    /// Unix only: Windows refuses to rename over a file SQLite has open.
+    #[cfg(unix)]
     fn replace_from_another_computer(&self) -> PathBuf {
         let ours = self.dir.path().join("ours-link.hoplodex");
         fs::hard_link(self.path(), &ours).unwrap();
@@ -195,6 +200,9 @@ fn our_own_writes_never_look_like_a_take_over() {
     assert!(world.events.recorded().is_empty());
 }
 
+// Unix only: Windows refuses to rename over a file SQLite has open, so
+// nothing can replace an open database there.
+#[cfg(unix)]
 #[test]
 fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
     let world = World::new();
@@ -235,6 +243,9 @@ fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
     assert_eq!(world.add_firearm("A2").unwrap_err().code, "DATABASE_CLOSED");
 }
 
+// Unix only: Windows refuses to rename over a file SQLite has open, so
+// nothing can replace an open database there.
+#[cfg(unix)]
 #[test]
 fn a_close_after_a_take_over_writes_nothing() {
     let world = World::new();
@@ -264,6 +275,9 @@ fn assert_unavailable(result: Result<(), CommandError>, path: &Path) {
     assert_eq!(error.details.as_deref(), Some(&json!({ "path": path.to_string_lossy() })));
 }
 
+// Unix only: Windows refuses to rename a file SQLite has open, which is
+// how this test takes the storage away.
+#[cfg(unix)]
 #[test]
 fn storage_that_goes_away_is_not_a_take_over() {
     let world = World::new();

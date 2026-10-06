@@ -481,6 +481,7 @@ fn deleting_an_accessory_host_unmounts_what_was_on_it_and_wipes_its_values() {
 
 mod whole_files {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
 
@@ -573,6 +574,7 @@ mod whole_files {
         assert!(left[..MIB as usize].iter().all(|b| *b == 0));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_file_that_cannot_be_overwritten_is_left_alone_and_reported() {
         let dir = TempDir::new().unwrap();

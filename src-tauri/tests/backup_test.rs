@@ -7,6 +7,7 @@
 mod support;
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -271,6 +272,7 @@ fn a_backup_from_today_removed_outside_the_app_lifts_the_limit_too() {
     assert_eq!(world.backups_in(&world.default_folder(), &id).len(), 2);
 }
 
+#[cfg(unix)]
 #[test]
 fn an_unreadable_backup_location_keeps_the_once_a_day_limit() {
     let world = World::new();
@@ -524,6 +526,7 @@ fn a_missing_backup_location_still_closes_and_leaves_the_changes_waiting() {
     assert_failed_and_waiting(&world, outcome, BackupFailureReason::LocationUnavailable);
 }
 
+#[cfg(unix)]
 #[test]
 fn an_unwritable_backup_location_fails_the_backup() {
     let world = World::new();
@@ -578,6 +581,9 @@ fn skipping_during_the_copy_removes_the_partial_file_and_leaves_the_changes_wait
     assert!(world.backup_record().0);
 }
 
+// Unix only: Windows refuses to rename a file SQLite has open, which is
+// how this test makes the file unreachable.
+#[cfg(unix)]
 #[test]
 fn a_close_with_the_file_unreachable_makes_no_backup_and_writes_nothing() {
     let world = World::new();
@@ -806,6 +812,7 @@ fn deleting_all_backups_deletes_every_one_and_nothing_else() {
     assert_eq!(world.close().backup, BackupOutcome::Made);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_backup_that_cannot_be_deleted_is_reported_and_the_rest_still_go() {
     let world = World::new();

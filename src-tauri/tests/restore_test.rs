@@ -6,6 +6,7 @@
 mod support;
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -524,6 +525,7 @@ fn a_missing_backup_location_refuses_before_anything_is_written() {
     assert_nothing_changed(&world, &before, &names);
 }
 
+#[cfg(unix)]
 #[test]
 fn an_unwritable_backup_location_refuses_before_anything_is_written() {
     let world = World::new();
@@ -558,6 +560,7 @@ fn with_backups_off_the_current_database_is_still_backed_up_first() {
     assert_eq!(world.listed().len(), 3);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_failed_backup_of_the_current_database_cancels_the_restore() {
     let world = World::new();
