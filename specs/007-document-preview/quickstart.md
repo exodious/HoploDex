@@ -72,7 +72,7 @@ built `hoplodex` binary, `CARGO_BIN_EXE_hoplodex`) with the fetched PDFium.
 | CSP unchanged | `frame-src`, `worker-src` and `script-src` still forbid frames, workers, wasm and eval | `tests/csp_test.rs` (+ the preview assertion) |
 | Seed in step | The seed has a PDF, a TIFF, a text, a CSV and a Word document, an accessory document, and a raw pre-007 JPEG row; the coverage test treats `document_names_fts` as an index | `examples/human_seed.rs`; `tests/human_seed_coverage_test.rs` |
 | E2E | Keyboard-only: open a PDF from the record, page with PageDown, zoom with +, move to the next document with →, Escape; "Open in another app…" with `HOPLODEX_E2E_CONSENT=cancel` (no file written, the consent log has the name) and `=open` (copy written, the `xdg-open` stub called); the setting change; lock with the viewer open | `e2e/specs/us13-document-preview.e2e.ts` *(new)* |
-| Release seam | The `HOPLODEX_E2E_CONSENT` marker is absent from a release binary and present in an E2E one | `scripts/check-no-webdriver.sh` (in `npm run audit`, and on the AppImage binary) |
+| Release seam | The `HOPLODEX_E2E_CONSENT` marker is absent from a release binary and present in an E2E one | `scripts/check-no-webdriver.mjs` (in `npm run audit`, and on the AppImage binary) |
 
 ## Manual checks (best effort before a release, not merge gates)
 

@@ -190,7 +190,7 @@ listed.
 scripts/
 ├── fetch-pdfium.sh                  # NEW: pinned download + SHA-256 check → src-tauri/pdfium/<target>/
 ├── pdfium.lock                      # NEW: release tag and per-target checksums
-├── check-no-webdriver.sh            # + HOPLODEX_E2E_CONSENT marker, both ways round
+├── check-no-webdriver.mjs           # + HOPLODEX_E2E_CONSENT marker, both ways round
 └── build-appimage.sh                # runs fetch-pdfium.sh; bundles the library
 Dockerfile                           # fetches PDFium; sets HOPLODEX_PDFIUM_DIR
 docs/third-party/pdfium.md           # NEW: PDFium and its bundled code, sources, versions, licenses

@@ -36,7 +36,7 @@ mock-keyring = ["dep:keyring-core"]
 # has no authentication and runs any script in the page; and
 # `HOPLODEX_E2E_IDLE_MINUTE_SECONDS` then sets how long the idle lock counts
 # as one minute, so a spec doesn't wait a real one (session/idle.rs).
-# `scripts/check-no-webdriver.sh` (in `npm run audit`, and on the release
+# `scripts/check-no-webdriver.mjs` (in `npm run audit`, and on the release
 # binary in build-appimage.sh) checks that a build without it has none of the
 # server.
 e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]

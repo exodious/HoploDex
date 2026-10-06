@@ -452,7 +452,7 @@ Every NEEDS CLARIFICATION in the Technical Context is resolved here.
     answers as told.
   - **The E2E build** (`e2e` feature only) reads
     `HOPLODEX_E2E_CONSENT=open|cancel` and appends each request's title to
-    `HOPLODEX_E2E_CONSENT_LOG`. `check-no-webdriver.sh` gains this seam's
+    `HOPLODEX_E2E_CONSENT_LOG`. `check-no-webdriver.mjs` gains this seam's
     variable name as a second marker that must be absent from a release
     binary, checked both ways round like the first.
 - **Rationale**: The owner chose a native dialog because it can't be

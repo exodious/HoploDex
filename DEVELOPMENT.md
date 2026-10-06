@@ -492,7 +492,7 @@ launches (`target/<profile>/hoplodex`).
 The `e2e` Cargo feature is for builds that must never reach a shipped one. It
 compiles in `tauri-plugin-wdio-webdriver`, a W3C WebDriver server on
 `127.0.0.1` at `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs
-any script in the page, so `scripts/check-no-webdriver.sh` checks that a
+any script in the page, so `scripts/check-no-webdriver.mjs` checks that a
 shipped build has none of it: the dependency graph in `npm run audit`, and the
 release binary in `scripts/build-appimage.sh`. The feature also implies
 `mock-keyring`, and lets
