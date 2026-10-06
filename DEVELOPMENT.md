@@ -387,6 +387,15 @@ npm run tauri build                                         # production install
 npm run bundle:linux                                        # the same on Linux, with a working AppImage (below)
 ```
 
+Cargo never deletes old build outputs. Each change to a test or a dependency
+leaves the previous test programs and incremental caches behind in
+`src-tauri/target`, so it grows by gigabytes a week. Clear it every so often:
+
+```bash
+cargo clean --manifest-path src-tauri/Cargo.toml                                # on the host
+scripts/dev-container.sh cargo clean --manifest-path src-tauri/Cargo.toml       # the container's target volume
+```
+
 ### Linux AppImage
 
 On Linux, build the bundles with `npm run bundle:linux` (in the dev

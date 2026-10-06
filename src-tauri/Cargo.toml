@@ -8,7 +8,10 @@ license = "GPL-3.0-only"
 
 [lib]
 name = "hoplodex_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Only an rlib: the binary and the tests link it. The template's staticlib
+# and cdylib are for iOS and Android, which HoploDex doesn't target, and each
+# cost hundreds of megabytes in every debug build.
+crate-type = ["rlib"]
 path = "src/lib.rs"
 
 [[bin]]
@@ -135,6 +138,17 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "WKWebView",
     "WKWebViewConfiguration",
 ] }
+
+# Debug and test builds keep line tables, so panics and backtraces still name
+# the file and line, but not full debug info, and none for dependencies. Full
+# debug info made each of the ~60 test programs 140-260 MB (a .pdb on Windows,
+# inside the executable on Linux). For a debugging session, set
+# CARGO_PROFILE_DEV_DEBUG=true to get full debug info for HoploDex's own code.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 panic = "abort"
