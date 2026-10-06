@@ -180,8 +180,8 @@ It runs on the host, with the app's window on the real desktop. It needs an
 unlocked, logged-in session: while the screen is locked, WKWebView reports
 every page as hidden and gives it no animation frames, so every step times
 out with "The app never settled". The tests that use real input
-(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore and the
-tests after it, all of us10, us11 and us12) are skipped, and reported as
+(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore-dialog
+regressions, all of us10, us11 and us12) are skipped, and reported as
 pending. The `xdg-open` stub and `quit-cleanup.py` aren't ported yet, and the
 screenshot walk is untested (its seed is wired up; full-page captures need a
 display taller than the page).
@@ -366,8 +366,13 @@ restart between tasks. To stop it until the next sign-in, close its window.
 **E2E on Windows:** `npm run test:e2e` runs there, through the embedded
 WebDriver server, with no driver to install, and is isolated from your real
 data like everywhere else (see [Test isolation](#test-isolation)). Not all of
-the harness is ported yet (#27): the real-input tests skip themselves, opening
-a document starts its real viewer, and the screenshot walk hasn't run there.
+the harness is ported yet (#27): opening a document starts its real viewer.
+The real-input tests skip themselves, by decision (see
+[Real keyboard and mouse input](#real-keyboard-and-mouse-input)).
+`npm run screenshots` runs there too, with the window on the desktop. Its
+frame takes some of the 1200×800, so the shots are 1184×761. Full-page shots
+grow the window past the bottom of the screen, which Windows allows. So take
+before/after pairs on one platform.
 With Windows' "Show animations in Windows" off (Settings › Accessibility ›
 Visual effects), WebView2 reports reduced motion and us7's catalogue-plate
 test fails; `setup-system.ps1 -AutoLogon` turns it on.
@@ -574,6 +579,17 @@ which skips it on other platforms. A block whose tests all do calls it from a
 added, a database it left open). Off Linux, `realClick` and `realKey` throw
 if a test reaches them without it.
 
+Real input stays on Linux only, by decision (#27): Windows and macOS skip
+these tests rather than port the helper. Two kinds need it. WebKitGTK
+regressions (a focus ring, a first layout) only matter on Linux. The
+keyboard-only flows (us10, us11, us12) need it on every platform, because
+the embedded WebDriver's key presses are synthetic: they don't move focus on
+Tab or type text. So use real input only for what needs it, and keep it out
+of anything else's way. A check that needs it goes in a test of its own,
+which leaves the database as it found it, and the other tests don't depend
+on it. us8's restore-dialog regressions are an example. The screenshot walk
+uses no real input, so it runs everywhere.
+
 To track down a bug of this kind, write a throwaway spec that opens the
 screen with real input and logs what you need from the page with
 `browser.execute`: `getBoundingClientRect()` of the elements involved,
@@ -654,7 +670,8 @@ npm run screenshots -- --screenshots=/tmp/pr   # somewhere else
 ```
 
 This runs `e2e/screenshots/screens.e2e.ts` through the E2E harness, under Xvfb
-at a fixed 1200×800 window. It starts at the database chooser listing the
+at a fixed 1200×800 window (for Windows, see [Windows](#windows)). It starts
+at the database chooser listing the
 [human-testing databases](#human-testing), seeded into the session's
 throwaway sandbox, shoots it and the create dialog, unlocks "Main collection"
 with the seed's passphrase, and walks the main screens and dialogs

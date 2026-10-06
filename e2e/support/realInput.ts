@@ -6,15 +6,17 @@ import { $, browser } from "@wdio/globals";
  * Real keyboard and mouse input for a spec, through the X server
  * (e2e/scripts/x11-input.py), for WebKitGTK behaviour WebDriver's own input
  * doesn't reproduce: whether a focus shows its ring, or a relayout that only
- * a real key press forces. Linux (Xvfb) only: a test that uses it starts
- * with {@link skipWithoutRealInput}, so other platforms skip it. See "Real
+ * a real key press forces; and for keyboard-only flows, since WebDriver's
+ * key presses are synthetic and neither move focus on Tab nor type text.
+ * Linux (Xvfb) only: a test that uses it starts with
+ * {@link skipWithoutRealInput}, so other platforms skip it. See "Real
  * keyboard and mouse input" in DEVELOPMENT.md.
  */
 
 const SCRIPT = fileURLToPath(new URL("../scripts/x11-input.py", import.meta.url));
 
-/** Whether this computer can send real input: an X server, so Linux only for
- * now (#28). */
+/** Whether this computer can send real input: an X server, so Linux only.
+ * Windows and macOS skip these tests rather than port it (#27). */
 export const HAS_REAL_INPUT = process.platform === "linux";
 
 /** Skips the test, or from a `before` hook the whole block, where there is no

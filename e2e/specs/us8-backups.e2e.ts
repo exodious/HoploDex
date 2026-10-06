@@ -156,14 +156,11 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(backupFiles()).toHaveLength(1);
   });
 
-  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async function () {
+  it("opens the restore dialog from a real click with no focus ring, sized to its content", async function () {
+    // Both regressions were WebKitGTK's, and need a real click, as a person
+    // makes, to show: WebDriver's own clicks don't bring them out.
     skipWithoutRealInput(this);
     await unlock(E2E_PASSPHRASE);
-    expect(await listed("AfterBackup")).toBe(true);
-
-    // Opened with a real click, as a person does: WebDriver's own clicks
-    // don't bring out the focus ring. The tests after this one need the
-    // database it leaves open, so they are skipped with it.
     await realClick("button.hd-db-menu");
     await realClick('[role="menuitem"]*=Restore from a backup');
     await $('[role="dialog"] input[type="radio"]').waitForExist();
@@ -191,6 +188,18 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
       );
     });
     expect(Math.abs(slack)).toBeLessThan(1);
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await closeDatabase();
+  });
+
+  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async () => {
+    await unlock(E2E_PASSPHRASE);
+    expect(await listed("AfterBackup")).toBe(true);
+
+    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    await $('[role="dialog"] input[type="radio"]').waitForExist();
+    await settle();
     await fill("Passphrase for this backup", E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist();
@@ -208,8 +217,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     });
   });
 
-  it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async function () {
-    skipWithoutRealInput(this);
+  it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async () => {
     // Still open after the restore, with both backups in the default folder.
     expect(backupFiles()).toHaveLength(2);
     fs.mkdirSync(elsewhere, { recursive: true });
@@ -226,8 +234,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(await restorable()).toBe(0);
   });
 
-  it("moves the backups to the new location (FR-026, US3-4a)", async function () {
-    skipWithoutRealInput(this);
+  it("moves the backups to the new location (FR-026, US3-4a)", async () => {
     // Their folder chosen again: they are the database's backups again.
     await useElsewhere();
     const made = backupFiles(elsewhere);
@@ -241,8 +248,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(await restorable()).toBe(made.length);
   });
 
-  it("shows what it knows of the selected database only (FR-040)", async function () {
-    skipWithoutRealInput(this);
+  it("shows what it knows of the selected database only (FR-040)", async () => {
     await closeDatabase();
     await createDatabase({ folder: elsewhere, name: "Other" });
     await closeDatabase();

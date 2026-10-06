@@ -7,7 +7,6 @@ import {
   groupBy,
   clickButton,
   clickEl,
-  fieldValue,
   fill,
   goTo,
   openPhysicalGroup,
@@ -25,7 +24,6 @@ import {
   waitForChooser,
 } from "../support/ui";
 import { SCREENSHOT_WINDOW, chooseTheme, resizeWindow, shot } from "../support/screenshots";
-import { realClick, realKey } from "../support/realInput";
 
 /**
  * The standard screenshot set for pull requests that change the UI: the main
@@ -106,31 +104,57 @@ async function closeDialog() {
   await settle();
 }
 
-/** Types `text` with real key presses into the focused field (an X keysym
- * per character), since the suggestion lists answer to real input. */
-async function typeReal(text: string) {
-  const names: Record<string, string> = { " ": "space", ".": "period" };
-  for (const char of text) {
-    const upper = char !== char.toLowerCase();
-    await realKey(upper ? `Shift_L+${char.toLowerCase()}` : (names[char] ?? char));
-  }
+/** Puts the focus in the input at `selector` (the first match). Scripted
+ * rather than real input, as is all of this walk's, so it runs on every
+ * platform. The suggestion lists answer to a scripted focus, change and
+ * keydown as to real ones. */
+async function focusInput(selector: string) {
+  await browser.execute((selector: string) => {
+    document.querySelector<HTMLInputElement>(selector)!.focus();
+  }, selector);
 }
 
-/** Tab lands in Caliber and brings its list up, which the shots don't want.
- * Escape closes the list only if it is up: with none, it would close the form. */
+/** Focuses the input at `selector` and replaces its text with `text`, as
+ * selecting it all and typing would: the change brings its suggestion list up. */
+async function typeInto(selector: string, text: string) {
+  await browser.execute(
+    (selector: string, text: string) => {
+      const input = document.querySelector<HTMLInputElement>(selector)!;
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    selector,
+    text,
+  );
+}
+
+/** Presses Escape on whatever has focus. It must be cancelable like a real
+ * key press: an open suggestion list cancels it, so the dialog stays open. */
+async function pressEscapeKey() {
+  await browser.execute(() =>
+    (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+}
+
+/** Moving the focus to Caliber can bring its list up, which the shots don't
+ * want. Escape closes the list only if it is up: with none, it would close
+ * the form. */
 async function closeListIfOpen() {
-  // The list comes up when Tab's focus lands in Caliber, and its options come
-  // from the backend: wait for the focus, then for the app to be idle.
+  // The list's options come from the backend: wait for the focus, then for
+  // the app to be idle.
   await browser.waitUntil(
     () =>
       browser.execute(() =>
         Boolean(document.activeElement?.closest('[role="dialog"] [data-field="caliber"]')),
       ),
-    { timeout: 5000, timeoutMsg: "Tab never reached Caliber" },
+    { timeout: 5000, timeoutMsg: "the focus never reached Caliber" },
   );
   await settle();
   if (await $('[role="listbox"]').isDisplayed()) {
-    await realKey("Escape");
+    await pressEscapeKey();
     await $('[role="listbox"]').waitForExist({ reverse: true });
   }
 }
@@ -232,21 +256,13 @@ async function chooseOpenMenuItem(label: string) {
 }
 
 /** Opens the "Mount on {name}" dialog from the record page's Mounted section,
- * and searches it with real key presses for `text` (the list answers to real
- * input). */
+ * and searches it for `text`. */
 async function searchMountDialog(text: string) {
   await openMenuButton(".hd-mounted-section", "Mount");
   await chooseOpenMenuItem("Existing accessory or firearm…");
   await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
   await settle();
-  await realClick('[role="dialog"] [role="combobox"]');
-  await typeReal(text);
-  // Real key presses reach the page a moment after they are sent, and the list
-  // answers each one: wait for the whole text, then for the last answer.
-  await browser.waitUntil(
-    async () => (await $('[role="dialog"] [role="combobox"]').getValue()) === text,
-    { timeout: 5000, timeoutMsg: "the search text was not typed as sent" },
-  );
+  await typeInto('[role="dialog"] [role="combobox"]', text);
   await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
   await settle();
 }
@@ -361,39 +377,27 @@ for (const theme of ["Light", "Dark"] as const) {
       await groupBy("Type");
 
       await openDialog("Add firearm");
-      await realClick('[data-field="make"] input');
-      await typeReal("Gl");
+      await typeInto('[data-field="make"] input', "Gl");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
       await centerField("make");
       await shot(`28-make-suggestions-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="listbox"]').waitForExist({ reverse: true });
 
       // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
       await centerField("cartridge");
-      await realClick('[data-field="cartridge"] input');
-      await typeReal("9mm");
+      await typeInto('[data-field="cartridge"] input', "9mm");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
       await centerField("cartridge");
       await shot(`29-cartridge-suggestions-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="listbox"]').waitForExist({ reverse: true });
 
       // A custom cartridge whose bore can be read from its name: the caliber
-      // is filled in, marked as a guess.
-      await browser.execute(() => {
-        const input = document.querySelector<HTMLInputElement>('[data-field="cartridge"] input');
-        input?.select();
-      });
-      await typeReal(".30 Custom Improved");
-      await browser.waitUntil(
-        async () => (await fieldValue("Cartridge")) === ".30 Custom Improved",
-        {
-          timeoutMsg: "the cartridge text was not typed as sent",
-        },
-      );
-      await realKey("Escape");
-      await realKey("Tab");
+      // is filled in, marked as a guess, once the focus moves on.
+      await typeInto('[data-field="cartridge"] input', ".30 Custom Improved");
+      await pressEscapeKey();
+      await focusInput('[role="dialog"] [data-field="caliber"] input');
       await $(".hd-guess-tag").waitForExist({ timeout: 5000 });
       await closeListIfOpen();
       await centerField("caliber");
@@ -406,11 +410,9 @@ for (const theme of ["Light", "Dark"] as const) {
       await openDialog("Edit");
       // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
       await centerField("cartridge");
-      await realClick('[data-field="cartridge"] input');
-      await realKey("Control_L+a");
-      await typeReal("9x19mm Parabellum");
-      await realKey("Escape");
-      await realKey("Tab");
+      await typeInto('[data-field="cartridge"] input', "9x19mm Parabellum");
+      await pressEscapeKey();
+      await focusInput('[role="dialog"] [data-field="caliber"] input');
       await $(".hd-caliber-suggestion").waitForExist({ timeout: 5000 });
       await closeListIfOpen();
       await centerField("caliber");
@@ -490,13 +492,11 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`40-registration-closed-summary-${suffix}`);
       await setGroup("Registration", true);
       await centerField("registrationForm");
-      await realClick('[data-field="registrationForm"] input');
-      await realKey("Control_L+a");
-      await typeReal("F");
+      await typeInto('[data-field="registrationForm"] input', "F");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
       await centerField("registrationForm");
       await shot(`42-registration-open-details-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="listbox"]').waitForExist({ reverse: true });
       await selectOption("Registered as", "Unspecified");
       await $('[role="alertdialog"]').waitForExist();
@@ -610,7 +610,7 @@ for (const theme of ["Light", "Dark"] as const) {
       );
       await openMenuButton(".hd-mounted-section", "Mount");
       await shot(`55-mount-menu-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="menu"]').waitForExist({ reverse: true });
 
       await searchMountDialog("holo");
