@@ -19,6 +19,14 @@ sharing a user data folder must agree on, so the preview needs a user data
 folder of its own. Edge's viewer has nothing like Open in Preview: its Save
 goes through the OS's Save As dialog, then `on_download`.
 
+**Re-run (2026-10-06, at 2bd34b59)** after the Windows work changed the
+shared probes and exit timing: on Linux (bare, proxy only, filter only, and
+everything with Save allowed) and on macOS 26.6.2 (bare, HUD and menu off,
+proxy only, filter only, WebRTC off, and everything), every result matched
+the tables below. The macOS run added the two details in its Open in
+Preview row (a copy per click, and Recent Documents entries). The app
+manifest check wasn't repeated; nothing it depends on changed.
+
 ## What each web view has
 
 | OS | Web view | Built-in PDF viewer | Tested |
@@ -99,7 +107,7 @@ Controls manifest, Windows refuses to start them
 | Top frame → raw `ipc://` fetch with a guessed key | No answer (timed out) without the filter; refused by the filter |
 | Toolbar on hover (WebKit's "PDF HUD") | Zoom out, zoom in, **Open in Preview**, Download |
 | HUD's Download | Nothing: no `on_download`, no file. WebKit hands it to a private UI-delegate method wry doesn't implement |
-| **HUD's Open in Preview, and the context menu's Open with Preview** | **Writes the decrypted PDF** to `$TMPDIR/WebKitPDFs-XXXXXX/doc.pdf` (mode 0400) and opens it in Preview. No Tauri handler sees it (no navigation, no download event). **The copy stays** after HoploDex quits, normally or killed; macOS removes it only with the temp folder |
+| **HUD's Open in Preview, and the context menu's Open with Preview** | **Writes the decrypted PDF** to `$TMPDIR/WebKitPDFs-XXXXXX/` (mode 0400) and opens it in Preview: the HUD's as `doc.pdf`, the menu's as a second, random-prefixed copy (`47e6Y8-doc.pdf`), so each click leaves a copy of its own. No Tauri handler sees it (no navigation, no download event). **The copy stays** after HoploDex quits, normally or killed; macOS removes it only with the temp folder. **Preview also adds both copies to Recent Documents** (`com.apple.LSSharedFileList.RecentDocuments.sfl4` and Preview's own `com.apple.preview.sfl4` under `~/Library/Application Support/com.apple.sharedfilelist/`), and those entries, which would carry the document's file name, stay in File > Open Recent, the Dock and Spotlight after the copy is gone |
 | Showing the PDF in an `<iframe>` or `<embed>` instead | Same toolbar and menu. And the iframe is same-origin with the page, so its probe reached the parent's `__TAURI_INTERNALS__`. No help |
 | `PDFPluginHUDEnabled` off | No toolbar. Set through WebKit SPI: `+[WKPreferences _features]`, then `-[WKPreferences _setEnabled:forFeature:]`. The context menu still has Open with Preview |
 | `contextmenu` cancelled (a frame script's `preventDefault`) | No context menu. The PDF can't run page script to undo it |
