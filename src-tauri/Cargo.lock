@@ -1772,6 +1772,7 @@ dependencies = [
 name = "hoplodex"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "calamine",
  "chrono",
  "csv",
@@ -1786,6 +1787,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "objc2-web-kit",
  "rusqlite",
  "rust_xlsxwriter",
  "same-file",

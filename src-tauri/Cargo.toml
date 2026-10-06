@@ -117,6 +117,25 @@ tempfile = "3"
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 
+# The same on macOS: WKWebView's content rule lists, and Tauri's `proxy_url`,
+# which macOS has only with `macos-proxy` (macOS 14 and later). Dev
+# dependencies, so the app's own build doesn't get them.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+tauri = { version = "2", features = ["macos-proxy"] }
+block2 = "0.6.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSError", "NSString", "NSURL"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-app-kit",
+    "WKContentRuleList",
+    "WKContentRuleListStore",
+    "WKPreferences",
+    "WKUserContentController",
+    "WKWebView",
+    "WKWebViewConfiguration",
+] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
