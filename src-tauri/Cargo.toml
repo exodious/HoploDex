@@ -145,6 +145,14 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "WKWebViewConfiguration",
 ] }
 
+# The same on Windows: WebView2's settings, events and DevTools protocol, and
+# WinSock for the tripwire's exclusive bind. Already in the tree through wry
+# and the app, at the versions they use.
+[target.'cfg(windows)'.dev-dependencies]
+webview2-com = "0.38.2"
+windows = { version = "0.61.3", features = ["Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock"] }
+
 # Debug and test builds keep line tables, so panics and backtraces still name
 # the file and line, but not full debug info, and none for dependencies. Full
 # debug info made each of the ~60 test programs 140-260 MB (a .pdb on Windows,

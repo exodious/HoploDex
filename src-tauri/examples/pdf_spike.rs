@@ -3,7 +3,8 @@
 // reaching HoploDex's commands or the network? Results and how to run it on
 // each OS: specs/007-document-preview/spike-webview-pdf.md. Linux runs use
 // examples/pdf_spike.sh in the dev container, macOS runs
-// examples/pdf_spike_mac.sh in a macOS VM.
+// examples/pdf_spike_mac.sh in a macOS VM, Windows runs
+// examples/pdf_spike_win.ps1 in the signed-in desktop session.
 //
 // It opens one window, "preview", which no capability names, on a PDF that
 // a custom protocol serves from memory. The PDF holds a marker string (to find
@@ -12,6 +13,8 @@
 // what each can reach (macOS shows the PDF in the top frame itself, so the
 // top frame's probe covers it there), by navigating to `spikereport:`, which the navigation
 // handler logs and refuses. Everything is logged to stderr with "SPIKE".
+// On Windows the viewer runs in an extension frame no page script reaches,
+// so the probe runs there through the DevTools protocol instead.
 //
 // Environment:
 // - SPIKE_PROXY=closed: send the web view's network to 127.0.0.1:9, a port
@@ -19,17 +22,34 @@
 //   binds and holds itself (the tripwire), which logs and drops every
 //   connection.
 // - SPIKE_HARDEN=1: turn off WebRTC (and DNS prefetching, which WebKitGTK no
-//   longer honours) in the preview's settings (Linux and macOS).
-// - SPIKE_BLOCKER=1: a WebKit content filter that blocks every URL but the
-//   preview's own (Linux and macOS).
+//   longer honours) in the preview's settings (Linux and macOS), or keep
+//   WebRTC to the proxy with a browser argument (Windows).
+// - SPIKE_BLOCKER=1: a content filter that blocks every URL but the
+//   preview's own: WebKit's content rules (Linux and macOS), a
+//   `WebResourceRequested` handler (Windows).
 // - SPIKE_NOSCRIPT=1: turn off PDF.js scripting and XFA (Linux's viewer).
 // - SPIKE_ALLOW_BLOB=1: let the viewer's Save navigate, so it downloads.
 // - SPIKE_EMBED=iframe or embed: load an HTML page that shows the PDF in an
 //   <iframe> or <embed>, instead of the PDF itself (macOS: WebKit's PDF HUD
 //   and its Open in Preview).
-// - SPIKE_NOCONTEXT=1: cancel the `contextmenu` event in every frame.
+// - SPIKE_NOCONTEXT=1: cancel the `contextmenu` event in every frame, and on
+//   Windows turn off WebView2's default context menus.
 // - SPIKE_NOHUD=1: turn off WebKit's PDF HUD (macOS), whose Open in Preview
 //   writes the document to a temporary file.
+// - SPIKE_PDF_HIDE=save,save_as,print,...: buttons to hide in Edge's PDF
+//   toolbar (Windows; `HiddenPdfToolbarItems`, names as in
+//   COREWEBVIEW2_PDF_TOOLBAR_ITEMS, or `all`).
+// - SPIKE_PROXY_LOOPBACK=1: send 127.0.0.1 and localhost through the proxy
+//   too (Windows; Chromium bypasses the proxy for them by default).
+// - SPIKE_EXCLUSIVE=1: bind the tripwire with SO_EXCLUSIVEADDRUSE (Windows).
+// - SPIKE_ARGS: more WebView2 browser arguments (Windows).
+// - SPIKE_MAIN_WINDOW=1: open a plain "main" window first, with wry's
+//   default browser arguments, as the app's own window would be (Windows:
+//   web views that share a user data folder share one browser process, so
+//   they must agree on its arguments). SPIKE_MAIN_DATA_DIR and
+//   SPIKE_PREVIEW_DATA_DIR give each its own user data folder; unset, a
+//   window uses the app's own (so set WEBVIEW2_USER_DATA_FOLDER instead,
+//   which overrides both).
 // - SPIKE_INCOGNITO=0: the default, persistent data store instead.
 // - SPIKE_DOWNLOAD_DIR: where an allowed Save is written.
 // - SPIKE_EXIT_SECONDS: when to quit (default 30).
@@ -137,8 +157,9 @@ const TOP_PROBE: &str = r#"
   try { const x = await limit(fetch('http://example.com/top-fetch', { mode: 'no-cors' }), 4000); r.net = x === 'timeout' ? x : 'reached (' + x.type + ')'; } catch (e) { r.net = 'ERR ' + String(e); }
   send(r);
   // With no viewer frame (macOS shows the PDF in the top frame), the reach
-  // probe runs here.
-  if (window.frames.length === 0) {
+  // probe runs here. On Windows the one child frame is an empty frame of the
+  // top frame's own `<embed>`, not the viewer, so it runs here too.
+  if (window.frames.length === 0 || TOPREACH) {
     await new Promise(res => setTimeout(res, 300));
     const n = { step: 'top-reach' };
     try { if (await limit((REACH_PROBE)(n), 15000) === 'timeout') n.timedOut = true; } catch (e) { n.fatal = String(e); }
@@ -155,12 +176,13 @@ const REACH_PROBE: &str = r#"async r => {
   r.internals = typeof window.__TAURI_INTERNALS__;
   r.webkitIpc = typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc);
   r.chromeIpc = typeof (window.chrome && window.chrome.webview);
+  r.chromeKeys = Object.keys(window.chrome || {}).join(',');
   try { r.parentHref = String(parent.location.href); } catch (e) { r.parentHref = 'ERR ' + String(e).slice(0, 80); }
   try { r.parentInternals = typeof parent.__TAURI_INTERNALS__; } catch (e) { r.parentInternals = 'ERR ' + String(e).slice(0, 80); }
   const msg = JSON.stringify({ cmd: 'spike_secret', callback: 1, error: 2, payload: {}, options: {} });
   try { if (r.webkitIpc === 'object') window.webkit.messageHandlers.ipc.postMessage(msg); if (r.chromeIpc === 'object') window.chrome.webview.postMessage(msg); r.postMessage = 'sent'; } catch (e) { r.postMessage = 'ERR ' + String(e); }
   const limit = (p, ms) => Promise.race([p, new Promise(res => setTimeout(() => res('timeout'), ms))]);
-  try { const x = await limit(fetch('ipc://localhost/spike_secret', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'Tauri-Callback': '1', 'Tauri-Error': '2', 'Tauri-Invoke-Key': 'guess' } }), 4000); r.rawIpc = x === 'timeout' ? x : x.status + ' ' + (await x.text()).slice(0, 60); } catch (e) { r.rawIpc = 'ERR ' + String(e).slice(0, 80); }
+  try { const x = await limit(fetch('IPCBASE' + 'spike_secret', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'Tauri-Callback': '1', 'Tauri-Error': '2', 'Tauri-Invoke-Key': 'guess' } }), 4000); r.rawIpc = x === 'timeout' ? x : x.status + ' ' + (await x.text()).slice(0, 60); } catch (e) { r.rawIpc = 'ERR ' + String(e).slice(0, 80); }
   const f = async u => { try { const x = await limit(fetch(u, { mode: 'no-cors' }), 4000); return x === 'timeout' ? x : 'reached (' + x.type + ')'; } catch (e) { return 'ERR ' + String(e).slice(0, 50); } };
   const ws = u => new Promise(res => { try { const s = new WebSocket(u); s.onopen = () => { res('OPEN'); s.close(); }; s.onerror = () => res('error'); setTimeout(() => res('timeout'), 4000); } catch (e) { res('ERR ' + String(e).slice(0, 50)); } });
   const img = u => new Promise(res => { const i = new Image(); i.onload = () => res('loaded'); i.onerror = () => res('error'); setTimeout(() => res('timeout'), 4000); i.src = u; });
@@ -241,9 +263,12 @@ fn main() {
         .unwrap_or_else(|_| std::env::temp_dir().join("spike-dl"));
     let exit_after: u64 =
         std::env::var("SPIKE_EXIT_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
+    let pdf_hide = std::env::var("SPIKE_PDF_HIDE").unwrap_or_default();
+    let proxy_loopback = env_flag("SPIKE_PROXY_LOOPBACK");
+    let exclusive = env_flag("SPIKE_EXCLUSIVE");
     let base = base_url();
     eprintln!(
-        "SPIKE base={base} proxy={proxy:?} harden={harden} blocker={blocker} noscript={noscript} allow_blob={allow_blob} embed={embed:?} nocontext={nocontext} nohud={nohud} incognito={incognito}"
+        "SPIKE base={base} proxy={proxy:?} harden={harden} blocker={blocker} noscript={noscript} allow_blob={allow_blob} embed={embed:?} nocontext={nocontext} nohud={nohud} incognito={incognito} pdf_hide={pdf_hide:?} proxy_loopback={proxy_loopback} exclusive={exclusive}"
     );
 
     let victim_tcp = watch_tcp("VICTIM", TcpListener::bind("127.0.0.1:0").unwrap());
@@ -251,8 +276,15 @@ fn main() {
     let proxy_url = match proxy.as_str() {
         "closed" | "1" => Some("http://127.0.0.1:9".to_string()),
         "own" => {
-            let port = watch_tcp("TRIPWIRE", TcpListener::bind("127.0.0.1:0").unwrap());
-            #[cfg(unix)]
+            #[cfg(windows)]
+            let listener = if exclusive {
+                exclusive_listener()
+            } else {
+                TcpListener::bind("127.0.0.1:0").unwrap()
+            };
+            #[cfg(not(windows))]
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = watch_tcp("TRIPWIRE", listener);
             try_to_take_port(port);
             Some(format!("http://127.0.0.1:{port}"))
         }
@@ -273,6 +305,10 @@ fn main() {
     let fill = move |script: &str| {
         script
             .replace("REACH_PROBE", REACH_PROBE)
+            .replace(
+                "IPCBASE",
+                if cfg!(windows) { "http://ipc.localhost/" } else { "ipc://localhost/" },
+            )
             .replace("VTCP", &victim_tcp.to_string())
             .replace("VUDP", &victim_udp.to_string())
     };
@@ -296,6 +332,24 @@ fn main() {
                 .unwrap()
         })
         .setup(move |app| {
+            if env_flag("SPIKE_MAIN_WINDOW") {
+                let main = WebviewWindowBuilder::new(
+                    app,
+                    "main",
+                    WebviewUrl::External("about:blank".parse().unwrap()),
+                )
+                .title("PDF spike main")
+                .inner_size(400.0, 300.0);
+                let main = match std::env::var("SPIKE_MAIN_DATA_DIR") {
+                    Ok(dir) => main.data_directory(dir.into()),
+                    Err(_) => main,
+                }
+                .build();
+                eprintln!(
+                    "SPIKE main window built: {:?}",
+                    main.map(|_| ()).map_err(|e| e.to_string())
+                );
+            }
             let nav_base = base.clone();
             let mut builder = WebviewWindowBuilder::new(
                 app,
@@ -346,10 +400,41 @@ fn main() {
                 true
             })
             .on_page_load(|_, p| eprintln!("SPIKE page-load {:?} {}", p.event(), p.url()));
+            #[cfg(not(windows))]
             if let Some(p) = &proxy_url {
                 builder = builder.proxy_url(p.parse().unwrap());
             }
-            let window = builder.build()?;
+            // WebView2 takes the proxy as a browser argument, and wry adds it
+            // (and its own defaults) only when no other arguments are given,
+            // so the spike writes them all.
+            #[cfg(windows)]
+            {
+                let mut args =
+                    String::from("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection");
+                if let Some(p) = &proxy_url {
+                    args += &format!(" --proxy-server={p}");
+                }
+                if proxy_loopback {
+                    args += " --proxy-bypass-list=<-loopback>";
+                }
+                if harden {
+                    args += " --webrtc-ip-handling-policy=disable_non_proxied_udp";
+                }
+                if let Ok(extra) = std::env::var("SPIKE_ARGS") {
+                    args += &format!(" {extra}");
+                }
+                eprintln!("SPIKE browser args {args}");
+                builder = builder.additional_browser_args(&args);
+            }
+            if let Ok(dir) = std::env::var("SPIKE_PREVIEW_DATA_DIR") {
+                builder = builder.data_directory(dir.into());
+            }
+            let window = builder.build();
+            eprintln!(
+                "SPIKE preview window built: {:?}",
+                window.as_ref().map(|_| ()).map_err(|e| e.to_string())
+            );
+            let window = window?;
             let doc_url =
                 format!("{base}{}", if embed.is_empty() { "doc.pdf" } else { "doc.html" });
             #[cfg(target_os = "linux")]
@@ -376,17 +461,39 @@ fn main() {
             }
             #[cfg(windows)]
             {
-                let _ = (harden, blocker, nohud);
-                window.navigate(doc_url.parse().unwrap())?;
+                let _ = (harden, nohud);
+                let target = window.clone();
+                let allow = base.clone();
+                window.with_webview(move |wv| {
+                    if let Err(e) = win::configure(&wv, blocker, nocontext, &pdf_hide, &allow) {
+                        eprintln!("SPIKE windows configure FAILED: {e}");
+                    }
+                    // From another thread, as on macOS.
+                    thread::spawn(move || target.navigate(doc_url.parse().unwrap()).unwrap());
+                })?;
             }
 
             let handle = app.handle().clone();
-            let probe = fill(&TOP_PROBE.replace("BASE", &base));
+            let probe = fill(
+                &TOP_PROBE
+                    .replace("BASE", &base)
+                    .replace("TOPREACH", if cfg!(windows) { "true" } else { "false" }),
+            );
+            #[cfg(windows)]
+            let viewer_probe = fill("REACH_PROBE");
             thread::spawn(move || {
+                let started = std::time::Instant::now();
                 let window = handle.get_webview_window("preview").unwrap();
                 thread::sleep(Duration::from_secs(7));
                 window.eval(probe).ok();
-                thread::sleep(Duration::from_secs(exit_after.saturating_sub(7)));
+                // The viewer's own frame, which no page script reaches on
+                // Windows, through the DevTools protocol.
+                #[cfg(windows)]
+                {
+                    thread::sleep(Duration::from_secs(2));
+                    window.with_webview(move |wv| win::devtools_probe(&wv, viewer_probe)).ok();
+                }
+                thread::sleep(Duration::from_secs(exit_after).saturating_sub(started.elapsed()));
                 eprintln!("SPIKE exiting");
                 handle.exit(0);
             });
@@ -486,6 +593,391 @@ fn try_to_take_port(port: u16) {
         };
         let ip = std::net::Ipv4Addr::from(ip);
         eprintln!("SPIKE take-over SO_REUSEADDR+SO_REUSEPORT bind {ip}:{port}: {result}");
+    }
+}
+
+/// The tripwire's socket, bound with SO_EXCLUSIVEADDRUSE, which is meant to
+/// stop any other socket binding its port (it doesn't stop one on 0.0.0.0;
+/// see the spike's results).
+#[cfg(windows)]
+fn exclusive_listener() -> TcpListener {
+    use std::os::windows::io::FromRawSocket;
+    use windows_sys::Win32::Networking::WinSock::*;
+    // Has std start WinSock before the raw calls.
+    drop(TcpListener::bind("127.0.0.1:0"));
+    unsafe {
+        let s = socket(AF_INET as i32, SOCK_STREAM, IPPROTO_TCP);
+        let one: i32 = 1;
+        let rc = setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (&raw const one).cast(), 4);
+        assert_eq!(rc, 0, "SO_EXCLUSIVEADDRUSE: {}", std::io::Error::last_os_error());
+        let addr = sockaddr_in([127, 0, 0, 1], 0);
+        assert_eq!(bind(s, (&raw const addr).cast(), size_of::<SOCKADDR_IN>() as i32), 0);
+        assert_eq!(listen(s, 8), 0);
+        TcpListener::from_raw_socket(s as u64)
+    }
+}
+
+#[cfg(windows)]
+fn sockaddr_in(ip: [u8; 4], port: u16) -> windows_sys::Win32::Networking::WinSock::SOCKADDR_IN {
+    use windows_sys::Win32::Networking::WinSock::*;
+    SOCKADDR_IN {
+        sin_family: AF_INET,
+        sin_port: port.to_be(),
+        sin_addr: IN_ADDR { S_un: IN_ADDR_0 { S_addr: u32::from_ne_bytes(ip) } },
+        sin_zero: [0; 8],
+    }
+}
+
+/// Tries to take the tripwire's port away, as another program might: plain,
+/// and with SO_REUSEADDR, which on Windows lets a socket bind a port another
+/// holds unless that one set SO_EXCLUSIVEADDRUSE.
+#[cfg(windows)]
+fn try_to_take_port(port: u16) {
+    use std::os::windows::io::FromRawSocket;
+    use windows_sys::Win32::Networking::WinSock::*;
+    for addr in [format!("127.0.0.1:{port}"), format!("0.0.0.0:{port}")] {
+        let result = TcpListener::bind(&addr).map(|_| "BOUND").map_err(|e| e.to_string());
+        eprintln!("SPIKE take-over std bind {addr}: {result:?}");
+    }
+    for ip in [[127, 0, 0, 1], [0, 0, 0, 0]] {
+        let result = unsafe {
+            let s = socket(AF_INET as i32, SOCK_STREAM, IPPROTO_TCP);
+            let one: i32 = 1;
+            setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (&raw const one).cast(), 4);
+            let addr = sockaddr_in(ip, port);
+            let rc = bind(s, (&raw const addr).cast(), size_of::<SOCKADDR_IN>() as i32);
+            if rc == 0 && listen(s, 8) == 0 {
+                watch_tcp("IMPOSTOR", TcpListener::from_raw_socket(s as u64));
+                "BOUND and listening".to_string()
+            } else {
+                let error = std::io::Error::from_raw_os_error(WSAGetLastError());
+                closesocket(s);
+                format!("refused: {error}")
+            }
+        };
+        let ip = std::net::Ipv4Addr::from(ip);
+        eprintln!("SPIKE take-over SO_REUSEADDR bind {ip}:{port}: {result}");
+    }
+}
+
+#[cfg(windows)]
+mod win {
+    use tauri::webview::PlatformWebview;
+    use webview2_com::{
+        CallDevToolsProtocolMethodCompletedHandler, ContextMenuRequestedEventHandler,
+        FrameCreatedEventHandler, FrameNavigationStartingEventHandler,
+        LaunchingExternalUriSchemeEventHandler, Microsoft::Web::WebView2::Win32::*,
+        PermissionRequestedEventHandler, ProcessFailedEventHandler, SaveAsUIShowingEventHandler,
+        ScriptDialogOpeningEventHandler, WebResourceRequestedEventHandler, take_pwstr,
+    };
+    use windows::core::{HSTRING, Interface, PWSTR, Result};
+
+    /// A string out-parameter's value, or "" if the call fails.
+    fn text(f: impl FnOnce(&mut PWSTR) -> Result<()>) -> String {
+        let mut p = PWSTR::null();
+        if f(&mut p).is_err() {
+            return String::new();
+        }
+        take_pwstr(p)
+    }
+
+    fn toolbar_items(names: &str) -> i32 {
+        names
+            .split(',')
+            .map(|n| match n.trim() {
+                "save" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_SAVE.0,
+                "save_as" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_SAVE_AS.0,
+                "print" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_PRINT.0,
+                "zoom_in" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_ZOOM_IN.0,
+                "zoom_out" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_ZOOM_OUT.0,
+                "rotate" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_ROTATE.0,
+                "fit_page" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_FIT_PAGE.0,
+                "page_layout" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_PAGE_LAYOUT.0,
+                "bookmarks" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_BOOKMARKS.0,
+                "page_selector" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_PAGE_SELECTOR.0,
+                "search" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_SEARCH.0,
+                "full_screen" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_FULL_SCREEN.0,
+                "more_settings" => COREWEBVIEW2_PDF_TOOLBAR_ITEMS_MORE_SETTINGS.0,
+                "all" => -1,
+                _ => 0,
+            })
+            .fold(0, |a, b| a | b)
+    }
+
+    /// The menu's items, with their submenus, as `name(label)`.
+    unsafe fn menu_items(items: &ICoreWebView2ContextMenuItemCollection) -> Vec<String> {
+        let mut count = 0u32;
+        unsafe {
+            let _ = items.Count(&mut count);
+            (0..count)
+                .filter_map(|i| items.GetValueAtIndex(i).ok())
+                .map(|item| {
+                    let name = text(|p| item.Name(p));
+                    let label = text(|p| item.Label(p)).replace('&', "");
+                    match item.Children().ok().map(|c| menu_items(&c)) {
+                        Some(c) if !c.is_empty() => format!("{name}({label}) > {c:?}"),
+                        _ => format!("{name}({label})"),
+                    }
+                })
+                .collect()
+        }
+    }
+
+    /// Settings and event handlers, before the document loads: every
+    /// request is logged (and with `blocker`, all but the preview's own are
+    /// refused), as are script dialogs, context menus, frames, permission
+    /// requests, external URI schemes, Save As and process failures.
+    pub fn configure(
+        wv: &PlatformWebview,
+        blocker: bool,
+        nocontext: bool,
+        pdf_hide: &str,
+        allow: &str,
+    ) -> Result<()> {
+        unsafe {
+            let env = wv.environment();
+            let webview = wv.controller().CoreWebView2()?;
+            eprintln!("SPIKE webview2 runtime={}", text(|p| env.BrowserVersionString(p)));
+            let settings = webview.Settings()?;
+            settings.SetAreDefaultScriptDialogsEnabled(false)?;
+            if nocontext {
+                settings.SetAreDefaultContextMenusEnabled(false)?;
+            }
+            let hidden = toolbar_items(pdf_hide);
+            if hidden != 0 {
+                let settings: ICoreWebView2Settings7 = settings.cast()?;
+                settings.SetHiddenPdfToolbarItems(COREWEBVIEW2_PDF_TOOLBAR_ITEMS(hidden))?;
+                let mut now = COREWEBVIEW2_PDF_TOOLBAR_ITEMS::default();
+                settings.HiddenPdfToolbarItems(&mut now)?;
+                eprintln!("SPIKE settings pdf toolbar hidden={:#x}", now.0);
+            }
+            let mut token = 0i64;
+
+            let webview22: ICoreWebView2_22 = webview.cast()?;
+            webview22.AddWebResourceRequestedFilterWithRequestSourceKinds(
+                &HSTRING::from("*"),
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
+            )?;
+            let allow = allow.to_string();
+            let env_ = env.clone();
+            webview.add_WebResourceRequested(
+                &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let request = args.Request()?;
+                    let uri = text(|p| request.Uri(p));
+                    if uri.starts_with(&allow) {
+                        return Ok(());
+                    }
+                    let method = text(|p| request.Method(p));
+                    let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+                    args.ResourceContext(&mut context)?;
+                    let verdict = if blocker { "BLOCK" } else { "pass" };
+                    eprintln!("SPIKE request {method} {uri} context={} -> {verdict}", context.0);
+                    if blocker {
+                        let response = env_.CreateWebResourceResponse(
+                            None,
+                            403,
+                            &HSTRING::from("Blocked"),
+                            &HSTRING::new(),
+                        )?;
+                        args.SetResponse(&response)?;
+                    }
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            webview.add_ScriptDialogOpening(
+                &ScriptDialogOpeningEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    eprintln!(
+                        "SPIKE script dialog from {}: {:?}",
+                        text(|p| args.Uri(p)),
+                        text(|p| args.Message(p))
+                    );
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            let webview11: ICoreWebView2_11 = webview.cast()?;
+            webview11.add_ContextMenuRequested(
+                &ContextMenuRequestedEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let target = args.ContextMenuTarget()?;
+                    eprintln!(
+                        "SPIKE context menu page={} frame={} items={:?}",
+                        text(|p| target.PageUri(p)),
+                        text(|p| target.FrameUri(p)),
+                        menu_items(&args.MenuItems()?)
+                    );
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            let webview4: ICoreWebView2_4 = webview.cast()?;
+            webview4.add_FrameCreated(
+                &FrameCreatedEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let frame = args.Frame()?;
+                    eprintln!("SPIKE frame created name={:?}", text(|p| frame.Name(p)));
+                    let frame: ICoreWebView2Frame2 = frame.cast()?;
+                    frame.add_NavigationStarting(
+                        &FrameNavigationStartingEventHandler::create(Box::new(|_, args| {
+                            let Some(args) = args else { return Ok(()) };
+                            eprintln!("SPIKE frame navigation {}", text(|p| args.Uri(p)));
+                            Ok(())
+                        })),
+                        &mut 0i64,
+                    )?;
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            webview.add_PermissionRequested(
+                &PermissionRequestedEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                    args.PermissionKind(&mut kind)?;
+                    eprintln!(
+                        "SPIKE permission requested kind={} by {} -> DENY",
+                        kind.0,
+                        text(|p| args.Uri(p))
+                    );
+                    args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            let webview18: ICoreWebView2_18 = webview.cast()?;
+            webview18.add_LaunchingExternalUriScheme(
+                &LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    eprintln!("SPIKE external uri scheme {} -> DENY", text(|p| args.Uri(p)));
+                    args.SetCancel(true)?;
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            let webview25: ICoreWebView2_25 = webview.cast()?;
+            webview25.add_SaveAsUIShowing(
+                &SaveAsUIShowingEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    eprintln!(
+                        "SPIKE save-as UI showing mime={}",
+                        text(|p| args.ContentMimeType(p))
+                    );
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+
+            webview.add_ProcessFailed(
+                &ProcessFailedEventHandler::create(Box::new(|_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                    args.ProcessFailedKind(&mut kind)?;
+                    eprintln!("SPIKE process failed kind={}", kind.0);
+                    Ok(())
+                })),
+                &mut token,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Calls a DevTools protocol method, on `session` if given, and hands
+    /// `done` its JSON result (or the error).
+    fn cdp(
+        webview: &ICoreWebView2,
+        session: Option<&str>,
+        method: &str,
+        params: &str,
+        done: impl FnOnce(String) + 'static,
+    ) {
+        let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
+            move |result: Result<()>, json: String| {
+                done(match result {
+                    Ok(()) => json,
+                    Err(e) => format!("ERR {e}"),
+                });
+                Ok(())
+            },
+        ));
+        let (method, params) = (HSTRING::from(method), HSTRING::from(params));
+        let sent = unsafe {
+            match session {
+                None => webview.CallDevToolsProtocolMethod(&method, &params, &handler),
+                Some(session) => webview.cast::<ICoreWebView2_11>().and_then(|w| {
+                    w.CallDevToolsProtocolMethodForSession(
+                        &HSTRING::from(session),
+                        &method,
+                        &params,
+                        &handler,
+                    )
+                }),
+            }
+        };
+        if let Err(e) = sent {
+            eprintln!("SPIKE cdp {method} not sent: {e}");
+        }
+    }
+
+    /// Lists the frames and targets, attaches to every target that isn't
+    /// the preview's own page (Edge's viewer) and runs `reach` (the reach
+    /// probe) in it, as code a PDF that exploited the viewer could run.
+    pub fn devtools_probe(wv: &PlatformWebview, reach: String) {
+        let Ok(webview) = (unsafe { wv.controller().CoreWebView2() }) else { return };
+        cdp(&webview, None, "Page.getFrameTree", "{}", |json| {
+            eprintln!("SPIKE cdp frame tree {json}");
+        });
+        let webview_ = webview.clone();
+        cdp(&webview, None, "Target.getTargets", "{}", move |json| {
+            eprintln!("SPIKE cdp targets {json}");
+            let targets: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+            for target in targets["targetInfos"].as_array().into_iter().flatten() {
+                let url = target["url"].as_str().unwrap_or_default().to_string();
+                if target["type"] == "page" && url.starts_with("http://hdpreview.") {
+                    continue;
+                }
+                let attach = serde_json::json!({ "targetId": target["targetId"], "flatten": true });
+                let (webview, reach) = (webview_.clone(), reach.clone());
+                cdp(
+                    &webview_.clone(),
+                    None,
+                    "Target.attachToTarget",
+                    &attach.to_string(),
+                    move |json| {
+                        let attached: serde_json::Value =
+                            serde_json::from_str(&json).unwrap_or_default();
+                        let Some(session) = attached["sessionId"].as_str() else {
+                            eprintln!("SPIKE cdp attach {url}: {json}");
+                            return;
+                        };
+                        let expression = format!(
+                            "({reach})({{ step: 'viewer-cdp' }}).then(r => JSON.stringify(r))"
+                        );
+                        let params = serde_json::json!({
+                            "expression": expression, "awaitPromise": true, "returnByValue": true
+                        });
+                        cdp(
+                            &webview,
+                            Some(session),
+                            "Runtime.evaluate",
+                            &params.to_string(),
+                            move |json| {
+                                eprintln!("SPIKE cdp viewer {url}: {json}");
+                            },
+                        );
+                    },
+                );
+            }
+        });
     }
 }
 

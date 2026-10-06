@@ -10,7 +10,14 @@ nothing to disk unless the user asks for it.
 with the same measures and two more: WebKit's PDF viewer there offers "Open
 with Preview" (in a hover toolbar and in its context menu), which writes the
 decrypted document to a temporary file with one click, so both must be
-turned off. Windows is still to be tested, in its own session.
+turned off. **On Windows: yes**, with the same measures done WebView2's
+way, and two differences that shape a design: the content filter there
+(`WebResourceRequested`) sees only the top frame, not Edge's viewer, so the
+proxy is the layer that covers the viewer and must take loopback too; and
+the proxy and WebRTC switches are browser arguments, which every web view
+sharing a user data folder must agree on, so the preview needs a user data
+folder of its own. Edge's viewer has nothing like Open in Preview: its Save
+goes through the OS's Save As dialog, then `on_download`.
 
 ## What each web view has
 
@@ -18,7 +25,7 @@ turned off. Windows is still to be tested, in its own session.
 |---|---|---|---|
 | Linux | WebKitGTK | PDF.js, bundled in WebKitGTK since 2.40 (`webkit-pdfjs-viewer://pdfjs/web/viewer.html`). In Debian's 2.54 (which the AppImage bundles) and Arch's 2.52 | Yes, Debian 2.54 in the dev container |
 | macOS | WKWebView | WebKit's PDF plugin ("Unified PDF Viewer", on the OS's PDFKit), in the main frame | Yes, macOS 26.6 in a tart VM (2026-10-06) |
-| Windows | WebView2 | Edge's viewer (PDFium in Chromium's sandbox), updated with Edge | No |
+| Windows | WebView2 | Edge's viewer (PDFium in Chromium's sandbox), updated with the WebView2 runtime | Yes, runtime 154.0.4258.62 on Windows Server 2025 (2026-10-06) |
 
 So nothing new is bundled: on Linux PDF.js already ships inside the bundled
 WebKitGTK, and on macOS and Windows the viewer is the OS's. research.md §3's
@@ -44,6 +51,26 @@ WebKit's PDF toolbar and clicks its buttons, right-clicks for the context
 menu and clicks Open with Preview, clicks the link, and reads the window's
 accessibility tree. The disk check covers the user's temp and cache folders
 (`/var/folders/…`), `/tmp`, `/private/var/tmp` and, in the VM, all of `HOME`.
+
+On Windows, `src-tauri/examples/pdf_spike_win.ps1` runs it in the signed-in
+desktop session of a test machine, with a fresh WebView2 user data folder
+(`WEBVIEW2_USER_DATA_FOLDER`) in the run's temp folder. It posts real mouse
+and keyboard input and takes screenshots with `examples/pdf_spike_input.ps1`
+(`SendInput`, `CopyFromScreen`): it clicks the toolbar's settings, Save
+(typing a path into the Save As dialog that opens) and Print, presses
+Ctrl+S, right-clicks for the context menu, clicks the link, and reads the
+window's UI Automation tree. Edge's viewer runs in frames no page script
+reaches, so the spike attaches to them through the DevTools protocol
+(`CallDevToolsProtocolMethodForSession`) and runs the same reach probe there,
+as code a PDF that exploited the viewer could run. It also logs every
+request WebView2's `WebResourceRequested` sees, script dialogs, context
+menus (with their items), permission requests, external URI schemes, Save
+As and process failures. The disk check covers `%LOCALAPPDATA%` (the temp
+folder and the WebView2 folder are in it) and `%APPDATA%`, for the marker as
+ASCII and as UTF-16. `examples/pdf_spike.rs` needed `build.rs` to link
+tauri-build's Windows resource into examples too: without its Common
+Controls manifest, Windows refuses to start them
+(`STATUS_ENTRYPOINT_NOT_FOUND`).
 
 ## Results (Linux, WebKitGTK 2.54)
 
@@ -81,6 +108,28 @@ accessibility tree. The disk check covers the user's temp and cache folders
 | The PDF's JavaScript | No alert in any run, no `window.alert` call. WebKit's plugin has no switch for it, so nothing to turn off. Not proof it can't run |
 | Decrypted content on disk | **None**, with the HUD off and the menu cancelled. Files written: the compiled content filter (rules only) and the GPU process's Metal shader lists |
 | Print | Not tried |
+
+## Results (Windows Server 2025, WebView2 154)
+
+| Check | Result |
+|---|---|
+| Renders | Yes: both pages, page count, zoom, fit, rotate, two-page view, find, Print, Save, full screen, a settings menu (Pin toolbar, View document properties). The address is `http://hdpreview.localhost/doc.pdf`, served by the custom protocol; no extra navigation needed |
+| Accessibility | The page text (`Text "HDSPIKEMARKER page one"`, `"Second page HDSPIKEMARKER"`) and a link are in the window's UI Automation tree, so Narrator can read it |
+| Where the viewer runs | Three renderer processes. The top frame (ours, with Tauri's IPC) holds only an `<embed>`. Edge's viewer is `chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/edge_pdf/index.html`, a DevTools target of type `webview` in a process of its own. Inside it, a frame at `http://hdpreview.localhost/doc.pdf` (cross-origin to the extension, its own process again) is where the PDF renders. The frame script reached neither: it ran only in the top frame and an empty `about:blank` frame of the `<embed>` |
+| Viewer frames → Tauri IPC | **Blocked.** Neither has `__TAURI_INTERNALS__` or `chrome.webview`, and both are cross-origin to their parent (`SecurityError`). A `postMessage` with no key does nothing. Their requests to `http://ipc.localhost/` never reach Tauri: `WebResourceRequested` doesn't see them, so they go to the network (to the proxy, with loopback in it) |
+| What Edge's viewer frame has | Private extension APIs: `chrome.edgePdfPrivate`, `pdfViewerPrivate`, `mimeHandlerPrivate`, `fileSystem`, `tabs`, `windows`, `management`, `runtime` and more. It's Edge's own code, not the PDF's; the PDF's frame has only `loadTimes`, `csi`, `app` and `metricsPrivate` |
+| Top frame → app commands | **Allowed without an app manifest** (`spike_secret` returned), plugin commands refused: as on Linux and macOS |
+| Toolbar Save, and the context menu's Save | **The OS's Save As dialog**, through WebView2's `SaveAsUIShowing` (`application/pdf`), which HoploDex can cancel. After the user picks a place, `on_download` fires with that place as the destination, and can change or refuse it; the document is fetched again from the custom protocol. Nothing is written before the user chooses |
+| Ctrl+S | Nothing, with Save shown or hidden (`SendInput`, after clicking the page) |
+| Print | Edge's print preview, inside the window; this machine's default printer was Microsoft Print to PDF, which asks where to save. Not printed |
+| Context menu | Save, Print, Rotate clockwise and counterclockwise, Inspect (DevTools, on in a debug build); Copy too when text is selected. No "open with", web search, read aloud or Copilot. `ContextMenuRequested` fires for it, with the viewer's frame as the target, so HoploDex can drop items or the whole menu; `AreDefaultContextMenusEnabled(false)` removes it |
+| Anything like Open in Preview | **No.** No toolbar button, menu item or settings entry hands the document to another program or a temporary file |
+| `HiddenPdfToolbarItems` | Hides the named buttons (tried Save, Save As, Print); the toolbar closes up, so the others move |
+| Clicking the PDF's link | A top-level navigation to `http://example.com/link-target`, refused by `on_navigation`. **But Edge's automatic HTTPS still sent `https://example.com/link-target`** (a document request from the top frame, seen by `WebResourceRequested`; with the proxy it went to the tripwire as `CONNECT example.com:443`), then showed "This site doesn't support a secure connection". Its Continue to site reloaded the PDF. The same with a persistent profile. The content filter refuses that request |
+| The PDF's JavaScript | No script dialog in any run (`ScriptDialogOpening`, with WebView2's own dialogs off). WebView2 has no switch for it. Not proof it can't run |
+| WebView2's own requests | `CONNECT config.edge.skype.com:443` and `edge.microsoft.com:443` from the browser process, not the page; the proxy sends them to the tripwire like anything else |
+| Decrypted content on disk | **None**, InPrivate (`incognito`) or with a persistent profile, with `Cache-Control: no-store`. Files written: all inside the WebView2 user data folder (profile files, GPU shader caches, Crashpad, variations seed, component caches); InPrivate still writes them |
+| Main window and preview in one user data folder | **The preview never loads.** With different browser arguments (the preview's proxy and WebRTC switch), its `build()` returns Ok but its web view shows nothing and navigates nowhere. With a folder each, both work |
 
 ## Network
 
@@ -156,14 +205,47 @@ Other findings:
 - The compiled filter is written to the store directory given to
   `WKContentRuleListStore` (rules only).
 
+### Network on Windows
+
+The same attempts, from the top frame and, through the DevTools protocol,
+from Edge's viewer frame and the PDF's frame. The proxy is wry's
+`--proxy-server` browser argument; the spike writes the arguments itself
+(wry drops its own, and the proxy, once an app gives any).
+
+| Variant | What got out |
+|---|---|
+| No filter, proxy to the tripwire | **The local service got everything from all three frames**: fetches, the image, the beacon, the WebSocket, and WebRTC's STUN packets: Chromium sends loopback around the proxy. The outside went to the tripwire (`GET http://example.com/…`, `CONNECT dns-leak-ws.invalid:80`) |
+| Proxy with `--proxy-bypass-list=<-loopback>` | Every TCP attempt from every frame went to the tripwire, `127.0.0.1` and `localhost` included (`GET http://127.0.0.1:…/fetch-loop`, `CONNECT 127.0.0.1:…` for the WebSocket, the viewer frames' `POST http://ipc.localhost/spike_secret`). Only WebRTC's UDP still reached the local service |
+| Content filter only (`WebResourceRequested` on `*`, refusing all but the preview's own URLs) | The top frame's fetches, image and beacon refused, and the link's HTTPS request. **Not its WebSocket, not WebRTC, and nothing from the two viewer frames**, which `WebResourceRequested` never sees: the local service got all of theirs |
+| `--webrtc-ip-handling-policy=disable_non_proxied_udp` | No STUN packets from any frame; the top frame and the PDF's frame gather no candidates. Edge's viewer frame still lists the computer's LAN address as a candidate, but sent nothing. `--force-webrtc-ip-handling-policy` and `--enforce-webrtc-ip-permission-check` changed nothing |
+| Filter, proxy with loopback, WebRTC switch | Nothing reached the local service. The tripwire saw what the filter can't see: the viewer frames' attempts and the top frame's WebSocket |
+
+Other findings:
+- **Taking over the tripwire's port**: while the spike held `127.0.0.1`,
+  binding `127.0.0.1` again failed, plain (10048) or with `SO_REUSEADDR`
+  (10013), whether or not the tripwire set `SO_EXCLUSIVEADDRUSE`. **Binding
+  `0.0.0.0` on the same port succeeded**, plain or with `SO_REUSEADDR`,
+  with `SO_EXCLUSIVEADDRUSE` too. As on macOS, the proxied connections all
+  went to the tripwire, the more specific address; the other socket got
+  none.
+- `WebResourceRequested` sees the top frame's fetches (context 7), images
+  (3), beacons (14), documents (1) and Tauri's own IPC requests, so a
+  filter that refuses everything else also refuses the IPC, which a preview
+  doesn't need.
+- DNS lookups weren't logged (no `LD_PRELOAD` equivalent). With the proxy,
+  names went to it in requests and `CONNECT` lines rather than being looked
+  up.
+
 **So the network block is three layers, each tested on its own**: the
 content filter (no port involved), the proxy to a port HoploDex holds for as
 long as a preview exists (a tripwire that logs anything getting past the
-filter), and the navigation handler for top-level navigations. On Windows
-the port must be bound with `SO_EXCLUSIVEADDRUSE`; the filter there would be
-WebView2's `WebResourceRequested`. On macOS the filter is a
-`WKContentRuleList`, WebRTC must be turned off as well, and the proxy is
-only the tripwire (above).
+filter), and the navigation handler for top-level navigations. On macOS the
+filter is a `WKContentRuleList`, WebRTC must be turned off as well, and the
+proxy is only the tripwire (above). On Windows it's the other way round: the
+filter (`WebResourceRequested`) covers only the top frame, so the proxy,
+with `<-loopback>`, is the layer that covers Edge's viewer, and WebRTC needs
+`--webrtc-ip-handling-policy=disable_non_proxied_udp`. `SO_EXCLUSIVEADDRUSE`
+adds nothing for a `127.0.0.1` port there.
 
 A test that keeps it blocked: open a PDF in the preview, have a frame script
 make every attempt above against a local test service, and fail if the
@@ -219,10 +301,18 @@ through the filter and the tripwire.
    WebRTC off (on macOS through SPI),
    `on_navigation` allowing only the preview's own URL and the viewer's,
    `on_new_window` denying, and `on_download` asking with the OS's save
-   dialog (so Save writes only where the user picks) or denying.
+   dialog (so Save writes only where the user picks) or denying. On Windows
+   the filter is a `WebResourceRequested` handler, and the proxy, the
+   loopback rule (`--proxy-bypass-list=<-loopback>`) and the WebRTC switch
+   (`--webrtc-ip-handling-policy=disable_non_proxied_udp`) are browser
+   arguments, written in full with wry's defaults
+   (`additional_browser_args`), since wry adds its own only when an app
+   gives none.
 3. **A frame script** (`initialization_script_for_all_frames`) that turns off
    PDF.js scripting and XFA at `webviewerloaded` (Linux), and cancels
-   `contextmenu` (macOS, where the menu has Open with Preview).
+   `contextmenu` (macOS, where the menu has Open with Preview). On Windows
+   it reaches neither viewer frame; the context menu is WebView2's
+   (`ContextMenuRequested` or `AreDefaultContextMenusEnabled`).
 4. **Serve from memory** through a custom protocol with
    `Cache-Control: no-store`; a one-time path per preview so nothing else can
    fetch it.
@@ -236,30 +326,20 @@ through the filter and the tripwire.
    and show no in-app preview if not, and a macOS test must hover,
    right-click and click Open in Preview and fail if any `WebKitPDFs-*`
    copy appears.
+7. **On Windows, a user data folder of the preview's own.** Browser
+   arguments belong to the browser process, which every web view sharing a
+   user data folder shares, so a preview with the proxy and the WebRTC
+   switch next to a main window without them never loads. A folder of its
+   own (`data_directory`) gives it a browser process of its own; it must be
+   one HoploDex controls and clears like its other caches, and E2E's
+   `WEBVIEW2_USER_DATA_FOLDER` overrides it, so an E2E run of the preview
+   needs a way to set it too. The proxy is the layer that keeps Edge's
+   viewer off the network and the computer's own services, so a Windows
+   test must run the reach probe in the viewer's frames (through the
+   DevTools protocol, as the spike does) and fail if the local service sees
+   anything. Edge's automatic HTTPS means a clicked link sends a request
+   even though `on_navigation` refuses the navigation; the filter refuses
+   it.
 
 TIFF (which no web view but WebKit on macOS shows) and text keep the plan's
 own decoders.
-
-## What the Windows session needs to check
-
-Run `cargo run --example pdf_spike` (no Xvfb; click the link and Save by
-hand) with `SPIKE_PROXY=own SPIKE_ALLOW_BLOB=1`, and:
-- Does the viewer show a PDF from a custom protocol? (Windows serves it as
-  `http://hdpreview.localhost/`.) What URL and origin does the viewer frame
-  report, and are any extra navigations needed (allow and log them)?
-- Can the viewer's frame reach IPC (`internals`, `postMessage`, `rawIpc`)?
-  Check whether WebView2's PDF viewer is a script context the frame script
-  reaches at all.
-- Does `proxy_url` (a browser argument for WebView2) send everything to the
-  tripwire, `localhost` included? macOS's doesn't. The content filter
-  (`SPIKE_BLOCKER`) needs a WebView2 equivalent (`WebResourceRequested`).
-- Does Edge's viewer have anything like macOS's Open in Preview: a button
-  or menu item that writes the document somewhere HoploDex isn't asked
-  about? Try every toolbar button and the context menu.
-- Does anything land on disk? Look for the marker under the app's data and
-  cache dirs (WebView2's user data folder especially) and the temp dir.
-- Does the PDF's JavaScript run (an alert reading "HD SPIKE PDF JAVASCRIPT
-  RAN"), and if so, can it be turned off?
-- Where does Save go, and does `on_download` fire?
-- The app manifest result is the same on every OS (Tauri's own code), so it
-  needs no retest.
