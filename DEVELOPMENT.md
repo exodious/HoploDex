@@ -226,14 +226,15 @@ computer.
 
 ### Windows
 
-x64 Windows 10 or 11. Two scripts install everything in this section,
-skipping what's already there, so they can be run again:
+x64 Windows 10 or 11 (Pro, Enterprise or Education), or Windows Server
+2025 with Desktop Experience. Two scripts install everything in this
+section, skipping what's already there, so they can be run again:
 
 ```powershell
-# 1. Once per computer, from an elevated PowerShell
-powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1   # -GitHubCli, -OpenSsh optional
-# 2. As each account that builds, from a new PowerShell that isn't elevated
-powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1     # -ClaudeCode optional
+# 1. Once per computer, from an elevated PowerShell; -GitHubCli optional
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1 -User alice
+# 2. Signed in as that user, from a new PowerShell that isn't elevated; -ClaudeCode optional
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1
 ```
 
 The repository is private, so on a new computer copy the two scripts over
@@ -289,6 +290,14 @@ What they install, to set it up by hand instead:
   `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`, and
   `git config --system core.longpaths true`, for deep `node_modules` and
   `target` paths.
+- **Remote access for `-User`:** Remote Desktop on, with Network Level
+  Authentication, and open in the firewall; the OpenSSH server
+  (`sshd`, built into Server 2025, an optional capability elsewhere)
+  started automatically and open on port 22; and the user in the "Remote
+  Desktop Users" and "OpenSSH Users" groups. Windows Home has no Remote
+  Desktop host, so the script refuses it. The default `sshd_config` lets
+  any local account sign in; "OpenSSH Users" restricts that only with an
+  `AllowGroups` line there.
 
 **Per user** (`setup-user.ps1`), after a new shell picks up the new `PATH`:
 

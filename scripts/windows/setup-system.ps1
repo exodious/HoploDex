@@ -7,7 +7,7 @@ The machine-wide half of a Windows development setup (DEVELOPMENT.md,
 "Windows"). Run it once per computer, from an elevated PowerShell, then run
 setup-user.ps1 as each account that builds:
 
-  powershell -ExecutionPolicy Bypass -File setup-system.ps1
+  powershell -ExecutionPolicy Bypass -File setup-system.ps1 -User alice
 
 It installs, skipping whatever is already there:
   - Visual Studio Build Tools 2026 with the "Desktop development with C++"
@@ -20,27 +20,34 @@ It installs, skipping whatever is already there:
     SQLCipher, and the machine-wide OPENSSL_DIR and OPENSSL_STATIC=1 the
     build reads. OpenSSL 1.1 isn't GPLv3-compatible, so it checks for 3.
   - Win32 long paths, which deep node_modules and target paths can need.
-  - With -GitHubCli, the GitHub CLI; with -OpenSsh, the OpenSSH server.
+  - Remote access for -User: Remote Desktop (with Network Level
+    Authentication) and the OpenSSH server, both on and open in the
+    firewall, and -User in the "Remote Desktop Users" and "OpenSSH Users"
+    groups.
+  - With -GitHubCli, the GitHub CLI.
 
-It can be run again: it adds only what's missing. x64 Windows only.
+It can be run again: it adds only what's missing. For x64 Windows 10 or 11
+Pro, Enterprise or Education, or Windows Server 2025 with Desktop
+Experience. Not Home, which has no Remote Desktop host.
+
+.PARAMETER User
+The account that will build and connect remotely, usually not an
+administrator: a local account (alice) or a domain one (DOMAIN\alice).
 
 .PARAMETER VcpkgRoot
 Where to clone vcpkg. Defaults to C:\vcpkg.
 
 .PARAMETER GitHubCli
 Also install the GitHub CLI (gh).
-
-.PARAMETER OpenSsh
-Also install and start the OpenSSH server, to run commands from another
-computer.
 #>
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true)]
+    [string]$User,
     [string]$VcpkgRoot = 'C:\vcpkg',
-    [switch]$GitHubCli,
-    [switch]$OpenSsh
+    [switch]$GitHubCli
 )
 
 Set-StrictMode -Version Latest
@@ -50,6 +57,9 @@ $NodeMajor = 24
 $OpenSslTriplet = 'x64-windows-static-md'
 $VcWorkload = 'Microsoft.VisualStudio.Workload.VCTools'
 $VcTools = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+# Builtin\Remote Desktop Users, whose name depends on the Windows language.
+$RemoteDesktopUsersSid = 'S-1-5-32-555'
+$OpenSshUsers = 'OpenSSH Users'
 # winget's "reboot needed to finish installation" (0x8A150109).
 $WingetRebootNeeded = -1978334967
 $script:RebootNeeded = $false
@@ -104,6 +114,18 @@ function Get-VcInstallation {
     return $null
 }
 
+# Adds a member to a local group unless it's already in it.
+function Add-GroupMember {
+    param([string]$Description, [hashtable]$Group, [string]$Sid)
+    try {
+        Add-LocalGroupMember @Group -Member $Sid
+        Write-Host "Added $User to $Description."
+    } catch {
+        if ($_.FullyQualifiedErrorId -notlike 'MemberExists*') { throw }
+        Write-Host "$User is already in $Description."
+    }
+}
+
 function Test-WindowsSdk {
     $lib = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Lib\*\um\x64\kernel32.Lib'
     return [bool](Get-ChildItem $lib -ErrorAction SilentlyContinue)
@@ -111,6 +133,16 @@ function Test-WindowsSdk {
 
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
     throw "This setup is for x64 Windows; this computer is $env:PROCESSOR_ARCHITECTURE."
+}
+$edition = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').EditionID
+if ($edition -like 'Core*') {
+    throw "Windows Home ($edition) has no Remote Desktop host; use Pro, Enterprise, Education or Server."
+}
+try {
+    $UserSid = (New-Object System.Security.Principal.NTAccount($User)).Translate(
+        [System.Security.Principal.SecurityIdentifier]).Value
+} catch [System.Security.Principal.IdentityNotMappedException] {
+    throw "There's no account named $User on this computer."
 }
 if (-not (Test-Command winget)) {
     throw 'winget is missing. Install "App Installer" from the Microsoft Store, then run this again.'
@@ -221,19 +253,40 @@ if ($GitHubCli) {
     }
 }
 
-if ($OpenSsh) {
-    Write-Step 'OpenSSH server'
+Write-Step 'Remote Desktop'
+$terminalServer = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+Set-ItemProperty $terminalServer -Name fDenyTSConnections -Value 0 -Type DWord
+# Network Level Authentication: sign in before a session is created.
+Set-ItemProperty "$terminalServer\WinStations\RDP-Tcp" -Name UserAuthentication -Value 1 -Type DWord
+# The "Remote Desktop" rule group, by an ID that doesn't depend on the language.
+Enable-NetFirewallRule -Group '@FirewallAPI.dll,-28752'
+Add-GroupMember -Description 'Remote Desktop Users' -Group @{ SID = $RemoteDesktopUsersSid } -Sid $UserSid
+
+Write-Step 'OpenSSH server'
+# Windows Server 2025 has sshd built in; elsewhere it's an optional capability.
+if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
     $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
-    if ($capability.State -ne 'Installed') {
-        Add-WindowsCapability -Online -Name $capability.Name | Out-Null
-    }
-    Set-Service sshd -StartupType Automatic
-    Start-Service sshd
+    if (-not $capability) { throw 'This Windows has no OpenSSH server to install.' }
+    Add-WindowsCapability -Online -Name $capability.Name | Out-Null
 }
+Set-Service sshd -StartupType Automatic
+Start-Service sshd
+# Installing the capability normally adds this rule; make sure it's there and on.
+$sshRule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue
+if ($sshRule) {
+    Enable-NetFirewallRule -Name 'OpenSSH-Server-In-TCP'
+} else {
+    New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' `
+        -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow | Out-Null
+}
+if (-not (Get-LocalGroup -Name $OpenSshUsers -ErrorAction SilentlyContinue)) {
+    New-LocalGroup -Name $OpenSshUsers -Description 'Members may sign in through OpenSSH.' | Out-Null
+}
+Add-GroupMember -Description $OpenSshUsers -Group @{ Name = $OpenSshUsers } -Sid $UserSid
 
 Write-Host ''
-Write-Host 'Machine-wide setup is done. Next, as each account that builds HoploDex,' -ForegroundColor Green
-Write-Host 'open a new PowerShell (not elevated) and run setup-user.ps1.' -ForegroundColor Green
+Write-Host "Machine-wide setup is done. Next, signed in as $User, open a new" -ForegroundColor Green
+Write-Host 'PowerShell (not elevated) and run setup-user.ps1.' -ForegroundColor Green
 if ($script:RebootNeeded) {
     Write-Warning 'An installer asked for a restart. Restart Windows before building.'
 }
