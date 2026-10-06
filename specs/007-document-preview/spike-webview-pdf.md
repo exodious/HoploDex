@@ -140,10 +140,11 @@ The same attempts, from the top frame (where the PDF is), with Tauri's
 
 Other findings:
 - **The proxy needs macOS 14**, and wry links its Network.framework calls
-  strongly, so turning on `macos-proxy` makes the whole app need macOS 14
-  (plan.md says macOS 12+). Since it doesn't cover the computer's own
-  services anyway, on macOS the filter is the layer that matters; the
-  tripwire adds only a log of outside requests that get past it.
+  strongly, so turning on `macos-proxy` makes the whole app need macOS 14.
+  That's no obstacle now that the minimum is macOS 26 (plan.md, raised
+  2026-10-06). But it doesn't cover the computer's own services, so on
+  macOS the filter is the layer that matters; the tripwire adds only a log
+  of outside requests that get past it.
 - **Taking over the tripwire's port**: while the spike held `127.0.0.1`,
   binding `127.0.0.1` again failed, plain or with `SO_REUSEADDR` +
   `SO_REUSEPORT`, but **binding `0.0.0.0` on the same port succeeded**, plain
@@ -162,7 +163,7 @@ filter), and the navigation handler for top-level navigations. On Windows
 the port must be bound with `SO_EXCLUSIVEADDRUSE`; the filter there would be
 WebView2's `WebResourceRequested`. On macOS the filter is a
 `WKContentRuleList`, WebRTC must be turned off as well, and the proxy is
-optional (above).
+only the tripwire (above).
 
 A test that keeps it blocked: open a PDF in the preview, have a frame script
 make every attempt above against a local test service, and fail if the
@@ -214,8 +215,8 @@ through the filter and the tripwire.
    window. Without it the preview window's top frame can call any command.
    This is hardening for the whole app, not just the preview.
 2. **The preview web view**: `incognito`, the content filter, `proxy_url`
-   to a tripwire port HoploDex holds (on macOS only if the minimum becomes
-   macOS 14), WebRTC off (on macOS through SPI),
+   to a tripwire port HoploDex holds (on macOS through `macos-proxy`),
+   WebRTC off (on macOS through SPI),
    `on_navigation` allowing only the preview's own URL and the viewer's,
    `on_new_window` denying, and `on_download` asking with the OS's save
    dialog (so Save writes only where the user picks) or denying.

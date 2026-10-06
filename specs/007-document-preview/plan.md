@@ -94,7 +94,8 @@ changes, and an existing development database must be recreated.
 - **WebdriverIO**: one spec with real keyboard input and an E2E-only
   consent seam, plus the screenshots walk.
 
-**Target Platform**: Desktop: Windows 10+, macOS 12+, Linux, unchanged.
+**Target Platform**: Desktop: Windows 10+, macOS 26+ (raised from 12+ on
+2026-10-06: the owner tests only macOS 26), Linux.
 PDFium targets: linux-x64, linux-arm64, mac-univ, win-x64, win-arm64.
 
 **Project Type**: Desktop application (Tauri: React frontend + Rust backend in
