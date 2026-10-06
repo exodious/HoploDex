@@ -138,18 +138,7 @@ your platform's package manager.
   xcode-select --install
   ```
 
-- **Windows**: the
-  [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-  (the "Desktop development with C++" workload) and WebView2 (preinstalled
-  on Windows 10/11; otherwise get it from the
-  [WebView2 runtime page](https://developer.microsoft.com/microsoft-edge/webview2/)).
-
-  SQLCipher also needs OpenSSL here (macOS uses CommonCrypto and Linux uses
-  `libssl-dev`, so neither needs anything extra). Install it, for example
-  with [vcpkg](https://vcpkg.io) — `vcpkg install openssl:x64-windows-static-md` —
-  and set `OPENSSL_DIR` (e.g. `C:\vcpkg\installed\x64-windows-static-md`) and
-  `OPENSSL_STATIC=1` before building. The build stops with "Missing
-  environment variable OPENSSL_DIR" otherwise.
+- **Windows**: see [Windows](#windows) below.
 
 **End-to-end (E2E) testing extras — Linux only:** an isolated virtual
 display. The E2E build carries its own WebDriver server (see "Test"), so
@@ -183,10 +172,6 @@ daemon that has no login keyring, which fails with `SS error: result not
 returned from SS API`. Verify it registered correctly
 with `busctl --user list | grep org.freedesktop.secrets` before re-running
 `npm run test:e2e`.
-
-The E2E suite hasn't been run on Windows yet. The embedded WebDriver server
-works there too, so it needs no driver either, only its platform-specific
-harness parts (#27).
 
 **macOS (partly ported, #28):** the harness gives the app a `HOME` inside
 the sandbox (only the app; cargo keeps the real one), since macOS builds
@@ -238,6 +223,93 @@ answers it, the first request's prompt sits over the middle of the screen
 and catches the clicks. The tart VM and podman's VM together can need more
 memory than a host has; if so, run the dev container's checks on another
 computer.
+
+### Windows
+
+x64 Windows 10 or 11. Two scripts install everything in this section,
+skipping what's already there, so they can be run again:
+
+```powershell
+# 1. Once per computer, from an elevated PowerShell
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1   # -GitHubCli, -OpenSsh optional
+# 2. As each account that builds, from a new PowerShell that isn't elevated
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1     # -ClaudeCode optional
+```
+
+The repository is private, so on a new computer copy the two scripts over
+first; the system script installs Git, and `-GitHubCli` adds `gh` to clone
+with. Run the user script as the account that builds: rustup, npm 12 and
+the cargo tools install into that account's profile, so an elevated shell
+signed in as another administrator sets up the wrong account.
+
+What they install, to set it up by hand instead:
+
+**Machine-wide** (`setup-system.ps1`):
+
+- **The MSVC C++ build tools and a Windows SDK.** Rust's
+  `x86_64-pc-windows-msvc` toolchain links with Microsoft's linker, and
+  `rusqlite`'s `bundled-sqlcipher` compiles SQLCipher's C with `cl.exe`.
+  Install [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+  2026 with the "Desktop development with C++" workload, whose recommended
+  parts include the SDK:
+
+  ```powershell
+  winget install --id Microsoft.VisualStudio.BuildTools -e --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+  ```
+
+  A Visual Studio (Community or another edition, 2022 or 2026) with that
+  workload works as well, and so do the 2022 Build Tools
+  (`Microsoft.VisualStudio.2022.BuildTools`). The GNU toolchain
+  (`x86_64-pc-windows-gnu`) doesn't: the OpenSSL below is built with MSVC.
+- **Git** (`winget install --id Git.Git -e --scope machine`).
+- **Node.js 24 LTS.** `OpenJS.NodeJS.LTS` follows whichever release is LTS,
+  so install a 24.x with `--version` and keep it there with
+  `winget pin add --id OpenJS.NodeJS.LTS --version 24.*`.
+- **WebView2**, the engine the app's window uses. Windows 10 and 11 include
+  it; otherwise get it from the
+  [WebView2 runtime page](https://developer.microsoft.com/microsoft-edge/webview2/)
+  or `winget install --id Microsoft.EdgeWebView2Runtime -e`.
+- **OpenSSL 3, from [vcpkg](https://vcpkg.io).** SQLCipher needs it on
+  Windows (macOS uses CommonCrypto and Linux uses `libssl-dev`). It must be
+  OpenSSL 3: 1.1 and older aren't GPLv3-compatible (see
+  [License audit](#license-audit)). Use a vcpkg of its own, cloned from
+  GitHub; the one that comes with Visual Studio has no classic mode, so
+  `vcpkg install` refuses there.
+
+  ```powershell
+  git clone https://github.com/microsoft/vcpkg C:\vcpkg
+  C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+  C:\vcpkg\vcpkg install openssl:x64-windows-static-md
+  ```
+
+  Then set `OPENSSL_DIR=C:\vcpkg\installed\x64-windows-static-md` and
+  `OPENSSL_STATIC=1`, machine-wide or for the user. The build stops with
+  "Missing environment variable OPENSSL_DIR" otherwise.
+- **Long paths:** `LongPathsEnabled` = 1 under
+  `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`, and
+  `git config --system core.longpaths true`, for deep `node_modules` and
+  `target` paths.
+
+**Per user** (`setup-user.ps1`), after a new shell picks up the new `PATH`:
+
+- **rustup** (`winget install --id Rustlang.Rustup -e`, or
+  [`rustup-init.exe`](https://win.rustup.rs)), then
+  `rustup toolchain install stable --component rustfmt --component clippy`.
+  Install it after the build tools, so its default host is
+  `x86_64-pc-windows-msvc`.
+- **npm 12:** `npm install --global npm@12`. It lands in `%APPDATA%\npm`,
+  and Node's own `npm.cmd` hands off to it, for this account only.
+- **cargo-nextest and cargo-deny:** `cargo install --locked cargo-nextest cargo-deny`.
+
+**Not yet on Windows:** the E2E suite and the screenshot walk haven't run
+there. The embedded WebDriver server works on Windows, so there's no driver
+to install, but the harness's platform-specific parts aren't ported (#27).
+**An E2E run on Windows isn't isolated from your real data**.
+Tauri finds the app's folders through `SHGetKnownFolderPath`, which ignores
+the `APPDATA` and `LOCALAPPDATA` the harness sets, so a run would write your
+real `%APPDATA%` config (#27). Until that's fixed, run `test:e2e` and
+`screenshots` only on a throwaway VM. The build, `cargo nextest run`,
+`npm test`, lint and the audits are safe anywhere.
 
 ## Install dependencies
 
@@ -747,7 +819,8 @@ before a release:
   but the crate declares only its own MIT license.
 - **SQLCipher's crypto library** (`bundled-sqlcipher`): on Linux it links the
   system's OpenSSL `libcrypto`, on macOS CommonCrypto, and on Windows the
-  OpenSSL found through `OPENSSL_DIR`, whose DLL ships with the app. OpenSSL
+  OpenSSL found through `OPENSSL_DIR`, linked into the app statically (the
+  `x64-windows-static-md` triplet builds no DLL). OpenSSL
   3.x is Apache-2.0, which is compatible. 1.1.x and older use the
   OpenSSL/SSLeay license, which isn't, so build releases against OpenSSL 3.
   Switching to `bundled-sqlcipher-vendored-openssl` would pull in
