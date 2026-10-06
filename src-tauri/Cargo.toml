@@ -114,6 +114,12 @@ windows-sys = { version = "0.61", features = [
 [dev-dependencies]
 tempfile = "3"
 
+# Distributed notices arrive on the main thread's run loop, and libtest runs
+# each test on a thread of its own, so this one has its own `main`.
+[[test]]
+name = "macos_screen_lock_test"
+harness = false
+
 # The PDF preview spike (examples/pdf_spike.rs) sets WebKitGTK's settings and
 # content filters. Already in the tree through wry, at the version and
 # features wry uses.
