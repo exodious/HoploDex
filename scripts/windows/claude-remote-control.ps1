@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-Keeps "claude remote-control" running in a HoploDex checkout, and restarts it
-to apply Claude Code updates.
+Keeps an interactive claude, with Remote Control on, running in a HoploDex
+checkout, and restarts it to apply Claude Code updates.
 
 .DESCRIPTION
 For a Windows test machine with auto-logon (DEVELOPMENT.md, "Windows").
@@ -12,19 +12,19 @@ open for E2E and screenshots, and you reach it from claude.ai/code or the
 Claude app. An SSH session couldn't host it: Windows' sshd ends every
 process in a session when it disconnects, and the session has no desktop.
 
-It starts "claude remote-control" in -Checkout and starts it again whenever
-it stops. Claude Code downloads updates in the background, but a running
+It starts "claude --remote-control --name <host>-hoplodex" in -Checkout,
+where <host> is this machine's short host name in lower case, and starts it
+again whenever it stops. Claude Code downloads updates in the background, but a running
 claude keeps its version until it restarts, so once a day, during
 -UpdateHour, it restarts claude if a newer version is installed. Run with
 -Restart (from SSH, say) to restart it now. Either way it stops claude with
-Ctrl+C, as you would, and with Stop-Process only if that doesn't work, and
-"claude remote-control" brings back the sessions the last one served.
-Whatever a session was doing at that moment stops.
+Ctrl+C, as you would, and with Stop-Process only if that doesn't work. The
+new claude starts a new conversation: whatever the old one was doing stops.
 
 To stop it until the next sign-in, close its window.
 
 .PARAMETER Checkout
-The HoploDex checkout to serve sessions in.
+The HoploDex checkout to run claude in.
 
 .PARAMETER UpdateHour
 The hour (0-23, local time) in which to restart for an update. -1 turns
@@ -80,7 +80,7 @@ if ($Restart) {
     $deadline = (Get-Date).AddMinutes(2)
     while ((Test-Path $RestartFile) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
     if (Test-Path $RestartFile) { throw 'The wrapper did not restart claude within 2 minutes.' }
-    Write-Host 'claude remote-control restarted.'
+    Write-Host 'claude restarted.'
     return
 }
 
@@ -89,7 +89,9 @@ if (Get-Wrapper) { throw 'claude-remote-control.ps1 is already running.' }
 Set-Content $PidFile $PID
 Remove-Item $RestartFile -ErrorAction SilentlyContinue
 Set-Location $Checkout
-$Host.UI.RawUI.WindowTitle = "claude remote-control: $Checkout"
+# The session's name in claude.ai/code and the Claude app.
+$SessionName = "$(([System.Net.Dns]::GetHostName() -split '\.')[0].ToLowerInvariant())-hoplodex"
+$Host.UI.RawUI.WindowTitle = "claude $($SessionName): $Checkout"
 
 Add-Type -TypeDefinition @'
 using System;
@@ -105,14 +107,19 @@ public static class HoploDexConsole {
 '@
 
 # Stops claude as Ctrl+C in this window would, but without stopping this
-# script, then forcibly if it's still running after 30 seconds.
+# script, then forcibly if it's still running after 30 seconds. Each attempt
+# presses Ctrl+C twice, since an interactive claude asks for a second one
+# before it exits.
 function Stop-Claude([System.Diagnostics.Process]$Claude) {
     # Ignore Ctrl+C here while claude, which shares this console, gets it.
     [HoploDexConsole]::SetConsoleCtrlHandler([IntPtr]::Zero, $true) | Out-Null
     try {
         foreach ($attempt in 1, 2) {
-            [HoploDexConsole]::GenerateConsoleCtrlEvent(0, 0) | Out-Null
-            if ($Claude.WaitForExit(15000)) { return }
+            foreach ($press in 1, 2) {
+                [HoploDexConsole]::GenerateConsoleCtrlEvent(0, 0) | Out-Null
+                if ($Claude.WaitForExit(500)) { return }
+            }
+            if ($Claude.WaitForExit(14000)) { return }
         }
         Write-Status 'claude ignored Ctrl+C; stopping it.'
         Stop-Process -Id $Claude.Id -Force
@@ -124,9 +131,9 @@ function Stop-Claude([System.Diagnostics.Process]$Claude) {
 
 while ($true) {
     $version = Get-ClaudeVersion
-    Write-Status "Starting claude remote-control ($version) in $Checkout."
+    Write-Status "Starting claude ($version) as $SessionName in $Checkout."
     $claudeExe = (Get-Command claude -CommandType Application | Select-Object -First 1).Source
-    $claude = Start-Process $claudeExe -ArgumentList 'remote-control' -NoNewWindow -PassThru
+    $claude = Start-Process $claudeExe -ArgumentList '--remote-control', '--name', $SessionName -NoNewWindow -PassThru
     # Keep the handle, so the exit code is still there after it exits.
     $null = $claude.Handle
     $lastCheck = Get-Date

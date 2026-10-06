@@ -338,12 +338,14 @@ it through [Remote Control](https://code.claude.com/docs/en/remote-control)
 from claude.ai/code, the Claude app or another Claude session. The option
 installs Claude Code, copies `scripts/windows/claude-remote-control.ps1`
 to `%LOCALAPPDATA%\HoploDex`, and adds a Startup-folder shortcut that runs
-it minimized at each sign-in. The script keeps `claude remote-control`
-running in the checkout: it starts it again whenever it stops, 30 seconds
-later. Before the first sign-in, answer Claude Code's one-time questions
-over SSH, since the minimized window would wait on them: in the checkout,
-run `claude` and `/login`, then `claude remote-control`, trust the folder,
-enable Remote Control, and stop it with Ctrl+C.
+it minimized at each sign-in. The script keeps
+`claude --remote-control --name <host>-hoplodex` running in the checkout
+(`<host>` is the machine's short host name, in lower case): it starts it
+again whenever it stops, 30 seconds later. Before the first sign-in, answer
+Claude Code's one-time questions over SSH, since the minimized window would
+wait on them: in the checkout, run `claude` and `/login`, then
+`claude --remote-control`, trust the folder, enable Remote Control, and
+`/exit`.
 
 Claude Code downloads updates in the background, but a running `claude`
 keeps its version until it restarts. So during one hour a day (`-UpdateHour`
@@ -355,10 +357,9 @@ powershell -File $env:LOCALAPPDATA\HoploDex\claude-remote-control.ps1 -Restart
 ```
 
 Either way it stops `claude` with Ctrl+C, and forcibly only if that
-doesn't work within 30 seconds, and the new `claude remote-control` brings
-back the sessions the old one served (for about four hours after it
-stopped). Whatever a session was doing at that moment stops, so restart
-between tasks. To stop it until the next sign-in, close its window.
+doesn't work within 30 seconds, and the new `claude` starts a new
+conversation under the same name. Whatever the old one was doing stops, so
+restart between tasks. To stop it until the next sign-in, close its window.
 
 **Not yet on Windows:** the E2E suite and the screenshot walk haven't run
 there. The embedded WebDriver server works on Windows, so there's no driver

@@ -21,8 +21,9 @@ It installs, skipping or updating whatever is already there:
   - With -ClaudeRemoteControl <checkout>, for a test machine with
     auto-logon: Claude Code, and claude-remote-control.ps1 (copied to
     %LOCALAPPDATA%\HoploDex) started minimized from the Startup folder at
-    each sign-in, serving Remote Control sessions in that checkout from the
-    desktop session. It needs claude-remote-control.ps1 next to this script.
+    each sign-in, running claude with Remote Control on in that checkout,
+    in the desktop session. It needs claude-remote-control.ps1 next to
+    this script.
 
 It checks first that setup-system.ps1 has run: the C++ tools, Git, Node.js
 24 and OPENSSL_DIR.
@@ -31,8 +32,8 @@ It checks first that setup-system.ps1 has run: the C++ tools, Git, Node.js
 Also install Claude Code (https://claude.ai/install.ps1).
 
 .PARAMETER ClaudeRemoteControl
-A HoploDex checkout to serve Claude Code Remote Control sessions in, from
-the desktop session, starting at each sign-in. Implies -ClaudeCode.
+A HoploDex checkout to run Claude Code in, with Remote Control on, in the
+desktop session, starting at each sign-in. Implies -ClaudeCode.
 #>
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -184,7 +185,7 @@ if ($ClaudeRemoteControl) {
     # Minimized.
     $shortcut.WindowStyle = 7
     $shortcut.Save()
-    Write-Host "At each sign-in, claude remote-control starts in $ClaudeRemoteControl."
+    Write-Host "At each sign-in, claude --remote-control starts in $ClaudeRemoteControl."
 }
 
 Write-Host ''
@@ -195,7 +196,7 @@ if ($ClaudeRemoteControl) {
     Write-Host 'Before the next sign-in, answer Claude Code''s one-time questions, which the' -ForegroundColor Green
     Write-Host 'minimized window would otherwise wait on. In a new terminal:' -ForegroundColor Green
     Write-Host "  cd `"$ClaudeRemoteControl`""
-    Write-Host '  claude                 # sign in with /login, then /exit'
-    Write-Host '  claude remote-control  # trust the folder, enable Remote Control, then Ctrl+C'
+    Write-Host '  claude                   # sign in with /login, then /exit'
+    Write-Host '  claude --remote-control  # trust the folder, enable Remote Control, then /exit'
     Write-Host 'Then restart Windows (or sign out and in) to start it.' -ForegroundColor Green
 }
