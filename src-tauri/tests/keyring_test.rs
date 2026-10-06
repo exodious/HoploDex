@@ -388,6 +388,10 @@ fn saving_a_wrong_passphrase_is_refused_by_the_first_page_check() {
 
 #[test]
 fn without_a_keyring_nothing_is_saved_and_everything_else_works() {
+    // The in-memory store is installed anyway, so `stored` can look in it.
+    // Under nextest this test has a process to itself, and the unavailable
+    // keyring never installs one.
+    Keyring::mock(None, None);
     let world = World::with_keyring(Keyring::mock(Some("unavailable"), None));
     let state = ops::chooser_state(&world.session, &world.machine, None, None);
     assert!(!state.keyring_available);
