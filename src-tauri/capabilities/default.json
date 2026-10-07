@@ -67,6 +67,7 @@
     "allow-get-photo-original",
     "allow-set-thumbnail-photo",
     "allow-delete-photo",
+    "allow-list-document-types",
     "allow-list-documents",
     "allow-add-document",
     "allow-add-document-from-path",

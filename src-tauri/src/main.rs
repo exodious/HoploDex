@@ -14,6 +14,7 @@ use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::preview::availability::PdfAvailabilityState;
 use hoplodex_lib::session::{Session, lifecycle};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -144,6 +145,8 @@ fn main() {
             backups::sweep_unfinished(&machine);
             app.manage(machine);
             app.manage(ImportSessionStore::new());
+            // Available until US1's startup check decides (research.md §7).
+            app.manage(PdfAvailabilityState::default());
             // Sleep, wake, screen lock and shutdown (FR-037, FR-038), and
             // the idle lock (FR-034).
             let (sender, events) = mpsc::channel();
@@ -233,6 +236,7 @@ fn main() {
             hoplodex_lib::commands::photos::get_photo_original,
             hoplodex_lib::commands::photos::set_thumbnail_photo,
             hoplodex_lib::commands::photos::delete_photo,
+            hoplodex_lib::commands::documents::list_document_types,
             hoplodex_lib::commands::documents::list_documents,
             hoplodex_lib::commands::documents::add_document,
             hoplodex_lib::commands::documents::add_document_from_path,

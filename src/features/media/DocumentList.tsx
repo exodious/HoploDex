@@ -80,13 +80,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     await addAll(
       files.map((file) => ({
         name: file.name,
-        add: async () =>
-          mediaService.addDocument(
-            owner,
-            await fileToByteArray(file),
-            file.name,
-            file.type || "application/octet-stream",
-          ),
+        add: async () => mediaService.addDocument(owner, await fileToByteArray(file), file.name),
       })),
     );
   }

@@ -86,7 +86,9 @@ type DocumentOpening = "preview" | "external";
 ### `list_document_types` *(new)*
 
 - **Input**: none.
-- **Output**: `DocumentType[]`, in the table order of research.md §2.
+- **Output**: `DocumentType[]`, in the table order of research.md §2: one
+  entry per canonical MIME type, so "Word" (`.doc`, then `.docx`) and
+  "Spreadsheet" (`.xls`, then `.xlsx`) each appear twice, and eleven in all.
 - **Use**: the document picker's `accept` and the drop router's document
   test read this. The frontend keeps no list of its own; the backend's
   `classify` stays the authority.

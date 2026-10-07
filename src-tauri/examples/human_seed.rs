@@ -564,10 +564,10 @@ pub fn seed(conn: &Connection, extra: usize) {
             })
             .collect()
     };
-    let documents = |firearm_id: i64, files: &[(&str, Vec<u8>, &str)]| {
-        for (name, bytes, mime) in files {
+    let documents = |firearm_id: i64, files: &[(&str, Vec<u8>)]| {
+        for (name, bytes) in files {
             must(
-                document_ops::add_document(conn, RecordRef::Firearm(firearm_id), bytes, name, mime),
+                document_ops::add_document(conn, RecordRef::Firearm(firearm_id), bytes, name),
                 name,
             );
         }
@@ -607,20 +607,57 @@ pub fn seed(conn: &Connection, extra: usize) {
             seed_photo!("glock-19-atf.jpg"),
         ],
     );
+    // specs/007-document-preview: one of each kind the preview handles or
+    // hands on, so every manual check has a document to open. The password
+    // is `hoplodex-test` (tests/fixtures/documents/SOURCE.md).
     documents(
         glock,
         &[
             (
-                "receipt-ridgeline-arms.pdf",
-                simple_pdf(&["Ridgeline Arms", "Sales receipt", "Glock 19 Gen5 - 529.00"]),
-                "application/pdf",
+                "Purchase receipt.pdf",
+                simple_pdf(&[
+                    &["Ridgeline Arms", "Sales receipt", "Glock 19 Gen5 - 529.00"],
+                    &[
+                        "Ridgeline Arms",
+                        "Terms of sale",
+                        "All sales final after the waiting period.",
+                    ],
+                    &["Ridgeline Arms", "Warranty", "Limited lifetime warranty on the frame."],
+                ]),
+            ),
+            (
+                "Appraisal (protected).pdf",
+                include_bytes!("../tests/fixtures/documents/password-protected.pdf").to_vec(),
+            ),
+            (
+                "Appraisal scan.tif",
+                include_bytes!("../tests/fixtures/documents/four-pages-mixed.tif").to_vec(),
             ),
             (
                 "owners-manual-notes.txt",
                 b"Field strip: clear, lock slide back, pull down the takedown tabs.\n".to_vec(),
-                "text/plain",
             ),
+            (
+                "Round count.csv",
+                b"date,rounds\n2026-01-09,150\n2026-02-14,200\n2026-03-21,100\n".to_vec(),
+            ),
+            (
+                "Bill of sale.docx",
+                include_bytes!("../tests/fixtures/documents/sample.docx").to_vec(),
+            ),
+            ("Range log.ods", include_bytes!("../tests/fixtures/documents/sample.ods").to_vec()),
         ],
+    );
+    // A row stored before 007, of a type `add_document` now refuses: it stays
+    // listed and deletable, and is neither previewed nor opened (FR-017).
+    must(
+        conn.execute(
+            "INSERT INTO document_attachments
+                (firearm_id, file_bytes, original_filename, mime_type, created_at)
+             VALUES (?1, ?2, 'Old scan.jpg', 'image/jpeg', datetime('now'))",
+            rusqlite::params![glock, gradient_image(600, 400, 40, true)],
+        ),
+        "a pre-007 document of another type",
     );
 
     // Deliberately no photos: shows the generic rifle thumbnail.
@@ -1191,8 +1228,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         registered_suppressor,
         &[(
             "Form 4 approval.pdf",
-            simple_pdf(&["Approved Form 4", "Registered to Smith Family Trust"]),
-            "application/pdf",
+            simple_pdf(&[&["Approved Form 4", "Registered to Smith Family Trust"]]),
         )],
     );
     // A Rifle made into a short-barreled rifle on a Form 1, to the owner.
@@ -1290,7 +1326,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         add(input);
     }
 
-    seed_accessories(conn, &policies);
+    seed_accessories(conn, &policies, glock);
     seed_mounts(conn);
 }
 
@@ -1324,7 +1360,7 @@ fn bare_accessory(kind: i64, make: &str, model: &str) -> AccessoryInput {
 /// record, one scheduled under a policy, photos and a document, and disposed
 /// accessories with retained history covering every disposition type. The
 /// mounts are `seed_mounts`'.
-fn seed_accessories(conn: &Connection, policies: &Policies) {
+fn seed_accessories(conn: &Connection, policies: &Policies, glock: i64) {
     let bare = bare_accessory;
     let add = |input: AccessoryInput| {
         let label = format!("{} {}", input.make, input.model);
@@ -1369,6 +1405,10 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         acquisition_price: Some(1_100),
         insurance_policy_id: Some(policies.collector),
         scheduled_coverage_amount: Some(1_200),
+        // On the Glock, so the Glock's documents test that preview never
+        // reaches the mounted record's (specs/007 FR-007); the Leupold's own
+        // receipt is below.
+        mounted_on: Some(RecordRef::Firearm(glock)),
         ..bare(KIND_OPTIC, "Leupold", "VX-5HD 3-15x44")
     });
     let scope_photos = [photo(scope, "scope-front.jpg", 200), photo(scope, "scope-side.jpg", 20)];
@@ -1380,9 +1420,12 @@ fn seed_accessories(conn: &Connection, policies: &Policies) {
         document_ops::add_document(
             conn,
             RecordRef::Accessory(scope),
-            &simple_pdf(&["Ridgeline Arms", "Sales receipt", "Leupold VX-5HD 3-15x44 - 1,100.00"]),
+            &simple_pdf(&[&[
+                "Ridgeline Arms",
+                "Sales receipt",
+                "Leupold VX-5HD 3-15x44 - 1,100.00",
+            ]]),
             "receipt-leupold.pdf",
-            "application/pdf",
         ),
         "an accessory receipt",
     );
@@ -1688,25 +1731,34 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     (byte(r), byte(g), byte(b))
 }
 
-/// A one-page PDF with real text, small enough to build by hand, so opening
-/// a document hands the OS viewer something it can actually display.
-fn simple_pdf(lines: &[&str]) -> Vec<u8> {
+/// A PDF with real text, one page per slice of lines, small enough to build
+/// by hand, so opening a document hands the viewer something it can
+/// actually display.
+fn simple_pdf(pages: &[&[&str]]) -> Vec<u8> {
     let escape = |line: &str| line.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)");
-    let mut content = String::from("BT /F1 16 Tf 72 720 Td 22 TL\n");
-    for line in lines {
-        content.push_str(&format!("({}) Tj T*\n", escape(line)));
-    }
-    content.push_str("ET");
-
-    let objects = [
+    // Objects: 1 catalog, 2 page tree, 3 font, then a page and its content
+    // stream for each page.
+    let first_page = 4;
+    let kids: Vec<String> =
+        (0..pages.len()).map(|n| format!("{} 0 R", first_page + 2 * n)).collect();
+    let mut objects = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R \
-         /Resources << /Font << /F1 4 0 R >> >> >>"
-            .to_string(),
+        format!("<< /Type /Pages /Kids [{}] /Count {} >>", kids.join(" "), pages.len()),
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
-        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
     ];
+    for (n, lines) in pages.iter().enumerate() {
+        let mut content = String::from("BT /F1 16 Tf 72 720 Td 22 TL\n");
+        for line in lines.iter() {
+            content.push_str(&format!("({}) Tj T*\n", escape(line)));
+        }
+        content.push_str("ET");
+        objects.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {} 0 R \
+             /Resources << /Font << /F1 3 0 R >> >> >>",
+            first_page + 2 * n + 1
+        ));
+        objects.push(format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()));
+    }
     let mut pdf = String::from("%PDF-1.4\n");
     let mut offsets = Vec::new();
     for (index, body) in objects.iter().enumerate() {

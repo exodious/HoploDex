@@ -9,6 +9,8 @@ use crate::commands::firearms::DeleteResult;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
 use crate::models::record::RecordRef;
 use crate::services::attachments::read_attachment_file;
+use crate::services::document_types::{self, DocumentType, classify};
+use crate::services::preview::availability::PdfAvailabilityState;
 use crate::services::secure_delete::secure_delete_dir;
 use crate::session::Session;
 
@@ -45,13 +47,22 @@ pub mod ops {
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }
 
+    /// The document types in table order (contracts/tauri-commands.md
+    /// `list_document_types`): what the picker's `accept` and the drop
+    /// router read, so the frontend keeps no list of its own.
+    pub fn list_document_types() -> &'static [DocumentType] {
+        document_types::all()
+    }
+
     pub fn add_document(
         conn: &Connection,
         owner: RecordRef,
         file_bytes: &[u8],
         original_filename: &str,
-        mime_type: &str,
     ) -> Result<DocumentAttachment, CommandError> {
+        // The type recorded is the one the content check finds, whatever the
+        // file chooser said (FR-016). Nothing is stored on a refusal.
+        let document_type = classify(original_filename, file_bytes)?;
         let exists: bool = conn
             .query_row(
                 &format!("SELECT EXISTS (SELECT 1 FROM {} WHERE id = :id)", owner.table()),
@@ -78,7 +89,7 @@ pub mod ops {
                 ":accessory_id": accessory_id,
                 ":file_bytes": file_bytes,
                 ":original_filename": original_filename,
-                ":mime_type": mime_type,
+                ":mime_type": document_type.mime_type,
             },
         )
         .map_err(CommandError::from_db)?;
@@ -87,14 +98,15 @@ pub mod ops {
     }
 
     /// `add_document` for a file already on disk — a document dropped onto
-    /// the window arrives as a path, not as bytes.
+    /// the window arrives as a path, not as bytes. It is classified by its
+    /// content like any other.
     pub fn add_document_from_path(
         conn: &Connection,
         owner: RecordRef,
         path: &Path,
     ) -> Result<DocumentAttachment, CommandError> {
         let file = read_attachment_file(path)?;
-        add_document(conn, owner, &file.bytes, &file.filename, file.mime_type)
+        add_document(conn, owner, &file.bytes, &file.filename)
     }
 
     pub fn delete_document(
@@ -228,10 +240,21 @@ fn hand_to_os(_app: &AppHandle, path: &Path) -> Result<(), CommandError> {
 pub async fn list_documents(
     owner: RecordRef,
     session: State<'_, Session>,
+    pdf: State<'_, PdfAvailabilityState>,
 ) -> Result<Vec<DocumentSummary>, CommandError> {
+    let pdf = pdf.get();
     session.read(|conn| {
-        Ok(ops::list_documents(conn, owner)?.into_iter().map(DocumentSummary::from).collect())
+        Ok(ops::list_documents(conn, owner)?
+            .into_iter()
+            .map(|document| DocumentSummary::new(document, &pdf))
+            .collect())
     })
+}
+
+/// The document types, for the picker and the drop router.
+#[tauri::command]
+pub async fn list_document_types() -> Result<&'static [DocumentType], CommandError> {
+    Ok(ops::list_document_types())
 }
 
 #[tauri::command]
@@ -239,11 +262,13 @@ pub async fn add_document(
     owner: RecordRef,
     file_bytes: Vec<u8>,
     original_filename: String,
-    mime_type: String,
     session: State<'_, Session>,
+    pdf: State<'_, PdfAvailabilityState>,
 ) -> Result<DocumentSummary, CommandError> {
+    let pdf = pdf.get();
     session.write(|conn| {
-        ops::add_document(conn, owner, &file_bytes, &original_filename, &mime_type).map(Into::into)
+        ops::add_document(conn, owner, &file_bytes, &original_filename)
+            .map(|document| DocumentSummary::new(document, &pdf))
     })
 }
 
@@ -254,8 +279,13 @@ pub async fn add_document_from_path(
     owner: RecordRef,
     path: String,
     session: State<'_, Session>,
+    pdf: State<'_, PdfAvailabilityState>,
 ) -> Result<DocumentSummary, CommandError> {
-    session.write(|conn| ops::add_document_from_path(conn, owner, Path::new(&path)).map(Into::into))
+    let pdf = pdf.get();
+    session.write(|conn| {
+        ops::add_document_from_path(conn, owner, Path::new(&path))
+            .map(|document| DocumentSummary::new(document, &pdf))
+    })
 }
 
 #[tauri::command]

@@ -28,6 +28,14 @@ fn marker_blob() -> Vec<u8> {
     MARKER.repeat(REPEATS)
 }
 
+/// The marker as a document: `add_document` keeps only what passes the
+/// content check (FR-016), and a PDF's signature may be followed by anything.
+fn marker_document() -> Vec<u8> {
+    let mut bytes = b"%PDF-1.4\n".to_vec();
+    bytes.extend(marker_blob());
+    bytes
+}
+
 /// A real PNG (so the thumbnail generator accepts it) with the marker
 /// appended after its final chunk, where decoders ignore it.
 fn marker_png() -> Vec<u8> {
@@ -87,9 +95,8 @@ fn the_search_can_see_the_marker_while_it_is_stored() {
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
 
@@ -113,9 +120,8 @@ fn deleting_a_document_wipes_its_bytes_and_returns_the_space() {
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
     let size_before = file_size(&db.conn);
@@ -163,9 +169,8 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
     let size_before = file_size(&db.conn);
@@ -268,9 +273,8 @@ fn deleting_one_attachment_leaves_the_others_intact() {
     let keep = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "keep.pdf",
-        "application/pdf",
     )
     .unwrap();
     let doomed = document_ops::add_document(
@@ -278,14 +282,13 @@ fn deleting_one_attachment_leaves_the_others_intact() {
         RecordRef::Firearm(created.id),
         b"%PDF-1.4 to be deleted",
         "gone.pdf",
-        "application/pdf",
     )
     .unwrap();
 
     document_ops::delete_document(&db.conn, doomed.id, true).unwrap();
 
     let kept = document_ops::get_document(&db.conn, keep.id).unwrap();
-    assert_eq!(kept.file_bytes, marker_blob(), "the vacuum must not disturb what stays");
+    assert_eq!(kept.file_bytes, marker_document(), "the vacuum must not disturb what stays");
 }
 
 #[test]
@@ -296,9 +299,8 @@ fn an_unconfirmed_delete_changes_nothing() {
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
 
@@ -355,8 +357,7 @@ fn deleting_an_accessory_wipes_its_serial_number_notes_photo_and_document() {
     let kept = create_accessory(&db, "Aimpoint", "KEEP-1", "kept notes");
     let owner = RecordRef::Accessory(doomed);
     photo_ops::add_photo(&db.conn, owner, &marker_png(), "scope.png", "image/png").unwrap();
-    document_ops::add_document(&db.conn, owner, &marker_blob(), "warranty.pdf", "application/pdf")
-        .unwrap();
+    document_ops::add_document(&db.conn, owner, &marker_document(), "warranty.pdf").unwrap();
     // Guard: the search sees every one of them while stored.
     let before = decrypted_export(&db.conn, scratch.path());
     assert!(contains(&before, SERIAL));
@@ -398,9 +399,8 @@ fn deleting_an_accessorys_document_wipes_its_bytes_and_returns_the_space() {
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Accessory(id),
-        &marker_blob(),
+        &marker_document(),
         "warranty.pdf",
-        "application/pdf",
     )
     .unwrap();
     let size_before = file_size(&db.conn);

@@ -64,6 +64,7 @@ pub const COMMANDS: &[&str] = &[
     "get_photo_original",
     "set_thumbnail_photo",
     "delete_photo",
+    "list_document_types",
     "list_documents",
     "add_document",
     "add_document_from_path",

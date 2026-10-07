@@ -1,6 +1,6 @@
 import { invoke } from "../../services/tauriClient";
 import type { RecordRef } from "../mounts/types";
-import type { DocumentSummary, PhotoSummary } from "./types";
+import type { DocumentSummary, DocumentType, PhotoSummary } from "./types";
 
 export function listPhotos(owner: RecordRef): Promise<PhotoSummary[]> {
   return invoke<PhotoSummary[]>("list_photos", { owner });
@@ -44,18 +44,19 @@ export function listDocuments(owner: RecordRef): Promise<DocumentSummary[]> {
   return invoke<DocumentSummary[]>("list_documents", { owner });
 }
 
+/** The document types the backend keeps, in table order: the picker's `accept` and the drop
+ * router's document test read this; the backend's content check stays the authority. */
+export function listDocumentTypes(): Promise<DocumentType[]> {
+  return invoke<DocumentType[]>("list_document_types");
+}
+
+/** The type recorded is the one the backend's content check finds, so none is sent. */
 export function addDocument(
   owner: RecordRef,
   fileBytes: number[],
   originalFilename: string,
-  mimeType: string,
 ): Promise<DocumentSummary> {
-  return invoke<DocumentSummary>("add_document", {
-    owner,
-    fileBytes,
-    originalFilename,
-    mimeType,
-  });
+  return invoke<DocumentSummary>("add_document", { owner, fileBytes, originalFilename });
 }
 
 /** Attaches a document from a file on disk — what a drop onto the window delivers. */

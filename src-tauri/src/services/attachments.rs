@@ -33,9 +33,10 @@ pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError>
     Ok(AttachmentFile { bytes, filename, mime_type })
 }
 
-/// The type to record for a file, going by its extension. Unknown
-/// extensions are stored as generic binary data, which is all the app needs
-/// them for: opening a document hands it to the OS by file name.
+/// The type to record for a photo, going by its extension. Anything else is
+/// generic binary data, which the photo rules refuse. Documents don't use
+/// this: their type comes from `services::document_types::classify`, which
+/// looks at the content (research.md §2).
 pub fn mime_type_for(filename: &str) -> &'static str {
     let extension = filename.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
     match extension.as_deref() {
@@ -44,17 +45,6 @@ pub fn mime_type_for(filename: &str) -> &'static str {
         Some("gif") => "image/gif",
         Some("webp") => "image/webp",
         Some("heic") => "image/heic",
-        Some("tif" | "tiff") => "image/tiff",
-        Some("pdf") => "application/pdf",
-        Some("txt") => "text/plain",
-        Some("csv") => "text/csv",
-        Some("rtf") => "application/rtf",
-        Some("doc") => "application/msword",
-        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        Some("xls") => "application/vnd.ms-excel",
-        Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        Some("odt") => "application/vnd.oasis.opendocument.text",
-        Some("ods") => "application/vnd.oasis.opendocument.spreadsheet",
         _ => "application/octet-stream",
     }
 }
@@ -65,7 +55,7 @@ mod tests {
 
     #[test]
     fn mime_type_ignores_extension_case() {
-        assert_eq!(mime_type_for("Receipt.PDF"), "application/pdf");
+        assert_eq!(mime_type_for("Front.PNG"), "image/png");
         assert_eq!(mime_type_for("range day.JPeG"), "image/jpeg");
     }
 
@@ -73,6 +63,7 @@ mod tests {
     fn mime_type_falls_back_to_generic_binary() {
         assert_eq!(mime_type_for("appraisal"), "application/octet-stream");
         assert_eq!(mime_type_for("notes.unknownext"), "application/octet-stream");
+        assert_eq!(mime_type_for("receipt.pdf"), "application/octet-stream");
     }
 
     #[test]

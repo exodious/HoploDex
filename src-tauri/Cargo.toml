@@ -80,7 +80,7 @@ zeroize = "1.9"
 # decompress (research.md §2), text decoding (§12) and page PNGs (§11).
 # Promoted from transitive, at the versions already in Cargo.lock: `zip` is
 # the 8.x `calamine` uses, `png` the 0.17 `image` uses.
-zip = { version = "8.6", default-features = false }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 cfb = "0.7.3"
 encoding_rs = "0.8.35"
 png = "0.17.16"

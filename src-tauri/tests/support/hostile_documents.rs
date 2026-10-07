@@ -329,6 +329,25 @@ pub fn html_named_pdf() -> Generated {
     )
 }
 
+/// A DOCX that is otherwise sound, with one more entry whose directory
+/// record declares 3 GB of content (the bytes behind it are one). Reading it
+/// whole would take far longer than reading its directory (research.md §2).
+pub fn docx_declaring_gigabytes() -> Generated {
+    const HUGE: &str = "word/media/huge.bin";
+    let mut b = word_package(WORD_MAIN, &[(HUGE, b"x")]);
+    let signature = le32(0x0201_4B50);
+    let mut at = 0;
+    while let Some(found) = b[at..].windows(4).position(|w| w == signature) {
+        let record = at + found;
+        let name_length = u16::from_le_bytes([b[record + 28], b[record + 29]]) as usize;
+        if &b[record + 46..record + 46 + name_length] == HUGE.as_bytes() {
+            b[record + 24..record + 28].copy_from_slice(&le32(3_000_000_000));
+        }
+        at = record + 4;
+    }
+    Generated::new("huge.docx", b)
+}
+
 /// A ZIP of the wrong sort (no `[Content_Types].xml`) named `.docx`.
 pub fn zip_named_docx() -> Generated {
     Generated::new("notes.docx", zip_stored(&[("readme.txt", b"hello")]))
@@ -347,7 +366,7 @@ pub const MARKUP_STARTS: [&str; 6] = ["!DOCTYPE html", "html", "svg", "?xml", "s
 /// (the tag's case alternates by its length, so both cases are covered
 /// across [`MARKUP_STARTS`]).
 pub fn markup_text(name: &str, tag: &str) -> Generated {
-    let tag = if tag.len() % 2 == 0 { tag.to_uppercase() } else { tag.to_lowercase() };
+    let tag = if tag.len().is_multiple_of(2) { tag.to_uppercase() } else { tag.to_lowercase() };
     let mut b = vec![0xEF, 0xBB, 0xBF];
     b.extend_from_slice(b" \r\n\t  <");
     b.extend_from_slice(tag.as_bytes());
