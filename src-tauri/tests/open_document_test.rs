@@ -826,16 +826,26 @@ fn a_row_the_attach_rules_would_refuse_is_refused_before_the_dialog_and_can_be_d
         "application/pdf",
         &html.bytes,
     );
+    // An Office file attached before the check for outside content.
+    let template = hostile::docx_with_remote_template();
+    let template_row = insert_raw_document(
+        &world.session,
+        world.firearm,
+        &template.name,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        &template.bytes,
+    );
     let consent = FakeConsent::open();
     let opener = FakeOpener::new();
 
     assert_eq!(code(world.open(&consent, &opener, jpeg_row)), "DOCUMENT_TYPE_NOT_ALLOWED");
     assert_eq!(code(world.open(&consent, &opener, html_row)), "DOCUMENT_CONTENT_MISMATCH");
+    assert_eq!(code(world.open(&consent, &opener, template_row)), "DOCUMENT_CONTENT_MISMATCH");
 
     assert!(consent.requests().is_empty(), "the dialog was never shown");
     assert!(opener.calls().is_empty());
     assert!(!world.copies().exists());
-    for id in [jpeg_row, html_row] {
+    for id in [jpeg_row, html_row, template_row] {
         world.session.write(|conn| document_ops::delete_document(conn, id, true)).unwrap();
     }
 }

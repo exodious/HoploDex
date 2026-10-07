@@ -432,6 +432,8 @@ fn refuses_what_is_not_a_document_and_stores_nothing() {
         (hostile::exe(), "DOCUMENT_TYPE_NOT_ALLOWED"),
         (hostile::html_named_pdf(), "DOCUMENT_CONTENT_MISMATCH"),
         (hostile::docm(), "DOCUMENT_TYPE_NOT_ALLOWED"),
+        (hostile::docx_with_remote_template(), "DOCUMENT_CONTENT_MISMATCH"),
+        (hostile::rtf_with_object(), "DOCUMENT_CONTENT_MISMATCH"),
     ] {
         let err = document_ops::add_document(&db.conn, owner, &file.bytes, &file.name)
             .expect_err(&file.name);

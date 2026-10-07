@@ -38,6 +38,9 @@ bytes)`:
 2. The content must carry that type's signature (research.md §2's table).
    Otherwise → `DOCUMENT_CONTENT_MISMATCH`. This includes:
    - macro-enabled OOXML, OLE or ODF content;
+   - RTF with an object or a template, and OOXML with an embedded or linked
+     object, ActiveX, an external workbook link, or any relationship but a
+     hyperlink that points outside the package;
    - text or CSV that begins with markup.
 
 There is no database `CHECK` for the type. The rule needs the content and

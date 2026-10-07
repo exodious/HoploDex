@@ -76,12 +76,16 @@ fs4 = "1.1.0"
 # Promoted from transitive, at the version already in Cargo.lock: wiping
 # passphrases from memory (research.md §1).
 zeroize = "1.9"
-# Document content checks, which only read directory structures and never
-# decompress (research.md §2), text decoding (§12) and page PNGs (§11).
+# Document content checks, which read directory structures and decompress
+# nothing but small parts (research.md §2), text decoding (§12) and page
+# PNGs (§11).
 # Promoted from transitive, at the versions already in Cargo.lock: `zip` is
 # the 8.x `calamine` uses, `png` the 0.17 `image` uses.
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 cfb = "0.7.3"
+# An OOXML package's relationship parts (research.md §2), at the version and
+# with the feature `calamine` already brings.
+quick-xml = { version = "0.41", features = ["encoding"] }
 encoding_rs = "0.8.35"
 png = "0.17.16"
 # TIFF pages, decoded in the render helper on every OS (research.md §11).

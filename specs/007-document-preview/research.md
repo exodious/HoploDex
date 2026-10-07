@@ -95,17 +95,44 @@ artifacts.
   | TIFF | `.tif`, `.tiff` | `II*\0`, `MM\0*` (or BigTIFF `II+\0`, `MM\0+`) | `tiff` |
   | Plain text | `.txt` | not markup (below) | `text` |
   | CSV | `.csv` | not markup | `text` |
-  | RTF | `.rtf` | `{\rtf` | not previewed |
+  | RTF | `.rtf` | `{\rtf`, and no object or template (below) | not previewed |
   | Word | `.doc` | OLE compound file with a `WordDocument` stream, no `Macros` / `_VBA_PROJECT_CUR` storage | not previewed |
-  | Word | `.docx` | ZIP with `[Content_Types].xml` whose main part is `…wordprocessingml.document.main+xml`, and no `vbaProject.bin` | not previewed |
+  | Word | `.docx` | ZIP with `[Content_Types].xml` whose main part is `…wordprocessingml.document.main+xml`, no `vbaProject.bin`, and relationships that stay inside (below) | not previewed |
   | Spreadsheet | `.xls` | OLE compound file with a `Workbook` or `Book` stream, no `_VBA_PROJECT_CUR` | not previewed |
-  | Spreadsheet | `.xlsx` | ZIP, main part `…spreadsheetml.sheet.main+xml`, no `vbaProject.bin` | not previewed |
+  | Spreadsheet | `.xlsx` | ZIP, main part `…spreadsheetml.sheet.main+xml`, no `vbaProject.bin`, relationships that stay inside | not previewed |
   | OpenDocument | `.odt`, `.ods` | ZIP whose first entry `mimetype` is `application/vnd.oasis.opendocument.text` / `.spreadsheet`, and no `Basic/` scripts | not previewed |
 
   **What "not markup" means**: after an optional BOM and whitespace, the
   first 512 bytes don't start with `<`, followed by `!DOCTYPE`, `html`,
   `svg`, `?xml`, `script` or `head`, compared case-insensitively. That is
   enough to stop the OS from sniffing the file as a web page.
+
+  **No object or template in RTF** *(added 2026-10-07, after the branch's
+  security review)*: after dropping CR and LF, the file contains neither
+  `\obj` (every object control word: `\object`, `\objdata`, `\objemb`,
+  `\objlink`, …) nor `\template`, compared case-insensitively. It is a
+  search, not a tokenizer, so `\bin` data can't hide a word from it; text
+  that spells out a backslash and `obj` (`\\obj`) is refused too, which
+  paperwork doesn't do.
+
+  **Relationships that stay inside an OOXML package** *(added
+  2026-10-07)*: every entry ending `.rels` or under a `_rels` folder (any
+  case, read by index so a duplicate name is read too, 8 MiB at most all
+  together) must be UTF-8 XML with no DTD and a `Relationships` element,
+  parsed by `quick-xml` with character references resolved (so
+  `&#69;xternal` is `External`), and each `Relationship` in it must:
+  - not have a type whose last segment is `oleObject`, `control`,
+    `activeXControlBinary`, `vbaProject`, `wordVbaData`, `externalLink`,
+    `xlMacrosheet` or `xlIntlMacrosheet` (embedded or linked OLE objects,
+    ActiveX, macros, XLM macro sheets, a workbook's links to other
+    workbooks and DDE servers);
+  - point inside the package unless it is a `hyperlink`, which only a click
+    follows. Outside is `TargetMode="External"` or an absolute target (a
+    URI scheme, a drive letter, `\\` or `//`). This refuses a remote or
+    linked template (remote template injection), a linked picture (which
+    can send the user's Windows credentials to a file share), frames and
+    subdocuments, all loaded when the document opens. A chart's embedded
+    workbook (`package`) stays inside and is accepted.
 
   **Results**:
   - The recorded `mime_type` is the type's canonical one, whatever the file
@@ -127,13 +154,31 @@ artifacts.
     some other way still can't reach the opener with it.
   - Macro-enabled Office content is refused by content, not just by
     extension, because renaming `.docm` to `.docx` keeps the macros.
-  - The checks are signature-level. They don't parse the file, so they run
+  - The checks are signature-level. They don't parse the document; the only
+    XML read is an OOXML package's relationship parts, by a parser that
+    expands no entities beyond XML's five and refuses a DTD, so they run
     safely in the main process.
-- **Crates**: `zip` and `cfb` are already in the tree through `calamine`
-  (Cargo.lock: `zip` 7.2/8.6, `cfb` 0.7.3). They are promoted to direct
-  dependencies at the locked versions, as `zeroize` and `libc` were. Both
-  only read directory structures here, never decompress content, so a ZIP
-  bomb costs nothing.
+  - Objects and outside links are refused *(2026-10-07)* because HoploDex
+    can't rely on the other app's defences everywhere. On Windows, Office
+    opens the zone-marked copy (§18) in Protected View; on Linux there is
+    no such mark, LibreOffice isn't sandboxed and has had macro-security
+    bypasses, and no minimum distribution version is set.
+  - **Known limits**: Excel 4.0 (XLM) macro sheets inside a `.xls` are
+    records in its `Workbook` stream, not a storage, so the directory check
+    can't see them; current Excel disables XLM by default and LibreOffice
+    doesn't run it. A `.doc`'s or `.xls`'s embedded objects (`ObjectPool`,
+    `MBD…` storages), ODF's embedded objects and links, and field codes
+    (`DDEAUTO`, `INCLUDEPICTURE`, `INCLUDETEXT`, `LINK`) in Word and RTF
+    documents aren't checked; Word disables DDE by default and asks before
+    updating links. A chart's embedded workbook isn't opened to check it.
+    A document made from a custom template records the template's path as
+    an outside relationship and is refused.
+- **Crates**: `zip`, `cfb` and `quick-xml` are already in the tree through
+  `calamine` (Cargo.lock: `zip` 7.2/8.6, `cfb` 0.7.3, `quick-xml` 0.41 with
+  its `encoding` feature). They are promoted to direct dependencies at the
+  locked versions, as `zeroize` and `libc` were. Only the content types and
+  the relationship parts are decompressed, each read through a limit, so a
+  ZIP bomb costs nothing.
 - **Alternatives considered**:
   - Decide by the stored MIME type: the file chooser's `File.type` is
     whatever the OS says, and a compromised web view says anything.
@@ -935,8 +980,9 @@ artifacts.
 - **Rationale**: Finding 1's "do not send executable/script types to an
   unrestricted OS opener" is met by §2. The canonical extension closes the
   gap where the OS picks a handler by a misleading name. Zone marking is
-  the platform's own "this came from elsewhere" signal for legacy
-  `.doc`/`.xls` macros, which §2 can't fully exclude. Owner-only
+  the platform's own "this came from elsewhere" signal for what §2 can't
+  fully exclude (its known limits: XLM macros in `.xls`, and objects and
+  field codes in `.doc` and `.xls`). Owner-only
   permissions make FR-009 (a)'s "anyone using this computer account" true
   rather than "anyone on this computer".
 

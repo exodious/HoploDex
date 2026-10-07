@@ -159,6 +159,25 @@ fn a_refusal_becomes_a_command_error_with_its_code_and_message() {
 }
 
 #[test]
+fn hyperlinks_pictures_charts_and_rtf_fields_are_accepted() {
+    for plain in
+        [hostile::docx_with_hyperlink(), hostile::docx_with_chart_workbook(), hostile::plain_rtf()]
+    {
+        assert!(classify(&plain.name, &plain.bytes).is_ok(), "{}", plain.name);
+    }
+}
+
+#[test]
+fn an_embedded_object_or_outside_link_is_named_in_the_refusal() {
+    let refused = classify("letter.rtf", &hostile::rtf_with_object().bytes).unwrap_err();
+    assert_eq!(
+        refused.message(),
+        "letter.rtf isn't a real RTF document, or it holds macros, scripts, web page code, \
+         embedded objects or links that load outside content, so it can't be kept as a document."
+    );
+}
+
+#[test]
 fn a_file_with_no_extension_is_not_allowed() {
     assert_eq!(classify("receipt", b"%PDF-1.4").unwrap_err().code(), "DOCUMENT_TYPE_NOT_ALLOWED");
     assert_eq!(classify("receipt.", b"%PDF-1.4").unwrap_err().code(), "DOCUMENT_TYPE_NOT_ALLOWED");

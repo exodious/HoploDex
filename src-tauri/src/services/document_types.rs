@@ -5,9 +5,12 @@
 //! `open_document` all go through [`classify`], so a row stored before this
 //! feature, or a file edited since, is judged by the same rule as a new one.
 //! The checks are signature-level: they look at magic bytes, a ZIP's central
-//! directory and one small part, and a compound file's directory. Nothing is
-//! decompressed beyond a few hundred bytes and nothing is parsed, so they
-//! are safe to run in the main process on hostile input.
+//! directory, its content types and relationship parts, a compound file's
+//! directory, and an RTF file's control words. An OOXML package's
+//! relationship parts are the only thing decompressed (a few megabytes at
+//! most, all together) and the only thing parsed, by `quick-xml`, which
+//! expands no entities beyond XML's five and refuses a DTD here, so the
+//! checks are safe to run in the main process on hostile input.
 
 use std::io::{Cursor, Read};
 
@@ -165,7 +168,7 @@ pub enum Refusal {
     /// `.jpg`, `.jpeg` or `.png`: photos go under Photos.
     Photo { name: String },
     /// The extension is on the list but the content isn't what it says, or
-    /// holds macros or markup.
+    /// holds macros, markup, embedded objects or links to outside content.
     ContentMismatch { name: String, label: &'static str },
 }
 
@@ -186,8 +189,9 @@ impl Refusal {
             }
             Self::Photo { name } => format!("{name} is a photo. Add it under Photos instead."),
             Self::ContentMismatch { name, label } => format!(
-                "{name} isn't a real {label} document, or it holds macros, scripts or web page \
-                 code, so it can't be kept as a document."
+                "{name} isn't a real {label} document, or it holds macros, scripts, web page \
+                 code, embedded objects or links that load outside content, so it can't be kept \
+                 as a document."
             ),
         }
     }
@@ -238,7 +242,7 @@ fn has_signature(signature: Signature, bytes: &[u8]) -> bool {
             matches!(bytes.get(..4), Some(b"II*\0" | b"MM\0*" | b"II+\0" | b"MM\0+"))
         }
         Signature::Text => !starts_with_markup(bytes),
-        Signature::Rtf => bytes.starts_with(b"{\\rtf"),
+        Signature::Rtf => bytes.starts_with(b"{\\rtf") && !rtf_loads_outside_content(bytes),
         Signature::Ole(streams) => is_plain_ole(bytes, streams),
         Signature::Ooxml(main_part) => is_plain_ooxml(bytes, main_part),
         Signature::Odf(mime) => is_plain_odf(bytes, mime),
@@ -302,9 +306,15 @@ fn is_plain_ole(bytes: &[u8], streams: &[&str]) -> bool {
 /// most: it is a few hundred bytes in practice.
 const CONTENT_TYPES_LIMIT: u64 = 256 * 1024;
 
+/// The most of an OOXML package's relationship parts that is read, all
+/// together. A document's are a few kilobytes; a spreadsheet with thousands
+/// of hyperlinks, a megabyte or two.
+const RELATIONSHIPS_LIMIT: u64 = 8 * 1024 * 1024;
+
 /// A ZIP whose `[Content_Types].xml` names `main_part` as the main part, with
-/// no `vbaProject.bin` and no macro-enabled type. The directory and one small
-/// part are read.
+/// no `vbaProject.bin`, no macro-enabled type, and relationship parts that
+/// keep everything inside the package (research.md §2). The directory, the
+/// content types and the relationship parts are read.
 fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
         return false;
@@ -320,7 +330,144 @@ fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
         return false;
     }
     let types = String::from_utf8_lossy(&types);
-    types.contains(main_part) && !types.contains("macroEnabled")
+    if !types.contains(main_part) || types.contains("macroEnabled") {
+        return false;
+    }
+    // Every entry that is, or may be, a relationship part, by index, so a
+    // second entry of the same name is read too.
+    let mut budget = RELATIONSHIPS_LIMIT;
+    for index in 0..archive.len() {
+        let Some(name) = archive.name_for_index(index) else {
+            return false;
+        };
+        let name = name.to_ascii_lowercase();
+        let is_relationships =
+            name.ends_with(".rels") || name.split(['/', '\\']).any(|segment| segment == "_rels");
+        if !is_relationships {
+            continue;
+        }
+        let Ok(entry) = archive.by_index(index) else {
+            return false;
+        };
+        let mut xml = Vec::new();
+        if entry.take(budget + 1).read_to_end(&mut xml).is_err() || xml.len() as u64 > budget {
+            return false;
+        }
+        budget -= xml.len() as u64;
+        if !relationships_stay_inside(&xml) {
+            return false;
+        }
+    }
+    true
+}
+
+/// The relationship types that bring in active content: OLE objects (embedded
+/// or linked), ActiveX controls, macros and macro sheets, and a workbook's
+/// links to other workbooks or DDE servers. Compared by the type's last
+/// segment, in any case, so the Transitional and Strict URIs both match.
+const ACTIVE_RELATIONSHIPS: [&str; 8] = [
+    "oleobject",
+    "control",
+    "activexcontrolbinary",
+    "vbaproject",
+    "wordvbadata",
+    "externallink",
+    "xlmacrosheet",
+    "xlintlmacrosheet",
+];
+
+/// Whether one relationship part is UTF-8 XML whose relationships keep
+/// everything inside the package: none of [`ACTIVE_RELATIONSHIPS`], and
+/// nothing outside it but hyperlinks, which only a click follows. Outside
+/// means `TargetMode="External"` or an absolute target (a URI scheme, a
+/// drive letter or a UNC path); a linked template, image, frame or
+/// subdocument is loaded when the document opens. Values are read as XML
+/// reads them, with character references resolved, so `&#69;xternal` is
+/// `External`. Anything the parser or this check can't read is refused.
+fn relationships_stay_inside(xml: &[u8]) -> bool {
+    use quick_xml::XmlVersion;
+    use quick_xml::events::Event;
+
+    let xml = xml.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(xml);
+    // UTF-16 and UTF-32 have NULs; another encoding is refused below.
+    if xml.contains(&0) {
+        return false;
+    }
+    let Ok(text) = std::str::from_utf8(xml) else {
+        return false;
+    };
+    let mut reader = quick_xml::Reader::from_str(text);
+    let decoder = reader.decoder();
+    let mut found_root = false;
+    loop {
+        let element = match reader.read_event() {
+            Ok(Event::Eof) => return found_root,
+            Ok(Event::Decl(decl)) => {
+                match decl.encoding() {
+                    None => {}
+                    Some(Ok(encoding)) if encoding.eq_ignore_ascii_case(b"utf-8") => {}
+                    Some(_) => return false,
+                }
+                continue;
+            }
+            // A package may not declare a DTD (ECMA-376 Part 2, M1.17), and
+            // one could define entities.
+            Ok(Event::DocType(_)) | Err(_) => return false,
+            Ok(Event::Start(element) | Event::Empty(element)) => element,
+            Ok(_) => continue,
+        };
+        match element.local_name().as_ref() {
+            b"Relationships" => found_root = true,
+            b"Relationship" => {
+                let (mut kind, mut target, mut mode) = (None, None, None);
+                for attribute in element.attributes() {
+                    let Ok(attribute) = attribute else {
+                        return false;
+                    };
+                    let Ok(value) =
+                        attribute.decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
+                    else {
+                        return false;
+                    };
+                    match attribute.key.local_name().as_ref() {
+                        b"Type" => kind = Some(value.trim().to_ascii_lowercase()),
+                        b"Target" => target = Some(value.trim().to_owned()),
+                        b"TargetMode" => mode = Some(value.trim().to_ascii_lowercase()),
+                        _ => {}
+                    }
+                }
+                let kind = kind.unwrap_or_default();
+                let last = kind.rsplit('/').next().unwrap_or_default();
+                if ACTIVE_RELATIONSHIPS.contains(&last) {
+                    return false;
+                }
+                let target = target.unwrap_or_default();
+                let absolute = target.starts_with("\\\\")
+                    || target.starts_with("//")
+                    || target.split_once(':').is_some_and(|(head, _)| !head.contains('/'));
+                let outside = mode.as_deref() == Some("external") || absolute;
+                if outside && last != "hyperlink" {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether RTF holds an object, embedded or linked (any `\obj…` control
+/// word: `\object`, `\objdata`, `\objemb`, `\objlink`, `\objautlink`, …),
+/// or names a template to load (`\template`). Line breaks are dropped first,
+/// since an RTF reader skips them, and case is ignored. This is a search,
+/// not a tokenizer, so `\bin` data can't hide a word from it; the price is
+/// that text that writes out a backslash and `obj` (`\\obj` in RTF) is
+/// refused too, which paperwork doesn't do.
+fn rtf_loads_outside_content(bytes: &[u8]) -> bool {
+    let squeezed: Vec<u8> =
+        bytes.iter().filter(|b| !matches!(b, b'\r' | b'\n')).map(u8::to_ascii_lowercase).collect();
+    [&b"\\obj"[..], b"\\template"]
+        .iter()
+        .any(|word| squeezed.windows(word.len()).any(|window| window == *word))
 }
 
 /// A ZIP whose first entry is `mimetype` holding `mime`, with no `Basic/` or
