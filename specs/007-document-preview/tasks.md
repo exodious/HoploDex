@@ -287,7 +287,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T100 [US3] Add `src/features/media/documentOpening.ts`: a small store holding this computer's `DocumentOpening`, loaded with `getDocumentOpening` once the collection's providers mount and updated by `setDocumentOpening`; add both wrappers to `src/features/media/mediaService.ts` (depends on T099)
 - [X] T101 [P] [US3] Add the "Documents" fieldset to `src/features/databases/DatabaseSettingsDialog.tsx` per ui contract §5, saving through the store at once, outside the dialog's Save. Make T096 pass (depends on T100)
 - [X] T102 [P] [US3] Make the name in `src/features/media/DocumentList.tsx` follow the store's setting (preview or `openDocument`, with its `title`), keeping "Preview" and "Open in another app…" on every row. Make T097 pass (depends on T100, T093)
-- [ ] T103 [US3] Make T098 pass in the dev container (depends on T101, T102)
+- [X] T103 [US3] Make T098 pass in the dev container (depends on T101, T102)
 
 **Checkpoint**: All three stories work on their own.
 
