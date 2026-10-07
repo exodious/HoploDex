@@ -149,6 +149,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_RemoteDesktop",
     "Win32_System_Shutdown",
     "Win32_UI_WindowsAndMessaging",
+    # `GetLastInputInfo`, sampled for the idle lock while the PDF surface is
+    # up (research.md §10).
+    "Win32_UI_Input_KeyboardAndMouse",
     # The render helper's job object and mitigations (research.md §11), the
     # external copy's DACL (§18) and `GetLastInputInfo` (§10).
     "Win32_System_JobObjects",

@@ -194,17 +194,21 @@ fn platform_check() -> bool {
     }
 }
 
-/// The first WebView2 runtime that has every interface the surface uses:
-/// `HiddenPdfToolbarItems`, `SaveAsUIShowing` (`ICoreWebView2_25`, the
-/// newest), `ContextMenuRequested` and the browser accelerator keys. The
-/// surface also queries each interface when it is built, so a threshold set
-/// too low fails there instead (research.md §7).
+/// The first WebView2 runtime that has every interface the surface uses.
+/// Microsoft's API reference dates each to the SDK release that introduced
+/// it, and an SDK's APIs need the runtime of the same build or later:
+/// `ICoreWebView2Settings3` (`AreBrowserAcceleratorKeysEnabled`) 1.0.864.35,
+/// `ICoreWebView2Settings7` (`HiddenPdfToolbarItems`) and `ICoreWebView2_11`
+/// (`ContextMenuRequested`) 1.0.1185.39, and `ICoreWebView2_25`
+/// (`SaveAsUIShowing`, the newest) 1.0.2739.15, which is runtime 128.0.2739.15.
+/// The surface also queries each interface when it is built, so a threshold
+/// set too low fails there instead (research.md §7).
 #[cfg(windows)]
-const MIN_WEBVIEW2_VERSION: windows::core::PCWSTR = windows::core::w!("131.0.2903.40");
+const MIN_WEBVIEW2_VERSION: windows::core::PCWSTR = windows::core::w!("128.0.2739.15");
 
 /// The installed WebView2 runtime is at least [`MIN_WEBVIEW2_VERSION`].
 ///
-/// Not run on the machine this was written on: Windows only.
+/// Run on Windows Server 2025 with runtime 154.0.4258.62.
 #[cfg(windows)]
 fn platform_check() -> bool {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
@@ -255,6 +259,13 @@ mod tests {
             decide_at_startup(&machine),
             PdfAvailability::Unavailable { reason: UnavailableReason::Held }
         );
+    }
+
+    /// The test machine has a WebView2 runtime far newer than the minimum.
+    #[cfg(windows)]
+    #[test]
+    fn the_windows_check_reads_the_installed_runtimes_version() {
+        assert!(platform_check());
     }
 
     #[cfg(target_os = "linux")]
