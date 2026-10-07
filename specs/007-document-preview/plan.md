@@ -515,6 +515,8 @@ Design choices made at planning that the spec left open (worth a look):
 - **The surface is a child web view in the main window** (research.md
   §4), behind Tauri's `unstable` feature, with an owned-window fallback
   if the first task finds a system where it doesn't work.
+  *Settled 2026-10-06 (T009)*: it passed on all three OS, so it stands
+  and the fallback is not used.
 - **WebKit's sandbox is turned on for the whole app on Linux**, the main
   window included, after a probe that starts a real sandboxed web process
   (§9). One full E2E run on a Linux host with the sandbox on is part of

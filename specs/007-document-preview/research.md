@@ -340,6 +340,9 @@ artifacts.
   the surface's browser process sent out went to the proxy and no further. The
   viewer's `favicon.ico` request reached the app's own protocol handler (404).
   So the child web view stands on Windows.
+- **Decision after the first task (T009, 2026-10-06)**: the child web view
+  passed on Linux, macOS and Windows, so it stands and the owned-window
+  fallback is not needed.
 
 ## 5. Keeping the surface unprivileged: the app ACL manifest
 
