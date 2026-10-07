@@ -3,8 +3,10 @@
 // Cargo feature (#29). The server has no authentication and runs any script
 // in the page, so any local process could read an unlocked collection
 // through it. The same goes for the E2E-only switches that change what the app
-// does (007: HOPLODEX_E2E_PDF_PREVIEW turns PDF preview off), each held out of
-// a shipped build by the same feature and checked by its name in the binary.
+// does (007: HOPLODEX_E2E_PDF_PREVIEW turns PDF preview off, and
+// HOPLODEX_E2E_CONSENT answers the native confirmation before a document goes
+// to another app), each held out of a shipped build by the same feature and
+// checked by its name in the binary.
 //
 //   node scripts/check-no-webdriver.mjs            the dependency graph only
 //   node scripts/check-no-webdriver.mjs BINARY...  also these built binaries
@@ -31,6 +33,10 @@ const crate = "tauri-plugin-wdio-webdriver";
 const markers = [
   { name: "TAURI_WEBDRIVER_PORT", what: "the embedded WebDriver server" },
   { name: "HOPLODEX_E2E_PDF_PREVIEW", what: "the E2E switch that turns PDF preview off" },
+  {
+    name: "HOPLODEX_E2E_CONSENT",
+    what: "the E2E stand-in that answers the native confirmation to open a document in another app",
+  },
 ].map((marker) => ({ ...marker, bytes: Buffer.from(marker.name) }));
 
 function hasCrate(features) {

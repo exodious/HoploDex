@@ -12,6 +12,7 @@ pub mod operations;
 pub mod pending;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -68,6 +69,28 @@ pub struct OpenDatabase {
     /// A TIFF's `Load` still under way, which `close_preview` can end
     /// without waiting for it.
     pub preview_loading: Option<PreviewLoading>,
+    /// Which open or unlock of a database this is, from a counter that only
+    /// goes up in this run. A command that asks the user something and acts
+    /// on the answer afterwards acts only if this is still the one that
+    /// asked ([`Session::with_generation`], research.md §18).
+    pub generation: u64,
+    /// The user answered "Open in another app" in the native confirmation
+    /// for a document during this open. It dies with this value, so a lock,
+    /// close or switch forgets it, and is never written anywhere (FR-012,
+    /// research.md §17).
+    pub external_open_confirmed: bool,
+}
+
+/// The last [`OpenDatabase::generation`] handed out.
+static GENERATIONS: AtomicU64 = AtomicU64::new(0);
+
+/// What a session knew about its open database when something was read from
+/// it: the part a later step needs to act on the same open (see
+/// [`Session::read_stamped`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenStamp {
+    pub generation: u64,
+    pub external_open_confirmed: bool,
 }
 
 impl OpenDatabase {
@@ -112,6 +135,8 @@ impl OpenDatabase {
             preview: None,
             preview_seq: 0,
             preview_loading: None,
+            generation: GENERATIONS.fetch_add(1, Ordering::Relaxed) + 1,
+            external_open_confirmed: false,
         })
     }
 
@@ -342,6 +367,47 @@ impl SessionInner {
         }
         let result = query(&open.conn);
         storage_lost_if_unreachable(open, result)
+    }
+
+    /// [`read`](Self::read), and the [`OpenStamp`] of the open it read from,
+    /// for a command that acts on the open later (`open_document`).
+    pub fn read_stamped<T>(
+        &self,
+        query: impl FnOnce(&Connection) -> Result<T, CommandError>,
+    ) -> Result<(T, OpenStamp), CommandError> {
+        let mut open = self.open_guard()?;
+        let open = open.as_mut().ok_or_else(CommandError::database_closed)?;
+        if open.pending_unresolved {
+            return Err(CommandError::pending_changes_unresolved());
+        }
+        let stamp = OpenStamp {
+            generation: open.generation,
+            external_open_confirmed: open.external_open_confirmed,
+        };
+        let result = query(&open.conn);
+        storage_lost_if_unreachable(open, result).map(|value| (value, stamp))
+    }
+
+    /// Runs `act` under the session's lock, only if the open database is
+    /// still the one with this `generation`, else `DATABASE_CLOSED` with
+    /// `act` not run (research.md §18). A close or lock takes the same lock
+    /// before it clears the copies folder, so what `act` writes there is
+    /// either cleared by it or never written.
+    ///
+    /// Unlike [`write`](Self::write) it neither checks the file's
+    /// fingerprint nor refuses while pending changes wait: it is for what
+    /// the session itself keeps about the open (a confirmation, a copy
+    /// outside the database), never for the collection.
+    pub fn with_generation<T>(
+        &self,
+        generation: u64,
+        act: impl FnOnce(&mut OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let mut guard = self.open_guard()?;
+        match guard.as_mut() {
+            Some(open) if open.generation == generation => act(open),
+            _ => Err(CommandError::database_closed()),
+        }
     }
 
     /// Runs anything that changes the open database, after checking that

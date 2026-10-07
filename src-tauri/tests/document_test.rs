@@ -115,43 +115,6 @@ fn lists_every_document_for_a_firearm() {
     assert_eq!(listed.len(), 2);
 }
 
-/// `open_document` hands the OS a temporary copy of the document (FR-010:
-/// "reopen them from the record") — the copy must hold the original bytes
-/// and keep the original filename, reduced to a safe single path component.
-#[test]
-fn writes_a_temporary_copy_under_a_safe_filename() {
-    let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
-    let dir = tempfile::TempDir::new().unwrap();
-
-    let attached = document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "receipt.pdf",
-    )
-    .unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &attached).unwrap();
-    assert_eq!(path, dir.path().join("receipt.pdf"));
-    assert_eq!(std::fs::read(&path).unwrap(), SAMPLE_PDF_BYTES);
-
-    let hostile = document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "../../escape:me?.pdf",
-    )
-    .unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &hostile).unwrap();
-    assert_eq!(path, dir.path().join("escape_me_.pdf"));
-
-    // `add_document` refuses a name like this one (no extension), so the row
-    // is one a development database could still hold.
-    let unnamed = insert_raw_document(&db, RecordRef::Firearm(firearm.id), "..", "application/pdf");
-    let path = document_ops::write_document_copy(dir.path(), &unnamed).unwrap();
-    assert_eq!(path, dir.path().join("document"));
-}
-
 #[test]
 fn attaches_a_document_dropped_as_a_file_path() {
     let db = TestDb::new();
@@ -203,7 +166,11 @@ fn clearing_opened_documents_overwrites_then_removes_each_copy() {
         "receipt.pdf",
     )
     .unwrap();
-    let copy = document_ops::write_document_copy(&opened.join("1"), &attached).unwrap();
+    // What `open_document` leaves there (tests/open_document_test.rs writes
+    // it through the command's own path).
+    std::fs::create_dir_all(opened.join("1")).unwrap();
+    let copy = opened.join("1").join("receipt.pdf");
+    std::fs::write(&copy, &attached.file_bytes).unwrap();
     let survivor = scratch.path().join("survivor");
     std::fs::hard_link(&copy, &survivor).unwrap();
 
@@ -300,14 +267,10 @@ fn attaches_and_reopens_a_document_on_an_accessory() {
 
     assert_eq!(attached.owner, RecordRef::Accessory(id));
     assert_eq!(attached.original_filename, "warranty.pdf");
-    // `open_document` reads it back by id and hands the OS a copy.
+    // `open_document` reads it back by id.
     let reopened = document_ops::get_document(&db.conn, attached.id).unwrap();
     assert_eq!(reopened.file_bytes, SAMPLE_PDF_BYTES);
     assert_eq!(reopened.mime_type, "application/pdf");
-    let dir = tempfile::TempDir::new().unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &reopened).unwrap();
-    assert_eq!(path, dir.path().join("warranty.pdf"));
-    assert_eq!(std::fs::read(&path).unwrap(), SAMPLE_PDF_BYTES);
 }
 
 #[test]

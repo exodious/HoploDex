@@ -7,12 +7,23 @@ use std::thread;
 use std::time::Duration;
 
 use hoplodex_lib::app_dirs;
-use hoplodex_lib::commands::documents::{OPENED_DOCUMENTS_DIR, clear_opened_documents_cache};
+#[cfg(not(feature = "e2e"))]
+use hoplodex_lib::commands::documents::AppOpener;
+#[cfg(feature = "e2e")]
+use hoplodex_lib::commands::documents::E2eOpener;
+use hoplodex_lib::commands::documents::{
+    OPENED_DOCUMENTS_DIR, Opener, clear_opened_documents_cache,
+};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::preview::{AppSurfaces, PreviewEnv};
 use hoplodex_lib::db;
 use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
+use hoplodex_lib::services::consent::Consent;
+#[cfg(not(feature = "e2e"))]
+use hoplodex_lib::services::consent::DialogConsent;
+#[cfg(feature = "e2e")]
+use hoplodex_lib::services::consent::E2eConsent;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide_at_startup};
@@ -204,6 +215,20 @@ fn main() {
                 Arc::new(AppSurfaces::new(app.handle().clone())),
                 Arc::new(availability),
             ));
+            // The native confirmation before a document goes to another app,
+            // and the launcher that hands it on. An E2E build answers from
+            // its environment and logs the hand-over instead (research.md
+            // §16).
+            #[cfg(not(feature = "e2e"))]
+            {
+                app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
+                app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(app.handle().clone())));
+            }
+            #[cfg(feature = "e2e")]
+            {
+                app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
+                app.manage::<Arc<dyn Opener>>(Arc::new(E2eOpener));
+            }
             // Sleep, wake, screen lock and shutdown (FR-037, FR-038), and
             // the idle lock (FR-034).
             let (sender, events) = mpsc::channel();

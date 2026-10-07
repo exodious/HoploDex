@@ -106,6 +106,10 @@ function isolateAppData() {
   // An E2E build never hands an opened document to the OS, which would start
   // a real viewer: it writes the copy's path here instead (open_document, #27).
   process.env.HOPLODEX_E2E_OPENED_LOG = path.join(sandbox, "opened.log");
+  // Nor can a WebDriver click the native confirmation that comes before it
+  // (007 research.md §16): an E2E build appends each request's title here and
+  // answers from HOPLODEX_E2E_CONSENT, set per session below.
+  process.env.HOPLODEX_E2E_CONSENT_LOG = path.join(sandbox, "consent.log");
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;
@@ -232,6 +236,12 @@ export const config: WebdriverIO.Config = {
     } else {
       delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
     }
+    // The native confirmation before a document goes to another app is
+    // answered "Open in another app" unless a spec says otherwise: it sets
+    // HOPLODEX_E2E_CONSENT (`open` or `cancel`) itself and calls
+    // relaunchApp(), which launches with what it set, and puts `open` back
+    // when it is done. A developer's own value never reaches the app.
+    process.env.HOPLODEX_E2E_CONSENT = "open";
     // The idle lock's minute lasts 3 s in the locking spec, so its test
     // doesn't wait a real minute; every other spec keeps the real one.
     if (specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts"))) {

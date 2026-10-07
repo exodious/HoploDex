@@ -1,18 +1,48 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, named_params};
-use tauri::{AppHandle, State};
+use serde::Serialize;
+use tauri::{AppHandle, Manager, State};
 
 use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
+use crate::models::database::IdlePauseReason;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
+use crate::models::document_opening::DocumentOpening;
 use crate::models::record::RecordRef;
 use crate::services::attachments::read_attachment_file;
+use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest, needs_consent};
 use crate::services::document_types::{self, DocumentType, classify};
+use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::availability::PdfAvailabilityState;
-use crate::services::secure_delete::secure_delete_dir;
+use crate::services::secure_delete::{secure_delete_dir, secure_delete_file};
 use crate::session::Session;
+
+/// Why the OS could not open a copy.
+#[derive(Debug)]
+pub enum OpenFailure {
+    /// The OS has no program for the file's type (`SE_ERR_NOASSOC`,
+    /// `open`'s non-zero exit, `xdg-open`'s exit 3 or 4; research.md §18).
+    NoApp,
+    Other(String),
+}
+
+/// Hands a file to the OS's default program for its type: the app's on the
+/// platform's own launcher, the E2E build's on a log, the tests' on a fake.
+/// What it starts is the other app's, not HoploDex's: it is never waited for
+/// past its start, and it outlives HoploDex.
+pub trait Opener: Send + Sync {
+    fn open(&self, path: &Path) -> Result<(), OpenFailure>;
+}
+
+/// What `open_document` answers: `opened` is false when the user cancelled
+/// the native confirmation.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct OpenedDocument {
+    pub opened: bool,
+}
 
 /// Pure, `Connection`-based business logic — mirrors `commands::firearms::ops`
 /// (constitution: no mocks, integration tests call these directly against a
@@ -131,21 +161,99 @@ pub mod ops {
         Ok(DeleteResult { deleted: true })
     }
 
-    /// Writes `document` into `dir` (created if absent) under its original
-    /// filename, reduced to a single path component with characters that
-    /// are invalid on any supported OS replaced — the copy `open_document`
-    /// hands to the OS default app.
-    pub fn write_document_copy(
-        dir: &Path,
-        document: &DocumentAttachment,
-    ) -> Result<PathBuf, CommandError> {
-        let io_error = |e: std::io::Error| {
-            CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {e}"))
-        };
-        std::fs::create_dir_all(dir).map_err(io_error)?;
-        let path = dir.join(safe_file_name(&document.original_filename));
-        std::fs::write(&path, &document.file_bytes).map_err(io_error)?;
-        Ok(path)
+    /// Reopens a document from its record in the OS's default program for
+    /// its type, through a temporary copy under `opened_documents_dir`, after
+    /// the user's native confirmation (FR-008 to FR-012, contracts/
+    /// tauri-commands.md "open_document"). The dialog and the opener run
+    /// outside the session's lock; the copy is written under it, and only
+    /// into the open that asked (research.md §18).
+    pub fn open_document(
+        session: &Session,
+        machine: &MachineSettings,
+        consent: &dyn Consent,
+        opener: &dyn Opener,
+        opened_documents_dir: &Path,
+        id: i64,
+    ) -> Result<OpenedDocument, CommandError> {
+        // 1. The document, and the open it was read from.
+        let (document, stamp) = session.read_stamped(|conn| get_document(conn, id))?;
+        // 2. Refused by the attach rules before any dialog (FR-017).
+        let document_type = classify(&document.original_filename, &document.file_bytes)?;
+        // 3. Ask, unless this session has already said yes to the setting.
+        let setting = machine.document_opening();
+        let mut said_yes = false;
+        if needs_consent(setting, stamp.external_open_confirmed) {
+            crate::commands::preview::ops::hide_pdf_surface(session);
+            let request = ConsentRequest::Document {
+                name: document.original_filename.clone(),
+                kind: document_type.label.to_owned(),
+                first_of_session_with_external: setting == DocumentOpening::External
+                    && !stamp.external_open_confirmed,
+            };
+            let answer = {
+                let _paused = IdlePause::new(session);
+                consent.ask(request)
+            };
+            if answer == ConsentAnswer::Cancel {
+                return Ok(OpenedDocument { opened: false });
+            }
+            said_yes = true;
+        }
+        // 4. The copy, under the lock, into the open that asked.
+        let path = session.with_generation(stamp.generation, |open| {
+            if said_yes {
+                open.external_open_confirmed = true;
+            }
+            write_copy(opened_documents_dir, id, &document, document_type)
+        })?;
+        // 5. The lock is free: start the other app.
+        match opener.open(&path) {
+            Ok(()) => Ok(OpenedDocument { opened: true }),
+            Err(OpenFailure::NoApp) => {
+                delete_copy(&path);
+                Err(CommandError::new(
+                    "NO_APP_FOR_DOCUMENT",
+                    format!(
+                        "This computer has no app that opens {} documents. HoploDex deleted the \
+                         copy it made.",
+                        document_type.label
+                    ),
+                ))
+            }
+            Err(OpenFailure::Other(reason)) => Err(CommandError::new(
+                "INTERNAL_ERROR",
+                format!("Could not open the document: {reason}"),
+            )),
+        }
+    }
+
+    /// The native dialog is up: the idle clock waits for it, as it does for
+    /// a file chooser (research.md §16), and starts again when this is
+    /// dropped.
+    struct IdlePause<'a>(&'a Session);
+
+    impl<'a> IdlePause<'a> {
+        fn new(session: &'a Session) -> Self {
+            session.idle().set_paused(IdlePauseReason::NativeDialog, true, session.clock().now());
+            Self(session)
+        }
+    }
+
+    impl Drop for IdlePause<'_> {
+        fn drop(&mut self) {
+            self.0.idle().set_paused(IdlePauseReason::NativeDialog, false, self.0.clock().now());
+        }
+    }
+
+    /// Securely deletes a copy `open_document` made and its folder, once the
+    /// OS had no program for it.
+    fn delete_copy(path: &Path) {
+        if let Err(err) = secure_delete_file(path) {
+            log::warn!("could not delete the opened-document copy {}: {err}", path.display());
+        }
+        if let Some(folder) = path.parent() {
+            let _ = std::fs::remove_dir(folder);
+        }
     }
 
     /// Securely deletes every temporary copy `open_document` left under
@@ -154,20 +262,6 @@ pub mod ops {
     /// forced kills, and anything a previous run failed to delete.
     pub fn clear_opened_documents(dir: &Path) -> Vec<PathBuf> {
         secure_delete_dir(dir)
-    }
-
-    fn safe_file_name(original: &str) -> String {
-        let last_component = original.rsplit(['/', '\\']).next().unwrap_or_default();
-        let cleaned: String = last_component
-            .chars()
-            .map(|c| if c.is_control() || r#"<>:"|?*"#.contains(c) { '_' } else { c })
-            .collect();
-        let trimmed = cleaned.trim();
-        if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
-            "document".into()
-        } else {
-            trimmed.into()
-        }
     }
 }
 
@@ -189,30 +283,111 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
 }
 
 /// Reopens a document from its record (FR-010) in the OS default app for
-/// its file type, via a temporary copy under [`OPENED_DOCUMENTS_DIR`].
+/// its file type, via a temporary copy under [`OPENED_DOCUMENTS_DIR`], after
+/// the native confirmation. There is no flag the web view could set to
+/// confirm: the answer is the user's, in a dialog Rust shows.
 #[tauri::command]
-pub async fn open_document(
-    id: i64,
-    app: AppHandle,
-    session: State<'_, Session>,
-) -> Result<(), CommandError> {
-    let document = session.read(|conn| ops::get_document(conn, id))?;
+pub async fn open_document(id: i64, app: AppHandle) -> Result<OpenedDocument, CommandError> {
     let dir = app_dirs::cache_dir(&app)
         .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?
-        .join(OPENED_DOCUMENTS_DIR)
-        .join(id.to_string());
-    let path = ops::write_document_copy(&dir, &document)?;
-    hand_to_os(&app, &path)
+        .join(OPENED_DOCUMENTS_DIR);
+    // The dialog blocks until it is answered, so not on an async thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let consent = app.state::<Arc<dyn Consent>>();
+        let opener = app.state::<Arc<dyn Opener>>();
+        ops::open_document(&session, &machine, &**consent, &**opener, &dir, id)
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}")))?
 }
 
-/// Opens `path` in the OS default app for its file type.
+/// The app's [`Opener`]: the platform's own launcher, detached, so what it
+/// starts is not tied to HoploDex's lifetime.
 #[cfg(not(feature = "e2e"))]
-fn hand_to_os(app: &AppHandle, path: &Path) -> Result<(), CommandError> {
-    use tauri_plugin_opener::OpenerExt;
+pub struct AppOpener<R: tauri::Runtime = tauri::Wry> {
+    // Where the platform has no launcher of its own to run (Windows).
+    #[cfg_attr(unix, allow(dead_code))]
+    app: tauri::AppHandle<R>,
+}
 
-    app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| {
-        CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}"))
-    })
+#[cfg(not(feature = "e2e"))]
+impl<R: tauri::Runtime> AppOpener<R> {
+    pub fn new(app: tauri::AppHandle<R>) -> Self {
+        Self { app }
+    }
+}
+
+/// `xdg-open` (Linux) and `open` (macOS) say whether the OS knows a program
+/// for the file by their exit status, within moments of being started; a
+/// program that holds the launcher for longer is running, which is a yes.
+/// The launcher gets its own process group, so nothing HoploDex does or
+/// suffers reaches it, and a thread reaps it.
+#[cfg(all(unix, not(feature = "e2e")))]
+impl<R: tauri::Runtime> Opener for AppOpener<R> {
+    fn open(&self, path: &Path) -> Result<(), OpenFailure> {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        #[cfg(target_os = "macos")]
+        const LAUNCHER: &str = "open";
+        #[cfg(not(target_os = "macos"))]
+        const LAUNCHER: &str = "xdg-open";
+        /// `xdg-open`: 3 "a required tool could not be found", 4 "the action
+        /// failed", which is what it says when nothing is set for the type.
+        #[cfg(not(target_os = "macos"))]
+        fn no_app(code: i32) -> bool {
+            matches!(code, 3 | 4)
+        }
+        /// `open` exits non-zero when no application can open the file.
+        #[cfg(target_os = "macos")]
+        fn no_app(_code: i32) -> bool {
+            true
+        }
+
+        let mut child = Command::new(LAUNCHER)
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .map_err(|e| OpenFailure::Other(format!("{LAUNCHER}: {e}")))?;
+        let (finished, status) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = finished.send(child.wait());
+        });
+        match status.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(status)) if status.success() => Ok(()),
+            Ok(Ok(status)) => match status.code() {
+                Some(code) if no_app(code) => Err(OpenFailure::NoApp),
+                _ => Err(OpenFailure::Other(format!("{LAUNCHER} failed ({status})"))),
+            },
+            Ok(Err(e)) => Err(OpenFailure::Other(format!("{LAUNCHER}: {e}"))),
+            // Still running: the program it started is the user's now.
+            Err(_) => Ok(()),
+        }
+    }
+}
+
+/// Windows: `ShellExecuteExW` through `tauri-plugin-opener`. Its error for a
+/// type with no program is `SE_ERR_NOASSOC` (31) or `ERROR_NO_ASSOCIATION`
+/// (1155). T091 checks this on the Windows test machine.
+#[cfg(all(windows, not(feature = "e2e")))]
+impl<R: tauri::Runtime> Opener for AppOpener<R> {
+    fn open(&self, path: &Path) -> Result<(), OpenFailure> {
+        use tauri_plugin_opener::OpenerExt;
+
+        self.app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| match &e {
+            tauri_plugin_opener::Error::Io(io) if matches!(io.raw_os_error(), Some(31 | 1155)) => {
+                OpenFailure::NoApp
+            }
+            _ => OpenFailure::Other(e.to_string()),
+        })
+    }
 }
 
 /// An E2E build never hands the copy on, which would start a real viewer on
@@ -221,20 +396,206 @@ fn hand_to_os(app: &AppHandle, path: &Path) -> Result<(), CommandError> {
 /// (#27). It appends the copy's path to `HOPLODEX_E2E_OPENED_LOG` instead,
 /// a file in the sandbox, for the specs to check.
 #[cfg(feature = "e2e")]
-fn hand_to_os(_app: &AppHandle, path: &Path) -> Result<(), CommandError> {
+pub struct E2eOpener;
+
+#[cfg(feature = "e2e")]
+impl Opener for E2eOpener {
+    fn open(&self, path: &Path) -> Result<(), OpenFailure> {
+        use std::io::Write;
+
+        let Some(log) = std::env::var_os("HOPLODEX_E2E_OPENED_LOG") else {
+            return Ok(());
+        };
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)
+            .and_then(|mut file| writeln!(file, "{}", path.display()))
+            .map_err(|e| OpenFailure::Other(e.to_string()))
+    }
+}
+
+// ---------------------------------------------------------------- the copy
+
+fn copy_error(what: &str, e: impl std::fmt::Display) -> CommandError {
+    CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {what}: {e}"))
+}
+
+/// Writes (or reuses) the copy of `document` that is handed to the other
+/// app: `<root>/<id>/<stem>.<canonical extension>`, private from creation
+/// (research.md §18, settles #71) and marked as from elsewhere. A copy that
+/// is already there with the same length is reused, since documents never
+/// change after attaching and Windows can't rewrite a file another program
+/// holds open; any other is replaced.
+fn write_copy(
+    root: &Path,
+    id: i64,
+    document: &DocumentAttachment,
+    document_type: &DocumentType,
+) -> Result<PathBuf, CommandError> {
+    let folder = root.join(id.to_string());
+    if let Some(parent) = root.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| copy_error("its folder", e))?;
+    }
+    private_dir(root)?;
+    private_dir(&folder)?;
+    protect_folder(&folder).map_err(|e| copy_error("its folder's protection", e))?;
+    let path = folder.join(format!(
+        "{}.{}",
+        safe_stem(&document.original_filename),
+        document_type.canonical_extension
+    ));
+    let bytes = &document.file_bytes;
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && meta.len() == bytes.len() as u64 => return Ok(path),
+        Ok(meta) if meta.is_dir() => {
+            return Err(copy_error("its file", "a folder is in the way"));
+        }
+        // A link, or a file of another length: replaced.
+        Ok(_) => std::fs::remove_file(&path).map_err(|e| copy_error("its file", e))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(copy_error("its file", e)),
+    }
+    create_private_file(&path, bytes).map_err(|e| copy_error("its file", e))?;
+    if let Err(e) = mark_untrusted(&path) {
+        // A copy that can't be marked is not handed on.
+        let _ = secure_delete_file(&path);
+        return Err(copy_error("its mark", e));
+    }
+    Ok(path)
+}
+
+/// Creates `path` (its parent exists) readable by the user alone, or checks
+/// that what is there is such a folder. Unix: created `0700` with no window
+/// in which it is wider, and an existing one is used only if it is a
+/// directory, not a symbolic link, owned by the user.
+fn private_dir(path: &Path) -> Result<(), CommandError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => private_dir_existing(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(path) {
+                Ok(()) => Ok(()),
+                // Made by someone between the check and here: judged like
+                // any folder that was already there.
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    private_dir_existing(path)
+                }
+                Err(e) => Err(copy_error("its folder", e)),
+            }
+        }
+        Err(e) => Err(copy_error("its folder", e)),
+    }
+}
+
+/// A folder that is already there is used only if it is a directory (not a
+/// link) owned by the user.
+fn private_dir_existing(path: &Path) -> Result<(), CommandError> {
+    let meta = std::fs::symlink_metadata(path).map_err(|e| copy_error("its folder", e))?;
+    if !meta.is_dir() {
+        return Err(copy_error("its folder", "it is not a folder"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY: `geteuid` has no preconditions and cannot fail.
+        if meta.uid() != unsafe { libc::geteuid() } {
+            return Err(copy_error("its folder", "it belongs to another user"));
+        }
+    }
+    Ok(())
+}
+
+/// Writes `bytes` to a new file at `path`, `0600` from creation on Unix.
+fn create_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
 
-    let Some(log) = std::env::var_os("HOPLODEX_E2E_OPENED_LOG") else {
-        return Ok(());
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Not followed if something put a link there since the check, and
+        // no wider than `0600` whatever the umask.
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.flush()
+}
+
+/// The copy's file name without its extension: the stored name's last path
+/// component with characters that are invalid on any supported OS replaced,
+/// its own extension dropped (the canonical one is used, FR-017), nothing
+/// hidden, nothing a Windows name can't be.
+fn safe_stem(original: &str) -> String {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    let last_component = original.rsplit(['/', '\\']).next().unwrap_or_default();
+    let cleaned: String = last_component
+        .chars()
+        .map(|c| if c.is_control() || r#"<>:"|?*"#.contains(c) { '_' } else { c })
+        .collect();
+    let stem = match cleaned.rsplit_once('.') {
+        Some((stem, _)) if !stem.trim_matches('.').is_empty() => stem,
+        _ => &cleaned,
     };
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log)
-        .and_then(|mut file| writeln!(file, "{}", path.display()))
-        .map_err(|e| {
-            CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}"))
-        })
+    let stem = stem.trim_matches(|c: char| c == '.' || c.is_whitespace());
+    let stem: String = stem.chars().take(100).collect();
+    let stem = stem.trim_end_matches(|c: char| c == '.' || c.is_whitespace()).to_owned();
+    if stem.is_empty() {
+        "document".into()
+    } else if RESERVED.contains(&stem.to_ascii_uppercase().as_str()) {
+        format!("_{stem}")
+    } else {
+        stem
+    }
+}
+
+// Per-OS marks on a copy and its folder. Each OS has its own function, so
+// the sessions that finish them each touch one place.
+
+/// Windows (T091): gives `folder` a protected DACL granting only the current
+/// user (`SetSecurityInfo`), so nothing inherited from a relocated cache
+/// folder widens it. Unix folders are `0700` from creation (`private_dir`);
+/// macOS has the same.
+#[cfg(not(windows))]
+fn protect_folder(_folder: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// T091 goes here.
+#[cfg(windows)]
+fn protect_folder(_folder: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// Marks the copy as having come from elsewhere, for the other app and the
+/// OS to treat as untrusted (research.md §18). Linux has no such mark.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// macOS (T090): add the `com.apple.quarantine` attribute with `setxattr`
+/// through `libc`.
+#[cfg(target_os = "macos")]
+fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// Windows (T091): write a `:Zone.Identifier` stream holding `ZoneId=3`, so
+/// Office opens the copy in Protected View and SmartScreen applies.
+#[cfg(windows)]
+fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 #[tauri::command]
@@ -302,4 +663,25 @@ pub async fn delete_document(
         crate::commands::preview::ops::close_preview_of(&session, id)?;
     }
     session.write(|conn| ops::delete_document(conn, id, confirmed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_stem;
+
+    #[test]
+    fn a_stored_name_becomes_a_safe_stem() {
+        assert_eq!(safe_stem("receipt.pdf"), "receipt");
+        assert_eq!(safe_stem("receipt.Pdf"), "receipt");
+        assert_eq!(safe_stem("../../escape:me?.pdf"), "escape_me_");
+        assert_eq!(safe_stem("a\\b/c d.tar.gz"), "c d.tar");
+        assert_eq!(safe_stem("no extension"), "no extension");
+        // Nothing hidden, empty, or a name Windows can't have.
+        assert_eq!(safe_stem(".pdf"), "pdf");
+        assert_eq!(safe_stem(".."), "document");
+        assert_eq!(safe_stem(""), "document");
+        assert_eq!(safe_stem("trailing. .pdf"), "trailing");
+        assert_eq!(safe_stem("CON.pdf"), "_CON");
+        assert_eq!(safe_stem(&format!("{}.pdf", "x".repeat(300))).chars().count(), 100);
+    }
 }

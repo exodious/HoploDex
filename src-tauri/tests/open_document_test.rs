@@ -484,11 +484,8 @@ fn with_the_setting_external_one_yes_covers_the_session_and_a_lock_forgets_it() 
     let world = World::new();
     world.setting(DocumentOpening::External);
     let id = world.pdf("receipt.pdf");
-    let consent = FakeConsent::answering(&[
-        ConsentAnswer::Cancel,
-        ConsentAnswer::Open,
-        ConsentAnswer::Open,
-    ]);
+    let consent =
+        FakeConsent::answering(&[ConsentAnswer::Cancel, ConsentAnswer::Open, ConsentAnswer::Open]);
     let opener = FakeOpener::new();
 
     assert!(!world.open(&consent, &opener, id).unwrap(), "a Cancel is not a yes");
@@ -629,7 +626,7 @@ impl ModeWatch {
         let flag = stop.clone();
         let seen = thread::spawn(move || {
             let mut seen = Vec::new();
-            let mut walk = |path: &Path, seen: &mut Vec<(PathBuf, bool, u32)>| {
+            let walk = |path: &Path, seen: &mut Vec<(PathBuf, bool, u32)>| {
                 if let Ok(meta) = fs::symlink_metadata(path) {
                     seen.push((path.to_owned(), meta.is_dir(), meta.permissions().mode() & 0o7777));
                 }
@@ -758,13 +755,8 @@ fn a_row_the_attach_rules_would_refuse_is_refused_before_the_dialog_and_can_be_d
     let world = World::new();
     let photo = hostile::jpg();
     let html = hostile::html_named_pdf();
-    let jpeg_row = insert_raw_document(
-        &world.session,
-        world.firearm,
-        &photo.name,
-        "image/jpeg",
-        &photo.bytes,
-    );
+    let jpeg_row =
+        insert_raw_document(&world.session, world.firearm, &photo.name, "image/jpeg", &photo.bytes);
     let html_row = insert_raw_document(
         &world.session,
         world.firearm,

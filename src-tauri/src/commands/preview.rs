@@ -465,6 +465,22 @@ pub mod ops {
         })
     }
 
+    /// Hides the PDF surface if one is shown, where it is, so that a native
+    /// dialog `open_document` shows is not sitting under it (research.md
+    /// §16). The viewer stays open; the frontend shows the surface again
+    /// with `set_preview_bounds`. Nothing happens with no PDF preview, or no
+    /// open database.
+    pub fn hide_pdf_surface(session: &Session) {
+        let _ = session.inspect(|open| {
+            if let Some(Preview { content: PreviewContent::Pdf { surface, .. }, .. }) =
+                open.preview.as_ref()
+            {
+                surface.set_bounds(last_bounds().into(), false);
+            }
+            Ok(())
+        });
+    }
+
     /// Gives the PDF surface the keyboard focus.
     pub fn focus_preview(session: &Session, id: u64) -> Result<(), CommandError> {
         session.inspect(|open| {

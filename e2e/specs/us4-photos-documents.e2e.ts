@@ -142,7 +142,9 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     await expect($(".hd-doc__name=receipt.pdf")).toExist();
     await clickButton("Open");
-    // `open_document` has answered (and any failure toast is up) once the
+    // The native confirmation is answered "Open in another app" by the E2E
+    // build (HOPLODEX_E2E_CONSENT, set to `open` for every spec by
+    // wdio.conf.ts); `open_document` has answered (and any failure toast is up) once the
     // app is idle.
     await settle();
     await expect($(".hd-toast--error")).not.toExist();
