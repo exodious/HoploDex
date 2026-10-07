@@ -9,5 +9,6 @@ pub mod import_export;
 pub mod insurance;
 pub mod mounts;
 pub mod photos;
+pub mod preview;
 
 pub use error::CommandError;

@@ -45,7 +45,10 @@ mock-keyring = ["dep:keyring-core"]
 e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `unstable`: `Window::add_child`, the PDF preview's child web view
+# (research.md §4). `macos-proxy`, macOS only (below): `proxy_url` there
+# (research.md §6).
+tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
@@ -73,6 +76,18 @@ fs4 = "1.1.0"
 # Promoted from transitive, at the version already in Cargo.lock: wiping
 # passphrases from memory (research.md §1).
 zeroize = "1.9"
+# Document content checks, which only read directory structures and never
+# decompress (research.md §2), text decoding (§12) and page PNGs (§11).
+# Promoted from transitive, at the versions already in Cargo.lock: `zip` is
+# the 8.x `calamine` uses, `png` the 0.17 `image` uses.
+zip = { version = "8.6", default-features = false }
+cfb = "0.7.3"
+encoding_rs = "0.8.35"
+png = "0.17.16"
+# TIFF pages, decoded in the render helper on every OS (research.md §11).
+# `fax` is at 0.2, the one `tiff` uses, so the tree has a single copy.
+tiff = "0.11.3"
+fax = "0.2.7"
 
 # Promoted from transitive, at the version already in Cargo.lock: asking the
 # storage to discard a securely deleted file's blocks (research.md §12).
@@ -83,16 +98,41 @@ libc = "0.2.189"
 # already in the tree for its platform; only the features are switched on.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5.18"
+# The render helper's confinement (research.md §11).
+landlock = "0.4.7"
+# The PDF surface's filter, settings and signals (research.md §6-§10). The
+# version and features wry uses, `v2_40` on top of its `v2_38`.
+webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
+    "NSArray",
     "NSDistributedNotificationCenter",
+    "NSError",
     "NSNotification",
     "NSString",
+    "NSURL",
 ] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "NSWorkspace"] }
+# The PDF surface's content rule list, SPI switches and input (research.md
+# §6, §7, §10). Promoted from dev-dependencies.
+block2 = "0.6.2"
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-app-kit",
+    "WKContentRuleList",
+    "WKContentRuleListStore",
+    "WKPreferences",
+    "WKUserContentController",
+    "WKWebView",
+    "WKWebViewConfiguration",
+] }
+# `proxy_url` on macOS (research.md §6); macOS 14 and later, and the minimum
+# is 26.
+tauri = { version = "2", features = ["unstable", "macos-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
 # File identity for the take-over check (research.md §6). Unix uses `stat`
@@ -109,7 +149,18 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_RemoteDesktop",
     "Win32_System_Shutdown",
     "Win32_UI_WindowsAndMessaging",
+    # The render helper's job object and mitigations (research.md §11), the
+    # external copy's DACL (§18) and `GetLastInputInfo` (§10).
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_SystemInformation",
 ] }
+# The PDF surface's settings and events (research.md §6-§10). The versions
+# wry uses.
+webview2-com = "0.38.2"
+windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"
@@ -120,37 +171,8 @@ tempfile = "3"
 name = "macos_screen_lock_test"
 harness = false
 
-# The PDF preview spike (examples/pdf_spike.rs) sets WebKitGTK's settings and
-# content filters. Already in the tree through wry, at the version and
-# features wry uses.
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
-
-# The same on macOS: WKWebView's content rule lists, and Tauri's `proxy_url`,
-# which macOS has only with `macos-proxy` (macOS 14 and later). Dev
-# dependencies, so the app's own build doesn't get them.
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-tauri = { version = "2", features = ["macos-proxy"] }
-block2 = "0.6.2"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSError", "NSString", "NSURL"] }
-objc2-web-kit = { version = "0.3.2", default-features = false, features = [
-    "std",
-    "block2",
-    "objc2-app-kit",
-    "WKContentRuleList",
-    "WKContentRuleListStore",
-    "WKPreferences",
-    "WKUserContentController",
-    "WKWebView",
-    "WKWebViewConfiguration",
-] }
-
-# The same on Windows: WebView2's settings, events and DevTools protocol, and
-# WinSock for the tripwire's exclusive bind. Already in the tree through wry
-# and the app, at the versions they use.
+# WinSock, for the tripwire's exclusive bind (research.md §6).
 [target.'cfg(windows)'.dev-dependencies]
-webview2-com = "0.38.2"
-windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock"] }
 
 # Debug and test builds keep line tables, so panics and backtraces still name
