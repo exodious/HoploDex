@@ -82,7 +82,9 @@ React 18 (`src`), unchanged
   its versions): `webkit2gtk` (Linux), `objc2-web-kit` and `block2`
   (macOS), `webview2-com` (Windows).
 - **Promoted from transitive**, at locked versions: `zip`, `cfb`,
-  `encoding_rs`, `png`.
+  `encoding_rs`, `png`, and `quick-xml` 0.41 (MIT, with its `encoding`
+  feature; through `calamine`; added 2026-10-07 to read an OOXML package's
+  relationship parts, research.md §2).
 - **Reused**: `tauri-plugin-dialog` (its Rust message API),
   `tauri-plugin-opener`, `zeroize`, `libc`, `objc2-app-kit`.
 - **Nothing bundled or fetched**: the PDF viewer is the one inside the web
@@ -165,7 +167,7 @@ and 8 success criteria.
 | IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | "Preparing…" is drawn before `open_preview` returns. A PDF is served from memory; the surface is reused within a viewer so the next PDF is a navigation. TIFF pages render only when visible, capped in size, at most 8 kept, off the session lock and off the UI thread. Search adds one indexed subquery. `performance_test.rs`, E2E timing and the surface check's first-paint time hold each budget (research.md §22). The Linux sandbox probe adds a child process at startup, measured |
 | V. User Privacy | Local only, real deletion, no hidden copies | **No disk**: previews write nothing; the viewer's Save, Print and Open in Preview are off; the macOS watch deletes a copy that gets out before Preview opens it, and turns PDF preview off rather than risk another; the helper's core dumps are off. **Real deletion**: deleting a document merges the search indexes, so its name leaves no FTS segment. **The external copy**: still under 001 FR-035's clean-up, now owner-only from creation and never written after a lock; the confirmation states it plainly, including the network consequence. **Nothing leaves the device**: the surface and the helper can't reach the network |
 | Security & Data Handling | Encryption at rest, vetted dependencies, no cipher change | The trust boundaries (research.md §1) answer both #13 findings: native consent, an allowlist by content, and no PDF or TIFF parser in the main web view. The app ACL manifest closes "a local page may call every command" for the whole app. No key or cipher change. **Vetted**: every new crate is seen by `cargo deny`; nothing is bundled outside it. The WebKit SPI on macOS is checked at each start. Persistence PR notes come from research.md §1, §2, §18 and §19 |
-| Licensing | GPLv3-compatible dependencies and bundled assets with recorded source | `tiff`, `fax` (MIT), `landlock` (MIT OR Apache-2.0); the promoted crates are MIT or MIT/Apache-2.0. No asset is bundled. The PDF viewers are part of the OS or of the WebKitGTK already bundled in the AppImage (PDF.js is Apache-2.0, inside WebKitGTK's own notices) |
+| Licensing | GPLv3-compatible dependencies and bundled assets with recorded source | `tiff`, `fax` (MIT), `landlock` (MIT OR Apache-2.0); the promoted crates (including `quick-xml`, MIT) are MIT or MIT/Apache-2.0. No asset is bundled. The PDF viewers are part of the OS or of the WebKitGTK already bundled in the AppImage (PDF.js is Apache-2.0, inside WebKitGTK's own notices) |
 
 **Result**: PASS, with the justified entries in Complexity Tracking.
 

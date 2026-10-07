@@ -82,6 +82,21 @@ artifacts.
     and each copy is marked as untrusted (§18).
   - The main web view decodes the PNGs HoploDex makes. These are
     well-formed, produced by the `png` crate from a bitmap.
+  - **Content checks are signature-level** *(added 2026-10-07; the "Known
+    limits" of §2)*: what `classify` doesn't see, so the other app's own
+    defences are what remain:
+    - Excel 4.0 (XLM) macro sheets inside a `.xls` (records in the
+      `Workbook` stream, not a storage);
+    - embedded objects in a `.doc` or `.xls` (`ObjectPool`, `MBD…`
+      storages) and in ODF, and ODF's links;
+    - Word and RTF field codes such as `DDEAUTO`, `INCLUDEPICTURE`,
+      `INCLUDETEXT` and `LINK`;
+    - a chart's embedded workbook, which isn't opened to check it.
+
+    Current Excel disables XLM by default and LibreOffice doesn't run it;
+    Word disables DDE by default and asks before updating links. The
+    reverse is also a limit: a document made from a custom template records
+    the template's path as an outside relationship and is refused.
 
 ## 2. Document types: one allowlist, checked by content, at attach and at open
 
@@ -1168,7 +1183,7 @@ processes.
 | `objc2-web-kit`, `block2`, more `objc2-app-kit` and `objc2-foundation` features (macOS) | MIT | SPI switches, content rule list, `NSEvent` monitor (§6, §7, §10) | promoted from dev-dependency, at the locked versions |
 | `webview2-com` (Windows) | MIT | the surface's settings and events (§6–§10) | promoted from dev-dependency, at wry's version |
 | `windows-sys` features: `Win32_System_JobObjects`, `Win32_System_Threading`, `Win32_Security`, `Win32_Security_Authorization`, `Win32_System_SystemInformation` | MIT OR Apache-2.0 | helper job object and mitigations (§11), the copy's DACL (§18), `GetLastInputInfo` (§10) | features only |
-| `zip`, `cfb`, `encoding_rs`, `png` | MIT / MIT / (Apache-2.0 OR MIT) AND BSD-3-Clause / MIT OR Apache-2.0 | content checks (§2), text (§12), page PNGs (§11) | promoted from transitive, at the locked versions |
+| `zip`, `cfb`, `encoding_rs`, `png`, `quick-xml` (`encoding` feature) | MIT / MIT / (Apache-2.0 OR MIT) AND BSD-3-Clause / MIT OR Apache-2.0 / MIT | content checks and OOXML relationship parts (§2), text (§12), page PNGs (§11) | promoted from transitive, at the locked versions |
 
 No binary is bundled or fetched. Every crate is seen by `cargo deny`.
 None collects data or makes network requests. No npm package is added.
