@@ -45,7 +45,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hoplodex_lib::services::preview::surface::{Rect, Surface, SurfaceConfig};
+use hoplodex_lib::services::preview::surface::{Hooks, Rect, Surface, SurfaceConfig};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder, http, webview::PageLoadEvent};
 
 const SCHEME: &str = "hdpreview";
@@ -265,6 +265,8 @@ fn main() {
                     proxy_url: format!("http://127.0.0.1:{port}").parse().unwrap(),
                     data_directory: preview_dir,
                     bounds: BOUNDS,
+                    secret: "0".repeat(32),
+                    hooks: Hooks::none(),
                     on_page_load: Some(Box::new(move |event, url| {
                         eprintln!("CHECK page-load {event:?} {url}");
                         if matches!(event, PageLoadEvent::Finished) && *url == url_hook {

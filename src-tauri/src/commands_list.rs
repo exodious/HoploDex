@@ -72,6 +72,8 @@ pub const COMMANDS: &[&str] = &[
     "delete_document",
     "open_preview",
     "close_preview",
+    "set_preview_bounds",
+    "focus_preview",
     "render_preview_page",
     "get_export_scope",
     "export_collection",

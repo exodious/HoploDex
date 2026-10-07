@@ -53,6 +53,13 @@ fn minute_seconds_from(setting: Option<&str>) -> i64 {
         .unwrap_or(SECONDS_PER_MINUTE)
 }
 
+/// Input Rust itself sees in the application's windows, as the PDF surface's
+/// web view does (research.md §10): counts as activity, like the main web
+/// view's `note_activity`. The caller keeps it to once a second.
+pub fn note_activity(session: &crate::session::Session) {
+    session.idle().note_activity(session.clock().now());
+}
+
 /// Kept in the session.
 pub struct IdleClock {
     state: Mutex<State>,

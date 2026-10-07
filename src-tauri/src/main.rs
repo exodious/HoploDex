@@ -9,16 +9,14 @@ use std::time::Duration;
 use hoplodex_lib::app_dirs;
 use hoplodex_lib::commands::documents::{OPENED_DOCUMENTS_DIR, clear_opened_documents_cache};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
-use hoplodex_lib::commands::preview::PreviewEnv;
+use hoplodex_lib::commands::preview::{AppSurfaces, PreviewEnv};
 use hoplodex_lib::db;
 use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
-use hoplodex_lib::services::preview::availability::PdfAvailabilityState;
-use hoplodex_lib::services::preview::{
-    PreviewSurface, SurfaceFactory, SurfaceSpec, helper as render_helper,
-};
+use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide_at_startup};
+use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
 use hoplodex_lib::session::{Session, lifecycle};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -120,16 +118,6 @@ fn tick_idle_clock(app: AppHandle) {
     }
 }
 
-/// The PDF surface is built by `services::preview::surface` once T062
-/// completes it; until then a PDF can't be shown.
-struct UnbuiltSurfaces;
-
-impl SurfaceFactory for UnbuiltSurfaces {
-    fn build(&self, _spec: SurfaceSpec) -> Result<Arc<dyn PreviewSurface>, String> {
-        Err("the PDF surface isn't built yet".into())
-    }
-}
-
 fn main() {
     // The render helper is this executable started again (research.md §11):
     // before any Tauri, keyring, session or logging setup, so it has none of
@@ -146,6 +134,18 @@ fn main() {
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     builder
+        // The PDF surface's documents, from memory (research.md §4).
+        .register_asynchronous_uri_scheme_protocol(
+            protocol_handler::SCHEME,
+            |context, request, responder| {
+                let session = context.app_handle().state::<Session>().inner().clone();
+                // The handler takes the session's lock, so not on the thread
+                // the web view asks from.
+                tauri::async_runtime::spawn_blocking(move || {
+                    responder.respond(protocol_handler::handle(&session, &request));
+                });
+            },
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -165,15 +165,19 @@ fn main() {
                 .with_keyring(Keyring::system());
             // A backup a crash or forced quit cut short (research.md §7).
             backups::sweep_unfinished(&machine);
+            // Whether PDFs are previewed on this computer in this run: this
+            // version's hold, then the web view's check, before anything is
+            // shown (research.md §7). The surface's browser data folder from
+            // a previous run goes too (research.md §6).
+            surface::clear_data_directory(&app_dirs::preview_webview_data_dir(app.handle())?);
+            let availability = PdfAvailabilityState::new(decide_at_startup(&machine));
             app.manage(machine);
             app.manage(ImportSessionStore::new());
-            // Available until US1's startup check decides (research.md §7).
-            let availability = PdfAvailabilityState::default();
             app.manage(availability.clone());
             // The preview commands: the helper is this executable.
             app.manage(PreviewEnv::new(
                 std::env::current_exe()?,
-                Arc::new(UnbuiltSurfaces),
+                Arc::new(AppSurfaces::new(app.handle().clone())),
                 Arc::new(availability),
             ));
             // Sleep, wake, screen lock and shutdown (FR-037, FR-038), and
@@ -273,6 +277,8 @@ fn main() {
             hoplodex_lib::commands::documents::delete_document,
             hoplodex_lib::commands::preview::open_preview,
             hoplodex_lib::commands::preview::close_preview,
+            hoplodex_lib::commands::preview::set_preview_bounds,
+            hoplodex_lib::commands::preview::focus_preview,
             hoplodex_lib::commands::preview::render_preview_page,
             hoplodex_lib::commands::import_export::get_export_scope,
             hoplodex_lib::commands::import_export::export_collection,

@@ -75,6 +75,8 @@
     "allow-delete-document",
     "allow-open-preview",
     "allow-close-preview",
+    "allow-set-preview-bounds",
+    "allow-focus-preview",
     "allow-render-preview-page",
     "allow-get-export-scope",
     "allow-export-collection",

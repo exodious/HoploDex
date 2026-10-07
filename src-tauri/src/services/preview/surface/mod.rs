@@ -1,13 +1,15 @@
 //! The PDF surface: a child web view in the main window and every per-OS
 //! measure on it (research.md §4-§10). One file per OS, as `platform/` does.
 //!
-//! This is the first part (T005): the web view itself, with the settings
-//! every OS shares (its label, no capability naming it, `incognito`, a proxy
-//! to a loopback port the caller holds, navigation and new windows denied
-//! but for its own document), its own browser process on Windows, and its
-//! bounds. The filters, settings, signals and input monitors that research.md
-//! §6-§10 add per OS go in `linux.rs`, `macos.rs` and `windows.rs` as later
-//! tasks reach them.
+//! [`Surface`] is the web view itself, with the settings every OS shares (its
+//! label, no capability naming it, `incognito`, a proxy to a loopback port the
+//! caller holds, navigation and new windows denied but for its own document,
+//! downloads refused, developer tools off in a release build, the frame script
+//! with the surface's secret in it), its own browser process on Windows, and
+//! its bounds. [`AppSurface`] wraps it as the app's [`PreviewSurface`]. The
+//! filters, settings, signals and input monitors that research.md §6-§10 add
+//! per OS go in `linux.rs`, `macos.rs` and `windows.rs`; they reach the app
+//! through [`Hooks`].
 //!
 //! Threading: `open` and `navigate` may be called from any thread except
 //! inside a `with_webview` closure. Like the spike, the document's load
@@ -29,19 +31,32 @@ use macos as os;
 use windows as os;
 
 use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
+    time::{Duration, Instant},
 };
 
 use tauri::{
     LogicalPosition, LogicalSize, Runtime, Url, Webview, WebviewUrl, Window,
-    webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
+    webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder},
 };
 
-/// Script run in every frame of the surface (research.md §8, §10).
-#[allow(dead_code)]
+use super::{PdfEndReason, PreviewSurface, SurfaceSpec};
+
+/// Script run in every frame of the surface (research.md §8, §10), with
+/// [`SECRET_PLACEHOLDER`] replaced by the surface's secret.
 const FRAME_SCRIPT: &str = include_str!("frame_script.js");
+
+/// What `frame_script.js` holds the surface's secret as.
+const SECRET_PLACEHOLDER: &str = "__HOPLODEX_SURFACE_SECRET__";
+
+/// The most often the surface's input counts as activity for the idle lock
+/// (research.md §10).
+const ACTIVITY_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The surface's label (research.md §4). No capability names it (§5).
 pub const LABEL: &str = "preview";
@@ -60,6 +75,84 @@ pub struct Rect {
 /// page's URL.
 pub type PageLoadHook = Box<dyn Fn(PageLoadEvent, &Url) + Send + Sync + 'static>;
 
+type Action = Box<dyn Fn() + Send + Sync + 'static>;
+
+/// What the surface tells the app, which the per-OS code calls (research.md
+/// §7, §10). The calls may come from the main thread or any other, so each
+/// must return at once.
+pub struct Hooks {
+    on_escape: Action,
+    on_focus_chrome: Action,
+    on_activity: Action,
+    on_end: Box<dyn Fn(PdfEndReason) + Send + Sync + 'static>,
+    on_download: Box<dyn Fn(&Url) + Send + Sync + 'static>,
+    last_activity: Mutex<Option<Instant>>,
+}
+
+impl Hooks {
+    pub fn new(
+        on_escape: Action,
+        on_focus_chrome: Action,
+        on_activity: Action,
+        on_end: Box<dyn Fn(PdfEndReason) + Send + Sync + 'static>,
+        on_download: Box<dyn Fn(&Url) + Send + Sync + 'static>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            on_escape,
+            on_focus_chrome,
+            on_activity,
+            on_end,
+            on_download,
+            last_activity: Mutex::new(None),
+        })
+    }
+
+    /// Hooks that do nothing, for a check that doesn't run the app.
+    pub fn none() -> Arc<Self> {
+        Self::new(
+            Box::new(|| {}),
+            Box::new(|| {}),
+            Box::new(|| {}),
+            Box::new(|_| {}),
+            Box::new(|_| {}),
+        )
+    }
+
+    /// Escape was pressed in the surface (and consumed).
+    pub fn escape(&self) {
+        (self.on_escape)();
+    }
+
+    /// F6 was pressed in the surface (and consumed).
+    pub fn focus_chrome(&self) {
+        (self.on_focus_chrome)();
+    }
+
+    /// Input reached the surface: calls the idle clock's `note_activity`, at
+    /// most once a second.
+    pub fn activity(&self) {
+        let mut last = self.last_activity.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        if last.is_some_and(|at| now.duration_since(at) < ACTIVITY_INTERVAL) {
+            return;
+        }
+        *last = Some(now);
+        drop(last);
+        (self.on_activity)();
+    }
+
+    /// The surface must close for `reason`: the preview ends and the viewer
+    /// is told.
+    pub fn end(&self, reason: PdfEndReason) {
+        (self.on_end)(reason);
+    }
+
+    /// The web view asked to download `url`, which is refused whatever it is.
+    pub fn download(&self, url: &Url) {
+        (self.on_download)(url);
+    }
+}
+
 /// What the caller decides about a surface.
 pub struct SurfaceConfig {
     /// The first document's URL. The only URL the surface may show.
@@ -72,6 +165,10 @@ pub struct SurfaceConfig {
     /// ignore it.
     pub data_directory: PathBuf,
     pub bounds: Rect,
+    /// The 128-bit secret, as hex, written into the frame script
+    /// (`GET /hooked/<secret>`, research.md §8).
+    pub secret: String,
+    pub hooks: Arc<Hooks>,
     pub on_page_load: Option<PageLoadHook>,
 }
 
@@ -129,7 +226,23 @@ impl<R: Runtime> Surface<R> {
                     let allowed = nav_allowed.lock().unwrap_or_else(|e| e.into_inner());
                     navigation_allowed(&allowed, url)
                 })
-                .on_new_window(|_, _| NewWindowResponse::Deny);
+                .on_new_window(|_, _| NewWindowResponse::Deny)
+                // Never a download: of the surface's own URL it is the sign
+                // that the web view has no PDF viewer (research.md §4).
+                .on_download({
+                    let hooks = config.hooks.clone();
+                    move |_, event| {
+                        if let DownloadEvent::Requested { url, .. } = &event {
+                            hooks.download(url);
+                        }
+                        false
+                    }
+                })
+                .initialization_script_for_all_frames(
+                    FRAME_SCRIPT.replace(SECRET_PLACEHOLDER, &config.secret),
+                )
+                // Off in a release build (research.md §8).
+                .devtools(cfg!(debug_assertions));
         if let Some(hook) = config.on_page_load {
             builder = builder.on_page_load(move |_, payload| hook(payload.event(), payload.url()));
         }
@@ -139,8 +252,9 @@ impl<R: Runtime> Surface<R> {
             LogicalPosition::new(config.bounds.x, config.bounds.y),
             LogicalSize::new(config.bounds.width, config.bounds.height),
         )?;
-        os::attach(window, &webview)?;
+        os::attach(window, &webview, &config.hooks)?;
         let surface = Surface { webview, allowed };
+        surface.set_bounds(config.bounds, false)?;
         surface.navigate(config.url);
         Ok(surface)
     }
@@ -180,12 +294,157 @@ impl<R: Runtime> Surface<R> {
     }
 }
 
+/// How many [`AppSurface`]s are open, so that the folder one leaves is never
+/// deleted from under the next.
+static OPEN_SURFACES: AtomicUsize = AtomicUsize::new(0);
+
+/// Deletes the surface's user data folder, which holds no document content
+/// (spike) but is the browser process's own on Windows: at startup, and after
+/// the surface's browser process has exited (research.md §6). Not while a
+/// surface is open: the next one uses the same folder.
+pub fn clear_data_directory(folder: &Path) {
+    if OPEN_SURFACES.load(Ordering::SeqCst) == 0 {
+        let _ = std::fs::remove_dir_all(folder);
+    }
+}
+
+/// The app's [`PreviewSurface`]: a [`Surface`] that closes with its last
+/// holder (research.md §20).
+pub struct AppSurface<R: Runtime> {
+    surface: Mutex<Option<Surface<R>>>,
+    data_directory: PathBuf,
+}
+
+impl<R: Runtime> AppSurface<R> {
+    /// Builds a surface in `window` from `spec`, hidden, with the network
+    /// going to `proxy_url`. Call it from a thread other than the main one:
+    /// the web view is built there.
+    pub fn build(
+        window: &Window<R>,
+        spec: SurfaceSpec,
+        proxy_url: Url,
+        data_directory: PathBuf,
+        hooks: Arc<Hooks>,
+    ) -> Result<Arc<dyn PreviewSurface>, String> {
+        let url: Url = spec.url.parse().map_err(|e| format!("not a URL: {e}"))?;
+        let config = SurfaceConfig {
+            url,
+            proxy_url,
+            data_directory: data_directory.clone(),
+            bounds: Rect {
+                x: spec.bounds.x,
+                y: spec.bounds.y,
+                width: spec.bounds.width,
+                height: spec.bounds.height,
+            },
+            secret: spec.secret,
+            hooks,
+            on_page_load: None,
+        };
+        let surface = Surface::open(window, config).map_err(|e| e.to_string())?;
+        OPEN_SURFACES.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::new(Self { surface: Mutex::new(Some(surface)), data_directory }))
+    }
+
+    fn with_surface(&self, f: impl FnOnce(&Surface<R>)) {
+        if let Some(surface) = self.surface.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            f(surface);
+        }
+    }
+}
+
+impl<R: Runtime> PreviewSurface for AppSurface<R> {
+    fn navigate(&self, url: &str) {
+        match url.parse() {
+            Ok(url) => self.with_surface(|surface| surface.navigate(url)),
+            Err(e) => log::warn!("the preview surface was given a URL it can't parse: {e}"),
+        }
+    }
+
+    fn set_bounds(&self, rect: Rect, visible: bool) {
+        self.with_surface(|surface| {
+            if let Err(e) = surface.set_bounds(rect, visible) {
+                log::warn!("could not place the preview surface: {e}");
+            }
+        });
+    }
+
+    fn focus(&self) {
+        self.with_surface(|surface| {
+            if let Err(e) = surface.webview().set_focus() {
+                log::warn!("could not focus the preview surface: {e}");
+            }
+        });
+    }
+
+    fn close(&self) {
+        let Some(surface) = self.surface.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+            return;
+        };
+        // Closing is a message to the main thread, so it doesn't wait on it.
+        if let Err(e) = surface.close() {
+            log::warn!("could not close the preview surface: {e}");
+        }
+        OPEN_SURFACES.fetch_sub(1, Ordering::SeqCst);
+        if cfg!(windows) {
+            // The browser process takes a moment to exit and let go of its
+            // folder.
+            let folder = self.data_directory.clone();
+            thread::spawn(move || {
+                for _ in 0..20 {
+                    thread::sleep(Duration::from_millis(500));
+                    if OPEN_SURFACES.load(Ordering::SeqCst) != 0 {
+                        return;
+                    }
+                    if std::fs::remove_dir_all(&folder).is_ok() || !folder.exists() {
+                        return;
+                    }
+                }
+            });
+        }
+    }
+}
+
+impl<R: Runtime> Drop for AppSurface<R> {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn url(s: &str) -> Url {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn activity_is_passed_on_at_most_once_a_second() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let hooks = Hooks::new(
+            Box::new(|| {}),
+            Box::new(|| {}),
+            Box::new(move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+            }),
+            Box::new(|_| {}),
+            Box::new(|_| {}),
+        );
+        for _ in 0..50 {
+            hooks.activity();
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        // A second later it counts again.
+        *hooks.last_activity.lock().unwrap() = Some(Instant::now() - ACTIVITY_INTERVAL);
+        hooks.activity();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_frame_script_has_its_secret_to_write_in_once() {
+        assert_eq!(FRAME_SCRIPT.matches(SECRET_PLACEHOLDER).count(), 1);
     }
 
     #[test]

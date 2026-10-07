@@ -64,6 +64,20 @@ impl From<SurfaceBounds> for Rect {
     }
 }
 
+/// Why Rust closed the PDF surface (`preview:pdf-ended`, contracts/tauri-commands.md
+/// "Shapes").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PdfEndReason {
+    /// macOS: a copy was written and deleted; PDF preview is off on this
+    /// computer until HoploDex is updated (FR-003a).
+    CopyCaught,
+    /// The web view has no PDF viewer: it turned the PDF into a download.
+    NoViewer,
+    /// The surface couldn't be set up safely, or PDF.js's hook didn't run.
+    Failed,
+}
+
 /// What `open_preview` answers (contracts/tauri-commands.md "Shapes").
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
@@ -147,6 +161,9 @@ pub enum PreviewContent {
         /// Shared with the viewer's next PDF; closed when the last holder
         /// goes.
         surface: Arc<dyn PreviewSurface>,
+        /// The surface's secret (`SurfaceSpec::secret`), which the next PDF
+        /// shown on the same surface inherits with it.
+        secret: String,
         /// The surface has been given the document.
         served: bool,
         /// Linux: PDF.js's `webviewerloaded` hook reported (research.md §8).

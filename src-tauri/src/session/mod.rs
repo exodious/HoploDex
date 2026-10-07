@@ -489,6 +489,12 @@ pub const CHOOSER_NOTICES: &str = "chooser:notices";
 /// `machine.json` in the app, a recorder in the tests.
 pub trait SessionEvents: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value);
+    /// Emits to the main web view only (the preview events, contracts/
+    /// tauri-commands.md "Events"), where the app keeps them from the PDF
+    /// surface's web view.
+    fn emit_to_main(&self, event: &str, payload: serde_json::Value) {
+        self.emit(event, payload);
+    }
     /// Keeps a notice for the chooser to show next.
     fn notice(&self, notice: ChooserNotice);
 }
@@ -496,6 +502,12 @@ pub trait SessionEvents: Send + Sync {
 impl<R: tauri::Runtime> SessionEvents for tauri::AppHandle<R> {
     fn emit(&self, event: &str, payload: serde_json::Value) {
         if let Err(err) = tauri::Emitter::emit(self, event, payload) {
+            log::warn!("could not emit {event}: {err}");
+        }
+    }
+
+    fn emit_to_main(&self, event: &str, payload: serde_json::Value) {
+        if let Err(err) = tauri::Emitter::emit_to(self, "main", event, payload) {
             log::warn!("could not emit {event}: {err}");
         }
     }

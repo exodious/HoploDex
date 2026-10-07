@@ -13,7 +13,7 @@
 use std::{
     ffi::c_void,
     os::raw::{c_int, c_uint},
-    sync::mpsc,
+    sync::{Arc, mpsc},
 };
 
 use tauri::{Runtime, Url, Webview, Window, webview::WebviewBuilder};
@@ -25,7 +25,7 @@ use webkit2gtk::glib::{
 
 use std::path::Path;
 
-use super::Rect;
+use super::{Hooks, Rect};
 
 type Widget = *mut c_void;
 const ALIGN_START: c_int = 1;
@@ -90,7 +90,11 @@ fn with_widget<R: Runtime>(
 ///
 /// A web view that has been moved shows nothing until its page next changes,
 /// so the other web views of the window are made to repaint.
-pub(super) fn attach<R: Runtime>(window: &Window<R>, webview: &Webview<R>) -> tauri::Result<()> {
+pub(super) fn attach<R: Runtime>(
+    window: &Window<R>,
+    webview: &Webview<R>,
+    _hooks: &Arc<Hooks>,
+) -> tauri::Result<()> {
     with_widget(webview, |surface| unsafe {
         let parent = gtk_widget_get_parent(surface);
         if parent.is_null() {

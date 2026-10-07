@@ -3,9 +3,9 @@
 
 use tauri::{Runtime, Url, Webview, Window, webview::WebviewBuilder};
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
-use super::Rect;
+use super::{Hooks, Rect};
 
 /// The proxy: `proxy_url` (Tauri's `macos-proxy` feature). Loopback bypasses
 /// it on macOS, so the content filter, a later task, is the layer that
@@ -19,7 +19,11 @@ pub(super) fn customize<R: Runtime>(
 }
 
 /// Nothing to arrange: `add_child` places the web view at its bounds.
-pub(super) fn attach<R: Runtime>(_window: &Window<R>, _webview: &Webview<R>) -> tauri::Result<()> {
+pub(super) fn attach<R: Runtime>(
+    _window: &Window<R>,
+    _webview: &Webview<R>,
+    _hooks: &Arc<Hooks>,
+) -> tauri::Result<()> {
     Ok(())
 }
 

@@ -8,20 +8,25 @@
 //! changes; they refuse with `DATABASE_CLOSED` when nothing is open.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tauri::State;
+use serde_json::json;
+use tauri::{AppHandle, Manager, Runtime, State};
 use zeroize::Zeroizing;
 
 use crate::commands::CommandError;
 use crate::models::document_attachment::PreviewKind;
 use crate::services::document_types::{classify, from_recorded};
-use crate::services::preview::availability::{PdfAvailability, PdfAvailabilityState};
+use crate::services::preview::availability::{
+    PdfAvailability, PdfAvailabilityState, UnavailableReason,
+};
 use crate::services::preview::{
-    HelperError, HelperHandle, HelperLimits, Preview, PreviewContent, PreviewInfo, PreviewLoading,
-    SurfaceBounds, SurfaceFactory, text,
+    HelperError, HelperHandle, HelperLimits, PdfEndReason, Preview, PreviewContent, PreviewInfo,
+    PreviewLoading, PreviewSurface, SurfaceBounds, SurfaceFactory, SurfaceSpec, protocol_handler,
+    surface::{AppSurface, Hooks},
+    text, tripwire,
 };
 use crate::session::{OpenDatabase, Session};
 
@@ -58,6 +63,85 @@ impl PreviewEnv {
             availability,
         }
     }
+}
+
+/// Builds the PDF surface as a child web view of the main window, with the
+/// app's hooks: what the surface sees reaches the session through `ops`.
+pub struct AppSurfaces<R: Runtime> {
+    app: AppHandle<R>,
+}
+
+impl<R: Runtime> AppSurfaces<R> {
+    pub fn new(app: AppHandle<R>) -> Self {
+        Self { app }
+    }
+
+    /// The hooks of one surface. Each runs its work on a thread of its own:
+    /// they are called from the main thread, which must not wait on the
+    /// session, since the thread that holds it may be waiting for the main
+    /// thread to build or close a web view.
+    fn hooks(&self) -> Arc<Hooks> {
+        fn off_thread(name: &str, work: impl FnOnce() + Send + 'static) {
+            if let Err(err) = std::thread::Builder::new().name(name.into()).spawn(work) {
+                log::error!("could not start {name}: {err}");
+            }
+        }
+        let shared = |app: &AppHandle<R>| app.state::<Session>().shared();
+        let (a, b, c, d, e) = (
+            self.app.clone(),
+            self.app.clone(),
+            self.app.clone(),
+            self.app.clone(),
+            self.app.clone(),
+        );
+        Hooks::new(
+            Box::new(move || {
+                let session = shared(&a);
+                off_thread("preview-escape", move || ops::surface_key(&session, "preview:escape"));
+            }),
+            Box::new(move || {
+                let session = shared(&b);
+                off_thread("preview-focus-chrome", move || {
+                    ops::surface_key(&session, "preview:focus-chrome");
+                });
+            }),
+            // The idle clock takes no lock of the session's database.
+            Box::new(move || crate::session::idle::note_activity(&c.state::<Session>())),
+            Box::new(move |reason| {
+                let session = shared(&d);
+                off_thread("preview-ended", move || ops::surface_ended(&session, reason));
+            }),
+            Box::new(move |url| {
+                let (app, url) = (e.clone(), url.to_string());
+                off_thread("preview-download", move || {
+                    let env = app.state::<PreviewEnv>().inner().clone();
+                    let _ = ops::surface_download(&app.state::<Session>().shared(), &env, &url);
+                });
+            }),
+        )
+    }
+}
+
+impl<R: Runtime> SurfaceFactory for AppSurfaces<R> {
+    fn build(&self, spec: SurfaceSpec) -> Result<Arc<dyn PreviewSurface>, String> {
+        let window = self.app.get_window("main").ok_or("the main window is gone")?;
+        let tripwire = tripwire::shared().ok_or("the tripwire isn't bound")?;
+        let proxy_url =
+            format!("http://{}", tripwire.addr()).parse().map_err(|e| format!("{e}"))?;
+        let data_directory =
+            crate::app_dirs::preview_webview_data_dir(&self.app).map_err(|e| e.to_string())?;
+        AppSurface::build(&window, spec, proxy_url, data_directory, self.hooks())
+    }
+}
+
+/// Where the viewer's page area last was, as `set_preview_bounds` sent it: a
+/// new surface is built there, hidden (contracts/tauri-commands.md
+/// "open_preview"). There is one main window, so one place.
+static LAST_BOUNDS: Mutex<SurfaceBounds> =
+    Mutex::new(SurfaceBounds { x: 0.0, y: 0.0, width: 800.0, height: 600.0 });
+
+fn last_bounds() -> SurfaceBounds {
+    *LAST_BOUNDS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Which `Load` is which, across sessions: a ticket is never reused, so a
@@ -142,14 +226,78 @@ pub mod ops {
                     Some(PreviewLoading { id, ticket, document_id, helper: None });
                 Ok(Begun::Tiff { id, ticket, bytes: Zeroizing::new(document.file_bytes) })
             }
-            PreviewKind::Pdf => {
-                if let PdfAvailability::Unavailable { reason } = env.availability.get() {
-                    return Err(CommandError::new("PDF_PREVIEW_UNAVAILABLE", reason.message()));
-                }
-                // Building the surface and serving the document are T061.
-                Err(failed("PDF previews aren't ready in this build."))
-            }
+            PreviewKind::Pdf => begin_pdf(open, env, document_id, document.file_bytes, previous),
         }
+    }
+
+    /// The PDF path of `begin`: a new token, and the surface of the PDF
+    /// that was shown if there was one, else a new one, hidden at the last
+    /// bounds sent, until its document has been served.
+    fn begin_pdf(
+        open: &mut OpenDatabase,
+        env: &PreviewEnv,
+        document_id: i64,
+        bytes: Vec<u8>,
+        previous: Option<Preview>,
+    ) -> Result<Begun, CommandError> {
+        if let PdfAvailability::Unavailable { reason } = env.availability.get() {
+            return Err(CommandError::new("PDF_PREVIEW_UNAVAILABLE", reason.message()));
+        }
+        // Bound once for the run; nothing can bind that port but this
+        // process, so a request that reaches it is a request the surface's
+        // other layers failed to stop (research.md §6).
+        if tripwire::shared().is_none() {
+            return Err(failed(
+                "The PDF viewer couldn't be set up, so this document can't be shown.",
+            ));
+        }
+        let mut token = [0u8; 16];
+        getrandom::fill(&mut token).map_err(|_| failed("This document couldn't be shown."))?;
+        let url = protocol_handler::document_url(&token);
+
+        let kept = match previous {
+            Some(Preview { content: PreviewContent::Pdf { surface, secret, .. }, .. }) => {
+                Some((surface, secret))
+            }
+            other => {
+                drop(other);
+                None
+            }
+        };
+        let (surface, secret) = match kept {
+            Some((surface, secret)) => {
+                // Hidden while the next document loads: its page, the old
+                // document, is still on it until the navigation lands.
+                surface.set_bounds(last_bounds().into(), false);
+                surface.navigate(&url);
+                (surface, secret)
+            }
+            None => {
+                let secret = crate::db::random_hex(16)
+                    .map_err(|_| failed("This document couldn't be shown."))?;
+                let spec = SurfaceSpec { url, secret: secret.clone(), bounds: last_bounds() };
+                let surface = env.surfaces.build(spec).map_err(|reason| {
+                    log::error!("the PDF surface couldn't be built: {reason}");
+                    failed("The PDF viewer couldn't be started, so this document can't be shown.")
+                })?;
+                (surface, secret)
+            }
+        };
+        open.preview_seq += 1;
+        let id = open.preview_seq;
+        open.preview = Some(Preview {
+            id,
+            document_id,
+            content: PreviewContent::Pdf {
+                token,
+                bytes: Zeroizing::new(bytes),
+                surface,
+                secret,
+                served: false,
+                hooked: false,
+            },
+        });
+        Ok(Begun::Done(PreviewInfo::Pdf { preview_id: id, document_id }))
     }
 
     /// Opens a document's preview, replacing any open one.
@@ -163,7 +311,12 @@ pub mod ops {
         document_id: i64,
     ) -> Result<PreviewInfo, CommandError> {
         let (id, ticket, bytes) = match session.inspect_mut(|open| begin(open, env, document_id))? {
-            Begun::Done(info) => return Ok(info),
+            Begun::Done(info) => {
+                if let PreviewInfo::Pdf { preview_id, .. } = &info {
+                    watch_for_the_hook(session, env, *preview_id);
+                }
+                return Ok(info);
+            }
             Begun::Tiff { id, ticket, bytes } => (id, ticket, bytes),
         };
 
@@ -291,6 +444,7 @@ pub mod ops {
                     "The viewer's place must be a size of at least 1 pixel, inside the window.",
                 ));
             }
+            *LAST_BOUNDS.lock().unwrap_or_else(|e| e.into_inner()) = bounds;
             let ready = *served && (*hooked || !cfg!(target_os = "linux"));
             surface.set_bounds(bounds.into(), visible && ready);
             Ok(())
@@ -309,15 +463,99 @@ pub mod ops {
         })
     }
 
+    /// Closes the PDF preview that is open and `matches`, and tells the viewer
+    /// why (`preview:pdf-ended`). Returns whether there was one. The surface
+    /// is closed outside the session's lock.
+    fn end_pdf(
+        session: &Session,
+        matches: impl FnOnce(&Preview) -> bool,
+        reason: PdfEndReason,
+    ) -> bool {
+        let ended = session.inspect_mut(|open| {
+            let is_it = open
+                .preview
+                .as_ref()
+                .is_some_and(|p| matches!(p.content, PreviewContent::Pdf { .. }) && matches(p));
+            Ok(if is_it { end_current(open) } else { None })
+        });
+        let Ok(Some(preview)) = ended else { return false };
+        let preview_id = preview.id;
+        drop(preview);
+        session.events().emit_to_main(
+            "preview:pdf-ended",
+            json!({ "previewId": preview_id, "reason": reason }),
+        );
+        true
+    }
+
+    /// The surface itself ended the preview (the macOS watch caught a copy,
+    /// a Windows interface was missing): closes the PDF shown and says why.
+    pub fn surface_ended(session: &Session, reason: PdfEndReason) {
+        end_pdf(session, |_| true, reason);
+    }
+
+    /// Escape or F6 was pressed in the surface: the viewer is told (`event`
+    /// is `preview:escape` or `preview:focus-chrome`).
+    pub fn surface_key(session: &Session, event: &str) {
+        let shown = session.inspect(|open| {
+            Ok(open
+                .preview
+                .as_ref()
+                .filter(|p| matches!(p.content, PreviewContent::Pdf { .. }))
+                .map(|p| p.id))
+        });
+        if let Ok(Some(preview_id)) = shown {
+            session.events().emit_to_main(event, json!({ "previewId": preview_id }));
+        }
+    }
+
     /// The surface's `on_download` hook: a download of the surface's own URL
-    /// means the web view has no PDF viewer. T061 ends the preview and turns
-    /// PDF preview off for the run; until then nothing is done.
+    /// means the web view has no PDF viewer. The download is refused by the
+    /// caller; this ends the preview and turns PDF preview off for the run
+    /// (research.md §4, §7). Any other URL is not the sign.
     pub fn surface_download(
-        _session: &Arc<Session>,
-        _env: &PreviewEnv,
-        _url: &str,
+        session: &Arc<Session>,
+        env: &PreviewEnv,
+        url: &str,
     ) -> Result<(), CommandError> {
+        let Ok(url) = url.parse::<tauri::Url>() else { return Ok(()) };
+        let own = session.inspect(|open| {
+            Ok(open.preview.as_ref().is_some_and(|p| match &p.content {
+                PreviewContent::Pdf { token, .. } => protocol_handler::is_document_url(&url, token),
+                _ => false,
+            }))
+        })?;
+        if own {
+            env.availability
+                .set(PdfAvailability::Unavailable { reason: UnavailableReason::NoViewer });
+            end_pdf(session, |_| true, PdfEndReason::NoViewer);
+        }
         Ok(())
+    }
+
+    /// Linux: PDF.js's hook must report within `env.hook_timeout`, or the
+    /// surface is closed rather than shown with a PDF's scripting on
+    /// (research.md §8).
+    fn watch_for_the_hook(session: &Arc<Session>, env: &PreviewEnv, preview_id: u64) {
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        let (session, timeout) = (Arc::clone(session), env.hook_timeout);
+        let spawned =
+            std::thread::Builder::new().name("preview-hook-timer".into()).spawn(move || {
+                std::thread::sleep(timeout);
+                end_pdf(
+                    &session,
+                    |p| {
+                        p.id == preview_id
+                            && matches!(p.content, PreviewContent::Pdf { hooked: false, .. })
+                    },
+                    PdfEndReason::Failed,
+                );
+            });
+        if let Err(err) = spawned {
+            log::error!("could not start the PDF hook timer: {err}");
+        }
     }
 
     /// One TIFF page as PNG bytes, `width_px` wide at most (4096 px, 24
@@ -379,6 +617,27 @@ pub async fn close_preview(
     session: State<'_, Session>,
 ) -> Result<(), CommandError> {
     ops::close_preview(&session, preview_id)
+}
+
+/// Moves and sizes the PDF surface over the viewer's page area and shows or
+/// hides it; it stays hidden until `preview:pdf-ready`.
+#[tauri::command]
+pub async fn set_preview_bounds(
+    preview_id: u64,
+    bounds: SurfaceBounds,
+    visible: bool,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    ops::set_preview_bounds(&session, preview_id, bounds, visible)
+}
+
+/// Gives the PDF surface the keyboard focus.
+#[tauri::command]
+pub async fn focus_preview(
+    preview_id: u64,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    ops::focus_preview(&session, preview_id)
 }
 
 /// One TIFF page as PNG bytes, received by the viewer as an `ArrayBuffer`.
