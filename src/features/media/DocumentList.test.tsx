@@ -5,6 +5,7 @@ import { ToastProvider } from "../../components";
 import { formatDate } from "../../lib/dates";
 import type { FileDropEvent } from "../../services/tauriClient";
 import { DocumentList } from "./DocumentList";
+import { chooseDocumentOpening, loadDocumentOpening, useDocumentOpening } from "./documentOpening";
 import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 
 // specs/007-document-preview/contracts/ui-document-preview.md §1 and §2,
@@ -13,7 +14,12 @@ import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 // (`invoke`, `listen`) with the command names of contracts/tauri-commands.md.
 // The US2 part (T084) adds the picker's `accept`, drops (`listenForFileDrops`,
 // routed by ui contract §6), "Open in another app…" and its results; toasts
-// are read through a ToastProvider around the list.
+// are read through a ToastProvider around the list. The US3 part (T097) adds
+// the name following this computer's setting, held in the store of
+// documentOpening.ts: `loadDocumentOpening()` reads it with
+// `get_document_opening`, `chooseDocumentOpening(value)` sends
+// `set_document_opening` `{ value }` and resolves with `changed`, and
+// `useDocumentOpening()` is the value a component follows.
 
 const backend = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload: unknown) => void>>();
@@ -98,6 +104,12 @@ const oldScan = () => doc(5, "Old scan.jpg", "image/jpeg", null, { openable: fal
 
 let docs: DocumentSummary[];
 
+/** What `get_document_opening` answers, and what `set_document_opening` sets. */
+let opening: "preview" | "external";
+/** What `set_document_opening` answers with `changed`, for a test to change
+ * (false: the user cancelled the native dialog). */
+let settingChanges: boolean;
+
 function calls(command: string): Record<string, unknown>[] {
   return backend.invoke.mock.calls
     .filter(([name]) => name === command)
@@ -128,12 +140,19 @@ afterAll(() => {
   Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   backend.reset();
   docs = [receipt(), scan(), notes(), billDocx(), oldScan()];
   openAnswer = () => ({ opened: true });
+  opening = "preview";
+  settingChanges = true;
   backend.invoke.mockReset().mockImplementation(async (command: string, args = {}) => {
     switch (command) {
+      case "get_document_opening":
+        return opening;
+      case "set_document_opening":
+        if (settingChanges) opening = args.value as typeof opening;
+        return { changed: settingChanges };
       case "list_documents":
         return docs.map((d) => ({ ...d }));
       case "list_document_types":
@@ -163,6 +182,8 @@ beforeEach(() => {
     }
     throw new Error(`unexpected command ${command}`);
   });
+  // The store is shared by the whole module: every test starts from "preview".
+  await loadDocumentOpening();
   URL.createObjectURL = vi.fn(() => "blob:test/1");
   URL.revokeObjectURL = vi.fn();
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
@@ -660,5 +681,158 @@ describe("DocumentList: Open in another app… (contract §1)", () => {
 
     await user.click(button);
     expect(calls("open_document")).toEqual([]);
+  });
+});
+
+// --- User Story 3 (T097) ------------------------------------------------------
+
+describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6)", () => {
+  /** Renders the list with this computer's setting loaded as `value`. */
+  async function renderListWith(value: "preview" | "external") {
+    opening = value;
+    await loadDocumentOpening();
+    return renderList();
+  }
+
+  it("with 'external', the name calls open_document, titled 'Open {name} in another app'", async () => {
+    const user = await renderListWith("external");
+    const name = screen.getByRole("button", { name: "Bill of sale.docx" });
+    expect(name).toHaveAttribute("title", "Open Bill of sale.docx in another app");
+
+    await user.click(name);
+
+    expect(calls("open_document")).toEqual([{ id: 4 }]);
+    expect(calls("open_preview")).toEqual([]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await toastWith("Opened Bill of sale.docx in another app.")).toBeInTheDocument();
+  });
+
+  it("with 'external', every row's name is titled for opening, a previewable one too", async () => {
+    await renderListWith("external");
+
+    for (const name of ["Purchase receipt.pdf", "Appraisal scan.tif", "Notes.txt"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute(
+        "title",
+        `Open ${name} in another app`,
+      );
+    }
+  });
+
+  it("with 'external', the name of a previewable document opens it in another app, and 'Preview' still previews it (US3-5)", async () => {
+    const user = await renderListWith("external");
+
+    await user.click(screen.getByRole("button", { name: "Purchase receipt.pdf" }));
+    await waitFor(() => expect(calls("open_document")).toEqual([{ id: 1 }]));
+    expect(calls("open_preview")).toEqual([]);
+
+    await user.click(within(row("Purchase receipt.pdf")).getByRole("button", { name: "Preview" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Purchase receipt.pdf" });
+    expect(dialog).toHaveAccessibleDescription(/Document 1 of 5/);
+    expect(calls("open_preview")).toEqual([{ documentId: 1 }]);
+    expect(calls("open_document")).toEqual([{ id: 1 }]);
+  });
+
+  it("with 'external', keeps both buttons on a previewable row and only 'Open in another app…' on the rest", async () => {
+    await renderListWith("external");
+
+    for (const name of ["Purchase receipt.pdf", "Appraisal scan.tif", "Notes.txt"]) {
+      const buttons = within(row(name))
+        .getAllByRole("button")
+        .map((b) => b.textContent?.trim());
+      expect(buttons).toContain("Preview");
+      expect(buttons).toContain("Open in another app…");
+    }
+    const word = within(row("Bill of sale.docx"));
+    expect(word.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(word.getByRole("button", { name: "Open in another app…" })).toBeEnabled();
+  });
+
+  it("changes back to 'preview': the name previews again, with its title (US3-6)", async () => {
+    const user = await renderListWith("external");
+    expect(screen.getByRole("button", { name: "Notes.txt" })).toHaveAttribute(
+      "title",
+      "Open Notes.txt in another app",
+    );
+
+    let changed: boolean | undefined;
+    await act(async () => {
+      changed = await chooseDocumentOpening("preview");
+    });
+
+    expect(changed).toBe(true);
+    expect(calls("set_document_opening")).toEqual([{ value: "preview" }]);
+    expect(screen.getByRole("button", { name: "Notes.txt" })).toHaveAttribute(
+      "title",
+      "Preview Notes.txt",
+    );
+    await user.click(screen.getByRole("button", { name: "Notes.txt" }));
+    expect(await screen.findByRole("dialog", { name: "Notes.txt" })).toBeInTheDocument();
+    expect(calls("open_preview")).toEqual([{ documentId: 3 }]);
+    expect(calls("open_document")).toEqual([]);
+  });
+
+  it("changes to 'external' while the list is shown: the name opens in another app from then on", async () => {
+    const user = await renderList();
+    expect(screen.getByRole("button", { name: "Notes.txt" })).toHaveAttribute(
+      "title",
+      "Preview Notes.txt",
+    );
+
+    await act(async () => {
+      await chooseDocumentOpening("external");
+    });
+
+    expect(calls("set_document_opening")).toEqual([{ value: "external" }]);
+    expect(screen.getByRole("button", { name: "Notes.txt" })).toHaveAttribute(
+      "title",
+      "Open Notes.txt in another app",
+    );
+    await user.click(screen.getByRole("button", { name: "Notes.txt" }));
+    await waitFor(() => expect(calls("open_document")).toEqual([{ id: 3 }]));
+    expect(calls("open_preview")).toEqual([]);
+  });
+
+  it("keeps 'preview' when the setting's confirmation is cancelled ({ changed: false })", async () => {
+    settingChanges = false;
+    await renderList();
+
+    let changed: boolean | undefined;
+    await act(async () => {
+      changed = await chooseDocumentOpening("external");
+    });
+
+    expect(changed).toBe(false);
+    expect(calls("set_document_opening")).toEqual([{ value: "external" }]);
+    expect(screen.getByRole("button", { name: "Notes.txt" })).toHaveAttribute(
+      "title",
+      "Preview Notes.txt",
+    );
+  });
+
+  it("reads the setting with get_document_opening, which takes no arguments", async () => {
+    opening = "external";
+    backend.invoke.mockClear();
+
+    await loadDocumentOpening();
+
+    expect(calls("get_document_opening")).toHaveLength(1);
+    const [, args] = backend.invoke.mock.calls.find(([name]) => name === "get_document_opening")!;
+    expect(args === undefined || Object.keys(args as object).length === 0).toBe(true);
+  });
+
+  it("useDocumentOpening is the loaded value, and follows a change", async () => {
+    function Probe() {
+      return <output aria-label="opening">{useDocumentOpening()}</output>;
+    }
+    opening = "external";
+    await loadDocumentOpening();
+    render(<Probe />);
+    expect(screen.getByLabelText("opening")).toHaveTextContent("external");
+
+    await act(async () => {
+      await chooseDocumentOpening("preview");
+    });
+    expect(screen.getByLabelText("opening")).toHaveTextContent("preview");
   });
 });
