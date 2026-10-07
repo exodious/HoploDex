@@ -149,48 +149,85 @@ fn platform_check() -> bool {
     (major, minor) >= (2, 40)
 }
 
-/// `+[WKPreferences _features]` lists `PDFPluginHUDEnabled`, the SPI the
-/// surface switches the HUD and WebRTC off with respond, and a `WKPreferences`
-/// reads both back as off after they are set (research.md §7). Must run on
-/// the main thread (`setup()` does).
-///
-/// Not run on the machine this was written on: macOS only.
+/// The WebKit SPI the macOS surface switches the PDF HUD and WebRTC off
+/// with (research.md §6, §7): shared by [`platform_check`], which tries them
+/// on a throwaway `WKPreferences` at startup, and the surface, which applies
+/// them to its own web view's, so the two can't mean different things.
+#[cfg(target_os = "macos")]
+pub(crate) mod webkit_switches {
+    use objc2::{ClassType, msg_send, rc::Retained, runtime::AnyObject, sel};
+    use objc2_foundation::{NSArray, NSString};
+    use objc2_web_kit::WKPreferences;
+
+    /// WebKit's name for the HUD's feature flag.
+    const HUD_FEATURE: &str = "PDFPluginHUDEnabled";
+
+    /// Turns the PDF HUD (Open in Preview, Download) and WebRTC off in
+    /// `prefs`, and reads both back. Any SPI that is missing, any feature
+    /// that isn't listed, or a switch that doesn't read back as off is an
+    /// `Err`: the caller must then not show a PDF (FR-003, FR-004).
+    pub(crate) fn switch_off(prefs: &WKPreferences) -> Result<(), String> {
+        // SAFETY: each selector is checked with `respondsToSelector:` before
+        // it is sent, with the argument and return types WebKit declares.
+        unsafe {
+            let class_lists_features: bool =
+                msg_send![WKPreferences::class(), respondsToSelector: sel!(_features)];
+            let instance_responds =
+                |selector| -> bool { msg_send![prefs, respondsToSelector: selector] };
+            for (ok, name) in [
+                (class_lists_features, "+[WKPreferences _features]"),
+                (instance_responds(sel!(_setEnabled:forFeature:)), "_setEnabled:forFeature:"),
+                (instance_responds(sel!(_isEnabledForFeature:)), "_isEnabledForFeature:"),
+                (instance_responds(sel!(_setPeerConnectionEnabled:)), "_setPeerConnectionEnabled:"),
+                (instance_responds(sel!(_peerConnectionEnabled)), "_peerConnectionEnabled"),
+            ] {
+                if !ok {
+                    return Err(format!("this WebKit has no {name}"));
+                }
+            }
+            let features: Retained<NSArray<AnyObject>> =
+                msg_send![WKPreferences::class(), _features];
+            let hud = features.iter().find(|feature| {
+                let key: Retained<NSString> = msg_send![&**feature, key];
+                key.to_string() == HUD_FEATURE
+            });
+            let Some(hud) = hud else {
+                return Err(format!("this WebKit lists no {HUD_FEATURE} feature"));
+            };
+            let _: () = msg_send![prefs, _setEnabled: false, forFeature: &*hud];
+            let _: () = msg_send![prefs, _setPeerConnectionEnabled: false];
+            let hud_on: bool = msg_send![prefs, _isEnabledForFeature: &*hud];
+            let rtc_on: bool = msg_send![prefs, _peerConnectionEnabled];
+            if hud_on || rtc_on {
+                return Err(format!(
+                    "WebKit's switches didn't hold (PDF HUD on: {hud_on}, WebRTC on: {rtc_on})"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `WKPreferences`'s SPI switches exist, find the HUD's feature and hold
+/// both settings off (research.md §7); see [`webkit_switches::switch_off`].
+/// Must run on the main thread (`setup()` does).
 #[cfg(target_os = "macos")]
 fn platform_check() -> bool {
-    use objc2::{ClassType, MainThreadMarker, msg_send, rc::Retained, runtime::AnyObject, sel};
-    use objc2_foundation::{NSArray, NSString};
+    use objc2::MainThreadMarker;
     use objc2_web_kit::WKPreferences;
 
     let Some(mtm) = MainThreadMarker::new() else {
         log::error!("the PDF viewer check must run on the main thread");
         return false;
     };
+    // SAFETY: a fresh, unshared `WKPreferences`.
     let prefs = unsafe { WKPreferences::new(mtm) };
-    let class_lists_features: bool =
-        unsafe { msg_send![WKPreferences::class(), respondsToSelector: sel!(_features)] };
-    let instance_responds =
-        |selector| -> bool { unsafe { msg_send![&*prefs, respondsToSelector: selector] } };
-    if !class_lists_features
-        || !instance_responds(sel!(_setEnabled:forFeature:))
-        || !instance_responds(sel!(_isEnabledForFeature:))
-        || !instance_responds(sel!(_setPeerConnectionEnabled:))
-        || !instance_responds(sel!(_peerConnectionEnabled))
-    {
-        return false;
-    }
-    let features: Retained<NSArray<AnyObject>> =
-        unsafe { msg_send![WKPreferences::class(), _features] };
-    let hud = features.iter().find(|feature| {
-        let key: Retained<NSString> = unsafe { msg_send![&**feature, key] };
-        key.to_string() == "PDFPluginHUDEnabled"
-    });
-    let Some(hud) = hud else { return false };
-    unsafe {
-        let _: () = msg_send![&*prefs, _setEnabled: false, forFeature: &*hud];
-        let _: () = msg_send![&*prefs, _setPeerConnectionEnabled: false];
-        let hud_on: bool = msg_send![&*prefs, _isEnabledForFeature: &*hud];
-        let rtc_on: bool = msg_send![&*prefs, _peerConnectionEnabled];
-        !hud_on && !rtc_on
+    match webkit_switches::switch_off(&prefs) {
+        Ok(()) => true,
+        Err(why) => {
+            log::warn!("the PDF viewer check: {why}");
+            false
+        }
     }
 }
 

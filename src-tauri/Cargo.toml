@@ -115,7 +115,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSString",
     "NSURL",
 ] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSEvent", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSWorkspace"] }
 # The PDF surface's content rule list, SPI switches and input (research.md
 # §6, §7, §10). Promoted from dev-dependencies.
 block2 = "0.6.2"
