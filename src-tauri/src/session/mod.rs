@@ -20,6 +20,7 @@ use rusqlite::{Connection, InterruptHandle};
 use crate::commands::CommandError;
 use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings};
 use crate::services::machine_settings::MachineSettings;
+use crate::services::preview::{Preview, PreviewLoading};
 use clock::{Clock, SystemClock};
 use fingerprint::{FileFingerprint, FingerprintCheck};
 use idle::IdleClock;
@@ -54,6 +55,19 @@ pub struct OpenDatabase {
     pub notes: DatabaseNotes,
     /// The lock settings kept in the file, for the idle clock (FR-034).
     pub lock_settings: LockSettings,
+    /// The one open document preview, if any. It lives and dies with this
+    /// value, so every path that drops the `OpenDatabase` (lock, close,
+    /// switch, sleep, shutdown, quit) ends the preview too: its TIFF helper
+    /// is killed, its PDF bytes zeroized and its surface closed (research.md
+    /// §20).
+    pub preview: Option<Preview>,
+    /// The id the last `open_preview` of this open took. Ids count up by one
+    /// within a session, so a request for a replaced preview is refused
+    /// (data-model.md "Preview").
+    pub preview_seq: u64,
+    /// A TIFF's `Load` still under way, which `close_preview` can end
+    /// without waiting for it.
+    pub preview_loading: Option<PreviewLoading>,
 }
 
 impl OpenDatabase {
@@ -95,6 +109,9 @@ impl OpenDatabase {
             storage_lost: false,
             notes: DatabaseNotes::default(),
             lock_settings,
+            preview: None,
+            preview_seq: 0,
+            preview_loading: None,
         })
     }
 }
@@ -106,7 +123,24 @@ pub fn database_name(path: &Path) -> String {
 
 /// Tauri state: the open database, or none, and where the session reports
 /// what happens to it.
-pub struct Session {
+///
+/// A handle to shared state, so it is cheap to clone: every clone is the same
+/// session. The preview commands need an `Arc<Session>` for the threads that
+/// outlive a call (research.md §8's hook timer), which a command gets from
+/// [`Session::shared`].
+#[derive(Clone)]
+pub struct Session(Arc<SessionInner>);
+
+impl std::ops::Deref for Session {
+    type Target = SessionInner;
+
+    fn deref(&self) -> &SessionInner {
+        &self.0
+    }
+}
+
+/// What a [`Session`] holds.
+pub struct SessionInner {
     open: Mutex<Option<OpenDatabase>>,
     events: Arc<dyn SessionEvents>,
     /// Where `open_document` puts decrypted copies, deleted at every close
@@ -160,7 +194,7 @@ impl Default for Session {
 
 impl Session {
     pub fn new(events: Arc<dyn SessionEvents>, opened_documents_dir: Option<PathBuf>) -> Self {
-        Self {
+        Self(Arc::new(SessionInner {
             open: Mutex::new(None),
             events,
             opened_documents_dir,
@@ -171,14 +205,25 @@ impl Session {
             open_path: Mutex::new(None),
             closing: Mutex::new(Closing::default()),
             closing_changed: Condvar::new(),
-        }
+        }))
     }
 
-    /// The same session on another clock, for the tests.
+    /// The same session on another clock, for the tests. Before any clone of
+    /// it exists.
     pub fn with_clock(self, clock: Arc<dyn Clock>) -> Self {
-        Self { clock, ..self }
+        let Ok(inner) = Arc::try_unwrap(self.0) else {
+            panic!("a session that has been cloned can't change its clock");
+        };
+        Self(Arc::new(SessionInner { clock, ..inner }))
     }
 
+    /// The session this handle is a handle to, as an `Arc` of its own.
+    pub fn shared(&self) -> Arc<Session> {
+        Arc::new(self.clone())
+    }
+}
+
+impl SessionInner {
     pub fn operations(&self) -> &Operations {
         &self.operations
     }

@@ -27,20 +27,26 @@
 //!      "dumpable": bool | null,                   // Linux
 //!      "landlock_abi": number | null,             // Linux: the ABI enforced
 //!      "landlock_enforced": bool }`               // Linux: any rule in force
-//!   It is the only way to look inside a confined process from outside.
+//!   It is the only way to look inside a confined process from outside, and it
+//!   is compiled into debug and test builds only (`cfg(debug_assertions)`): a
+//!   release binary has no such mode, so the tests that use it are skipped
+//!   under `--release`.
 
 #[path = "support/preview_support.rs"]
 mod preview_support;
 mod support;
 
+#[cfg(debug_assertions)]
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use hoplodex_lib::services::preview::{HelperHandle, HelperLimits};
+#[cfg(debug_assertions)]
 use serde_json::Value;
 use support::document_fixture;
 use support::hostile_documents as hostile;
+#[cfg(debug_assertions)]
 use tempfile::TempDir;
 
 use preview_support::{assert_gone, png_size, process_is_gone, wait_until_gone};
@@ -51,12 +57,14 @@ fn exe() -> PathBuf {
 
 /// What the self-check saw, and how many connections the test's own listener
 /// took (the self-check's one connection before confining, and no other).
+#[cfg(debug_assertions)]
 #[allow(dead_code)]
 struct Report {
     json: Value,
     connections: usize,
 }
 
+#[cfg(debug_assertions)]
 fn self_check() -> Report {
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("secret.txt");
@@ -81,7 +89,7 @@ fn self_check() -> Report {
 
 // --- Confinement ------------------------------------------------------------
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(all(debug_assertions, any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn once_confined_it_can_open_no_file_and_no_tcp_socket() {
     let Report { json, connections } = self_check();
@@ -121,6 +129,7 @@ fn once_confined_it_can_open_no_file_and_no_tcp_socket() {
     }
 }
 
+#[cfg(debug_assertions)]
 #[test]
 fn its_environment_is_empty() {
     let json = self_check().json;
@@ -128,7 +137,7 @@ fn its_environment_is_empty() {
     assert_eq!(json["env_vars"], 0, "{json}");
 }
 
-#[cfg(unix)]
+#[cfg(all(debug_assertions, unix))]
 #[test]
 fn core_dumps_are_off() {
     let json = self_check().json;

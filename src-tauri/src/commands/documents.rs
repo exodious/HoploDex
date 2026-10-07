@@ -295,5 +295,11 @@ pub async fn delete_document(
     confirmed: bool,
     session: State<'_, Session>,
 ) -> Result<DeleteResult, CommandError> {
+    // The preview of the document goes first: its bytes, helper and surface
+    // must not outlive the document (contracts/tauri-commands.md
+    // `delete_document`). Nothing is closed for a refused deletion.
+    if confirmed {
+        crate::commands::preview::ops::close_preview_of(&session, id)?;
+    }
     session.write(|conn| ops::delete_document(conn, id, confirmed))
 }

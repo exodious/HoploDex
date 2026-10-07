@@ -9,12 +9,16 @@ use std::time::Duration;
 use hoplodex_lib::app_dirs;
 use hoplodex_lib::commands::documents::{OPENED_DOCUMENTS_DIR, clear_opened_documents_cache};
 use hoplodex_lib::commands::import_export::ImportSessionStore;
+use hoplodex_lib::commands::preview::PreviewEnv;
 use hoplodex_lib::db;
 use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::availability::PdfAvailabilityState;
+use hoplodex_lib::services::preview::{
+    PreviewSurface, SurfaceFactory, SurfaceSpec, helper as render_helper,
+};
 use hoplodex_lib::session::{Session, lifecycle};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -116,7 +120,25 @@ fn tick_idle_clock(app: AppHandle) {
     }
 }
 
+/// The PDF surface is built by `services::preview::surface` once T062
+/// completes it; until then a PDF can't be shown.
+struct UnbuiltSurfaces;
+
+impl SurfaceFactory for UnbuiltSurfaces {
+    fn build(&self, _spec: SurfaceSpec) -> Result<Arc<dyn PreviewSurface>, String> {
+        Err("the PDF surface isn't built yet".into())
+    }
+}
+
 fn main() {
+    // The render helper is this executable started again (research.md §11):
+    // before any Tauri, keyring, session or logging setup, so it has none of
+    // them, and it never returns here.
+    let args: Vec<String> =
+        std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
+    if args.first().map(String::as_str) == Some(render_helper::ARGUMENT) {
+        render_helper::run(&args);
+    }
     let builder = tauri::Builder::default();
     // The E2E suite's WebDriver server, on 127.0.0.1 at
     // `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs any
@@ -146,7 +168,14 @@ fn main() {
             app.manage(machine);
             app.manage(ImportSessionStore::new());
             // Available until US1's startup check decides (research.md §7).
-            app.manage(PdfAvailabilityState::default());
+            let availability = PdfAvailabilityState::default();
+            app.manage(availability.clone());
+            // The preview commands: the helper is this executable.
+            app.manage(PreviewEnv::new(
+                std::env::current_exe()?,
+                Arc::new(UnbuiltSurfaces),
+                Arc::new(availability),
+            ));
             // Sleep, wake, screen lock and shutdown (FR-037, FR-038), and
             // the idle lock (FR-034).
             let (sender, events) = mpsc::channel();
@@ -242,6 +271,9 @@ fn main() {
             hoplodex_lib::commands::documents::add_document_from_path,
             hoplodex_lib::commands::documents::open_document,
             hoplodex_lib::commands::documents::delete_document,
+            hoplodex_lib::commands::preview::open_preview,
+            hoplodex_lib::commands::preview::close_preview,
+            hoplodex_lib::commands::preview::render_preview_page,
             hoplodex_lib::commands::import_export::get_export_scope,
             hoplodex_lib::commands::import_export::export_collection,
             hoplodex_lib::commands::import_export::import_collection,

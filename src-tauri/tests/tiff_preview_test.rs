@@ -31,6 +31,14 @@ use preview_support::{
     Fixture, any_file_holds, assert_gone, png_size, wait_for_helper_child, wait_until_gone,
 };
 
+/// The tests of this file share one process, and several of them look at
+/// every render helper that process has as a child (`helper_children`), so
+/// they run one at a time.
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn code_of<T: std::fmt::Debug>(result: Result<T, hoplodex_lib::commands::CommandError>) -> String {
     result.unwrap_err().code
 }
@@ -111,6 +119,7 @@ fn break_compression_of(tiff: &mut [u8], page: usize, value: u16) {
 
 #[test]
 fn a_single_page_opens_with_its_size_in_points_at_its_dpi() {
+    let _serial = serial();
     let world = Fixture::new();
     let bytes = document_fixture("one-page.tif");
     let (want_w, want_h) = expected_first_page_points(&bytes);
@@ -128,6 +137,7 @@ fn a_single_page_opens_with_its_size_in_points_at_its_dpi() {
 
 #[test]
 fn without_dpi_tags_a_page_is_sized_at_200_dpi() {
+    let _serial = serial();
     let world = Fixture::new();
     // 48 x 48 pixels and no resolution tags: 48 * 72 / 200 points.
     let id = world.add("scan.tif", &hostile::tiff(1).bytes);
@@ -140,6 +150,7 @@ fn without_dpi_tags_a_page_is_sized_at_200_dpi() {
 
 #[test]
 fn four_pages_open_and_each_renders_to_the_width_asked() {
+    let _serial = serial();
     let world = Fixture::new();
     let id = world.add("four-pages-mixed.tif", &document_fixture("four-pages-mixed.tif"));
 
@@ -160,6 +171,7 @@ fn four_pages_open_and_each_renders_to_the_width_asked() {
 
 #[test]
 fn a_page_with_an_unsupported_compression_fails_alone() {
+    let _serial = serial();
     let world = Fixture::new();
     let mut tiff = hostile::tiff(3).bytes;
     break_compression_of(&mut tiff, 1, 9999);
@@ -173,6 +185,7 @@ fn a_page_with_an_unsupported_compression_fails_alone() {
 
 #[test]
 fn an_unreadable_first_ifd_fails_the_open_as_damaged() {
+    let _serial = serial();
     let world = Fixture::new();
     let mut past_the_end = hostile::tiff(1).bytes;
     past_the_end[4..8].copy_from_slice(&1_000_000u32.to_le_bytes());
@@ -190,6 +203,7 @@ fn an_unreadable_first_ifd_fails_the_open_as_damaged() {
 
 #[test]
 fn each_crafted_tiff_fails_cleanly_and_the_session_stays_usable() {
+    let _serial = serial();
     let mut world = Fixture::new();
     // The 2^31-page chain and the 100,000 x 100,000 page have to stop at a
     // limit: keep the wait short.
@@ -247,6 +261,7 @@ fn large() -> &'static hostile::Generated {
 
 #[test]
 fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
+    let _serial = serial();
     let world = Fixture::new();
     let large_id = world.add(&large().name, &large().bytes);
     // Learn where the session's preview ids are, so the id of the next open
@@ -292,6 +307,7 @@ fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
 #[cfg(unix)]
 #[test]
 fn a_killed_helper_fails_that_page_is_restarted_and_a_third_crash_ends_the_preview() {
+    let _serial = serial();
     let world = Fixture::new();
     let id = world.add("three.tif", &hostile::tiff(3).bytes);
     let preview_id = Fixture::id_of(&world.open_ok(id));
@@ -331,6 +347,7 @@ fn a_killed_helper_fails_that_page_is_restarted_and_a_third_crash_ends_the_previ
 
 #[test]
 fn the_width_is_clamped_to_4096_pixels() {
+    let _serial = serial();
     let world = Fixture::new();
     // 8192 x 100 pixels.
     let wide = hostile::large_tiff(8192 * 100);
@@ -345,6 +362,7 @@ fn the_width_is_clamped_to_4096_pixels() {
 
 #[test]
 fn the_page_is_clamped_to_24_megapixels_for_its_aspect_ratio() {
+    let _serial = serial();
     let mut world = Fixture::new();
     // The decode of 100 MB takes a while in a debug build.
     world.preview.env.helper_limits.render = Duration::from_secs(120);
@@ -371,6 +389,7 @@ fn png_aspect_of_large() -> f64 {
 
 #[test]
 fn a_bad_page_width_or_kind_of_preview_is_a_validation_error() {
+    let _serial = serial();
     let world = Fixture::new();
     let tiff = world.add("two.tif", &hostile::tiff(2).bytes);
     let text = world.add("note.txt", b"hello");
@@ -395,6 +414,7 @@ fn a_bad_page_width_or_kind_of_preview_is_a_validation_error() {
 
 #[test]
 fn the_helper_is_gone_after_close_preview_and_after_opening_another_document() {
+    let _serial = serial();
     let world = Fixture::new();
     let tiff = world.add("a.tif", &document_fixture("one-page.tif"));
     let other_tiff = world.add("b.tif", &document_fixture("four-pages-mixed.tif"));
@@ -461,8 +481,7 @@ impl Drop for ScratchEnv {
 
 #[test]
 fn a_preview_leaves_no_file_holding_the_document() {
-    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-    let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = serial();
     let scratch = TempDir::new().unwrap();
     let _env = ScratchEnv::point_at(scratch.path());
     let marker: [u8; 64] =

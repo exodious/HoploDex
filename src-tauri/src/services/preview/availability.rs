@@ -1,6 +1,8 @@
 //! Whether PDF preview is available, and why not (research.md §7, §17).
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+
+use crate::services::machine_settings::MachineSettings;
 
 /// Why PDF preview is off on this computer (FR-003a).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,17 +50,42 @@ impl PdfAvailability {
     pub fn is_available(&self) -> bool {
         matches!(self, Self::Available)
     }
+
+    /// Decides at startup (research.md §7, §17): this version's hold keeps
+    /// PDF preview off, then the OS check. A hold for another version is
+    /// cleared, so this version tries again. (T058 adds the per-OS check
+    /// itself, which gives `os_check_passed`.)
+    pub fn at_startup(
+        machine: &MachineSettings,
+        running_version: &str,
+        os_check_passed: bool,
+    ) -> Self {
+        machine.clear_stale_hold(running_version);
+        let held = machine
+            .pdf_preview_hold()
+            .is_some_and(|hold| hold.version.as_deref() == Some(running_version));
+        if held {
+            Self::Unavailable { reason: UnavailableReason::Held }
+        } else if !os_check_passed {
+            Self::Unavailable { reason: UnavailableReason::CheckFailed }
+        } else {
+            Self::Available
+        }
+    }
 }
 
 /// [`PdfAvailability`] as Tauri state: decided at startup and changed at run
 /// time (`NoViewer`, and `Held` when the watch catches a copy). `Available`
 /// until the startup check exists.
-#[derive(Debug)]
-pub struct PdfAvailabilityState(Mutex<PdfAvailability>);
+///
+/// A handle to shared state: a clone is the same availability, so the
+/// preview commands' `PreviewEnv` and the document list read one value.
+#[derive(Debug, Clone)]
+pub struct PdfAvailabilityState(Arc<Mutex<PdfAvailability>>);
 
 impl PdfAvailabilityState {
     pub fn new(initial: PdfAvailability) -> Self {
-        Self(Mutex::new(initial))
+        Self(Arc::new(Mutex::new(initial)))
     }
 
     pub fn get(&self) -> PdfAvailability {

@@ -22,7 +22,7 @@ use crate::services::machine_settings::{self, MachineSettings};
 use crate::services::passphrase::Passphrase;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
-use crate::session::{ImmediateClose, OpenDatabase, Session, pending};
+use crate::session::{ImmediateClose, OpenDatabase, Session, SessionInner, pending};
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most
@@ -615,7 +615,7 @@ fn backup_failed(
 /// then let go of it without writing anything more, so no backup and no
 /// marker clear. The frontend is told first, so it drops the collection
 /// view before anything else happens.
-pub(crate) fn close_taken_over(session: &Session, open: OpenDatabase) {
+pub(crate) fn close_taken_over(session: &SessionInner, open: OpenDatabase) {
     log::warn!("{} was taken over by another computer", open.path.display());
     let path = open.path.to_string_lossy().into_owned();
     let events = session.events();
