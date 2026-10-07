@@ -496,7 +496,6 @@ function TiffView({
         onClick={tiff.zoomOut}
       />
       <Menu
-        modal
         trigger={
           <Button size="sm" variant="ghost" disabled={!arrived} title="Zoom">
             <span id={percentId} className="hd-num">{`${tiff.percent}%`}</span>

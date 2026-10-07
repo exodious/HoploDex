@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { Button } from "./Button";
 import { Menu, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuItem, MenuSeparator } from "./Menu";
 import { useState } from "react";
+import { Dialog } from "./Dialog";
 
 function renderMenu() {
   const handlers = { lock: vi.fn(), switchDb: vi.fn(), close: vi.fn() };
@@ -197,5 +198,48 @@ describe("Menu radio items (specs/005 contracts/ui-registration.md §6)", () => 
     );
     await user.click(screen.getByRole("button", { name: "Open" }));
     expect(await screen.findByText("Section")).toBeInTheDocument();
+  });
+  describe("inside a Dialog", () => {
+    // react-menu and react-dialog once pulled two copies of react-dismissable-layer, so a menu
+    // opened in a dialog closed as it opened and never got the focus. package.json now keeps
+    // the Radix packages on one copy (`npm ls @radix-ui/react-dismissable-layer`).
+    function DialogWithMenu({ open = true }: { open?: boolean }) {
+      return (
+        <Dialog open={open} onOpenChange={() => undefined} title="Preview">
+          <Menu trigger={<Button>Zoom</Button>}>
+            <MenuItem onSelect={() => undefined}>Fit width</MenuItem>
+            <MenuItem onSelect={() => undefined}>Fit page</MenuItem>
+          </Menu>
+        </Dialog>
+      );
+    }
+
+    it("opens, stays open and holds the focus", async () => {
+      const user = userEvent.setup();
+      render(<DialogWithMenu />);
+      await user.click(screen.getByRole("button", { name: "Zoom" }));
+
+      const menu = await screen.findByRole("menu");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.getByRole("menu")).toBe(menu);
+      expect(menu.contains(document.activeElement)).toBe(true);
+
+      await user.keyboard("{ArrowDown}{Enter}");
+      await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("leaves the page clickable when the dialog and an open menu unmount together", async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(<DialogWithMenu />);
+      await user.click(screen.getByRole("button", { name: "Zoom" }));
+      await screen.findByRole("menu");
+
+      rerender(<DialogWithMenu open={false} />);
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(document.body.style.pointerEvents).not.toBe("none");
+    });
   });
 });
