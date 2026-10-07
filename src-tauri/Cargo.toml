@@ -171,6 +171,9 @@ windows-sys = { version = "0.61", features = [
     # The pipes of the render helper HoploDex starts into its job object
     # (research.md §11, amended 2026-10-07).
     "Win32_System_Pipes",
+    # `AssocQueryStringW`: whether a program is registered for a document type
+    # (research.md §18, amended 2026-10-07).
+    "Win32_UI_Shell",
 ] }
 # The PDF surface's settings and events (research.md §6-§10). The versions
 # wry uses.

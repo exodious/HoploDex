@@ -34,6 +34,16 @@ pub enum OpenFailure {
 /// What it starts is the other app's, not HoploDex's: it is never waited for
 /// past its start, and it outlives HoploDex.
 pub trait Opener: Send + Sync {
+    /// Whether the OS has a program for files with this extension (no dot,
+    /// the type's canonical one), asked before any dialog or copy
+    /// (research.md §18, amended 2026-10-07). The default is yes: Linux and
+    /// macOS learn there is none from `open`'s exit status, and Windows
+    /// answers from its file associations, because `ShellExecuteExW` shows
+    /// its "How do you want to open this file?" picker rather than failing.
+    fn has_app(&self, _extension: &str) -> bool {
+        true
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure>;
 }
 
@@ -179,6 +189,11 @@ pub mod ops {
         let (document, stamp) = session.read_stamped(|conn| get_document(conn, id))?;
         // 2. Refused by the attach rules before any dialog (FR-017).
         let document_type = classify(&document.original_filename, &document.file_bytes)?;
+        // 2a. No program for the type: say so before asking or writing anything
+        // (FR-010, research.md §18).
+        if !opener.has_app(document_type.canonical_extension) {
+            return Err(no_app_error(document_type, false));
+        }
         // 3. Ask, unless this session has already said yes to the setting.
         let setting = machine.document_opening();
         let mut said_yes = false;
@@ -211,20 +226,24 @@ pub mod ops {
             Ok(()) => Ok(OpenedDocument { opened: true }),
             Err(OpenFailure::NoApp) => {
                 delete_copy(&path);
-                Err(CommandError::new(
-                    "NO_APP_FOR_DOCUMENT",
-                    format!(
-                        "This computer has no app that opens {} documents. HoploDex deleted the \
-                         copy it made.",
-                        document_type.label
-                    ),
-                ))
+                Err(no_app_error(document_type, true))
             }
             Err(OpenFailure::Other(reason)) => Err(CommandError::new(
                 "INTERNAL_ERROR",
                 format!("Could not open the document: {reason}"),
             )),
         }
+    }
+
+    /// `NO_APP_FOR_DOCUMENT`; the second sentence only when a copy had been
+    /// made and was deleted.
+    fn no_app_error(document_type: &DocumentType, copy_deleted: bool) -> CommandError {
+        let mut message =
+            format!("This computer has no app that opens {} documents.", document_type.label);
+        if copy_deleted {
+            message.push_str(" HoploDex deleted the copy it made.");
+        }
+        CommandError::new("NO_APP_FOR_DOCUMENT", message)
     }
 
     /// The native dialog is up: the idle clock waits for it, as it does for
@@ -373,14 +392,49 @@ impl<R: tauri::Runtime> Opener for AppOpener<R> {
     }
 }
 
-/// Windows: `ShellExecuteExW` through `tauri-plugin-opener`. Its error for a
-/// type with no program is `SE_ERR_NOASSOC` (31) or `ERROR_NO_ASSOCIATION`
-/// (1155). Checked on Windows Server 2025 (T091): for a type with no program
-/// (`.docx` without Office), `ShellExecuteExW` succeeds and shows "How do you
-/// want to open this file?", with or without `SEE_MASK_FLAG_NO_UI`, so this
-/// mapping is not reached there.
+/// Whether Windows has a program registered to `open` files with this
+/// extension (no dot), by `AssocQueryStringW` with `ASSOCF_INIT_IGNOREUNKNOWN`:
+/// `HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION)` (0x80070483) means none. Any
+/// other failure is not taken as "no app", so `ShellExecuteExW` decides.
+#[cfg(windows)]
+pub fn windows_has_app(extension: &str) -> bool {
+    use windows_sys::Win32::UI::Shell::{
+        ASSOCF_INIT_IGNOREUNKNOWN, ASSOCSTR_COMMAND, AssocQueryStringW,
+    };
+
+    /// `HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION)`.
+    const NO_ASSOCIATION: i32 = 0x8007_0483_u32 as i32;
+
+    let key: Vec<u16> = format!(".{extension}").encode_utf16().chain(Some(0)).collect();
+    let verb: Vec<u16> = "open\0".encode_utf16().collect();
+    let mut size: u32 = 0;
+    // SAFETY: both strings are NUL-terminated and outlive the call; no output
+    // buffer is passed, so `size` only receives the length needed.
+    let result = unsafe {
+        AssocQueryStringW(
+            ASSOCF_INIT_IGNOREUNKNOWN,
+            ASSOCSTR_COMMAND,
+            key.as_ptr(),
+            verb.as_ptr(),
+            std::ptr::null_mut(),
+            &mut size,
+        )
+    };
+    result != NO_ASSOCIATION
+}
+
+/// Windows: `ShellExecuteExW` through `tauri-plugin-opener`. `has_app` is
+/// asked first (T091 rework, 2026-10-07): for a type with no program (`.docx`
+/// without Office), `ShellExecuteExW` succeeds and shows "How do you want to
+/// open this file?", with or without `SEE_MASK_FLAG_NO_UI`, so it can't say so
+/// itself. Its error for a type with no program, `SE_ERR_NOASSOC` (31) or
+/// `ERROR_NO_ASSOCIATION` (1155), is still mapped, as a fallback.
 #[cfg(all(windows, not(feature = "e2e")))]
 impl<R: tauri::Runtime> Opener for AppOpener<R> {
+    fn has_app(&self, extension: &str) -> bool {
+        windows_has_app(extension)
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         use tauri_plugin_opener::OpenerExt;
 

@@ -135,6 +135,12 @@ type DocumentOpening = "preview" | "external";
   1. Read the document and the session's generation (`session.read`).
   2. `classify` it. On failure, return `DOCUMENT_TYPE_NOT_ALLOWED` or
      `DOCUMENT_CONTENT_MISMATCH`, before any dialog (FR-017).
+  2a. *(amended 2026-10-07)* Ask `Opener::has_app(canonical extension)`.
+     If the OS has no program for the type, return `NO_APP_FOR_DOCUMENT`
+     ("This computer has no app that opens {kind} documents.") with no
+     dialog and nothing written. The default answer is yes (Linux and
+     macOS learn it in step 5); Windows asks `AssocQueryStringW`
+     (research.md §18).
   3. If `needs_consent(setting, session.external_open_confirmed)`: hide
      the PDF surface if one is shown, pause idle, show the native
      confirmation for this document (ui contract §4), resume idle. On
@@ -148,7 +154,9 @@ type DocumentOpening = "preview" | "external";
   5. Release the lock and call the opener.
 - **Errors**:
   - `DOCUMENT_TYPE_NOT_ALLOWED` and `DOCUMENT_CONTENT_MISMATCH`, as above;
-  - `NO_APP_FOR_DOCUMENT` (the copy was securely deleted);
+  - `NO_APP_FOR_DOCUMENT` (no copy was made on Windows, step 2a; where the
+    opener finds out in step 5, the copy was securely deleted and the
+    message adds "HoploDex deleted the copy it made.");
   - `INTERNAL_ERROR` (the copy couldn't be written, or its folder isn't
     a private directory owned by the user);
   - `NOT_FOUND`;

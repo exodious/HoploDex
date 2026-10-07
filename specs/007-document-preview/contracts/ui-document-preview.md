@@ -53,7 +53,9 @@ cancelled.
 **Results of `open_document`**:
 - **Success**: a toast, "Opened {name} in another app."
 - **`NO_APP_FOR_DOCUMENT`**: an error toast, "This computer has no app
-  that opens {kind} documents. HoploDex deleted the copy it made."
+  that opens {kind} documents." (Amended 2026-10-07: on Windows the check
+  comes before the dialog and no copy is made. Where the opener finds out
+  later, the message adds " HoploDex deleted the copy it made.")
 - **`DOCUMENT_TYPE_NOT_ALLOWED` / `DOCUMENT_CONTENT_MISMATCH`**: an error
   toast with the backend message.
 

@@ -900,6 +900,21 @@ artifacts.
     macOS; `xdg-open`'s exit status 3 or 4 on Linux). The copy is securely
     deleted at once and `NO_APP_FOR_DOCUMENT` returned. Per-OS behavior is
     a manual check (quickstart).
+    - **Amended 2026-10-07 (Windows, T091 rework)**: `ShellExecuteExW`
+      doesn't fail for a type with no program: on Windows Server 2025 it
+      succeeds and shows "How do you want to open this file?" (with or
+      without `SEE_MASK_FLAG_NO_UI`), which would leave the copy behind and
+      break FR-010. So on Windows the check comes first. `Opener::has_app`
+      (default `true`, so Linux and macOS still read the opener's exit
+      status) is asked for the type's canonical extension before the
+      consent dialog and before anything is written; on Windows it is
+      `AssocQueryStringW(ASSOCF_INIT_IGNOREUNKNOWN, ASSOCSTR_COMMAND,
+      ".<ext>", "open")`, and `0x80070483` (`ERROR_NO_ASSOCIATION`) means no
+      app. Any other failure is not taken as "none". Then
+      `NO_APP_FOR_DOCUMENT` comes back with no dialog and no copy: "This
+      computer has no app that opens {kind} documents." The `31`/`1155`
+      mapping of the launcher's error stays as a fallback, and its message
+      adds "HoploDex deleted the copy it made.", since a copy had been made.
 - **Rationale**: Finding 1's "do not send executable/script types to an
   unrestricted OS opener" is met by §2. The canonical extension closes the
   gap where the OS picks a handler by a misleading name. Zone marking is

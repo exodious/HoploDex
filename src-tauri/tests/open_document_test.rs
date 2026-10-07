@@ -144,11 +144,25 @@ struct FakeOpener {
     calls: Mutex<Vec<(PathBuf, Vec<u8>)>>,
     fails: Fails,
     on_open: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// What `has_app` answers, and each extension it was asked about.
+    has_app: bool,
+    asked: Mutex<Vec<String>>,
 }
 
 impl FakeOpener {
     fn new() -> Self {
-        Self { calls: Mutex::default(), fails: Fails::Never, on_open: Mutex::default() }
+        Self {
+            calls: Mutex::default(),
+            fails: Fails::Never,
+            on_open: Mutex::default(),
+            has_app: true,
+            asked: Mutex::default(),
+        }
+    }
+
+    /// An OS with no program for any type.
+    fn without_app() -> Self {
+        Self { has_app: false, ..Self::new() }
     }
 
     fn failing(fails: Fails) -> Self {
@@ -165,6 +179,11 @@ impl FakeOpener {
 }
 
 impl Opener for FakeOpener {
+    fn has_app(&self, extension: &str) -> bool {
+        self.asked.lock().unwrap().push(extension.to_owned());
+        self.has_app
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         if let Some(hook) = self.on_open.lock().unwrap().as_ref() {
             hook();
@@ -736,6 +755,36 @@ fn an_opener_with_no_app_for_the_type_deletes_the_copy_at_once() {
     assert_eq!(opener.calls().len(), 1, "it was tried");
     assert_eq!(opener.calls()[0].1, pdf_bytes(), "with a complete copy");
     assert!(world.files().is_empty(), "the copy is gone");
+}
+
+/// FR-010, research.md §18 (amended 2026-10-07): when the OS says up front
+/// that no program is registered for the type, nothing else happens.
+#[test]
+fn a_type_with_no_registered_app_is_refused_before_the_dialog_and_nothing_is_written() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let consent = FakeConsent::open();
+    let opener = FakeOpener::without_app();
+
+    let refused = world.open(&consent, &opener, id).unwrap_err();
+
+    assert_eq!(refused.code, "NO_APP_FOR_DOCUMENT");
+    assert_eq!(refused.message, "This computer has no app that opens PDF documents.");
+    assert_eq!(*opener.asked.lock().unwrap(), vec!["pdf".to_owned()], "the canonical extension");
+    assert!(consent.requests().is_empty(), "the user was not asked");
+    assert!(opener.calls().is_empty(), "nothing was started");
+    assert!(world.files().is_empty(), "no copy was written");
+    assert!(!world.folder_of(id).exists(), "not even its folder");
+    assert!(!world.confirmed(), "and no yes was recorded");
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_asks_its_file_associations_whether_a_type_has_an_app() {
+    use hoplodex_lib::commands::documents::windows_has_app;
+
+    assert!(!windows_has_app("hdxtest"), "nothing is registered for .hdxtest");
+    assert!(windows_has_app("txt"), ".txt opens in Notepad at least");
 }
 
 #[test]

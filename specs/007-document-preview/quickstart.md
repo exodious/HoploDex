@@ -121,10 +121,12 @@ unless it says otherwise.
 
 1. On a computer with no app for `.ods`, start the app as in M1.
 2. Choose "Open in another app…" on the seeded "Range log.ods".
-3. Choose "Open in another app" in the system dialog.
+3. Choose "Open in another app" in the system dialog. (On Windows there is
+   no dialog: the check comes first, amended 2026-10-07.)
 4. **Expected**: the toast "This computer has no app that opens
-   OpenDocument spreadsheet documents. HoploDex deleted the copy it made."
-   The `opened-documents` folder has no `Range log.ods`.
+   OpenDocument spreadsheet documents." (On Linux and macOS, which find
+   out only when they start the app, it continues "HoploDex deleted the
+   copy it made.") The `opened-documents` folder has no `Range log.ods`.
 
 ### M3. The copy is marked untrusted (Windows, macOS)
 
