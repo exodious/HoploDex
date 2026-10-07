@@ -382,11 +382,30 @@ function windowScreenshot(): Screen {
   return { width: Number(fields[1]), height: Number(fields[2]), pixels: ppm.subarray(at) };
 }
 
-/** How many pixels are the page's magenta. */
-function magentaPixels(screen: Screen): number {
+/** How many pixels are the page's magenta; with `inside`, how many are
+ * outside that rectangle (grown by `slack` px; the window sits at 0,0). */
+function magentaPixels(
+  screen: Screen,
+  inside?: { left: number; top: number; right: number; bottom: number },
+  slack = 3,
+): number {
   let count = 0;
   for (let i = 0; i + 2 < screen.pixels.length; i += 3) {
-    if (screen.pixels[i] > 225 && screen.pixels[i + 1] < 45 && screen.pixels[i + 2] > 225) count++;
+    if (screen.pixels[i] > 225 && screen.pixels[i + 1] < 45 && screen.pixels[i + 2] > 225) {
+      if (inside) {
+        const at = i / 3;
+        const x = at % screen.width;
+        const y = Math.floor(at / screen.width);
+        if (
+          x >= inside.left - slack &&
+          x <= inside.right + slack &&
+          y >= inside.top - slack &&
+          y <= inside.bottom + slack
+        )
+          continue;
+      }
+      count++;
+    }
   }
   return count;
 }
@@ -640,15 +659,42 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     await closeViewer();
   });
 
-  it("a lock with a PDF shown leaves nothing of it on the screen once the chooser is up", async function () {
+  it("the PDF surface lies exactly over the viewer's page area, and not over the footer", async function () {
     this.timeout(120000);
-    // A page that is all magenta, which nothing else in the app is.
+    // A page that is all magenta, which nothing else in the app is, so that
+    // wherever the surface is on the screen shows.
     await attach("Magenta.pdf", "application/pdf", pdfWith("1 0 1 rg 0 0 612 792 re f"));
     const mark = await eventMark();
     await openDocument("Magenta.pdf");
     await waitForEvent("preview:pdf-ready", mark);
     // A toast hides the surface, which is a web view above the page (the
     // attach above left one): wait for them to go.
+    await browser.waitUntil(async () => !(await $(".hd-toast").isExisting()), {
+      timeout: 15000,
+      timeoutMsg: "the toasts never went",
+    });
+    await browser.pause(1500); // the dialog's entrance, and the viewer's first paint
+    const area = await browser.execute(() => {
+      const r = document.querySelector(".hd-preview__surface")!.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    });
+    const screen = windowScreenshot();
+    expect(magentaPixels(screen)).toBeGreaterThan(5000);
+    // Linux GTK allocated the surface its natural size, not the size asked
+    // for, so it ran to the window's edges over the footer.
+    expect(magentaPixels(screen, area)).toBeLessThan(100);
+    // And fills it (the page, less the viewer's toolbar and gutters, is most
+    // of the area), rather than sitting offset inside it.
+    const areaPixels = (area.right - area.left) * (area.bottom - area.top);
+    expect(magentaPixels(screen) - magentaPixels(screen, area)).toBeGreaterThan(0.7 * areaPixels);
+    await closeViewer();
+  });
+
+  it("a lock with a PDF shown leaves nothing of it on the screen once the chooser is up", async function () {
+    this.timeout(120000);
+    const mark = await eventMark();
+    await openDocument("Magenta.pdf");
+    await waitForEvent("preview:pdf-ready", mark);
     await browser.waitUntil(async () => !(await $(".hd-toast").isExisting()), {
       timeout: 15000,
       timeoutMsg: "the toasts never went",

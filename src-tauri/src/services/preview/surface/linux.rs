@@ -64,6 +64,7 @@ unsafe extern "C" {
     fn gtk_overlay_get_type() -> usize;
     fn gtk_overlay_add_overlay(overlay: Widget, widget: Widget);
     fn gtk_overlay_set_overlay_pass_through(overlay: Widget, widget: Widget, pass: c_int);
+    fn gtk_widget_get_size_request(widget: Widget, width: *mut c_int, height: *mut c_int);
     fn gtk_widget_set_halign(widget: Widget, align: c_int);
     fn gtk_widget_set_valign(widget: Widget, align: c_int);
     fn gtk_widget_set_margin_start(widget: Widget, margin: c_int);
@@ -354,6 +355,19 @@ unsafe fn overlay(surface: Widget) {
                 gtk_container_add(overlay, main);
                 g_object_unref(main.cast());
             }
+            gobject_ffi::g_signal_connect_data(
+                overlay.cast(),
+                c"get-child-position".as_ptr(),
+                // SAFETY: a `GCallback` is any C function pointer; this one
+                // has `get-child-position`'s signature.
+                Some(std::mem::transmute::<
+                    unsafe extern "C" fn(Widget, Widget, *mut Allocation, *mut c_void) -> c_int,
+                    unsafe extern "C" fn(),
+                >(child_position)),
+                ptr::null_mut(),
+                None,
+                0,
+            );
             gtk_box_pack_start(parent, overlay, 1, 1, 0);
             gtk_widget_show_all(overlay);
         }
@@ -372,6 +386,45 @@ unsafe fn overlay(surface: Widget) {
             }
         }
     }
+}
+
+/// `GdkRectangle`.
+#[repr(C)]
+struct Allocation {
+    x: c_int,
+    y: c_int,
+    width: c_int,
+    height: c_int,
+}
+
+/// The overlay's `get-child-position` signal: gives the surface exactly the
+/// margins and size request `place` set, and nothing more.
+///
+/// Without it, GTK allocates the surface its natural size, which for a
+/// WebKitGTK view is larger than the size request (the request is only a
+/// floor): the surface ran from its corner to the window's edges, over the
+/// viewer's footer. The main web view is the overlay's own child, not an
+/// overlay widget, so the signal never asks about it.
+unsafe extern "C" fn child_position(
+    _overlay: Widget,
+    child: Widget,
+    allocation: *mut Allocation,
+    _data: *mut c_void,
+) -> c_int {
+    // SAFETY: GTK passes a live child and a rectangle to fill in.
+    unsafe {
+        let (mut width, mut height) = (0, 0);
+        gtk_widget_get_size_request(child, &mut width, &mut height);
+        // GTK takes a widget's margins off the rectangle it is allocated, so
+        // the margins that put the surface in place are part of this one.
+        *allocation = Allocation {
+            x: 0,
+            y: 0,
+            width: gtk_widget_get_margin_start(child) + width.max(1),
+            height: gtk_widget_get_margin_top(child) + height.max(1),
+        };
+    }
+    1
 }
 
 /// What the filter's save callback needs: the web view to add it to (held
