@@ -890,7 +890,7 @@ Events from Rust to the main web view (contracts/tauri-commands.md):
 
 | Operation | Budget | Expected | Test |
 |---|---|---|---|
-| `open_preview` → PDF surface shown, 10 MB | 1 s (SC-001) | read blob ~50 ms; first surface: web view creation ~100–200 ms on Linux and macOS, ~300–500 ms on Windows (a browser process for its own folder); serving 10 MB from memory ~20 ms; first page drawn by the viewer ~200 ms | `us13` E2E (time to `preview:pdf-ready`); the surface check (time to first paint, by screenshot) on each OS |
+| `open_preview` → PDF surface shown, 10 MB | 1 s (SC-001) | read blob ~50 ms; first surface: web view creation ~100–200 ms on Linux and macOS, ~300–500 ms on Windows (a browser process for its own folder); serving 10 MB from memory ~20 ms; first page drawn by the viewer ~200 ms | `performance_test.rs` (open and serve, recording surface, at 10,000 + 10,000); `us13` E2E (time to `preview:pdf-ready`); the surface check (time to first paint, by screenshot) on each OS |
 | Next PDF in the same viewer | 1 s | navigation only; no new web view | the surface check |
 | `open_preview` → page 1, 10 MB TIFF | 1 s | spawn helper ~30 ms; pipe 10 MB ~10 ms; IFD walk ~5 ms; decode page 1 (LZW or G4, 300 DPI letter) ~150 ms; downsample and PNG ~60 ms | `performance_test.rs` |
 | Progress, 150 MB PDF or TIFF | 1 s (SC-001) | "Preparing {name}…" is drawn by React before `open_preview` returns; the viewer's own progress after | `DocumentPreview.test.tsx` |

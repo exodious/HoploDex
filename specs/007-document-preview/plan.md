@@ -325,6 +325,7 @@ src/
 
 e2e/
 ├── specs/us13-document-preview.e2e.ts   # NEW
+├── support/largePdf.ts                  # NEW: a ~10 MB PDF written to the sandbox for SC-001's timing
 ├── wdio.conf.ts                         # consent and PDF-availability seams; WEBVIEW2_USER_DATA_FOLDER no longer set
 └── screenshots/screens.e2e.ts           # + contracts/ui-document-preview.md §10 (PDF by window screenshot)
 ```
@@ -384,7 +385,7 @@ and link it from each:
 
 - **#26** (verify the app on Windows and macOS, FR-022): do its last box
   in this branch: record in 001's artifacts that FR-022 is verified on
-  Linux, Windows and macOS (build, Rust, Vitest, lint and audits, all 14
+  Linux, Windows and macOS (build, Rust, Vitest, lint and audits, all 15
   E2E spec files and the screenshot walk on each), and bring 001's
   `plan.md` up to date where it is stale (the embedded driver, not
   `tauri-driver`; macOS 26, Apple silicon only). Run the release
@@ -413,7 +414,7 @@ and link it from each:
 - **#29** (one embedded WebDriver): bring the status at the top up to
   date: the embedded driver now runs the E2E suite and the screenshot
   walk on Linux, macOS and Windows, and both outstanding boxes are
-  ticked (all 14 spec files pass on each, the real-input tests pending
+  ticked (all 15 spec files pass on each, the real-input tests pending
   off Linux). Comment that `npm run audit:webdriver` runs on Windows
   through Node (3ae66d5), and pass the release `hoplodex.exe` to it,
   which the first Windows run didn't, and report the result.
