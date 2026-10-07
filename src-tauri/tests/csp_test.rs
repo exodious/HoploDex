@@ -172,3 +172,43 @@ fn no_network_capable_plugin_is_a_dependency_or_has_a_permission() {
         }
     }
 }
+
+/// specs/007-document-preview research.md §13: the main web view gets no
+/// frames, workers, wasm or eval from the document preview (the PDF is shown
+/// in a separate surface), so a later change can't loosen the CSP to bring a
+/// PDF engine into it.
+#[test]
+fn the_csp_still_forbids_frames_workers_wasm_and_eval() {
+    let config = read_json("tauri.conf.json");
+    let directives = parse_csp(&config["app"]["security"]["csp"]);
+
+    assert_eq!(
+        directives.get("frame-src").map(Vec::as_slice),
+        Some(&["'none'".to_string()][..]),
+        "frame-src must stay 'none'"
+    );
+    // Workers fall back to script-src, then to default-src ('self' alone), so
+    // a `worker-src` may only be as strict.
+    if let Some(workers) = directives.get("worker-src") {
+        assert!(
+            workers.iter().all(|s| s == "'self'" || s == "'none'"),
+            "worker-src must not loosen default-src 'self', got {workers:?}"
+        );
+        assert!(!workers.iter().any(|s| s == "blob:" || s == "data:"), "no worker from a URL");
+    }
+    assert_eq!(directives.get("default-src").map(Vec::as_slice), Some(&["'self'".to_string()][..]));
+    for directive in ["script-src", "default-src"] {
+        let sources = directives.get(directive).map(Vec::as_slice).unwrap_or_default();
+        for forbidden in ["'unsafe-eval'", "'wasm-unsafe-eval'"] {
+            assert!(
+                !sources.iter().any(|s| s == forbidden),
+                "{directive} must not allow {forbidden}"
+            );
+        }
+    }
+    for directive in ["child-src", "object-src"] {
+        if let Some(sources) = directives.get(directive) {
+            assert_eq!(sources, &["'none'".to_string()], "{directive} must not allow a frame");
+        }
+    }
+}

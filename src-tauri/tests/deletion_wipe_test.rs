@@ -587,3 +587,91 @@ mod whole_files {
         assert!(path.exists(), "unlinking it would leave its data unwiped");
     }
 }
+
+// --- Document names (specs/007-document-preview T028, research.md §19) --------
+//
+// A document's filename is also kept in `document_names_fts`, a trigram index
+// (0002_fts5.sql): the whole name in `document_attachments`, its lowercased
+// three-character pieces in the index. Both must be gone after a delete,
+// including from the index's own segments, so the bytes are looked for in the
+// database's decrypted contents, as for every other test here (the encrypted
+// file itself can't hold plaintext, deleted or not).
+
+const DOCUMENT_NAME: &str = "Zqkvw-Xjhgf statement.pdf";
+/// The index's pieces of that name, leaving out the first, which the index
+/// does not keep as plain bytes.
+const DOCUMENT_NAME_TOKENS: [&str; 5] = ["qkv", "kvw", "xjh", "jhg", "hgf"];
+
+fn assert_no_document_name(bytes: &[u8]) {
+    assert!(!contains(bytes, DOCUMENT_NAME), "the filename is still in the database");
+    assert!(!contains(bytes, "Zqkvw"), "a remnant of the filename was left");
+    for token in DOCUMENT_NAME_TOKENS {
+        assert!(!contains(bytes, token), "the index kept {token:?}");
+    }
+}
+
+fn assert_document_name_stored(bytes: &[u8]) {
+    assert!(contains(bytes, DOCUMENT_NAME), "the search can't see the filename");
+    for token in DOCUMENT_NAME_TOKENS {
+        assert!(contains(bytes, token), "the full-text index holds {token:?}");
+    }
+}
+
+#[test]
+fn deleting_a_document_wipes_its_filename_from_the_table_and_the_index() {
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-N1"), false, None)
+            .unwrap();
+    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-N2"), false, None).unwrap();
+    let document = document_ops::add_document(
+        &db.conn,
+        RecordRef::Firearm(created.id),
+        b"%PDF-1.4\n%%EOF\n",
+        DOCUMENT_NAME,
+    )
+    .unwrap();
+    assert_document_name_stored(&decrypted_export(&db.conn, scratch.path()));
+
+    document_ops::delete_document(&db.conn, document.id, true).unwrap();
+
+    assert_no_document_name(&decrypted_export(&db.conn, scratch.path()));
+    assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
+}
+
+#[test]
+fn deleting_the_record_that_owned_a_document_wipes_its_filename_too() {
+    for owner_is_firearm in [true, false] {
+        let db = TestDb::new();
+        let scratch = tempfile::TempDir::new().unwrap();
+        let (owner, delete): (RecordRef, Box<dyn Fn(&TestDb)>) = if owner_is_firearm {
+            let id =
+                firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-N3"), false, None)
+                    .unwrap()
+                    .id;
+            (
+                RecordRef::Firearm(id),
+                Box::new(move |db| {
+                    firearm_ops::delete_firearm(&db.conn, id, true).unwrap();
+                }),
+            )
+        } else {
+            let id = create_accessory(&db, "Leupold", "W-N4", "notes");
+            (
+                RecordRef::Accessory(id),
+                Box::new(move |db| {
+                    accessory_ops::delete_accessory(&db.conn, id, true).unwrap();
+                }),
+            )
+        };
+        document_ops::add_document(&db.conn, owner, b"%PDF-1.4\n%%EOF\n", DOCUMENT_NAME).unwrap();
+        assert_document_name_stored(&decrypted_export(&db.conn, scratch.path()));
+
+        delete(&db);
+
+        assert_no_document_name(&decrypted_export(&db.conn, scratch.path()));
+        assert_eq!(row_count(&db, "document_attachments"), 0);
+        assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
+    }
+}
