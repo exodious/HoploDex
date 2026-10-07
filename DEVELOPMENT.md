@@ -203,10 +203,13 @@ scripts/tart-vm.sh fetch e2e/screenshots-out   # copy results back
 
 `setup` uses the image's `admin` only to create the user, turn off sleep,
 skip the user's Setup Assistant, log it in automatically at boot and give
-Terminal Accessibility and Screen Recording. The toolchain (rustup,
-cargo-nextest, Node and npm at the `Dockerfile`'s versions) goes in the
-user's home. Running it again finishes what's left. Shut the VM down with
-`scripts/tart-vm.sh stop`, not `tart stop`, which cuts a macOS guest's power
+Terminal and SSH sessions Accessibility and Screen Recording, and turn off
+the "bypass the private window picker" question macOS otherwise asks each of
+them at the first screenshot and every 30 days (`forceBypassScreenCaptureAlert`,
+as a managed preference that a small LaunchDaemon puts back after each boot).
+The toolchain (rustup, cargo-nextest, Node and npm at the `Dockerfile`'s
+versions) goes in the user's home. Running it again finishes what's left.
+Shut the VM down with `scripts/tart-vm.sh stop`, not `tart stop`, which cuts a macOS guest's power
 and loses whatever it hasn't written to disk yet. The script's header lists
 its settings (`HOPLODEX_VM` and friends, for a VM you already have). The rest
 of this paragraph is what it does for you. To set a VM up by hand, install the

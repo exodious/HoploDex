@@ -20,10 +20,11 @@
 # The VM comes from a Cirrus Labs image with Xcode, whose `admin` user (password
 # `admin`, passwordless sudo) is used only during setup: to create the test
 # user, turn off sleep, skip the user's Setup Assistant, log it in
-# automatically at boot and, where SIP is off, give Terminal Accessibility and
-# Screen Recording. Everything else runs as the test user, with the toolchain
-# (rustup, cargo-nextest, Node and npm at the Dockerfile's versions) in its
-# home, not Homebrew, which belongs to `admin` on the image.
+# automatically at boot, turn off macOS's "bypass the private window picker"
+# question and, where SIP is off, give Terminal and SSH sessions Accessibility
+# and Screen Recording. Everything else runs as the test user, with the
+# toolchain (rustup, cargo-nextest, Node and npm at the Dockerfile's versions)
+# in its home, not Homebrew, which belongs to `admin` on the image.
 #
 # A GUI app started over SSH lands in launchd's Background session and never
 # gets a window, so `gui` and the E2E step of `test` start their command
@@ -263,20 +264,57 @@ if [ "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2
 fi
 
 # Accessibility and Screen Recording for Terminal, which runs the desktop
-# commands (`gui`), so real input and screenshots work there without a
-# prompt over the middle of the screen. TCC.db can only be written with SIP
-# off, as it is on the Cirrus images; otherwise grant them by hand.
+# commands (`gui`), and for SSH sessions (sshd-keygen-wrapper is the process
+# TCC holds responsible for them), so real input and screenshots work from
+# either without a prompt over the middle of the screen. TCC.db can only be
+# written with SIP off, as it is on the Cirrus images; otherwise grant them by
+# hand.
 if csrutil status | grep -q disabled; then
   tcc="/Library/Application Support/com.apple.TCC/TCC.db"
   now="$(date +%s)"
-  for service in kTCCServiceAccessibility kTCCServiceScreenCapture kTCCServicePostEvent; do
-    sqlite3 "$tcc" "INSERT OR REPLACE INTO access
-      (service, client, client_type, auth_value, auth_reason, auth_version, flags, last_modified)
-      VALUES ('$service', 'com.apple.Terminal', 0, 2, 4, 1, 0, $now);"
+  for client in 'com.apple.Terminal 0' '/usr/libexec/sshd-keygen-wrapper 1'; do
+    set -- $client # the bundle ID or path, and its client_type
+    for service in kTCCServiceAccessibility kTCCServiceScreenCapture kTCCServicePostEvent; do
+      sqlite3 "$tcc" "INSERT OR REPLACE INTO access
+        (service, client, client_type, auth_value, auth_reason, auth_version, flags, last_modified)
+        VALUES ('$service', '$1', $2, 2, 4, 1, 0, $now);"
+    done
   done
 else
-  echo "SIP is on: grant Terminal Accessibility and Screen Recording in the VM's Privacy & Security settings" >&2
+  echo "SIP is on: grant Terminal and sshd-keygen-wrapper Accessibility and Screen Recording in the VM's Privacy & Security settings" >&2
 fi
+
+# Screen Recording granted, macOS still asks each app that captures the screen
+# directly (screencapture, from Terminal or over SSH) whether it may go on
+# "bypassing the private window picker", at its first capture and every 30
+# days, over the middle of the screen. forceBypassScreenCaptureAlert is the
+# restriction an MDM profile sets to stop that (macOS 15.1+); replayd ignores
+# it as a user preference, so it goes in as a managed one. On a Mac with no
+# MDM, macOS empties /Library/Managed Preferences at boot, so a daemon puts
+# the file back whenever that folder changes (and at boot), written as a file
+# (defaults won't write there) and read once cfprefsd starts again.
+daemon=io.github.exodious.hoplodex-tart.screen-capture-alert
+cat > "/Library/LaunchDaemons/$daemon.plist" <<'DAEMON'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>io.github.exodious.hoplodex-tart.screen-capture-alert</string>
+<key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string><string>
+f="/Library/Managed Preferences/com.apple.applicationaccess.plist"
+[ "$(/usr/libexec/PlistBuddy -c "Print :forceBypassScreenCaptureAlert" "$f" 2>/dev/null)" = true ] &amp;&amp; exit 0
+mkdir -p "/Library/Managed Preferences"
+[ -f "$f" ] || plutil -create xml1 "$f"
+plutil -replace forceBypassScreenCaptureAlert -bool YES "$f"
+chmod 644 "$f"
+killall cfprefsd
+</string></array>
+<key>RunAtLoad</key><true/>
+<key>WatchPaths</key><array><string>/Library/Managed Preferences</string></array>
+</dict></plist>
+DAEMON
+chmod 644 "/Library/LaunchDaemons/$daemon.plist"
+launchctl bootout "system/$daemon" 2>/dev/null || true
+launchctl bootstrap system "/Library/LaunchDaemons/$daemon.plist"
 ADMIN
   } | admin_ssh "admin@$ip" 'sudo -n bash -s' > "$state/admin.log" 2>&1 || {
     cat "$state/admin.log" >&2
@@ -418,8 +456,8 @@ dir="\$(mktemp -d /tmp/hoplodex-gui.XXXXXX)"
 : > "\$dir/log"
 {
   echo '#!/bin/zsh'
-  echo 'cd ~/$checkout || exit 1'
-  printf '{ %s; } >> %q 2>&1\n' "\$1" "\$dir/log"
+  # The cd inside, so a missing checkout still writes a status to wait for.
+  printf '{ cd ~/$checkout && %s; } >> %q 2>&1\n' "\$1" "\$dir/log"
   printf 'echo \$? > %q\n' "\$dir/status"
 } > "\$dir/run.command"
 chmod +x "\$dir/run.command"
