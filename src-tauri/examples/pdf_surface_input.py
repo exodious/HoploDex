@@ -18,7 +18,7 @@ import time
 
 HERE = pathlib.Path(__file__).resolve()
 spec = importlib.util.spec_from_file_location(
-    "x11_input", HERE.parents[3] / "e2e" / "scripts" / "x11-input.py"
+    "x11_input", HERE.parents[2] / "e2e" / "scripts" / "x11-input.py"
 )
 x11_input = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(x11_input)

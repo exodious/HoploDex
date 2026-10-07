@@ -81,7 +81,7 @@ use std::{
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::{
     PdfEndReason,
-    surface::{Hooks, Rect, Surface, SurfaceConfig},
+    surface::{Hooks, LABEL, Rect, Surface, SurfaceConfig},
     tripwire,
 };
 use serde_json::Value;
@@ -339,9 +339,13 @@ const FRAME_PROBE: &str = r#"
 (() => {
   if (window.__hdProbeRan) return;
   window.__hdProbeRan = true;
-  const report = (k, r) => { try { new Image().src = '__BASE____report?k=' + k + '&d=' + encodeURIComponent(JSON.stringify(r)); } catch (e) {} };
-  const REACH = __REACH__;
   const isTop = window === window.top;
+  // PDF.js's frame can't load an `hdpreview:` image itself (the E2E run found
+  // it), so a child frame tells its top frame, which makes the request.
+  const send = (k, r) => { try { new Image().src = '__BASE____report?k=' + k + '&d=' + encodeURIComponent(JSON.stringify(r)); } catch (e) {} };
+  const report = (k, r) => { if (isTop) send(k, r); else { try { parent.postMessage({ hdProbe: [k, r] }, '*'); } catch (e) {} } };
+  if (isTop) addEventListener('message', e => { if (e.data && e.data.hdProbe) send(e.data.hdProbe[0], e.data.hdProbe[1]); });
+  const REACH = __REACH__;
   setTimeout(async () => {
     const r = { step: 'reach', frame: isTop ? 'top' : 'child' };
     try { await REACH(r); } catch (e) { r.fatal = String(e); }
@@ -1406,11 +1410,11 @@ fn run_check(run: Run) {
     if !shared.ended.lock().unwrap().is_empty() {
         failures.push(format!("the surface ended: {:?}", shared.ended.lock().unwrap()));
     }
-    if app.webview_windows().len() != 1 {
-        failures.push(format!(
-            "another window opened: {:?}",
-            app.webview_windows().keys().collect::<Vec<_>>()
-        ));
+    // The surface's own host window (Linux) is not another.
+    let windows: Vec<String> =
+        app.webview_windows().into_keys().filter(|l| l != "main" && l != LABEL).collect();
+    if !windows.is_empty() {
+        failures.push(format!("another window opened: {windows:?}"));
     }
     #[cfg(target_os = "macos")]
     {
@@ -1440,7 +1444,7 @@ fn run_check(run: Run) {
             eprintln!("CHECK FAIL {failure}");
         }
         screenshot(&options.shot.with_extension("failed.png"));
-        app.exit(4);
+        std::process::exit(4);
     }
 }
 
@@ -1549,7 +1553,14 @@ fn drive_input(run: &Run, input: &Input) -> Vec<String> {
                     // the items not yet clicked.
                     None if toggles < 12 && seen.difference(&clicked).next().is_some() => {
                         toggles += 1;
-                        buttons.iter().find(|b| b["key"] == "secondaryToolbarToggle").cloned()
+                        buttons
+                            .iter()
+                            .find(|b| {
+                                b["key"]
+                                    .as_str()
+                                    .is_some_and(|k| k.starts_with("secondaryToolbarToggle"))
+                            })
+                            .cloned()
                     }
                     None => None,
                 };
@@ -1561,6 +1572,16 @@ fn drive_input(run: &Run, input: &Input) -> Vec<String> {
                 input.click(x, y);
                 clicked.insert(key);
                 thread::sleep(Duration::from_millis(500));
+            }
+            // The controls the frame script hides must never have been shown.
+            for key in &seen {
+                let key = key.to_lowercase();
+                if ["download", "print", "openfile", "bookmark", "editor"]
+                    .iter()
+                    .any(|forbidden| key.contains(forbidden))
+                {
+                    failures.push(format!("the viewer showed a {key} control"));
+                }
             }
             failures.extend(click_presentation_mode(run, input));
             let unclicked: Vec<_> = seen.difference(&clicked).collect();
