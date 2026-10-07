@@ -274,6 +274,11 @@ What they install, to set it up by hand instead:
 - **Node.js 24 LTS.** `OpenJS.NodeJS.LTS` follows whichever release is LTS,
   so install a 24.x with `--version` and keep it there with
   `winget pin add --id OpenJS.NodeJS.LTS --version 24.*`.
+- **Python 3.13**, the dev container's version, for all users and on the
+  machine `PATH`, with the `py` launcher:
+  `winget install --id Python.Python.3.13 -e --scope machine --override "/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1 InstallLauncherAllUsers=1 Include_test=0"`.
+  On Windows it's `python` or `py -3.13`; `python3` is the Microsoft Store's
+  alias.
 - **WebView2**, the engine the app's window uses. Windows 10 and 11 include
   it; otherwise get it from the
   [WebView2 runtime page](https://developer.microsoft.com/microsoft-edge/webview2/)

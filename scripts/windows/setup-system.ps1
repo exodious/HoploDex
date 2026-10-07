@@ -15,6 +15,8 @@ It installs, skipping whatever is already there:
     Windows SDK). A Visual Studio that already has the C++ tools counts.
   - Git, machine-wide.
   - Node.js 24 LTS, pinned in winget so an upgrade stays on 24.
+  - Python 3.13 (the dev container's), machine-wide, on PATH, with the py
+    launcher.
   - The WebView2 runtime, if Windows doesn't already have it.
   - vcpkg in -VcpkgRoot, with OpenSSL 3 (openssl:x64-windows-static-md) for
     SQLCipher, and the machine-wide OPENSSL_DIR and OPENSSL_STATIC=1 the
@@ -74,6 +76,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $NodeMajor = 24
+# The dev container's Python (Debian trixie's python3).
+$PythonVersion = '3.13'
 $OpenSslTriplet = 'x64-windows-static-md'
 $VcWorkload = 'Microsoft.VisualStudio.Workload.VCTools'
 $VcTools = 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
@@ -394,6 +398,26 @@ if (Test-Command node) {
 Invoke-Checked winget @('pin', 'add', '--id', 'OpenJS.NodeJS.LTS', '--exact',
     '--version', "$NodeMajor.*", '--force', '--accept-source-agreements',
     '--disable-interactivity') | Out-Null
+
+Write-Step "Python $PythonVersion"
+# Not `python --version`: without Python, that finds the Microsoft Store's
+# python.exe alias, which opens the Store. The py launcher comes with the
+# python.org installer.
+$foundPython = $null
+if (Test-Command py) {
+    $ErrorActionPreference = 'Continue'
+    $foundPython = "$(& py "-$PythonVersion" --version 2>$null)".Trim()
+    $ErrorActionPreference = 'Stop'
+}
+if ($foundPython -match '^Python \d') {
+    Write-Host "Found $foundPython."
+} else {
+    # Python.Python.3.13 stays on 3.13 when upgraded, so no pin. --override
+    # replaces winget's silent switches with these: for all users, on the
+    # machine PATH (ahead of the user's WindowsApps aliases), with the launcher.
+    Install-WingetPackage "Python.Python.$PythonVersion" @('--scope', 'machine', '--override',
+        '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1 InstallLauncherAllUsers=1 Include_test=0')
+}
 
 Write-Step 'WebView2 runtime'
 $webView2 = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
