@@ -15,7 +15,7 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::{Session, lifecycle};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// What the frontend is sent when the user closes the window or quits: it
 /// asks about unsaved changes, then calls `quit_application` (research.md
@@ -150,6 +150,16 @@ fn main() {
             platform::spawn_listener(sender);
             handle_system_events(app.handle().clone(), events);
             tick_idle_clock(app.handle().clone());
+            // The main window is built here rather than from tauri.conf.json
+            // so its web view gets a data folder of its own, apart from the
+            // preview surface's (research.md §6). Same title and sizes as the
+            // config gave it.
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .title("HoploDex")
+                .inner_size(1200.0, 800.0)
+                .min_inner_size(800.0, 600.0)
+                .data_directory(app_dirs::main_webview_data_dir(app.handle())?)
+                .build()?;
             Ok(())
         })
         .on_window_event(|window, event| {

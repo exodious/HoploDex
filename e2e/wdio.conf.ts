@@ -112,11 +112,6 @@ function isolateAppData() {
     process.env.XDG_CACHE_HOME = cache;
     process.env.XDG_CONFIG_HOME = config;
     writeUserDirs(config, documents);
-  } else if (process.platform === "win32") {
-    // WebView2 keeps its profile (local storage, and so the theme) in the
-    // app's real local data folder, which every worker would share. Its
-    // loader takes this variable over the folder Tauri passes.
-    process.env.WEBVIEW2_USER_DATA_FOLDER = path.join(data, "webview2");
   } else if (process.platform === "darwin") {
     // macOS ignores XDG_*: Tauri builds every directory (Application Support,
     // Caches, Documents) from HOME, so the app gets a home of its own inside

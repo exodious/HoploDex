@@ -26,7 +26,6 @@ pub use resolve::{cache_dir, config_dir, document_dir, home_dir};
 /// window is built in `setup()` with it (research.md §6), so its folder is
 /// never the one the preview surface uses and no `WEBVIEW2_USER_DATA_FOLDER`
 /// is needed.
-#[allow(dead_code)] // used by main.rs's setup() from T014
 pub fn main_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<PathBuf> {
     Ok(main_webview_dir(&cache_dir(app)?))
 }
