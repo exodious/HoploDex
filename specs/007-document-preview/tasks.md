@@ -476,3 +476,47 @@ Each story adds value without breaking the previous ones; stop at any checkpoint
 - Verify tests fail before implementing
 - Every new command is registered in three places (`generate_handler!`, `COMMANDS`, the capability); `acl_manifest_test` fails otherwise
 - Commit after each task or logical group; never touch the real databases
+
+---
+
+## Phase 7: Convergence
+
+**Purpose**: The gaps the convergence assessment found at fa9f2f27 (two read-only assessors, US1 | US2, US3, plan and constitution), plus performance findings from the per-OS runs. 0 HIGH, 1 MEDIUM, the rest LOW.
+
+**Decisions recorded (the user, 2026-10-07)**:
+- **TIFF zoom outside 50–400%**: the button that would move the wrong way is disabled. Above 400% fit, zoom in is disabled and zoom out steps to 400%; below 50%, zoom out is disabled and zoom in steps to 50%. The range stays 50–400%.
+- **Messages while a PDF is shown**: every message the viewer causes (delete, open failures and the like) goes to the viewer's footer status line while a PDF is shown, so the surface isn't hidden. A toast from outside the viewer still hides the surface briefly.
+- **Consent after switching the setting**: changing the setting to "Open in another app" clears the session's earlier yes (`external_open_confirmed`), so the next open asks once with the "won't be asked again" line. This amends research.md §17's "any confirmed open sets it" for this case.
+- **Windows PDF first paint (1.26 s release, random-pixel test PDF)**: measure a realistic 10 MB PDF (a multi-page scan) on Windows. If it meets 1 s, record that SC-001 holds for real documents and that the random-pixel file is a stress case; if not, bring it back to the user.
+- **The name of a row that can't be opened, with "Open in another app" set**: plain text with the reason as its `title`, not a button, matching the disabled "Open in another app…" button.
+- **Earlier, during Phase 6**: suggestions are warmed at open, and accessories' make/model indexes are non-partial (7237a8c4); the `braces` advisory is allowlisted until 2026-12-31 (f82fd557); a multi-page TIFF opens at fit-width as the contract says, and the human seed has a realistic scan (1b402fbd).
+
+### Decisions applied
+
+- [ ] T148 [US1] Make the TIFF zoom buttons always move their own way (MEDIUM, divergent; FR-005, US1-2, US1-3, ui contract §2 and §7, research.md §14): in `src/features/media/useTiffPages.ts` (`zoomIn`/`zoomOut`, `clampPercent`) and the viewer's toolbar, disable zoom in at a fit above 400% and zoom out at a fit below 50%, with the other button stepping into the range, per the decision above. Add unit tests in `useTiffPages`'s and `DocumentPreview`'s tests for both ends, and make `e2e/specs/us13-document-preview.e2e.ts` (around its zoom check) assert the direction, not just that the percent changed; update ui contract §2/§7
+- [ ] T149 [US1] Show the viewer's own messages in its footer status line while a PDF is shown (LOW, divergent; ui contract §2 "Toasts while a PDF is shown"): `DocumentList.tsx`'s delete-from-viewer toast and any other message the viewer causes go to `DocumentPreview`'s status line when the current document is a PDF; toasts from elsewhere keep `PreviewSurface`'s hide. Unit tests for the delete case landing on a PDF, and update ui contract §2
+- [ ] T150 [US3] Clear the session's `external_open_confirmed` when `set_document_opening` changes the setting to `"external"` (LOW, untested and divergent; FR-012, US3-3, research.md §17 as amended above): in `src-tauri/src/commands/databases.rs`, with the session (if one is open) passed to `ops::set_document_opening`; a test in `src-tauri/tests/open_document_test.rs` that a yes given under Preview, then the switch, makes the next open ask with the extra line; add a dated amendment note to research.md §17 and update contracts/tauri-commands.md "Setting commands"
+- [ ] T151 [US3] With `"external"`, render the name of a row whose `openable` is `false` as plain text with the reason as its `title` (LOW, partial; ui contract §1, decision above) in `src/features/media/DocumentList.tsx`; a test in `DocumentList.test.tsx`; update ui contract §1 (depends on T149 for the same file)
+- [ ] T152 On Windows, measure the time to first paint of a realistic 10 MB PDF (a multi-page scan, generated with the fixtures' `generate.py` from content of our own, not random pixels) with `pdf_surface_check` in a release build; record it on T074's line beside the random-pixel figure, and per the decision above either record that SC-001 holds for real documents (research.md §22, the PR notes) or bring the figure to the user (decision above; SC-001, constitution IV)
+
+### Remaining findings
+
+- [ ] T153 [P] [US3] Pause the idle clock around the setting's native confirmation when a session is open (LOW, divergent; research.md §16, constitution IV): `set_document_opening` in `src-tauri/src/commands/databases.rs` takes the same `IdlePauseReason::NativeDialog` pause as `open_document` (`commands/documents.rs`), with a test beside `the_idle_clock_is_paused_while_the_dialog_is_up_and_starts_again_after` (same file as T150: do it in the same batch, after T150)
+- [ ] T154 [P] [US1] Test the text viewer's chunking over 1 MB (LOW, untested; research.md §12, §22, T079): in `src/features/media/DocumentPreview.test.tsx`, only the first chunk renders, scrolling near the end appends the next, and no surrogate pair is split
+- [ ] T155 [US1] Check on each OS that the PDF surface hides with the minimized main window (LOW, doc-drift; research.md §4, T062): Linux in the dev container, then macOS and Windows on their machines; if it already goes with its parent window, record that on this line and correct research.md §4 and T062's wording; if it doesn't, hide it on minimize in `services/preview/surface/` and test it
+- [ ] T156 [P] [US1] Start the 5 s hook timer when the document is first served, not when `open_preview` returns (LOW, divergent; research.md §8, T031): `src-tauri/src/commands/preview.rs` and `services/preview/protocol_handler.rs`, with a test
+- [ ] T157 [P] [US1] Refuse an `hdpreview` request from any web view but `preview` (LOW, divergent; contracts/tauri-commands.md "`hdpreview`: served to the PDF surface only"): check `webview_label()` in the handler registered in `src-tauri/src/main.rs` / `protocol_handler.rs`, with a test
+- [ ] T158 [US1] Route a dropped file correctly before the document types have loaded or if loading them failed (LOW, partial; ui contract §6): wait for `listDocumentTypes` before routing a drop in `src/features/media/DocumentList.tsx` and `filePaths.ts`, or classify on the backend, with a test of a drop made before the types load (same file as T149 and T151: after them)
+- [ ] T159 [P] [US1] Lower-case the kind label mid-sentence in the viewer's "can't be previewed" texts (LOW, partial; ui contract §3), except PDF, TIFF, CSV, RTF and the OpenDocument names, in `src/features/media/DocumentPreview.tsx`, with tests (same file as T149: after it)
+- [ ] T160 [P] Add to quickstart.md's manual check M1 a step for the setting's native confirmation: change the setting in Database settings, see the system dialog "Open documents in another app?", press Escape, and check the setting stays "Preview in HoploDex" (LOW, untested; FR-012, ui contract §4)
+- [ ] T161 [P] In CLAUDE.md's UI-consistency bullet, note that consent for a decrypted copy leaving the app uses `services::consent`'s native dialog, not `ConfirmDialog` (constitution III); fix the test heading at `src-tauri/tests/open_document_test.rs` that says "US2-6" for the lock during the dialog (it is US2-3, #65) (LOW, doc-drift; same test file as T150: same batch)
+- [ ] T162 Bring `suggest_entries` over both tables back well inside 004's 50 ms on Windows (LOW, performance; 004 SC-007, constitution IV): Windows measured Model ≈42–50.5 ms, of which SQLite 10.5 ms, Rust grouping ≈18 ms and dropping the 20k-group vocabulary ≈12.7 ms. Cut the per-call allocation in `src-tauri/src/services/suggestions.rs` (for example, don't build and drop the whole vocabulary per keystroke) without slowing open beyond its budget; measure on Linux, then confirm with the release `performance_test` on Windows
+
+### Gates again
+
+- [ ] T163 On Linux, rerun T114's full gates and the screenshot walk after T148–T162 (one at a time, alone)
+- [ ] T164 On macOS, rerun T115's gates after T148–T162 (`format:check` and the npm audit were red there only because the run predated f82fd557) and tick T115
+- [ ] T165 On Windows, rerun T116's gates after T148–T162
+- [ ] T166 Then do T119 (FR-022 verified on all three OS, citing T163–T165)
+
+**Dependencies**: T148, T154, T156, T157 in parallel (different files); `DocumentList.tsx`: T149 → T151 → T158; `DocumentPreview.tsx`: T149 → T159; `commands/databases.rs` and `open_document_test.rs`: T150 → T153 → T161's heading fix; T152 and T155's macOS/Windows parts on their machines; T162 alone in `suggestions.rs`; T163–T165 after all of them; T166 last.
