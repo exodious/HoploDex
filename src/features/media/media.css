@@ -185,6 +185,16 @@
   text-underline-offset: 3px;
 }
 
+/* A name with nothing to open (the setting is "Open in another app"): text, not a button. */
+.hd-doc__name--plain {
+  display: block;
+  cursor: default;
+}
+
+.hd-doc__name--plain:hover {
+  text-decoration: none;
+}
+
 .hd-doc__meta {
   font-size: var(--text-sm);
   color: var(--ink-2);

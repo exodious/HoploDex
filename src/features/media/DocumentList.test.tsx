@@ -395,6 +395,94 @@ describe("DocumentList: deleting from the viewer (contract §2 Footer)", () => {
   });
 });
 
+describe("DocumentList: the viewer's messages while a PDF is shown (contract §2, tasks.md T149)", () => {
+  async function deleteFromViewer(name: string) {
+    const user = await renderList();
+    await user.click(screen.getByRole("button", { name }));
+    await screen.findByRole("dialog", { name });
+    await user.click(
+      within(screen.getByRole("dialog", { name })).getByRole("button", { name: "Delete document" }),
+    );
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete this document?" });
+    await user.click(within(confirm).getByRole("button", { name: "Delete document" }));
+  }
+
+  it("says 'Deleted …' in the footer, not a toast, when the viewer moves on to a PDF", async () => {
+    docs = [scan(), receipt(), notes()];
+    await deleteFromViewer("Appraisal scan.tif");
+
+    const dialog = await screen.findByRole("dialog", { name: "Purchase receipt.pdf" });
+    expect(await within(dialog).findByText("Deleted Appraisal scan.tif.")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    await act(async () => {});
+    expect(noToasts()).toBeNull();
+  });
+
+  it("toasts 'Deleted …' when the viewer moves on to something that isn't a PDF", async () => {
+    await deleteFromViewer("Appraisal scan.tif");
+
+    await screen.findByRole("dialog", { name: "Notes.txt" });
+    expect(await toastWith("Deleted Appraisal scan.tif.")).toBeInTheDocument();
+  });
+
+  it("toasts 'Deleted …' when the viewer closes", async () => {
+    docs = [receipt()];
+    await deleteFromViewer("Purchase receipt.pdf");
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await toastWith("Deleted Purchase receipt.pdf.")).toBeInTheDocument();
+  });
+
+  it("puts a failed deletion in the footer, as an error, while the PDF is shown", async () => {
+    const answer = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "delete_document") {
+        throw new CommandFailure({ code: "INTERNAL_ERROR", message: "The disk is full." });
+      }
+      return answer(command, args);
+    });
+    await deleteFromViewer("Purchase receipt.pdf");
+
+    const dialog = await screen.findByRole("dialog", { name: "Purchase receipt.pdf" });
+    const status = await within(dialog).findByText("The disk is full.");
+    expect(status).toHaveClass("hd-preview__footer-status--error");
+    await act(async () => {});
+    expect(noToasts()).toBeNull();
+  });
+
+  it("toasts a failed deletion when the viewer shows something that isn't a PDF", async () => {
+    const answer = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "delete_document") {
+        throw new CommandFailure({ code: "INTERNAL_ERROR", message: "The disk is full." });
+      }
+      return answer(command, args);
+    });
+    await deleteFromViewer("Notes.txt");
+
+    expect(await toastWith("The disk is full.")).toHaveClass("hd-toast--error");
+  });
+
+  it("drops the footer's message when the user moves to another document", async () => {
+    docs = [scan(), receipt(), notes()];
+    const user = await renderList();
+    await user.click(screen.getByRole("button", { name: "Appraisal scan.tif" }));
+    const first = await screen.findByRole("dialog", { name: "Appraisal scan.tif" });
+    await user.click(within(first).getByRole("button", { name: "Delete document" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete this document?" });
+    await user.click(within(confirm).getByRole("button", { name: "Delete document" }));
+    const dialog = await screen.findByRole("dialog", { name: "Purchase receipt.pdf" });
+    await within(dialog).findByText("Deleted Appraisal scan.tif.");
+
+    await user.click(within(dialog).getByRole("button", { name: "Next document" }));
+
+    await screen.findByRole("dialog", { name: "Notes.txt" });
+    expect(screen.queryByText("Deleted Appraisal scan.tif.")).not.toBeInTheDocument();
+  });
+});
+
 // --- User Story 2 (T084) ------------------------------------------------------
 
 const REFUSED =
@@ -568,6 +656,60 @@ describe("DocumentList: drops (contract §6)", () => {
     ]);
     expect(await toastWith(`virus.exe ${REFUSED}`)).toBeInTheDocument();
     expect(screen.queryByText(/Range day\.jpg/)).not.toBeInTheDocument();
+  });
+});
+
+describe("DocumentList: a drop before the document types have loaded (contract §6, tasks.md T158)", () => {
+  /** The list with `list_document_types` held until the test lets it answer. */
+  async function renderListHoldingTypes() {
+    const types$ = deferred<DocumentType[]>();
+    const answer = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) =>
+      command === "list_document_types" ? types$.promise : answer(command, args),
+    );
+    await renderList();
+    return types$;
+  }
+
+  it("waits for the types, then attaches a document of an allowed type", async () => {
+    const types$ = await renderListHoldingTypes();
+
+    act(() => backend.drop(["/home/sam/Receipts/Bill of sale.docx"]));
+    await act(async () => {});
+    expect(calls("add_document_from_path")).toEqual([]);
+    expect(noToasts()).toBeNull();
+
+    await act(async () => types$.resolve(types));
+
+    await waitFor(() => expect(calls("add_document_from_path")).toHaveLength(1));
+    expect(noToasts()?.textContent ?? "").not.toContain("wasn't attached");
+  });
+
+  it("waits for the types, then refuses what isn't a document type, before any command", async () => {
+    const types$ = await renderListHoldingTypes();
+
+    act(() => backend.drop(["/home/sam/Downloads/setup.exe", "/home/sam/Receipts/Scan.tiff"]));
+    await act(async () => {});
+    expect(noToasts()).toBeNull();
+
+    await act(async () => types$.resolve(types));
+
+    expect(await toastWith(`setup.exe ${REFUSED}`)).toHaveClass("hd-toast--error");
+    await waitFor(() => expect(calls("add_document_from_path")).toHaveLength(1));
+    expect(calls("add_document_from_path")[0].path).toBe("/home/sam/Receipts/Scan.tiff");
+  });
+
+  it("if the types can't be loaded, sends each non-photo to the backend, which decides", async () => {
+    const types$ = await renderListHoldingTypes();
+
+    act(() => backend.drop(["/a/Receipt.pdf", "/a/Range day.jpg"]));
+    await act(async () =>
+      types$.reject(new CommandFailure({ code: "INTERNAL_ERROR", message: "No types." })),
+    );
+
+    await waitFor(() => expect(calls("add_document_from_path")).toHaveLength(1));
+    expect(calls("add_document_from_path")[0].path).toBe("/a/Receipt.pdf");
+    expect(noToasts()?.textContent ?? "").not.toContain("wasn't attached");
   });
 });
 
@@ -746,6 +888,35 @@ describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6
     const word = within(row("Bill of sale.docx"));
     expect(word.queryByRole("button", { name: "Preview" })).toBeNull();
     expect(word.getByRole("button", { name: "Open in another app…" })).toBeEnabled();
+  });
+
+  it("with 'external', the name of a row that can't be opened is plain text with the reason as its title", async () => {
+    const user = await renderListWith("external");
+
+    expect(screen.queryByRole("button", { name: "Old scan.jpg" })).not.toBeInTheDocument();
+    const name = screen.getByText("Old scan.jpg");
+    expect(name.tagName).toBe("SPAN");
+    expect(name.getAttribute("title")).toMatch(/not a document type/i);
+    // Like the disabled button beside it, which gives the same reason.
+    const button = within(name.closest("li") as HTMLElement).getByRole("button", {
+      name: "Open in another app…",
+    });
+    expect(button).toBeDisabled();
+    expect(button.getAttribute("title")).toBe(name.getAttribute("title"));
+
+    await user.click(name);
+    expect(calls("open_document")).toEqual([]);
+    expect(calls("open_preview")).toEqual([]);
+    // Every other row's name is still a button.
+    expect(screen.getByRole("button", { name: "Notes.txt" })).toBeInTheDocument();
+  });
+
+  it("with 'preview', the name of a row that can't be opened is still a button, which opens the viewer", async () => {
+    const user = await renderList();
+
+    await user.click(screen.getByRole("button", { name: "Old scan.jpg" }));
+
+    await screen.findByRole("dialog", { name: "Old scan.jpg" });
   });
 
   it("changes back to 'preview': the name previews again, with its title (US3-6)", async () => {

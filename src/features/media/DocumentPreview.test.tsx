@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components";
@@ -91,6 +91,9 @@ const notes = doc(3, "Notes.txt", "text/plain", "text");
 const rounds = doc(4, "Round count.csv", "text/csv", "text");
 const bill = doc(5, "Bill of sale.docx", types[4].mimeType, null);
 const single = doc(6, "One page.tif", "image/tiff", "tiff");
+const tiny = doc(7, "Stamp.tif", "image/tiff", "tiff");
+const huge = doc(8, "Plan sheet.tif", "image/tiff", "tiff");
+const big = doc(9, "Range log.txt", "text/plain", "text");
 const documents = [receipt, scan, notes, rounds, bill];
 const ADDED = formatDate("2026-03-14");
 
@@ -106,6 +109,9 @@ const infos: Record<number, PreviewInfo> = {
     text: "=SUM(A1)\n<b>bold</b>\nhttps://example.com\na,b\n1,2",
   },
   6: { previewId: 16, documentId: 6, kind: "tiff", pages: [PAGE] },
+  // Fits outside 50-400% in the 1000 x 800 test area: about 576% and 19%.
+  7: { previewId: 17, documentId: 7, kind: "tiff", pages: [{ width: 100, height: 100 }] },
+  8: { previewId: 18, documentId: 8, kind: "tiff", pages: [{ width: 3000, height: 3000 }] },
 };
 
 type Handler = (args: Record<string, unknown>) => unknown;
@@ -604,6 +610,52 @@ describe("DocumentPreview: a single-page TIFF (contract §2)", () => {
   });
 });
 
+describe("DocumentPreview: zoom buttons at a fit outside 50-400% (research.md §14, tasks.md T148)", () => {
+  const zoomIn = () => within(viewer()).getByRole("button", { name: "Zoom in" });
+  const zoomOut = () => within(viewer()).getByRole("button", { name: "Zoom out" });
+  const percent = () => within(viewer()).getByRole("button", { name: /\d+%/ });
+
+  it("above 400%, zoom in is disabled and zoom out steps to 400%", async () => {
+    const { user } = await openViewer({ docs: [tiny], start: 0 });
+    await screen.findByAltText("Stamp.tif");
+
+    expect(Number.parseInt(percent().textContent ?? "0", 10)).toBeGreaterThan(400);
+    expect(zoomIn()).toBeDisabled();
+    expect(zoomOut()).toBeEnabled();
+
+    await user.click(zoomOut());
+    expect(percent()).toHaveTextContent("400%");
+    expect(zoomIn()).toBeDisabled();
+    expect(zoomOut()).toBeEnabled();
+  });
+
+  it("below 50%, zoom out is disabled and zoom in steps to 50%", async () => {
+    const { user } = await openViewer({ docs: [huge], start: 0 });
+    await screen.findByAltText("Plan sheet.tif");
+
+    expect(Number.parseInt(percent().textContent ?? "999", 10)).toBeLessThan(50);
+    expect(zoomOut()).toBeDisabled();
+    expect(zoomIn()).toBeEnabled();
+
+    await user.click(zoomIn());
+    expect(percent()).toHaveTextContent("50%");
+    expect(zoomOut()).toBeDisabled();
+    expect(zoomIn()).toBeEnabled();
+  });
+
+  it("the + and − keys move the same way: + does nothing above 400%", async () => {
+    const { user } = await openViewer({ docs: [tiny], start: 0 });
+    await screen.findByAltText("Stamp.tif");
+    const before = percent().textContent;
+    screen.getByLabelText("Stamp.tif, pages").focus();
+
+    await user.keyboard("+");
+    expect(percent()).toHaveTextContent(before ?? "");
+    await user.keyboard("-");
+    expect(percent()).toHaveTextContent("400%");
+  });
+});
+
 describe("DocumentPreview: text (contract §2)", () => {
   it("shows text and CSV as a text child of a pre, with nothing made of it", async () => {
     await openViewer({ start: 3 });
@@ -619,6 +671,77 @@ describe("DocumentPreview: text (contract §2)", () => {
     expect(viewer().querySelector("a, table, b")).toBeNull();
     expect(pre).toHaveAttribute("aria-label", "Round count.csv");
     expect(pre).toHaveAttribute("tabindex", "0");
+  });
+});
+
+describe("DocumentPreview: a text document over 1 MB is shown in chunks (research.md §12, tasks.md T154)", () => {
+  // The chunk is 1 MiB of UTF-16 code units. The emoji sits across the first chunk's end,
+  // so the cut has to move back by one to keep its two halves together.
+  const CHUNK = 1 << 20;
+  const EMOJI = "\u{1F600}";
+  const text = "x".repeat(CHUNK - 1) + EMOJI + "y".repeat(CHUNK + 10);
+  const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+  async function openBig() {
+    installBackend({
+      open_preview: () => ({ previewId: 19, documentId: 9, kind: "text", text }),
+    });
+    await openViewer({ docs: [big], start: 0 });
+    return (await screen.findByRole("region", { name: "Range log.txt" })) as HTMLElement;
+  }
+
+  /** Scrolls the page area to `fromEnd` px short of its end (jsdom lays nothing out). */
+  function scrollTo(pre: HTMLElement, fromEnd: number) {
+    Object.defineProperty(pre, "scrollHeight", { configurable: true, value: 100000 });
+    Object.defineProperty(pre, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 100000 - 800 - fromEnd,
+    });
+    fireEvent.scroll(pre);
+  }
+
+  const shownLength = (pre: HTMLElement) => pre.textContent?.length ?? 0;
+
+  it("renders only the first chunk, ending before the emoji that straddles the cut", async () => {
+    const pre = await openBig();
+
+    expect(shownLength(pre)).toBe(CHUNK - 1);
+    expect(pre.textContent).toBe("x".repeat(CHUNK - 1));
+    expect(pre.textContent).not.toContain(EMOJI);
+  });
+
+  it("appends the next chunk when the scroll nears the end, and not before", async () => {
+    const pre = await openBig();
+
+    scrollTo(pre, 5000); // further from the end than one screen
+    expect(shownLength(pre)).toBe(CHUNK - 1);
+
+    scrollTo(pre, 100); // within one screen of it
+    expect(shownLength(pre)).toBe(CHUNK - 1 + CHUNK);
+    expect(pre.textContent?.startsWith("x".repeat(CHUNK - 1) + EMOJI)).toBe(true);
+  });
+
+  it("appends every chunk in the end, the whole text and no more, and splits no surrogate pair", async () => {
+    const pre = await openBig();
+
+    scrollTo(pre, 0);
+    scrollTo(pre, 0);
+    scrollTo(pre, 0); // a third scroll, with nothing left to append
+
+    expect(pre.textContent).toBe(text);
+    for (const node of Array.from(pre.childNodes)) {
+      expect(LONE_SURROGATE.test(node.textContent ?? "")).toBe(false);
+    }
+    expect(pre.childNodes.length).toBe(3);
+  });
+
+  it("shows a text under 1 MB whole, in one piece", async () => {
+    await openViewer({ start: 2 });
+
+    const pre = await screen.findByRole("region", { name: "Notes.txt" });
+    expect(pre.textContent).toBe("Field strip the pistol.");
+    expect(pre.childNodes).toHaveLength(1);
   });
 });
 
@@ -690,6 +813,61 @@ describe("DocumentPreview: states (contract §3)", () => {
       expect(within(viewer()).queryByText(/^Preparing/)).not.toBeInTheDocument();
     },
   );
+
+  // ui contract §3: the kind reads as a word inside the sentence, but acronyms keep
+  // their capitals.
+  it.each([
+    [0, "Purchase receipt.pdf", "a PDF"],
+    [1, "Appraisal scan.tif", "a TIFF"],
+    [2, "Notes.txt", "a plain text"],
+    [3, "Round count.csv", "a CSV"],
+  ] as const)(
+    "DOCUMENT_CONTENT_MISMATCH for %s names the kind mid-sentence: %s is %s document",
+    async (start, name, phrase) => {
+      installBackend({
+        open_preview: () => {
+          throw failure("DOCUMENT_CONTENT_MISMATCH", "x");
+        },
+      });
+      await openViewer({ start });
+
+      await waitFor(() =>
+        expect(statuses()).toContain(
+          `${name} can't be previewed: its content isn't ${phrase} document.`,
+        ),
+      );
+    },
+  );
+
+  it("DOCUMENT_CONTENT_MISMATCH writes a pre-007 row's extension as it is, and a sentence-start kind in capitals", async () => {
+    installBackend({
+      open_preview: () => {
+        throw failure("DOCUMENT_CONTENT_MISMATCH", "x");
+      },
+    });
+    await openViewer({ docs: [doc(9, "Old scan.jpg", "image/jpeg", null)], start: 0 });
+
+    await waitFor(() =>
+      expect(statuses()).toContain(
+        "Old scan.jpg can't be previewed: its content isn't a JPG document.",
+      ),
+    );
+  });
+
+  it("PREVIEW_UNSUPPORTED keeps the kind's capital at the start of its sentence", async () => {
+    installBackend({
+      open_preview: () => {
+        throw failure("PREVIEW_UNSUPPORTED", "x");
+      },
+    });
+    await openViewer({ docs: [doc(3, "Notes.txt", "text/plain", null)], start: 0 });
+
+    await waitFor(() =>
+      expect(statuses()).toContain(
+        "Notes.txt can't be previewed here. Plain text documents open in another app.",
+      ),
+    );
+  });
 
   it("DOCUMENT_CONTENT_MISMATCH offers no Open in another app… (FR-017)", async () => {
     installBackend({

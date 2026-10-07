@@ -20,7 +20,7 @@ import {
 import type { IconName } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
-import { documentKindLabel } from "./documentKind";
+import { documentKindLabel, kindInSentence } from "./documentKind";
 import {
   closePreview,
   focusPreview,
@@ -36,6 +36,13 @@ import { PAGE_GAP, useTiffPages } from "./useTiffPages";
 import type { TiffZoom } from "./useTiffPages";
 import "./media.css";
 
+/** A message the viewer caused that the list says: shown in the footer's status line
+ * while a PDF is shown, where a toast would hide the surface (ui contract §2). */
+export interface ViewerMessage {
+  text: string;
+  error: boolean;
+}
+
 export interface DocumentPreviewProps {
   /** The record's own documents, in list order: previous and next move only
    * through these (FR-007). */
@@ -50,6 +57,9 @@ export interface DocumentPreviewProps {
   /** The PDF surface was closed by the backend (`preview:pdf-ended`), so the
    * list can reload for `copyCaught` and `noViewer`. */
   onPdfEnded?: (reason: PdfEndReason) => void;
+  /** A new message for the footer's status line (what a toast would say). The list
+   * only sends one for a document the viewer shows as a PDF. */
+  message?: ViewerMessage | null;
 }
 
 /** What the page area shows when there is no document to show (ui contract §3). */
@@ -73,7 +83,7 @@ const PDF_ENDED: Record<PdfEndReason, Problem> = {
 };
 
 function withArticle(kind: string): string {
-  return /^(?:[AEIOU]|RTF)/.test(kind) ? `an ${kind}` : `a ${kind}`;
+  return /^(?:[AEIOUaeiou]|RTF)/.test(kind) ? `an ${kind}` : `a ${kind}`;
 }
 
 /** The sentence for a state, ui contract §3. */
@@ -86,7 +96,7 @@ function problemSentence(problem: Problem, name: string, kind: string): string {
     case "PDF_COPY_CAUGHT":
       return `This computer's PDF viewer saved a copy of ${name} to disk. HoploDex deleted it and has turned PDF previews off on this computer until HoploDex is updated. You can still open PDFs in another app.`;
     case "DOCUMENT_CONTENT_MISMATCH":
-      return `${name} can't be previewed: its content isn't ${withArticle(kind)} document.`;
+      return `${name} can't be previewed: its content isn't ${withArticle(kindInSentence(kind))} document.`;
     case "PREVIEW_DAMAGED":
       return `${name} can't be previewed: the document is damaged or incomplete.`;
     default:
@@ -113,6 +123,7 @@ export function DocumentPreview({
   onClose,
   onDelete,
   onPdfEnded,
+  message,
 }: DocumentPreviewProps) {
   const doc = documents[index];
   const name = doc.originalFilename;
@@ -172,6 +183,12 @@ export function DocumentPreview({
       cancelled = true;
     };
   }, [doc.id]);
+
+  // After the effect above, which clears the status for a new document: a message that
+  // arrives with the move (the list's "Deleted …") stays.
+  useEffect(() => {
+    if (message) setOpenStatus(message);
+  }, [message]);
 
   const focusFirstControl = useCallback(() => {
     const dialog = root.current?.closest('[role="dialog"]');
@@ -566,7 +583,7 @@ function TiffView({
         aria-label="Zoom out"
         title="Zoom out"
         aria-describedby={percentId}
-        disabled={!arrived}
+        disabled={!arrived || !tiff.canZoomOut}
         onClick={tiff.zoomOut}
       />
       <Menu
@@ -594,7 +611,7 @@ function TiffView({
         aria-label="Zoom in"
         title="Zoom in"
         aria-describedby={percentId}
-        disabled={!arrived}
+        disabled={!arrived || !tiff.canZoomIn}
         onClick={tiff.zoomIn}
       />
     </>

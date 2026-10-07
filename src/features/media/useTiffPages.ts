@@ -50,7 +50,12 @@ export interface TiffPages {
   setZoom: (zoom: TiffZoom) => void;
   zoomIn: () => void;
   zoomOut: () => void;
-  /** The zoom as a percent; for a fit, the percent it works out to. */
+  /** Zoom in is off at 400% and above, which a fit can be (research.md §14). */
+  canZoomIn: boolean;
+  /** Zoom out is off at 50% and below, which a fit can be. */
+  canZoomOut: boolean;
+  /** The zoom as a percent; for a fit, the percent it works out to. A fit can
+   * lie outside 50–400%. */
   percent: number;
   layout: PageBox[];
   contentHeight: number;
@@ -272,18 +277,26 @@ export function useTiffPages({
   const setZoom = useCallback((next: TiffZoom) => {
     setZoomState(typeof next === "number" ? clampPercent(next) : next);
   }, []);
+  // A fit can be outside 50–400%: the button that would move the wrong way is
+  // off, and the other steps into the range (research.md §14).
+  const canZoomIn = percent < ZOOM_MAX;
+  const canZoomOut = percent > ZOOM_MIN;
   const zoomIn = useCallback(() => {
-    setZoomState(Math.min(ZOOM_MAX, (Math.floor(percent / ZOOM_STEP) + 1) * ZOOM_STEP));
-  }, [percent]);
+    if (!canZoomIn) return;
+    setZoomState(clampPercent((Math.floor(percent / ZOOM_STEP) + 1) * ZOOM_STEP));
+  }, [percent, canZoomIn]);
   const zoomOut = useCallback(() => {
-    setZoomState(Math.max(ZOOM_MIN, (Math.ceil(percent / ZOOM_STEP) - 1) * ZOOM_STEP));
-  }, [percent]);
+    if (!canZoomOut) return;
+    setZoomState(clampPercent((Math.ceil(percent / ZOOM_STEP) - 1) * ZOOM_STEP));
+  }, [percent, canZoomOut]);
 
   return {
     zoom,
     setZoom,
     zoomIn,
     zoomOut,
+    canZoomIn,
+    canZoomOut,
     percent,
     layout,
     contentHeight,

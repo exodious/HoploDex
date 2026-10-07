@@ -10,3 +10,12 @@ export function documentKindLabel(doc: DocumentSummary, types: DocumentType[]): 
   const extension = doc.originalFilename.split(".").pop();
   return extension && extension !== doc.originalFilename ? extension.toUpperCase() : "File";
 }
+
+/** A kind label inside a sentence (ui contract §3): "Plain text" and "Spreadsheet" are
+ * lower-cased, and what is written as it is keeps its case: the acronyms (PDF, TIFF, CSV,
+ * RTF, an extension in capitals), the OpenDocument names and the product name Word. */
+export function kindInSentence(label: string): string {
+  return /^[A-Z][a-z]/.test(label) && !/^(?:OpenDocument|Word)\b/.test(label)
+    ? label.charAt(0).toLowerCase() + label.slice(1)
+    : label;
+}

@@ -664,10 +664,20 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
       timeout: 5000,
       timeoutMsg: "Page Down never moved to page 2",
     });
+    // Each zoom key moves its own way (research.md §14; a fit outside 50-400% is
+    // covered by the unit tests): + raises the percent, − lowers it.
+    const percentValue = async () => Number.parseInt(await percent(), 10);
+    const startPercent = await percentValue();
     await realKey("KP_Add");
-    await browser.waitUntil(async () => (await percent()) !== before, {
+    await browser.waitUntil(async () => (await percentValue()) > startPercent, {
       timeout: 5000,
-      timeoutMsg: "+ never changed the zoom",
+      timeoutMsg: `+ never raised the zoom from ${before}`,
+    });
+    const raised = await percentValue();
+    await realKey("KP_Subtract");
+    await browser.waitUntil(async () => (await percentValue()) < raised, {
+      timeout: 5000,
+      timeoutMsg: `− never lowered the zoom from ${raised}%`,
     });
 
     // Tab leaves the page area for the footer, whose arrows move on to the text.

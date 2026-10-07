@@ -25,7 +25,10 @@ Each row, left to right:
    - **Setting "Preview in HoploDex"**: activating it opens the viewer
      (§2). For a document that can't be previewed, the viewer opens on
      the matching state (§3).
-   - **Setting "Open in another app"**: it calls `open_document`.
+   - **Setting "Open in another app"**: it calls `open_document`. For a
+     row whose `openable` is `false` there is nothing to open, so the name
+     is plain text (not a button) with the reason as its `title`, matching
+     the disabled "Open in another app…" button (amended 2026-10-07).
    - Its `title` says what will happen: "Preview {name}" or "Open {name}
      in another app".
 2. **Meta line**: `{kind} · added {date}`, then, where it applies
@@ -76,6 +79,12 @@ OS):
   separator; zoom out, `{percent}%`, zoom in; fit width, fit page. The
   percent is a `Menu` offering 50–400% and the two fits.
 - **Single-page TIFF**: zoom out, `{percent}%`, zoom in, fit, actual size.
+- **Zoom range** (amended 2026-10-07): 50–400% in 25% steps. A fit can lie
+  outside it (a tiny or a huge scan), and then the button that would move
+  the wrong way is disabled: above 400%, zoom in is disabled and zoom out
+  steps to 400%; below 50%, zoom out is disabled and zoom in steps to 50%.
+  The `+` and `−` keys (§7) follow the same rule. Zoom in is also disabled
+  at 400%, and zoom out at 50%.
 - **PDF and text**: no toolbar. A PDF's page, zoom, find and selection
   controls are its viewer's own, inside the page area.
 
@@ -99,9 +108,16 @@ OS):
   pre-wrap`, the mono font token, and the content as a text child.
 
 **Toasts while a PDF is shown**: the viewer's footer has a status line
-(`role="status"`) that takes the messages a toast would otherwise show
-over the surface ("Opened {name} in another app."), so nothing has to be
-drawn above it.
+(`role="status"`) that takes every message the viewer causes while a PDF is
+shown, in place of a toast: "Opened {name} in another app.", an open
+failure, and, after "Delete document" in the viewer, "Deleted {name}." or
+the deletion's failure (an error, in the danger colour). Nothing is then
+drawn above the surface. The deletion's message follows the viewer to the
+document it moves on to, and shows in the footer if that is a PDF; when it
+is anything else, or the viewer closes, it is a toast. The line is cleared
+when the user moves to another document or closes the viewer. A toast from
+outside the viewer still hides the surface for as long as it shows
+(`PreviewSurface`). (Amended 2026-10-07.)
 
 **Footer**, matching `PhotoViewer`:
 - previous and next document (icon buttons "Previous document" / "Next
@@ -130,6 +146,13 @@ returns to the control that opened the viewer. `close_preview` is called.
 | `PREVIEW_DAMAGED` (TIFF) | "{name} can't be previewed: the document is damaged or incomplete.", plus "Open in another app…" |
 | `PREVIEW_PAGE_FAILED` (TIFF) | in that page's slot: "Page {n} can't be shown." The other pages are unaffected. |
 | A PDF the viewer can't show, or protected by a password | the viewer's own message or password prompt, inside the surface; "Open in another app…" stays in the footer (FR-006) |
+
+**Kind in a sentence** (amended 2026-10-07): a kind label after the start of
+a sentence ("its content isn't a {kind} document") is lower-cased, as in
+"a plain text document", "a spreadsheet document". PDF, TIFF, CSV, RTF, a
+pre-007 row's extension in capitals, the OpenDocument names and the product
+name Word keep their case. At the start of a sentence it is as the label
+is ("Plain text documents open in another app.").
 
 Every message is a `role="status"` region. The previous and next document
 buttons stay usable in every state. After `copyCaught` or `noViewer` the
@@ -193,6 +216,11 @@ not the database's.
   - JPEG and PNG still go to Photos (`isPhotoPath`).
   - `isDocumentPath` is now "the extension is in `list_document_types`",
     no longer "not a photo".
+  - A drop waits for `list_document_types` before it is routed, so a drop
+    made just after the page opens is judged by the types and not by an
+    empty list. If the types can't be loaded, every dropped file but a
+    photo goes to the backend, whose content check refuses what isn't a
+    document type.
   - Any other dropped file is refused before any command, with a toast:
     "{name} wasn't attached. Documents can be PDF, TIFF, text, CSV, RTF,
     Word, spreadsheet or OpenDocument files."
@@ -224,7 +252,7 @@ pages"):
 - **↑ / ↓ / Space / Shift+Space**: scroll.
 - **PageUp / PageDown**: previous and next page.
 - **Home / End**: first and last page.
-- **+ / −**: zoom in and out.
+- **+ / −**: zoom in and out (the range rule of §2 applies).
 - **0**: fit width; for a single-page TIFF, fit.
 - **1**: actual size (single-page TIFF).
 - **← / →**: scroll sideways when the page is wider than the view.

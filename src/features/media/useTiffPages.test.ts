@@ -322,6 +322,51 @@ describe("useTiffPages: zoom (research.md §14)", () => {
     act(() => result.current.zoomIn());
     expect(result.current.percent).toBe(400);
   });
+
+  // A fit outside 50-400% (a tiny scan, or a huge one): the button that would move
+  // the wrong way is off, and the other steps into the range (tasks.md T148).
+  it("turns zoom in off at a fit above 400%, and zoom out steps down to 400%", () => {
+    const tiny: PageSize[] = [{ width: 100, height: 100 }]; // fit width: 968 / 100 -> 726%
+    const { result } = mount(tiny, { initialZoom: "fitWidth" });
+    expect(result.current.percent).toBeGreaterThan(400);
+    expect(result.current.canZoomIn).toBe(false);
+    expect(result.current.canZoomOut).toBe(true);
+
+    act(() => result.current.zoomIn());
+    expect(result.current.zoom).toBe("fitWidth");
+
+    act(() => result.current.zoomOut());
+    expect(result.current.zoom).toBe(400);
+    expect(result.current.percent).toBe(400);
+    expect(result.current.canZoomIn).toBe(false);
+    expect(result.current.canZoomOut).toBe(true);
+  });
+
+  it("turns zoom out off at a fit below 50%, and zoom in steps up to 50%", () => {
+    const huge: PageSize[] = [{ width: 3000, height: 3000 }]; // fit width: 968 / 3000 -> 24%
+    const { result } = mount(huge, { initialZoom: "fitWidth" });
+    expect(result.current.percent).toBeLessThan(50);
+    expect(result.current.canZoomOut).toBe(false);
+    expect(result.current.canZoomIn).toBe(true);
+
+    act(() => result.current.zoomOut());
+    expect(result.current.zoom).toBe("fitWidth");
+
+    act(() => result.current.zoomIn());
+    expect(result.current.zoom).toBe(50);
+    expect(result.current.percent).toBe(50);
+    expect(result.current.canZoomOut).toBe(false);
+    expect(result.current.canZoomIn).toBe(true);
+  });
+
+  it("keeps both on inside the range, and turns each off at its end", () => {
+    const { result } = mount(pagesOf(2));
+    expect([result.current.canZoomIn, result.current.canZoomOut]).toEqual([true, true]);
+    act(() => result.current.setZoom(400));
+    expect([result.current.canZoomIn, result.current.canZoomOut]).toEqual([false, true]);
+    act(() => result.current.setZoom(50));
+    expect([result.current.canZoomIn, result.current.canZoomOut]).toEqual([true, false]);
+  });
 });
 
 describe("useTiffPages: the current page (research.md §14)", () => {

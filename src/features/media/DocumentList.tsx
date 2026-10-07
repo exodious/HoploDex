@@ -9,6 +9,7 @@ import type { RecordRef } from "../mounts/types";
 import * as mediaService from "./mediaService";
 import type { DocumentSummary, DocumentType, PdfEndReason } from "./types";
 import { DocumentPreview } from "./DocumentPreview";
+import type { ViewerMessage } from "./DocumentPreview";
 import { documentKindLabel } from "./documentKind";
 import { useDocumentOpening } from "./documentOpening";
 import { documentAccept, fileName, isDocumentPath, isPhotoPath } from "./filePaths";
@@ -53,6 +54,8 @@ export function DocumentList({ owner }: DocumentListProps) {
   const [opening, setOpening] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<DocumentSummary | null>(null);
   const [types, setTypes] = useState<DocumentType[]>([]);
+  // What the viewer's footer says in place of a toast while a PDF is shown (ui contract §2).
+  const [viewerMessage, setViewerMessage] = useState<ViewerMessage | null>(null);
   // The document the viewer shows, by id: a reload of the list can't move it.
   const [viewing, setViewing] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,14 +65,16 @@ export function DocumentList({ owner }: DocumentListProps) {
 
   /** Reloads the list. `then` runs with it in the same batch of updates as
    * the list is set, so a viewer's position follows it without a frame between. */
-  async function load(then?: (list: DocumentSummary[]) => void) {
+  async function load(then?: (list: DocumentSummary[]) => void): Promise<DocumentSummary[]> {
     try {
       const list = await mediaService.listDocuments(owner);
       setDocuments(list);
       then?.(list);
+      return list;
     } catch (e) {
       notify(failureMessage(e, "Documents couldn't be loaded."), "error");
       setDocuments([]);
+      return [];
     }
   }
 
@@ -79,11 +84,32 @@ export function DocumentList({ owner }: DocumentListProps) {
   }, [owner.kind, owner.id]);
 
   // The labels come from the backend's table, with no list of the app's own (FR-016).
+  // A drop waits for the same load (`typesLoad`), so it is routed by the types and not
+  // by an empty list; a failed load is `[]`, and rows then show their extension, which
+  // is what a pre-007 row shows anyway.
+  const typesLoad = useRef<Promise<DocumentType[]>>(Promise.resolve([]));
   useEffect(() => {
-    mediaService.listDocumentTypes().then(setTypes, () => {
-      // Rows then show their extension, which is what a pre-007 row shows anyway.
-    });
+    const loading = mediaService.listDocumentTypes().catch((): DocumentType[] => []);
+    typesLoad.current = loading;
+    void loading.then(setTypes);
   }, []);
+
+  // The viewer's message goes with the viewer.
+  useEffect(() => {
+    if (viewing === null) setViewerMessage(null);
+  }, [viewing]);
+
+  /** Says what a toast would say, except for a message the viewer causes while it shows
+   * a PDF: the PDF surface is a separate web view that a toast can't be drawn over and
+   * would hide, so the viewer's footer says it (ui contract §2). `shown` is the document
+   * the viewer shows once the message is said. */
+  function say(text: string, error: boolean, shown?: DocumentSummary | null) {
+    if (shown?.previewKind === "pdf" && shown.previewAvailable) {
+      setViewerMessage({ text, error });
+    } else {
+      notify(text, error ? "error" : "success");
+    }
+  }
 
   /** Attaches each document in turn, carrying on past one that fails so a
    * bad file doesn't cost the rest of a batch. */
@@ -129,14 +155,18 @@ export function DocumentList({ owner }: DocumentListProps) {
   }
 
   /** Routes a drop: documents attach, photos are Photos' (so nothing is said),
-   * and anything else is refused before any command (ui contract §6). */
-  function routeDrop(paths: string[]) {
-    const documents = paths.filter((path) => isDocumentPath(path, types));
+   * and anything else is refused before any command (ui contract §6). It waits for
+   * the document types; if they couldn't be loaded, nothing can be refused by
+   * extension here, so every non-photo goes to the backend, whose content check is
+   * the authority and which refuses what isn't a document type. */
+  async function routeDrop(paths: string[]) {
+    const known = await typesLoad.current;
+    const isDocument = (path: string) =>
+      known.length === 0 ? !isPhotoPath(path) : isDocumentPath(path, known);
     for (const path of paths) {
-      if (!isPhotoPath(path) && !isDocumentPath(path, types))
-        notify(refusal(fileName(path)), "error");
+      if (!isPhotoPath(path) && !isDocument(path)) notify(refusal(fileName(path)), "error");
     }
-    void addPaths(documents);
+    await addPaths(paths.filter(isDocument));
   }
 
   async function open(doc: DocumentSummary) {
@@ -153,18 +183,21 @@ export function DocumentList({ owner }: DocumentListProps) {
   }
 
   async function remove(doc: DocumentSummary) {
+    // The deletion is the viewer's when it is open, and its message then follows
+    // the viewer to the document it moves on to.
+    const fromViewer = viewing !== null;
+    const shownNow = documents?.find((d) => d.id === viewing) ?? null;
     try {
       await mediaService.deleteDocument(doc.id, true);
       const position = documents?.findIndex((d) => d.id === doc.id) ?? -1;
+      const after = (list: DocumentSummary[]) => list[Math.min(position, list.length - 1)] ?? null;
       // From the viewer: on to the next document, or the one before it, or close.
-      await load((list) =>
-        setViewing((now) =>
-          now === null ? null : (list[Math.min(position, list.length - 1)]?.id ?? null),
-        ),
-      );
-      notify(`Deleted ${doc.originalFilename}.`);
+      const list = await load((fresh) => {
+        if (fromViewer) setViewing(after(fresh)?.id ?? null);
+      });
+      say(`Deleted ${doc.originalFilename}.`, false, fromViewer ? after(list) : null);
     } catch (e) {
-      notify(failureMessage(e, "The document couldn't be deleted."), "error");
+      say(failureMessage(e, "The document couldn't be deleted."), true, shownNow);
     }
   }
 
@@ -183,7 +216,10 @@ export function DocumentList({ owner }: DocumentListProps) {
     if (reason === "copyCaught" || reason === "noViewer") void load();
   }
 
-  const dragging = useFileDrop((path) => !isPhotoPath(path), routeDrop);
+  const dragging = useFileDrop(
+    (path) => !isPhotoPath(path),
+    (paths) => void routeDrop(paths),
+  );
   const accept = documentAccept(types);
   const pick = () => inputRef.current?.click();
 
@@ -227,18 +263,25 @@ export function DocumentList({ owner }: DocumentListProps) {
             <li key={doc.id} className="hd-doc">
               <Icon name="file" className="hd-doc__icon" />
               <div className="hd-doc__text">
-                <button
-                  type="button"
-                  className="hd-doc__name"
-                  onClick={() => (nameOpensExternally ? void open(doc) : setViewing(doc.id))}
-                  title={
-                    nameOpensExternally
-                      ? `Open ${doc.originalFilename} in another app`
-                      : `Preview ${doc.originalFilename}`
-                  }
-                >
-                  {doc.originalFilename}
-                </button>
+                {nameOpensExternally && !doc.openable ? (
+                  // Nothing to open: plain text with the reason, like the disabled button.
+                  <span className="hd-doc__name hd-doc__name--plain" title={NOT_OPENABLE}>
+                    {doc.originalFilename}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="hd-doc__name"
+                    onClick={() => (nameOpensExternally ? void open(doc) : setViewing(doc.id))}
+                    title={
+                      nameOpensExternally
+                        ? `Open ${doc.originalFilename} in another app`
+                        : `Preview ${doc.originalFilename}`
+                    }
+                  >
+                    {doc.originalFilename}
+                  </button>
+                )}
                 <span className="hd-doc__meta">
                   {documentKindLabel(doc, types)} · added {formatDate(doc.createdAt.slice(0, 10))}
                   {metaSuffix(doc)}
@@ -298,10 +341,14 @@ export function DocumentList({ owner }: DocumentListProps) {
           documents={documents}
           index={viewIndex}
           documentTypes={types}
-          onIndexChange={(next) => setViewing(documents[next].id)}
+          onIndexChange={(next) => {
+            setViewerMessage(null);
+            setViewing(documents[next].id);
+          }}
           onClose={() => setViewing(null)}
           onDelete={setDeleting}
           onPdfEnded={onPdfEnded}
+          message={viewerMessage}
         />
       )}
 
