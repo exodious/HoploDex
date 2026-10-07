@@ -378,9 +378,21 @@ the pull request:
   symlink and owner check, and the Windows DACL (§18), with the tests.
 
 The branch also finished the cross-platform test environments, which 007's
-spike and per-OS measures needed. The pull request closes these three too.
+spike and per-OS measures needed. The pull request closes these four too.
 Before it does, open one follow-up issue for the checks they leave (below),
 and link it from each:
+
+- **#26** (verify the app on Windows and macOS, FR-022): do its last box
+  in this branch: record in 001's artifacts that FR-022 is verified on
+  Linux, Windows and macOS (build, Rust, Vitest, lint and audits, all 14
+  E2E spec files and the screenshot walk on each), and bring 001's
+  `plan.md` up to date where it is stale (the embedded driver, not
+  `tauri-driver`; macOS 26, Apple silicon only). Run the release
+  performance tests on the Windows and macOS machines and report them
+  against the budgets. Comment with the results and tick #27, #28 and
+  #29. CI (#25) is separate work: take it off #26's list and say it
+  stays open on its own. The manual sleep, lock and shutdown checks go to
+  the follow-up issue.
 
 - **#27** (Windows development and test environment): comment that the
   harness is isolated (7810a4e) and ported (3a90476, 47a3bab), the
