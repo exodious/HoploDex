@@ -375,7 +375,10 @@ impl<R: tauri::Runtime> Opener for AppOpener<R> {
 
 /// Windows: `ShellExecuteExW` through `tauri-plugin-opener`. Its error for a
 /// type with no program is `SE_ERR_NOASSOC` (31) or `ERROR_NO_ASSOCIATION`
-/// (1155). T091 checks this on the Windows test machine.
+/// (1155). Checked on Windows Server 2025 (T091): for a type with no program
+/// (`.docx` without Office), `ShellExecuteExW` succeeds and shows "How do you
+/// want to open this file?", with or without `SEE_MASK_FLAG_NO_UI`, so this
+/// mapping is not reached there.
 #[cfg(all(windows, not(feature = "e2e")))]
 impl<R: tauri::Runtime> Opener for AppOpener<R> {
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
@@ -473,6 +476,7 @@ fn private_dir(path: &Path) -> Result<(), CommandError> {
     match std::fs::symlink_metadata(path) {
         Ok(_) => private_dir_existing(path),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            #[cfg_attr(not(unix), allow(unused_mut))]
             let mut builder = std::fs::DirBuilder::new();
             #[cfg(unix)]
             {
@@ -571,10 +575,118 @@ fn protect_folder(_folder: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// T091 goes here.
+/// The folder's handle is opened without following a reparse point, and must
+/// be a directory; its DACL becomes one ACE, full control for the current
+/// user, inherited by the copy written into it, with inheritance from above
+/// cut off.
 #[cfg(windows)]
-fn protect_folder(_folder: &Path) -> std::io::Result<()> {
+fn protect_folder(folder: &Path) -> std::io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, LocalFree};
+    use windows_sys::Win32::Security::Authorization::{
+        EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE, SE_FILE_OBJECT, SET_ACCESS, SetEntriesInAclW,
+        SetSecurityInfo, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_W,
+    };
+    use windows_sys::Win32::Security::{
+        ACL, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+        SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ALL_ACCESS, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, READ_CONTROL,
+        WRITE_DAC,
+    };
+
+    let handle = std::fs::OpenOptions::new()
+        .access_mode(READ_CONTROL | WRITE_DAC)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(folder)?;
+    // Not a link or junction swapped in since `private_dir` looked.
+    if !handle.metadata()?.is_dir() {
+        return Err(std::io::Error::other("it is not a folder"));
+    }
+    let mut user = current_user_sid()?;
+    let access = EXPLICIT_ACCESS_W {
+        grfAccessPermissions: FILE_ALL_ACCESS,
+        grfAccessMode: SET_ACCESS,
+        grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        Trustee: TRUSTEE_W {
+            pMultipleTrustee: std::ptr::null_mut(),
+            MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
+            TrusteeForm: TRUSTEE_IS_SID,
+            TrusteeType: TRUSTEE_IS_USER,
+            ptstrName: user.as_mut_ptr().cast(),
+        },
+    };
+    let mut acl: *mut ACL = std::ptr::null_mut();
+    // SAFETY: one valid entry whose SID outlives the call; `acl` receives a
+    // LocalAlloc'd ACL, freed below.
+    let made = unsafe { SetEntriesInAclW(1, &access, std::ptr::null(), &mut acl) };
+    if made != ERROR_SUCCESS {
+        return Err(std::io::Error::from_raw_os_error(made as i32));
+    }
+    // SAFETY: the handle is open with WRITE_DAC and `acl` is the valid ACL
+    // made above; owner, group and SACL are left as they are.
+    let set = unsafe {
+        SetSecurityInfo(
+            handle.as_raw_handle(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            acl,
+            std::ptr::null(),
+        )
+    };
+    // SAFETY: `acl` came from SetEntriesInAclW and is freed once.
+    unsafe { LocalFree(acl.cast()) };
+    if set != ERROR_SUCCESS {
+        return Err(std::io::Error::from_raw_os_error(set as i32));
+    }
     Ok(())
+}
+
+/// The SID of the user the process runs as, copied out of its token.
+#[cfg(windows)]
+fn current_user_sid() -> std::io::Result<Vec<u8>> {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Security::{
+        CopySid, GetLengthSid, GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    let mut token: HANDLE = std::ptr::null_mut();
+    // SAFETY: the pseudo-handle of this process; `token` receives a handle
+    // closed below.
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let result = (|| {
+        let mut needed = 0u32;
+        // SAFETY: a size query with no buffer; it fails, setting `needed`.
+        unsafe { GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut needed) };
+        // u64s, so the buffer is aligned for TOKEN_USER.
+        let mut buffer = vec![0u64; (needed as usize).div_ceil(8)];
+        // SAFETY: `buffer` holds `needed` bytes.
+        if unsafe {
+            GetTokenInformation(token, TokenUser, buffer.as_mut_ptr().cast(), needed, &mut needed)
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: filled with a TOKEN_USER, whose SID points into `buffer`.
+        let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+        // SAFETY: a valid SID, copied into a buffer of its length.
+        let length = unsafe { GetLengthSid(sid) };
+        let mut copy = vec![0u8; length as usize];
+        if unsafe { CopySid(length, copy.as_mut_ptr().cast(), sid) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(copy)
+    })();
+    // SAFETY: opened above, closed once.
+    unsafe { CloseHandle(token) };
+    result
 }
 
 /// Marks the copy as having come from elsewhere, for the other app and the
@@ -615,11 +727,14 @@ fn mark_untrusted(copy: &Path) -> std::io::Result<()> {
     if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
-/// Windows (T091): write a `:Zone.Identifier` stream holding `ZoneId=3`, so
-/// Office opens the copy in Protected View and SmartScreen applies.
+/// Windows: a `:Zone.Identifier` stream holding `ZoneId=3` (the Internet
+/// zone), what a browser writes on a download, so Office opens the copy in
+/// Protected View and SmartScreen applies.
 #[cfg(windows)]
-fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
-    Ok(())
+fn mark_untrusted(copy: &Path) -> std::io::Result<()> {
+    let mut stream = copy.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    std::fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n")
 }
 
 #[tauri::command]

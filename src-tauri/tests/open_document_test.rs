@@ -945,10 +945,6 @@ fn the_text_for_the_setting_is_the_contracts_word_for_word() {
 }
 
 // --- Per-OS cases ------------------------------------------------------------------
-//
-// T091 adds here, `#[cfg(windows)]`: the per-document folder's DACL grants
-// only the current user and is protected, and the copy has a
-// `:Zone.Identifier` stream holding `ZoneId=3`, read back.
 
 /// The copy's `com.apple.quarantine` attribute, read with `getxattr`, or
 /// `None` if it has none.
@@ -1007,4 +1003,292 @@ fn macos_the_copy_carries_a_quarantine_attribute() {
     assert!(world.open(&FakeConsent::open(), &opener, id).unwrap());
     assert_eq!(opener.paths(), vec![copy.clone(), copy.clone()]);
     assert_eq!(quarantine_of(&copy).as_deref(), Some(mark.as_str()));
+}
+
+/// Windows (T091): reading a file's DACL back, and widening one.
+#[cfg(windows)]
+mod windows_acl {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE, LocalFree};
+    use windows_sys::Win32::Security::Authorization::{
+        EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, NO_MULTIPLE_TRUSTEE,
+        SE_FILE_OBJECT, SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID,
+        TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+    };
+    use windows_sys::Win32::Security::{
+        ACCESS_ALLOWED_ACE, ACL, ACL_SIZE_INFORMATION, AclSizeInformation, CopySid,
+        CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
+        GetLengthSid, GetSecurityDescriptorControl, GetTokenInformation, PSECURITY_DESCRIPTOR,
+        SE_DACL_PROTECTED, SECURITY_MAX_SID_SIZE, SUB_CONTAINERS_AND_OBJECTS_INHERIT, TOKEN_QUERY,
+        TOKEN_USER, TokenUser, WinWorldSid,
+    };
+    use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    pub const GENERIC_READ: u32 = 0x8000_0000;
+
+    fn wide(path: &Path) -> Vec<u16> {
+        path.as_os_str().encode_wide().chain(Some(0)).collect()
+    }
+
+    pub fn current_user() -> Vec<u8> {
+        unsafe {
+            let mut token: HANDLE = std::ptr::null_mut();
+            assert_ne!(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token), 0);
+            let mut needed = 0u32;
+            GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut needed);
+            let mut buffer = vec![0u64; (needed as usize).div_ceil(8)];
+            assert_ne!(
+                GetTokenInformation(
+                    token,
+                    TokenUser,
+                    buffer.as_mut_ptr().cast(),
+                    needed,
+                    &mut needed
+                ),
+                0
+            );
+            CloseHandle(token);
+            let sid = (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid;
+            let length = GetLengthSid(sid);
+            let mut copy = vec![0u8; length as usize];
+            assert_ne!(CopySid(length, copy.as_mut_ptr().cast(), sid), 0);
+            copy
+        }
+    }
+
+    pub fn everyone() -> Vec<u8> {
+        let mut sid = vec![0u8; SECURITY_MAX_SID_SIZE as usize];
+        let mut size = SECURITY_MAX_SID_SIZE;
+        let made = unsafe {
+            CreateWellKnownSid(
+                WinWorldSid,
+                std::ptr::null_mut(),
+                sid.as_mut_ptr().cast(),
+                &mut size,
+            )
+        };
+        assert_ne!(made, 0);
+        sid.truncate(size as usize);
+        sid
+    }
+
+    /// One ACE of a DACL: allowed or not, its mask, its flags and its SID.
+    #[derive(Debug)]
+    pub struct Ace {
+        pub allowed: bool,
+        pub mask: u32,
+        pub flags: u8,
+        pub sid: Vec<u8>,
+    }
+
+    impl Ace {
+        pub fn is(&self, sid: &[u8]) -> bool {
+            unsafe { EqualSid(self.sid.as_ptr() as _, sid.as_ptr() as _) != 0 }
+        }
+    }
+
+    /// `path`'s DACL: whether it is protected, and its ACEs.
+    pub fn dacl(path: &Path) -> (bool, Vec<Ace>) {
+        unsafe {
+            let mut acl: *mut ACL = std::ptr::null_mut();
+            let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+            let read = GetNamedSecurityInfoW(
+                wide(path).as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut acl,
+                std::ptr::null_mut(),
+                &mut descriptor,
+            );
+            assert_eq!(read, ERROR_SUCCESS, "reading {}'s DACL", path.display());
+            let (mut control, mut revision) = (0u16, 0u32);
+            assert_ne!(GetSecurityDescriptorControl(descriptor, &mut control, &mut revision), 0);
+            assert!(!acl.is_null(), "{} has a null DACL, which allows everyone", path.display());
+            let mut size = ACL_SIZE_INFORMATION::default();
+            assert_ne!(
+                GetAclInformation(
+                    acl,
+                    (&raw mut size).cast(),
+                    size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    AclSizeInformation,
+                ),
+                0
+            );
+            let mut aces = Vec::new();
+            for index in 0..size.AceCount {
+                let mut ace = std::ptr::null_mut();
+                assert_ne!(GetAce(acl, index, &mut ace), 0);
+                let ace = ace.cast::<ACCESS_ALLOWED_ACE>();
+                let header = (*ace).Header;
+                let sid = (&raw const (*ace).SidStart).cast::<core::ffi::c_void>().cast_mut();
+                let length = GetLengthSid(sid) as usize;
+                aces.push(Ace {
+                    allowed: u32::from(header.AceType) == ACCESS_ALLOWED_ACE_TYPE,
+                    mask: (*ace).Mask,
+                    flags: header.AceFlags,
+                    sid: std::slice::from_raw_parts(sid.cast::<u8>(), length).to_vec(),
+                });
+            }
+            LocalFree(descriptor);
+            (control & SE_DACL_PROTECTED != 0, aces)
+        }
+    }
+
+    /// Adds an inheritable ACE letting Everyone read, as a cache folder moved
+    /// somewhere shared might carry.
+    pub fn let_everyone_read(path: &Path) {
+        unsafe {
+            let mut old: *mut ACL = std::ptr::null_mut();
+            let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+            let read = GetNamedSecurityInfoW(
+                wide(path).as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut old,
+                std::ptr::null_mut(),
+                &mut descriptor,
+            );
+            assert_eq!(read, ERROR_SUCCESS);
+            let mut everyone = everyone();
+            let access = EXPLICIT_ACCESS_W {
+                grfAccessPermissions: GENERIC_READ,
+                grfAccessMode: GRANT_ACCESS,
+                grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+                Trustee: TRUSTEE_W {
+                    pMultipleTrustee: std::ptr::null_mut(),
+                    MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
+                    TrusteeForm: TRUSTEE_IS_SID,
+                    TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
+                    ptstrName: everyone.as_mut_ptr().cast(),
+                },
+            };
+            let mut new: *mut ACL = std::ptr::null_mut();
+            assert_eq!(SetEntriesInAclW(1, &access, old, &mut new), ERROR_SUCCESS);
+            let set = SetNamedSecurityInfoW(
+                wide(path).as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                new,
+                std::ptr::null(),
+            );
+            assert_eq!(set, ERROR_SUCCESS);
+            LocalFree(new.cast());
+            LocalFree(descriptor);
+        }
+    }
+}
+
+/// Every ACE of `path`'s DACL allows, and names the current user.
+#[cfg(windows)]
+fn assert_only_the_user(path: &Path, what: &str) -> Vec<windows_acl::Ace> {
+    let user = windows_acl::current_user();
+    let (_, aces) = windows_acl::dacl(path);
+    assert!(!aces.is_empty(), "{what} has an empty DACL");
+    for ace in &aces {
+        assert!(ace.allowed && ace.is(&user), "{what} has an ACE for someone else: {aces:?}");
+    }
+    aces
+}
+
+#[cfg(windows)]
+#[test]
+fn issue_71_the_document_folder_has_a_protected_dacl_for_the_user_alone_and_the_copy_inherits_it() {
+    use windows_sys::Win32::Security::{INHERITED_ACE, SUB_CONTAINERS_AND_OBJECTS_INHERIT};
+    use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
+
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    // What sits above the folder must not reach it: a cache folder moved
+    // somewhere Everyone can read.
+    fs::create_dir_all(world.copies()).unwrap();
+    windows_acl::let_everyone_read(&world.copies());
+    let everyone = windows_acl::everyone();
+    assert!(
+        windows_acl::dacl(&world.copies()).1.iter().any(|ace| ace.is(&everyone)),
+        "the setup gave Everyone an ACE"
+    );
+
+    assert!(world.open(&FakeConsent::open(), &FakeOpener::new(), id).unwrap());
+
+    let folder = world.folder_of(id);
+    let (protected, _) = windows_acl::dacl(&folder);
+    assert!(protected, "the folder's DACL is protected: nothing inherited from above");
+    let aces = assert_only_the_user(&folder, "the document's folder");
+    assert_eq!(aces.len(), 1, "{aces:?}");
+    assert_eq!(aces[0].mask, FILE_ALL_ACCESS);
+    assert_eq!(
+        u32::from(aces[0].flags) & SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        "inherited by what is put in it"
+    );
+    let copy = folder.join("receipt.pdf");
+    let aces = assert_only_the_user(&copy, "the copy");
+    assert!(aces.iter().all(|ace| u32::from(ace.flags) & INHERITED_ACE != 0), "{aces:?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn issue_71_an_existing_document_folder_is_narrowed_to_the_user() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    fs::create_dir_all(world.folder_of(id)).unwrap();
+    windows_acl::let_everyone_read(&world.folder_of(id));
+
+    assert!(world.open(&FakeConsent::open(), &FakeOpener::new(), id).unwrap());
+
+    assert!(windows_acl::dacl(&world.folder_of(id)).0, "protected");
+    assert_only_the_user(&world.folder_of(id), "the document's folder");
+    assert_only_the_user(&world.folder_of(id).join("receipt.pdf"), "the copy");
+}
+
+#[cfg(windows)]
+#[test]
+fn issue_71_a_junction_for_the_document_folder_is_refused_and_nothing_goes_through_it() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let elsewhere = TempDir::new().unwrap();
+    fs::create_dir_all(world.copies()).unwrap();
+    // A junction needs no privilege, unlike a directory symbolic link.
+    let made = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(world.folder_of(id))
+        .arg(elsewhere.path())
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "mklink /J: {made:?}");
+    let opener = FakeOpener::new();
+
+    let refused = world.open(&FakeConsent::open(), &opener, id);
+
+    assert_eq!(code(refused), "INTERNAL_ERROR");
+    assert!(opener.calls().is_empty());
+    assert!(files_under(elsewhere.path()).is_empty(), "nothing went through the junction");
+}
+
+#[cfg(windows)]
+#[test]
+fn the_copy_has_a_zone_identifier_stream_for_the_internet_zone() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let opener = FakeOpener::new();
+
+    assert!(world.open(&FakeConsent::open(), &opener, id).unwrap());
+
+    let copy = world.folder_of(id).join("receipt.pdf");
+    let mut stream = copy.into_os_string();
+    stream.push(":Zone.Identifier");
+    let mark = fs::read_to_string(&stream).expect("the copy has a Zone.Identifier stream");
+    let lines: Vec<&str> = mark.lines().map(str::trim).collect();
+    assert_eq!(lines.first(), Some(&"[ZoneTransfer]"), "{mark:?}");
+    assert!(lines.contains(&"ZoneId=3"), "the Internet zone: {mark:?}");
+    assert_eq!(opener.calls()[0].1, pdf_bytes(), "the mark is a stream, not in the file's bytes");
 }
