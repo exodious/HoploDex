@@ -133,6 +133,7 @@ A collector adds one or more photographs to a firearm record, designates which p
 2. **Given** a firearm record with multiple photos, **When** the user explicitly selects a different photo as the thumbnail, **Then** browse views update to show the newly selected thumbnail.
 3. **Given** a firearm record with no photos, **When** the user views it in list or tile form, **Then** a generic thumbnail matching the firearm's type is shown.
 4. **Given** a firearm record, **When** the user attaches a document (e.g., a PDF), **Then** the document is saved with the record and can be reopened from it.
+   _Amended by [spec 007](../007-document-preview/spec.md): the document is previewed in the application by default, and opened in another program only after a confirmation (FR-001, FR-008, FR-013)._
 5. **Given** a document opened from a firearm record in an external application, **When** the application exits (or, after a crash or forced termination, at the next launch), **Then** no decrypted copy of that document remains on disk.
 
 ---
@@ -187,6 +188,7 @@ A collector exports their full collection (including photographs) to a standard 
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020)._
 - **FR-010**: System MUST allow the user to attach arbitrary documents (e.g., PDF files) to a firearm record and reopen them from the record (see FR-035 for the handling of temporary decrypted copies).
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020)._
+  _Amended by [spec 007](../007-document-preview/spec.md): only document types can be attached as documents (FR-016); opening a document previews it in the application by default, and opening it in another program takes a confirmation (FR-001, FR-008, FR-013)._
 - **FR-011**: System MUST allow the user to browse the collection in both a list layout and a tiled (thumbnail-based) layout.
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020). The Accessories page has the same layouts (006 FR-016)._
 - **FR-012**: System MUST allow the user to group the collection by any structured (non-free-form) field, including at minimum type, caliber, and make.
@@ -198,6 +200,7 @@ A collector exports their full collection (including photographs) to a standard 
   _Amended by [spec 002](../002-firearm-identification/spec.md): origin (by its display label), year of manufacture, country of manufacture, importer name, and the original maker's marks are now part of "any recorded information"._
   _Amended by [spec 004](../004-cartridges-action-types/spec.md): the cartridge and the action type's name are also searchable._
   _Amended by [issue #46](https://github.com/exodious/HoploDex/issues/46): a search matches text anywhere inside a value, not only from the start of a word ("365" finds "P365 XL"). The index is trigram-tokenized; a search of one or two characters is matched with `LIKE` instead._
+  _Amended by [spec 007](../007-document-preview/spec.md): the search also matches the names of attached documents (FR-015)._
 - **FR-014**: System MUST allow the user to schedule a firearm under an insurance policy record (see FR-027), recording that firearm's own scheduled coverage amount under the policy. A firearm that is not scheduled is covered by the blanket policy in force (FR-036); blanket coverage is never assigned per firearm.
   _Amended by [spec 006](../006-accessory-links/spec.md): accessories count and are covered, scheduled and warned about as firearms are (006 FR-008, FR-009)._
 - **FR-015**: System MUST compute and display a value summary of the current (non-disposed) firearms in the collection, automatically recalculated whenever a firearm is added, edited, dispositioned, or deleted — without requiring the user to manually trigger the calculation. The summary MUST show the overall collection-wide total estimated replacement value, and MUST break that total down per insurance policy (the blanket policy in force, with its blanket total against its coverage limit, and each individually-scheduled firearm's value against its own scheduled amount), including a distinct grouping for firearms that no policy covers.

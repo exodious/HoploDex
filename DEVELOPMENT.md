@@ -223,7 +223,7 @@ runs in launchd's `Background` session (`launchctl managername` says so) and
 never gets a window: the app starts, logs, and waits forever. Run the E2E
 suite from a Terminal in the VM, or from SSH start the app through Terminal
 (`open -a Terminal run.command`) and drive it from SSH, as
-`src-tauri/examples/pdf_spike_mac.sh` does. Whatever posts mouse input or
+`scripts/macos/pdf-surface-check.sh` does. Whatever posts mouse input or
 takes screenshots (`sshd-session` over SSH, or Terminal) needs Accessibility
 and Screen Recording in the VM's Privacy & Security settings. Until someone
 answers it, the first request's prompt sits over the middle of the screen
@@ -580,6 +580,68 @@ E2E build never hands an opened document to the OS either, so no real
 viewer starts: `open_document` writes the copy's path to
 `HOPLODEX_E2E_OPENED_LOG` instead, which us4 checks.
 
+Feature 007 adds two more E2E-only seams, both read only by a build with the
+`e2e` feature. `HOPLODEX_E2E_CONSENT` answers the native confirmation before a
+document goes to another app, which no WebDriver can click: `open` answers
+"Open in another app", anything else (or nothing) "Cancel". Each request's
+title is appended to the file `HOPLODEX_E2E_CONSENT_LOG` names, which the
+harness points into the sandbox. `wdio.conf.ts` sets the answer to `open` for
+every spec, and a spec that tests the dialog sets its own and calls
+`relaunchApp()`, since the app reads it at start-up.
+`HOPLODEX_E2E_PDF_PREVIEW=off` makes the start-up check say the computer's PDF
+viewer can't be used, so PDFs aren't previewable while TIFF and text still
+are (a spec file named `*-pdf-off.e2e.ts` gets it for its whole session). Both
+variable names are among the markers `scripts/check-no-webdriver.mjs` looks
+for, so a shipped binary that carries either one fails `build-appimage.sh`'s
+check, just as one with the WebDriver server does.
+
+WebDriver drives only the main web view. What goes on inside the PDF surface,
+a child web view, is the PDF surface check's.
+
+### PDF surface check
+
+The PDF surface (specs/007-document-preview/research.md §4 and §23) is a web
+view that shows a document the app doesn't trust, and each OS builds it
+differently, so one script per OS builds `src-tauri/examples/pdf_surface_check.rs`
+(which uses the app's own `services::preview::surface`, not a copy) and drives
+it with real input. It shows hostile, truncated, bit-flipped and 10 MB PDFs,
+probes what a frame can reach (network, IPC, commands), clicks every toolbar and
+context-menu item and presses the viewer's shortcuts, and fails if anything
+reached the network, a command or the disk. It prints the 10 MB PDF's time to
+first paint. Run it on every OS before a pull request that touches
+`services/preview/surface/` or the viewer's page area, and whenever the web view
+engine is updated (Tauri, wry, WebKitGTK, WebView2):
+
+- **Linux:** `scripts/dev-container.sh scripts/pdf-surface-check.sh`, under Xvfb
+  with XTest input and throwaway `HOME` and `XDG_*` folders.
+- **macOS:** `scripts/macos/pdf-surface-check.sh`, from a Mac with the tart VM
+  set up (it starts the VM, copies the checkout in, runs the check in the VM's
+  desktop session and copies the log back). The `--hud-on` variant leaves
+  WebKit's PDF toolbar on and passes only if the watch on the Preview copy
+  deletes it, closes the surface and sets the PDF preview hold; run it too.
+- **Windows:** `powershell -ExecutionPolicy Bypass -File
+  scripts\windows\pdf-surface-check.ps1`, in the signed-in desktop session, at
+  100% scaling.
+
+Each takes `shows` to run the 3-page PDF and take a screenshot instead. Logs and
+screenshots go to `e2e/screenshots-out/pdf-surface/`. Exit codes: 0 passed, 1 no
+window, 2 no load, 3 usage, 4 a check failed.
+
+### WebKit's sandbox on a Linux host
+
+On Linux the app turns on WebKit's web-process sandbox (bubblewrap) for the
+whole app, but only where a probe shows it works: at start-up it runs itself
+once as `hoplodex --webkit-sandbox-probe` and sets `WEBKIT_FORCE_SANDBOX=1`
+only if that child loads a page. A host needs `bubblewrap` and `xdg-dbus-proxy`
+(and no AppArmor rule that restricts user namespaces for it); without them the app runs unsandboxed and logs why. The
+dev container never gets the sandbox: podman blocks the `/proc` mount bubblewrap
+needs, and WebKit skips its sandbox where `/run/.containerenv` exists, so the
+probe doesn't run there either. So the container's E2E and surface-check runs
+are unsandboxed. Before merging a change to the preview, run the E2E suite once
+on a Linux host (`npm run build && npm run test:e2e`) and the surface check
+there (`scripts/pdf-surface-check.sh`, without the container) and note the
+result in the pull request.
+
 ### Real keyboard and mouse input
 
 WebDriver's clicks and keys don't reach WebKitGTK the way a person's do, so
@@ -663,8 +725,10 @@ of it:
   (`src-tauri/src/app_dirs.rs`; every command gets its directories there).
   That's what isolates Windows, whose known folders ignore `APPDATA` and the
   like. The webview's own data goes into the sandbox too: through `XDG_*`
-  directories on Linux (with a `user-dirs.dirs`),
-  `HOME` on macOS, and `WEBVIEW2_USER_DATA_FOLDER` on Windows. Each spec starts at
+  directories on Linux (with a `user-dirs.dirs`) and `HOME` on macOS. On
+  Windows the app puts each web view's data folder (`main-webview` and
+  `preview-webview2`) under `HOPLODEX_E2E_CACHE_HOME`, so no
+  `WEBVIEW2_USER_DATA_FOLDER` is set. Each spec starts at
   a first run and creates its database by typing a location in the sandbox
   (`createDatabase()` in `e2e/support/ui.ts`), or unlocks the seeded one
   with its passphrase (`unlock()`). There is no database key in the

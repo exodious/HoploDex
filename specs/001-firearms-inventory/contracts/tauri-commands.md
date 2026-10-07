@@ -142,6 +142,7 @@ _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#fir
 ### `list_firearms`
 
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#firearms-amended): `FirearmSummary` gains `mountedOn` and `mountedCounts`; search and `groupBy` are unchanged._
+_Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#search-content-only): the search term also matches the names of the firearm's documents._
 
 - **Input**:
   ```ts
@@ -289,6 +290,8 @@ _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#pho
 
 ### `list_photos` / `list_documents`
 
+_Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#list_documents): `list_documents` also reports how each document can be shown (`previewKind`, `previewAvailable`, `openable`)._
+
 - **Input**: `firearmId: number`.
 - **Output**: `PhotoSummary[]` / `DocumentSummary[]` — omit `originalBytes`/
   `fileBytes` (a document's bytes are read back only by `open_document`,
@@ -348,11 +351,15 @@ _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#pho
 
 ### `add_document` / `delete_document`
 
+_Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#add_document): `add_document` accepts only document types, recognised by name and content, and stores the content's own type; deleting also removes the name from the search index._
+
 - Analogous to photo commands, without thumbnail generation. The stored
   `file_bytes` never cross the IPC boundary; `open_document` is the only
   way to reopen a document.
 
 ### `open_document`
+
+_Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#open_document-amended-native-consent): a confirmation comes before any copy is written, and the document is handed to another program only if it still passes the type check._
 
 - **Input**: `id: number`.
 - **Output**: nothing. Reopens the document from its record (FR-010) in
