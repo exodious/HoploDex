@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { browser } from "@wdio/globals";
 import { settle } from "./ui";
 
@@ -149,8 +150,8 @@ export async function chooseTheme(label: "Light" | "Dark") {
 }
 
 /**
- * Saves the app's window as `<name>.png` from the X display (Linux), the way
- * the user sees it. A WebDriver screenshot holds only the main web view, so it
+ * Saves the app's window as `<name>.png` from the X display (Linux) or the
+ * desktop (Windows, `window-shot.ps1`), the way the user sees it. A WebDriver screenshot holds only the main web view, so it
  * leaves out 007's PDF surface, a child of the window that the viewer's
  * dialog leaves open over the PDF's place; this one has it. The window is the
  * only one on the display and is at its corner, so the picture is the
@@ -159,8 +160,8 @@ export async function chooseTheme(label: "Light" | "Dark") {
  */
 export async function shotDisplay(name: string) {
   if (!outDir) return;
-  if (process.platform !== "linux") {
-    throw new Error("shotDisplay needs the X display, which only Linux has");
+  if (process.platform !== "linux" && process.platform !== "win32") {
+    throw new Error("shotDisplay needs the X display (Linux) or the Windows desktop");
   }
   fs.mkdirSync(outDir, { recursive: true });
   await settleForShot();
@@ -174,14 +175,31 @@ export async function shotDisplay(name: string) {
   });
   // The surface paints on its own clock, not the page's.
   await browser.pause(800);
-  const { width, height } = SCREENSHOT_WINDOW;
-  execFileSync("import", [
-    "-window",
-    "root",
-    "-crop",
-    `${width}x${height}+0+0`,
-    "+repage",
-    path.join(outDir, `${name}.png`),
-  ]);
+  if (process.platform === "win32") {
+    // The window's client area, the main web view's size (see window-shot.ps1).
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        fileURLToPath(new URL("../scripts/window-shot.ps1", import.meta.url)),
+        "-Out",
+        path.join(outDir, `${name}.png`),
+      ],
+      { stdio: "pipe" },
+    );
+  } else {
+    const { width, height } = SCREENSHOT_WINDOW;
+    execFileSync("import", [
+      "-window",
+      "root",
+      "-crop",
+      `${width}x${height}+0+0`,
+      "+repage",
+      path.join(outDir, `${name}.png`),
+    ]);
+  }
   await browser.execute(() => document.getElementById("hd-screenshot-freeze")?.remove());
 }

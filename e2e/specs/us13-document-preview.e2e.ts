@@ -358,13 +358,41 @@ interface Screen {
   pixels: Buffer;
 }
 
-/** The whole X screen as the user sees it, which includes the PDF surface (a
- * WebDriver screenshot holds only the main web view). */
+/** The screen as the user sees it, which includes the PDF surface (a
+ * WebDriver screenshot holds only the main web view): the whole X screen on
+ * Linux, where the window sits at 0,0, and on Windows the window's client
+ * area (e2e/scripts/window-shot.ps1), so a point in the page is the same point
+ * in the picture on both. */
 function windowScreenshot(): Screen {
-  // 8 bits a channel: ImageMagick's default is 16, which doubles each pixel.
-  const ppm = execFileSync("import", ["-depth", "8", "-window", "root", "ppm:-"], {
-    maxBuffer: 512 * 1024 * 1024,
-  });
+  let ppm: Buffer;
+  if (process.platform === "win32") {
+    const file = path.join(os.tmpdir(), `hoplodex-window-${process.pid}.ppm`);
+    try {
+      execFileSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          path.join(path.dirname(fileURLToPath(import.meta.url)), "../scripts/window-shot.ps1"),
+          "-Out",
+          file,
+          "-Format",
+          "ppm",
+        ],
+        { stdio: "pipe" },
+      );
+      ppm = fs.readFileSync(file);
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  } else {
+    // 8 bits a channel: ImageMagick's default is 16, which doubles each pixel.
+    ppm = execFileSync("import", ["-depth", "8", "-window", "root", "ppm:-"], {
+      maxBuffer: 512 * 1024 * 1024,
+    });
+  }
   // "P6", width, height, 255, one whitespace byte, then the pixels.
   const fields: string[] = [];
   let at = 0;

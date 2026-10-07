@@ -27,9 +27,10 @@ use support::document_fixture;
 use support::hostile_documents as hostile;
 use tempfile::TempDir;
 
-use preview_support::{
-    Fixture, any_file_holds, assert_gone, png_size, wait_for_helper_child, wait_until_gone,
-};
+use preview_support::{Fixture, any_file_holds, assert_gone, png_size, wait_for_helper_child};
+// Only the Unix-only kill test below waits for a helper by process id.
+#[cfg(unix)]
+use preview_support::wait_until_gone;
 
 /// The tests of this file share one process, and several of them look at
 /// every render helper that process has as a child (`helper_children`), so
