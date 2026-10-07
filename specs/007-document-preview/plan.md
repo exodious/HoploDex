@@ -91,7 +91,9 @@ React 18 (`src`), unchanged
   size), `Button`, `Menu`, `SegmentedControl` and `useToast`.
 
 **Storage**: The existing encrypted SQLCipher database. `0002_fts5.sql` is
-edited in place to add `document_names_fts` and three triggers. No column
+edited in place to add `document_names_fts` and three triggers (and, after
+the performance run, `0001_initial.sql`'s two accessory make/model indexes
+lose their `WHERE ... IS NOT NULL`). No column
 changes, and an existing development database must be recreated.
 `machine.json` gains `documentOpening` and `pdfPreviewHold` (both
 defaulted, so no version bump).

@@ -12,7 +12,7 @@ each user story's independent test and each success criterion in
 - The development container (`scripts/dev-container.sh`; see
   DEVELOPMENT.md). Nothing is fetched: no new binary, and every new crate
   comes through `cargo`.
-- A **fresh database**: `0002_fts5.sql` was edited in place. Nothing here
+- A **fresh database**: `0002_fts5.sql` was edited in place (and `0001_initial.sql`, for the accessories' make and model indexes). Nothing here
   opens the real databases. Every test, E2E run, surface check and
   screenshot uses throwaway locations (DEVELOPMENT.md, "Test isolation").
 - For the macOS and Windows surface checks: the macOS 26 VM and the
