@@ -173,18 +173,6 @@ pub mod ops {
         )
     }
 
-    /// Ends whatever preview or load `open` has, for the one that replaces it
-    /// or the end of the viewer. Returns the preview that was open, so a PDF
-    /// can hand its surface to the next one before it is dropped.
-    fn end_current(open: &mut OpenDatabase) -> Option<Preview> {
-        if let Some(loading) = open.preview_loading.take()
-            && let Some(helper) = loading.helper
-        {
-            helper.shutdown();
-        }
-        open.preview.take()
-    }
-
     /// What `open_preview` decided under the session's lock.
     enum Begun {
         Done(PreviewInfo),
@@ -198,7 +186,7 @@ pub mod ops {
     ) -> Result<Begun, CommandError> {
         // The viewer shows one document: the one before it goes first,
         // whatever happens to this request.
-        let previous = end_current(open);
+        let previous = open.end_preview();
         let document = crate::commands::documents::ops::get_document(&open.conn, document_id)?;
         if from_recorded(&document.mime_type).is_none() {
             return Err(unsupported());
@@ -275,6 +263,14 @@ pub mod ops {
             None => {
                 let secret = crate::db::random_hex(16)
                     .map_err(|_| failed("This document couldn't be shown."))?;
+                // The surface is built with the session's lock held, and
+                // `add_child` waits for the main thread. That can't deadlock
+                // as long as nothing on the main thread waits for the lock:
+                // every command is `async` (so runs on the runtime's
+                // threads), the OS backends in `platform/` run on threads of
+                // their own, the protocol handler and each surface hook hand
+                // their work to another thread, and the idle clock's
+                // `note_activity` takes only the clock's own mutex.
                 let spec = SurfaceSpec { url, secret: secret.clone(), bounds: last_bounds() };
                 let surface = env.surfaces.build(spec).map_err(|reason| {
                     log::error!("the PDF surface couldn't be built: {reason}");
@@ -399,7 +395,7 @@ pub mod ops {
             let loading_is_it = open.preview_loading.as_ref().is_some_and(|l| l.id == id);
             let shown_is_it = open.preview.as_ref().is_some_and(|p| p.id == id);
             if loading_is_it || shown_is_it {
-                return Ok(end_current(open));
+                return Ok(open.end_preview());
             }
             Ok(None)
         })?;
@@ -417,7 +413,7 @@ pub mod ops {
                 open.preview_loading.as_ref().is_some_and(|l| l.document_id == document_id);
             let shown_is_it = open.preview.as_ref().is_some_and(|p| p.document_id == document_id);
             if loading_is_it || shown_is_it {
-                return Ok(end_current(open));
+                return Ok(open.end_preview());
             }
             Ok(None)
         })?;
@@ -476,7 +472,7 @@ pub mod ops {
                 .preview
                 .as_ref()
                 .is_some_and(|p| matches!(p.content, PreviewContent::Pdf { .. }) && matches(p));
-            Ok(if is_it { end_current(open) } else { None })
+            Ok(if is_it { open.end_preview() } else { None })
         });
         let Ok(Some(preview)) = ended else { return false };
         let preview_id = preview.id;

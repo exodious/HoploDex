@@ -252,7 +252,12 @@ impl<R: Runtime> Surface<R> {
             LogicalPosition::new(config.bounds.x, config.bounds.y),
             LogicalSize::new(config.bounds.width, config.bounds.height),
         )?;
-        os::attach(window, &webview, &config.hooks)?;
+        // A surface the OS couldn't set up (a filter that wouldn't install)
+        // is closed, never left in the window.
+        if let Err(e) = os::attach(window, &webview, &config.hooks) {
+            let _ = webview.close();
+            return Err(e);
+        }
         let surface = Surface { webview, allowed };
         surface.set_bounds(config.bounds, false)?;
         surface.navigate(config.url);

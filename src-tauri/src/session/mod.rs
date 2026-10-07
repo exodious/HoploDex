@@ -114,6 +114,20 @@ impl OpenDatabase {
             preview_loading: None,
         })
     }
+
+    /// Ends the document preview now, whatever it is: a TIFF's load is
+    /// stopped and its helper killed, a PDF's bytes are zeroized and its
+    /// surface closed (research.md §20). Returns the preview that was open,
+    /// so a PDF can hand its surface to the next one before it is dropped;
+    /// a caller that holds the session's lock drops it after letting go.
+    pub fn end_preview(&mut self) -> Option<Preview> {
+        if let Some(loading) = self.preview_loading.take()
+            && let Some(helper) = loading.helper
+        {
+            helper.shutdown();
+        }
+        self.preview.take()
+    }
 }
 
 /// A database's name: its file name without the extension.
@@ -440,6 +454,16 @@ impl SessionInner {
         let taken = self.lock().take();
         self.forget_open();
         taken
+    }
+
+    /// Ends the open database's preview, if one is open, before anything else
+    /// of a close is announced: the surface is gone from the screen and the
+    /// helper dead by then (FR-014, SC-006). For a close that has begun but
+    /// has not yet taken the database (an immediate one). The preview is
+    /// dropped outside the session's lock.
+    pub(crate) fn end_preview(&self) {
+        let ended = self.lock().as_mut().and_then(OpenDatabase::end_preview);
+        drop(ended);
     }
 
     /// Nothing is open any more: the idle clock stops.

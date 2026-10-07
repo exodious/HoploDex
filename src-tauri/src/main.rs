@@ -16,6 +16,8 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide_at_startup};
+#[cfg(target_os = "linux")]
+use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
 use hoplodex_lib::session::{Session, lifecycle};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
@@ -34,7 +36,11 @@ static OS_ENDING: AtomicBool = AtomicBool::new(false);
 /// decrypted document copies are deleted, with no backup; then it exits.
 fn end_for_the_os(app: &AppHandle) {
     OS_ENDING.store(true, Ordering::SeqCst);
+    // The session's close ends the preview first (the PDF surface is closed
+    // and the helper killed), then the copies the PDF viewer left on macOS
+    // are swept (FR-003a, research.md §7).
     lifecycle::will_shut_down(&app.state::<Session>(), &app.state::<MachineSettings>());
+    app.state::<MachineSettings>().sweep_hold_leftovers();
     app.exit(0);
 }
 
@@ -119,14 +125,23 @@ fn tick_idle_clock(app: AppHandle) {
 }
 
 fn main() {
-    // The render helper is this executable started again (research.md §11):
-    // before any Tauri, keyring, session or logging setup, so it has none of
-    // them, and it never returns here.
+    // The render helper and the sandbox probe are this executable started
+    // again (research.md §9, §11): before any Tauri, keyring, session or
+    // logging setup, so they have none of them, and they never return here.
     let args: Vec<String> =
         std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
+    #[cfg(target_os = "linux")]
+    if args.first().map(String::as_str) == Some(sandbox_probe::ARGUMENT) {
+        sandbox_probe::run_child_probe();
+    }
     if args.first().map(String::as_str) == Some(render_helper::ARGUMENT) {
         render_helper::run(&args);
     }
+    // WebKit's sandbox, on only where a probe shows it works, and decided
+    // here because the variable that turns it on must be set before the
+    // first web context exists (research.md §9).
+    #[cfg(target_os = "linux")]
+    let webkit_sandbox = sandbox_probe::decide_and_apply();
     let builder = tauri::Builder::default();
     // The E2E suite's WebDriver server, on 127.0.0.1 at
     // `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs any
@@ -148,7 +163,12 @@ fn main() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(move |app| {
+            #[cfg(target_os = "linux")]
+            {
+                log::info!("{}", webkit_sandbox.describe());
+                app.manage(webkit_sandbox);
+            }
             // Backstop for a crash or forced kill: decrypted document copies
             // a previous session couldn't clean up on exit (FR-035).
             clear_opened_documents_cache(app.handle());
@@ -165,6 +185,10 @@ fn main() {
                 .with_keyring(Keyring::system());
             // A backup a crash or forced quit cut short (research.md §7).
             backups::sweep_unfinished(&machine);
+            // Copies the macOS PDF viewer left behind in a run that couldn't
+            // delete them (FR-003a, research.md §17). A hold for another
+            // version is cleared in `decide_at_startup` below.
+            machine.sweep_hold_leftovers();
             // Whether PDFs are previewed on this computer in this run: this
             // version's hold, then the web view's check, before anything is
             // shown (research.md §7). The surface's browser data folder from
@@ -302,7 +326,13 @@ fn main() {
             }
             // Decrypted copies of opened documents live only as long as the
             // session (FR-035); the startup sweep covers abnormal exits.
-            RunEvent::Exit => clear_opened_documents_cache(app),
+            RunEvent::Exit => {
+                clear_opened_documents_cache(app);
+                // Not there when the exit is a setup that failed.
+                if let Some(machine) = app.try_state::<MachineSettings>() {
+                    machine.sweep_hold_leftovers();
+                }
+            }
             _ => {}
         });
 }

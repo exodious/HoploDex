@@ -29,7 +29,8 @@ use crate::session::{ImmediateClose, OpenDatabase, Session, SessionInner, pendin
 /// (research.md §14); what is not done by then is finished on waking.
 const IMMEDIATE_WAIT: Duration = Duration::from_secs(10);
 
-/// Creates a database at `path` and makes it the open one.
+/// Creates a database at `path` and makes it the open one, closing any other
+/// open database first as a switch.
 pub fn create(
     session: &Session,
     machine: &MachineSettings,
@@ -44,6 +45,11 @@ pub fn create(
             }
             other => other.into(),
         })?;
+    if session.is_open() {
+        // A switch, as in `open`: the other database is closed normally
+        // (its preview ends, its backup is made) rather than replaced.
+        close_normal(session, machine, CloseReason::Switched).ok();
+    }
     session.install(prepare(machine, conn, path)?);
     Ok(())
 }
@@ -156,6 +162,9 @@ pub fn close_normal(
     };
     // Unsaved input was kept by a lock, or dealt with by the user.
     open.staged_draft = None;
+    // The preview is off the screen and out of memory before the close is
+    // announced, however long the backup takes (FR-014, research.md §20).
+    drop(open.end_preview());
     let check = if open.storage_lost {
         FingerprintCheck::Unreachable
     } else {
@@ -345,6 +354,10 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
         (path, lock_announced)
     };
     session.set_last_closed(&path);
+    // Before `session:closed`, which is when the frontend drops the
+    // collection: the preview goes first, without waiting for the rest of
+    // the close (FR-014).
+    session.end_preview();
     let events = session.events();
     if is_lock(reason) && !lock_announced {
         events.notice(ChooserNotice::Closed {
@@ -615,7 +628,8 @@ fn backup_failed(
 /// then let go of it without writing anything more, so no backup and no
 /// marker clear. The frontend is told first, so it drops the collection
 /// view before anything else happens.
-pub(crate) fn close_taken_over(session: &SessionInner, open: OpenDatabase) {
+pub(crate) fn close_taken_over(session: &SessionInner, mut open: OpenDatabase) {
+    drop(open.end_preview());
     log::warn!("{} was taken over by another computer", open.path.display());
     let path = open.path.to_string_lossy().into_owned();
     let events = session.events();

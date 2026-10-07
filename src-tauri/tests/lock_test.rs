@@ -1051,7 +1051,10 @@ impl World {
 }
 
 /// Every way the collection goes, each as a function of the world.
-fn ways_the_collection_goes() -> Vec<(&'static str, Box<dyn Fn(&World)>)> {
+/// One way the collection goes, by name.
+type Way = (&'static str, Box<dyn Fn(&World)>);
+
+fn ways_the_collection_goes() -> Vec<Way> {
     vec![
         (
             "lock now",
@@ -1094,6 +1097,10 @@ fn ways_the_collection_goes() -> Vec<(&'static str, Box<dyn Fn(&World)>)> {
     ]
 }
 
+/// A close announcement: its event, whether the preview was over by then, and
+/// how long after the close began.
+type Announced = (String, bool, Duration);
+
 fn a_preview_ends_with_every_way_the_collection_goes(kind: Shown) {
     for (way, go) in ways_the_collection_goes() {
         let world = World::new();
@@ -1103,7 +1110,7 @@ fn a_preview_ends_with_every_way_the_collection_goes(kind: Shown) {
         let preview_env = TestPreview::new();
         let shown = world.show(&preview_env, kind);
         let database = world.database_id();
-        let announced: Arc<Mutex<Vec<(String, bool, Duration)>>> = Arc::default();
+        let announced: Arc<Mutex<Vec<Announced>>> = Arc::default();
         let started = Instant::now();
         {
             let (announced, shown) = (Arc::clone(&announced), shown.clone());
