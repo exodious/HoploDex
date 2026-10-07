@@ -830,12 +830,19 @@ for (const theme of ["Light", "Dark"] as const) {
       await shotDisplay(`68-viewer-pdf-${suffix}`);
       await closeViewer();
 
-      await openDocument("Appraisal scan.tif");
-      await $(`${VIEWER} img[alt="Appraisal scan.tif, page 1 of 4"]`).waitForExist({
+      // The TIFF screen shows a scan that looks like one (US Letter, 200 DPI,
+      // three pages), on the suppressor's record; the Glock's own TIFF is a
+      // tiny test image the viewer has to zoom a long way.
+      await back();
+      await openRecord("Dead Air Sandman-K");
+      await openDocument("Bill of sale (scan).tif");
+      await $(`${VIEWER} img[alt="Bill of sale (scan).tif, page 1 of 3"]`).waitForExist({
         timeout: 10000,
       });
       await shot(`69-viewer-tiff-${suffix}`);
       await closeViewer();
+      await back();
+      await openRecord(RECORD);
 
       await openDocument("owners-manual-notes.txt");
       await $(`${VIEWER} pre.hd-preview__text`).waitForExist({ timeout: 10000 });

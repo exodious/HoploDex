@@ -169,6 +169,29 @@ fn four_pages_open_and_each_renders_to_the_width_asked() {
     assert_eq!(world.helper_pid(), Some(helper), "one helper for the whole preview");
 }
 
+/// The human-testing seed's scan (SOURCE.md): three US Letter pages at
+/// 200 DPI, 1-bit CCITT G4, so the viewer shows a real-sized document and
+/// not a thumbnail zoomed to fit.
+#[test]
+fn the_seeded_bill_of_sale_scan_is_three_letter_pages_at_200_dpi() {
+    let _serial = serial();
+    let world = Fixture::new();
+    let id = world.add("bill-of-sale-scan.tif", &document_fixture("bill-of-sale-scan.tif"));
+
+    let info = world.open_ok(id);
+
+    assert_eq!(info["kind"], "tiff");
+    let pages = pages_of(&info);
+    assert_eq!(pages.len(), 3);
+    for (n, (width, height)) in pages.iter().enumerate() {
+        assert!((width - 612.0).abs() < 0.5 && (height - 792.0).abs() < 0.5, "page {n}: {pages:?}");
+    }
+    let png = render(&world, Fixture::id_of(&info), 0, 800).unwrap();
+    let (width, height) = png_size(&png);
+    assert_eq!(width, 800);
+    assert!((1034..=1036).contains(&height), "800 px wide, so about 1035 high: {height}");
+}
+
 #[test]
 fn a_page_with_an_unsupported_compression_fails_alone() {
     let _serial = serial();

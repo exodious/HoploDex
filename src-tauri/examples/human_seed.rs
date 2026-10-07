@@ -1224,12 +1224,21 @@ pub fn seed(conn: &Connection, extra: usize) {
         registered_to: text("Smith Family Trust"),
         ..base("Dead Air", "Sandman-K", "SMK-51207", ".30", SUPPRESSOR)
     });
+    // specs/007-document-preview: the approved form, and a TIFF that looks
+    // like a real scan (three US Letter pages, 200 DPI, 1-bit), unlike the
+    // Glock's tiny test pages.
     documents(
         registered_suppressor,
-        &[(
-            "Form 4 approval.pdf",
-            simple_pdf(&[&["Approved Form 4", "Registered to Smith Family Trust"]]),
-        )],
+        &[
+            (
+                "Form 4 approval.pdf",
+                simple_pdf(&[&["Approved Form 4", "Registered to Smith Family Trust"]]),
+            ),
+            (
+                "Bill of sale (scan).tif",
+                include_bytes!("../tests/fixtures/documents/bill-of-sale-scan.tif").to_vec(),
+            ),
+        ],
     );
     // A Rifle made into a short-barreled rifle on a Form 1, to the owner.
     add(FirearmInput {

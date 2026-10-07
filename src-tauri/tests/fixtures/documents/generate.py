@@ -178,6 +178,152 @@ def make_tiffs():
             out("one-page.tif", f.read())
 
 
+def make_scan_tiff():
+    """`bill-of-sale-scan.tif`: three US Letter pages (1700 x 2200 px at
+    200 DPI) of a typed bill of sale, as a scanner's fax-style output: 1-bit,
+    CCITT Group 4, a little skew and softness before the threshold. The
+    human-testing seed attaches it, so the viewer has a TIFF that looks like
+    a real scan, not a thumbnail zoomed to fit."""
+    width, height = 1700, 2200
+    serif, bold, mono = "DejaVu-Serif", "DejaVu-Serif-Bold", "DejaVu-Sans-Mono"
+    oblique = "DejaVu-Serif-Italic"
+    with tempfile.TemporaryDirectory() as tmp:
+        def page(n, items):
+            args = ["-density", "200", "-size", f"{width}x{height}", "xc:white", "-fill", "black"]
+            for kind, *a in items:
+                if kind == "text":
+                    x, y, text, size, font = a
+                    args += ["-font", font, "-pointsize", str(size), "-annotate", f"+{x}+{y}", text]
+                elif kind == "rule":
+                    x1, y1, x2, y2, w = a
+                    args += ["-stroke", "black", "-strokewidth", str(w), "-draw",
+                             f"line {x1},{y1} {x2},{y2}", "-stroke", "none"]
+                elif kind == "box":
+                    x1, y1, x2, y2 = a
+                    args += ["-fill", "none", "-stroke", "black", "-strokewidth", "2", "-draw",
+                             f"rectangle {x1},{y1} {x2},{y2}", "-stroke", "none", "-fill", "black"]
+                elif kind == "ink":  # a handwritten signature: a loose stroke
+                    x, y = a
+                    d = (f"M {x},{y} C {x+30},{y-70} {x+60},{y-80} {x+75},{y-20} "
+                         f"S {x+110},{y-90} {x+130},{y-30} S {x+175},{y-60} {x+215},{y-18} "
+                         f"S {x+290},{y-35} {x+380},{y-24}")
+                    args += ["-fill", "none", "-stroke", "black", "-strokewidth", "4",
+                             "-draw", f"path '{d}'", "-stroke", "none", "-fill", "black"]
+            args += ["-font", serif, "-pointsize", "9", "-annotate", "+120+2090",
+                     "Ridgeline Arms  -  Bill of sale  -  Sale of 12 September 2025"]
+            args += ["-annotate", "+1450+2090", f"Page {n} of 3"]
+            # What a flatbed does: a slight skew, soft edges, then 1-bit.
+            args += ["-background", "white", "-rotate", f"{0.25 * (1 if n % 2 else -1)}",
+                     "-gravity", "center", "-crop", f"{width}x{height}+0+0", "+repage",
+                     "-blur", "0x0.7", "-threshold", "62%", "-type", "bilevel",
+                     "-units", "PixelsPerInch", "-density", "200", "-compress", "Group4",
+                     f"tiff:{os.path.join(tmp, f'p{n}.tif')}"]
+            magick(*args)
+
+        rows = [
+            ("Make", "Dead Air"), ("Model", "Sandman-K"), ("Type", "Suppressor"),
+            ("Serial number", "SMK-51207"), ("Bore", ".30 caliber"), ("Price", "$1,100.00"),
+        ]
+        p1 = [
+            ("text", 120, 230, "RIDGELINE ARMS", 26, bold),
+            ("text", 120, 285, "Federal firearms licensee  -  retail and NFA sales", 11, serif),
+            ("text", 120, 325, "1200 Example Street, Springfield, ST 00000   (555) 010-0142", 11, serif),
+            ("rule", 120, 360, 1580, 360, 4),
+            ("text", 120, 480, "BILL OF SALE", 30, bold),
+            ("text", 1150, 480, "No. 25-0912-031", 13, mono),
+            ("text", 120, 570, "Date of sale: September 12, 2025", 13, serif),
+            ("text", 120, 640, "The seller named below sells, and the buyer named below buys, the", 13, serif),
+            ("text", 120, 690, "following item, on the terms printed on the next page.", 13, serif),
+            ("box", 120, 760, 1580, 1160),
+        ]
+        for i, (label, value) in enumerate(rows):
+            y = 760 + 67 * i
+            if i:
+                p1.append(("rule", 120, y, 1580, y, 1))
+            p1 += [("text", 150, y + 46, label, 12, serif), ("text", 560, y + 46, value, 13, mono)]
+        p1 += [
+            ("rule", 540, 760, 540, 1160, 1),
+            ("text", 120, 1290, "SELLER", 11, bold),
+            ("text", 120, 1340, "Ridgeline Arms, by Dana Whitfield, Sales manager", 13, serif),
+            ("text", 120, 1400, "FFL on file with the buyer's transfer paperwork.", 11, oblique),
+            ("text", 120, 1530, "BUYER", 11, bold),
+            ("text", 120, 1580, "Smith Family Trust, by Alex Smith, Trustee", 13, serif),
+            ("text", 120, 1640, "To be registered on ATF Form 4 (transfer approved by the ATF).", 11, oblique),
+            ("ink", 150, 1850),
+            ("rule", 120, 1860, 760, 1860, 2),
+            ("text", 120, 1900, "Seller's signature", 10, serif),
+            ("text", 120, 1935, "Date: 09/12/2025", 10, serif),
+            ("ink", 960, 1850),
+            ("rule", 930, 1860, 1580, 1860, 2),
+            ("text", 930, 1900, "Buyer's signature", 10, serif),
+            ("text", 930, 1935, "Date: 09/12/2025", 10, serif),
+        ]
+        terms = [
+            "1.  The buyer has inspected the item and accepts it as described on page 1.",
+            "2.  Title passes to the buyer when the ATF approves the transfer and the",
+            "    seller delivers the item. Until then the seller keeps it in its vault.",
+            "3.  The buyer certifies that he or she, or the trust, may lawfully possess the",
+            "    item where it will be kept, and will not move it across a state line",
+            "    without the permission the law requires.",
+            "4.  All sales are final once the ATF approves the transfer. The seller may",
+            "    repair or replace a defective item within thirty days at its choice.",
+            "5.  The tax stamp, if any, is paid by the buyer and is not part of the price.",
+            "6.  This bill of sale and the approved form are the whole agreement.",
+        ]
+        p2 = [
+            ("text", 120, 230, "TERMS OF SALE", 26, bold),
+            ("rule", 120, 275, 1580, 275, 4),
+            ("text", 120, 360, "Bill of sale no. 25-0912-031 (Dead Air Sandman-K, SMK-51207)", 11, mono),
+        ]
+        for i, line in enumerate(terms):
+            p2.append(("text", 120 if line[0] != " " else 180, 480 + 55 * i, line.strip(), 13, serif))
+        p2 += [
+            ("text", 120, 1180, "Notes", 12, bold),
+            ("rule", 120, 1260, 1580, 1260, 1),
+            ("text", 130, 1245, "Silencer cleaned and test-fired at the shop, 3 rounds, no issues.", 12, oblique),
+            ("rule", 120, 1340, 1580, 1340, 1),
+            ("text", 130, 1325, "Buyer received the mount, the manual and a hard case.", 12, oblique),
+            ("rule", 120, 1420, 1580, 1420, 1),
+            ("rule", 120, 1500, 1580, 1500, 1),
+            ("rule", 120, 1580, 1580, 1580, 1),
+            ("text", 120, 1900, "Initials  ", 11, serif),
+            ("rule", 260, 1910, 560, 1910, 2),
+            ("ink", 290, 1895),
+        ]
+        p3 = [
+            ("text", 120, 230, "RECEIPT OF TRANSFER", 26, bold),
+            ("rule", 120, 275, 1580, 275, 4),
+            ("text", 120, 380, "Smith Family Trust acknowledges receipt of the item below.", 13, serif),
+            ("text", 120, 470, "Dead Air Sandman-K suppressor, serial SMK-51207", 13, mono),
+            ("text", 120, 570, "Approved on ATF Form 4:", 13, serif),
+            ("text", 820, 570, "February 10, 2026", 13, mono),
+            ("text", 120, 650, "Date received:", 13, serif),
+            ("text", 820, 650, "February 14, 2026", 13, mono),
+        ]
+        checks = ["The item matches page 1, serial number included.",
+                  "The Form 4 approval was shown to me and a copy given.",
+                  "The shop's return terms on page 2 were explained.",
+                  "The item arrived with the mount, manual and case."]
+        for i, line in enumerate(checks):
+            y = 800 + 80 * i
+            p3 += [("box", 120, y, 160, y + 40), ("text", 190, y + 32, line, 13, serif)]
+        p3 += [
+            ("text", 120, 1280, "Received by", 11, bold),
+            ("ink", 150, 1480),
+            ("rule", 120, 1490, 760, 1490, 2),
+            ("text", 120, 1530, "Alex Smith, Trustee", 11, serif),
+            ("text", 930, 1530, "Released by Dana Whitfield", 11, serif),
+            ("ink", 960, 1480),
+            ("rule", 930, 1490, 1580, 1490, 2),
+        ]
+        for n, items in enumerate((p1, p2, p3), 1):
+            page(n, items)
+        subprocess.run(["tiffcp", os.path.join(tmp, "p1.tif"), os.path.join(tmp, "p2.tif"),
+                        os.path.join(tmp, "p3.tif"), os.path.join(tmp, "all.tif")], check=True)
+        with open(os.path.join(tmp, "all.tif"), "rb") as f:
+            out("bill-of-sale-scan.tif", f.read())
+
+
 # ----------------------------------------------------- ZIP-based formats
 
 FIXED = (2020, 1, 1, 0, 0, 0)
@@ -385,6 +531,7 @@ def make_ole():
 if __name__ == "__main__":
     make_pdfs()
     make_tiffs()
+    make_scan_tiff()
     make_ooxml_odf()
     make_ole()
     sys.exit(0)
