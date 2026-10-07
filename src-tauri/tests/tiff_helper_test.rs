@@ -154,7 +154,10 @@ fn once_confined_it_cannot_start_a_program() {
 fn its_environment_is_empty() {
     let json = self_check().json;
 
-    assert_eq!(json["env_vars"], 0, "{json}");
+    // macOS's libSystem adds `__CF_USER_TEXT_ENCODING` to a process started
+    // with none, whatever the parent passes: it holds no more than that.
+    let allowed = if cfg!(target_os = "macos") { 1 } else { 0 };
+    assert!(json["env_vars"].as_u64().unwrap() <= allowed, "{json}");
 }
 
 #[cfg(all(debug_assertions, unix))]
@@ -172,11 +175,28 @@ fn core_dumps_are_off() {
 #[cfg(unix)]
 #[test]
 fn it_exits_when_its_parent_dies() {
+    it_exits_within(Duration::from_secs(5));
+}
+
+/// If HoploDex exits, everything it spawned goes with it at once, with its
+/// stdin still open (research.md §11, amended 2026-10-07): on macOS, which has
+/// no `PR_SET_PDEATHSIG`, a `kqueue` watch on the parent does it.
+#[cfg(target_os = "macos")]
+#[test]
+fn on_macos_it_is_gone_within_a_second_of_its_parent_being_killed() {
+    it_exits_within(Duration::from_secs(1));
+}
+
+/// An intermediate process stands in for HoploDex: it starts the helper on its
+/// own stdin, prints the helper's PID and waits. The test kills it with
+/// SIGKILL and times the helper's end. Its stdin stays open (`shell.stdin` is
+/// held), so only the death of the parent can end the helper, not the end of
+/// its input.
+#[cfg(unix)]
+fn it_exits_within(limit: Duration) {
     use std::io::BufRead;
     use std::process::{Command, Stdio};
 
-    // A shell stands in for HoploDex: it starts the helper on its own stdin,
-    // prints the helper's PID and waits.
     let mut shell = Command::new("sh")
         .arg("-c")
         .arg(r#"exec 3<&0; "$0" --render-helper <&3 & echo $!; wait"#)
@@ -194,13 +214,8 @@ fn it_exits_when_its_parent_dies() {
 
     shell.kill().unwrap();
     shell.wait().unwrap();
-    // On Linux the pipe stays open (`stdin` is still held), so only the death
-    // of its parent can end the helper (`PR_SET_PDEATHSIG`); elsewhere the end
-    // of its stdin is the signal (research.md §11).
-    #[cfg(not(target_os = "linux"))]
-    drop(shell.stdin.take());
 
-    assert!(wait_until_gone(helper, Duration::from_secs(5)), "the helper outlived its parent");
+    assert!(wait_until_gone(helper, limit), "the helper outlived its parent by {limit:?}");
     drop(shell.stdin.take());
 }
 

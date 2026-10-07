@@ -668,6 +668,16 @@ artifacts.
   - libtiff through FFI: C, and a native library.
   - seccomp-bpf on Linux: more brittle across glibc versions for little
     gain over Landlock and the process boundary.
+- **Amendment (2026-10-07), dies with HoploDex**: if HoploDex exits, every
+  process it spawned goes with it at once, whatever the helper is doing. The
+  table's macOS cell, "stdin EOF", is not enough (it waits for a page to
+  finish), so on macOS the helper registers a `kqueue` `EVFILT_PROC` /
+  `NOTE_EXIT` watch on its parent before `sandbox_init`, checks `getppid()`
+  again after registering (to close the race with a parent that died first),
+  and a thread blocked on the queue calls `_exit` when the parent exits. The
+  wait needs nothing the profile denies, since the queue exists already.
+  Linux (`PR_SET_PDEATHSIG`) and Windows (a thread waiting on the parent
+  process) already did this; stdin EOF remains the normal way the helper ends.
 
 ## 12. Text and CSV
 

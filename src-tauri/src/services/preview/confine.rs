@@ -2,9 +2,10 @@
 //! mitigations on Windows, the sandbox profile on macOS (research.md §11).
 //!
 //! [`confine`] is called by the helper before it reads a byte of any document
-//! (`helper::run`). The Linux and Windows branches are written (T052, T056);
-//! the macOS branch (T055) does what it can without its OS's sandbox until
-//! then.
+//! (`helper::run`). Each branch also makes the helper die with HoploDex at
+//! once, by whatever its OS offers: `PR_SET_PDEATHSIG` on Linux, a thread
+//! waiting on the parent on Windows, and a `kqueue` `NOTE_EXIT` watch on the
+//! parent on macOS (research.md §11, amended 2026-10-07).
 
 /// What [`confine`] managed, for the helper's self-check and the log.
 #[derive(Debug, Clone, Copy, Default)]
@@ -142,20 +143,141 @@ mod imp {
     }
 }
 
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(target_os = "macos")]
 mod imp {
+    use std::ffi::{CStr, c_char, c_int};
+
     use super::Confinement;
 
-    pub fn log_support() {}
+    /// The helper's exit code when its parent is gone.
+    const PARENT_GONE: c_int = 5;
 
-    /// macOS's `sandbox_init` profile is T055. Until then: no core dump.
+    /// `kSBXProfilePureComputation`: the profile that denies everything but
+    /// pure computation: no file, no network, no Mach service, no process
+    /// creation (`fork` and `exec`), no IPC. Files and pipes already open
+    /// stay usable, which is how the helper reads and writes its frames.
+    const PURE_COMPUTATION: &CStr = c"pure-computation";
+    /// `SANDBOX_NAMED`: the profile argument is the name of a built-in one.
+    const SANDBOX_NAMED: u64 = 0x1;
+
+    // `sandbox_init` is deprecated, and still what a plain command-line
+    // process has: it is in libSystem, which every Rust program links.
+    unsafe extern "C" {
+        fn sandbox_init(profile: *const c_char, flags: u64, errorbuf: *mut *mut c_char) -> c_int;
+        fn sandbox_free_error(errorbuf: *mut c_char);
+    }
+
+    pub fn log_support() {
+        log::info!(
+            "the TIFF helper is confined with sandbox_init's pure-computation profile and ends \
+             with HoploDex"
+        );
+    }
+
+    fn last_error(what: &str) -> String {
+        format!("{what}: {}", std::io::Error::last_os_error())
+    }
+
+    /// Order: the parent watch first, since it needs `kqueue` and `kevent`
+    /// (which the profile would deny a new queue) and so that the helper
+    /// never reads a document with no one to end it, then the core limit,
+    /// then the profile, which nothing may follow that needs a file, a
+    /// process or a service. Every step fails closed: the helper exits
+    /// without reading a document.
     pub fn confine() -> Result<Confinement, String> {
+        die_with_parent()?;
         let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
         // SAFETY: a plain system call with a pointer to a local.
         if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &core) } != 0 {
-            return Err(format!("RLIMIT_CORE: {}", std::io::Error::last_os_error()));
+            return Err(last_error("RLIMIT_CORE"));
         }
+        sandbox()?;
         Ok(Confinement::default())
+    }
+
+    /// Dies with HoploDex at once, as `PR_SET_PDEATHSIG` does on Linux and
+    /// the job object's watch does on Windows: macOS has neither, and the
+    /// end of stdin is too late when a page is being decoded. A thread
+    /// blocks in `kevent` on the parent's exit and calls `_exit`.
+    ///
+    /// The queue is made and the watch registered here, before the profile,
+    /// so the wait after it needs nothing new: a `kevent` on a descriptor the
+    /// process holds is not a file, network or service access
+    /// (tests/tiff_helper_test.rs kills a parent and times the end). The
+    /// parent is checked again after the registration: if it died before
+    /// it, the event would never come (the registration fails with `ESRCH`,
+    /// or the parent has changed already).
+    fn die_with_parent() -> Result<(), String> {
+        // SAFETY: plain system calls; the event structures are zeroed and
+        // live across the calls that use them, and the queue descriptor is
+        // kept open for the life of the process.
+        unsafe {
+            let parent = libc::getppid();
+            if parent <= 1 {
+                return Err("the parent is gone".into());
+            }
+            let queue = libc::kqueue();
+            if queue < 0 {
+                return Err(last_error("kqueue"));
+            }
+            let mut watch: libc::kevent = std::mem::zeroed();
+            watch.ident = parent as libc::uintptr_t;
+            watch.filter = libc::EVFILT_PROC;
+            watch.flags = libc::EV_ADD | libc::EV_ONESHOT;
+            watch.fflags = libc::NOTE_EXIT;
+            if libc::kevent(queue, &watch, 1, std::ptr::null_mut(), 0, std::ptr::null()) != 0 {
+                return Err(last_error("kevent (the parent watch)"));
+            }
+            if libc::getppid() != parent {
+                return Err("the parent is gone".into());
+            }
+            std::thread::Builder::new()
+                .name("parent-watch".into())
+                .spawn(move || {
+                    let mut event: libc::kevent = std::mem::zeroed();
+                    loop {
+                        let n = libc::kevent(
+                            queue,
+                            std::ptr::null(),
+                            0,
+                            &mut event,
+                            1,
+                            std::ptr::null(),
+                        );
+                        // An interrupted wait goes on waiting; anything else
+                        // is the parent's exit, or a queue that can no longer
+                        // tell, which is as unsafe to carry on with.
+                        if n < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR)
+                        {
+                            continue;
+                        }
+                        libc::_exit(PARENT_GONE);
+                    }
+                })
+                .map(|_| ())
+                .map_err(|e| format!("the parent watch: {e}"))
+        }
+    }
+
+    /// Enters the pure-computation sandbox: it can't be left.
+    fn sandbox() -> Result<(), String> {
+        let mut error: *mut c_char = std::ptr::null_mut();
+        // SAFETY: a NUL-terminated name and a pointer to a local; a message
+        // `sandbox_init` returns is read once and handed back to
+        // `sandbox_free_error`.
+        unsafe {
+            if sandbox_init(PURE_COMPUTATION.as_ptr(), SANDBOX_NAMED, &mut error) == 0 {
+                return Ok(());
+            }
+            let message = if error.is_null() {
+                "no message".to_owned()
+            } else {
+                let text = CStr::from_ptr(error).to_string_lossy().into_owned();
+                sandbox_free_error(error);
+                text
+            };
+            Err(format!("sandbox_init: {message}"))
+        }
     }
 }
 

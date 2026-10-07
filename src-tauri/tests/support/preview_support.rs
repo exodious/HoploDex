@@ -320,7 +320,17 @@ pub fn process_is_gone(pid: u32) -> bool {
             }
         }
     }
-    #[cfg(all(unix, not(target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        // `kill(pid, 0)` still finds a zombie, so ask `ps` for the state.
+        let listing = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .expect("ps");
+        let state = String::from_utf8_lossy(&listing.stdout);
+        state.trim().is_empty() || state.trim_start().starts_with('Z')
+    }
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
     {
         // SAFETY: signal 0 only checks that the process exists.
         let found = unsafe { libc::kill(pid as i32, 0) } == 0;
@@ -356,7 +366,7 @@ pub fn assert_gone(pid: u32, what: &str) {
 
 /// The PIDs of this process's render helpers: through `/proc` on Linux, a
 /// snapshot of the processes on Windows (a child named `hoplodex.exe`, the
-/// helper being the app's own executable), empty elsewhere.
+/// helper being the app's own executable), `ps` on macOS, empty elsewhere.
 pub fn helper_children() -> Vec<u32> {
     #[cfg(target_os = "linux")]
     {
@@ -413,7 +423,27 @@ pub fn helper_children() -> Vec<u32> {
         }
         found
     }
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    {
+        let me = std::process::id();
+        let listing = std::process::Command::new("ps")
+            .args(["-ax", "-o", "pid=,ppid=,stat=,command="])
+            .output()
+            .expect("ps");
+        String::from_utf8_lossy(&listing.stdout)
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let pid = fields.next()?.parse::<u32>().ok()?;
+                let ppid = fields.next()?.parse::<u32>().ok()?;
+                let state = fields.next()?;
+                let command = fields.collect::<Vec<_>>().join(" ");
+                (ppid == me && !state.starts_with('Z') && command.contains("--render-helper"))
+                    .then_some(pid)
+            })
+            .collect()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         Vec::new()
     }
