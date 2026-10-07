@@ -376,6 +376,35 @@ the pull request:
 - **#71** (decrypted document copies lack private permissions): the pull
   request closes it. Comment with the Unix modes from creation, the
   symlink and owner check, and the Windows DACL (§18), with the tests.
+
+The branch also finished the cross-platform test environments, which 007's
+spike and per-OS measures needed. The pull request closes these three too.
+Before it does, open one follow-up issue for the checks they leave (below),
+and link it from each:
+
+- **#27** (Windows development and test environment): comment that the
+  harness is isolated (7810a4e) and ported (3a90476, 47a3bab), the
+  power and session messages are tested against the hidden window
+  (47a3bab), and `scripts/windows/` with DEVELOPMENT.md's Windows section
+  replaces the dropped VM scripts. Move to the follow-up: Windows human
+  testing (the `sandbox-dirs` split, WebView2's profile, the seed's
+  safety check, `human-testing.ps1`, the keyring question), and sleep,
+  lock and shutdown checked by hand on Windows.
+- **#28** (macOS development and test environment): comment that the
+  harness is isolated and ported, `scripts/tart-vm.sh` and
+  DEVELOPMENT.md's macOS section are done, the screenshot walk,
+  `quit-cleanup.py` and `human-testing.sh` run on macOS (b438ebf,
+  a1402d0), and the sleep, wake, lock and power-off handlers are tested
+  (37a6ba5). Move to the follow-up: sleep, wake, screen lock and log-out
+  or shut-down by hand on a real Mac (a guest can't sleep), and saved
+  passphrases in the Keychain under `human-testing.sh`'s `HOME`.
+- **#29** (one embedded WebDriver): bring the status at the top up to
+  date: the embedded driver now runs the E2E suite and the screenshot
+  walk on Linux, macOS and Windows, and both outstanding boxes are
+  ticked (all 14 spec files pass on each, the real-input tests pending
+  off Linux). Comment that `npm run audit:webdriver` runs on Windows
+  through Node (3ae66d5), and pass the release `hoplodex.exe` to it,
+  which the first Windows run didn't, and report the result.
 - **#21** (release security review): comment that the review must cover:
   - the app ACL manifest and the three-list test;
   - the PDF surface's measures on each OS, the WebKit SPI and its startup
