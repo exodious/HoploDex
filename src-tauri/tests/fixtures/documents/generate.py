@@ -6,6 +6,9 @@ Needs Python 3 (standard library only), ImageMagick (`magick`) and libtiff's
 
     python3 generate.py
 
+`python3 generate.py scan-pdf OUT [PAGES [DPI]]` instead writes one extra,
+uncommitted document for performance runs (see `make_scan_pdf`).
+
 Written for HoploDex (feature 007, T004); the output is covered by the
 project's own license, there is no third-party content.
 """
@@ -528,7 +531,98 @@ def make_ole():
     out("sample.doc", ole_file({"WordDocument": fib + text, "1Table": b"\0" * 16}))
 
 
+def make_scan_pdf(path, pages=10, dpi=300):
+    """Opt-in (`python3 generate.py scan-pdf OUT [PAGES] [DPI]`, not part of the
+    committed fixtures): a PDF that looks like what a scanner makes of a typed
+    ledger, for measuring the viewer's first paint on a document of realistic
+    weight (T152, SC-001). `pages` US Letter pages at `dpi`, each a typed
+    acquisition record with rules, a box and drawn signatures, in grey with the
+    paper's grain and a little skew and softness, JPEG-compressed (quality 85)
+    inside the PDF as a scanner's own PDF output is. The defaults come to about
+    10 MB. The content is invented. Fonts are DejaVu unless HD_FONT_SERIF,
+    HD_FONT_BOLD, HD_FONT_MONO name others (ImageMagick's font names)."""
+    serif = os.environ.get("HD_FONT_SERIF", "DejaVu-Serif")
+    bold = os.environ.get("HD_FONT_BOLD", "DejaVu-Serif-Bold")
+    mono = os.environ.get("HD_FONT_MONO", "DejaVu-Sans-Mono")
+    k = dpi / 200.0  # the 200 DPI layout below, scaled
+    width, height = round(1700 * k), round(2200 * k)
+    makes = [("Dead Air", "Sandman-K", "Suppressor"), ("Ridgeline", "RL-9", "Pistol"),
+             ("Harrow", "Model 12", "Shotgun"), ("Lowell", "LA-15", "Rifle"),
+             ("Dead Air", "Wolfman", "Suppressor"), ("Stanton", "Scout", "Rifle")]
+    with tempfile.TemporaryDirectory() as tmp:
+        files = []
+        for n in range(1, pages + 1):
+            make, model, kind = makes[(n - 1) % len(makes)]
+            serial = f"{make[:3].upper()}-{51207 + 137 * n}"
+            args = ["-seed", str(n), "-density", str(dpi), "-size", f"{width}x{height}", "xc:white", "-fill", "black"]
+
+            def text(x, y, t, size, font):
+                return ["-font", font, "-pointsize", str(round(size * k, 1)),
+                        "-annotate", f"+{round(x * k)}+{round(y * k)}", t]
+
+            def rule(x1, y1, x2, y2, w):
+                return ["-stroke", "black", "-strokewidth", str(max(1, round(w * k))), "-draw",
+                        f"line {round(x1 * k)},{round(y1 * k)} {round(x2 * k)},{round(y2 * k)}", "-stroke", "none"]
+
+            def ink(x, y):
+                c = lambda v: round(v * k)
+                d = (f"M {c(x)},{c(y)} C {c(x+30)},{c(y-70)} {c(x+60)},{c(y-80)} {c(x+75)},{c(y-20)} "
+                     f"S {c(x+110)},{c(y-90)} {c(x+130)},{c(y-30)} S {c(x+175)},{c(y-60)} {c(x+215)},{c(y-18)} "
+                     f"S {c(x+290)},{c(y-35)} {c(x+380)},{c(y-24)}")
+                return ["-fill", "none", "-stroke", "black", "-strokewidth", str(max(1, round(4 * k))),
+                        "-draw", f"path '{d}'", "-stroke", "none", "-fill", "black"]
+
+            args += text(120, 230, "RIDGELINE ARMS", 26, bold)
+            args += text(120, 285, "Acquisition record  -  retail and NFA sales", 11, serif)
+            args += rule(120, 360, 1580, 360, 4)
+            args += text(120, 480, "BILL OF SALE", 30, bold)
+            args += text(1150, 480, f"No. 25-0912-{n:03d}", 13, mono)
+            args += text(120, 570, f"Date of sale: September {1 + n}, 2025", 13, serif)
+            rows = [("Make", make), ("Model", model), ("Type", kind), ("Serial number", serial),
+                    ("Bore", ".30 caliber" if n % 2 else "9 mm"), ("Price", f"${900 + 85 * n:,}.00")]
+            args += ["-fill", "none", "-stroke", "black", "-strokewidth", str(max(1, round(2 * k))), "-draw",
+                     f"rectangle {round(120 * k)},{round(700 * k)} {round(1580 * k)},{round(1100 * k)}",
+                     "-stroke", "none", "-fill", "black"]
+            for i, (label, value) in enumerate(rows):
+                y = 700 + 67 * i
+                if i:
+                    args += rule(120, y, 1580, y, 1)
+                args += text(150, y + 46, label, 12, serif) + text(560, y + 46, value, 13, mono)
+            args += rule(540, 700, 540, 1100, 1)
+            lines = ["The buyer has inspected the item and accepts it as described above.",
+                     "Title passes to the buyer when the transfer is approved and the item",
+                     "is delivered. Until then the seller keeps it in its vault.",
+                     "The buyer certifies that the item may lawfully be kept where it will be",
+                     "stored and will not be moved across a state line without the permission",
+                     "the law requires. All sales are final once the transfer is approved."]
+            for i, line in enumerate(lines):
+                args += text(120, 1230 + 55 * i, line, 12, serif)
+            args += text(120, 1700, "Notes", 12, bold)
+            for i in range(3):
+                args += rule(120, 1790 + 80 * i, 1580, 1790 + 80 * i, 1)
+            args += text(130, 1775, f"Cleaned and test-fired at the shop, {3 + n} rounds, no issues.", 12, serif)
+            args += ink(150, 2000) + rule(120, 2010, 760, 2010, 2) + text(120, 2050, "Seller's signature", 10, serif)
+            args += ink(960, 2000) + rule(930, 2010, 1580, 2010, 2) + text(930, 2050, "Buyer's signature", 10, serif)
+            args += text(1450, 2150, f"Page {n} of {pages}", 9, serif)
+            # What a flatbed does: a slight skew, soft edges, paper grain, grey.
+            args += ["-background", "white", "-rotate", f"{0.25 * (1 if n % 2 else -1)}",
+                     "-gravity", "center", "-crop", f"{width}x{height}+0+0", "+repage",
+                     "-blur", f"0x{0.9 * k / 1.5:.2f}", "-attenuate", "0.45", "+noise", "Gaussian",
+                     "-colorspace", "Gray", "-level", "6%,100%",
+                     "-quality", "85", "-units", "PixelsPerInch", "-density", str(dpi),
+                     os.path.join(tmp, f"p{n}.jpg")]
+            magick(*args)
+            files.append(os.path.join(tmp, f"p{n}.jpg"))
+        magick(*files, "-compress", "JPEG", "-units", "PixelsPerInch", "-density", str(dpi), path)
+    print(f"{path}: {os.path.getsize(path)} bytes, {pages} pages at {dpi} DPI")
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        if sys.argv[1] != "scan-pdf" or len(sys.argv) < 3:
+            sys.exit("usage: generate.py [scan-pdf OUT [PAGES [DPI]]]")
+        make_scan_pdf(sys.argv[2], *(int(a) for a in sys.argv[3:5]))
+        sys.exit(0)
     make_pdfs()
     make_tiffs()
     make_scan_tiff()
