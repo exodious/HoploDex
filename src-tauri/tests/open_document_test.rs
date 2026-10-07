@@ -946,8 +946,65 @@ fn the_text_for_the_setting_is_the_contracts_word_for_word() {
 
 // --- Per-OS cases ------------------------------------------------------------------
 //
-// T090 adds here, `#[cfg(target_os = "macos")]`: the copy carries a
-// `com.apple.quarantine` attribute, read back.
 // T091 adds here, `#[cfg(windows)]`: the per-document folder's DACL grants
 // only the current user and is protected, and the copy has a
 // `:Zone.Identifier` stream holding `ZoneId=3`, read back.
+
+/// The copy's `com.apple.quarantine` attribute, read with `getxattr`, or
+/// `None` if it has none.
+#[cfg(target_os = "macos")]
+fn quarantine_of(path: &Path) -> Option<String> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+    let mut value = vec![0u8; 256];
+    // SAFETY: both names are NUL-terminated and `value` is writable for its
+    // length.
+    let read = unsafe {
+        libc::getxattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_mut_ptr().cast(),
+            value.len(),
+            0,
+            libc::XATTR_NOFOLLOW,
+        )
+    };
+    if read < 0 {
+        let error = std::io::Error::last_os_error();
+        assert_eq!(error.raw_os_error(), Some(libc::ENOATTR), "getxattr: {error}");
+        return None;
+    }
+    value.truncate(read as usize);
+    Some(String::from_utf8(value).unwrap())
+}
+
+/// T090 (research.md §18): the copy handed to the other app carries a
+/// quarantine mark in the form a browser gives a download, and keeps it when
+/// a second open reuses the copy.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_the_copy_carries_a_quarantine_attribute() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let opener = FakeOpener::new();
+    let before = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+
+    assert!(world.open(&FakeConsent::open(), &opener, id).unwrap());
+
+    let copy = world.folder_of(id).join("receipt.pdf");
+    assert_eq!(opener.paths(), vec![copy.clone()]);
+    let mark = quarantine_of(&copy).expect("the copy has no com.apple.quarantine attribute");
+    let fields: Vec<&str> = mark.split(';').collect();
+    assert_eq!(fields.len(), 4, "flags;time;agent;event, got {mark:?}");
+    assert_eq!(fields[0], "0081", "the flags in {mark:?}");
+    let marked_at = u64::from_str_radix(fields[1], 16).unwrap();
+    assert!(marked_at >= before && marked_at <= before + 60, "the time in {mark:?}");
+    assert_eq!(fields[2], "HoploDex", "the agent in {mark:?}");
+
+    // A second open reuses the copy, which is still marked.
+    assert!(world.open(&FakeConsent::open(), &opener, id).unwrap());
+    assert_eq!(opener.paths(), vec![copy.clone(), copy.clone()]);
+    assert_eq!(quarantine_of(&copy).as_deref(), Some(mark.as_str()));
+}

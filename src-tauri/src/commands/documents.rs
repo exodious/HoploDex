@@ -584,11 +584,35 @@ fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// macOS (T090): add the `com.apple.quarantine` attribute with `setxattr`
-/// through `libc`.
+/// macOS (T090): adds the `com.apple.quarantine` attribute with `setxattr`
+/// through `libc`, in the form a browser gives a download
+/// (`flags;hex seconds;agent;event`, the flags Chrome's `0081`, no event in
+/// the quarantine database), so the OS and the other app treat the copy as
+/// from elsewhere. Not on a link: the copy was just created as a file.
 #[cfg(target_os = "macos")]
-fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
-    Ok(())
+fn mark_untrusted(copy: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let value = format!("0081;{seconds:08x};HoploDex;");
+    let path = CString::new(copy.as_os_str().as_bytes())?;
+    // SAFETY: both strings are NUL-terminated and outlive the call, and
+    // `value` is valid for its length.
+    let result = unsafe {
+        libc::setxattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+            libc::XATTR_NOFOLLOW,
+        )
+    };
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
 /// Windows (T091): write a `:Zone.Identifier` stream holding `ZoneId=3`, so
