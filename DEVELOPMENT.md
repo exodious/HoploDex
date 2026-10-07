@@ -642,6 +642,16 @@ on a Linux host (`npm run build && npm run test:e2e`) and the surface check
 there (`scripts/pdf-surface-check.sh`, without the container) and note the
 result in the pull request.
 
+A checkout you also use with the container has an empty `node_modules` on the
+host, since the container keeps its own in a volume mounted there, and the
+host can't write to it. Run the host's E2E from a second copy of the checkout
+(`git ls-files` plus `dist/`, then `npm ci` there; point its `src-tauri/target`
+at a host build folder), not from this one. To see that a run is sandboxed,
+look at the main window's `WebKitWebProcess`: its `/proc/<pid>/ns/pid` and
+`ns/mnt` differ from the shell's. The app's log line isn't in the E2E output.
+The probe's child takes about 165 ms (the first run after boot about 315 ms),
+against 158 ms for the same child with the sandbox off.
+
 ### Real keyboard and mouse input
 
 WebDriver's clicks and keys don't reach WebKitGTK the way a person's do, so
