@@ -1,20 +1,21 @@
-# For examples/pdf_spike_win.ps1: real mouse input, screenshots and window
-# bounds on Windows, as pdf_spike_input.swift gives the macOS runs and
-# e2e/scripts/x11-input.py the Linux ones. Run it in the signed-in desktop
+# For scripts/windows/pdf-surface-check.ps1: real mouse input, screenshots
+# and window bounds on Windows, as pdf_surface_input.swift gives the macOS
+# runs and pdf_surface_input.py the Linux ones. Run it in the signed-in desktop
 # session (an SSH session has no desktop to post input to).
 #
-#   pdf_spike_input.ps1 bounds PID       the PID's largest visible window:
+#   pdf_surface_input.ps1 bounds PID       the PID's largest visible window:
 #                                        x y width height (physical pixels)
-#   pdf_spike_input.ps1 move X Y         move the pointer
-#   pdf_spike_input.ps1 click X Y        left click
-#   pdf_spike_input.ps1 rclick X Y       right click
-#   pdf_spike_input.ps1 key KEYS         send keys (SendKeys syntax, e.g. ^s)
-#   pdf_spike_input.ps1 shot FILE        screenshot of the whole screen (PNG)
-#   pdf_spike_input.ps1 text PID         every name and value the PID's UI
+#   pdf_surface_input.ps1 move X Y         move the pointer
+#   pdf_surface_input.ps1 click X Y        left click
+#   pdf_surface_input.ps1 rclick X Y       right click
+#   pdf_surface_input.ps1 scroll X Y N     wheel N notches at X Y (negative: down)
+#   pdf_surface_input.ps1 key KEYS         send keys (SendKeys syntax, e.g. ^s)
+#   pdf_surface_input.ps1 shot FILE        screenshot of the whole screen (PNG)
+#   pdf_surface_input.ps1 text PID         every name and value the PID's UI
 #                                        Automation tree exposes (what a screen
 #                                        reader could read), with each
 #                                        element's control type and position
-#   pdf_spike_input.ps1 press PID NAME   invoke the PID's element named NAME
+#   pdf_surface_input.ps1 press PID NAME   invoke the PID's element named NAME
 #                                        (a button, a menu item)
 param(
     [Parameter(Mandatory)][string]$Command,
@@ -28,7 +29,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-public static class SpikeInput {
+public static class SurfaceInput {
     [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr v);
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint f, int x, int y, uint d, UIntPtr e);
@@ -65,6 +66,14 @@ public static class SpikeInput {
         mouse_event(right ? 0x0010u : 0x0004u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(80);
     }
 
+    public static void Scroll(int x, int y, int notches) {
+        Move(x, y);
+        for (int i = 0; i < Math.Abs(notches); i++) {
+            mouse_event(0x0800u, 0, 0, unchecked((uint)(notches > 0 ? 120 : -120)), UIntPtr.Zero);
+            Thread.Sleep(40);
+        }
+    }
+
     public static void Shot(string file) {
         int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
         using (var bmp = new System.Drawing.Bitmap(w, h))
@@ -75,7 +84,7 @@ public static class SpikeInput {
     }
 }
 '@
-[SpikeInput]::DpiAware()
+[SurfaceInput]::DpiAware()
 
 function Walk-Tree([uint32]$ProcessId, [scriptblock]$Visit) {
     Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
@@ -101,18 +110,19 @@ function Walk-Tree([uint32]$ProcessId, [scriptblock]$Visit) {
 
 switch ($Command) {
     'bounds' {
-        $b = [SpikeInput]::Bounds([uint32]$Rest[0])
+        $b = [SurfaceInput]::Bounds([uint32]$Rest[0])
         if (-not $b) { exit 1 }
         "$($b[0]) $($b[1]) $($b[2]) $($b[3])"
     }
-    'move' { [SpikeInput]::Move([int]$Rest[0], [int]$Rest[1]) }
-    'click' { [SpikeInput]::Click([int]$Rest[0], [int]$Rest[1], $false) }
-    'rclick' { [SpikeInput]::Click([int]$Rest[0], [int]$Rest[1], $true) }
+    'move' { [SurfaceInput]::Move([int]$Rest[0], [int]$Rest[1]) }
+    'click' { [SurfaceInput]::Click([int]$Rest[0], [int]$Rest[1], $false) }
+    'rclick' { [SurfaceInput]::Click([int]$Rest[0], [int]$Rest[1], $true) }
     'key' {
         Add-Type -AssemblyName System.Windows.Forms
         [System.Windows.Forms.SendKeys]::SendWait($Rest[0])
     }
-    'shot' { [SpikeInput]::Shot($Rest[0]) }
+    'scroll' { [SurfaceInput]::Scroll([int]$Rest[0], [int]$Rest[1], [int]$Rest[2]) }
+    'shot' { [SurfaceInput]::Shot($Rest[0]) }
     'text' {
         Walk-Tree $Rest[0] {
             param($e, $info, $value)
@@ -140,7 +150,7 @@ switch ($Command) {
         if ($script:pressed) { 'pressed' } else { 'not found' }
     }
     default {
-        [Console]::Error.WriteLine('usage: bounds PID | move X Y | click X Y | rclick X Y | key KEYS | shot FILE | text PID | press PID NAME')
+        [Console]::Error.WriteLine('usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | key KEYS | shot FILE | text PID | press PID NAME')
         exit 2
     }
 }

@@ -1,23 +1,25 @@
-// For examples/pdf_spike_mac.sh: real mouse input and window bounds on
-// macOS, as e2e/scripts/x11-input.py gives the Linux runs. The terminal (or
+// For scripts/macos/pdf-surface-check.sh: real mouse input and window bounds
+// on macOS, as pdf_surface_input.py gives the Linux runs. The terminal (or
 // sshd) running it needs Accessibility access to post events.
 //
-//   pdf_spike_input bounds PID      the PID's largest window: x y width height
-//   pdf_spike_input move X Y        move the pointer (screen points)
-//   pdf_spike_input click X Y       left click
-//   pdf_spike_input rclick X Y      right click
-//   pdf_spike_input text PID        every text the PID's accessibility tree
+//   pdf_surface_input bounds PID      the PID's largest window: x y width height
+//   pdf_surface_input move X Y        move the pointer (screen points)
+//   pdf_surface_input click X Y       left click
+//   pdf_surface_input rclick X Y      right click
+//   pdf_surface_input text PID        every text the PID's accessibility tree
 //                                   exposes (what VoiceOver could read), with
 //                                   each element's role and position
-//   pdf_spike_input press PID TITLE press the PID's element titled TITLE
+//   pdf_surface_input press PID TITLE press the PID's element titled TITLE
 //                                   (a context menu item, a button)
-//   pdf_spike_input clickt X Y      left click, and print when (Unix ms,
+//   pdf_surface_input clickt X Y      left click, and print when (Unix ms,
 //                                   just before the button goes up)
-//   pdf_spike_input find PID ROLE TITLE
+//   pdf_surface_input find PID ROLE TITLE
 //                                   the centre of the PID's first ROLE
 //                                   element whose title is TITLE: x y
-//   pdf_spike_input key CODE        press a key (a virtual key code)
-//   pdf_spike_input menu PID        the PID's menu bar items, as paths,
+//   pdf_surface_input key CODE [cmd]  press a key (a virtual key code), with
+//                                   Command held if `cmd` is given
+//   pdf_surface_input scroll X Y N    wheel N notches at X Y (negative: down)
+//   pdf_surface_input menu PID        the PID's menu bar items, as paths,
 //                                   with any disabled ones marked
 import ApplicationServices
 import CoreGraphics
@@ -91,8 +93,18 @@ case "find":
 case "key":
     let code = CGKeyCode(args[2])!
     for down in [true, false] {
-        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!.post(tap: .cghidEventTap)
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
+        if args.count > 3 && args[3] == "cmd" { event.flags = .maskCommand }
+        event.post(tap: .cghidEventTap)
         usleep(50_000)
+    }
+case "scroll":
+    let (x, y, n) = (Double(args[2])!, Double(args[3])!, Int32(args[4])!)
+    post(.mouseMoved, x, y)
+    for _ in 0..<abs(n) {
+        CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: n > 0 ? 3 : -3, wheel2: 0, wheel3: 0)!
+            .post(tap: .cghidEventTap)
+        usleep(40_000)
     }
 case "menu":
     func items(_ element: AXUIElement, _ path: String, _ depth: Int) {
@@ -128,6 +140,6 @@ case "press":
     }
     print(pressed ? "pressed" : "not found")
 default:
-    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE | menu PID\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [cmd] | menu PID\n".data(using: .utf8)!)
     exit(2)
 }
