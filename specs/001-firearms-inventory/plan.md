@@ -27,12 +27,14 @@ from policy dates and never assigned per firearm (FR-014, FR-036).
 React 18+ (frontend, `src`)
 
 **Primary Dependencies**: Tauri 2.x (app shell, IPC, async commands, native
-dialogs/file access); `rusqlite` with the `bundled-sqlcipher` and `fts5`
-features (encrypted persistence + full-text search); `keyring` (OS-native
-credential store for the SQLCipher passphrase); `rust_xlsxwriter` (Excel
-export) and `calamine` (Excel import) plus `csv` (CSV export/import); an
-accessible React component library built on Radix UI primitives (e.g.
-shadcn/ui) for WCAG 2.1 AA-compliant, consistent UI; `tauri-plugin-dialog`
+dialogs/file access); `rusqlite` with the `bundled-sqlcipher`
+feature (encrypted persistence; its bundled SQLite also provides the FTS5
+full-text search); `keyring` (OS-native credential store, holding the
+SQLCipher passphrase only when the user opts in; see spec 003);
+`rust_xlsxwriter` (Excel
+export) and `calamine` (Excel import) plus `csv` (CSV export/import); the
+app's own shared component library (`src/components/`), built on Radix UI
+primitives, for WCAG 2.1 AA-compliant, consistent UI; `tauri-plugin-dialog`
 for file/folder pickers on export/import
 
 **Storage**: A single encrypted SQLite (SQLCipher) database file on the
@@ -46,18 +48,24 @@ server.
 insurance-warning calculations, import matching and conflict resolution,
 encryption/keyring integration) run against a real temporary SQLCipher
 database per the constitution's no-mocks rule; Vitest + React Testing
-Library for frontend unit tests; WebdriverIO driven through `tauri-driver`
-(Tauri's officially supported WebDriver harness) for E2E tests covering the
-five user-story acceptance scenarios end-to-end against the built app. Format,
-lint, test, and build are defined as a CI workflow for Windows, macOS, and
-Linux so FR-022's cross-platform requirement can be verified rather than
-assumed. The workflow is intentionally kept disabled
+Library for frontend unit tests; WebdriverIO driven through the embedded
+WebDriver server (`tauri-plugin-wdio-webdriver`, compiled into the E2E build
+only and kept out of the shipped one by `npm run audit:webdriver`; there is
+no `tauri-driver` to install) for E2E tests covering the user-story
+acceptance scenarios end-to-end against the built app. Format, lint, test,
+the dependency and license audits and the build are run on Windows, macOS
+and Linux so FR-022's cross-platform requirement is verified rather than
+assumed; the last full run on each is recorded in spec.md's FR-022. A CI
+workflow for them is written but intentionally kept disabled
 (`.github/workflows-disabled/`) until the owner enables it; until then the
-same checks are run locally, which is a documented, owner-approved deviation
-from Constitution I's automated-gate requirement.
+same checks are run locally (on Linux in the dev container, on macOS in a
+macOS 26 VM, on Windows on a test machine), which is a documented,
+owner-approved deviation from Constitution I's automated-gate requirement.
 
-**Target Platform**: Desktop — Windows 10+, macOS 12+, Linux (glibc,
-WebKitGTK) — single codebase, no server component, fully offline-capable.
+**Target Platform**: Desktop — Windows 10+ (x64, WebView2), macOS 26+
+(Apple silicon only; the owner tests nothing older, and the bundle sets
+`minimumSystemVersion` to 26.0), Linux (glibc, WebKitGTK) — single
+codebase, no server component, fully offline-capable.
 
 **Project Type**: Desktop application (Tauri: React frontend + Rust
 backend in one repo, not a client/server web app).
@@ -89,9 +97,9 @@ documents of typical consumer sizes (a few MB each).
 
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
-| I. Code Quality | Linting/static analysis, peer review, small single-purpose modules, no speculative abstraction | `clippy` + `rustfmt` for Rust, `eslint`/`prettier` for TS wired into CI; Rust backend split into focused modules (`db`, `models`, `commands`, `services::{valuation, insurance, import_export}`) with no premature abstraction beyond what FR-001–FR-041 require |
-| II. Testing (NON-NEGOTIABLE) | Tests before done, red-green, real persistence (no mocks), regression tests for bugs | `cargo test` integration tests run against a real temp SQLCipher DB (via `rusqlite`'s in-memory-file or tempdir DB, never a mock connection); one test per acceptance scenario in spec.md; Vitest for pure frontend logic; WebdriverIO/`tauri-driver` E2E for full user-story flows |
-| III. UX Consistency | Single shared component library, consistent confirmation pattern, WCAG 2.1 AA | Single Radix-based component library (shadcn/ui) is the only source of buttons/dialogs/forms/tables; one shared `<ConfirmDialog>` component used for every destructive action (delete firearm, delete policy, bulk import overwrite); components chosen/audited for WCAG 2.1 AA |
+| I. Code Quality | Linting/static analysis, peer review, small single-purpose modules, no speculative abstraction | `clippy` + `rustfmt` for Rust, `eslint`/`prettier` for TS, run as local gates (CI is disabled, see Testing); Rust backend split into focused modules (`db`, `models`, `commands`, `services::{valuation, insurance, import_export}`) with no premature abstraction beyond what FR-001–FR-041 require |
+| II. Testing (NON-NEGOTIABLE) | Tests before done, red-green, real persistence (no mocks), regression tests for bugs | `cargo test` integration tests run against a real temp SQLCipher DB (via `rusqlite`'s in-memory-file or tempdir DB, never a mock connection); one test per acceptance scenario in spec.md; Vitest for pure frontend logic; WebdriverIO E2E (embedded WebDriver) for full user-story flows |
+| III. UX Consistency | Single shared component library, consistent confirmation pattern, WCAG 2.1 AA | Single Radix-based component library (`src/components/`) is the only source of buttons/dialogs/forms/tables; one shared `<ConfirmDialog>` component used for every destructive action (delete firearm, delete policy, bulk import overwrite); components chosen/audited for WCAG 2.1 AA |
 | IV. Performance | 100ms feedback / 1s completion for interactive ops, 500ms search, no UI-thread blocking, progress indication for bulk ops | All DB access happens in Rust via async Tauri commands off the UI thread; FTS5 index keeps search sub-500ms at 10k-row scale; import/export run as async commands emitting `tauri::Emitter` progress events consumed by a shared progress-bar component |
 | V. User Privacy | Local/encrypted storage, no unconsented transmission, no telemetry on collection contents, clear export disclosure, real deletion | SQLCipher encrypts the entire DB file at rest; `keyring` stores the passphrase in the OS credential store, never logged; no analytics/telemetry dependency is introduced; export dialog explicitly states the destination folder and that files leave the device unencrypted (T139–T140); the webview gets a restrictive CSP and no network-capable plugin is enabled (T141–T142); deleting a firearm, photo, or document issues a real `DELETE` rather than a soft-delete flag, with `PRAGMA secure_delete = ON` zeroing freed pages and a `VACUUM` after deletion returning the space, so deleted BLOB content does not linger in the file (T137–T138). _Amended by [spec 003](../003-database-protection-management/plan.md): the database is keyed by the user's passphrase, and the keyring holds only that passphrase, only on opt-in._ |
 | Security & Data Handling | Encryption at rest, opt-in-only network features, vetted dependencies, no unauthorized external access | No network/sync feature exists in this feature at all (FR-021); all chosen dependencies (`rusqlite`, `keyring`, `rust_xlsxwriter`, `calamine`) are local-only, reviewed for absence of phone-home behavior in research.md; the DB file lives in the OS app-data directory, not a shared/exposed location. _Amended by [spec 003](../003-database-protection-management/plan.md): databases and their backups live in folders the user chooses._ |
@@ -125,11 +133,11 @@ src-tauri/
 ├── src/
 │   ├── main.rs               # Tauri app bootstrap, plugin/command registration
 │   ├── db/
-│   │   ├── mod.rs            # SQLCipher connection pool, key unlock, migrations
+│   │   ├── mod.rs            # create/open of a passphrase-keyed SQLCipher database, migrations (one connection, no pool; held by `session/`)
 │   │   └── migrations/       # versioned SQL migrations (schema + FTS5 tables)
 │   ├── models/                # Firearm, DispositionHistory, Photo, DocumentAttachment,
 │   │                          # InsurancePolicy, InsuranceCoverage, GenericThumbnail
-│   ├── commands/               # #[tauri::command] async handlers (thin IPC layer)
+│   ├── commands/               # #[tauri::command] handlers (thin IPC layer; each area's logic is in its `ops`)
 │   │   ├── firearms.rs
 │   │   ├── photos.rs
 │   │   ├── documents.rs
@@ -137,7 +145,6 @@ src-tauri/
 │   │   └── import_export.rs
 │   └── services/                # pure business logic, unit/integration tested
 │       ├── secure_delete.rs     # overwrite-then-unlink for decrypted temp copies (FR-035)
-│       ├── thumbnails.rs        # generic-thumbnail fallback resolution (FR-009)
 │       ├── valuation.rs         # value-summary computation (FR-015)
 │       ├── insurance_status.rs  # under/uninsured + policy-expiry rules (FR-016/017/024/028)
 │       ├── import_matching.rs   # make+model+serial matching & conflict resolution (FR-026/030)
@@ -158,20 +165,22 @@ src/                              # React + TypeScript frontend
 │   ├── insurance/                 # policy management, value summary, warnings (US3)
 │   ├── media/                    # photo/document attach + thumbnail picker (US4)
 │   └── import-export/            # export/import wizards, conflict resolution UI (US5)
-├── services/                     # thin wrappers around Tauri `invoke()` calls
-├── hooks/
+│                                 # (later features added `app/`, `databases/`, `session/`,
+│                                 # `accessories/` and `mounts/`)
+├── services/                     # `tauriClient.ts`, the one `invoke()` wrapper; each feature has its own `*Service.ts`
 └── main.tsx
 
 src/**/*.test.tsx                 # Vitest unit tests, colocated with components
 
 e2e/
-├── wdio.conf.ts                  # WebdriverIO config using tauri-driver
+├── wdio.conf.ts                  # WebdriverIO config; the app's embedded WebDriver server
 └── specs/
     ├── us1-record-firearm.e2e.ts
     ├── us2-browse-search.e2e.ts
     ├── us3-value-insurance.e2e.ts
     ├── us4-photos-documents.e2e.ts
-    └── us5-export-import.e2e.ts
+    ├── us5-export-import.e2e.ts
+    └── …                         # one file per later feature: 15 in all
 ```
 
 **Structure Decision**: A single Tauri 2.x repository with two source
