@@ -338,6 +338,11 @@ fi
 # No screen saver, and so no lock behind it.
 defaults -currentHost write com.apple.screensaver idleTime -int 0
 
+# Terminal starts with no windows: it doesn't reopen the last session's, which
+# after a `gui` run cut short would come back as a pile of shells.
+defaults write com.apple.Terminal ApplePersistenceIgnoreState -bool true
+defaults write com.apple.Terminal NSQuitAlwaysKeepsWindows -bool false
+
 echo "rust $(rustc --version | cut -d' ' -f2), $(cargo nextest --version | head -1), node $(node --version), npm $(npm --version)"
 USER
   } | user_ssh "$user@$ip" 'bash -s'
@@ -400,7 +405,8 @@ cmd_ssh() {
 }
 
 # Runs a shell command line in the test user's desktop session through
-# Terminal, follows its output, and exits with its status.
+# Terminal, in a window that closes when it's done, follows its output, and
+# exits with its status.
 cmd_gui() {
   [[ $# -gt 0 ]] || die "usage: $0 gui CMD [ARG...]"
   need_desktop
@@ -417,7 +423,21 @@ dir="\$(mktemp -d /tmp/hoplodex-gui.XXXXXX)"
   printf 'echo \$? > %q\n' "\$dir/status"
 } > "\$dir/run.command"
 chmod +x "\$dir/run.command"
-open -a Terminal "\$dir/run.command"
+# Opened through a settings file, not as a .command: Terminal's profiles keep
+# a window open after its shell exits, so every run left a dead window
+# behind. This one closes its window (shellExitAction 0) once the command and
+# then the shell exit, and Terminal doesn't keep it among its profiles.
+cat > "\$dir/run.terminal" <<TERMINAL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>type</key><string>Window Settings</string>
+<key>CommandString</key><string>\$dir/run.command; exit</string>
+<key>RunCommandAsShell</key><false/>
+<key>shellExitAction</key><integer>0</integer>
+</dict></plist>
+TERMINAL
+open -a Terminal "\$dir/run.terminal"
 tail -n +1 -f "\$dir/log" &
 tail=\$!
 until [ -s "\$dir/status" ]; do sleep 1; done
