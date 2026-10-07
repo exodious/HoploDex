@@ -431,6 +431,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     const clickedAt = await openDocument("Large appraisal.pdf");
     const ready = await waitForEvent("preview:pdf-ready", mark);
 
+    console.log(`SC-001: click to preview:pdf-ready ${Math.round(ready.at - clickedAt)} ms`);
     expect(ready.at - clickedAt).toBeLessThan(1000);
     await closeViewer();
   });

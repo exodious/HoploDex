@@ -100,7 +100,8 @@ export function useTiffPages({
     () => initialZoom ?? (pages.length > 1 ? "fitWidth" : "fitPage"),
   );
   const scale = scaleFor(zoom, pages, viewportWidth, viewportHeight);
-  const percent = typeof zoom === "number" ? clampPercent(zoom) : Math.round((scale / CSS_PX_PER_POINT) * 100);
+  const percent =
+    typeof zoom === "number" ? clampPercent(zoom) : Math.round((scale / CSS_PX_PER_POINT) * 100);
 
   const layout = useMemo(() => {
     let top = 0;
@@ -238,8 +239,12 @@ export function useTiffPages({
                 victim = candidate;
                 continue;
               }
-              const older = (lastShown.current.get(candidate) ?? 0) - (lastShown.current.get(victim) ?? 0);
-              if (older < 0 || (older === 0 && Math.abs(candidate - page) > Math.abs(victim - page))) {
+              const older =
+                (lastShown.current.get(candidate) ?? 0) - (lastShown.current.get(victim) ?? 0);
+              if (
+                older < 0 ||
+                (older === 0 && Math.abs(candidate - page) > Math.abs(victim - page))
+              ) {
                 victim = candidate;
               }
             }
