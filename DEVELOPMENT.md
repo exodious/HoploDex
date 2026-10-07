@@ -392,6 +392,11 @@ before/after pairs on one platform.
 With Windows' "Show animations in Windows" off (Settings › Accessibility ›
 Visual effects), WebView2 reports reduced motion and us7's catalogue-plate
 test fails; `setup-system.ps1 -AutoLogon` turns it on.
+A WebDriver screenshot leaves out the PDF surface (a child web view), so where
+Linux takes the X display with `import -window root`, us13's pixel checks and
+the walk's viewer shots (`shotDisplay`) run `e2e/scripts/window-shot.ps1` on
+Windows. It saves the app window's client area, so a point in the page is the
+same point in the picture, and the window must be on top and uncovered.
 
 ## Install dependencies
 

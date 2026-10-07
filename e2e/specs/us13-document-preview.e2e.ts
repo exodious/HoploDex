@@ -483,7 +483,8 @@ async function windowScreenshot(): Promise<Screen> {
           "-Format",
           "ppm",
         ],
-        { stdio: "pipe" },
+        // windowsHide: no console window of its own over the app.
+        { stdio: "pipe", windowsHide: true },
       );
       ppm = fs.readFileSync(file);
     } finally {
@@ -862,6 +863,15 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
       expect(magentaPixels(screen) - magentaPixels(screen, area)).toBeGreaterThan(0.7 * areaPixels);
     }
     await closeViewer();
+    if (process.platform === "win32") {
+      // The surface held the keyboard focus. Closing it left the focus with no
+      // web view on Windows, so the page's focus() fired no blur (a field was
+      // never settled on leaving it) until the user clicked in the window.
+      await browser.waitUntil(() => browser.execute(() => document.hasFocus()), {
+        timeout: 5000,
+        timeoutMsg: "the main web view never got the focus back after the viewer closed",
+      });
+    }
   });
 
   it("a lock with a PDF shown leaves nothing of it on the screen once the chooser is up", async function () {

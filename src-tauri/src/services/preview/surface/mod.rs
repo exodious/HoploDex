@@ -328,7 +328,24 @@ impl<R: Runtime> Surface<R> {
     /// Closes the web view.
     pub fn close(self) -> tauri::Result<()> {
         on_close(&self.webview);
-        self.webview.close()
+        // The surface held the keyboard focus (the PDF viewer takes it, and a
+        // page's own `focus()` can't take it back), and on Windows closing it
+        // leaves the focus with no web view: the dialog's `focus()` calls then
+        // fire no `blur`, so a field is never settled on leaving it, until
+        // the user clicks in the window. Linux and macOS hand it back.
+        #[cfg(windows)]
+        let main = {
+            use tauri::Manager;
+            self.webview.window().get_webview("main")
+        };
+        let closed = self.webview.close();
+        #[cfg(windows)]
+        if let Some(main) = main
+            && let Err(e) = main.set_focus()
+        {
+            log::warn!("could not give the focus back to the main web view: {e}");
+        }
+        closed
     }
 }
 

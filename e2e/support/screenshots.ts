@@ -198,7 +198,8 @@ export async function shotDisplay(name: string) {
         "-Out",
         file,
       ],
-      { stdio: "pipe" },
+      // windowsHide: no console window of its own over the app.
+      { stdio: "pipe", windowsHide: true },
     );
   } else if (process.platform === "darwin") {
     // WebDriver's rectangle is the window's frame, title bar included; the
