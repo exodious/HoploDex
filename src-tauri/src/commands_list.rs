@@ -17,6 +17,8 @@ pub const COMMANDS: &[&str] = &[
     "skip_backup",
     "update_lock_settings",
     "lock_database",
+    "get_document_opening",
+    "set_document_opening",
     "stage_pending_changes",
     "resolve_pending_changes",
     "note_activity",

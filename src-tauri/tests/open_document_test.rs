@@ -1068,10 +1068,7 @@ fn preview_never_asks_and_setting_the_current_value_changes_nothing() {
     let world = World::new();
     let consent = FakeConsent::open();
 
-    assert!(
-        !world.set_opening(&consent, DocumentOpening::Preview),
-        "already \"preview\": a no-op"
-    );
+    assert!(!world.set_opening(&consent, DocumentOpening::Preview), "already \"preview\": a no-op");
     assert!(consent.requests().is_empty());
 
     assert!(world.set_opening(&consent, DocumentOpening::External));

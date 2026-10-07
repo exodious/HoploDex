@@ -271,6 +271,8 @@ fn main() {
             hoplodex_lib::commands::databases::skip_backup,
             hoplodex_lib::commands::databases::update_lock_settings,
             hoplodex_lib::commands::databases::lock_database,
+            hoplodex_lib::commands::databases::get_document_opening,
+            hoplodex_lib::commands::databases::set_document_opening,
             hoplodex_lib::commands::databases::stage_pending_changes,
             hoplodex_lib::commands::databases::resolve_pending_changes,
             hoplodex_lib::commands::databases::note_activity,

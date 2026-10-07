@@ -20,6 +20,8 @@
     "allow-skip-backup",
     "allow-update-lock-settings",
     "allow-lock-database",
+    "allow-get-document-opening",
+    "allow-set-document-opening",
     "allow-stage-pending-changes",
     "allow-resolve-pending-changes",
     "allow-note-activity",
