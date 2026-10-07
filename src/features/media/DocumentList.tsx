@@ -10,7 +10,7 @@ import * as mediaService from "./mediaService";
 import type { DocumentSummary, DocumentType, PdfEndReason } from "./types";
 import { DocumentPreview } from "./DocumentPreview";
 import { documentKindLabel } from "./documentKind";
-import { fileName, isDocumentPath } from "./filePaths";
+import { documentAccept, fileName, isDocumentPath, isPhotoPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
 import "./media.css";
 
@@ -24,6 +24,11 @@ function failureMessage(e: unknown, fallback: string): string {
 }
 
 const PDF_OFF = "PDFs can't be previewed on this computer.";
+const NOT_OPENABLE = "This can't be opened: it is not a document type.";
+
+/** A dropped file that isn't a document type (ui contract §6). */
+const refusal = (name: string) =>
+  `${name} wasn't attached. Documents can be PDF, TIFF, text, CSV, RTF, Word, spreadsheet or OpenDocument files.`;
 
 /** What the meta line adds after the kind and date, where it applies
  * (contract §1; FR-013: the list shows which documents can be previewed). */
@@ -88,7 +93,11 @@ export function DocumentList({ owner }: DocumentListProps) {
         await add();
         added += 1;
       } catch (e) {
-        failure ??= failureMessage(e, `${name} couldn't be attached.`);
+        // The backend's message says a photo isn't a document type; here it can say where it goes.
+        failure ??=
+          e instanceof CommandFailure && e.code === "DOCUMENT_TYPE_NOT_ALLOWED" && isPhotoPath(name)
+            ? `${name} is a photo. Add it under Photos instead.`
+            : failureMessage(e, `${name} couldn't be attached.`);
       }
     }
     setAdding(0);
@@ -115,10 +124,23 @@ export function DocumentList({ owner }: DocumentListProps) {
     );
   }
 
+  /** Routes a drop: documents attach, photos are Photos' (so nothing is said),
+   * and anything else is refused before any command (ui contract §6). */
+  function routeDrop(paths: string[]) {
+    const documents = paths.filter((path) => isDocumentPath(path, types));
+    for (const path of paths) {
+      if (!isPhotoPath(path) && !isDocumentPath(path, types))
+        notify(refusal(fileName(path)), "error");
+    }
+    void addPaths(documents);
+  }
+
   async function open(doc: DocumentSummary) {
     setOpening(doc.id);
     try {
-      await mediaService.openDocument(doc.id);
+      // `opened` is false when the user declined the native question: nothing is said.
+      const { opened } = await mediaService.openDocument(doc.id);
+      if (opened) notify(`Opened ${doc.originalFilename} in another app.`);
     } catch (e) {
       notify(failureMessage(e, `${doc.originalFilename} couldn't be opened.`), "error");
     } finally {
@@ -157,7 +179,8 @@ export function DocumentList({ owner }: DocumentListProps) {
     if (reason === "copyCaught" || reason === "noViewer") void load();
   }
 
-  const dragging = useFileDrop(isDocumentPath, (paths) => void addPaths(paths));
+  const dragging = useFileDrop((path) => !isPhotoPath(path), routeDrop);
+  const accept = documentAccept(types);
   const pick = () => inputRef.current?.click();
 
   return (
@@ -176,6 +199,7 @@ export function DocumentList({ owner }: DocumentListProps) {
           ref={inputRef}
           type="file"
           multiple
+          accept={accept}
           className="hd-sr-only"
           tabIndex={-1}
           aria-label="Attach documents"
@@ -187,8 +211,8 @@ export function DocumentList({ owner }: DocumentListProps) {
         <button type="button" className="hd-dropzone hd-dropzone--compact" onClick={pick}>
           <Icon name="file" size={22} />
           <span>
-            Drop receipts, appraisals, or manuals here, or{" "}
-            <span className="hd-link">choose files</span>
+            Drop receipts, bills of sale, registration forms or service records here (PDF, TIFF,
+            text, Word or spreadsheet), or <span className="hd-link">choose files</span>
           </span>
         </button>
       )}
@@ -229,9 +253,11 @@ export function DocumentList({ owner }: DocumentListProps) {
                 variant="ghost"
                 icon="open"
                 pending={opening === doc.id}
+                disabled={!doc.openable}
+                title={doc.openable ? undefined : NOT_OPENABLE}
                 onClick={() => open(doc)}
               >
-                Open
+                Open in another app…
               </Button>
               <Button
                 size="sm"

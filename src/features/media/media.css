@@ -235,6 +235,10 @@
   color: var(--ink-2);
 }
 
+.hd-preview__footer-status--error {
+  color: var(--danger);
+}
+
 /* The page area: a TIFF's scroll of pages, and the text. */
 .hd-preview__pages,
 .hd-preview__text {

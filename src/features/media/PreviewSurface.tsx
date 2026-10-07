@@ -14,9 +14,11 @@ export interface PreviewSurfaceProps {
   previewId: number;
   /** The document's name, for the label and the progress line. */
   name: string;
+  /** Hold the surface hidden while the native confirmation is up. */
+  hidden?: boolean;
 }
 
-export function PreviewSurface({ previewId, name }: PreviewSurfaceProps) {
+export function PreviewSurface({ previewId, name, hidden = false }: PreviewSurfaceProps) {
   const region = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const sent = useRef("");
@@ -27,14 +29,14 @@ export function PreviewSurface({ previewId, name }: PreviewSurfaceProps) {
     const { x, y, width, height } = element.getBoundingClientRect();
     // The backend refuses a size under 1 px; a collapsed area has nothing to show.
     if (!(width >= 1) || !(height >= 1)) return;
-    const visible = document.querySelector(COVERS) === null;
+    const visible = !hidden && document.querySelector(COVERS) === null;
     const key = `${previewId}|${x}|${y}|${width}|${height}|${visible}`;
     if (key === sent.current) return;
     sent.current = key;
     setPreviewBounds(previewId, { x, y, width, height }, visible).catch(() => {
       // PREVIEW_CLOSED: the viewer is going away, or the lock closed it.
     });
-  }, [previewId]);
+  }, [previewId, hidden]);
 
   useEffect(() => {
     setReady(false);

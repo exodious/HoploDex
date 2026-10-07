@@ -3,9 +3,8 @@
 // (PhotoGallery.tsx). Contract: specs/007-document-preview/contracts/
 // ui-document-preview.md §2 (The viewer), §3 (States in the page area), §7
 // (Keyboard) and §8 (Accessibility); research.md §12 (text) and §14 (TIFF).
-//
-// "Open in another app…" is not here yet: user story 2 adds it to the footer and
-// to the states that offer it (tasks.md T093).
+// "Open in another app…" (user story 2, §1-§3) sits in the footer, and is the
+// primary action of each state that can't show the document.
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, UIEvent } from "react";
 import {
@@ -16,6 +15,7 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   placeFocus,
+  useToast,
 } from "../../components";
 import type { IconName } from "../../components";
 import { formatDate } from "../../lib/dates";
@@ -27,6 +27,7 @@ import {
   onPdfEnded as listenPdfEnded,
   onPreviewEscape,
   onPreviewFocusChrome,
+  openDocument,
   openPreview,
 } from "./mediaService";
 import { PreviewSurface } from "./PreviewSurface";
@@ -118,6 +119,11 @@ export function DocumentPreview({
   const kind = documentKindLabel(doc, documentTypes);
   const [view, setView] = useState<View>({ phase: "loading" });
   const root = useRef<HTMLDivElement>(null);
+  const notify = useToast();
+  // The native confirmation is up (or the hand-off is under way); `openStatus` is what a
+  // toast would say, kept in the footer while a PDF's surface is over the window.
+  const [opening, setOpening] = useState(false);
+  const [openStatus, setOpenStatus] = useState<{ text: string; error: boolean } | null>(null);
   const hasPrev = index > 0;
   const hasNext = index < documents.length - 1;
 
@@ -145,6 +151,7 @@ export function DocumentPreview({
   useEffect(() => {
     let cancelled = false;
     setView({ phase: "loading" });
+    setOpenStatus(null);
     openPreview(doc.id).then(
       (info) => {
         // Closed while it was preparing: the answer is closed as soon as it's known.
@@ -210,6 +217,40 @@ export function DocumentPreview({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  async function openElsewhere() {
+    const target = doc;
+    setOpening(true);
+    setOpenStatus(null);
+    const say = (text: string, error: boolean) => {
+      if (unmounted.current) return;
+      // A toast can't be drawn over the PDF surface, so the footer says it (ui contract §2).
+      if (latest.current.view.phase === "ready" && latest.current.view.info.kind === "pdf") {
+        setOpenStatus({ text, error });
+      } else {
+        notify(text, error ? "error" : "success");
+      }
+    };
+    try {
+      const { opened } = await openDocument(target.id);
+      // Declining the native question says nothing.
+      if (opened) say(`Opened ${target.originalFilename} in another app.`, false);
+    } catch (e) {
+      say(
+        e instanceof CommandFailure ? e.message : `${target.originalFilename} couldn't be opened.`,
+        true,
+      );
+    } finally {
+      if (!unmounted.current) setOpening(false);
+    }
+  }
+
+  // FR-017: a document whose content isn't its type is never handed on.
+  const canOpenElsewhere = !(
+    view.phase === "problem" && view.problem.code === "DOCUMENT_CONTENT_MISMATCH"
+  );
+  const openLabel = "Open in another app…";
+  const notOpenable = doc.openable ? undefined : "This can't be opened: it is not a document type.";
+
   const pageCount =
     view.phase === "ready" && view.info.kind === "tiff" ? view.info.pages.length : 0;
   const description = [
@@ -233,11 +274,28 @@ export function DocumentPreview({
       <div className="hd-preview__state">
         <Icon name={icon} size={28} className="hd-preview__state-icon" />
         <p role="status">{problemSentence(view.problem, name, kind)}</p>
+        {canOpenElsewhere && (
+          <Button
+            variant="primary"
+            icon="open"
+            pending={opening}
+            disabled={!doc.openable}
+            title={notOpenable}
+            onClick={openElsewhere}
+          >
+            {openLabel}
+          </Button>
+        )}
       </div>
     );
   } else if (view.info.kind === "pdf") {
     content = (
-      <PreviewSurface key={view.info.previewId} previewId={view.info.previewId} name={name} />
+      <PreviewSurface
+        key={view.info.previewId}
+        previewId={view.info.previewId}
+        name={name}
+        hidden={opening}
+      />
     );
   } else if (view.info.kind === "tiff") {
     content = (
@@ -279,13 +337,29 @@ export function DocumentPreview({
             />
             {pdfId !== null && (
               // What a toast would say over the PDF surface, which a toast can't
-              // be drawn over (ui contract §2). Filled in with user story 2.
-              <span className="hd-preview__footer-status" role="status" />
+              // be drawn over (ui contract §2).
+              <span
+                className={`hd-preview__footer-status${openStatus?.error ? " hd-preview__footer-status--error" : ""}`}
+                role="status"
+              >
+                {openStatus?.text}
+              </span>
             )}
           </div>
           <Button variant="ghost" icon="trash" onClick={() => onDelete(doc)}>
             Delete document
           </Button>
+          {canOpenElsewhere && (
+            <Button
+              icon="open"
+              pending={opening}
+              disabled={!doc.openable}
+              title={notOpenable}
+              onClick={openElsewhere}
+            >
+              {openLabel}
+            </Button>
+          )}
         </>
       }
     >

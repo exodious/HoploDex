@@ -71,9 +71,11 @@ export function addDocumentFromPath(owner: RecordRef, path: string): Promise<Doc
   return invoke<DocumentSummary>("add_document_from_path", { owner, path });
 }
 
-/** Opens the document in the OS default app for its file type (FR-010). */
-export function openDocument(id: number): Promise<void> {
-  return invoke<void>("open_document", { id });
+/** Hands the document to the OS default app for its type, after the native
+ * confirmation (FR-010; contracts/tauri-commands.md `open_document`).
+ * `opened` is false when the user declined the confirmation. */
+export function openDocument(id: number): Promise<{ opened: boolean }> {
+  return invoke<{ opened: boolean }>("open_document", { id });
 }
 
 export function deleteDocument(id: number, confirmed: boolean): Promise<{ deleted: boolean }> {
@@ -130,10 +132,7 @@ export function onPdfReady(previewId: number, handler: () => void): () => void {
   return onPreviewEvent("preview:pdf-ready", previewId, () => handler());
 }
 
-export function onPdfEnded(
-  previewId: number,
-  handler: (reason: PdfEndReason) => void,
-): () => void {
+export function onPdfEnded(previewId: number, handler: (reason: PdfEndReason) => void): () => void {
   return onPreviewEvent<{ previewId: number; reason: PdfEndReason }>(
     "preview:pdf-ended",
     previewId,
