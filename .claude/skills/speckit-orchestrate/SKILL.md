@@ -138,6 +138,10 @@ When a subagent reports:
 3. **Commit by path**, leaving out files a still-running agent is editing; push. One
    commit per batch, message naming the task IDs. Follow CLAUDE.md's commit rules.
 4. Note follow-ups that belong to a later batch, and put them in that batch's prompt.
+5. **Retest on the OS that failed.** A fix for a failure seen on only one OS is verified
+   only by rerunning it on that OS, several runs in a row for a flake. Passing elsewhere
+   doesn't count, even when the fix is in common code. Until that OS's session reports
+   back, call it "fixed, not yet verified on <OS>".
 
 ## 5. Interruptions
 

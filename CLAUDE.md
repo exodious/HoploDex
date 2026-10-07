@@ -17,6 +17,7 @@ On a host with podman, run tests, lint, the dependency audit and screenshots thr
 - Don't use the options that pass the host's identity through (`--git-config`, `--ssh-agent`, `--gh-token`, `--anthropic-api-key`) unless the user asks. Commit from the host. `--gui` is only for `tauri dev` and human testing; tests don't need it.
 - Use `--build` after a `Dockerfile` change. Never use `--reset-volumes=all` without asking, because it logs the user out of `gh` and `claude`.
 - Run tests directly on the host only if podman isn't available or the user asks.
+- **A failure seen on only one OS** is fixed only once it has been rerun on that OS (several runs in a row for a flake). Passing on another OS doesn't verify it.
 - **A UI bug a spec can't reproduce** (a focus ring, a layout that fixes itself on the next key press or mouse move) may need real input, which WebDriver's clicks and keys aren't. See "Real keyboard and mouse input" in `DEVELOPMENT.md`.
 
 ## Never touch the real databases
