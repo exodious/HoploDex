@@ -354,8 +354,9 @@ pub fn assert_gone(pid: u32, what: &str) {
     assert!(wait_until_gone(pid, Duration::from_secs(3)), "helper {pid} still runs {what}");
 }
 
-/// The PIDs of this process's render helpers, found through `/proc`
-/// (Linux only; empty elsewhere).
+/// The PIDs of this process's render helpers: through `/proc` on Linux, a
+/// snapshot of the processes on Windows (a child named `hoplodex.exe`, the
+/// helper being the app's own executable), empty elsewhere.
 pub fn helper_children() -> Vec<u32> {
     #[cfg(target_os = "linux")]
     {
@@ -380,7 +381,39 @@ pub fn helper_children() -> Vec<u32> {
         }
         found
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+            TH32CS_SNAPPROCESS,
+        };
+
+        let me = std::process::id();
+        let mut found = Vec::new();
+        // SAFETY: plain system calls; the snapshot is closed, and the
+        // structure is zeroed and sized.
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot == INVALID_HANDLE_VALUE {
+                return found;
+            }
+            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            let mut more = Process32FirstW(snapshot, &mut entry);
+            while more != 0 {
+                let len = entry.szExeFile.iter().position(|c| *c == 0).unwrap_or(0);
+                let name = String::from_utf16_lossy(&entry.szExeFile[..len]);
+                if entry.th32ParentProcessID == me && name.eq_ignore_ascii_case("hoplodex.exe") {
+                    found.push(entry.th32ProcessID);
+                }
+                more = Process32NextW(snapshot, &mut entry);
+            }
+            CloseHandle(snapshot);
+        }
+        found
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Vec::new()
     }

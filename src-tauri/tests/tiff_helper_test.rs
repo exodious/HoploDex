@@ -49,7 +49,9 @@ use support::hostile_documents as hostile;
 #[cfg(debug_assertions)]
 use tempfile::TempDir;
 
-use preview_support::{assert_gone, png_size, process_is_gone, wait_until_gone};
+use preview_support::{assert_gone, png_size};
+#[cfg(unix)]
+use preview_support::{process_is_gone, wait_until_gone};
 
 fn exe() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_hoplodex"))
@@ -127,6 +129,24 @@ fn once_confined_it_can_open_no_file_and_no_tcp_socket() {
         assert_eq!(json["exec_after"], false, "{json}");
         assert_eq!(connections, 1);
     }
+}
+
+/// Windows' measures (research.md §11): the job object's one-process limit and
+/// the child-process policy stop the helper from starting a program. The
+/// mitigations don't confine files or the network, which the table doesn't ask.
+#[cfg(all(debug_assertions, windows))]
+#[test]
+fn once_confined_it_cannot_start_a_program() {
+    let Report { json, .. } = self_check();
+
+    assert!(
+        std::process::Command::new(r"C:\Windows\System32\whoami.exe")
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success()),
+        "the probe program does not run here, so the check means nothing"
+    );
+    assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
 }
 
 #[cfg(debug_assertions)]

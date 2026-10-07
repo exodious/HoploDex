@@ -153,6 +153,12 @@ windows-sys = { version = "0.61", features = [
     # external copy's DACL (§18) and `GetLastInputInfo` (§10).
     "Win32_System_JobObjects",
     "Win32_System_Threading",
+    # The helper's error mode, parent watch and WER flags, and the mitigation
+    # policy structures (research.md §11).
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_ErrorReporting",
+    "Win32_System_SystemServices",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_System_SystemInformation",
@@ -173,7 +179,11 @@ harness = false
 
 # WinSock, for the tripwire's exclusive bind (research.md §6).
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Networking_WinSock"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Networking_WinSock",
+    # The helper lookup of tests/support/preview_support.rs.
+    "Win32_System_Diagnostics_ToolHelp",
+] }
 
 # Debug and test builds keep line tables, so panics and backtraces still name
 # the file and line, but not full debug info, and none for dependencies. Full

@@ -84,6 +84,13 @@ mod self_check {
 
     use super::confine;
 
+    /// A program that exists on the OS and exits at once: whether the
+    /// confined helper can start it is the probe.
+    #[cfg(not(windows))]
+    const PROGRAM: &str = "/bin/true";
+    #[cfg(windows)]
+    const PROGRAM: &str = r"C:\Windows\System32\whoami.exe";
+
     pub fn run(args: &[String]) -> i32 {
         let (Some(port), Some(file)) =
             (args.first().and_then(|p| p.parse::<u16>().ok()), args.get(1))
@@ -95,7 +102,7 @@ mod self_check {
         let file_before = can_open();
         let tcp_before = can_connect();
         let Ok(confinement) = confine::confine() else { return 3 };
-        let exec_after = Command::new("/bin/true")
+        let exec_after = Command::new(PROGRAM)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
