@@ -11,6 +11,14 @@
 //                                   each element's role and position
 //   pdf_spike_input press PID TITLE press the PID's element titled TITLE
 //                                   (a context menu item, a button)
+//   pdf_spike_input clickt X Y      left click, and print when (Unix ms,
+//                                   just before the button goes up)
+//   pdf_spike_input find PID ROLE TITLE
+//                                   the centre of the PID's first ROLE
+//                                   element whose title is TITLE: x y
+//   pdf_spike_input key CODE        press a key (a virtual key code)
+//   pdf_spike_input menu PID        the PID's menu bar items, as paths,
+//                                   with any disabled ones marked
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -63,6 +71,44 @@ case "click":
 case "rclick":
     let (x, y) = (Double(args[2])!, Double(args[3])!)
     post(.mouseMoved, x, y); post(.rightMouseDown, x, y, .right); post(.rightMouseUp, x, y, .right)
+case "clickt":
+    let (x, y) = (Double(args[2])!, Double(args[3])!)
+    post(.mouseMoved, x, y); post(.leftMouseDown, x, y)
+    print(Int64(Date().timeIntervalSince1970 * 1000))
+    post(.leftMouseUp, x, y)
+case "find":
+    var found = false
+    walk(AXUIElementCreateApplication(Int32(args[2])!)) { element, role, _ in
+        guard !found, role == args[3], attribute(element, kAXTitleAttribute) as? String == args[4],
+              let p = attribute(element, kAXPositionAttribute), let s = attribute(element, kAXSizeAttribute)
+        else { return }
+        var point = CGPoint.zero, size = CGSize.zero
+        AXValueGetValue(p as! AXValue, .cgPoint, &point); AXValueGetValue(s as! AXValue, .cgSize, &size)
+        print(Int(point.x + size.width / 2), Int(point.y + size.height / 2))
+        found = true
+    }
+    if !found { exit(1) }
+case "key":
+    let code = CGKeyCode(args[2])!
+    for down in [true, false] {
+        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!.post(tap: .cghidEventTap)
+        usleep(50_000)
+    }
+case "menu":
+    func items(_ element: AXUIElement, _ path: String, _ depth: Int) {
+        guard depth < 8 else { return }
+        for child in attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
+            let title = attribute(child, kAXTitleAttribute) as? String ?? ""
+            let here = title.isEmpty ? path : (path.isEmpty ? title : "\(path) > \(title)")
+            if !title.isEmpty {
+                let enabled = attribute(child, kAXEnabledAttribute) as? Bool ?? true
+                print(here + (enabled ? "" : " [disabled]"))
+            }
+            items(child, here, depth + 1)
+        }
+    }
+    let app = AXUIElementCreateApplication(Int32(args[2])!)
+    if let bar = attribute(app, kAXMenuBarAttribute) { items(bar as! AXUIElement, "", 0) }
 case "text":
     let app = AXUIElementCreateApplication(Int32(args[2])!)
     // Ask for the full tree, as VoiceOver does (web content is built lazily).
@@ -82,6 +128,6 @@ case "press":
     }
     print(pressed ? "pressed" : "not found")
 default:
-    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | text PID | press PID TITLE\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE | menu PID\n".data(using: .utf8)!)
     exit(2)
 }

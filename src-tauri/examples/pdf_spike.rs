@@ -54,20 +54,36 @@
 // - SPIKE_DOWNLOAD_DIR: where an allowed Save is written.
 // - SPIKE_EXIT_SECONDS: when to quit (default 30).
 //
+// What Open in Preview's copy is named, and how far cleanup reaches it
+// (macOS, with the HUD and the menu on):
+// - SPIKE_TOKEN_PATH=1: serve the PDF at `<random token>/document.pdf`.
+// - SPIKE_FILENAME=NAME: send `Content-Disposition: inline; filename="NAME"`.
+// - SPIKE_PDF_TITLE=TEXT: give the PDF an /Info dictionary with that /Title.
+// - SPIKE_SWEEP=1: when the preview window is destroyed, delete every
+//   `WebKitPDFs-*` dir in the temp dir that appeared since it was built.
+// - SPIKE_CLOSE_FILE=PATH: close the preview window once PATH exists.
+// - SPIKE_WATCH=1: poll the temp dir every millisecond while the spike runs;
+//   when a new `WebKitPDFs-*` dir appears, log when (Unix ms), delete it at
+//   once and close the preview window. SPIKE_WATCH_DELAY_MS=N waits N ms
+//   between seeing it and deleting it, as a slower watcher would.
+// Closing the preview window doesn't end the spike: it runs until
+// SPIKE_EXIT_SECONDS, so what Preview does afterwards can be watched.
+//
 // Whatever the settings, the spike also starts a fake local service (a TCP
 // and a UDP port on 127.0.0.1) that logs anything reaching it, and the
 // reach probe tries to reach it and the outside by fetch, image,
 // beacon, WebSocket, WebRTC and DNS prefetch.
 
 use std::{
+    collections::HashSet,
     io::{BufRead, BufReader},
     net::{TcpListener, UdpSocket},
-    path::PathBuf,
+    path::{Path, PathBuf},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    Manager, WebviewUrl, WebviewWindowBuilder, http,
+    Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, http,
     webview::{DownloadEvent, NewWindowResponse},
 };
 
@@ -91,7 +107,7 @@ fn base_url() -> String {
     }
 }
 
-fn build_pdf() -> Vec<u8> {
+fn build_pdf(title: Option<&str>) -> Vec<u8> {
     let page1 = format!(
         "BT /F1 24 Tf 72 700 Td ({MARKER} page one) Tj ET \
          BT /F1 14 Tf 72 650 Td (A link to example.com is below) Tj ET \
@@ -99,7 +115,7 @@ fn build_pdf() -> Vec<u8> {
     );
     let page2 = format!("BT /F1 24 Tf 72 700 Td (Second page {MARKER}) Tj ET");
     let pad = format!("{MARKER}-PAD ").repeat(200_000);
-    let objs: Vec<String> = vec![
+    let mut objs: Vec<String> = vec![
         "<< /Type /Catalog /Pages 2 0 R /OpenAction 7 0 R >>".into(),
         "<< /Type /Pages /Kids [3 0 R 8 0 R] /Count 2 >>".into(),
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R \
@@ -117,6 +133,10 @@ fn build_pdf() -> Vec<u8> {
         format!("<< /Length {} >>\nstream\n{page2}\nendstream", page2.len()),
         format!("<< /Length {} >>\nstream\n{pad}\nendstream", pad.len()),
     ];
+    let info = title.map(|t| {
+        objs.push(format!("<< /Title ({t}) >>"));
+        format!(" /Info {} 0 R", objs.len())
+    });
     let mut out = b"%PDF-1.7\n".to_vec();
     let mut offsets = vec![];
     for (i, o) in objs.iter().enumerate() {
@@ -129,8 +149,12 @@ fn build_pdf() -> Vec<u8> {
         out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
     }
     out.extend_from_slice(
-        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1)
-            .as_bytes(),
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R{} >>\nstartxref\n{xref}\n%%EOF\n",
+            objs.len() + 1,
+            info.unwrap_or_default()
+        )
+        .as_bytes(),
     );
     out
 }
@@ -248,6 +272,52 @@ fn env_flag(name: &str) -> bool {
     std::env::var(name).is_ok_and(|v| v == "1")
 }
 
+fn unix_ms() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+}
+
+/// The `WebKitPDFs-*` dirs in the temp dir, where WebKit's Open in Preview
+/// writes its copies.
+fn pdf_dirs() -> HashSet<PathBuf> {
+    std::fs::read_dir(std::env::temp_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("WebKitPDFs-"))
+        .map(|e| e.path())
+        .collect()
+}
+
+fn mode(path: &Path) -> String {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::symlink_metadata(path)
+        .map(|m| {
+            #[cfg(unix)]
+            let mode = format!("{:o}", m.permissions().mode() & 0o7777);
+            #[cfg(not(unix))]
+            let mode = format!("readonly={}", m.permissions().readonly());
+            format!("{mode} {} bytes", m.len())
+        })
+        .unwrap_or_else(|e| format!("ERR {e}"))
+}
+
+/// Deletes a `WebKitPDFs-*` dir, logging what was in it (names, modes) and
+/// whether the delete worked.
+fn delete_pdf_dir(dir: &Path, why: &str) {
+    eprintln!("SPIKE {why}: dir {} mode {}", dir.display(), mode(dir));
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        eprintln!("SPIKE {why}:   file {:?} mode {}", entry.file_name(), mode(&entry.path()));
+    }
+    let result = std::fs::remove_dir_all(dir);
+    eprintln!(
+        "SPIKE {why}: delete {} at {} -> {result:?}, exists after: {}",
+        dir.display(),
+        unix_ms(),
+        dir.exists()
+    );
+}
+
 fn main() {
     let proxy = std::env::var("SPIKE_PROXY").unwrap_or_default();
     let harden = env_flag("SPIKE_HARDEN");
@@ -266,6 +336,21 @@ fn main() {
     let pdf_hide = std::env::var("SPIKE_PDF_HIDE").unwrap_or_default();
     let proxy_loopback = env_flag("SPIKE_PROXY_LOOPBACK");
     let exclusive = env_flag("SPIKE_EXCLUSIVE");
+    let filename = std::env::var("SPIKE_FILENAME").ok();
+    let pdf_title = std::env::var("SPIKE_PDF_TITLE").ok();
+    let sweep = env_flag("SPIKE_SWEEP");
+    let watch = env_flag("SPIKE_WATCH");
+    let watch_delay: u64 =
+        std::env::var("SPIKE_WATCH_DELAY_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let close_file = std::env::var("SPIKE_CLOSE_FILE").ok().map(PathBuf::from);
+    let pdf_path = if env_flag("SPIKE_TOKEN_PATH") {
+        let mut token = [0u8; 16];
+        getrandom::fill(&mut token).unwrap();
+        let token: String = token.iter().map(|b| format!("{b:02x}")).collect();
+        format!("{token}/document.pdf")
+    } else {
+        "doc.pdf".to_string()
+    };
     let base = base_url();
     eprintln!(
         "SPIKE base={base} proxy={proxy:?} harden={harden} blocker={blocker} noscript={noscript} allow_blob={allow_blob} embed={embed:?} nocontext={nocontext} nohud={nohud} incognito={incognito} pdf_hide={pdf_hide:?} proxy_loopback={proxy_loopback} exclusive={exclusive}"
@@ -290,13 +375,19 @@ fn main() {
         }
         _ => None,
     };
+    eprintln!(
+        "SPIKE pdf_path={pdf_path} filename={filename:?} pdf_title={pdf_title:?} sweep={sweep} watch={watch} watch_delay={watch_delay} close_file={close_file:?}"
+    );
+    // Before the preview exists, so any dir that appears later is its doing.
+    let dirs_before = pdf_dirs();
+    eprintln!("SPIKE WebKitPDFs dirs before: {}", dirs_before.len());
     eprintln!("SPIKE victim tcp={victim_tcp} udp={victim_udp} proxy_url={proxy_url:?}");
 
-    let pdf = build_pdf();
+    let pdf = build_pdf(pdf_title.as_deref());
     let style = "border:0;margin:0;width:100vw;height:100vh;display:block";
     let page = match embed.as_str() {
-        "embed" => format!(r#"<embed src="doc.pdf" type="application/pdf" style="{style}">"#),
-        _ => format!(r#"<iframe src="doc.pdf" style="{style}"></iframe>"#),
+        "embed" => format!(r#"<embed src="{pdf_path}" type="application/pdf" style="{style}">"#),
+        _ => format!(r#"<iframe src="{pdf_path}" style="{style}"></iframe>"#),
     };
     let page = format!("<!doctype html><html><body style=\"margin:0\">{page}</body></html>");
     eprintln!("SPIKE pdf bytes={}", pdf.len());
@@ -325,11 +416,28 @@ fn main() {
             } else {
                 ("application/pdf", pdf.clone())
             };
-            http::Response::builder()
+            let mut response = http::Response::builder()
                 .header("Content-Type", kind)
-                .header("Cache-Control", "no-store")
-                .body(body)
-                .unwrap()
+                .header("Cache-Control", "no-store");
+            if let Some(name) = filename.as_ref().filter(|_| kind == "application/pdf") {
+                response =
+                    response.header("Content-Disposition", format!("inline; filename=\"{name}\""));
+            }
+            response.body(body).unwrap()
+        })
+        .on_window_event({
+            let dirs_before = dirs_before.clone();
+            move |window, event| {
+                if window.label() != "preview" || !matches!(event, WindowEvent::Destroyed) {
+                    return;
+                }
+                eprintln!("SPIKE preview window destroyed at {}", unix_ms());
+                if sweep {
+                    for dir in pdf_dirs().difference(&dirs_before) {
+                        delete_pdf_dir(dir, "sweep");
+                    }
+                }
+            }
         })
         .setup(move |app| {
             if env_flag("SPIKE_MAIN_WINDOW") {
@@ -435,8 +543,38 @@ fn main() {
                 window.as_ref().map(|_| ()).map_err(|e| e.to_string())
             );
             let window = window?;
-            let doc_url =
-                format!("{base}{}", if embed.is_empty() { "doc.pdf" } else { "doc.html" });
+            let doc_url = if embed.is_empty() {
+                format!("{base}{pdf_path}")
+            } else {
+                format!("{base}doc.html")
+            };
+            if let Some(path) = close_file.clone() {
+                let window = window.clone();
+                thread::spawn(move || {
+                    while !path.exists() {
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                    eprintln!("SPIKE close file seen, closing the preview at {}", unix_ms());
+                    window.close().ok();
+                });
+            }
+            if watch {
+                let window = window.clone();
+                let mut seen = dirs_before.clone();
+                thread::spawn(move || {
+                    loop {
+                        let new: Vec<PathBuf> = pdf_dirs().difference(&seen).cloned().collect();
+                        for dir in new {
+                            eprintln!("SPIKE watch: new {} at {}", dir.display(), unix_ms());
+                            thread::sleep(Duration::from_millis(watch_delay));
+                            delete_pdf_dir(&dir, "watch");
+                            seen.insert(dir);
+                            window.close().ok();
+                        }
+                        thread::sleep(Duration::from_millis(1));
+                    }
+                });
+            }
             #[cfg(target_os = "linux")]
             {
                 let store = std::env::temp_dir().join("spike-filter-store");
@@ -476,6 +614,7 @@ fn main() {
             let handle = app.handle().clone();
             let probe = fill(
                 &TOP_PROBE
+                    .replace("'doc.pdf'", &format!("'{pdf_path}'"))
                     .replace("BASE", &base)
                     .replace("TOPREACH", if cfg!(windows) { "true" } else { "false" }),
             );
@@ -499,8 +638,15 @@ fn main() {
             });
             Ok(())
         })
-        .run(ctx)
-        .expect("spike failed");
+        .build(ctx)
+        .expect("spike failed")
+        .run(|_, event| {
+            // Closing the preview (the last window) doesn't end the spike;
+            // SPIKE_EXIT_SECONDS does.
+            if let RunEvent::ExitRequested { code: None, api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
 
 fn percent_decode(s: &str) -> String {
