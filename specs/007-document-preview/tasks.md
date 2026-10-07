@@ -240,7 +240,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 
 ### Tests for User Story 2 (mandatory per constitution)
 
-- [ ] T083 [P] [US2] Write failing `src-tauri/tests/open_document_test.rs` with a fake `Consent` (records each request, answers as told) and a fake opener (records the path, or fails as no-app):
+- [X] T083 [P] [US2] Write failing `src-tauri/tests/open_document_test.rs` with a fake `Consent` (records each request, answers as told) and a fake opener (records the path, or fails as no-app):
   - the request names the document's stored filename, with control characters replaced and cut to 120 characters with an ellipsis, and its kind; with the default setting every open asks (FR-008, US2-1);
   - Cancel → `{ opened: false }`, no folder, no file, opener not called (US2-2, SC-004);
   - Open → `{ opened: true }`; the copy is named the stored stem plus the type's canonical extension ("receipt.Pdf" → `receipt.pdf`); on Unix the folders are `0700` and the file `0600` from creation; a symlinked or foreign-owned folder gives `INTERNAL_ERROR` and no file; the opener is called once; a second open reuses the same-length copy; `external_open_confirmed` is set; the copy is cleared on close and by the startup sweep (US2-3, FR-010);
