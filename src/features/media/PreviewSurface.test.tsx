@@ -131,6 +131,16 @@ describe("PreviewSurface: bounds (contract §2, contracts/tauri-commands.md set_
     });
   });
 
+  it("asks again when the document is ready, so the backend shows the surface it kept hidden", async () => {
+    render(<PreviewSurface previewId={PREVIEW_ID} name={NAME} />);
+    await waitFor(() => expect(boundsCalls()).toHaveLength(1));
+
+    act(() => backend.emit("preview:pdf-ready", { previewId: PREVIEW_ID }));
+
+    await waitFor(() => expect(boundsCalls()).toHaveLength(2));
+    expect(lastBounds()).toMatchObject({ previewId: PREVIEW_ID, visible: true });
+  });
+
   it("sends the new rectangle when the page area is resized", async () => {
     render(<PreviewSurface previewId={PREVIEW_ID} name={NAME} />);
     await waitFor(() => expect(lastBounds()).toBeDefined());

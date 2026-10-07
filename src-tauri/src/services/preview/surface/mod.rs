@@ -175,6 +175,10 @@ pub struct SurfaceConfig {
 /// An open surface. Dropping it doesn't close the web view: call `close`.
 pub struct Surface<R: Runtime> {
     webview: Webview<R>,
+    /// Linux: the never-shown window the web view was built in
+    /// (`linux::host_window`), closed with it.
+    #[cfg(target_os = "linux")]
+    host: Window<R>,
     /// The one URL the navigation handler allows.
     allowed: Arc<Mutex<Url>>,
 }
@@ -247,7 +251,13 @@ impl<R: Runtime> Surface<R> {
             builder = builder.on_page_load(move |_, payload| hook(payload.event(), payload.url()));
         }
         let builder = os::customize(builder, &config.proxy_url, &config.data_directory);
-        let webview = window.add_child(
+        #[cfg(target_os = "linux")]
+        let host = os::host_window(window)?;
+        #[cfg(target_os = "linux")]
+        let parent = &host;
+        #[cfg(not(target_os = "linux"))]
+        let parent = window;
+        let webview = parent.add_child(
             builder,
             LogicalPosition::new(config.bounds.x, config.bounds.y),
             LogicalSize::new(config.bounds.width, config.bounds.height),
@@ -256,9 +266,16 @@ impl<R: Runtime> Surface<R> {
         // is closed, never left in the window.
         if let Err(e) = os::attach(window, &webview, &config.hooks) {
             let _ = webview.close();
+            #[cfg(target_os = "linux")]
+            let _ = host.destroy();
             return Err(e);
         }
-        let surface = Surface { webview, allowed };
+        let surface = Surface {
+            webview,
+            #[cfg(target_os = "linux")]
+            host,
+            allowed,
+        };
         surface.set_bounds(config.bounds, false)?;
         surface.navigate(config.url);
         Ok(surface)
@@ -295,7 +312,10 @@ impl<R: Runtime> Surface<R> {
 
     /// Closes the web view.
     pub fn close(self) -> tauri::Result<()> {
-        self.webview.close()
+        let closed = self.webview.close();
+        #[cfg(target_os = "linux")]
+        let closed = closed.and(self.host.destroy());
+        closed
     }
 }
 

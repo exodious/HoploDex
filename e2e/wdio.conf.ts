@@ -136,7 +136,7 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
 
 /**
  * Seeds the human-testing databases for the screenshot walk in
- * e2e/screenshots/, which wants a realistic collection rather than an empty
+ * e2e/screenshots/ and for 007's preview spec, which want a realistic collection rather than an empty
  * one. The seed writes only into a directory it creates, so it gets a new
  * `seed` folder inside the sandbox, with its databases, backups and a
  * `machine.json` whose recent list names them. The app's config directory
@@ -205,7 +205,17 @@ export const config: WebdriverIO.Config = {
     // WebdriverIO connects with this same config object once the hook
     // returns, so the session goes to this worker's app.
     config.port = assignWorkerPort(cid);
-    if (specs.some((spec) => spec.endsWith("/e2e/screenshots/screens.e2e.ts"))) seedCollection();
+    // The screenshot walk and 007's preview spec (which opens the seed's
+    // Glock and its documents) want the realistic collection.
+    if (
+      specs.some(
+        (spec) =>
+          spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
+          spec.endsWith("/e2e/specs/us13-document-preview.e2e.ts"),
+      )
+    ) {
+      seedCollection();
+    }
     // A computer with no keyring service (FR-019).
     if (specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts"))) {
       process.env.HOPLODEX_E2E_KEYRING = "unavailable";

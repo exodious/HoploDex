@@ -25,7 +25,11 @@ use std::{
     os::raw::{c_char, c_int, c_uint},
     path::Path,
     ptr,
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -34,7 +38,6 @@ use webkit2gtk::{
     ContextMenuExt, ContextMenuItemExt, SettingsExt, WebViewExt,
     glib::{
         self,
-        ffi::{GList, g_list_free},
         gobject_ffi::{self, GObject, g_object_ref, g_object_unref, g_type_check_instance_is_a},
         translate::ToGlibPtr,
     },
@@ -48,7 +51,6 @@ const ALIGN_START: c_int = 1;
 // libgtk-3 is already linked: wry's `gtk` crate links it.
 unsafe extern "C" {
     fn gtk_widget_get_parent(widget: Widget) -> Widget;
-    fn gtk_container_get_children(container: Widget) -> *mut GList;
     fn gtk_container_remove(container: Widget, widget: Widget);
     fn gtk_container_add(container: Widget, widget: Widget);
     fn gtk_box_pack_start(b: Widget, child: Widget, expand: c_int, fill: c_int, padding: c_uint);
@@ -80,12 +82,41 @@ unsafe extern "C" {
 /// its own that the registration never reaches. Without a key of its own the
 /// surface can't load an `hdpreview:` URL ("The URL can't be shown"), found
 /// by `pdf_surface_check` (research.md §4).
+///
+/// The key must also be new for each surface: the store keeps a key's entry
+/// for the life of the app on Linux, and a second surface under the same key
+/// would find the protocol "already registered" and never get it, so every
+/// PDF after the first would fail to load (found by
+/// `us13-document-preview.e2e.ts`). Each surface leaves one small entry in
+/// the store, and nothing on disk.
 pub(super) fn customize<R: Runtime>(
     builder: WebviewBuilder<R>,
     proxy_url: &Url,
     data_directory: &Path,
 ) -> WebviewBuilder<R> {
-    builder.proxy_url(proxy_url.clone()).data_directory(data_directory.to_path_buf())
+    static SURFACES: AtomicUsize = AtomicUsize::new(0);
+    let key = data_directory.join(format!("surface-{}", SURFACES.fetch_add(1, Ordering::Relaxed)));
+    builder.proxy_url(proxy_url.clone()).data_directory(key)
+}
+
+/// The window the surface's web view is built in, before `attach` moves it
+/// over the main window's.
+///
+/// A web view added to the main window makes it a window with two web views,
+/// which Tauri's `webview_windows` leaves out, and so the E2E build's embedded
+/// WebDriver server (tauri-plugin-wdio-webdriver) could no longer find the
+/// main web view while a PDF is shown ("no such window", found by
+/// `us13-document-preview.e2e.ts`). Built here instead, the surface is the
+/// only web view of a window of its own, which is never shown: its `GtkWidget`
+/// is taken out of that window into the main window's overlay at once.
+pub(super) fn host_window<R: Runtime>(main: &Window<R>) -> tauri::Result<Window<R>> {
+    tauri::window::WindowBuilder::new(main.app_handle(), super::LABEL)
+        .visible(false)
+        .decorations(false)
+        .skip_taskbar(true)
+        .focused(false)
+        .inner_size(1.0, 1.0)
+        .build()
 }
 
 /// Runs `f` with the surface's `GtkWidget`, on the GTK thread.
@@ -156,6 +187,17 @@ pub(super) fn attach<R: Runtime>(
     std::fs::create_dir_all(&store)?;
     let store = CString::new(store.to_string_lossy().as_bytes())
         .map_err(|_| std::io::Error::other("the cache folder's path has a NUL in it"))?;
+    // The main web view's widget, which the surface is put over.
+    let main = window
+        .get_webview("main")
+        .ok_or_else(|| std::io::Error::other("the main web view is gone"))?;
+    let (main_widget, main_widget_received) = mpsc::channel::<usize>();
+    with_widget(&main, move |widget| {
+        let _ = main_widget.send(widget as usize);
+    })?;
+    let main_widget = main_widget_received
+        .recv_timeout(FILTER_TIMEOUT)
+        .map_err(|_| std::io::Error::other("the main web view did not answer"))?;
     let (installed, filter_result) = mpsc::channel::<Result<(), String>>();
     let hooks = Arc::clone(hooks);
     webview.with_webview(move |platform| {
@@ -163,9 +205,10 @@ pub(super) fn attach<R: Runtime>(
         let raw: *mut webkit2gtk::ffi::WebKitWebView = view.to_glib_none().0;
         harden(&view);
         connect_signals(&view, raw, &hooks);
-        // SAFETY: `raw` is the live web view, and this runs on the GTK thread.
+        // SAFETY: `raw` is the live web view, `main_widget` the main web
+        // view's (which outlives it), and this runs on the GTK thread.
         unsafe {
-            overlay(raw.cast());
+            overlay(main_widget as Widget, raw.cast());
             install_filter(raw, &store, installed);
         }
     })?;
@@ -292,48 +335,37 @@ unsafe extern "C" fn on_pointer(
     0
 }
 
-/// Moves the main web view into an overlay (once) and the surface over it.
+/// Moves the main web view `main` into an overlay (once) and the surface over
+/// it.
 ///
-/// SAFETY: `surface` is a live `GtkWidget`, and this is the GTK thread.
-unsafe fn overlay(surface: Widget) {
+/// SAFETY: both are live `GtkWidget`s, and this is the GTK thread.
+unsafe fn overlay(main: Widget, surface: Widget) {
     unsafe {
-        let parent = gtk_widget_get_parent(surface);
+        let parent = gtk_widget_get_parent(main);
         if parent.is_null() {
             return;
         }
-        // The overlay a previous surface made, or the main web view to move.
-        let (mut overlay, mut main): (Widget, Widget) = (ptr::null_mut(), ptr::null_mut());
-        let list = gtk_container_get_children(parent);
-        let mut node = list;
-        while !node.is_null() {
-            let child: Widget = (*node).data;
-            if child != surface {
-                if g_type_check_instance_is_a(
-                    child.cast::<GObject>().cast(),
-                    gtk_overlay_get_type(),
-                ) != 0
-                {
-                    overlay = child;
-                } else if main.is_null() {
-                    main = child;
-                }
-            }
-            node = (*node).next;
-        }
-        g_list_free(list);
-        if overlay.is_null() {
-            overlay = gtk_overlay_new();
-            if !main.is_null() {
+        // The overlay a previous surface made, or the one to make.
+        let overlay =
+            if g_type_check_instance_is_a(parent.cast::<GObject>().cast(), gtk_overlay_get_type())
+                != 0
+            {
+                parent
+            } else {
+                let overlay = gtk_overlay_new();
                 g_object_ref(main.cast());
                 gtk_container_remove(parent, main);
                 gtk_container_add(overlay, main);
                 g_object_unref(main.cast());
-            }
-            gtk_box_pack_start(parent, overlay, 1, 1, 0);
-            gtk_widget_show_all(overlay);
-        }
+                gtk_box_pack_start(parent, overlay, 1, 1, 0);
+                gtk_widget_show_all(overlay);
+                overlay
+            };
+        let host = gtk_widget_get_parent(surface);
         g_object_ref(surface.cast());
-        gtk_container_remove(parent, surface);
+        if !host.is_null() {
+            gtk_container_remove(host, surface);
+        }
         gtk_overlay_add_overlay(overlay, surface);
         gtk_overlay_set_overlay_pass_through(overlay, surface, 0);
         g_object_unref(surface.cast());

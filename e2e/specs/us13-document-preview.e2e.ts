@@ -18,7 +18,6 @@ import {
   invokeCommand,
   pressEscape,
   scratchDocuments,
-  selectChooserRow,
   selectOption,
   settle,
   switchDatabase,
@@ -77,6 +76,14 @@ async function openRecord(name: string) {
   );
   await $("#record-name").waitForExist();
   await settle();
+}
+
+/** The chooser opens with the last-opened database ("Main collection") already
+ * selected and its passphrase field showing; a row's select button exists only
+ * for the others. */
+async function chooseMainCollection() {
+  const select = await $('button.hd-db-row__select[aria-label^="Main collection, "]');
+  if (await select.isExisting()) await select.click();
 }
 
 /** Leaves a record for the Collection page and opens the Glock again, which
@@ -353,7 +360,8 @@ interface Screen {
 /** The whole X screen as the user sees it, which includes the PDF surface (a
  * WebDriver screenshot holds only the main web view). */
 function windowScreenshot(): Screen {
-  const ppm = execFileSync("import", ["-window", "root", "ppm:-"], {
+  // 8 bits a channel: ImageMagick's default is 16, which doubles each pixel.
+  const ppm = execFileSync("import", ["-depth", "8", "-window", "root", "ppm:-"], {
     maxBuffer: 512 * 1024 * 1024,
   });
   // "P6", width, height, 255, one whitespace byte, then the pixels.
@@ -386,7 +394,7 @@ function magentaPixels(screen: Screen): number {
 
 describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () => {
   before(async () => {
-    await selectChooserRow("Main collection");
+    await chooseMainCollection();
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     await recordPreviewEvents();
     await openRecord(GLOCK);
@@ -615,8 +623,9 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     await closeViewer();
   });
 
-  it("FR-006: 'Open in another app…' stays in the footer beside a damaged PDF", async () => {
-    // Needs the footer button, which is User Story 2's (tasks.md T079, T093).
+  // The footer's "Open in another app…" is User Story 2's (tasks.md T093):
+  // enabled with T086, which owns this check.
+  it.skip("FR-006: 'Open in another app…' stays in the footer beside a damaged PDF", async () => {
     const mark = await eventMark();
     await openDocument("three-pages-truncated.pdf");
     await waitForEvent("preview:pdf-ready", mark);
@@ -637,6 +646,12 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     const mark = await eventMark();
     await openDocument("Magenta.pdf");
     await waitForEvent("preview:pdf-ready", mark);
+    // A toast hides the surface, which is a web view above the page (the
+    // attach above left one): wait for them to go.
+    await browser.waitUntil(async () => !(await $(".hd-toast").isExisting()), {
+      timeout: 15000,
+      timeoutMsg: "the toasts never went",
+    });
     await browser.pause(1000); // the viewer's first paint
     expect(magentaPixels(windowScreenshot())).toBeGreaterThan(5000);
 
@@ -660,7 +675,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = "3";
     await relaunchApp();
     await waitForChooser();
-    await selectChooserRow("Main collection");
+    await chooseMainCollection();
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     await recordPreviewEvents();
 
@@ -695,7 +710,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
     await relaunchApp();
     await waitForChooser();
-    await selectChooserRow("Main collection");
+    await chooseMainCollection();
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     await waitForCollection();
     await openRecord(GLOCK);

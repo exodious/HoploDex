@@ -5,6 +5,7 @@
 (function () {
   'use strict';
   var SECRET = '__HOPLODEX_SURFACE_SECRET__';
+  var HOOKED_MESSAGE = 'hoplodex:pdfjs-hooked';
 
   function cancel(event) {
     event.preventDefault();
@@ -26,6 +27,21 @@
     },
     true
   );
+
+  // WebKitGTK shows a PDF as a wrapper document (the surface's own URL) that
+  // holds PDF.js's viewer in a frame. The viewer frame can't load an
+  // `hdpreview:` image itself (found by the E2E run: its request never
+  // arrives), so it tells the wrapper with a message, and the wrapper, which
+  // can, makes the request. Only a message from that frame counts.
+  if (window === window.top && location.protocol === 'hdpreview:') {
+    addEventListener('message', function (event) {
+      var frames = document.getElementsByTagName('iframe');
+      if (frames.length === 1 && event.source === frames[0].contentWindow && event.data === HOOKED_MESSAGE) {
+        new Image().src = 'hdpreview://localhost/hooked/' + SECRET;
+      }
+    });
+    return;
+  }
 
   // Only PDF.js's viewer frame (WebKitGTK, Linux) has anything more to set.
   if (location.protocol !== 'webkit-pdfjs-viewer:') {
@@ -62,8 +78,13 @@
     options.set('enableScripting', false);
     options.set('enableXfa', false);
     options.set('annotationEditorMode', -1);
-    // Tells the protocol handler this document's viewer is set up.
-    new Image().src = 'hdpreview://localhost/hooked/' + SECRET;
+    // Tells the wrapper, which tells the protocol handler, that this
+    // document's viewer is set up.
+    try {
+      parent.postMessage(HOOKED_MESSAGE, '*');
+    } catch (e) {
+      // No parent to tell: the hook is not reported, and Rust closes the surface.
+    }
   }
   document.addEventListener('webviewerloaded', onLoaded);
   try {
@@ -78,7 +99,9 @@
   var style = document.createElement('style');
   style.textContent =
     '#download, #secondaryDownload, #print, #secondaryPrint, #openFile, #secondaryOpenFile,' +
-    ' #editorModeButtons, #editorModeSeparator, #viewBookmark, #secondaryViewBookmark' +
+    ' #editorModeButtons, #editorModeSeparator, #viewBookmark, #secondaryViewBookmark,' +
+    // The ids of the PDF.js that WebKitGTK 2.54 carries.
+    ' button[id*="ownload"], button[id*="rint"], button[id*="penFile"], button[id*="ookmark"]' +
     ' { display: none !important; }';
   (document.head || document.documentElement).appendChild(style);
 })();

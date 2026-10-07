@@ -19,6 +19,7 @@ fn is_housekeeping(table: &str) -> bool {
         || table.starts_with("firearms_fts_")
         || table == "accessories_fts"
         || table.starts_with("accessories_fts_")
+        || table.starts_with("document_names_fts")
 }
 
 fn changes_waiting(conn: &Connection) -> bool {

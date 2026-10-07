@@ -38,8 +38,14 @@ export function PreviewSurface({ previewId, name }: PreviewSurfaceProps) {
 
   useEffect(() => {
     setReady(false);
-    return onPdfReady(previewId, () => setReady(true));
-  }, [previewId]);
+    return onPdfReady(previewId, () => {
+      setReady(true);
+      // The backend keeps the surface hidden until the document is ready,
+      // whatever the bounds said: ask again, so that it is shown now.
+      sent.current = "";
+      sendBounds();
+    });
+  }, [previewId, sendBounds]);
 
   useEffect(() => {
     sent.current = "";
@@ -62,12 +68,7 @@ export function PreviewSurface({ previewId, name }: PreviewSurfaceProps) {
   }, [sendBounds]);
 
   return (
-    <div
-      ref={region}
-      className="hd-preview__surface"
-      role="region"
-      aria-label={`${name}, PDF`}
-    >
+    <div ref={region} className="hd-preview__surface" role="region" aria-label={`${name}, PDF`}>
       <span className="hd-sr-only">
         Press F6 to move into the document, and F6 again to come back.
       </span>

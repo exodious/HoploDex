@@ -645,30 +645,26 @@ fn deleting_the_record_that_owned_a_document_wipes_its_filename_too() {
     for owner_is_firearm in [true, false] {
         let db = TestDb::new();
         let scratch = tempfile::TempDir::new().unwrap();
-        let (owner, delete): (RecordRef, Box<dyn Fn(&TestDb)>) = if owner_is_firearm {
+        let owner = if owner_is_firearm {
             let id =
                 firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-N3"), false, None)
                     .unwrap()
                     .id;
-            (
-                RecordRef::Firearm(id),
-                Box::new(move |db| {
-                    firearm_ops::delete_firearm(&db.conn, id, true).unwrap();
-                }),
-            )
+            RecordRef::Firearm(id)
         } else {
-            let id = create_accessory(&db, "Leupold", "W-N4", "notes");
-            (
-                RecordRef::Accessory(id),
-                Box::new(move |db| {
-                    accessory_ops::delete_accessory(&db.conn, id, true).unwrap();
-                }),
-            )
+            RecordRef::Accessory(create_accessory(&db, "Leupold", "W-N4", "notes"))
         };
         document_ops::add_document(&db.conn, owner, b"%PDF-1.4\n%%EOF\n", DOCUMENT_NAME).unwrap();
         assert_document_name_stored(&decrypted_export(&db.conn, scratch.path()));
 
-        delete(&db);
+        match owner {
+            RecordRef::Firearm(id) => {
+                firearm_ops::delete_firearm(&db.conn, id, true).unwrap();
+            }
+            RecordRef::Accessory(id) => {
+                accessory_ops::delete_accessory(&db.conn, id, true).unwrap();
+            }
+        }
 
         assert_no_document_name(&decrypted_export(&db.conn, scratch.path()));
         assert_eq!(row_count(&db, "document_attachments"), 0);
