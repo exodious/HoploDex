@@ -170,6 +170,10 @@ pub struct SurfaceConfig {
     pub secret: String,
     pub hooks: Arc<Hooks>,
     pub on_page_load: Option<PageLoadHook>,
+    /// macOS: leave WebKit's PDF HUD on, for the surface check's `--hud-on`
+    /// variant (FR-003a). The app always sets it `false`; nothing reads it
+    /// from the environment.
+    pub hud_on: bool,
 }
 
 /// An open surface. Dropping it doesn't close the web view: call `close`.
@@ -181,6 +185,16 @@ pub struct Surface<R: Runtime> {
     host: Window<R>,
     /// The one URL the navigation handler allows.
     allowed: Arc<Mutex<Url>>,
+}
+
+/// The web view is about to be closed: on macOS, whose web view outlives its
+/// close, the OS code ends the watch and the input monitor here. Nothing on
+/// the other OS.
+fn on_close<R: Runtime>(webview: &Webview<R>) {
+    #[cfg(target_os = "macos")]
+    os::on_close(webview);
+    #[cfg(not(target_os = "macos"))]
+    let _ = webview;
 }
 
 /// `place` where Tauri's own geometry works (macOS and Windows).
@@ -264,7 +278,12 @@ impl<R: Runtime> Surface<R> {
         )?;
         // A surface the OS couldn't set up (a filter that wouldn't install)
         // is closed, never left in the window.
-        if let Err(e) = os::attach(window, &webview, &config.hooks) {
+        #[cfg(target_os = "macos")]
+        let attached = os::attach(window, &webview, &config.hooks, config.hud_on);
+        #[cfg(not(target_os = "macos"))]
+        let attached = os::attach(window, &webview, &config.hooks);
+        if let Err(e) = attached {
+            on_close(&webview);
             let _ = webview.close();
             #[cfg(target_os = "linux")]
             let _ = host.destroy();
@@ -312,6 +331,7 @@ impl<R: Runtime> Surface<R> {
 
     /// Closes the web view.
     pub fn close(self) -> tauri::Result<()> {
+        on_close(&self.webview);
         let closed = self.webview.close();
         #[cfg(target_os = "linux")]
         let closed = closed.and(self.host.destroy());
@@ -365,6 +385,7 @@ impl<R: Runtime> AppSurface<R> {
             secret: spec.secret,
             hooks,
             on_page_load: None,
+            hud_on: false,
         };
         let surface = Surface::open(window, config).map_err(|e| e.to_string())?;
         OPEN_SURFACES.fetch_add(1, Ordering::SeqCst);

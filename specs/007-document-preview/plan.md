@@ -223,7 +223,7 @@ src-tauri/
 │                                    #  objc2-web-kit, block2, webview2-com promoted; zip, cfb, encoding_rs,
 │                                    #  png promoted; windows-sys features
 ├── build.rs                         # app ACL manifest from COMMANDS
-├── capabilities/default.json        # allow-<command> for every command, window "main" only
+├── capabilities/default.json        # allow-<command> for every command, web view "main" only
 ├── tauri.conf.json                  # app.windows emptied: the main window is built in setup() (research.md §6)
 ├── src/
 │   ├── main.rs                      # `--render-helper` and `--webkit-sandbox-probe` checked first; the probe

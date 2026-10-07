@@ -22,7 +22,7 @@
 # the app's folders taken from the E2E variables (an `e2e` build); it never
 # reaches a real database. Exits with the example's code.
 #
-# Untested: written before surface/macos.rs (T065) existed.
+# Run on the macOS 26 VM for T072 (check) and T073 (--hud-on).
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=$ROOT/e2e/screenshots-out/pdf-surface

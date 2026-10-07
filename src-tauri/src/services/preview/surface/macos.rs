@@ -21,13 +21,15 @@
 //! returns an error and the caller closes it, so a PDF is never shown
 //! without every measure.
 //!
-//! The monitor and the watch end with the surface. A `WKWebView` is not
-//! freed when Tauri closes it (checked in the macOS VM: it outlives
-//! `Webview::close` by minutes, so an associated object's `dealloc` is no
-//! signal), so the watch's thread, which wakes every [`POLL`] anyway, asks
-//! Tauri whether this surface is still the window's `preview` web view, and
-//! when it isn't makes its last sweep, has the main thread remove the monitor
-//! and ends. A surface that replaces it ends the old one the same way.
+//! The monitor and the watch end with the surface, at an exact point:
+//! `Surface::close` (and a surface refused by `attach`) calls [`on_close`],
+//! which has the watch's thread make its last sweep and end, and removes the
+//! monitor. (A `WKWebView` is not freed when Tauri closes it, checked in the
+//! macOS VM: it outlives `Webview::close` by minutes, so neither an
+//! associated object's `dealloc` nor the view's absence from the window is
+//! a signal worth polling for.) Only the newest surface is kept: attaching
+//! another ends the one before it the same way, and a close of a surface that
+//! has been replaced ends nothing.
 
 use std::{
     cell::RefCell,
@@ -39,7 +41,7 @@ use std::{
     path::{Path, PathBuf},
     ptr::{self, NonNull},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -109,39 +111,57 @@ const KEY_F6: u16 = 97;
 const COPY_FOLDER_PREFIX: &str = "WebKitPDFs-";
 
 /// Configures the surface (switches, rule list, monitor, watch), and waits
-/// for the rule list to be installed. See the module's header.
+/// for the rule list to be installed. See the module's header. `hud_on` is
+/// the surface check's `--hud-on` variant: the app always passes `false`.
 pub(super) fn attach<R: Runtime>(
     _window: &Window<R>,
     webview: &Webview<R>,
     hooks: &Arc<Hooks>,
+    hud_on: bool,
 ) -> tauri::Result<()> {
     let store = crate::app_dirs::cache_dir(webview.app_handle())?.join(FILTER_STORE);
     fs::create_dir_all(&store)?;
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let app = webview.app_handle().clone();
-    let (alive_app, finished_app) = (app.clone(), app.clone());
     // Before the web view can load anything, so a copy made from the first
     // document is a new one.
-    Watch::start(
-        std::env::temp_dir(),
-        caught_copies_handler(app, Arc::clone(hooks)),
-        // Still this surface: the window has a `preview` web view and no
-        // newer surface has been attached.
-        Box::new(move || {
-            alive_app.get_webview(super::LABEL).is_some()
-                && GENERATION.load(Ordering::SeqCst) == generation
-        }),
-        Box::new(move || {
-            let _ = finished_app.run_on_main_thread(move || remove_monitor(generation));
-        }),
-    )?;
-    let hooks = Arc::clone(hooks);
+    let watch =
+        Watch::start(std::env::temp_dir(), caught_copies_handler(app.clone(), Arc::clone(hooks)))?;
+    let replaced = CURRENT.lock().unwrap_or_else(|e| e.into_inner()).replace(Current {
+        generation,
+        view: 0,
+        watch,
+    });
+    if let Some(old) = replaced {
+        end_surface(&app, old);
+    }
+    let attached = attach_view(webview, Arc::clone(hooks), store, generation, hud_on);
+    if attached.is_err() {
+        // The caller closes the surface, which would end it too; this makes
+        // it independent of that.
+        end_current(&app, |current| current.generation == generation);
+    }
+    attached
+}
+
+fn attach_view<R: Runtime>(
+    webview: &Webview<R>,
+    hooks: Arc<Hooks>,
+    store: PathBuf,
+    generation: u64,
+    hud_on: bool,
+) -> tauri::Result<()> {
     let (done, outcome) = mpsc::channel::<Result<(), String>>();
     webview.with_webview(move |platform| {
         // SAFETY: on macOS, Tauri's `PlatformWebview::inner` is the
         // `WKWebView`, and this runs on the main thread.
         let view: &WKWebView = unsafe { &*platform.inner().cast() };
-        match harden(view, &store, done.clone()) {
+        if let Some(current) = CURRENT.lock().unwrap_or_else(|e| e.into_inner()).as_mut()
+            && current.generation == generation
+        {
+            current.view = ptr::from_ref(view) as usize;
+        }
+        match harden(view, &store, done.clone(), hud_on) {
             Ok(()) => {
                 if let Some(monitor) = input_monitor(view, hooks) {
                     MONITORS.with(|m| m.borrow_mut().insert(generation, monitor));
@@ -160,12 +180,33 @@ pub(super) fn attach<R: Runtime>(
     }
 }
 
+/// The surface's web view is being closed (called from `Surface::close`, before
+/// `Webview::close`): the surface's watch makes its last sweep and ends, and
+/// its input monitor is removed. Nothing if `webview` is not the current
+/// surface's (one a newer surface has replaced has ended already).
+pub(super) fn on_close<R: Runtime>(webview: &Webview<R>) {
+    let app = webview.app_handle().clone();
+    let on_main = app.clone();
+    let asked = webview.with_webview(move |platform| {
+        let view = platform.inner() as usize;
+        // The last click may not land after the last sweep: hidden first.
+        // SAFETY: `inner` is the `WKWebView`; a plain setter on the main thread.
+        let _: () = unsafe { msg_send![platform.inner().cast::<AnyObject>(), setHidden: true] };
+        end_current(&on_main, |current| current.view == view || current.view == 0);
+    });
+    if asked.is_err() {
+        // The web view is already gone, so it is the surface that was current.
+        end_current(&app, |_| true);
+    }
+}
+
 /// The SPI switches, then the compile and install of the rule list, which
 /// reports through `done` from the main thread when it finishes.
 fn harden(
     view: &WKWebView,
     store: &Path,
     done: mpsc::Sender<Result<(), String>>,
+    hud_on: bool,
 ) -> Result<(), String> {
     // `configuration` is a copy, but its preferences and user content
     // controller are the web view's own.
@@ -174,7 +215,7 @@ fn harden(
         let config = view.configuration();
         (config.preferences(), config.userContentController())
     };
-    webkit_switches::switch_off(&prefs)?;
+    webkit_switches::switch_off(&prefs, hud_on)?;
     let url = NSURL::fileURLWithPath(&NSString::from_str(&store.to_string_lossy()));
     let mtm = objc2::MainThreadMarker::new().ok_or("not on the main thread")?;
     // SAFETY: `url` is a file URL.
@@ -329,6 +370,34 @@ thread_local! {
     static MONITORS: RefCell<HashMap<u64, Retained<AnyObject>>> = RefCell::new(HashMap::new());
 }
 
+/// The surface that is current: what ends with it.
+struct Current {
+    generation: u64,
+    /// The `WKWebView`'s address, set on the main thread by `attach` (0 until
+    /// then): how `on_close` knows its web view is this one.
+    view: usize,
+    watch: Watch,
+}
+
+static CURRENT: Mutex<Option<Current>> = Mutex::new(None);
+
+/// Ends the current surface if `which` says so: its watch makes the last
+/// sweep, and its input monitor is removed on the main thread.
+fn end_current<R: Runtime>(app: &tauri::AppHandle<R>, which: impl FnOnce(&Current) -> bool) {
+    let mut current = CURRENT.lock().unwrap_or_else(|e| e.into_inner());
+    if current.as_ref().is_some_and(which) {
+        let ended = current.take().expect("just checked");
+        drop(current);
+        end_surface(app, ended);
+    }
+}
+
+fn end_surface<R: Runtime>(app: &tauri::AppHandle<R>, ended: Current) {
+    ended.watch.stop();
+    let generation = ended.generation;
+    let _ = app.run_on_main_thread(move || remove_monitor(generation));
+}
+
 /// Removes surface `generation`'s input monitor. Main thread.
 fn remove_monitor(generation: u64) {
     if let Some(monitor) = MONITORS.with(|m| m.borrow_mut().remove(&generation)) {
@@ -339,7 +408,7 @@ fn remove_monitor(generation: u64) {
 
 /// Called with the paths of the copies the watch deleted, and whether the
 /// surface should be closed for it (not at the last sweep, when it is
-/// closing already).
+/// closing already). The call with no paths and `false` is the last.
 type CaughtHandler = Box<dyn Fn(&[PathBuf], bool) + Send + 'static>;
 
 /// What the app does when a copy is caught (research.md §7): records each
@@ -426,28 +495,21 @@ fn kevent_zero() -> libc::kevent {
     unsafe { std::mem::zeroed() }
 }
 
-/// How often the watch's thread looks up from its `kqueue` to see whether its
-/// surface is still open.
-const POLL: Duration = Duration::from_millis(250);
-
-/// Whether the surface the watch belongs to is still open.
-type Alive = Box<dyn Fn() -> bool + Send + 'static>;
+/// The `kevent` identifier of the user event that stops the watch.
+const STOP: libc::uintptr_t = 1;
 
 /// The watch (research.md §7): a thread holding a `kqueue` on `$TMPDIR`
-/// (`EVFILT_VNODE`, `NOTE_WRITE`).
-struct Watch;
+/// (`EVFILT_VNODE`, `NOTE_WRITE`), and a user event to end it.
+struct Watch {
+    queue: Arc<OwnedFd>,
+}
 
 impl Watch {
-    /// Registers the folder with a new `kqueue`, takes the entries already
-    /// there, and starts the thread, which runs until `alive` says no, makes
-    /// a last sweep and calls `finished`. The registration comes first, so
-    /// no entry made after it can be missed.
-    fn start(
-        folder: PathBuf,
-        caught: CaughtHandler,
-        alive: Alive,
-        finished: Box<dyn FnOnce() + Send>,
-    ) -> std::io::Result<()> {
+    /// Registers the folder and the stop event with a new `kqueue`, takes the
+    /// entries already there, and starts the thread, which runs until
+    /// [`Watch::stop`], makes a last sweep and ends. The registration comes
+    /// first, so no entry made after it can be missed.
+    fn start(folder: PathBuf, caught: CaughtHandler) -> std::io::Result<Self> {
         use std::os::unix::ffi::OsStrExt;
         let path = std::ffi::CString::new(folder.as_os_str().as_bytes())
             .map_err(|_| std::io::Error::other("$TMPDIR has a NUL in it"))?;
@@ -462,59 +524,81 @@ impl Watch {
             if dir < 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            (queue, OwnedFd::from_raw_fd(dir))
+            (Arc::new(queue), OwnedFd::from_raw_fd(dir))
         };
         let mut watch_dir = kevent_zero();
         watch_dir.ident = dir.as_raw_fd() as libc::uintptr_t;
         watch_dir.filter = libc::EVFILT_VNODE;
         watch_dir.flags = libc::EV_ADD | libc::EV_CLEAR;
         watch_dir.fflags = libc::NOTE_WRITE;
-        // SAFETY: one valid event; no events are asked for.
+        let mut stop = kevent_zero();
+        stop.ident = STOP;
+        stop.filter = libc::EVFILT_USER;
+        stop.flags = libc::EV_ADD | libc::EV_CLEAR;
+        let changes = [watch_dir, stop];
+        // SAFETY: two valid events; no events are asked for.
         let registered = unsafe {
-            libc::kevent(queue.as_raw_fd(), &watch_dir, 1, ptr::null_mut(), 0, ptr::null())
+            libc::kevent(queue.as_raw_fd(), changes.as_ptr(), 2, ptr::null_mut(), 0, ptr::null())
         };
         if registered < 0 {
             return Err(std::io::Error::last_os_error());
         }
         let known = existing_copies(&folder);
-        thread::Builder::new().name("preview-pdf-watch".into()).spawn(move || {
-            run(&queue, dir, &folder, known, &caught, &alive);
-            finished();
-        })?;
-        Ok(())
+        let thread_queue = Arc::clone(&queue);
+        thread::Builder::new()
+            .name("preview-pdf-watch".into())
+            .spawn(move || run(&thread_queue, dir, &folder, known, &caught))?;
+        Ok(Self { queue })
+    }
+
+    /// Has the thread make its last sweep and end. Returns at once.
+    fn stop(&self) {
+        let mut trigger = kevent_zero();
+        trigger.ident = STOP;
+        trigger.filter = libc::EVFILT_USER;
+        trigger.fflags = libc::NOTE_TRIGGER;
+        // SAFETY: one valid event; no events are asked for.
+        let n = unsafe {
+            libc::kevent(self.queue.as_raw_fd(), &trigger, 1, ptr::null_mut(), 0, ptr::null())
+        };
+        if n < 0 {
+            log::warn!(
+                "the PDF watch could not be told to stop: {}",
+                std::io::Error::last_os_error()
+            );
+        }
     }
 }
 
 /// The thread: on each write to the folder, deletes the new copies and says
-/// so. Once the surface is gone, the same once more and the hold's leftovers
-/// swept (a copy found then is not announced: the surface is closed).
+/// so. On the stop event, the same once more and the hold's leftovers swept
+/// (a copy found then is not announced: the surface is closed).
 fn run(
     queue: &OwnedFd,
     dir: OwnedFd,
     folder: &Path,
     mut known: HashSet<OsString>,
     caught: &CaughtHandler,
-    alive: &Alive,
 ) {
     let _dir = dir;
-    let mut event = kevent_zero();
-    let timeout = libc::timespec {
-        tv_sec: POLL.as_secs() as libc::time_t,
-        tv_nsec: POLL.subsec_nanos() as libc::c_long,
-    };
+    let mut events = [kevent_zero(), kevent_zero()];
     loop {
-        // SAFETY: room for the one event it is told of.
-        let n = unsafe { libc::kevent(queue.as_raw_fd(), ptr::null(), 0, &mut event, 1, &timeout) };
-        if n < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+        // SAFETY: room for the two events it is told of; no timeout.
+        let n = unsafe {
+            libc::kevent(queue.as_raw_fd(), ptr::null(), 0, events.as_mut_ptr(), 2, ptr::null())
+        };
+        if n < 0 {
+            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
             break;
         }
-        let open = alive();
-        // Listed on an event, and once more as the surface ends.
-        let found = if n > 0 || !open { sweep(folder, &mut known) } else { Vec::new() };
+        let stopping = events[..n as usize].iter().any(|e| e.filter == libc::EVFILT_USER);
+        let found = sweep(folder, &mut known);
         if !found.is_empty() {
-            caught(&found, open);
+            caught(&found, !stopping);
         }
-        if !open {
+        if stopping {
             caught(&[], false);
             break;
         }
@@ -536,7 +620,10 @@ pub(super) fn bounds<R: Runtime>(webview: &Webview<R>) -> tauri::Result<Rect> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, atomic::AtomicBool};
+    use std::time::Instant;
+
+    /// Well under the 250 ms the watch once polled at.
+    const POLL_BOUND: Duration = Duration::from_millis(200);
 
     fn names(paths: &[PathBuf]) -> Vec<String> {
         let mut names: Vec<_> =
@@ -577,34 +664,27 @@ mod tests {
 
     type Caught = (Vec<PathBuf>, bool);
 
-    /// A watch on `folder` that reports to a channel, and the switch that
-    /// closes its "surface".
-    fn watch(folder: &Path) -> (Arc<AtomicBool>, mpsc::Receiver<Caught>, mpsc::Receiver<()>) {
+    /// A watch on `folder` that reports to a channel. Its last call (no paths,
+    /// not announced) is the thread's end.
+    fn watch(folder: &Path) -> (Watch, mpsc::Receiver<Caught>) {
         let (tx, rx) = mpsc::channel::<Caught>();
-        let (done_tx, done) = mpsc::channel::<()>();
         let tx = Mutex::new(tx);
-        let open = Arc::new(AtomicBool::new(true));
-        let still_open = open.clone();
-        Watch::start(
+        let watch = Watch::start(
             folder.to_owned(),
             Box::new(move |paths, announce| {
                 let _ = tx.lock().unwrap().send((paths.to_vec(), announce));
             }),
-            Box::new(move || still_open.load(Ordering::SeqCst)),
-            Box::new(move || {
-                let _ = done_tx.send(());
-            }),
         )
         .unwrap();
-        (open, rx, done)
+        (watch, rx)
     }
 
     #[test]
-    fn the_watch_deletes_a_copy_as_it_is_made_and_sweeps_once_more_when_the_surface_closes() {
+    fn the_watch_deletes_a_copy_as_it_is_made_and_sweeps_once_more_when_it_is_stopped() {
         let tmp = tempfile::TempDir::new().unwrap();
         let before = tmp.path().join("WebKitPDFs-before");
         fs::create_dir(&before).unwrap();
-        let (open, rx, done) = watch(tmp.path());
+        let (watch, rx) = watch(tmp.path());
 
         let copy = tmp.path().join("WebKitPDFs-copy");
         fs::create_dir(&copy).unwrap();
@@ -614,40 +694,49 @@ mod tests {
         assert!(!copy.exists());
         assert!(before.exists());
 
-        // The surface closes: one more call, nothing caught, no announcement,
-        // and the thread ends.
-        open.store(false, Ordering::SeqCst);
+        // Stopped (the surface closes): one more call, nothing caught, no
+        // announcement, at once (no poll to wait for).
+        let stopped = Instant::now();
+        watch.stop();
         let (paths, announce) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(paths.is_empty());
         assert!(!announce);
-        done.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(stopped.elapsed() < POLL_BOUND, "the last sweep waits for nothing");
     }
 
     #[test]
-    fn a_copy_that_arrives_as_the_surface_closes_is_deleted_and_not_announced() {
+    fn a_copy_that_arrives_as_the_watch_is_stopped_is_deleted_and_not_announced() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let (open, rx, done) = watch(tmp.path());
+        let (watch, rx) = watch(tmp.path());
         let copy = tmp.path().join("WebKitPDFs-late");
         fs::create_dir(&copy).unwrap();
-        open.store(false, Ordering::SeqCst);
-        done.recv_timeout(Duration::from_secs(5)).unwrap();
+        watch.stop();
+        let mut caught = Vec::new();
+        loop {
+            let call = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let last = call.0.is_empty() && !call.1;
+            caught.push(call);
+            if last {
+                break;
+            }
+        }
         assert!(!copy.exists());
-        let caught: Vec<_> = rx.try_iter().collect();
-        // The thread may have seen the copy before or with the close.
+        // The thread may have seen the copy before or with the stop.
         assert!(caught.iter().any(|(paths, _)| names(paths) == ["WebKitPDFs-late"]));
-        assert!(!caught.last().unwrap().1);
     }
 
     #[test]
-    fn a_watch_whose_surface_is_gone_does_not_touch_later_copies() {
+    fn a_watch_that_was_stopped_does_not_touch_later_copies() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let (open, _rx, done) = watch(tmp.path());
-        open.store(false, Ordering::SeqCst);
-        done.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (watch, rx) = watch(tmp.path());
+        watch.stop();
+        let (paths, announce) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(paths.is_empty() && !announce);
         let copy = tmp.path().join("WebKitPDFs-after");
         fs::create_dir(&copy).unwrap();
-        thread::sleep(Duration::from_millis(600));
+        thread::sleep(Duration::from_millis(300));
         assert!(copy.exists());
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

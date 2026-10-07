@@ -166,7 +166,10 @@ pub(crate) mod webkit_switches {
     /// `prefs`, and reads both back. Any SPI that is missing, any feature
     /// that isn't listed, or a switch that doesn't read back as off is an
     /// `Err`: the caller must then not show a PDF (FR-003, FR-004).
-    pub(crate) fn switch_off(prefs: &WKPreferences) -> Result<(), String> {
+    /// `leave_hud_on` is only for the surface check's `--hud-on` variant
+    /// (FR-003a), which tests the watch with the HUD on: the HUD is then
+    /// neither switched nor required to read back off.
+    pub(crate) fn switch_off(prefs: &WKPreferences, leave_hud_on: bool) -> Result<(), String> {
         // SAFETY: each selector is checked with `respondsToSelector:` before
         // it is sent, with the argument and return types WebKit declares.
         unsafe {
@@ -194,9 +197,11 @@ pub(crate) mod webkit_switches {
             let Some(hud) = hud else {
                 return Err(format!("this WebKit lists no {HUD_FEATURE} feature"));
             };
-            let _: () = msg_send![prefs, _setEnabled: false, forFeature: &*hud];
+            if !leave_hud_on {
+                let _: () = msg_send![prefs, _setEnabled: false, forFeature: &*hud];
+            }
             let _: () = msg_send![prefs, _setPeerConnectionEnabled: false];
-            let hud_on: bool = msg_send![prefs, _isEnabledForFeature: &*hud];
+            let hud_on: bool = !leave_hud_on && msg_send![prefs, _isEnabledForFeature: &*hud];
             let rtc_on: bool = msg_send![prefs, _peerConnectionEnabled];
             if hud_on || rtc_on {
                 return Err(format!(
@@ -222,7 +227,7 @@ fn platform_check() -> bool {
     };
     // SAFETY: a fresh, unshared `WKPreferences`.
     let prefs = unsafe { WKPreferences::new(mtm) };
-    match webkit_switches::switch_off(&prefs) {
+    match webkit_switches::switch_off(&prefs, false) {
         Ok(()) => true,
         Err(why) => {
             log::warn!("the PDF viewer check: {why}");

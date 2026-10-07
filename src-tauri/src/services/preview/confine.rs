@@ -249,7 +249,8 @@ mod imp {
                         // An interrupted wait goes on waiting; anything else
                         // is the parent's exit, or a queue that can no longer
                         // tell, which is as unsafe to carry on with.
-                        if n < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR)
+                        if n < 0
+                            && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR)
                         {
                             continue;
                         }

@@ -81,6 +81,7 @@ use std::{
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::{
     PdfEndReason,
+    availability::PdfAvailability,
     surface::{Hooks, LABEL, Rect, Surface, SurfaceConfig},
     tripwire,
 };
@@ -660,7 +661,9 @@ fn serve_main(shared: &Shared, req: &http::Request<Vec<u8>>) -> http::Response<V
 fn counting_hooks(shared: &Arc<Shared>, app: &AppHandle<Wry>) -> Arc<Hooks> {
     let tell_main = |app: AppHandle<Wry>, what: &'static str| {
         move || {
-            if let Some(main) = app.get_webview_window("main") {
+            // `get_webview` (not `get_webview_window`, which is `None` once the
+            // window has the surface's web view too).
+            if let Some(main) = app.get_webview("main") {
                 let _ = main.eval(format!("fetch('/seen/{what}')"));
             }
         }
@@ -989,6 +992,9 @@ impl Run {
                     Instant::now(),
                 ));
             })),
+            // The one place the HUD is left on: this variant's config field
+            // (FR-003a). The app's surface never sets it.
+            hud_on: self.options.hud_on,
         };
         let window = self.app.get_window("main").unwrap();
         match Surface::open(&window, config) {
@@ -1187,11 +1193,6 @@ fn run_check(run: Run) {
 
     thread::sleep(Duration::from_secs(2));
     let hooks = counting_hooks(shared, app);
-    #[cfg(target_os = "macos")]
-    if options.hud_on {
-        // The seam T065's surface reads: leave WebKit's PDF HUD on.
-        unsafe { std::env::set_var("HOPLODEX_PDF_HUD_ON", "1") };
-    }
     // Opened on a document the handler doesn't have, so the probe can be put
     // in (Linux) before the first real document is asked for.
     let surface = run.open_surface(&warmup, hooks);
@@ -1220,7 +1221,7 @@ fn run_check(run: Run) {
 
     #[cfg(target_os = "macos")]
     if options.hud_on {
-        let ok = hud_on_check(&run, &surface, &hostile, input.as_ref(), &pdf_dirs_before);
+        let ok = hud_on_check(&run, surface, &hostile, input.as_ref(), &pdf_dirs_before);
         if !ok {
             run.fail(4, "the HUD-on variant did not pass");
         }
@@ -1410,9 +1411,11 @@ fn run_check(run: Run) {
     if !shared.ended.lock().unwrap().is_empty() {
         failures.push(format!("the surface ended: {:?}", shared.ended.lock().unwrap()));
     }
-    // The surface's own host window (Linux) is not another.
+    // The surface's own host window (Linux) is not another. `windows()`, not
+    // `webview_windows()`: that lists only a window with a single web view,
+    // and on macOS the main window has the surface's besides.
     let windows: Vec<String> =
-        app.webview_windows().into_keys().filter(|l| l != "main" && l != LABEL).collect();
+        app.windows().into_keys().filter(|l| l != "main" && l != LABEL).collect();
     if !windows.is_empty() {
         failures.push(format!("another window opened: {windows:?}"));
     }
@@ -1444,8 +1447,17 @@ fn run_check(run: Run) {
             eprintln!("CHECK FAIL {failure}");
         }
         screenshot(&options.shot.with_extension("failed.png"));
-        std::process::exit(4);
+        exit_with(app, 4);
     }
+}
+
+/// Exits with `code`. macOS's `App::exit` ends the process with 0 whatever the
+/// code, so a failure leaves it explicitly.
+fn exit_with(app: &AppHandle<Wry>, code: i32) {
+    if code != 0 && cfg!(target_os = "macos") {
+        std::process::exit(code);
+    }
+    app.exit(code);
 }
 
 /// With the hostile PDF shown: clicks every toolbar button and every link,
@@ -1661,11 +1673,12 @@ fn click_presentation_mode(run: &Run, input: &Input) -> Vec<String> {
 }
 
 /// macOS, `--hud-on`: with the HUD left on, clicks its Open in Preview and
-/// waits for the watch to delete the copy, close the surface and set the hold.
+/// waits for the watch to delete the copy, then closes the surface as the app
+/// does on `CopyCaught` and checks the hold is set.
 #[cfg(target_os = "macos")]
 fn hud_on_check(
     run: &Run,
-    surface: &Surface<Wry>,
+    surface: Surface<Wry>,
     hostile: &Url,
     input: Option<&Input>,
     before: &HashSet<PathBuf>,
@@ -1674,27 +1687,38 @@ fn hud_on_check(
         eprintln!("CHECK FAIL the HUD-on variant needs --input");
         return false;
     };
-    if run.show(surface, hostile, run.options.timeout).is_none() {
+    if run.show(&surface, hostile, run.options.timeout).is_none() {
         eprintln!("CHECK FAIL the PDF did not load");
         return false;
     }
     thread::sleep(Duration::from_secs(4));
+    // Focus the window, on its margin (the spike's way).
+    input.click(BOUNDS.x + BOUNDS.width + 20.0, BOUNDS.y + 300.0);
+    thread::sleep(Duration::from_millis(500));
     // The HUD appears over the viewer's bottom centre when the pointer is
     // there; Open in Preview is its second button (the spike's offsets, from
     // the viewer's centre and bottom).
     let (cx, bottom) = (BOUNDS.x + BOUNDS.width / 2.0, BOUNDS.y + BOUNDS.height);
     input.mouse_move(cx - 10.0, bottom - 200.0);
     thread::sleep(Duration::from_millis(300));
-    input.click(cx, bottom - 72.0);
+    input.mouse_move(cx, bottom - 80.0);
+    thread::sleep(Duration::from_millis(800));
+    input.click(cx + 30.0, bottom - 72.0);
     let ended =
         wait_until(Duration::from_secs(15), || !run.shared.ended.lock().unwrap().is_empty());
     let reasons = run.shared.ended.lock().unwrap().clone();
     eprintln!("CHECK the surface ended: {reasons:?}");
     let copy_caught = ended && reasons == [PdfEndReason::CopyCaught];
+    // What the app does on `CopyCaught`: closes the surface, whose last sweep
+    // and monitor removal `Surface::close` triggers.
+    if let Err(e) = surface.close() {
+        eprintln!("CHECK FAIL the surface could not be closed: {e}");
+        return false;
+    }
     thread::sleep(Duration::from_secs(2));
     let leftover: Vec<_> = webkit_pdf_dirs().difference(before).cloned().collect();
     eprintln!("CHECK new WebKitPDFs folders left: {leftover:?}");
-    let closed = run.app.get_webview("preview").is_none();
+    let closed = wait_until(Duration::from_secs(5), || run.app.get_webview("preview").is_none());
     eprintln!("CHECK surface closed: {closed}");
     let config = run.options.scratch.join("config");
     let hold = run
@@ -1703,7 +1727,32 @@ fn hud_on_check(
         .map(|settings| settings.pdf_preview_hold())
         .or_else(|| MachineSettings::load(&config).ok().map(|s| s.pdf_preview_hold()));
     eprintln!("CHECK hold: {hold:?}");
-    copy_caught && leftover.is_empty() && closed && hold.is_some_and(|h| h.is_some())
+    // A restart reads the hold from `machine.json` again (FR-003a): the same
+    // version finds PDF preview held off, another version clears the hold and
+    // finds it available (the OS check is taken as passed: it needs the main
+    // thread).
+    let restart = |version: &str| {
+        MachineSettings::load(&config)
+            .ok()
+            .map(|machine| PdfAvailability::at_startup(&machine, version, true))
+    };
+    let same = restart(env!("CARGO_PKG_VERSION"));
+    eprintln!("CHECK a restart on the same version: {same:?}");
+    let other = restart("0.0.0-another-version");
+    eprintln!("CHECK a restart on another version: {other:?}");
+    let held = same.is_some_and(|a| !a.is_available());
+    let cleared = other.is_some_and(|a| a.is_available());
+    // Preview, if the copy got that far, was not given a document: the watch
+    // deletes the copy first (spike: Preview opens to nothing or not at all).
+    let preview_running =
+        Command::new("pgrep").args(["-x", "Preview"]).status().is_ok_and(|s| s.success());
+    eprintln!("CHECK Preview is running: {preview_running}");
+    copy_caught
+        && leftover.is_empty()
+        && closed
+        && hold.is_some_and(|h| h.is_some())
+        && held
+        && cleared
 }
 
 /// `shows` (T005): the 3-page PDF in the surface, a screenshot, and out.

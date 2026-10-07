@@ -94,7 +94,10 @@ case "key":
     let code = CGKeyCode(args[2])!
     for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
-        if args.count > 3 && args[3] == "cmd" { event.flags = .maskCommand }
+        // Always set: an event with the flags unset takes the modifiers of the
+        // key event posted before it, so Escape after Command+O reached nothing
+        // (Command+Escape belongs to the system).
+        event.flags = args.count > 3 && args[3] == "cmd" ? .maskCommand : []
         event.post(tap: .cghidEventTap)
         usleep(50_000)
     }

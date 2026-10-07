@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main HoploDex window",
-  "windows": ["main"],
+  "description": "Capabilities for the main HoploDex web view (named by webview: a window's capabilities reach every web view in it, including the PDF surface)",
+  "webviews": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-set-title",

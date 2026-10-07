@@ -349,8 +349,11 @@ artifacts.
 - **Decision**: `build.rs` gives `tauri_build` an app manifest
   (`Attributes::app_manifest(AppManifest::new().commands(&COMMANDS))`)
   listing every HoploDex command. Tauri then refuses any command a
-  window's capabilities don't allow. `capabilities/default.json` (window
-  `main`) allows each one; no capability names `preview`.
+  window's capabilities don't allow. `capabilities/default.json` (web view
+  `main`, by `webviews`, not `windows`) allows each one; no capability names
+  `preview`. A capability's `windows` reaches every web view in the window,
+  and the surface is a child web view of `main`: the macOS surface check
+  found the surface's page answered with `windows: ["main"]`.
   - **One list**: `COMMANDS` is the single list of command names, used by
     `build.rs`. A unit test parses `main.rs`'s `generate_handler!` and
     `capabilities/default.json` and fails unless all three name the same

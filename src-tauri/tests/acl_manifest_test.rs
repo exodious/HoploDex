@@ -94,16 +94,21 @@ fn commands_handler_and_capability_name_the_same_commands() {
 }
 
 #[test]
-fn every_capability_is_for_the_main_window_alone() {
+fn every_capability_is_for_the_main_web_view_alone() {
+    // Tauri allows a command to every web view in a window the capability
+    // names (`resolve_access` matches `windows` against the web view's
+    // window), and the preview surface is a child web view of the main
+    // window: so a capability names the web view, never the window. Found by
+    // the surface check on macOS, where the surface's page was answered.
     for (path, capability) in capabilities() {
         assert_eq!(
-            capability["windows"],
+            capability["webviews"],
             serde_json::json!(["main"]),
-            "{path}: a capability must name exactly the main window (the preview surface gets none)"
+            "{path}: a capability must name exactly the main web view (the preview surface gets none)"
         );
         assert!(
-            capability.get("webviews").is_none(),
-            "{path}: a capability must not name webviews"
+            capability.get("windows").is_none(),
+            "{path}: a capability must not name windows: every web view in one is allowed"
         );
     }
 }
