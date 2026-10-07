@@ -20,6 +20,9 @@ export interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
   options: SegmentedOption<T>[];
   size?: "md" | "sm";
+  /** A change is in progress: the control keeps the value it has, announces `aria-busy` and
+   * takes no input until it finishes. */
+  busy?: boolean;
 }
 
 /** A single-choice radio group rendered as joined buttons — for short,
@@ -32,6 +35,7 @@ export function SegmentedControl<T extends string>({
   onChange,
   options,
   size = "md",
+  busy,
 }: SegmentedControlProps<T>) {
   const id = useId();
   return (
@@ -39,6 +43,7 @@ export function SegmentedControl<T extends string>({
       className={["hd-segmented", size === "sm" && "hd-segmented--sm"].filter(Boolean).join(" ")}
       role="radiogroup"
       aria-labelledby={`${id}-label`}
+      aria-busy={busy || undefined}
     >
       <span id={`${id}-label`} className={hideLabel ? "hd-sr-only" : "hd-segmented__label"}>
         {label}
@@ -55,6 +60,7 @@ export function SegmentedControl<T extends string>({
               name={id}
               value={option.value}
               checked={value === option.value}
+              disabled={busy}
               onChange={() => onChange(option.value)}
             />
             <span className="hd-segmented__face">

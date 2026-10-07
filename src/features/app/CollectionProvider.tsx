@@ -17,6 +17,7 @@ import type {
 } from "../firearms/types";
 import * as insuranceService from "../insurance/insuranceService";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
+import { loadDocumentOpening } from "../media/documentOpening";
 import {
   CollectionContext,
   NO_ACCESSORY_KINDS,
@@ -125,6 +126,12 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     return () => {
       current = false;
     };
+  }, []);
+
+  // This computer's "Open documents" setting is read once the collection is open, for the
+  // document lists to follow. Until it is read, or if it can't be, the default "preview" holds.
+  useEffect(() => {
+    loadDocumentOpening().catch(() => {});
   }, []);
 
   const value = useMemo<CollectionState>(

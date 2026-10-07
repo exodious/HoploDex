@@ -9,12 +9,15 @@ import {
   Dialog,
   PassphraseField,
   ProgressBar,
+  SegmentedControl,
   Select,
   TextField,
   useToast,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
+import { chooseDocumentOpening, useDocumentOpening } from "../media/documentOpening";
+import type { DocumentOpening } from "../media/types";
 import * as databasesService from "./databasesService";
 import { folderOf, joinPath } from "./paths";
 import { DatabaseGuideLink } from "./DatabaseGuide";
@@ -334,6 +337,7 @@ function SettingsForm({
             <BackupActions name={status.name} disabled={saving} onRestore={onRestore} />
           </fieldset>
           <LockingSection status={status} lock={lock} disabled={saving} onChange={setLock} />
+          <DocumentsSection />
           <ThisComputer status={status} disabled={saving} onChange={onPassphraseSavedChange} />
           {leftBehind && (
             <p className="hd-banner" role="status">
@@ -385,6 +389,48 @@ function SettingsForm({
         }}
       />
     </>
+  );
+}
+
+/** What a document's name does (007 FR-012; contracts/ui-document-preview.md §5). It is this
+ * computer's setting, not the database's: it is saved as soon as it is chosen, through the store
+ * the document lists read, and the dialog's Save and Cancel leave it alone. Choosing "Open in
+ * another app" asks natively first, so the control stays at the old value, busy, until that is
+ * answered, and stays there if it was declined. */
+function DocumentsSection() {
+  const notify = useToast();
+  const opening = useDocumentOpening();
+  const [pending, setPending] = useState(false);
+
+  async function choose(value: DocumentOpening) {
+    if (value === opening) return;
+    setPending(true);
+    try {
+      await chooseDocumentOpening(value);
+    } catch (e) {
+      notify(e instanceof CommandFailure ? e.message : "The setting couldn't be saved.", "error");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <fieldset className="hd-form-section hd-form-fieldset">
+      <legend className="hd-form-subgroup__title">Documents</legend>
+      <SegmentedControl<DocumentOpening>
+        label="Open documents"
+        value={opening}
+        busy={pending}
+        onChange={(value) => void choose(value)}
+        options={[
+          { value: "preview", label: "Preview in HoploDex" },
+          { value: "external", label: "Open in another app" },
+        ]}
+      />
+      <p className="hd-field__hint">
+        Applies to every database on this computer. Saved for this computer as soon as you choose.
+      </p>
+    </fieldset>
   );
 }
 

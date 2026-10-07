@@ -1,6 +1,7 @@
 import { invoke, listen } from "../../services/tauriClient";
 import type { RecordRef } from "../mounts/types";
 import type {
+  DocumentOpening,
   DocumentSummary,
   DocumentType,
   PdfEndReason,
@@ -148,4 +149,16 @@ export function onPreviewEscape(previewId: number, handler: () => void): () => v
 /** F6 was pressed in the PDF surface; the main web view has the focus again. */
 export function onPreviewFocusChrome(previewId: number, handler: () => void): () => void {
   return onPreviewEvent("preview:focus-chrome", previewId, () => handler());
+}
+
+/** This computer's "Open documents" setting (FR-012; contracts/tauri-commands.md
+ * `get_document_opening`). It needs no open database. */
+export function getDocumentOpening(): Promise<DocumentOpening> {
+  return invoke<DocumentOpening>("get_document_opening");
+}
+
+/** Changes the setting. For "external" the backend asks natively first, and `changed` is false
+ * when that was declined, or when the value is the current one. */
+export function setDocumentOpening(value: DocumentOpening): Promise<{ changed: boolean }> {
+  return invoke<{ changed: boolean }>("set_document_opening", { value });
 }

@@ -451,6 +451,10 @@
   outline-offset: 1px;
 }
 
+.hd-segmented[aria-busy="true"] .hd-segmented__track {
+  opacity: 0.7;
+}
+
 .hd-segmented--sm .hd-segmented__face {
   height: 26px;
   padding: 0 10px;

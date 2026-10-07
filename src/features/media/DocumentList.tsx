@@ -10,6 +10,7 @@ import * as mediaService from "./mediaService";
 import type { DocumentSummary, DocumentType, PdfEndReason } from "./types";
 import { DocumentPreview } from "./DocumentPreview";
 import { documentKindLabel } from "./documentKind";
+import { useDocumentOpening } from "./documentOpening";
 import { documentAccept, fileName, isDocumentPath, isPhotoPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
 import "./media.css";
@@ -44,6 +45,9 @@ function metaSuffix(doc: DocumentSummary): string {
  * previews inside HoploDex (007). */
 export function DocumentList({ owner }: DocumentListProps) {
   const notify = useToast();
+  // What the name does follows this computer's setting (FR-012); "Preview" and
+  // "Open in another app…" stay on the row either way.
+  const nameOpensExternally = useDocumentOpening() === "external";
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [adding, setAdding] = useState(0);
   const [opening, setOpening] = useState<number | null>(null);
@@ -226,8 +230,12 @@ export function DocumentList({ owner }: DocumentListProps) {
                 <button
                   type="button"
                   className="hd-doc__name"
-                  onClick={() => setViewing(doc.id)}
-                  title={`Preview ${doc.originalFilename}`}
+                  onClick={() => (nameOpensExternally ? void open(doc) : setViewing(doc.id))}
+                  title={
+                    nameOpensExternally
+                      ? `Open ${doc.originalFilename} in another app`
+                      : `Preview ${doc.originalFilename}`
+                  }
                 >
                   {doc.originalFilename}
                 </button>
