@@ -1,11 +1,13 @@
-//! The render helper's confinement: Landlock on Linux, a job object and
-//! mitigations on Windows, the sandbox profile on macOS (research.md §11).
+//! The render helper's confinement: Landlock on Linux, a job object (made by
+//! HoploDex, checked here) and mitigations on Windows, the sandbox profile on
+//! macOS (research.md §11).
 //!
 //! [`confine`] is called by the helper before it reads a byte of any document
 //! (`helper::run`). Each branch also makes the helper die with HoploDex at
-//! once, by whatever its OS offers: `PR_SET_PDEATHSIG` on Linux, a thread
-//! waiting on the parent on Windows, and a `kqueue` `NOTE_EXIT` watch on the
-//! parent on macOS (research.md §11, amended 2026-10-07).
+//! once, by whatever its OS offers: `PR_SET_PDEATHSIG` on Linux, a job object
+//! that HoploDex itself owns on Windows (the kernel ends the helper when
+//! HoploDex's handle to it closes, however HoploDex ends), and a `kqueue`
+//! `NOTE_EXIT` watch on the parent on macOS (research.md §11, amended 2026-10-07).
 
 /// What [`confine`] managed, for the helper's self-check and the log.
 #[derive(Debug, Clone, Copy, Default)]
@@ -196,7 +198,7 @@ mod imp {
     }
 
     /// Dies with HoploDex at once, as `PR_SET_PDEATHSIG` does on Linux and
-    /// the job object's watch does on Windows: macOS has neither, and the
+    /// the job object HoploDex owns does on Windows: macOS has neither, and the
     /// end of stdin is too late when a page is being decoded. A thread
     /// blocks in `kevent` on the parent's exit and calls `_exit`.
     ///
@@ -285,44 +287,30 @@ mod imp {
 mod imp {
     use std::mem::size_of;
 
-    use windows_sys::Win32::Foundation::{
-        CloseHandle, FALSE, FILETIME, GetLastError, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
-    };
+    use windows_sys::Win32::Foundation::{FALSE, GetLastError};
     use windows_sys::Win32::System::Diagnostics::Debug::{
         SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX, SetErrorMode,
-    };
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-        TH32CS_SNAPPROCESS,
     };
     use windows_sys::Win32::System::ErrorReporting::{
         WER_FAULT_REPORTING_DISABLE_SNAPSHOT_CRASH, WER_FAULT_REPORTING_FLAG_NO_HEAP_ON_QUEUE,
         WER_FAULT_REPORTING_FLAG_NOHEAP, WER_FAULT_REPORTING_NO_UI, WerSetFlags,
     };
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-        JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-        SetInformationJobObject,
+        IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, QueryInformationJobObject,
     };
     use windows_sys::Win32::System::SystemServices::{
         PROCESS_MITIGATION_CHILD_PROCESS_POLICY, PROCESS_MITIGATION_DYNAMIC_CODE_POLICY,
         PROCESS_MITIGATION_IMAGE_LOAD_POLICY,
     };
     use windows_sys::Win32::System::Threading::{
-        ExitProcess, GetCurrentProcess, GetCurrentProcessId, GetProcessTimes, INFINITE,
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-        ProcessChildProcessPolicy, ProcessDynamicCodePolicy, ProcessImageLoadPolicy,
-        SetProcessMitigationPolicy, WaitForSingleObject,
+        GetCurrentProcess, ProcessChildProcessPolicy, ProcessDynamicCodePolicy,
+        ProcessImageLoadPolicy, SetProcessMitigationPolicy,
     };
 
+    use super::super::helper_job::MEMORY_LIMIT;
     use super::Confinement;
-
-    /// The job's memory limit: 2 GiB, as Linux's `RLIMIT_DATA` (research.md §11).
-    const MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
-
-    /// The helper's exit code when its parent is gone.
-    const PARENT_GONE: u32 = 5;
 
     /// `NoRemoteImages` and `NoLowMandatoryLabelImages` of
     /// `PROCESS_MITIGATION_IMAGE_LOAD_POLICY`'s `Flags`.
@@ -334,8 +322,8 @@ mod imp {
 
     pub fn log_support() {
         log::info!(
-            "the TIFF helper is confined with a job object (2 GiB, no other process) and \
-             process mitigation policies"
+            "the TIFF helper is confined with a job object HoploDex owns (2 GiB, no other \
+             process, ended when HoploDex is) and process mitigation policies"
         );
     }
 
@@ -344,56 +332,65 @@ mod imp {
         format!("{what}: error {}", unsafe { GetLastError() })
     }
 
-    /// Order: the job first (its limits bound everything later), then the
-    /// error mode and WER, then the parent watch, which needs `OpenProcess`,
-    /// then the mitigations, the child-process one last so nothing an earlier
-    /// step needed is blocked.
+    /// Order: the job check first (its limits bound everything later), then
+    /// the error mode and WER, then the mitigations, the child-process one
+    /// last so nothing an earlier step needed is blocked.
     ///
     /// Everything but the image-load policy fails closed: the helper exits
     /// without reading a document. The image-load policy is the one measure
     /// that can be missing from a Windows that is otherwise fine, so it is
     /// best effort, as Landlock is on an older kernel.
     pub fn confine() -> Result<Confinement, String> {
-        job()?;
+        in_the_parents_job()?;
         errors();
-        die_with_parent()?;
         let _ = mitigate(ProcessImageLoadPolicy, NO_REMOTE_OR_LOW_LABEL_IMAGES);
         mitigate(ProcessDynamicCodePolicy, PROHIBIT_DYNAMIC_CODE)?;
         mitigate(ProcessChildProcessPolicy, NO_CHILD_PROCESS_CREATION)?;
         Ok(Confinement::default())
     }
 
-    /// A job object holding only this process: `KILL_ON_JOB_CLOSE`, no other
-    /// process (`ACTIVE_PROCESS = 1`, kept beside the child-process policy as
-    /// a second line) and 2 GiB of memory. The helper makes and joins it
-    /// itself, so the limits are in force before it reads a document, and it
-    /// never closes the handle. A job it was started in doesn't matter: jobs
-    /// nest.
-    fn job() -> Result<(), String> {
-        // SAFETY: plain system calls; the structure is zeroed and `size_of`
-        // is its own size.
+    /// Dies with HoploDex, and is bounded, because HoploDex put this process
+    /// in a job object of its own making (`helper_job::spawn`) before it ran
+    /// any code. The helper can't make that job itself: one it made and
+    /// owned would outlive a HoploDex that was killed. So it checks that it
+    /// is in a job, and that the job has the limits of HoploDex's (kill on
+    /// close, one process, 2 GiB), and refuses to serve when it isn't: a
+    /// helper started any other way, by hand or by a bug, is not confined.
+    /// Jobs nest, so a job the whole of HoploDex was started in (a test
+    /// runner's) doesn't matter: the one asked about is this process's own.
+    fn in_the_parents_job() -> Result<(), String> {
+        // SAFETY: plain system calls with pointers to locals; the structure
+        // is zeroed and `size_of` is its own size.
         unsafe {
-            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job.is_null() {
-                return Err(last_error("CreateJobObjectW"));
+            let mut in_job = FALSE;
+            if IsProcessInJob(GetCurrentProcess(), std::ptr::null_mut(), &mut in_job) == FALSE {
+                return Err(last_error("IsProcessInJob"));
+            }
+            if in_job == FALSE {
+                return Err("not in a job object".into());
             }
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-                | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-                | JOB_OBJECT_LIMIT_JOB_MEMORY;
-            limits.BasicLimitInformation.ActiveProcessLimit = 1;
-            limits.JobMemoryLimit = MEMORY_LIMIT;
-            if SetInformationJobObject(
-                job,
+            // A null job is the one the calling process is in.
+            if QueryInformationJobObject(
+                std::ptr::null_mut(),
                 JobObjectExtendedLimitInformation,
-                std::ptr::from_ref(&limits).cast(),
+                std::ptr::from_mut(&mut limits).cast(),
                 size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                std::ptr::null_mut(),
             ) == FALSE
             {
-                return Err(last_error("SetInformationJobObject"));
+                return Err(last_error("QueryInformationJobObject"));
             }
-            if AssignProcessToJobObject(job, GetCurrentProcess()) == FALSE {
-                return Err(last_error("AssignProcessToJobObject"));
+            let wanted = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+                | JOB_OBJECT_LIMIT_JOB_MEMORY;
+            let basic = &limits.BasicLimitInformation;
+            if basic.LimitFlags & wanted != wanted
+                || basic.ActiveProcessLimit != 1
+                || limits.JobMemoryLimit == 0
+                || limits.JobMemoryLimit > MEMORY_LIMIT
+            {
+                return Err("the job object is not HoploDex's".into());
             }
         }
         Ok(())
@@ -415,79 +412,6 @@ mod imp {
                     | WER_FAULT_REPORTING_DISABLE_SNAPSHOT_CRASH,
             );
         }
-    }
-
-    /// A process's creation time, in 100 ns units since 1601.
-    fn created(process: HANDLE) -> Option<u64> {
-        let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
-        // SAFETY: four pointers to locals.
-        let read =
-            unsafe { GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user) };
-        (read != FALSE)
-            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
-    }
-
-    /// The process that started this one, if it is still the one that did:
-    /// found in a snapshot of the processes, and rejected when it was created
-    /// after this one (its identifier has been reused).
-    fn parent() -> Option<HANDLE> {
-        // SAFETY: plain system calls; the snapshot is closed, and the
-        // structure is zeroed and sized.
-        unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if snapshot == INVALID_HANDLE_VALUE {
-                return None;
-            }
-            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
-            entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
-            let me = GetCurrentProcessId();
-            let mut parent_id = None;
-            let mut more = Process32FirstW(snapshot, &mut entry);
-            while more != FALSE {
-                if entry.th32ProcessID == me {
-                    parent_id = Some(entry.th32ParentProcessID);
-                    break;
-                }
-                more = Process32NextW(snapshot, &mut entry);
-            }
-            CloseHandle(snapshot);
-            let parent = OpenProcess(
-                PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
-                FALSE,
-                parent_id.filter(|id| *id != 0)?,
-            );
-            if parent.is_null() {
-                return None;
-            }
-            match (created(parent), created(GetCurrentProcess())) {
-                (Some(theirs), Some(ours)) if theirs <= ours => Some(parent),
-                _ => {
-                    CloseHandle(parent);
-                    None
-                }
-            }
-        }
-    }
-
-    /// Dies with HoploDex. The job object can't do that here, since it is
-    /// the helper's own: it closes only when the helper is gone already. So a
-    /// thread waits on the parent and ends the process when it dies, even in
-    /// the middle of a page, which the closed pipe alone would let finish.
-    fn die_with_parent() -> Result<(), String> {
-        let parent = parent().ok_or("the parent is gone")? as usize;
-        std::thread::Builder::new()
-            .name("parent-watch".into())
-            .spawn(move || {
-                // SAFETY: the handle stays open for the life of the process.
-                unsafe {
-                    if WaitForSingleObject(parent as HANDLE, INFINITE) == WAIT_OBJECT_0 {
-                        ExitProcess(PARENT_GONE);
-                    }
-                }
-            })
-            .map(|_| ())
-            .map_err(|e| format!("the parent watch: {e}"))
     }
 
     /// One mitigation policy, whose `Flags` word is `flags`, on this process.

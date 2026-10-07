@@ -5,7 +5,11 @@
 
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+#[cfg(not(windows))]
+use std::process::Child;
+#[cfg(not(windows))]
+use std::process::{ChildStdin, ChildStdout};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -57,16 +61,57 @@ pub enum HelperError {
     Closed,
 }
 
+/// A started helper: a `Child`, or on Windows the process together with the
+/// job object HoploDex made for it (`helper_job`). Both have `id`, `kill`
+/// and `wait`.
+#[cfg(not(windows))]
+type Proc = Child;
+#[cfg(windows)]
+type Proc = super::helper_job::JobChild;
+
+/// The helper's pipes: a `Child`'s, or on Windows plain files (see
+/// `helper_job::spawn`).
+#[cfg(not(windows))]
+type Stdin = ChildStdin;
+#[cfg(not(windows))]
+type Stdout = ChildStdout;
+#[cfg(windows)]
+type Stdin = std::fs::File;
+#[cfg(windows)]
+type Stdout = std::fs::File;
+
+/// A helper just started, with its pipes.
+type Started = (Proc, Stdin, Stdout);
+
+/// Starts the helper the app's way (research.md §11). On Windows that is into
+/// its own job object, by `CreateProcessW`, before it runs any code.
+fn start(exe: &Path) -> io::Result<Started> {
+    #[cfg(windows)]
+    {
+        super::helper_job::spawn(exe, &[])
+    }
+    #[cfg(not(windows))]
+    {
+        let mut child = HelperHandle::command(exe).spawn()?;
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::other("no pipes"));
+        };
+        Ok((child, stdin, stdout))
+    }
+}
+
 /// One helper process and its pipes.
 struct Process {
     pid: u32,
-    child: Mutex<Child>,
+    child: Mutex<Proc>,
     io: Mutex<Io>,
 }
 
 struct Io {
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    stdin: Stdin,
+    stdout: BufReader<Stdout>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -74,7 +119,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// What the spawner thread is asked for.
-type SpawnRequest = (PathBuf, Sender<io::Result<Child>>);
+type SpawnRequest = (PathBuf, Sender<io::Result<Started>>);
 
 /// Helpers are started from one thread that lives as long as the process.
 /// `PR_SET_PDEATHSIG` fires when the *thread* that started a child ends, not
@@ -87,7 +132,7 @@ fn spawner() -> &'static Sender<SpawnRequest> {
         let started =
             thread::Builder::new().name("preview-helper-spawner".into()).spawn(move || {
                 for (exe, reply) in requests {
-                    let _ = reply.send(HelperHandle::command(&exe).spawn());
+                    let _ = reply.send(start(&exe));
                 }
             });
         if let Err(err) = started {
@@ -104,15 +149,10 @@ impl Process {
         spawner()
             .send((exe.to_owned(), reply))
             .map_err(|_| HelperError::Spawn(io::Error::other("no spawner")))?;
-        let mut child = answer
+        let (child, stdin, stdout) = answer
             .recv()
             .map_err(|_| HelperError::Spawn(io::Error::other("no spawner")))?
             .map_err(HelperError::Spawn)?;
-        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(HelperError::Spawn(io::Error::other("no pipes")));
-        };
         Ok(Arc::new(Self {
             pid: child.id(),
             child: Mutex::new(child),
@@ -136,7 +176,7 @@ impl Process {
     fn exchange(
         self: &Arc<Self>,
         limit: Duration,
-        send: impl FnOnce(&mut ChildStdin) -> io::Result<()>,
+        send: impl FnOnce(&mut Stdin) -> io::Result<()>,
     ) -> Result<Response, HelperError> {
         let mut io = lock(&self.io);
         let _watchdog = Watchdog::start(self, limit);
@@ -345,7 +385,10 @@ impl HelperHandle {
     /// The command the app runs for the helper: `--render-helper`, a cleared
     /// environment, its stdin and stdout piped, stderr discarded, and no
     /// console window on Windows (research.md §11). Tests add arguments to
-    /// it and spawn it themselves.
+    /// it and spawn it themselves. On Windows the app does not run this
+    /// command: it starts the helper into its job object with
+    /// `helper_job::spawn`, so a helper started from this command is in no
+    /// job of HoploDex's and refuses to serve.
     pub fn command(exe: &Path) -> Command {
         let mut command = Command::new(exe);
         command

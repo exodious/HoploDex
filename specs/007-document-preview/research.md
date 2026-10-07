@@ -678,6 +678,27 @@ artifacts.
   wait needs nothing the profile denies, since the queue exists already.
   Linux (`PR_SET_PDEATHSIG`) and Windows (a thread waiting on the parent
   process) already did this; stdin EOF remains the normal way the helper ends.
+- **Amendment (2026-10-07), the Windows job object is HoploDex's**: the
+  arrangement above for Windows (the helper makes and joins its own job, and
+  a thread waits on its parent) is replaced, because a job the helper owns
+  closes only when the helper is gone, so the thread was the only thing
+  tying the helper to HoploDex, and a thread can't act when HoploDex is
+  terminated or crashes. Now HoploDex makes the job (`KILL_ON_JOB_CLOSE`,
+  `ACTIVE_PROCESS = 1`, 2 GiB job memory), one per helper, since the
+  one-process and memory limits are per job and a restarted helper starts
+  while its predecessor is still ending. It holds the only handle (not
+  inheritable) in the `HelperHandle`'s process record for the helper's life,
+  and starts the helper with `CreateProcessW` and a
+  `PROC_THREAD_ATTRIBUTE_JOB_LIST` attribute, so the helper is in the job
+  before it runs any code. The same attribute list carries
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (its three standard handles and
+  nothing else), and the environment is empty, as before (`helper_job.rs`).
+  Any end of HoploDex, including `TerminateProcess`, closes the handle and
+  the kernel kills the helper at once (`tests/tiff_helper_test.rs` kills a
+  parent and expects the helper gone within a second). The helper checks that
+  it is in a job with those limits and refuses to serve otherwise (exit 3),
+  and keeps its own mitigation policies, error mode and WER flags. The
+  parent-watch thread is dropped: the job covers every case it did.
 
 ## 12. Text and CSV
 

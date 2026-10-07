@@ -165,6 +165,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_System_SystemInformation",
+    # The pipes of the render helper HoploDex starts into its job object
+    # (research.md §11, amended 2026-10-07).
+    "Win32_System_Pipes",
 ] }
 # The PDF surface's settings and events (research.md §6-§10). The versions
 # wry uses.
@@ -186,6 +189,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Networking_WinSock",
     # The helper lookup of tests/support/preview_support.rs.
     "Win32_System_Diagnostics_ToolHelp",
+    # Waiting for the helper to end when its parent is killed
+    # (tests/tiff_helper_test.rs).
+    "Win32_System_Threading",
 ] }
 
 # Debug and test builds keep line tables, so panics and backtraces still name

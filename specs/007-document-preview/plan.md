@@ -76,7 +76,8 @@ React 18 (`src`), unchanged
   confinement).
 - **New features of existing crates**: `tauri`'s `unstable` (child web
   views) and `macos-proxy`; more `windows-sys` features (job objects,
-  threading, security, `GetLastInputInfo`).
+  threading, security, pipes, `GetLastInputInfo`; amended 2026-10-07: the
+  helper's job object is HoploDex's, research.md §11).
 - **Promoted from dev-dependencies** (already in the tree through wry, at
   its versions): `webkit2gtk` (Linux), `objc2-web-kit` and `block2`
   (macOS), `webview2-com` (Windows).
@@ -256,6 +257,7 @@ src-tauri/
 │   │   │   │                        #  SaveAsUIShowing, accelerator keys, GetLastInputInfo
 │   │   │   ├── helper.rs            # TIFF helper entry: confine, serve Load/Render
 │   │   │   ├── helper_protocol.rs   # frame encoding shared by parent and helper
+│   │   │   ├── helper_job.rs        # Windows: the helper started into HoploDex's own job object (research.md §11, amended 2026-10-07)
 │   │   │   ├── confine.rs           # per-OS confinement (Landlock, sandbox_init, job object, rlimits)
 │   │   │   ├── tiff.rs              # IFD walk, page decode (tiff + fax), downsample → PNG
 │   │   │   └── text.rs              # BOM/UTF-8/UTF-16/Windows-1252 decode, control characters

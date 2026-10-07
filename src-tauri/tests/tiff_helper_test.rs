@@ -31,6 +31,13 @@
 //!   is compiled into debug and test builds only (`cfg(debug_assertions)`): a
 //!   release binary has no such mode, so the tests that use it are skipped
 //!   under `--release`.
+//!
+//! On Windows (research.md §11, amended 2026-10-07) HoploDex owns the helper's
+//! job object and starts the helper into it with `CreateProcessW`
+//! (`services::preview::helper_job::spawn`). The helper refuses to serve
+//! outside such a job, so the self-check is run through `helper_job::spawn`,
+//! `HelperHandle::command` is what a helper outside a job is started with,
+//! and a parent that is terminated takes the helper with it.
 
 #[path = "support/preview_support.rs"]
 mod preview_support;
@@ -41,6 +48,8 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::time::Duration;
 
+#[cfg(windows)]
+use hoplodex_lib::services::preview::helper_job;
 use hoplodex_lib::services::preview::{HelperHandle, HelperLimits};
 #[cfg(debug_assertions)]
 use serde_json::Value;
@@ -66,6 +75,31 @@ struct Report {
     connections: usize,
 }
 
+/// Runs the helper's self-check the way the app starts the helper: on
+/// Windows into a job object made for it (`helper_job::spawn`), which the
+/// helper insists on; elsewhere through `HelperHandle::command`. Whether it
+/// exited 0, and what it printed.
+#[cfg(debug_assertions)]
+fn run_self_check(args: &[&str]) -> (bool, String) {
+    #[cfg(windows)]
+    {
+        use std::io::Read;
+
+        let args: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        let (mut child, stdin, mut stdout) = helper_job::spawn(&exe(), &args).unwrap();
+        let mut text = String::new();
+        stdout.read_to_string(&mut text).unwrap();
+        let code = child.wait().unwrap();
+        drop(stdin);
+        (code == 0, text)
+    }
+    #[cfg(not(windows))]
+    {
+        let output = HelperHandle::command(&exe()).args(args).output().unwrap();
+        (output.status.success(), String::from_utf8(output.stdout).unwrap())
+    }
+}
+
 #[cfg(debug_assertions)]
 fn self_check() -> Report {
     let dir = TempDir::new().unwrap();
@@ -75,12 +109,11 @@ fn self_check() -> Report {
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
 
-    let mut command = HelperHandle::command(&exe());
-    command.args(["--self-check", &port.to_string(), file.to_str().unwrap()]);
-    let output = command.output().unwrap();
+    let args = ["--self-check", &port.to_string(), file.to_str().unwrap()];
+    let (success, stdout) = run_self_check(&args);
 
-    assert!(output.status.success(), "the self-check failed: {:?}", output.status);
-    let line = String::from_utf8(output.stdout).unwrap();
+    assert!(success, "the self-check failed");
+    let line = stdout;
     let json: Value = serde_json::from_str(line.trim()).unwrap_or_else(|e| panic!("{e}: {line}"));
     let mut connections = 0;
     while listener.accept().is_ok() {
@@ -147,6 +180,30 @@ fn once_confined_it_cannot_start_a_program() {
         "the probe program does not run here, so the check means nothing"
     );
     assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
+}
+
+/// On Windows the job object is HoploDex's, so a helper that was not put in
+/// one the app's way (here: started by `HelperHandle::command`, which the app
+/// does not run on Windows) refuses to serve, and so does its self-check:
+/// both exit with 3 before reading a document.
+#[cfg(windows)]
+#[test]
+fn started_outside_hoplodexs_job_it_refuses_to_serve() {
+    let serve = HelperHandle::command(&exe()).output().unwrap();
+    assert_eq!(serve.status.code(), Some(3), "a helper outside the job served");
+    assert!(serve.stdout.is_empty());
+
+    #[cfg(debug_assertions)]
+    {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("secret.txt");
+        std::fs::write(&file, b"not for the helper").unwrap();
+        let check = HelperHandle::command(&exe())
+            .args(["--self-check", "9", file.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert_eq!(check.status.code(), Some(3), "a self-check outside the job confined itself");
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -217,6 +274,87 @@ fn it_exits_within(limit: Duration) {
 
     assert!(wait_until_gone(helper, limit), "the helper outlived its parent by {limit:?}");
     drop(shell.stdin.take());
+}
+
+/// The environment variable that makes `the_parent_stub` act as HoploDex.
+#[cfg(windows)]
+const STUB: &str = "HOPLODEX_TEST_PARENT_STUB";
+
+/// Not a test of its own: the process `the_helper_dies_with_hoplodex_even_if_it_is_killed`
+/// starts and kills, standing in for HoploDex. It spawns the helper the app's
+/// way (`HelperHandle::spawn`), has it load and render a page (so it is
+/// serving, which means it is confined and in its job), prints its PID and
+/// waits to be killed. Run on its own, without the variable, it does nothing.
+#[cfg(windows)]
+#[test]
+fn the_parent_stub() {
+    use std::io::Write;
+
+    if std::env::var_os(STUB).is_none() {
+        return;
+    }
+    let mut helper = HelperHandle::spawn(&exe(), HelperLimits::default()).unwrap();
+    helper.load(&document_fixture("one-page.tif")).unwrap();
+    helper.render(0, 100).unwrap();
+    println!("HELPER_PID={}", helper.pid());
+    std::io::stdout().flush().unwrap();
+    std::thread::sleep(Duration::from_secs(120));
+}
+
+/// "If HoploDex exits, everything it spawned goes with it at once": HoploDex
+/// owns the helper's job object, so a HoploDex that is terminated (no chance
+/// to run any code of its own) closes the handle and the kernel kills the
+/// helper (research.md §11, amended 2026-10-07).
+#[cfg(windows)]
+#[test]
+fn the_helper_dies_with_hoplodex_even_if_it_is_killed() {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+    use std::time::Instant;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
+    };
+
+    let mut parent = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "the_parent_stub", "--nocapture", "--test-threads=1"])
+        .env(STUB, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut lines = std::io::BufReader::new(parent.stdout.take().unwrap()).lines();
+    let helper = loop {
+        let line = lines.next().expect("the parent stub ended before it started a helper");
+        // libtest starts the line with the test's name.
+        let line = line.unwrap();
+        if let Some((_, pid)) = line.split_once("HELPER_PID=") {
+            break pid.trim().parse::<u32>().unwrap();
+        }
+    };
+    // SAFETY: a plain system call; the handle is closed below.
+    let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, helper) };
+    assert!(!handle.is_null(), "the helper {helper} is not there to watch");
+    assert!(
+        // SAFETY: the handle is open.
+        unsafe { WaitForSingleObject(handle, 0) } != WAIT_OBJECT_0,
+        "the helper exited on its own"
+    );
+
+    // `Child::kill` is `TerminateProcess`: nothing of the parent runs again.
+    parent.kill().unwrap();
+    let killed = Instant::now();
+    // SAFETY: the handle is open.
+    let waited = unsafe { WaitForSingleObject(handle, 1000) };
+    let took = killed.elapsed();
+    // SAFETY: the handle is open and not used again.
+    unsafe { CloseHandle(handle) };
+    parent.wait().unwrap();
+
+    assert_eq!(waited, WAIT_OBJECT_0, "the helper outlived its parent by more than a second");
+    assert!(took < Duration::from_secs(1), "the helper took {took:?} to go");
 }
 
 #[cfg(unix)]

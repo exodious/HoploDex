@@ -12,6 +12,8 @@ pub mod availability;
 pub mod confine;
 pub mod helper;
 pub mod helper_handle;
+#[cfg(windows)]
+pub mod helper_job;
 pub mod helper_protocol;
 pub mod protocol_handler;
 #[cfg(target_os = "linux")]
