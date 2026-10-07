@@ -88,12 +88,8 @@ The lead runs on whichever machine the user leads from (usually Linux, the
 fastest; sometimes another). Tasks that need a different OS (code behind a
 `#[cfg(target_os = ...)]`, that OS's tests, E2E, screenshots or surface check)
 go to a Claude session on a machine with that OS, over `SendMessage`. Each
-runs under Remote Control in a HoploDex checkout and is named
-`<host>-hoplodex`; find the exact names with `ListAgents`. As of feature 007:
-`nous-hoplodex` (Linux, usually the lead), `apollo-hoplodex` (a Mac, which
-drives the macOS 26 VM with `scripts/tart-vm.sh`), and `win-<host>-hoplodex`
-(the Windows test VM, kept running by `scripts/windows/claude-remote-control.ps1`;
-DEVELOPMENT.md "Windows").
+runs under Remote Control in a HoploDex checkout; find them with `ListAgents`
+(the user's local notes say which session is which machine).
 
 - **The batch:** write it like a subagent prompt (§2), plus the lead's
   session name to reply to and "use the speckit-os-batch skill". That skill
