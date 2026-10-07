@@ -1011,6 +1011,10 @@ pub mod ops {
                  WHERE (:include_disposed = 1 OR f.status = 'active')
                    AND (:has_query = 0
                         OR (:short_query = 0 AND f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
+                        -- The names of the firearm's own documents (FR-015,
+                        -- research.md §19), never those of a record mounted on it.
+                        OR (:short_query = 0 AND f.id IN (SELECT d.firearm_id FROM document_attachments d WHERE d.id IN (SELECT rowid FROM document_names_fts WHERE document_names_fts MATCH :query)))
+                        OR (:short_query = 1 AND EXISTS (SELECT 1 FROM document_attachments d WHERE d.firearm_id = f.id AND d.original_filename LIKE :like ESCAPE '\\'))
                         OR (:short_query = 1 AND (
                             f.make LIKE :like ESCAPE '\\'
                             OR f.model LIKE :like ESCAPE '\\'

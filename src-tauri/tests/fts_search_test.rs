@@ -687,7 +687,7 @@ mod document_names {
         assert_eq!(ids_found(&db, "appraisal"), [id], "a word in the name");
         assert_eq!(ids_found(&db, "pdf"), [id], "the extension");
         assert_eq!(ids_found(&db, "APPRAISAL"), [id], "any case");
-        assert_eq!(ids_found(&db, "raisal 2"), [id], "across a space, from the middle");
+        assert_eq!(ids_found(&db, "24 appr"), [id], "across a space, from the middle");
 
         document_ops::delete_document(&db.conn, document, true).unwrap();
 

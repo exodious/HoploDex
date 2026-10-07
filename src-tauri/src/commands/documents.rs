@@ -126,7 +126,8 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No document was found with that id."));
         }
-        crate::db::reclaim_freed_space(conn);
+        // The file name is in the document-names index (research.md §19).
+        crate::db::reclaim_deleted_record(conn);
         Ok(DeleteResult { deleted: true })
     }
 

@@ -15,6 +15,7 @@ use crate::db::{now_utc, random_hex};
 use crate::models::database::ChooserNotice;
 use crate::models::document_opening::DocumentOpening;
 use crate::services::keyring::Keyring;
+use crate::services::secure_delete::{secure_delete_dir, secure_delete_file};
 
 const FILE_NAME: &str = "machine.json";
 const VERSION: u32 = 1;
@@ -89,6 +90,21 @@ pub struct UnfinishedBackupMove {
     pub partial_path: Option<PathBuf>,
 }
 
+/// The PDF preview hold (FR-003a, research.md §7, §17): the macOS watch caught
+/// a copy of a document. Paths and a version only, never a document's name or
+/// content.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfPreviewHold {
+    /// The HoploDex version during which a copy was caught. While it equals
+    /// the running version, PDF preview is off.
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Caught `WebKitPDFs-*` folders not yet confirmed gone.
+    #[serde(default)]
+    pub leftovers: Vec<PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineFile {
@@ -106,6 +122,9 @@ struct MachineFile {
     /// `VERSION` stays 1.
     #[serde(default)]
     document_opening: DocumentOpening,
+    /// FR-003a. `None` (JSON `null`) unless a hold or a leftover is recorded.
+    #[serde(default)]
+    pdf_preview_hold: Option<PdfPreviewHold>,
 }
 
 impl MachineFile {
@@ -118,6 +137,7 @@ impl MachineFile {
             unfinished_backup_move: None,
             notices: Vec::new(),
             document_opening: DocumentOpening::default(),
+            pdf_preview_hold: None,
         })
     }
 
@@ -343,6 +363,89 @@ impl MachineSettings {
         self.update(|file| file.document_opening = value);
     }
 
+    /// The PDF preview hold, or `None` when there is none (FR-003a).
+    pub fn pdf_preview_hold(&self) -> Option<PdfPreviewHold> {
+        self.lock().pdf_preview_hold.clone()
+    }
+
+    /// Holds PDF preview off for `version`, keeping the leftovers recorded.
+    pub fn hold_pdf_preview(&self, version: &str) {
+        self.update(|file| {
+            file.pdf_preview_hold.get_or_insert_with(Default::default).version =
+                Some(version.to_owned());
+        });
+    }
+
+    /// Records a caught `WebKitPDFs-*` folder to delete.
+    pub fn add_hold_leftover(&self, path: &Path) {
+        self.update(|file| {
+            let hold = file.pdf_preview_hold.get_or_insert_with(Default::default);
+            if !hold.leftovers.iter().any(|known| known == path) {
+                hold.leftovers.push(path.to_owned());
+            }
+        });
+    }
+
+    /// Forgets a leftover that is gone. The hold returns to `None` when it
+    /// has neither a version nor a leftover left.
+    pub fn drop_hold_leftover(&self, path: &Path) {
+        self.update(|file| {
+            if let Some(hold) = &mut file.pdf_preview_hold {
+                hold.leftovers.retain(|known| known != path);
+            }
+            normalize_hold(&mut file.pdf_preview_hold);
+        });
+    }
+
+    /// At startup: a hold for a version other than `running` loses its
+    /// version, so this version tries PDF preview again. Leftovers stay until
+    /// each path is gone.
+    pub fn clear_stale_hold(&self, running: &str) {
+        self.update(|file| {
+            if let Some(hold) = file
+                .pdf_preview_hold
+                .as_mut()
+                .filter(|hold| hold.version.as_deref().is_some_and(|version| version != running))
+            {
+                hold.version = None;
+            }
+            normalize_hold(&mut file.pdf_preview_hold);
+        });
+    }
+
+    /// Deletes each recorded leftover and drops the ones that are gone,
+    /// touching nothing else. Run at a surface's close, at startup and at a
+    /// shutdown signal. Only a path named `WebKitPDFs-*` is ever deleted, so
+    /// an edited `machine.json` cannot point the sweep elsewhere; any other
+    /// entry is dropped unread.
+    pub fn sweep_hold_leftovers(&self) {
+        let leftovers = match &self.lock().pdf_preview_hold {
+            Some(hold) => hold.leftovers.clone(),
+            None => return,
+        };
+        for path in leftovers {
+            let is_webkit_copy = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("WebKitPDFs-"));
+            let gone = if !is_webkit_copy {
+                true
+            } else {
+                match fs::symlink_metadata(&path) {
+                    Err(err) => err.kind() == io::ErrorKind::NotFound,
+                    Ok(meta) if meta.is_dir() => {
+                        secure_delete_dir(&path);
+                        !path.exists()
+                    }
+                    Ok(_) => secure_delete_file(&path).is_ok() || !path.exists(),
+                }
+            };
+            if gone {
+                self.drop_hold_leftover(&path);
+            }
+        }
+    }
+
     pub fn unfinished_backup(&self) -> Option<UnfinishedBackup> {
         self.lock().unfinished_backup.clone()
     }
@@ -377,6 +480,13 @@ impl MachineSettings {
     }
 }
 
+/// Returns the hold to `None` when it records nothing.
+fn normalize_hold(hold: &mut Option<PdfPreviewHold>) {
+    if hold.as_ref().is_some_and(|hold| hold.version.is_none() && hold.leftovers.is_empty()) {
+        *hold = None;
+    }
+}
+
 /// Writes to a temporary file beside `path`, flushes it, then renames it
 /// over `path`, so a crash leaves either the old file or the new one.
 fn write_atomically(path: &Path, file: &MachineFile) -> io::Result<()> {
@@ -405,5 +515,9 @@ fn host_display_name() -> String {
         host
     };
     let host: String = host.trim().chars().take(MAX_DISPLAY_NAME_CHARS).collect();
-    if host.is_empty() { "another computer".to_owned() } else { host }
+    if host.is_empty() {
+        "another computer".to_owned()
+    } else {
+        host
+    }
 }

@@ -104,7 +104,7 @@ fn any_bytes_at_all_decode_without_failing() {
 
 #[test]
 fn c0_controls_other_than_tab_line_feed_and_carriage_return_become_replacement_characters() {
-    for control in (0x00u8..=0x1F).filter(|b| ![b'\t', b'\n', b'\r'].contains(b)) {
+    for control in (0x00u8..=0x1F).filter(|b| !b"\t\n\r".contains(b)) {
         let text = decode(&[b'a', control, b'b']);
 
         assert_eq!(text, format!("a{REPLACEMENT}b"), "control {control:#04x}");
