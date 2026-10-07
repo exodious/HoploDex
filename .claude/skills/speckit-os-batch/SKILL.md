@@ -91,4 +91,10 @@ loaded, DEVELOPMENT.md or the spec docs yourself: the subagents do.
    commit hash(es) and test results in a line, then, in under 150 words, only
    decisions the lead might revisit, deviations from the spec, and anything
    left red. Don't summarise the tasks.
-4. Then wait for the next batch. Don't start other tasks on your own.
+4. Messages between machines carry no delivery receipt, so the lead answers
+   each report with "Received <hash>". End your turn with one line, not the
+   report again: "Reported <hash> to the lead; waiting for its
+   acknowledgement." When the acknowledgement comes, answer it with one word
+   ("Acknowledged."). If the user asks and none has come, resend the report
+   once.
+5. Then wait for the next batch. Don't start other tasks on your own.

@@ -89,7 +89,10 @@ session over `SendMessage` (find it with `ListAgents`). Write the batch like a
 subagent prompt (§2), plus: the lead's session name to reply to, "pull
 --rebase first", "commit by path, push, reply with the hash". The remote
 session runs it with the `speckit-os-batch` skill, which commits and pushes
-itself. Pull before reviewing its commits, and never while one of your own
+itself. Messages between machines carry no delivery receipt, so answer each
+report at once with a one-line `SendMessage`, "Received <hash>", before
+anything else; the session waits for it rather than repeating its report to
+the user. Pull before reviewing its commits, and never while one of your own
 agents would have files changed under it mid-run. A remote session in a
 different permission mode from yours holds your messages for the user's
 approval; run them in the same mode.
