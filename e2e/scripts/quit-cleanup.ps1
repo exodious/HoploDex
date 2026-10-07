@@ -153,14 +153,13 @@ public static class QuitCleanupWindows {
 
 function Invoke-Quit([string]$How) {
     $scratch = Join-Path ([IO.Path]::GetTempPath()) ("hoplodex-quit-" + [guid]::NewGuid().ToString('N'))
-    $config, $cache, $documents, $webview = 'config', 'cache', 'documents', 'webview2' |
+    $config, $cache, $documents = 'config', 'cache', 'documents' |
         ForEach-Object { New-Item -ItemType Directory -Path (Join-Path $scratch $_) | Select-Object -ExpandProperty FullName }
     # An E2E build takes its directories from these, never from the OS
     # (src-tauri/src/app_dirs.rs), and won't start without them.
     $env:HOPLODEX_E2E_CONFIG_HOME = $config
     $env:HOPLODEX_E2E_CACHE_HOME = $cache
     $env:HOPLODEX_E2E_DOCUMENTS = $documents
-    $env:WEBVIEW2_USER_DATA_FOLDER = $webview
     $env:TAURI_WEBDRIVER_PORT = "$WebDriverPort"
     $planted = Join-Path $cache "$Identifier\opened-documents\7\receipt.pdf"
 

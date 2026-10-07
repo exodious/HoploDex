@@ -1,7 +1,7 @@
 //! Reading files the user drops onto the window. The webview never sees the
 //! file itself — the desktop shell hands the frontend the dropped paths
-//! (WebKitGTK exposes no `File` for a dragged-in file) — so the bytes, name,
-//! and type are read here instead, and the result is stored exactly as if it
+//! (WebKitGTK exposes no `File` for a dragged-in file) — so the bytes and name
+//! are read here instead, and the result is stored exactly as if it
 //! had come from the file picker.
 
 use std::path::Path;
@@ -11,7 +11,6 @@ use crate::commands::CommandError;
 pub struct AttachmentFile {
     pub bytes: Vec<u8>,
     pub filename: String,
-    pub mime_type: &'static str,
 }
 
 pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError> {
@@ -29,8 +28,7 @@ pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError>
         log::error!("couldn't read {}: {err}", path.display());
         CommandError::not_found(format!("{filename} couldn't be read."))
     })?;
-    let mime_type = mime_type_for(&filename);
-    Ok(AttachmentFile { bytes, filename, mime_type })
+    Ok(AttachmentFile { bytes, filename })
 }
 
 /// The type to record for a photo, going by its extension. Anything else is
