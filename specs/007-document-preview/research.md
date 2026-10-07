@@ -219,7 +219,14 @@ artifacts.
   surface's position and size. The surface is hidden (`hide()`) while
   anything is drawn above the viewer: the delete confirmation, a menu, a
   toast that would overlap it (the `PreviewSurface` component tracks
-  this), and while the main window is minimized.
+  this). When the main window is minimized the surface goes with its
+  parent window: HoploDex does not hide it, the window system does.
+  (2026-10-07, T155: this paragraph used to say HoploDex hides it while
+  the main window is minimized. Checked on each OS: on Linux it is a
+  `GtkOverlay` child, unmapped with the window; on macOS it is a child of
+  the window and is back in place on restore; on Windows it is a child
+  HWND, parked offscreen with the window and back at the same rectangle.
+  No surface code is involved.)
 
   **Its lifetime**:
   - **Created** when the viewer shows a PDF and has no surface,
