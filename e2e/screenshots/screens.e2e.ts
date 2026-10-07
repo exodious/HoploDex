@@ -186,9 +186,12 @@ async function waitForViewerStatus(startsWith: string) {
  * platform. The suggestion lists answer to a scripted focus, change and
  * keydown as to real ones. */
 async function focusInput(selector: string) {
-  await browser.execute((selector: string) => {
-    document.querySelector<HTMLInputElement>(selector)!.focus();
+  const found = await browser.execute((selector: string) => {
+    const input = document.querySelector<HTMLInputElement>(selector);
+    input?.focus();
+    return Boolean(input);
   }, selector);
+  if (!found) throw new Error(`focusInput: nothing matches "${selector}"`);
 }
 
 /** Focuses the input at `selector` and replaces its text with `text`, as
@@ -216,18 +219,22 @@ async function pressEscapeKey() {
   );
 }
 
-/** Moving the focus to Caliber can bring its list up, which the shots don't
- * want. Escape closes the list only if it is up: with none, it would close
- * the form. */
-async function closeListIfOpen() {
-  // The list's options come from the backend: wait for the focus, then for
-  // the app to be idle.
+/** Closes the suggestion list of the form field `field` (Caliber by default)
+ * if it comes up, which the shots don't want. Moving the focus to Caliber, or
+ * typing a cartridge, can bring a list up. Escape closes the list only if it
+ * is up: with none, it would close the form. The list's options come from
+ * the backend, so a list that is not up yet looks the same as one that never
+ * comes: this waits for the focus, then for the app to be idle, and only then
+ * decides. */
+async function closeListIfOpen(field = "caliber") {
   await browser.waitUntil(
     () =>
-      browser.execute(() =>
-        Boolean(document.activeElement?.closest('[role="dialog"] [data-field="caliber"]')),
+      browser.execute(
+        (field: string) =>
+          Boolean(document.activeElement?.closest(`[role="dialog"] [data-field="${field}"]`)),
+        field,
       ),
-    { timeout: 5000, timeoutMsg: "the focus never reached Caliber" },
+    { timeout: 5000, timeoutMsg: `the focus never reached ${field}` },
   );
   await settle();
   if (await $('[role="listbox"]').isDisplayed()) {
@@ -473,7 +480,7 @@ for (const theme of ["Light", "Dark"] as const) {
       // A custom cartridge whose bore can be read from its name: the caliber
       // is filled in, marked as a guess, once the focus moves on.
       await typeInto('[data-field="cartridge"] input', ".30 Custom Improved");
-      await pressEscapeKey();
+      await closeListIfOpen("cartridge");
       await focusInput('[role="dialog"] [data-field="caliber"] input');
       await $(".hd-guess-tag").waitForExist({ timeout: 5000 });
       await closeListIfOpen();
@@ -488,7 +495,7 @@ for (const theme of ["Light", "Dark"] as const) {
       // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
       await centerField("cartridge");
       await typeInto('[data-field="cartridge"] input', "9x19mm Parabellum");
-      await pressEscapeKey();
+      await closeListIfOpen("cartridge");
       await focusInput('[role="dialog"] [data-field="caliber"] input');
       await $(".hd-caliber-suggestion").waitForExist({ timeout: 5000 });
       await closeListIfOpen();
