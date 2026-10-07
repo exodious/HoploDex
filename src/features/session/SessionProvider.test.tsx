@@ -8,6 +8,8 @@ import * as databasesService from "../databases/databasesService";
 import type { ChooserState, DatabaseStatus } from "../databases/types";
 import { InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
 import type { InsurancePolicy } from "../insurance/types";
+import { DocumentPreview } from "../media/DocumentPreview";
+import type { DocumentSummary } from "../media/types";
 import { SessionProvider } from "./SessionProvider";
 import * as sessionService from "./sessionService";
 import type { SessionClosed } from "./sessionService";
@@ -16,6 +18,14 @@ import { useSession } from "./sessionStore";
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../databases/databasesService");
 vi.mock("./sessionService");
+
+// The document viewer's own commands (specs/007-document-preview): everything
+// else the viewer calls is `invoke`, and every other service here is mocked.
+const viewerBackend = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("../../services/tauriClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../services/tauriClient")>()),
+  invoke: viewerBackend.invoke,
+}));
 
 const setTitle = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ setTitle }) }));
@@ -421,4 +431,94 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
     expect(screen.getByText("Collection shell")).toBeInTheDocument();
     expect(sessionService.closeDatabase).not.toHaveBeenCalled();
   });
+});
+
+// --- 007: the document viewer (SC-006, contracts/ui-document-preview.md §9) ----
+
+const notesDocument: DocumentSummary = {
+  id: 3,
+  owner: { kind: "firearm", id: 1 },
+  originalFilename: "Notes.txt",
+  mimeType: "text/plain",
+  createdAt: "2026-03-14 09:30:00",
+  previewKind: "text",
+  previewAvailable: true,
+  openable: true,
+};
+
+describe("SessionProvider (007: the document viewer, SC-006)", () => {
+  let sessionClosed: (closed: SessionClosed) => void;
+
+  beforeEach(() => {
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(status(false));
+    vi.mocked(sessionService.onSessionClosed)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosed = handler;
+        return () => {};
+      });
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    viewerBackend.invoke.mockReset().mockImplementation(async (command: string) => {
+      if (command === "open_preview") {
+        return {
+          previewId: 31,
+          documentId: 3,
+          kind: "text",
+          text: "Serial BXKT482 on the receipt",
+        };
+      }
+      if (command === "close_preview") return null;
+      throw new Error(`unexpected command ${command}`);
+    });
+  });
+
+  it.each(["lockedByUser", "idle", "screenLocked"] as const)(
+    "a lock (%s) unmounts the viewer before the chooser is rendered",
+    async (reason) => {
+      render(
+        <SessionProvider>
+          <DocumentPreview
+            documents={[notesDocument]}
+            index={0}
+            documentTypes={[
+              {
+                label: "Plain text",
+                extensions: ["txt"],
+                mimeType: "text/plain",
+                previewKind: "text",
+              },
+            ]}
+            onIndexChange={() => {}}
+            onClose={() => {}}
+            onDelete={() => {}}
+          />
+        </SessionProvider>,
+      );
+      await screen.findByRole("dialog", { name: "Notes.txt" });
+      await screen.findByText("Serial BXKT482 on the receipt");
+
+      // At no point may the viewer and the chooser be on the screen together.
+      let together = false;
+      const watch = new MutationObserver(() => {
+        if (
+          document.querySelector('[role="dialog"]') &&
+          screen.queryByLabelText("Passphrase for “Main collection”")
+        ) {
+          together = true;
+        }
+      });
+      watch.observe(document.body, { childList: true, subtree: true });
+
+      act(() => sessionClosed({ reason, databasePath: PATH }));
+
+      expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+      await Promise.resolve();
+      watch.disconnect();
+      expect(together).toBe(false);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(screen.queryByText("Serial BXKT482 on the receipt")).not.toBeInTheDocument();
+      // Its cleanup ran with the rest of the collection's tree.
+      expect(viewerBackend.invoke).toHaveBeenCalledWith("close_preview", { previewId: 31 });
+    },
+  );
 });
