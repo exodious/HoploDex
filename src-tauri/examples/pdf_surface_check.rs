@@ -1061,19 +1061,60 @@ fn install_frame_probe(surface: &Surface<Wry>, script: String) -> bool {
 /// a run of pixels in the surface's page area that are all different.
 #[cfg(windows)]
 mod pixels {
-    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetPixel, ReleaseDC};
+    use windows_sys::Win32::Graphics::Gdi::{
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
+        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SRCCOPY, SelectObject,
+    };
+
+    /// The width of the run of pixels read.
+    const RUN: i32 = 24;
 
     /// Whether the 24 pixels from `(x, y)` rightwards hold at least 12 colours
     /// (a drawn page of noise; the viewer's grey and the toolbar hold 1 or 2).
+    /// The run is copied from the screen once, with one `BitBlt` and one
+    /// `GetDIBits`, and read from memory: `GetPixel` takes 17-55 ms a call on
+    /// the Windows test machine, so 24 of them made the first poll alone take
+    /// 1.3 s and the time it ended at was reported as the first paint (T074,
+    /// T152); a copy takes well under a millisecond.
     pub fn noisy(x: i32, y: i32) -> bool {
-        // SAFETY: the screen's device context, released before returning.
+        // SAFETY: the screen's device context and a memory device context and
+        // bitmap made for this call, all released before returning.
         unsafe {
-            let dc = GetDC(std::ptr::null_mut());
+            let screen = GetDC(std::ptr::null_mut());
+            let memory = CreateCompatibleDC(screen);
+            let bitmap = CreateCompatibleBitmap(screen, RUN, 1);
+            let previous = SelectObject(memory, bitmap);
             let mut colours = std::collections::HashSet::new();
-            for step in 0..24 {
-                colours.insert(GetPixel(dc, x + step, y));
+            if BitBlt(memory, 0, 0, RUN, 1, screen, x, y, SRCCOPY) != 0 {
+                let mut info: BITMAPINFO = std::mem::zeroed();
+                info.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+                info.bmiHeader.biWidth = RUN;
+                info.bmiHeader.biHeight = -1;
+                info.bmiHeader.biPlanes = 1;
+                info.bmiHeader.biBitCount = 32;
+                info.bmiHeader.biCompression = BI_RGB;
+                let mut buffer = [0u32; RUN as usize];
+                // The bitmap is deselected first, as `GetDIBits` requires.
+                SelectObject(memory, previous);
+                if GetDIBits(
+                    memory,
+                    bitmap,
+                    0,
+                    1,
+                    buffer.as_mut_ptr().cast(),
+                    &mut info,
+                    DIB_RGB_COLORS,
+                ) == 1
+                {
+                    // The colour without the unused fourth byte.
+                    colours.extend(buffer.iter().map(|pixel| pixel & 0x00FF_FFFF));
+                }
+            } else {
+                SelectObject(memory, previous);
             }
-            ReleaseDC(std::ptr::null_mut(), dc);
+            DeleteObject(bitmap);
+            DeleteDC(memory);
+            ReleaseDC(std::ptr::null_mut(), screen);
             colours.len() >= 12
         }
     }
