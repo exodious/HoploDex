@@ -38,7 +38,17 @@
 //! Room for T090 (macOS: the `com.apple.quarantine` attribute) and T091
 //! (Windows: the folder's DACL and the `:Zone.Identifier` stream), which the
 //! macOS and Windows sessions add as `#[cfg(...)]` cases at the end of this
-//! file, and for T095 (the setting's own request).
+//! file.
+//!
+//! T095 (US3), written ahead of T099; it fails to compile until that exists.
+//! Further assumed API (contracts/tauri-commands.md "Setting commands"),
+//! `commands::databases::ops`, on `MachineSettings` alone (no open database):
+//! - `get_document_opening(machine: &MachineSettings) -> DocumentOpening`;
+//! - `set_document_opening(machine: &MachineSettings, consent: &dyn Consent,
+//!   value: DocumentOpening) -> impl Serialize`, serializing as
+//!   `{ "changed": bool }`. For `External` while the setting is `Preview` it
+//!   asks with `ConsentRequest::Setting`; every other call changes without
+//!   asking.
 
 #[path = "support/preview_support.rs"]
 mod preview_support;
@@ -991,6 +1001,231 @@ fn the_text_for_the_setting_is_the_contracts_word_for_word() {
             "You'll be asked once each time a database is opened or unlocked.",
         ],
     );
+}
+
+// --- The setting (US3-1, US3-2, US3-6, FR-011, FR-012) ----------------------------
+
+impl World {
+    /// `set_document_opening`'s answer's `changed`.
+    fn set_opening(&self, consent: &FakeConsent, value: DocumentOpening) -> bool {
+        set_opening(&self.machine, consent, value)
+    }
+}
+
+fn set_opening(machine: &MachineSettings, consent: &FakeConsent, value: DocumentOpening) -> bool {
+    let answer = databases::set_document_opening(machine, consent, value);
+    let answer: Value = serde_json::to_value(answer).unwrap();
+    answer["changed"].as_bool().unwrap_or_else(|| panic!("no `changed` in {answer}"))
+}
+
+#[test]
+fn the_default_is_preview_and_the_setting_needs_no_open_database() {
+    let config = TempDir::new().unwrap();
+    let machine = MachineSettings::load(config.path()).unwrap();
+
+    assert_eq!(databases::get_document_opening(&machine), DocumentOpening::Preview);
+
+    let consent = FakeConsent::open();
+    assert!(set_opening(&machine, &consent, DocumentOpening::External), "no session is needed");
+    assert_eq!(databases::get_document_opening(&machine), DocumentOpening::External);
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(
+        databases::get_document_opening(&reloaded),
+        DocumentOpening::External,
+        "it belongs to this computer and is kept in machine.json"
+    );
+}
+
+#[test]
+fn choosing_external_asks_with_the_settings_own_text_and_a_yes_changes_it() {
+    let world = World::new();
+    let consent = FakeConsent::open();
+
+    let changed = world.set_opening(&consent, DocumentOpening::External);
+
+    assert!(changed);
+    assert_eq!(consent.requests(), vec![ConsentRequest::Setting]);
+    assert_eq!(consent.titles(), vec!["Open documents in another app?".to_owned()]);
+    assert_eq!(databases::get_document_opening(&world.machine), DocumentOpening::External);
+}
+
+#[test]
+fn cancelling_the_settings_dialog_keeps_preview() {
+    let world = World::new();
+    let consent = FakeConsent::cancel();
+
+    let changed = world.set_opening(&consent, DocumentOpening::External);
+
+    assert!(!changed);
+    assert_eq!(consent.requests().len(), 1);
+    assert_eq!(databases::get_document_opening(&world.machine), DocumentOpening::Preview);
+    let reloaded = MachineSettings::load(world.config.path()).unwrap();
+    assert_eq!(reloaded.document_opening(), DocumentOpening::Preview, "nothing was written");
+}
+
+#[test]
+fn preview_never_asks_and_setting_the_current_value_changes_nothing() {
+    let world = World::new();
+    let consent = FakeConsent::open();
+
+    assert!(
+        !world.set_opening(&consent, DocumentOpening::Preview),
+        "already \"preview\": a no-op"
+    );
+    assert!(consent.requests().is_empty());
+
+    assert!(world.set_opening(&consent, DocumentOpening::External));
+    assert_eq!(consent.requests().len(), 1);
+    assert!(
+        !world.set_opening(&consent, DocumentOpening::External),
+        "already \"external\": a no-op, and no second dialog"
+    );
+    assert_eq!(consent.requests().len(), 1);
+
+    assert!(world.set_opening(&consent, DocumentOpening::Preview), "back, without asking (US3-6)");
+    assert_eq!(consent.requests().len(), 1);
+    assert_eq!(databases::get_document_opening(&world.machine), DocumentOpening::Preview);
+}
+
+#[test]
+fn the_settings_dialog_does_not_confirm_the_session() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let setting_consent = FakeConsent::open();
+    assert!(world.set_opening(&setting_consent, DocumentOpening::External));
+    assert!(!world.confirmed(), "the session flag is set only by a document's dialog (US3-3)");
+
+    let consent = FakeConsent::open();
+    let opener = FakeOpener::new();
+    assert!(world.open(&consent, &opener, id).unwrap());
+
+    assert_eq!(consent.requests().len(), 1, "the first open still asks");
+    assert!(document_request(&consent.requests()[0]).2);
+    assert!(world.confirmed());
+}
+
+// --- Opening with the setting (US3-3, US3-4, FR-012) ------------------------------
+
+#[test]
+fn with_external_the_first_open_says_it_wont_ask_again_and_the_second_doesnt_ask() {
+    let world = World::new();
+    world.setting(DocumentOpening::External);
+    let id = world.pdf("receipt.pdf");
+    let consent = FakeConsent::open();
+    let opener = FakeOpener::new();
+
+    world.open(&consent, &opener, id).unwrap();
+    world.open(&consent, &opener, id).unwrap();
+
+    let requests = consent.requests();
+    assert_eq!(requests.len(), 1, "only the session's first open asks");
+    assert!(document_request(&requests[0]).2, "and it carries the extra line's flag");
+    assert!(
+        requests[0]
+            .body()
+            .contains("You won't be asked again until this database is closed or locked."),
+        "{}",
+        requests[0].body()
+    );
+    assert_eq!(opener.calls().len(), 2, "both opens reached the other app");
+}
+
+#[test]
+fn a_cancelled_first_open_asks_again_with_the_extra_line() {
+    let world = World::new();
+    world.setting(DocumentOpening::External);
+    let id = world.pdf("receipt.pdf");
+    let consent = FakeConsent::answering(&[ConsentAnswer::Cancel, ConsentAnswer::Open]);
+    let opener = FakeOpener::new();
+
+    assert!(!world.open(&consent, &opener, id).unwrap());
+    assert!(world.open(&consent, &opener, id).unwrap());
+
+    let requests = consent.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(document_request(&requests[0]).2 && document_request(&requests[1]).2);
+}
+
+#[test]
+fn a_lock_a_close_or_a_switch_makes_the_next_external_open_ask_again() {
+    for way in ["lock", "close", "switch"] {
+        let world = World::new();
+        world.setting(DocumentOpening::External);
+        let id = world.pdf("receipt.pdf");
+        let consent = FakeConsent::open();
+        let opener = FakeOpener::new();
+        world.open(&consent, &opener, id).unwrap();
+        world.open(&consent, &opener, id).unwrap();
+        assert_eq!(consent.requests().len(), 1, "{way}: confirmed before");
+
+        let mut asked = 1;
+        match way {
+            "lock" => {
+                world.lock();
+                world.reopen();
+            }
+            "close" => {
+                lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed)
+                    .unwrap();
+                world.reopen();
+            }
+            _ => {
+                // Another database is opened (a switch), then this one again.
+                let other = world.dir.path().join("Other.hoplodex");
+                lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+                let other_firearm = new_firearm(&world.session);
+                let other_id = insert_raw_document(
+                    &world.session,
+                    other_firearm,
+                    "other.pdf",
+                    "application/pdf",
+                    &pdf_bytes(),
+                );
+                assert!(!world.confirmed(), "{way}: another database starts unconfirmed");
+                world.open(&consent, &opener, other_id).unwrap();
+                asked += 1;
+                assert_eq!(consent.requests().len(), asked, "{way}: the other database asks");
+                world.reopen();
+            }
+        }
+
+        assert!(!world.confirmed(), "{way}: the new session has not confirmed");
+        world.open(&consent, &opener, id).unwrap();
+        asked += 1;
+        let requests = consent.requests();
+        assert_eq!(requests.len(), asked, "{way}: the next open asks again");
+        assert!(
+            document_request(requests.last().unwrap()).2,
+            "{way}: with the extra line, as the session's first"
+        );
+        world.open(&consent, &opener, id).unwrap();
+        assert_eq!(consent.requests().len(), asked, "{way}: and then covers the session again");
+    }
+}
+
+#[test]
+fn with_preview_every_open_asks_and_none_has_the_extra_line() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let consent = FakeConsent::open();
+    let opener = FakeOpener::new();
+    // A session that confirmed under "external", then went back to "preview".
+    assert!(world.set_opening(&consent, DocumentOpening::External));
+    world.open(&consent, &opener, id).unwrap();
+    assert!(world.confirmed());
+    assert!(world.set_opening(&consent, DocumentOpening::Preview));
+    let before = consent.requests().len();
+
+    for _ in 0..3 {
+        world.open(&consent, &opener, id).unwrap();
+    }
+
+    let requests = consent.requests();
+    assert_eq!(requests.len() - before, 3, "every open asks");
+    for request in &requests[before..] {
+        assert!(!document_request(request).2, "the setting isn't \"external\"");
+        assert!(!request.body().contains("You won't be asked again"));
+    }
 }
 
 // --- Per-OS cases ------------------------------------------------------------------
