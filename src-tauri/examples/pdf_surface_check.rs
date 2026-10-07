@@ -7,7 +7,7 @@
 // specs/007-document-preview/tasks.md; the result goes in research.md §4.
 //
 //   cargo run --example pdf_surface_check -- shows [--scratch DIR]
-//       [--screenshot PNG] [--timeout SECONDS]
+//       [--screenshot PNG] [--timeout SECONDS] [--no-probe]
 //
 // Modes (only one for now; later tasks add more):
 //   shows   Opens the window (1000x800 logical, at the OS's default place),
@@ -110,7 +110,8 @@ fn tripwire(hits: Arc<AtomicUsize>) -> u16 {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: pdf_surface_check shows [--scratch DIR] [--screenshot PNG] [--timeout SECONDS]"
+        "usage: pdf_surface_check shows [--scratch DIR] [--screenshot PNG] [--timeout SECONDS] \
+         [--no-probe]"
     );
     std::process::exit(3)
 }
@@ -162,7 +163,14 @@ fn main() {
     }
     let (mut scratch, mut shot, mut timeout) =
         (None::<PathBuf>, None::<PathBuf>, Duration::from_secs(40));
+    let mut probe = true;
     while let Some(flag) = args.next() {
+        // A control run: without the probe's request, any tripwire hit is the
+        // surface's own traffic.
+        if flag == "--no-probe" {
+            probe = false;
+            continue;
+        }
         let value = args.next().unwrap_or_else(|| usage());
         match flag.as_str() {
             "--scratch" => scratch = Some(value.into()),
@@ -289,10 +297,12 @@ fn main() {
                 // Anything this surface fetches must go to the proxy. The script
                 // runs in the page that holds the viewer (Linux, Windows's top
                 // frame); a PDF document itself, as on macOS, runs none.
-                surface
-                    .webview()
-                    .eval("new Image().src = 'http://hoplodex-proxy-probe.invalid/probe'")
-                    .ok();
+                if probe {
+                    surface
+                        .webview()
+                        .eval("new Image().src = 'http://hoplodex-proxy-probe.invalid/probe'")
+                        .ok();
+                }
                 thread::sleep(Duration::from_secs(4));
                 match surface.bounds() {
                     Ok(b) => eprintln!("CHECK surface bounds {b:?}"),

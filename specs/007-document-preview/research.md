@@ -284,7 +284,34 @@ artifacts.
     a context of its own that the registration never reaches ("The URL can't
     be shown"). The surface's `data_directory` (a folder it never uses on
     Linux) is the key that fixes it.
-  macOS (T007) is not yet run.
+- **Result of the first task, macOS (T007, 2026-10-06)**: the same example
+  in "shows" mode, run through `scripts/tart-vm.sh gui` in the macOS 26
+  (Tahoe) VM as the standard test user (WebKit of that release): exit 0, with
+  no change to `surface/macos.rs` or `surface/mod.rs`. The child web view
+  `preview` (`Window::add_child`, incognito, `proxy_url` to the loopback
+  listener) loaded `hdpreview://localhost/<token>/document.pdf` (page load
+  Started and Finished, 2.3 s after the surface was built, mostly the 2 s
+  the example waits for the window), and `surface.bounds()` reported x=40,
+  y=100, 920x660, the rectangle asked for. The screenshot
+  (`e2e/screenshots-out/pdf-surface/shows-macos.png`, the whole 1920x4200
+  screen) shows WebKit's own PDF viewer (white page, "Page 1 of 3", its
+  scroll bar) drawn inside the main window's red outline, the main page's
+  banner above it, and the main page still running (4 of its 1 s ticks). A
+  system dialog (the VM's screen-recording prompt for `sshd`, raised by
+  `screencapture`) and the VM's leftover Terminal windows cover part of it;
+  they aren't the app's. So the child web view stands on macOS, with nothing
+  needed beyond `add_child`'s own placement (no overlay, unlike Linux), and
+  the protocol worked without a `data_directory` (macOS ignores it).
+  - **The proxy probe did run.** A PDF document on WebKit is still a
+    document into which `eval` runs script (WKWebView's `evaluateJavaScript`
+    goes to the main frame, which for a PDF is a generated page holding the
+    viewer), so the example's `new Image().src = 'http://…invalid/…'`
+    reached the proxy: `tripwire hits=1`. A control run with `--no-probe`
+    (the example's new flag, which skips that request) gave `tripwire
+    hits=0`, so the one hit is the probe's and the surface makes no other
+    request of its own. That shows `proxy_url` is applied to the surface's
+    own network on macOS for a non-loopback name (as §6 says, a loopback one
+    bypasses the proxy there).
 
 - **Result of the first task, Windows (T008, 2026-10-06)**: the same example,
   `cargo run --example pdf_surface_check -- shows`, on Windows Server 2025
