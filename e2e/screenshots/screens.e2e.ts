@@ -10,6 +10,7 @@ import {
   fill,
   goTo,
   openPhysicalGroup,
+  pressEscape,
   search,
   selectOption,
   settle,
@@ -23,7 +24,14 @@ import {
   unlock,
   waitForChooser,
 } from "../support/ui";
-import { SCREENSHOT_WINDOW, chooseTheme, resizeWindow, shot } from "../support/screenshots";
+import { relaunchApp } from "../support/app";
+import {
+  SCREENSHOT_WINDOW,
+  chooseTheme,
+  resizeWindow,
+  shot,
+  shotDisplay,
+} from "../support/screenshots";
 
 /**
  * The standard screenshot set for pull requests that change the UI: the main
@@ -102,6 +110,75 @@ async function closeDialog() {
   );
   await $('[role="dialog"]').waitForExist({ reverse: true });
   await settle();
+}
+
+// --- 007's document viewer ----------------------------------------------------
+
+/** Starts recording `preview:pdf-ready` in the page, the way the frontend's
+ * own listener gets it, so a shot waits until the PDF surface is there. Safe
+ * to call again: it listens once per page. */
+async function recordPdfReady() {
+  await browser.execute(() => {
+    const page = window as unknown as {
+      __hdPdfReady?: number;
+      __TAURI_INTERNALS__: {
+        transformCallback: (callback: () => void) => number;
+        invoke: (cmd: string, args: unknown) => Promise<unknown>;
+      };
+    };
+    if (page.__hdPdfReady !== undefined) return;
+    page.__hdPdfReady = 0;
+    const handler = page.__TAURI_INTERNALS__.transformCallback(() => {
+      page.__hdPdfReady = (page.__hdPdfReady ?? 0) + 1;
+    });
+    void page.__TAURI_INTERNALS__.invoke("plugin:event|listen", {
+      event: "preview:pdf-ready",
+      target: { kind: "Any" },
+      handler,
+    });
+  });
+}
+
+const pdfReadyCount = () =>
+  browser.execute(() => (window as unknown as { __hdPdfReady?: number }).__hdPdfReady ?? 0);
+
+const VIEWER = ".hd-dialog__content--xl";
+
+/** Clicks the document's name in the record's list, which opens the viewer. */
+async function openDocument(name: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute((wanted: string) => {
+        const button = [...document.querySelectorAll<HTMLElement>("button.hd-doc__name")].find(
+          (b) => b.textContent?.trim() === wanted,
+        );
+        button?.click();
+        return Boolean(button);
+      }, name),
+    { timeout: 5000, timeoutMsg: `no document "${name}" in the list` },
+  );
+  await $(`${VIEWER} .hd-dialog__title`).waitForExist();
+  await settle();
+}
+
+async function closeViewer() {
+  await pressEscape();
+  await $(VIEWER).waitForExist({ reverse: true });
+  await settle();
+}
+
+async function waitForViewerStatus(startsWith: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (wanted: string) =>
+          [...document.querySelectorAll(`.hd-dialog__content--xl [role="status"]`)].some((el) =>
+            el.textContent?.trim().startsWith(wanted),
+          ),
+        startsWith,
+      ),
+    { timeout: 10000, timeoutMsg: `the viewer never said "${startsWith}"` },
+  );
 }
 
 /** Puts the focus in the input at `selector` (the first match). Scripted
@@ -736,6 +813,43 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
     });
 
+    // specs/007-document-preview contracts/ui-document-preview.md §10: the
+    // Glock's document list, and the viewer on each kind of document.
+    it("the document list and the viewer", async () => {
+      await recordPdfReady();
+      await openRecord(RECORD);
+      // The whole record: all eight rows of the list, down to the pre-007 JPEG.
+      await shot(`67-document-list-${suffix}`, { fullPage: true });
+
+      const ready = await pdfReadyCount();
+      await openDocument("Purchase receipt.pdf");
+      await browser.waitUntil(async () => (await pdfReadyCount()) > ready, {
+        timeout: 15000,
+        timeoutMsg: "the PDF never became ready",
+      });
+      await shotDisplay(`68-viewer-pdf-${suffix}`);
+      await closeViewer();
+
+      await openDocument("Appraisal scan.tif");
+      await $(`${VIEWER} img[alt="Appraisal scan.tif, page 1 of 4"]`).waitForExist({
+        timeout: 10000,
+      });
+      await shot(`69-viewer-tiff-${suffix}`);
+      await closeViewer();
+
+      await openDocument("owners-manual-notes.txt");
+      await $(`${VIEWER} pre.hd-preview__text`).waitForExist({ timeout: 10000 });
+      await shot(`70-viewer-text-${suffix}`);
+      await closeViewer();
+
+      await openDocument("Bill of sale.docx");
+      await waitForViewerStatus("Bill of sale.docx can't be previewed here.");
+      await shot(`71-viewer-cant-preview-${suffix}`);
+      await closeViewer();
+
+      await back();
+    });
+
     it("pending changes after a lock", async () => {
       // A lock with an edit under way keeps it, and the next open asks.
       await goTo("Collection");
@@ -888,6 +1002,35 @@ describe("Screenshots: replacing a record with a disposed row", () => {
     await clickButton("Cancel");
     await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await closeDialog();
+    await chooseTheme("Light");
+  });
+});
+
+// specs/007-document-preview FR-003a: a computer whose PDF viewer can't be
+// used safely. HOPLODEX_E2E_PDF_PREVIEW=off is an E2E-only switch the app reads
+// when it starts, so this one relaunches it (last in the walk: nothing after it
+// wants the default back, and it is put back anyway).
+describe("Screenshots: PDFs can't be previewed on this computer", () => {
+  after(async () => {
+    delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
+  });
+
+  it("says so in the viewer", async () => {
+    process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
+    await relaunchApp();
+    await waitForChooser();
+    const select = await $('button.hd-db-row__select[aria-label^="Main collection, "]');
+    if (await select.isExisting()) await select.click();
+    await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+    await goTo("Collection");
+    await openRecord(RECORD);
+    await openDocument("Purchase receipt.pdf");
+    await waitForViewerStatus("PDFs can't be previewed on this computer.");
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`72-viewer-pdf-unavailable-${theme.toLowerCase()}`);
+    }
+    await closeViewer();
     await chooseTheme("Light");
   });
 });
