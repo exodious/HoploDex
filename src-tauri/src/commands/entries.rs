@@ -75,8 +75,9 @@ pub mod ops {
         conn: &Connection,
         input: &SuggestEntriesInput,
     ) -> Result<SuggestEntriesOutput, CommandError> {
-        let vocabulary = FieldVocabulary::load(conn, input.field).map_err(CommandError::from_db)?;
-        let suggestions = suggestions::suggest(&vocabulary, &input.text, input.make.as_deref());
+        let suggestions =
+            suggestions::suggest(conn, input.field, &input.text, input.make.as_deref())
+                .map_err(CommandError::from_db)?;
         Ok(SuggestEntriesOutput { suggestions })
     }
 

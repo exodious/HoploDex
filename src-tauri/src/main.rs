@@ -165,10 +165,13 @@ fn main() {
             protocol_handler::SCHEME,
             |context, request, responder| {
                 let session = context.app_handle().state::<Session>().inner().clone();
+                // Only the PDF surface's web view may ask (contracts/
+                // tauri-commands.md "The `hdpreview` protocol").
+                let webview_label = context.webview_label().to_owned();
                 // The handler takes the session's lock, so not on the thread
                 // the web view asks from.
                 tauri::async_runtime::spawn_blocking(move || {
-                    responder.respond(protocol_handler::handle(&session, &request));
+                    responder.respond(protocol_handler::handle(&session, &webview_label, &request));
                 });
             },
         )

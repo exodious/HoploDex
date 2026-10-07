@@ -166,6 +166,14 @@ fn tokens(text: &str) -> Vec<String> {
 /// without decoding to characters, since a 10,000-value suggestion query
 /// tokenizes every value on record.
 fn ascii_tokens(folded: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    ascii_for_each_token(folded, |token| tokens.push(token.to_owned()));
+    tokens
+}
+
+/// The tokens of already folded ASCII text, one call each, with nothing
+/// allocated.
+fn ascii_for_each_token(folded: &str, mut each: impl FnMut(&str)) {
     let bytes = folded.as_bytes();
     fn space(byte: &u8) -> bool {
         (*byte as char).is_whitespace()
@@ -173,7 +181,6 @@ fn ascii_tokens(folded: &str) -> Vec<String> {
     fn digit_beside<'a>(mut range: impl Iterator<Item = &'a u8>) -> bool {
         range.find(|byte| !space(byte)).is_some_and(u8::is_ascii_digit)
     }
-    let mut tokens = Vec::new();
     let mut start = None;
     for (index, byte) in bytes.iter().enumerate() {
         let separator = space(byte)
@@ -183,7 +190,7 @@ fn ascii_tokens(folded: &str) -> Vec<String> {
                 && digit_beside(bytes[index + 1..].iter()));
         match (separator, start) {
             (true, Some(from)) => {
-                tokens.push(folded[from..index].to_owned());
+                each(&folded[from..index]);
                 start = None;
             }
             (false, None) => start = Some(index),
@@ -191,9 +198,8 @@ fn ascii_tokens(folded: &str) -> Vec<String> {
         }
     }
     if let Some(from) = start {
-        tokens.push(folded[from..].to_owned());
+        each(&folded[from..]);
     }
-    tokens
 }
 
 /// The words of a value: its tokens without `and` (research.md §3, step 4).
@@ -207,6 +213,71 @@ pub fn words(text: &str) -> Vec<String> {
 /// "Smith&Wesson" are all `smithwesson`.
 pub fn entry_key(text: &str) -> String {
     words(text).concat()
+}
+
+/// The words of a value and its entry key, in buffers that are reused from
+/// one value to the next. The key is the words concatenated, so each word is
+/// a slice of it: a suggestion query that goes through every value on record
+/// (20,000 models over two tables) normalizes each into one of these without
+/// allocating, where [`words`] and [`entry_key`] allocate a `String` per word
+/// and another for the key.
+#[derive(Debug, Clone, Default)]
+pub struct EntryWords {
+    key: String,
+    /// Where each word ends in `key`.
+    ends: Vec<usize>,
+    /// The folded ASCII text being split.
+    scratch: String,
+}
+
+impl EntryWords {
+    pub fn new(text: &str) -> Self {
+        let mut words = Self::default();
+        words.set(text);
+        words
+    }
+
+    /// Replaces the contents with the words of `text`: the same words and
+    /// key as [`words`] and [`entry_key`].
+    pub fn set(&mut self, text: &str) {
+        self.key.clear();
+        self.ends.clear();
+        if text.is_ascii() {
+            self.scratch.clear();
+            self.scratch.push_str(text);
+            self.scratch.make_ascii_lowercase();
+            let (key, ends) = (&mut self.key, &mut self.ends);
+            ascii_for_each_token(&self.scratch, |token| {
+                if token != "and" {
+                    key.push_str(token);
+                    ends.push(key.len());
+                }
+            });
+        } else {
+            for word in words(text) {
+                self.key.push_str(&word);
+                self.ends.push(self.key.len());
+            }
+        }
+    }
+
+    /// The entry key.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ends.is_empty()
+    }
+
+    pub fn words(&self) -> impl Iterator<Item = &str> {
+        let mut from = 0;
+        self.ends.iter().map(move |&end| {
+            let word = &self.key[from..end];
+            from = end;
+            word
+        })
+    }
 }
 
 /// The first character of each word: "Smith & Wesson" is `sw`.

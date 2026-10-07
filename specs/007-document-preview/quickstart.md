@@ -116,6 +116,13 @@ unless it says otherwise.
 6. **Expected**: the dialog closes, no app starts, and the
    `opened-documents` folder under the app's cache folder has no
    `Purchase receipt.pdf`.
+7. Open the database menu, then Database settings, and in its Documents
+   section change "Open documents" to "Open in another app".
+8. **Expected**: a system dialog titled "Open documents in another
+   app?" with the buttons "Open in another app" and "Cancel", and the
+   HoploDex window doesn't respond to clicks while it is shown. Press
+   Escape: the dialog closes and the setting still reads "Preview in
+   HoploDex".
 
 ### M2. No app for the type
 

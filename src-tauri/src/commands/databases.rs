@@ -36,6 +36,7 @@ pub mod ops {
 
     use crate::commands::CommandError;
     use crate::commands::backups::ops::delete_backups_in;
+    use crate::commands::documents::ops::IdlePause;
     use crate::db;
     use crate::models::database::DocumentOpeningChanged;
     use crate::models::database::{
@@ -346,9 +347,14 @@ pub mod ops {
     /// Choosing `External` while it is `Preview` asks first, and Cancel
     /// leaves it unchanged; every other change is made without asking; the
     /// current value is a no-op. The answer is not the session's: it never
-    /// sets `external_open_confirmed` (US3-2), which is why no `Session` is
-    /// taken.
+    /// sets `external_open_confirmed` (US3-2). A change to `External` clears
+    /// an earlier yes in the open database (research.md §17, amended
+    /// 2026-10-07), so the next open asks once with the "won't be asked
+    /// again" line (US3-3). No database need be open: `session` is touched
+    /// only if one is. While the dialog is up the idle clock waits for it
+    /// (research.md §16).
     pub fn set_document_opening(
+        session: &Session,
         machine: &MachineSettings,
         consent: &dyn Consent,
         value: DocumentOpening,
@@ -356,12 +362,23 @@ pub mod ops {
         if machine.document_opening() == value {
             return DocumentOpeningChanged { changed: false };
         }
-        if value == DocumentOpening::External
-            && consent.ask(ConsentRequest::Setting) == ConsentAnswer::Cancel
-        {
-            return DocumentOpeningChanged { changed: false };
+        if value == DocumentOpening::External {
+            let answer = {
+                let _paused = session.is_open().then(|| IdlePause::new(session));
+                consent.ask(ConsentRequest::Setting)
+            };
+            if answer == ConsentAnswer::Cancel {
+                return DocumentOpeningChanged { changed: false };
+            }
         }
         machine.set_document_opening(value);
+        if value == DocumentOpening::External {
+            // `DATABASE_CLOSED` only means there is no earlier yes to clear.
+            let _ = session.inspect_mut(|open| {
+                open.external_open_confirmed = false;
+                Ok(())
+            });
+        }
         DocumentOpeningChanged { changed: true }
     }
 
@@ -991,9 +1008,10 @@ pub async fn set_document_opening(
     app: AppHandle,
 ) -> Result<DocumentOpeningChanged, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
         let machine = app.state::<MachineSettings>();
         let consent = app.state::<Arc<dyn Consent>>();
-        ops::set_document_opening(&machine, &**consent, value)
+        ops::set_document_opening(&session, &machine, &**consent, value)
     })
     .await
     .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not change the setting: {e}")))

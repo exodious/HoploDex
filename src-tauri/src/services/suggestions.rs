@@ -1,21 +1,29 @@
 //! Suggestion ranking and snapping for make, model, cartridge and caliber
 //! (specs/004-cartridges-action-types research.md §4 and §6).
 //!
-//! The vocabulary is read from `firearms` at call time and kept nowhere
-//! (FR-011): a value whose last firearm was deleted is gone from the next
+//! The vocabulary is read from the tables at call time and kept nowhere
+//! (FR-011): a value whose last record was deleted is gone from the next
 //! call. Every comparison goes through the entry key
 //! ([`crate::services::entry_text`]), so what counts as the same value here
 //! is exactly what it counts as when saving and importing.
+//!
+//! A suggestion call reads the values on record once and keeps only those
+//! that match what was typed, with the words of each value in buffers
+//! reused from one to the next: at 20,000 distinct models over two tables,
+//! building and dropping the whole vocabulary on every keystroke (a `String`
+//! per word, per key and per value) took more than the query itself, on
+//! Windows, whose allocator is slower than Linux's (specs/007 T162).
 
 use std::cmp::Reverse;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::iter::once;
 use std::sync::OnceLock;
 
 use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::services::cartridges::catalog;
-use crate::services::entry_text::{EntryField, MAX_ENTRY_CHARS, check_entry_text, words};
+use crate::services::entry_text::{EntryField, EntryWords, MAX_ENTRY_CHARS, check_entry_text};
 use crate::services::registration::BUILT_IN_FORMS;
 
 /// The most suggestions one call returns (research.md §4).
@@ -57,21 +65,42 @@ struct Spelling {
 /// The spellings on record that share one entry key.
 #[derive(Debug)]
 struct Group {
-    /// The words of the first spelling seen, for matching.
-    words: Vec<String>,
-    spellings: Vec<Spelling>,
+    /// The first spelling seen; the others are in `more`, which most groups
+    /// never allocate.
+    first: Spelling,
+    more: Vec<Spelling>,
     use_count: i64,
-    /// Model only: the makes it is recorded with, by id in
-    /// [`FieldVocabulary::make_ids`].
-    makes: Vec<u32>,
 }
 
 impl Group {
+    fn new(text: &str, count: i64, min_id: i64) -> Self {
+        Self {
+            first: Spelling { text: text.to_owned(), count, min_id },
+            more: Vec::new(),
+            use_count: count,
+        }
+    }
+
+    /// Adds the records using `text`, a spelling that may be known already.
+    fn add(&mut self, text: &str, count: i64, min_id: i64) {
+        self.use_count += count;
+        match once(&mut self.first)
+            .chain(self.more.iter_mut())
+            .find(|spelling| spelling.text == text)
+        {
+            Some(spelling) => {
+                spelling.count += count;
+                spelling.min_id = spelling.min_id.min(min_id);
+            }
+            None => self.more.push(Spelling { text: text.to_owned(), count, min_id }),
+        }
+    }
+
     /// The spelling used by the most records; the earliest recorded on a
     /// tie (spec Edge Cases).
     fn display(&self) -> &str {
-        self.spellings
-            .iter()
+        once(&self.first)
+            .chain(&self.more)
             // The ids of the two tables overlap, so the same count and first
             // id can come from two spellings; the later text then wins, as
             // it did when the rows came ordered by text.
@@ -82,14 +111,13 @@ impl Group {
 }
 
 /// The values of one field on record (active and disposed firearms and
-/// accessories), grouped
-/// by entry key.
+/// accessories), grouped by entry key. It is what [`snap`] looks a value up
+/// in, and what an import snapshots when it starts; a suggestion call reads
+/// the values itself ([`suggest`]).
 #[derive(Debug)]
 pub struct FieldVocabulary {
     field: EntryField,
     groups: HashMap<String, Group>,
-    /// Model only: an id for each make's entry key.
-    make_ids: HashMap<String, u32>,
 }
 
 /// The queries that read every value of `field` on record, one per table that
@@ -150,60 +178,48 @@ pub fn warm(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Calls `visit` with each row of `field`'s queries: the value, its make
+/// (Model only, and only when the record has one), how many records use it
+/// and the first of them. The text is borrowed from the row.
+fn for_each_row(
+    conn: &Connection,
+    field: EntryField,
+    mut visit: impl FnMut(&str, Option<&str>, i64, i64),
+) -> rusqlite::Result<()> {
+    for sql in vocabulary_queries(field) {
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let text = row.get_ref(0)?.as_str()?;
+            let make = row.get_ref(1)?.as_str_or_null()?;
+            visit(text, make, row.get(2)?, row.get(3)?);
+        }
+    }
+    Ok(())
+}
+
 impl FieldVocabulary {
     pub fn load(conn: &Connection, field: EntryField) -> rusqlite::Result<Self> {
-        let mut make_ids: HashMap<String, u32> = HashMap::new();
-        // A make's text → its id, so each distinct make is keyed once.
-        let mut make_texts: HashMap<String, u32> = HashMap::new();
         let mut groups: HashMap<String, Group> = HashMap::new();
-        for sql in vocabulary_queries(field) {
-            let mut stmt = conn.prepare(&sql)?;
-            let mut rows = stmt.query([])?;
-            while let Some(row) = rows.next()? {
-                let text: String = row.get(0)?;
-                let make: Option<String> = row.get(1)?;
-                let (count, min_id): (i64, i64) = (row.get(2)?, row.get(3)?);
-                let words = words(&text);
-                let key = words.concat();
-                if key.is_empty() {
-                    continue;
-                }
-                let group = groups.entry(key).or_insert_with(|| Group {
-                    words,
-                    spellings: Vec::new(),
-                    use_count: 0,
-                    makes: Vec::new(),
-                });
-                group.use_count += count;
-                match group.spellings.iter_mut().find(|spelling| spelling.text == text) {
-                    Some(spelling) => {
-                        spelling.count += count;
-                        spelling.min_id = spelling.min_id.min(min_id);
-                    }
-                    None => group.spellings.push(Spelling { text, count, min_id }),
-                }
-                if let Some(make) = make {
-                    let id = match make_texts.get(&make) {
-                        Some(&id) => id,
-                        None => {
-                            let next = make_ids.len() as u32;
-                            let id = *make_ids.entry(words_key(&make)).or_insert(next);
-                            make_texts.insert(make, id);
-                            id
-                        }
-                    };
-                    if !group.makes.contains(&id) {
-                        group.makes.push(id);
-                    }
+        let mut words = EntryWords::default();
+        for_each_row(conn, field, |text, _make, count, min_id| {
+            words.set(text);
+            if words.key().is_empty() {
+                return;
+            }
+            match groups.get_mut(words.key()) {
+                Some(group) => group.add(text, count, min_id),
+                None => {
+                    groups.insert(words.key().to_owned(), Group::new(text, count, min_id));
                 }
             }
-        }
-        Ok(Self { field, groups, make_ids })
+        })?;
+        Ok(Self { field, groups })
     }
 }
 
 fn words_key(text: &str) -> String {
-    words(text).concat()
+    EntryWords::new(text).key().to_owned()
 }
 
 /// The spelling the catalog or the vocabulary already has for `key`, and
@@ -312,60 +328,64 @@ pub fn snap_for_import(vocabulary: &FieldVocabulary, sheet: &SheetSpellings, tex
     sheet.chosen.get(&key).cloned().unwrap_or_else(|| trimmed.to_owned())
 }
 
-/// What the user has typed, as the comparison form of research.md §3.
-struct Typed {
-    key: String,
-    words: Vec<String>,
-}
-
-impl Typed {
-    fn new(text: &str) -> Self {
-        let words = words(text);
-        Self { key: words.concat(), words }
-    }
-}
-
 const PREFIX: u8 = 1;
 const WORD_PREFIX: u8 = 2;
 const INITIALISM_OR_ALIAS: u8 = 3;
 
 /// Each typed word is a prefix of a later word of the candidate, in order;
 /// a single typed word matches any word (research.md §4, tier 2).
-fn word_prefix_match(typed: &[String], candidate: &[String]) -> bool {
-    match typed {
-        [] => false,
-        [word] => candidate.iter().any(|w| w.starts_with(word.as_str())),
-        _ => {
-            let mut next = 0;
-            for word in candidate {
-                if word.starts_with(typed[next].as_str()) {
-                    next += 1;
-                    if next == typed.len() {
-                        return true;
-                    }
-                }
+fn word_prefix_match(typed: &EntryWords, candidate: &EntryWords) -> bool {
+    let mut wanted = typed.words().peekable();
+    if wanted.peek().is_none() {
+        return false;
+    }
+    for word in candidate.words() {
+        if let Some(next) = wanted.peek()
+            && word.starts_with(next)
+        {
+            wanted.next();
+            if wanted.peek().is_none() {
+                return true;
             }
-            false
         }
     }
+    false
 }
 
 /// The best tier at which `typed` matches a value with these words
 /// (research.md §4). Empty text matches everything at tier 1.
-fn text_tier(typed: &Typed, key: &str, words: &[String]) -> Option<u8> {
-    if key.starts_with(&typed.key) {
+fn text_tier(typed: &EntryWords, candidate: &EntryWords) -> Option<u8> {
+    if candidate.key().starts_with(typed.key()) {
         Some(PREFIX)
-    } else if word_prefix_match(&typed.words, words) {
+    } else if word_prefix_match(typed, candidate) {
         Some(WORD_PREFIX)
-    } else if typed.key.chars().count() >= 2 && initialism_of(words).starts_with(&typed.key) {
+    } else if typed.key().chars().count() >= 2 && initialism_starts_with(candidate, typed.key()) {
         Some(INITIALISM_OR_ALIAS)
     } else {
         None
     }
 }
 
-fn initialism_of(words: &[String]) -> String {
-    words.iter().filter_map(|word| word.chars().next()).collect()
+/// Whether the first characters of the candidate's words begin with `prefix`.
+fn initialism_starts_with(candidate: &EntryWords, prefix: &str) -> bool {
+    let mut firsts = candidate.words().filter_map(|word| word.chars().next());
+    prefix.chars().all(|c| firsts.next() == Some(c))
+}
+
+/// The entry keys of a field's built-in values, each with a slot to count
+/// the records that use it in: a value on record with one of these keys
+/// takes the built-in spelling and appears once (US2-4).
+#[derive(Default)]
+struct KeySlots {
+    by_key: HashMap<String, usize>,
+}
+
+impl KeySlots {
+    /// The slot of `key`; two built-in values with one key share it.
+    fn slot(&mut self, key: &str) -> usize {
+        let next = self.by_key.len();
+        *self.by_key.entry(key.to_owned()).or_insert(next)
+    }
 }
 
 /// A catalog cartridge with the forms it is matched by, worked out once.
@@ -373,58 +393,80 @@ struct CatalogCartridge {
     name: &'static str,
     rank: u32,
     caliber: &'static str,
-    key: String,
-    words: Vec<String>,
-    alias_words: Vec<(String, Vec<String>)>,
+    words: EntryWords,
+    aliases: Vec<EntryWords>,
     class_key: String,
+    slot: usize,
 }
 
 /// A catalog caliber (a bore class).
 struct CatalogCaliber {
     spelling: &'static str,
     rank: u32,
-    key: String,
-    words: Vec<String>,
+    words: EntryWords,
+    slot: usize,
+}
+
+/// A built-in registration form name, in rank order.
+struct CatalogForm {
+    name: &'static str,
+    words: EntryWords,
+    slot: usize,
 }
 
 struct CatalogIndex {
     cartridges: Vec<CatalogCartridge>,
+    cartridge_slots: KeySlots,
     calibers: Vec<CatalogCaliber>,
+    caliber_slots: KeySlots,
+    forms: Vec<CatalogForm>,
+    form_slots: KeySlots,
 }
 
 fn catalog_index() -> &'static CatalogIndex {
     static INDEX: OnceLock<CatalogIndex> = OnceLock::new();
-    INDEX.get_or_init(|| CatalogIndex {
-        cartridges: catalog()
+    INDEX.get_or_init(|| {
+        let mut cartridge_slots = KeySlots::default();
+        let cartridges = catalog()
             .entries()
             .iter()
-            .map(|entry| CatalogCartridge {
-                name: &entry.name,
-                rank: entry.rank,
-                caliber: &entry.caliber,
-                key: words_key(&entry.name),
-                words: words(&entry.name),
-                alias_words: entry
-                    .aliases
-                    .iter()
-                    .map(|alias| {
-                        let words = words(alias);
-                        (words.concat(), words)
-                    })
-                    .collect(),
-                class_key: words_key(&entry.caliber),
+            .map(|entry| {
+                let words = EntryWords::new(&entry.name);
+                CatalogCartridge {
+                    name: &entry.name,
+                    rank: entry.rank,
+                    caliber: &entry.caliber,
+                    slot: cartridge_slots.slot(words.key()),
+                    words,
+                    aliases: entry.aliases.iter().map(|alias| EntryWords::new(alias)).collect(),
+                    class_key: words_key(&entry.caliber),
+                }
             })
-            .collect(),
-        calibers: catalog()
+            .collect();
+        let mut caliber_slots = KeySlots::default();
+        let calibers = catalog()
             .classes()
             .iter()
-            .map(|class| CatalogCaliber {
-                spelling: &class.spelling,
-                rank: class.best_rank,
-                key: words_key(&class.spelling),
-                words: words(&class.spelling),
+            .map(|class| {
+                let words = EntryWords::new(&class.spelling);
+                CatalogCaliber {
+                    spelling: &class.spelling,
+                    rank: class.best_rank,
+                    slot: caliber_slots.slot(words.key()),
+                    words,
+                }
             })
-            .collect(),
+            .collect();
+        let mut form_slots = KeySlots::default();
+        let forms = BUILT_IN_FORMS
+            .iter()
+            .copied()
+            .map(|name| {
+                let words = EntryWords::new(name);
+                CatalogForm { name, slot: form_slots.slot(words.key()), words }
+            })
+            .collect();
+        CatalogIndex { cartridges, cartridge_slots, calibers, caliber_slots, forms, form_slots }
     })
 }
 
@@ -446,114 +488,171 @@ fn best(current: Option<u8>, tier: Option<u8>) -> Option<u8> {
     }
 }
 
+/// A value on record that matches what was typed.
+struct Candidate {
+    group: Group,
+    tier: u8,
+    /// Model only: the model is recorded with the make on the form.
+    make_matched: bool,
+}
+
 /// The ranked suggestions for `text` in the field (research.md §4): at most
-/// [`MAX_SUGGESTIONS`], best first. `make` is the make on the form: for a
-/// model, only models recorded with that make are offered, so a make that
-/// isn't on record offers none; a blank make offers them all. Text over [`MAX_ENTRY_CHARS`] characters matches
-/// nothing.
-pub fn suggest(vocabulary: &FieldVocabulary, text: &str, make: Option<&str>) -> Vec<Suggestion> {
+/// [`MAX_SUGGESTIONS`], best first, from the values on record now and the
+/// built-in ones. `make` is the make on the form: for a model, only models
+/// recorded with that make are offered, so a make that isn't on record
+/// offers none; a blank make offers them all. Text over [`MAX_ENTRY_CHARS`]
+/// characters matches nothing.
+pub fn suggest(
+    conn: &Connection,
+    field: EntryField,
+    text: &str,
+    make: Option<&str>,
+) -> rusqlite::Result<Vec<Suggestion>> {
     if text.chars().count() > MAX_ENTRY_CHARS {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let typed = Typed::new(text);
-    // Model only: the entered make's id, or `Some(None)` when the make is on
-    // no record, which no model can match.
-    let make_filter = (vocabulary.field == EntryField::Model)
+    let typed = EntryWords::new(text);
+    // Model only: the entered make's key. A make that is on no record
+    // matches no model, so no record's make equals it.
+    let make_filter = (field == EntryField::Model)
         .then(|| make.map(words_key).filter(|key| !key.is_empty()))
-        .flatten()
-        .map(|key| vocabulary.make_ids.get(&key).copied());
+        .flatten();
+    let index = catalog_index();
+    let slots = match field {
+        EntryField::Cartridge => Some(&index.cartridge_slots),
+        EntryField::Caliber => Some(&index.caliber_slots),
+        EntryField::RegistrationForm => Some(&index.form_slots),
+        EntryField::Make | EntryField::Model | EntryField::RegisteredTo => None,
+    };
+    // How many records use each built-in value, in its slot.
+    let mut slot_counts = vec![0i64; slots.map_or(0, |slots| slots.by_key.len())];
+
+    // The values on record that match, by entry key. A row that doesn't
+    // match is not kept, and neither is one of a built-in value, which the
+    // built-in's own row stands for.
+    let mut candidates: HashMap<String, Candidate> = HashMap::new();
+    let mut words = EntryWords::default();
+    let mut make_words = EntryWords::default();
+    for_each_row(conn, field, |value, row_make, count, min_id| {
+        words.set(value);
+        let key = words.key();
+        if key.is_empty() {
+            return;
+        }
+        if let Some(&slot) = slots.and_then(|slots| slots.by_key.get(key)) {
+            slot_counts[slot] += count;
+            return;
+        }
+        let Some(tier) = text_tier(&typed, &words) else { return };
+        let make_matched = match &make_filter {
+            None => true,
+            Some(filter) => row_make.is_some_and(|row_make| {
+                make_words.set(row_make);
+                make_words.key() == filter
+            }),
+        };
+        match candidates.get_mut(key) {
+            Some(candidate) => {
+                candidate.group.add(value, count, min_id);
+                candidate.tier = candidate.tier.min(tier);
+                candidate.make_matched |= make_matched;
+            }
+            None => {
+                candidates.insert(
+                    key.to_owned(),
+                    Candidate { group: Group::new(value, count, min_id), tier, make_matched },
+                );
+            }
+        }
+    })?;
 
     let mut ranked: Vec<Ranked> = Vec::new();
-    let mut consumed: HashSet<String> = HashSet::new();
-    let index = catalog_index();
-
-    // The catalog's values first, so a value on record with the same key
-    // takes the catalog's spelling and appears once (US2-4).
-    let mut offer =
-        |name: &'static str, key: &str, rank: u32, caliber: Option<&'static str>, tier| {
-            let use_count = vocabulary.groups.get(key).map_or(0, |group| group.use_count);
-            consumed.insert(key.to_owned());
-            let Some(tier) = tier else { return };
-            ranked.push(Ranked { tier, use_count, rank, value: name, caliber, in_catalog: true });
-        };
-    match vocabulary.field {
+    // The built-in values first, so a value on record with the same key
+    // takes the built-in spelling and appears once (US2-4).
+    let mut offer = |name: &'static str,
+                     slot: usize,
+                     rank: u32,
+                     caliber: Option<&'static str>,
+                     tier: Option<u8>| {
+        let Some(tier) = tier else { return };
+        ranked.push(Ranked {
+            tier,
+            use_count: slot_counts[slot],
+            rank,
+            value: name,
+            caliber,
+            in_catalog: true,
+        });
+    };
+    match field {
         EntryField::Cartridge => {
             for entry in &index.cartridges {
-                let mut tier = text_tier(&typed, &entry.key, &entry.words);
-                if entry
-                    .alias_words
-                    .iter()
-                    .any(|(key, words)| text_tier(&typed, key, words).is_some())
-                {
+                let mut tier = text_tier(&typed, &entry.words);
+                if entry.aliases.iter().any(|alias| text_tier(&typed, alias).is_some()) {
                     tier = best(tier, Some(INITIALISM_OR_ALIAS));
                 }
                 // The bore class: typing exactly it lists its cartridges,
                 // most common first (US2-3); typing part of it narrows to
                 // them at the lowest tier.
-                if !typed.key.is_empty() && entry.class_key.starts_with(&typed.key) {
+                if !typed.key().is_empty() && entry.class_key.starts_with(typed.key()) {
                     let class_tier =
-                        if entry.class_key == typed.key { PREFIX } else { INITIALISM_OR_ALIAS };
+                        if entry.class_key == typed.key() { PREFIX } else { INITIALISM_OR_ALIAS };
                     tier = best(tier, Some(class_tier));
                 }
-                offer(entry.name, &entry.key, entry.rank, Some(entry.caliber), tier);
+                offer(entry.name, entry.slot, entry.rank, Some(entry.caliber), tier);
             }
         }
         EntryField::Caliber => {
             for class in &index.calibers {
                 offer(
                     class.spelling,
-                    &class.key,
+                    class.slot,
                     class.rank,
                     None,
-                    text_tier(&typed, &class.key, &class.words),
+                    text_tier(&typed, &class.words),
                 );
             }
         }
         // The built-in form names, in rank order (data-model.md "Built-in
         // Form Name"); only the typed text decides which are offered.
         EntryField::RegistrationForm => {
-            for (index, name) in BUILT_IN_FORMS.iter().copied().enumerate() {
-                let key = words_key(name);
-                let tier = text_tier(&typed, &key, &words(name));
-                offer(name, &key, index as u32 + 1, None, tier);
+            for (rank, form) in index.forms.iter().enumerate() {
+                offer(form.name, form.slot, rank as u32 + 1, None, text_tier(&typed, &form.words));
             }
         }
         EntryField::Make | EntryField::Model | EntryField::RegisteredTo => {}
     }
 
-    for (key, group) in &vocabulary.groups {
-        if consumed.contains(key) {
-            continue;
-        }
-        if let Some(make_id) = make_filter
-            && !make_id.is_some_and(|id| group.makes.contains(&id))
-        {
-            continue;
-        }
-        let Some(tier) = text_tier(&typed, key, &group.words) else { continue };
+    for candidate in candidates.values().filter(|candidate| candidate.make_matched) {
         ranked.push(Ranked {
-            tier,
-            use_count: group.use_count,
+            tier: candidate.tier,
+            use_count: candidate.group.use_count,
             rank: u32::MAX,
-            value: group.display(),
+            value: candidate.group.display(),
             caliber: None,
             in_catalog: false,
         });
     }
 
-    ranked.sort_by(|a, b| {
+    let order = |a: &Ranked, b: &Ranked| {
         (a.tier, a.use_count == 0, Reverse(a.use_count), a.rank)
             .cmp(&(b.tier, b.use_count == 0, Reverse(b.use_count), b.rank))
             .then_with(|| a.value.cmp(b.value))
-    });
-    ranked
+    };
+    // Only the best twenty are ordered: with no text typed, every value
+    // on record is a match.
+    if ranked.len() > MAX_SUGGESTIONS {
+        ranked.select_nth_unstable_by(MAX_SUGGESTIONS, order);
+        ranked.truncate(MAX_SUGGESTIONS);
+    }
+    ranked.sort_by(order);
+    Ok(ranked
         .into_iter()
-        .take(MAX_SUGGESTIONS)
         .map(|ranked| Suggestion {
             value: ranked.value.to_owned(),
             in_catalog: ranked.in_catalog,
             use_count: ranked.use_count,
             caliber: ranked.caliber.map(str::to_owned),
         })
-        .collect()
+        .collect())
 }

@@ -57,6 +57,7 @@ use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::preview::protocol_handler;
+use hoplodex_lib::services::preview::surface;
 use hoplodex_lib::services::preview::text as preview_text;
 use hoplodex_lib::services::valuation::get_value_summary;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -1277,6 +1278,53 @@ fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_record
     }
 }
 
+/// Where the time of a Model suggestion over both tables goes (T162): the
+/// query alone, and the whole call, which reads the same rows and keeps only
+/// what matches the text; and, for the settle and import path, building the
+/// whole vocabulary and dropping it. Printed for the pull request's
+/// performance note; the budget itself is held by the test above.
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn suggest_entries_over_both_tables_breakdown() {
+    use hoplodex_lib::services::suggestions::{FieldVocabulary, suggest, vocabulary_queries};
+
+    let _alone = one_at_a_time();
+    let scale = MountedScale::new();
+    let conn = &scale.db.conn;
+    for (text, make) in [("model 12", None), ("acc model 12", Some("Leupold")), ("", None)] {
+        for round in 0..3 {
+            let started = Instant::now();
+            let mut rows = 0;
+            for sql in vocabulary_queries(EntryField::Model) {
+                let mut stmt = conn.prepare(&sql).unwrap();
+                let mut cursor = stmt.query([]).unwrap();
+                while let Some(row) = cursor.next().unwrap() {
+                    let _text: &str = row.get_ref(0).unwrap().as_str().unwrap();
+                    rows += 1;
+                }
+            }
+            let query = started.elapsed();
+
+            let started = Instant::now();
+            let suggestions = suggest(conn, EntryField::Model, text, make).unwrap();
+            let call = started.elapsed();
+
+            let started = Instant::now();
+            let vocabulary = FieldVocabulary::load(conn, EntryField::Model).unwrap();
+            let load = started.elapsed();
+            let started = Instant::now();
+            drop(vocabulary);
+            let dropped = started.elapsed();
+
+            eprintln!(
+                "T162 round {round} Model {text:?}: query alone {query:?} ({rows} rows), whole \
+                 call {call:?} ({} found); the whole vocabulary: load {load:?}, drop {dropped:?}",
+                suggestions.len()
+            );
+        }
+    }
+}
+
 // --- Feature 007: the document preview ------------------------------------------
 
 const DOCUMENT_COUNT: usize = 30_000;
@@ -1534,7 +1582,7 @@ fn open_preview_of_a_10_mb_tiff_shows_page_one_within_a_second_at_10k_plus_10k_r
 /// The `hdpreview` handler, asked for `url` as the surface asks.
 fn get(world: &Fixture, url: &str) -> tauri::http::Response<Vec<u8>> {
     let request = tauri::http::Request::builder().method("GET").uri(url).body(Vec::new()).unwrap();
-    protocol_handler::handle(&world.session, &request)
+    protocol_handler::handle(&world.session, surface::LABEL, &request)
 }
 
 /// research.md §22 "open_preview -> PDF surface shown, 10 MB": what Rust does

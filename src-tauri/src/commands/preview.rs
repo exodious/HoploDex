@@ -43,7 +43,8 @@ pub struct PreviewEnv {
     /// The executable started again as `--render-helper`.
     pub helper_exe: PathBuf,
     pub helper_limits: HelperLimits,
-    /// How long a PDF may go without PDF.js's hook on Linux.
+    /// How long a PDF may go without PDF.js's hook on Linux, from its
+    /// document first being served.
     pub hook_timeout: Duration,
     pub surfaces: Arc<dyn SurfaceFactory>,
     pub availability: Arc<PdfAvailabilityState>,
@@ -309,6 +310,7 @@ pub mod ops {
                 secret,
                 served: false,
                 hooked: false,
+                hook_timeout: env.hook_timeout,
             },
         });
         Ok(Begun::Done(PreviewInfo::Pdf { preview_id: id, document_id }))
@@ -327,7 +329,7 @@ pub mod ops {
         let (id, ticket, bytes) = match session.inspect_mut(|open| begin(open, env, document_id))? {
             Begun::Done(info) => {
                 if let PreviewInfo::Pdf { preview_id, .. } = &info {
-                    watch_for_the_hook(session, env, *preview_id);
+                    watch_for_the_serve(session, env, *preview_id);
                 }
                 return Ok(info);
             }
@@ -563,29 +565,46 @@ pub mod ops {
         Ok(())
     }
 
-    /// Linux: PDF.js's hook must report within `env.hook_timeout`, or the
-    /// surface is closed rather than shown with a PDF's scripting on
-    /// (research.md §8).
-    fn watch_for_the_hook(session: &Arc<Session>, env: &PreviewEnv, preview_id: u64) {
+    /// Linux: the surface must ask for the document within
+    /// `env.hook_timeout` (5 s, research.md §8's figure; no other is
+    /// recorded) of `open_preview`, or the preview fails as a missing hook
+    /// does, so the viewer doesn't wait for a surface that never asks. The
+    /// hook's own 5 s starts at the first serve (`hook_timed_out`).
+    fn watch_for_the_serve(session: &Arc<Session>, env: &PreviewEnv, preview_id: u64) {
         if !cfg!(target_os = "linux") {
             return;
         }
         let (session, timeout) = (Arc::clone(session), env.hook_timeout);
         let spawned =
-            std::thread::Builder::new().name("preview-hook-timer".into()).spawn(move || {
+            std::thread::Builder::new().name("preview-serve-timer".into()).spawn(move || {
                 std::thread::sleep(timeout);
                 end_pdf(
                     &session,
                     |p| {
                         p.id == preview_id
-                            && matches!(p.content, PreviewContent::Pdf { hooked: false, .. })
+                            && matches!(p.content, PreviewContent::Pdf { served: false, .. })
                     },
                     PdfEndReason::Failed,
                 );
             });
         if let Err(err) = spawned {
-            log::error!("could not start the PDF hook timer: {err}");
+            log::error!("could not start the PDF serve timer: {err}");
         }
+    }
+
+    /// Linux: PDF.js's hook did not report within the preview's
+    /// `hook_timeout` of its document being served (the protocol handler
+    /// starts that timer at the first serve, research.md §8), so the surface
+    /// is closed rather than shown with a PDF's scripting on. A no-op if the
+    /// preview has ended, been replaced or been hooked since.
+    pub fn hook_timed_out(session: &Session, preview_id: u64) {
+        end_pdf(
+            session,
+            |p| {
+                p.id == preview_id && matches!(p.content, PreviewContent::Pdf { hooked: false, .. })
+            },
+            PdfEndReason::Failed,
+        );
     }
 
     /// One TIFF page as PNG bytes, `width_px` wide at most (4096 px, 24

@@ -503,9 +503,12 @@ artifacts.
     random bits written into the script when the surface is built; the
     filter allows the scheme). On Linux the surface is shown only after
     the protocol handler has seen that request for the current document;
-    if it doesn't come within 5 s of the document being served, the
+    if it doesn't come within 5 s of the document first being served (the
+    protocol handler starts the timer then, not `open_preview`), the
     surface is closed with `PREVIEW_FAILED` rather than shown with
-    scripting on.
+    scripting on. On Linux the surface must also ask for the document
+    within 5 s of `open_preview`, or the preview fails the same way, so
+    the viewer never waits for a surface that doesn't ask.
   - **macOS and Windows**: their viewers have no switch for a PDF's
     JavaScript. The spike saw no script dialog or alert from the test
     PDF's `app.alert` on either. The containment is §5 and §6.
@@ -861,6 +864,13 @@ artifacts.
   consequences in this session.
 - **Alternatives considered**: the flag in the frontend's session store:
   settable by a compromised web view.
+- **Amendment, 2026-10-07 (the user's decision, T150)**: "any confirmed
+  open sets it" holds except for one case. `set_document_opening` clears
+  the flag when it changes the setting to `"external"`, so a yes given
+  while the setting was `"preview"` does not carry over, and the next
+  open asks once, with the "won't be asked again" line (FR-012, US3-3).
+  The setting's own dialog still never sets it. A switch back to
+  `"preview"` leaves it alone.
 
 ## 18. The external copy
 

@@ -24,6 +24,7 @@ pub mod tiff;
 pub mod tripwire;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -170,6 +171,9 @@ pub enum PreviewContent {
         served: bool,
         /// Linux: PDF.js's `webviewerloaded` hook reported (research.md §8).
         hooked: bool,
+        /// Linux: how long the hook has from the document first being
+        /// served; the protocol handler starts the timer then (§8).
+        hook_timeout: Duration,
     },
     Tiff {
         /// The helper process, killed and waited for when this is dropped. It

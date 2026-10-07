@@ -44,8 +44,8 @@
 //! Further assumed API (contracts/tauri-commands.md "Setting commands"),
 //! `commands::databases::ops`, on `MachineSettings` alone (no open database):
 //! - `get_document_opening(machine: &MachineSettings) -> DocumentOpening`;
-//! - `set_document_opening(machine: &MachineSettings, consent: &dyn Consent,
-//!   value: DocumentOpening) -> impl Serialize`, serializing as
+//! - `set_document_opening(session: &Session, machine: &MachineSettings,
+//!   consent: &dyn Consent, value: DocumentOpening) -> impl Serialize`, serializing as
 //!   `{ "changed": bool }`. For `External` while the setting is `Preview` it
 //!   asks with `ConsentRequest::Setting`; every other call changes without
 //!   asking.
@@ -75,11 +75,14 @@ use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::preview::SurfaceBounds;
 use hoplodex_lib::services::preview::protocol_handler;
+use hoplodex_lib::services::preview::surface;
 use hoplodex_lib::session::{Session, lifecycle};
 use preview_support::{TestPreview, add_document, insert_raw_document, new_firearm};
 use serde_json::Value;
 use support::hostile_documents as hostile;
-use support::{ManualClock, TEST_PASSPHRASE, document_fixture, passphrase, test_session_at};
+use support::{
+    ManualClock, TEST_PASSPHRASE, document_fixture, passphrase, test_session, test_session_at,
+};
 use tauri::http::Request;
 use tempfile::TempDir;
 
@@ -545,7 +548,7 @@ fn each_open_or_unlock_is_a_new_generation() {
     assert_ne!(world.generation(), first);
 }
 
-// --- A lock while the dialog is up (#65, US2-6) ---------------------------------
+// --- A lock while the dialog is up (#65, US2-3) ---------------------------------
 
 #[test]
 fn issue_65_a_lock_while_the_dialog_is_up_writes_no_copy_and_starts_nothing() {
@@ -894,7 +897,7 @@ fn a_shown_pdf_surface_is_hidden_while_the_dialog_is_up() {
     let url = surface.url();
     let get = |url: &str| {
         let request = Request::builder().method("GET").uri(url).body(Vec::new()).unwrap();
-        protocol_handler::handle(&world.session, &request)
+        protocol_handler::handle(&world.session, surface::LABEL, &request)
     };
     assert_eq!(get(&url).status().as_u16(), 200);
     if cfg!(target_os = "linux") {
@@ -1008,12 +1011,17 @@ fn the_text_for_the_setting_is_the_contracts_word_for_word() {
 impl World {
     /// `set_document_opening`'s answer's `changed`.
     fn set_opening(&self, consent: &FakeConsent, value: DocumentOpening) -> bool {
-        set_opening(&self.machine, consent, value)
+        set_opening(&self.session, &self.machine, consent, value)
     }
 }
 
-fn set_opening(machine: &MachineSettings, consent: &FakeConsent, value: DocumentOpening) -> bool {
-    let answer = databases::set_document_opening(machine, consent, value);
+fn set_opening(
+    session: &Session,
+    machine: &MachineSettings,
+    consent: &FakeConsent,
+    value: DocumentOpening,
+) -> bool {
+    let answer = databases::set_document_opening(session, machine, consent, value);
     let answer: Value = serde_json::to_value(answer).unwrap();
     answer["changed"].as_bool().unwrap_or_else(|| panic!("no `changed` in {answer}"))
 }
@@ -1022,11 +1030,16 @@ fn set_opening(machine: &MachineSettings, consent: &FakeConsent, value: Document
 fn the_default_is_preview_and_the_setting_needs_no_open_database() {
     let config = TempDir::new().unwrap();
     let machine = MachineSettings::load(config.path()).unwrap();
+    let (session, _events) = test_session(&config.path().join("opened-documents"));
+    assert!(!session.is_open());
 
     assert_eq!(databases::get_document_opening(&machine), DocumentOpening::Preview);
 
     let consent = FakeConsent::open();
-    assert!(set_opening(&machine, &consent, DocumentOpening::External), "no session is needed");
+    assert!(
+        set_opening(&session, &machine, &consent, DocumentOpening::External),
+        "no database need be open"
+    );
     assert_eq!(databases::get_document_opening(&machine), DocumentOpening::External);
     let reloaded = MachineSettings::load(config.path()).unwrap();
     assert_eq!(
@@ -1099,6 +1112,68 @@ fn the_settings_dialog_does_not_confirm_the_session() {
     assert_eq!(consent.requests().len(), 1, "the first open still asks");
     assert!(document_request(&consent.requests()[0]).2);
     assert!(world.confirmed());
+}
+
+#[test]
+fn switching_to_external_clears_a_yes_given_under_preview() {
+    // research.md §17, amended 2026-10-07: the session's earlier yes does not
+    // carry over to the setting that makes it matter (US3-3).
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    let first = FakeConsent::open();
+    let opener = FakeOpener::new();
+    assert!(world.open(&first, &opener, id).unwrap());
+    assert!(world.confirmed(), "a yes under Preview sets the flag");
+
+    assert!(world.set_opening(&FakeConsent::open(), DocumentOpening::External));
+    assert!(!world.confirmed(), "the switch cleared it");
+
+    let second = FakeConsent::open();
+    assert!(world.open(&second, &opener, id).unwrap());
+    let requests = second.requests();
+    assert_eq!(requests.len(), 1, "the next open asks");
+    assert!(document_request(&requests[0]).2, "with the \"won't be asked again\" line");
+    assert!(world.confirmed());
+}
+
+#[test]
+fn a_cancelled_switch_to_external_keeps_the_sessions_yes() {
+    let world = World::new();
+    let id = world.pdf("receipt.pdf");
+    assert!(world.open(&FakeConsent::open(), &FakeOpener::new(), id).unwrap());
+
+    assert!(!world.set_opening(&FakeConsent::cancel(), DocumentOpening::External));
+
+    assert!(world.confirmed(), "nothing changed, so nothing was forgotten");
+}
+
+#[test]
+fn the_idle_clock_is_paused_while_the_settings_dialog_is_up_and_starts_again_after() {
+    let world = World::new();
+    databases::update_lock_settings(
+        &world.session,
+        &LockSettingsInput { idle_enabled: true, idle_minutes: 10, on_screen_lock: false },
+    )
+    .unwrap();
+    let consent = FakeConsent::open();
+    consent.while_asking({
+        let session = world.session.clone();
+        let machine = world.machine.clone();
+        let clock = world.clock.clone();
+        move |_| {
+            clock.advance(chrono::Duration::minutes(30));
+            assert!(!lifecycle::idle_tick(&session, &machine), "paused: no lock in the dialog");
+        }
+    });
+
+    assert!(world.set_opening(&consent, DocumentOpening::External));
+
+    assert!(world.session.is_open());
+    assert!(!lifecycle::idle_tick(&world.session, &world.machine), "the idle time began again");
+    world.clock.advance(chrono::Duration::minutes(9));
+    assert!(!lifecycle::idle_tick(&world.session, &world.machine));
+    world.clock.advance(chrono::Duration::minutes(1));
+    assert!(lifecycle::idle_tick(&world.session, &world.machine), "and runs out as usual");
 }
 
 // --- Opening with the setting (US3-3, US3-4, FR-012) ------------------------------

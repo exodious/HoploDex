@@ -249,10 +249,10 @@ pub mod ops {
     /// The native dialog is up: the idle clock waits for it, as it does for
     /// a file chooser (research.md §16), and starts again when this is
     /// dropped.
-    struct IdlePause<'a>(&'a Session);
+    pub(crate) struct IdlePause<'a>(&'a Session);
 
     impl<'a> IdlePause<'a> {
-        fn new(session: &'a Session) -> Self {
+        pub(crate) fn new(session: &'a Session) -> Self {
             session.idle().set_paused(IdlePauseReason::NativeDialog, true, session.clock().now());
             Self(session)
         }

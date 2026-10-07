@@ -15,7 +15,7 @@
 //!   (what the `delete_document` command calls first) and
 //!   `surface_download(&Arc<Session>, &PreviewEnv, url)` (the surface's
 //!   `on_download` hook);
-//! - `services::preview::protocol_handler::handle(&Session,
+//! - `services::preview::protocol_handler::handle(&Session, webview_label: &str,
 //!   &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>>`;
 //! - `PdfAvailability::at_startup(&MachineSettings, running_version: &str,
 //!   os_check_passed: bool)`;
@@ -37,6 +37,7 @@ use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::SurfaceBounds;
 use hoplodex_lib::services::preview::availability::{PdfAvailability, UnavailableReason};
 use hoplodex_lib::services::preview::protocol_handler;
+use hoplodex_lib::services::preview::surface;
 use serde_json::{Value, json};
 use support::document_fixture;
 use support::hostile_documents as hostile;
@@ -55,7 +56,13 @@ fn pdf_bytes() -> Vec<u8> {
 /// The protocol handler, asked for `url` as the surface asks.
 fn get(world: &Fixture, url: &str) -> Response<Vec<u8>> {
     let request = Request::builder().method("GET").uri(url).body(Vec::new()).unwrap();
-    protocol_handler::handle(&world.session, &request)
+    protocol_handler::handle(&world.session, surface::LABEL, &request)
+}
+
+/// The protocol handler, asked for `url` by the web view labelled `label`.
+fn get_from(world: &Fixture, label: &str, url: &str) -> Response<Vec<u8>> {
+    let request = Request::builder().method("GET").uri(url).body(Vec::new()).unwrap();
+    protocol_handler::handle(&world.session, label, &request)
 }
 
 /// `url` with its path replaced.
@@ -321,6 +328,81 @@ fn without_the_hook_the_surface_is_closed_and_the_viewer_told_it_failed() {
     assert!(surface.is_closed());
     assert!(!surface.ever_shown());
     assert!(ready_events(&world).is_empty(), "never shown with scripting on");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn the_hook_timer_starts_at_the_first_serve() {
+    let mut world = Fixture::new();
+    world.preview.env.hook_timeout = Duration::from_millis(400);
+    let id = world.add("a.pdf", &pdf_bytes());
+    let preview_id = Fixture::id_of(&world.open_ok(id));
+    let surface = world.preview.surfaces.only();
+
+    // A slow surface: part of the serve limit passes before it asks.
+    std::thread::sleep(Duration::from_millis(250));
+    assert!(ended_events(&world).is_empty());
+    assert!(!surface.is_closed());
+
+    assert_eq!(get(&world, &surface.url()).status().as_u16(), 200);
+    std::thread::sleep(Duration::from_millis(250));
+    assert!(ended_events(&world).is_empty(), "the hook's time runs from the serve");
+
+    assert!(
+        preview_support::wait_for(Duration::from_secs(5), || !ended_events(&world).is_empty()),
+        "no preview:pdf-ended"
+    );
+    assert_eq!(ended_events(&world), vec![json!({ "previewId": preview_id, "reason": "failed" })]);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_surface_that_never_asks_for_the_document_fails_the_preview() {
+    let mut world = Fixture::new();
+    world.preview.env.hook_timeout = Duration::from_millis(300);
+    let id = world.add("a.pdf", &pdf_bytes());
+    let preview_id = Fixture::id_of(&world.open_ok(id));
+    let surface = world.preview.surfaces.only();
+
+    assert!(
+        preview_support::wait_for(Duration::from_secs(5), || !ended_events(&world).is_empty()),
+        "no preview:pdf-ended for a document that was never served"
+    );
+    assert_eq!(ended_events(&world), vec![json!({ "previewId": preview_id, "reason": "failed" })]);
+    assert!(surface.is_closed());
+    assert!(!surface.ever_shown());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_document_served_in_time_is_not_failed_by_the_serve_timer() {
+    let mut world = Fixture::new();
+    world.preview.env.hook_timeout = Duration::from_millis(400);
+    let id = world.add("a.pdf", &pdf_bytes());
+    world.open_ok(id);
+    let surface = world.preview.surfaces.only();
+
+    serve_and_hook(&world, &surface);
+    std::thread::sleep(Duration::from_millis(900));
+
+    assert!(ended_events(&world).is_empty());
+    assert!(!surface.is_closed());
+}
+
+#[test]
+fn only_the_preview_web_view_may_use_the_scheme() {
+    let world = Fixture::new();
+    let id = world.add("a.pdf", &pdf_bytes());
+    world.open_ok(id);
+    let surface = world.preview.surfaces.only();
+    let hook = at(&surface.url(), &format!("/hooked/{}", surface.secret()));
+
+    for label in ["main", "other", ""] {
+        assert!(is_404(&get_from(&world, label, &surface.url())), "document from {label:?}");
+        assert!(is_404(&get_from(&world, label, &hook)), "hook from {label:?}");
+    }
+    assert!(ready_events(&world).is_empty(), "nothing was served or hooked");
+    assert_eq!(get_from(&world, surface::LABEL, &surface.url()).status().as_u16(), 200);
 }
 
 #[cfg(target_os = "linux")]

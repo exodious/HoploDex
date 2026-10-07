@@ -258,15 +258,19 @@ Events go to the `main` web view only (`emit_to`).
 ## The `hdpreview` protocol *(new)*
 
 Registered with `register_asynchronous_uri_scheme_protocol`. It answers
-only the PDF surface's requests:
+only the PDF surface's requests: the handler is given the label of the
+web view that asked and answers `404`, empty, to any but `preview`:
 
 | Request | Answer |
 |---|---|
 | `GET /<token>/document.pdf`, token of the current PDF preview | `200`, `Content-Type: application/pdf`, `Cache-Control: no-store`, no `Accept-Ranges`, the whole document; then `preview:pdf-ready` (on Linux once the hook has also reported) |
 | `GET /hooked/<surface secret>` (Linux) | `204`; marks the current document's PDF.js hook as run (research.md §8) |
+| any request from a web view other than `preview` | `404`, empty |
 | anything else, or a token no longer current | `404`, empty |
 
-It holds the session lock only to copy out the current token's bytes.
+It holds the session lock only to copy out the current token's bytes. On
+Linux the first serve of a document starts the 5 s timer for its hook
+(research.md §8); `open_preview` starts none.
 
 ## Setting commands *(new)*
 
@@ -286,9 +290,15 @@ It holds the session lock only to copy out the current token's bytes.
     cancelled, and the setting is unchanged.
   - For `"preview"`, it changes without asking (FR-012).
   - Setting the current value is a no-op returning `{ changed: false }`.
-- **Session**: this dialog doesn't set `external_open_confirmed`. The
-  first document opened in another app in the session still asks
-  (FR-012, spec US3-3).
+- **Session**: this dialog doesn't set `external_open_confirmed`. A
+  change to `"external"` clears it if a database is open (research.md
+  §17, amended 2026-10-07), so the first document opened in another app
+  after the change still asks, with the "won't be asked again" line
+  (FR-012, spec US3-3). No database need be open: the command touches
+  the session only if one is.
+- **Idle clock**: while the confirmation is up and a database is open,
+  the idle clock is paused (`IdlePauseReason::NativeDialog`, research.md
+  §16), as for `open_document`.
 
 ## Search (content only)
 

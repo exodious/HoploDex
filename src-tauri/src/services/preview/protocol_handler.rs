@@ -2,22 +2,28 @@
 //! memory to the surface (research.md §4, contracts/tauri-commands.md "The
 //! `hdpreview` protocol").
 //!
-//! It answers three requests and nothing else:
+//! It answers three requests, from the PDF surface's web view (`webview_label`
+//! is `surface::LABEL`) and from no other, and nothing else:
 //! - `GET /<token>/document.pdf`, the current PDF preview's token: `200` with
 //!   the whole document;
 //! - `GET /hooked/<surface secret>`: `204`, PDF.js's hook has run (Linux,
 //!   research.md §8);
-//! - anything else, or a token no longer shown: `404`, empty.
+//! - anything else, a request from another web view, or a token no longer
+//!   shown: `404`, empty.
 //!
 //! The session's lock is held only to copy out the bytes or set a flag. When
 //! both the document has been served (and on Linux hooked), `preview:pdf-ready`
-//! goes to the main web view, once.
+//! goes to the main web view, once. On Linux the first serve of a document
+//! also starts its hook timer (research.md §8).
+
+use std::time::Duration;
 
 use serde_json::json;
 use tauri::http::{Method, Request, Response};
 
 use crate::commands::CommandError;
 use crate::services::preview::PreviewContent;
+use crate::services::preview::surface;
 use crate::session::Session;
 
 /// The scheme's name, as registered in `main.rs`.
@@ -65,9 +71,16 @@ fn not_found() -> Response<Vec<u8>> {
     Response::builder().status(404).body(Vec::new()).expect("a 404 is a valid response")
 }
 
-/// Answers the PDF surface's requests.
-pub fn handle(session: &Session, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
-    if request.method() != Method::GET {
+/// Answers the PDF surface's requests. `webview_label` is the label of the
+/// web view that made the request: any but the surface's gets a 404, so the
+/// main web view can't read a document or set the hook flag through the
+/// scheme.
+pub fn handle(
+    session: &Session,
+    webview_label: &str,
+    request: &Request<Vec<u8>>,
+) -> Response<Vec<u8>> {
+    if webview_label != surface::LABEL || request.method() != Method::GET {
         return not_found();
     }
     let path = request.uri().path();
@@ -95,19 +108,26 @@ fn serve(session: &Session, path: &str) -> Response<Vec<u8>> {
     let found = session.inspect_mut(|open| -> Result<_, CommandError> {
         let Some(preview) = open.preview.as_mut() else { return Ok(None) };
         let id = preview.id;
-        let PreviewContent::Pdf { token, bytes, served, hooked, .. } = &mut preview.content else {
+        let PreviewContent::Pdf { token, bytes, served, hooked, hook_timeout, .. } =
+            &mut preview.content
+        else {
             return Ok(None);
         };
         if path != document_path(token) {
             return Ok(None);
         }
+        let first_serve = !*served;
         let was_ready = is_ready(*served, *hooked);
         *served = true;
         let became = (!was_ready && is_ready(*served, *hooked)).then_some(id);
-        Ok(Some((bytes.to_vec(), became)))
+        let timer = first_serve.then_some((id, *hook_timeout));
+        Ok(Some((bytes.to_vec(), became, timer)))
     });
     // A closed session or a replaced preview is a 404 like any other.
-    let Ok(Some((body, became))) = found else { return not_found() };
+    let Ok(Some((body, became, timer))) = found else { return not_found() };
+    if let Some((preview_id, timeout)) = timer {
+        watch_for_the_hook(session, preview_id, timeout);
+    }
     announce_ready(session, became);
     Response::builder()
         .status(200)
@@ -115,6 +135,24 @@ fn serve(session: &Session, path: &str) -> Response<Vec<u8>> {
         .header("Cache-Control", "no-store")
         .body(body)
         .expect("a 200 with these headers is a valid response")
+}
+
+/// Linux: PDF.js's hook must report within `timeout` of the document being
+/// served, or the surface is closed rather than shown with a PDF's scripting
+/// on (research.md §8). Started at the first serve, so a slow surface start
+/// doesn't spend the time.
+fn watch_for_the_hook(session: &Session, preview_id: u64, timeout: Duration) {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    let session = session.clone();
+    let spawned = std::thread::Builder::new().name("preview-hook-timer".into()).spawn(move || {
+        std::thread::sleep(timeout);
+        crate::commands::preview::ops::hook_timed_out(&session, preview_id);
+    });
+    if let Err(err) = spawned {
+        log::error!("could not start the PDF hook timer: {err}");
+    }
 }
 
 fn hooked(session: &Session, secret: &str) -> Response<Vec<u8>> {
