@@ -284,7 +284,35 @@ artifacts.
     a context of its own that the registration never reaches ("The URL can't
     be shown"). The surface's `data_directory` (a folder it never uses on
     Linux) is the key that fixes it.
-  macOS (T007) and Windows (T008) are not yet run.
+  macOS (T007) is not yet run.
+
+- **Result of the first task, Windows (T008, 2026-10-06)**: the same example,
+  `cargo run --example pdf_surface_check -- shows`, on Windows Server 2025
+  (WebView2 runtime 154.0.4258.62, no code change to `surface/windows.rs` or
+  the example): exit 0. The child web view loaded
+  `http://hdpreview.localhost/<token>/document.pdf` (WebView2 serves the
+  scheme as `hdpreview://localhost/…` to the handler, and page-load Started and
+  Finished report the `http://` form, which is what `on_navigation` compares),
+  served in 2.4 s from the surface's build, and Edge's PDF viewer (its toolbar,
+  "1 of 3", page 1's text) drew inside the main window exactly within the
+  page's red outline (`e2e/screenshots-out/pdf-surface/shows-windows.png`;
+  `bounds()` reported x=40, y=100, 920x660 logical, and the main page kept
+  ticking, 6 pings). Two browser processes, listed both by the example and
+  independently by polling `Win32_Process` while it ran, both children of
+  the example's process:
+  - main window (pid 8012): `--user-data-dir=<scratch>\cache\main-webview\EBWebView`
+    with wry's default arguments only;
+  - surface (pid 6020): `--user-data-dir=<scratch>\cache\preview-webview2\EBWebView
+    --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection
+    --proxy-bypass-list=<-loopback> --proxy-server=http://127.0.0.1:<port>
+    --webrtc-ip-handling-policy=disable_non_proxied_udp`.
+  Neither used the default folder under `%LOCALAPPDATA%`. The tripwire was hit
+  5 times (two while the surface's browser started, before the document was
+  requested, not attributed to a request; the others after the document
+  loaded, one of them the probe image to a name outside the app): everything
+  the surface's browser process sent out went to the proxy and no further. The
+  viewer's `favicon.ico` request reached the app's own protocol handler (404).
+  So the child web view stands on Windows.
 
 ## 5. Keeping the surface unprivileged: the app ACL manifest
 
