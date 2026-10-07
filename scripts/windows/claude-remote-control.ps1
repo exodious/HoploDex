@@ -12,9 +12,12 @@ open for E2E and screenshots, and you reach it from claude.ai/code or the
 Claude app. An SSH session couldn't host it: Windows' sshd ends every
 process in a session when it disconnects, and the session has no desktop.
 
-It starts "claude --remote-control --name <host>-hoplodex" in -Checkout,
-where <host> is this machine's short host name in lower case, and starts it
-again whenever it stops. Claude Code downloads updates in the background, but a running
+It starts "claude --remote-control --name <host>-hoplodex
+--permission-mode auto" in -Checkout, where <host> is this machine's short
+host name in lower case, and starts it again whenever it stops. Auto mode is
+the lead's: a session in another mode holds each message from the lead for
+your approval, so batches sent with the speckit-os-batch skill would wait on
+you. Claude Code downloads updates in the background, but a running
 claude keeps its version until it restarts, so once a day, during
 -UpdateHour, it restarts claude if a newer version is installed. Run with
 -Restart (from SSH, say) to restart it now. Either way it stops claude with
@@ -133,7 +136,7 @@ while ($true) {
     $version = Get-ClaudeVersion
     Write-Status "Starting claude ($version) as $SessionName in $Checkout."
     $claudeExe = (Get-Command claude -CommandType Application | Select-Object -First 1).Source
-    $claude = Start-Process $claudeExe -ArgumentList '--remote-control', '--name', $SessionName -NoNewWindow -PassThru
+    $claude = Start-Process $claudeExe -ArgumentList '--remote-control', '--name', $SessionName, '--permission-mode', 'auto' -NoNewWindow -PassThru
     # Keep the handle, so the exit code is still there after it exits.
     $null = $claude.Handle
     $lastCheck = Get-Date

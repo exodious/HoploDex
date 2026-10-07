@@ -348,13 +348,18 @@ from claude.ai/code, the Claude app or another Claude session. The option
 installs Claude Code, copies `scripts/windows/claude-remote-control.ps1`
 to `%LOCALAPPDATA%\HoploDex`, and adds a Startup-folder shortcut that runs
 it minimized at each sign-in. The script keeps
-`claude --remote-control --name <host>-hoplodex` running in the checkout
-(`<host>` is the machine's short host name, in lower case): it starts it
-again whenever it stops, 30 seconds later. Before the first sign-in, answer
-Claude Code's one-time questions over SSH, since the minimized window would
-wait on them: in the checkout, run `claude` and `/login`, then
-`claude --remote-control`, trust the folder, enable Remote Control, and
-`/exit`.
+`claude --remote-control --name <host>-hoplodex --permission-mode auto`
+running in the checkout (`<host>` is the machine's short host name, in lower
+case): it starts it again whenever it stops, 30 seconds later. Auto mode
+matches the lead's: a session in another mode holds each message from the
+lead for your approval. The lead sends per-OS batches, and the session runs
+each with the `speckit-os-batch` skill and reports back. Before the first
+sign-in, answer Claude Code's one-time questions over SSH, since the
+minimized window would wait on them: in the checkout, run `claude` and
+`/login`, then `claude --remote-control --permission-mode auto`, trust the
+folder, enable Remote Control, accept auto mode if asked, and `/exit`. After
+changing the script, rerun `setup-user.ps1 -ClaudeRemoteControl` (or copy it
+to `%LOCALAPPDATA%\HoploDex`) and restart it with `-Restart`.
 
 Claude Code downloads updates in the background, but a running `claude`
 keeps its version until it restarts. So during one hour a day (`-UpdateHour`

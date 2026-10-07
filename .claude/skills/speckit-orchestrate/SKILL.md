@@ -82,6 +82,18 @@ Ground rules:
 For **test-writing** batches, ask instead for "the API your tests assume, one line each,
 then ambiguities", and pass that list to the implementer of the same story.
 
+## 2a. Per-OS batches on remote sessions
+
+Tasks that need another OS (Windows, macOS) go to that machine's Claude
+session over `SendMessage` (find it with `ListAgents`). Write the batch like a
+subagent prompt (§2), plus: the lead's session name to reply to, "pull
+--rebase first", "commit by path, push, reply with the hash". The remote
+session runs it with the `speckit-os-batch` skill, which commits and pushes
+itself. Pull before reviewing its commits, and never while one of your own
+agents would have files changed under it mid-run. A remote session in a
+different permission mode from yours holds your messages for the user's
+approval; run them in the same mode.
+
 ## 3. Shared build environment
 
 When agents share one dev container's volumes (one `target/`, one `node_modules`, one
