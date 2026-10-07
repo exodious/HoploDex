@@ -79,7 +79,7 @@ use std::{
 
 use hoplodex_lib::services::preview::{
     PdfEndReason,
-    surface::{Hooks, LABEL, Rect, Surface, SurfaceConfig},
+    surface::{Hooks, Rect, Surface, SurfaceConfig},
     tripwire,
 };
 #[cfg(target_os = "macos")]
@@ -1633,11 +1633,9 @@ fn run_check(run: Run) {
     if !shared.ended.lock().unwrap().is_empty() {
         failures.push(format!("the surface ended: {:?}", shared.ended.lock().unwrap()));
     }
-    // The surface's own host window (Linux) is not another. `windows()`, not
-    // `webview_windows()`: that lists only a window with a single web view,
-    // and on macOS the main window has the surface's besides.
-    let windows: Vec<String> =
-        app.windows().into_keys().filter(|l| l != "main" && l != LABEL).collect();
+    // `windows()`, not `webview_windows()`: that lists only a window with a
+    // single web view, and the main window has the surface's besides.
+    let windows: Vec<String> = app.windows().into_keys().filter(|l| l != "main").collect();
     if !windows.is_empty() {
         failures.push(format!("another window opened: {windows:?}"));
     }

@@ -38,6 +38,7 @@ use webkit2gtk::{
     ContextMenuExt, ContextMenuItemExt, SettingsExt, WebViewExt,
     glib::{
         self,
+        ffi::{GList, g_list_free},
         gobject_ffi::{self, GObject, g_object_ref, g_object_unref, g_type_check_instance_is_a},
         translate::ToGlibPtr,
     },
@@ -50,7 +51,12 @@ const ALIGN_START: c_int = 1;
 
 // libgtk-3 is already linked: wry's `gtk` crate links it.
 unsafe extern "C" {
+    fn gtk_widget_get_toplevel(widget: Widget) -> Widget;
+    fn gtk_window_get_focus(window: Widget) -> Widget;
+    fn gtk_widget_grab_focus(widget: Widget);
     fn gtk_widget_get_parent(widget: Widget) -> Widget;
+    fn gtk_container_get_children(container: Widget) -> *mut GList;
+    fn gtk_bin_get_child(bin: Widget) -> Widget;
     fn gtk_container_remove(container: Widget, widget: Widget);
     fn gtk_container_add(container: Widget, widget: Widget);
     fn gtk_box_pack_start(b: Widget, child: Widget, expand: c_int, fill: c_int, padding: c_uint);
@@ -97,26 +103,6 @@ pub(super) fn customize<R: Runtime>(
     static SURFACES: AtomicUsize = AtomicUsize::new(0);
     let key = data_directory.join(format!("surface-{}", SURFACES.fetch_add(1, Ordering::Relaxed)));
     builder.proxy_url(proxy_url.clone()).data_directory(key)
-}
-
-/// The window the surface's web view is built in, before `attach` moves it
-/// over the main window's.
-///
-/// A web view added to the main window makes it a window with two web views,
-/// which Tauri's `webview_windows` leaves out, and so the E2E build's embedded
-/// WebDriver server (tauri-plugin-wdio-webdriver) could no longer find the
-/// main web view while a PDF is shown ("no such window", found by
-/// `us13-document-preview.e2e.ts`). Built here instead, the surface is the
-/// only web view of a window of its own, which is never shown: its `GtkWidget`
-/// is taken out of that window into the main window's overlay at once.
-pub(super) fn host_window<R: Runtime>(main: &Window<R>) -> tauri::Result<Window<R>> {
-    tauri::window::WindowBuilder::new(main.app_handle(), super::LABEL)
-        .visible(false)
-        .decorations(false)
-        .skip_taskbar(true)
-        .focused(false)
-        .inner_size(1.0, 1.0)
-        .build()
 }
 
 /// Runs `f` with the surface's `GtkWidget`, on the GTK thread.
@@ -187,17 +173,6 @@ pub(super) fn attach<R: Runtime>(
     std::fs::create_dir_all(&store)?;
     let store = CString::new(store.to_string_lossy().as_bytes())
         .map_err(|_| std::io::Error::other("the cache folder's path has a NUL in it"))?;
-    // The main web view's widget, which the surface is put over.
-    let main = window
-        .get_webview("main")
-        .ok_or_else(|| std::io::Error::other("the main web view is gone"))?;
-    let (main_widget, main_widget_received) = mpsc::channel::<usize>();
-    with_widget(&main, move |widget| {
-        let _ = main_widget.send(widget as usize);
-    })?;
-    let main_widget = main_widget_received
-        .recv_timeout(FILTER_TIMEOUT)
-        .map_err(|_| std::io::Error::other("the main web view did not answer"))?;
     let (installed, filter_result) = mpsc::channel::<Result<(), String>>();
     let hooks = Arc::clone(hooks);
     webview.with_webview(move |platform| {
@@ -205,10 +180,9 @@ pub(super) fn attach<R: Runtime>(
         let raw: *mut webkit2gtk::ffi::WebKitWebView = view.to_glib_none().0;
         harden(&view);
         connect_signals(&view, raw, &hooks);
-        // SAFETY: `raw` is the live web view, `main_widget` the main web
-        // view's (which outlives it), and this runs on the GTK thread.
+        // SAFETY: `raw` is the live web view, and this runs on the GTK thread.
         unsafe {
-            overlay(main_widget as Widget, raw.cast());
+            overlay(raw.cast());
             install_filter(raw, &store, installed);
         }
     })?;
@@ -335,42 +309,68 @@ unsafe extern "C" fn on_pointer(
     0
 }
 
-/// Moves the main web view `main` into an overlay (once) and the surface over
-/// it.
+/// Moves the main web view into an overlay (once) and the surface over it.
 ///
-/// SAFETY: both are live `GtkWidget`s, and this is the GTK thread.
-unsafe fn overlay(main: Widget, surface: Widget) {
+/// SAFETY: `surface` is a live `GtkWidget`, and this is the GTK thread.
+unsafe fn overlay(surface: Widget) {
     unsafe {
-        let parent = gtk_widget_get_parent(main);
+        let parent = gtk_widget_get_parent(surface);
         if parent.is_null() {
             return;
         }
-        // The overlay a previous surface made, or the one to make.
-        let overlay =
-            if g_type_check_instance_is_a(parent.cast::<GObject>().cast(), gtk_overlay_get_type())
-                != 0
-            {
-                parent
-            } else {
-                let overlay = gtk_overlay_new();
+        // Taking a focused widget out of its container drops the window's
+        // focus, so the keys that follow (F6, the arrows) would reach nothing:
+        // whichever widget had it gets it back at the end, except that a new
+        // web view takes the focus as it is made, and the viewer's controls
+        // (the main web view) are where it belongs. (`gtk_widget_has_focus`
+        // is false in a window the system hasn't focused, so the window's own
+        // record of its focus is read.)
+        let focus = gtk_window_get_focus(gtk_widget_get_toplevel(surface));
+        // The overlay a previous surface made, or the main web view to move.
+        let (mut overlay, mut main): (Widget, Widget) = (ptr::null_mut(), ptr::null_mut());
+        let list = gtk_container_get_children(parent);
+        let mut node = list;
+        while !node.is_null() {
+            let child: Widget = (*node).data;
+            if child != surface {
+                if g_type_check_instance_is_a(
+                    child.cast::<GObject>().cast(),
+                    gtk_overlay_get_type(),
+                ) != 0
+                {
+                    overlay = child;
+                } else if main.is_null() {
+                    main = child;
+                }
+            }
+            node = (*node).next;
+        }
+        g_list_free(list);
+        if overlay.is_null() {
+            overlay = gtk_overlay_new();
+            if !main.is_null() {
                 g_object_ref(main.cast());
                 gtk_container_remove(parent, main);
                 gtk_container_add(overlay, main);
                 g_object_unref(main.cast());
-                gtk_box_pack_start(parent, overlay, 1, 1, 0);
-                gtk_widget_show_all(overlay);
-                overlay
-            };
-        let host = gtk_widget_get_parent(surface);
-        g_object_ref(surface.cast());
-        if !host.is_null() {
-            gtk_container_remove(host, surface);
+            }
+            gtk_box_pack_start(parent, overlay, 1, 1, 0);
+            gtk_widget_show_all(overlay);
         }
+        g_object_ref(surface.cast());
+        gtk_container_remove(parent, surface);
         gtk_overlay_add_overlay(overlay, surface);
         gtk_overlay_set_overlay_pass_through(overlay, surface, 0);
         g_object_unref(surface.cast());
         gtk_widget_set_halign(surface, ALIGN_START);
         gtk_widget_set_valign(surface, ALIGN_START);
+        if !focus.is_null() {
+            let main_view = if main.is_null() { gtk_bin_get_child(overlay) } else { main };
+            let target = if focus == surface { main_view } else { focus };
+            if !target.is_null() {
+                gtk_widget_grab_focus(target);
+            }
+        }
     }
 }
 

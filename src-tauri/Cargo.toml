@@ -222,3 +222,13 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+# #79: tauri-plugin-wdio-webdriver 1.4.0, patched. It found windows only through
+# `AppHandle::webview_windows()`, which leaves out a window that holds more than one
+# web view, so the main window vanished from WebDriver ("no such window") while the
+# PDF preview's child web view was on it. The vendored copy finds a web view by its
+# label instead (`platform::WebviewHandle`, `server/mod.rs`, `server/handlers/window.rs`;
+# the executors take a `WebviewHandle` where they took a `WebviewWindow`). Only the
+# `e2e` feature builds it. Drop this patch when the fix is released upstream.
+[patch.crates-io]
+tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }
