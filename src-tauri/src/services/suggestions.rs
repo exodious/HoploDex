@@ -72,7 +72,10 @@ impl Group {
     fn display(&self) -> &str {
         self.spellings
             .iter()
-            .max_by_key(|spelling| (spelling.count, Reverse(spelling.min_id)))
+            // The ids of the two tables overlap, so the same count and first
+            // id can come from two spellings; the later text then wins, as
+            // it did when the rows came ordered by text.
+            .max_by_key(|spelling| (spelling.count, Reverse(spelling.min_id), &spelling.text))
             .map(|spelling| spelling.text.as_str())
             .unwrap_or_default()
     }
@@ -89,75 +92,109 @@ pub struct FieldVocabulary {
     make_ids: HashMap<String, u32>,
 }
 
-impl FieldVocabulary {
-    pub fn load(conn: &Connection, field: EntryField) -> rusqlite::Result<Self> {
-        let column = field.column();
-        // The shared fields are on both tables (006 FR-003, research.md §16);
-        // the registration fields are the firearms' alone.
-        let records = match field {
-            EntryField::Make | EntryField::Model | EntryField::Caliber | EntryField::Cartridge => {
+/// The queries that read every value of `field` on record, one per table that
+/// holds it, each with how many records use the value and the first of them.
+/// A table's query is its own, not one over both tables joined by
+/// `UNION ALL`: it then reads the table's covering index in order and groups
+/// as it goes, where the joined one sorted all the rows into a temporary
+/// tree (about half of the 20,000 models' time at 10,000 firearms and
+/// 10,000 accessories, on Windows over the 50ms of SC-004). The two tables'
+/// groups are merged in [`FieldVocabulary::load`].
+pub fn vocabulary_queries(field: EntryField) -> Vec<String> {
+    let column = field.column();
+    // The shared fields are on both tables (006 FR-003, research.md §16);
+    // the registration fields are the firearms' alone.
+    let tables: &[&str] = match field {
+        EntryField::Make | EntryField::Model | EntryField::Caliber | EntryField::Cartridge => {
+            &["firearms", "accessories"]
+        }
+        EntryField::RegistrationForm | EntryField::RegisteredTo => &["firearms"],
+    };
+    tables
+        .iter()
+        .map(|table| {
+            // A make is NULL on an accessory that has none; its model still
+            // counts.
+            if field == EntryField::Model {
                 format!(
-                    "(SELECT id, make, {column} FROM firearms
-                      UNION ALL SELECT id, make, {column} FROM accessories)"
+                    "SELECT {column}, make, COUNT(*), MIN(id) FROM {table}
+                     WHERE {column} IS NOT NULL GROUP BY make, {column}"
+                )
+            } else {
+                format!(
+                    "SELECT {column}, NULL, COUNT(*), MIN(id) FROM {table}
+                     WHERE {column} IS NOT NULL GROUP BY {column}"
                 )
             }
-            EntryField::RegistrationForm | EntryField::RegisteredTo => {
-                format!("(SELECT id, make, {column} FROM firearms)")
-            }
-        };
-        // A make is NULL on an accessory that has none; its model still counts.
-        let sql = if field == EntryField::Model {
-            format!(
-                "SELECT {column}, make, COUNT(*), MIN(id) FROM {records}
-                 WHERE {column} IS NOT NULL GROUP BY make, {column}"
-            )
-        } else {
-            format!(
-                "SELECT {column}, NULL, COUNT(*), MIN(id) FROM {records}
-                 WHERE {column} IS NOT NULL GROUP BY {column}"
-            )
-        };
+        })
+        .collect()
+}
+
+/// Makes the first suggestion after a database opens as fast as the later
+/// ones (SC-004's 50ms; 004 research.md §5): reads what each field's
+/// suggestions read, once, so the connection's page cache already holds the
+/// pages (a fresh connection decrypts each page from the file on first
+/// touch, which on macOS cost 123ms for the first Make query at 10,000
+/// firearms), and builds the catalog's index, which the first cartridge or
+/// caliber suggestion would otherwise build. The results are dropped, so
+/// nothing is kept (FR-011).
+pub fn warm(conn: &Connection) -> rusqlite::Result<()> {
+    let _ = catalog_index();
+    for field in EntryField::ALL {
+        for sql in vocabulary_queries(field) {
+            conn.query_row(&format!("SELECT COUNT(*) FROM ({sql})"), [], |row| {
+                row.get::<_, i64>(0)
+            })?;
+        }
+    }
+    Ok(())
+}
+
+impl FieldVocabulary {
+    pub fn load(conn: &Connection, field: EntryField) -> rusqlite::Result<Self> {
         let mut make_ids: HashMap<String, u32> = HashMap::new();
         // A make's text → its id, so each distinct make is keyed once.
         let mut make_texts: HashMap<String, u32> = HashMap::new();
         let mut groups: HashMap<String, Group> = HashMap::new();
-        let mut stmt = conn.prepare(&sql)?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            let text: String = row.get(0)?;
-            let make: Option<String> = row.get(1)?;
-            let (count, min_id): (i64, i64) = (row.get(2)?, row.get(3)?);
-            let words = words(&text);
-            let key = words.concat();
-            if key.is_empty() {
-                continue;
-            }
-            let group = groups.entry(key).or_insert_with(|| Group {
-                words,
-                spellings: Vec::new(),
-                use_count: 0,
-                makes: Vec::new(),
-            });
-            group.use_count += count;
-            match group.spellings.iter_mut().find(|spelling| spelling.text == text) {
-                Some(spelling) => {
-                    spelling.count += count;
-                    spelling.min_id = spelling.min_id.min(min_id);
+        for sql in vocabulary_queries(field) {
+            let mut stmt = conn.prepare(&sql)?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let text: String = row.get(0)?;
+                let make: Option<String> = row.get(1)?;
+                let (count, min_id): (i64, i64) = (row.get(2)?, row.get(3)?);
+                let words = words(&text);
+                let key = words.concat();
+                if key.is_empty() {
+                    continue;
                 }
-                None => group.spellings.push(Spelling { text, count, min_id }),
-            }
-            if let Some(make) = make {
-                let id = match make_texts.get(&make) {
-                    Some(&id) => id,
-                    None => {
-                        let next = make_ids.len() as u32;
-                        let id = *make_ids.entry(words_key(&make)).or_insert(next);
-                        make_texts.insert(make, id);
-                        id
+                let group = groups.entry(key).or_insert_with(|| Group {
+                    words,
+                    spellings: Vec::new(),
+                    use_count: 0,
+                    makes: Vec::new(),
+                });
+                group.use_count += count;
+                match group.spellings.iter_mut().find(|spelling| spelling.text == text) {
+                    Some(spelling) => {
+                        spelling.count += count;
+                        spelling.min_id = spelling.min_id.min(min_id);
                     }
-                };
-                if !group.makes.contains(&id) {
-                    group.makes.push(id);
+                    None => group.spellings.push(Spelling { text, count, min_id }),
+                }
+                if let Some(make) = make {
+                    let id = match make_texts.get(&make) {
+                        Some(&id) => id,
+                        None => {
+                            let next = make_ids.len() as u32;
+                            let id = *make_ids.entry(words_key(&make)).or_insert(next);
+                            make_texts.insert(make, id);
+                            id
+                        }
+                    };
+                    if !group.makes.contains(&id) {
+                        group.makes.push(id);
+                    }
                 }
             }
         }

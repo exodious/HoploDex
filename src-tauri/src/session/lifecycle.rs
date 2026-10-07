@@ -20,6 +20,7 @@ use crate::services::backups::{self, BackupFailure, BackupJob, Due};
 use crate::services::file_swap;
 use crate::services::machine_settings::{self, MachineSettings};
 use crate::services::passphrase::Passphrase;
+use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
 use crate::session::{ImmediateClose, OpenDatabase, Session, SessionInner, pending};
@@ -78,10 +79,10 @@ pub fn open(
     Ok(())
 }
 
-/// Wraps a freshly opened connection for the session and records the open
-/// in the recent list, with what this computer should remember about the
-/// database. A backup opened directly becomes a database of its own here
-/// (research.md §9).
+/// Wraps a freshly opened connection for the session, warms what the first
+/// suggestion reads, and records the open in the recent list, with what this
+/// computer should remember about the database. A backup opened directly
+/// becomes a database of its own here (research.md §9).
 pub(crate) fn prepare(
     machine: &MachineSettings,
     conn: Connection,
@@ -91,6 +92,12 @@ pub(crate) fn prepare(
     let location: String = conn
         .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
         .map_err(CommandError::from_db)?;
+    // Before the connection goes into the session, so no command waits on
+    // it. It is part of the open: the 1s of SC-003 includes it, timed in
+    // `performance_test.rs`.
+    if let Err(err) = suggestions::warm(&conn) {
+        log::warn!("warming the suggestions failed: {err}");
+    }
     let mut open = OpenDatabase::new(conn, path)?;
     open.notes.opened_backup = opened_backup;
     machine.touch_recent(

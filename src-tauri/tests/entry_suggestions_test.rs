@@ -747,3 +747,107 @@ fn a_make_stays_while_either_a_firearm_or_an_accessory_still_holds_it() {
     accessory_ops::delete_accessory(&db.conn, accessory, true).unwrap();
     assert!(suggest(&db, EntryField::Make, "shared").is_empty());
 }
+
+// --- The warm-up at open (SC-004's first keystroke) ---------------------------
+
+/// The bytes of page cache `conn` holds (SQLite's `SQLITE_DBSTATUS_CACHE_USED`).
+fn page_cache_bytes(conn: &rusqlite::Connection) -> i32 {
+    let (mut current, mut highest) = (0, 0);
+    // SAFETY: `conn`'s handle is live for the call, and the two outputs are
+    // plain integers.
+    let status = unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            conn.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED,
+            &mut current,
+            &mut highest,
+            0,
+        )
+    };
+    assert_eq!(status, rusqlite::ffi::SQLITE_OK);
+    current
+}
+
+/// A fresh connection decrypts each page from the file on first touch,
+/// which put the first suggestion after opening over 50ms on macOS at
+/// 10,000 firearms. Opening reads what the suggestions read, so their pages
+/// are already in the connection's cache: a bare connection holds none of
+/// them. A regression for the timing, which a Linux run can't show (the
+/// release `performance_test` times it where the cost is).
+#[test]
+fn opening_a_database_warms_the_pages_the_suggestions_read() {
+    use hoplodex_lib::db;
+    use hoplodex_lib::services::machine_settings::MachineSettings;
+    use hoplodex_lib::session::lifecycle;
+    use support::{passphrase, test_machine, test_session};
+
+    let db = TestDb::new();
+    {
+        let tx = db.conn.unchecked_transaction().unwrap();
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO firearms (uid, make, model, serial_number, caliber, cartridge,
+                                       firearm_type_id, created_at, updated_at)
+                 VALUES (?1, 'Ruger', ?2, ?3, '9mm', '9x19mm Parabellum', 1,
+                         datetime('now'), datetime('now'))",
+            )
+            .unwrap();
+        for i in 0..3_000 {
+            stmt.execute(rusqlite::params![support::uid(), format!("Model {i}"), format!("S-{i}")])
+                .unwrap();
+        }
+        drop(stmt);
+        tx.commit().unwrap();
+    }
+    let path = db.path();
+    let (conn, dir) = db.into_parts();
+    drop(conn);
+
+    let bare = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
+    let bare_bytes = page_cache_bytes(&bare);
+    drop(bare);
+
+    let config = tempfile::TempDir::new().unwrap();
+    let machine = MachineSettings::load(config.path()).unwrap();
+    let (session, _events) = test_session(&config.path().join("opened-documents"));
+    // Taking over the marker the tests' own computer left: not what is under test.
+    lifecycle::open(&session, &machine, &path, &passphrase(), true).unwrap();
+    let warmed_bytes = session.read(|conn| Ok(page_cache_bytes(conn))).unwrap();
+
+    eprintln!(
+        "page cache after a bare open: {bare_bytes}, after opening the session: {warmed_bytes}"
+    );
+    assert!(
+        warmed_bytes >= bare_bytes + 128 * 1024,
+        "opening left {warmed_bytes} bytes of pages in the cache, a bare connection {bare_bytes}"
+    );
+    drop(session);
+    drop(dir);
+}
+
+/// Each field's queries read a covering index in order, with no table scan
+/// and no sort. The accessories' make and model indexes were partial on
+/// columns that are `NOT NULL`, which SQLite can't use, so the models over
+/// both tables scanned and sorted the accessories and took 51ms on Windows
+/// at 10,000 firearms and 10,000 accessories, against SC-004's 50ms.
+#[test]
+fn every_suggestion_query_reads_a_covering_index_without_sorting() {
+    use hoplodex_lib::services::suggestions::vocabulary_queries;
+
+    let db = TestDb::new();
+    for field in EntryField::ALL {
+        for sql in vocabulary_queries(field) {
+            let mut stmt = db.conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            let steps: Vec<String> =
+                stmt.query_map([], |row| row.get(3)).unwrap().map(Result::unwrap).collect();
+            assert!(
+                steps.iter().all(|step| !step.contains("TEMP B-TREE")),
+                "{field:?}: {steps:?} sorts"
+            );
+            assert!(
+                steps.iter().all(|step| step.contains("USING COVERING INDEX")),
+                "{field:?}: {steps:?} doesn't read a covering index"
+            );
+        }
+    }
+}

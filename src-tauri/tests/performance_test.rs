@@ -14,6 +14,12 @@
 //! it) and of a 10 MB text, the text's decode, and searching a document name
 //! among 30,000 documents.
 //!
+//! The suggestions' warm-up is part of opening a database: the open row of
+//! 003 below includes it, and a last row holds the open, warm-up included,
+//! to the same 1s at 10,000 firearms, 10,000 accessories and 30,000
+//! documents, with the first suggestion after it within 50ms (SC-003,
+//! SC-004).
+//!
 //! Feature 003 adds opening a database, key derivation included, to the 1s
 //! action budget (SC-003), the first progress event of a backup, a
 //! passphrase change, a restore and a move of backups to the 100ms feedback
@@ -74,8 +80,13 @@ fn one_at_a_time() -> MutexGuard<'static, ()> {
 /// whole test binary (seeding is most of a test's time) and copied for each
 /// test that needs only that.
 fn seeded_firearms() -> TestDb {
+    TestDb::copy_of(seeded_template())
+}
+
+/// The file [`seeded_firearms`] copies, closed.
+fn seeded_template() -> &'static PathBuf {
     static TEMPLATE: OnceLock<PathBuf> = OnceLock::new();
-    let template = TEMPLATE.get_or_init(|| {
+    TEMPLATE.get_or_init(|| {
         let template = TestDb::new();
         seed_10k_firearms(&template.conn);
         let (conn, dir) = template.into_parts();
@@ -99,8 +110,33 @@ fn seeded_firearms() -> TestDb {
         // static it reads.
         unsafe { atexit(remove_template) };
         dir.join(TestDb::FILE_NAME)
-    });
-    TestDb::copy_of(template)
+    })
+}
+
+/// A copy of [`seeded_template`], opened through the session as the app
+/// opens a database (`lifecycle::open`, which warms what the first
+/// suggestion reads), not on a bare connection: the first query of a fresh
+/// connection is what a user's first keystroke costs.
+struct OpenedCopy {
+    _dir: TempDir,
+    _config: TempDir,
+    session: Session,
+}
+
+impl OpenedCopy {
+    fn new() -> Self {
+        let dir = TempDir::new().unwrap();
+        let config = TempDir::new().unwrap();
+        let path = dir.path().join(TestDb::FILE_NAME);
+        std::fs::copy(seeded_template(), &path).unwrap();
+        let (session, _events) = support::test_session(&config.path().join("opened-documents"));
+        let machine = MachineSettings::load(config.path()).unwrap();
+        // The template carries the open marker of the tests' own computer,
+        // not of this settings directory's: taking it over is the one way
+        // the app opens such a file, and changes nothing the timing reads.
+        lifecycle::open(&session, &machine, &path, &passphrase(), true).unwrap();
+        Self { _dir: dir, _config: config, session }
+    }
 }
 
 fn firearm_ids(conn: &Connection) -> Vec<i64> {
@@ -455,12 +491,14 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
 /// specs/004-cartridges-action-types SC-004 (research.md §5): the
 /// suggestion list for each field, computed per keystroke at 10,000
 /// firearms with 10,000 distinct models (the worst case), within 50ms: half
-/// of the 100ms budget, the rest being IPC and rendering.
+/// of the 100ms budget, the rest being IPC and rendering. The first call is
+/// timed too, on a database opened as the app opens it: the open warms what
+/// the suggestions read.
 #[test]
 #[ignore = "release only: see DEVELOPMENT.md"]
 fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models() {
     let _alone = one_at_a_time();
-    let db = seeded_firearms();
+    let opened = OpenedCopy::new();
 
     for (field, text, make) in [
         (EntryField::Make, "sw", None),
@@ -472,7 +510,7 @@ fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models
     ] {
         let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
         let started = Instant::now();
-        let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
+        let output = opened.session.read(|conn| entry_ops::suggest_entries(conn, &input)).unwrap();
         let elapsed = started.elapsed();
         eprintln!("SC-004: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
         assert!(!output.suggestions.is_empty());
@@ -1616,4 +1654,62 @@ fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and
     assert!(firearms("big app") >= 1);
     assert!(firearms("ap") > 1_000);
     assert!(accessories("ap") > 300);
+}
+
+/// SC-003 at 007's collection size: opening takes at most a second, the
+/// suggestions' warm-up and key derivation included, and the first
+/// suggestion of every field after it meets SC-004's 50ms as the later ones
+/// do. The database is made through the session and opened again by the
+/// app's own open (`open_database`), so the warm-up runs as a user gets it.
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn opening_a_database_of_10k_plus_10k_records_and_30k_documents_is_within_a_second_and_warm() {
+    let _alone = one_at_a_time();
+    let large = LargeDatabase::new();
+    large
+        .session
+        .write(|conn| {
+            seed_10k_accessories(conn);
+            seed_30k_documents(conn);
+            Ok(())
+        })
+        .unwrap();
+    drop(large.session.take());
+
+    let started = Instant::now();
+    large.open(TEST_PASSPHRASE);
+    let elapsed = started.elapsed();
+    eprintln!(
+        "SC-003: opened {RECORD_COUNT} firearms, {ACCESSORY_COUNT} accessories and \
+         {DOCUMENT_COUNT} documents, suggestions warmed, in {elapsed:?}"
+    );
+    assert!(
+        elapsed.as_millis() < 1_000,
+        "SC-003: opening took {}ms at {RECORD_COUNT} firearms, {ACCESSORY_COUNT} accessories and \
+         {DOCUMENT_COUNT} documents; budget is 1000ms",
+        elapsed.as_millis()
+    );
+
+    for (field, text, make) in [
+        (EntryField::Make, "sw", None),
+        (EntryField::Model, "model 12", Some("Ruger")),
+        (EntryField::Cartridge, "9", None),
+        (EntryField::Caliber, ".2", None),
+        (EntryField::RegistrationForm, "", None),
+        (EntryField::RegisteredTo, "", None),
+    ] {
+        let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
+        let started = Instant::now();
+        large.session.read(|conn| entry_ops::suggest_entries(conn, &input)).unwrap();
+        let elapsed = started.elapsed();
+        eprintln!(
+            "SC-004: first suggest_entries({field:?}, {text:?}) after opening took {elapsed:?}"
+        );
+        assert!(
+            elapsed.as_millis() < 50,
+            "SC-004: suggest_entries({field:?}, {text:?}) took {}ms right after opening, over the \
+             50ms budget",
+            elapsed.as_millis()
+        );
+    }
 }

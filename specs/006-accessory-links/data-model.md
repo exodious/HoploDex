@@ -147,8 +147,9 @@ CREATE INDEX idx_accessories_kind ON accessories (accessory_kind_id);
 CREATE INDEX idx_accessories_status ON accessories (status);
 CREATE INDEX idx_accessories_insurance_policy ON accessories (insurance_policy_id);
 -- research.md §16: suggest_entries' GROUP BY over both tables.
-CREATE INDEX idx_accessories_make ON accessories (make) WHERE make IS NOT NULL;
-CREATE INDEX idx_accessories_make_model ON accessories (make, model) WHERE model IS NOT NULL;
+-- Not partial: make and model are NOT NULL, so a partial index is unusable.
+CREATE INDEX idx_accessories_make ON accessories (make);
+CREATE INDEX idx_accessories_make_model ON accessories (make, model);
 CREATE INDEX idx_accessories_caliber ON accessories (caliber) WHERE caliber IS NOT NULL;
 CREATE INDEX idx_accessories_cartridge ON accessories (cartridge) WHERE cartridge IS NOT NULL;
 ```

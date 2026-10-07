@@ -432,10 +432,15 @@ stays readable at any depth without assuming an indent per level (FR-013).
   - Make, model, caliber and cartridge reuse `EntryField` unchanged:
     `check_entry_text` on save and import, and `settle_entry`/`snap` on the
     form.
-  - `FieldVocabulary::load` reads `firearms UNION ALL accessories` for each
-    of the four fields. The model suggestions' "same make" rule reads both
-    tables. Partial indexes on `accessories (make)`, `(make, model)`,
-    `(caliber)` and `(cartridge)` keep `suggest_entries` within 004's 50 ms.
+  - `FieldVocabulary::load` reads both `firearms` and `accessories` for each
+    of the four fields, one query per table, and merges the groups. The model
+    suggestions' "same make" rule reads both tables. Indexes on
+    `accessories (make)`, `(make, model)`, `(caliber)` and `(cartridge)` keep
+    `suggest_entries` within 004's 50 ms. The caliber and cartridge indexes
+    are partial (`IS NOT NULL`); the make and make-model ones are not, because
+    make and model are `NOT NULL` (amended 2026-10-02), and SQLite then drops
+    `IS NOT NULL` from the query and can't use a partial index (the models
+    over both tables took 51 ms on Windows until then).
   - Make and model are required on an accessory, as on a firearm
     (amended 2026-10-02); the caliber is optional, so `check_entry_text`
     for an accessory treats a blank caliber as "none". The caps and
