@@ -96,6 +96,9 @@ const huge = doc(8, "Plan sheet.tif", "image/tiff", "tiff");
 const big = doc(9, "Range log.txt", "text/plain", "text");
 const documents = [receipt, scan, notes, rounds, bill];
 const ADDED = formatDate("2026-03-14");
+// ui contract §3 (amended 2026-10-07): the sentence repeats every reason `classify` refuses content.
+const REFUSED_TAIL =
+  ", or it holds macros, scripts, web page code, embedded objects or links that load outside content.";
 
 const PAGE: { width: number; height: number } = { width: 612, height: 792 };
 const infos: Record<number, PreviewInfo> = {
@@ -788,7 +791,7 @@ describe("DocumentPreview: states (contract §3)", () => {
             throw failure("DOCUMENT_CONTENT_MISMATCH", "x");
           },
         }),
-      "Bill of sale.docx can't be previewed: its content isn't a Word document.",
+      `Bill of sale.docx can't be previewed: its content isn't a Word document${REFUSED_TAIL}`,
     ],
     [
       "PREVIEW_DAMAGED",
@@ -833,7 +836,7 @@ describe("DocumentPreview: states (contract §3)", () => {
 
       await waitFor(() =>
         expect(statuses()).toContain(
-          `${name} can't be previewed: its content isn't ${phrase} document.`,
+          `${name} can't be previewed: its content isn't ${phrase} document${REFUSED_TAIL}`,
         ),
       );
     },
@@ -849,7 +852,7 @@ describe("DocumentPreview: states (contract §3)", () => {
 
     await waitFor(() =>
       expect(statuses()).toContain(
-        "Old scan.jpg can't be previewed: its content isn't a JPG document.",
+        `Old scan.jpg can't be previewed: its content isn't a JPG document${REFUSED_TAIL}`,
       ),
     );
   });
@@ -879,6 +882,27 @@ describe("DocumentPreview: states (contract §3)", () => {
 
     await waitFor(() =>
       expect(statuses().join(" ")).toContain("its content isn't a Word document"),
+    );
+    expect(
+      within(viewer()).queryByRole("button", { name: "Open in another app…" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("DOCUMENT_CONTENT_MISMATCH for a kept document with an embedded object or outside link says every reason and offers no Open in another app… (FR-017, amended 2026-10-07)", async () => {
+    installBackend({
+      open_preview: () => {
+        throw failure(
+          "DOCUMENT_CONTENT_MISMATCH",
+          "Bill of sale.docx holds an embedded object or a link to outside content.",
+        );
+      },
+    });
+    await openViewer({ start: 4 });
+
+    await waitFor(() =>
+      expect(statuses()).toContain(
+        "Bill of sale.docx can't be previewed: its content isn't a Word document, or it holds macros, scripts, web page code, embedded objects or links that load outside content.",
+      ),
     );
     expect(
       within(viewer()).queryByRole("button", { name: "Open in another app…" }),

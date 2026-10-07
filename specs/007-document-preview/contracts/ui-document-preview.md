@@ -142,7 +142,7 @@ returns to the control that opened the viewer. `close_preview` is called.
 | `PDF_PREVIEW_UNAVAILABLE`, or `preview:pdf-ended` `noViewer` | "PDFs can't be previewed on this computer. {reason}", plus "Open in another app…". The reason is the backend's sentence, for example "This computer's PDF viewer couldn't be set up safely." |
 | `preview:pdf-ended` `copyCaught` (macOS) | "This computer's PDF viewer saved a copy of {name} to disk. HoploDex deleted it and has turned PDF previews off on this computer until HoploDex is updated. You can still open PDFs in another app.", plus "Open in another app…" |
 | `preview:pdf-ended` `failed`, or `PREVIEW_FAILED` | "{name} couldn't be previewed.", plus "Open in another app…" |
-| `DOCUMENT_CONTENT_MISMATCH` | "{name} can't be previewed: its content isn't a {kind} document." No "Open in another app…" (FR-017). |
+| `DOCUMENT_CONTENT_MISMATCH` | "{name} can't be previewed: its content isn't {a/an kind} document, or it holds macros, scripts, web page code, embedded objects or links that load outside content." (amended 2026-10-07: the viewer's own sentence repeats every reason `classify` refuses content, since a real Word or RTF document with an embedded object or an outside link is refused too.) No "Open in another app…" (FR-017). |
 | `PREVIEW_DAMAGED` (TIFF) | "{name} can't be previewed: the document is damaged or incomplete.", plus "Open in another app…" |
 | `PREVIEW_PAGE_FAILED` (TIFF) | in that page's slot: "Page {n} can't be shown." The other pages are unaffected. |
 | A PDF the viewer can't show, or protected by a password | the viewer's own message or password prompt, inside the surface; "Open in another app…" stays in the footer (FR-006) |

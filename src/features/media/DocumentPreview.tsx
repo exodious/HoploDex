@@ -96,7 +96,7 @@ function problemSentence(problem: Problem, name: string, kind: string): string {
     case "PDF_COPY_CAUGHT":
       return `This computer's PDF viewer saved a copy of ${name} to disk. HoploDex deleted it and has turned PDF previews off on this computer until HoploDex is updated. You can still open PDFs in another app.`;
     case "DOCUMENT_CONTENT_MISMATCH":
-      return `${name} can't be previewed: its content isn't ${withArticle(kindInSentence(kind))} document.`;
+      return `${name} can't be previewed: its content isn't ${withArticle(kindInSentence(kind))} document, or it holds macros, scripts, web page code, embedded objects or links that load outside content.`;
     case "PREVIEW_DAMAGED":
       return `${name} can't be previewed: the document is damaged or incomplete.`;
     default:
