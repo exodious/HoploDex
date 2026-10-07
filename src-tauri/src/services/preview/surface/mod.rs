@@ -278,9 +278,13 @@ impl<R: Runtime> Surface<R> {
         )?;
         // A surface the OS couldn't set up (a filter that wouldn't install)
         // is closed, never left in the window.
+        // macOS takes `hud_on`, Windows' request filter follows the surface's one
+        // document.
         #[cfg(target_os = "macos")]
         let attached = os::attach(window, &webview, &config.hooks, config.hud_on);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        let attached = os::attach(window, &webview, &config.hooks, &allowed);
+        #[cfg(not(any(target_os = "macos", windows)))]
         let attached = os::attach(window, &webview, &config.hooks);
         if let Err(e) = attached {
             on_close(&webview);

@@ -77,13 +77,14 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-#[cfg(target_os = "macos")]
-use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::preview::{
     PdfEndReason,
-    availability::PdfAvailability,
     surface::{Hooks, LABEL, Rect, Surface, SurfaceConfig},
     tripwire,
+};
+#[cfg(target_os = "macos")]
+use hoplodex_lib::services::{
+    machine_settings::MachineSettings, preview::availability::PdfAvailability,
 };
 use serde_json::Value;
 use tauri::{
@@ -393,8 +394,11 @@ fn judge_reach(report: &Value) -> Vec<String> {
     let frame = report["frame"].as_str().unwrap_or("?");
     let text = |name: &str| report[name].as_str().unwrap_or("");
     let mut failures = Vec::new();
+    // Windows' top frame is refused by answering 403, which a no-cors fetch
+    // reports as a response: what reached the proxy is `judge_proxied`'s.
+    let refused_by_answer = cfg!(windows) && frame == "top";
     for name in ["netExt", "netDns", "netLoop", "netLocalhost"] {
-        if text(name).starts_with("reached") {
+        if !refused_by_answer && text(name).starts_with("reached") {
             failures.push(format!("the {frame} frame's fetch ({name}) reached its target"));
         }
     }
@@ -454,6 +458,8 @@ struct Shared {
     served: Mutex<Vec<(String, Instant)>>,
     /// Page-load events as `(finished, url, when)`.
     loads: Mutex<Vec<(bool, Url, Instant)>>,
+    /// Windows: what reached the surface's proxy, as `(stage, request line)`.
+    proxied: Mutex<Vec<(&'static str, String)>>,
 }
 
 impl Shared {
@@ -540,7 +546,11 @@ fn main_page() -> String {
 /// the surface's call, were it answered, is a failure.
 #[tauri::command]
 fn get_chooser_state(webview: tauri::Webview, shared: tauri::State<'_, Arc<Shared>>) -> String {
-    eprintln!("CHECK command answered for web view {}", webview.label());
+    eprintln!(
+        "CHECK command answered for web view {} (in window {})",
+        webview.label(),
+        webview.window().label()
+    );
     shared.answered.lock().unwrap().push(webview.label().to_string());
     "answered".into()
 }
@@ -955,6 +965,9 @@ struct Run {
     token: String,
     tcp: u16,
     udp: u16,
+    /// Where the surface's network goes: the app's tripwire, and on Windows
+    /// the reading proxy.
+    proxy: std::net::SocketAddr,
     started: SystemTime,
 }
 
@@ -976,10 +989,9 @@ impl Run {
 
     fn open_surface(&self, url: &Url, hooks: Arc<Hooks>) -> Surface<Wry> {
         let shared = self.shared.clone();
-        let wire = tripwire::shared().expect("the tripwire binds");
         let config = SurfaceConfig {
             url: url.clone(),
-            proxy_url: format!("http://{}", wire.addr()).parse().unwrap(),
+            proxy_url: format!("http://{}", self.proxy).parse().unwrap(),
             data_directory: self.options.scratch.join("cache").join("preview-webview2"),
             bounds: BOUNDS,
             secret: "0".repeat(32),
@@ -1042,6 +1054,55 @@ fn install_frame_probe(surface: &Surface<Wry>, script: String) -> bool {
         let _ = done.send(ok);
     });
     sent.is_ok() && installed.recv_timeout(Duration::from_secs(10)).unwrap_or(false)
+}
+
+/// Windows: Edge's viewer draws into a plugin no script reaches, so the first
+/// paint of the 10 MB PDF (two pages of random pixels) is seen on the screen:
+/// a run of pixels in the surface's page area that are all different.
+#[cfg(windows)]
+mod pixels {
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, GetPixel, ReleaseDC};
+
+    /// Whether the 24 pixels from `(x, y)` rightwards hold at least 12 colours
+    /// (a drawn page of noise; the viewer's grey and the toolbar hold 1 or 2).
+    pub fn noisy(x: i32, y: i32) -> bool {
+        // SAFETY: the screen's device context, released before returning.
+        unsafe {
+            let dc = GetDC(std::ptr::null_mut());
+            let mut colours = std::collections::HashSet::new();
+            for step in 0..24 {
+                colours.insert(GetPixel(dc, x + step, y));
+            }
+            ReleaseDC(std::ptr::null_mut(), dc);
+            colours.len() >= 12
+        }
+    }
+
+    /// Starts watching the screen at `(x, y)`; the instant it first looks
+    /// drawn is put in the returned cell (nothing in 30 s: `None`). `None` is
+    /// returned at once if it looks drawn already, since nothing could then
+    /// be told apart.
+    pub fn watch(
+        x: i32,
+        y: i32,
+    ) -> Option<std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>>> {
+        if noisy(x, y) {
+            return None;
+        }
+        let cell = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let found = cell.clone();
+        std::thread::spawn(move || {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while std::time::Instant::now() < until {
+                if noisy(x, y) {
+                    *found.lock().unwrap() = Some(std::time::Instant::now());
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+        Some(cell)
+    }
 }
 
 /// Windows: Edge's viewer lives in a frame no page script reaches, so the
@@ -1153,6 +1214,124 @@ mod cdp {
     }
 }
 
+/// How many connections reached the surface's proxy: the app's tripwire's
+/// count, or on Windows the reading proxy's.
+fn proxied_count(shared: &Shared, wire: &tripwire::Tripwire) -> usize {
+    if cfg!(windows) { shared.proxied.lock().unwrap().len() } else { wire.connections() }
+}
+
+/// Windows: what the run is doing, for the tripwire sampler's lines.
+static STAGE: Mutex<&'static str> = Mutex::new("start");
+
+fn stage(name: &'static str) {
+    *STAGE.lock().unwrap_or_else(|e| e.into_inner()) = name;
+}
+
+/// Windows: the surface's proxy, in place of the app's tripwire (which only
+/// counts): it accepts, reads the request line (a `CONNECT host:port` or a
+/// `GET http://host/...`) and closes the connection unanswered, as the
+/// tripwire does, and notes what it read with the run's stage and the seconds
+/// since the run began, so what reached it can be told apart: WebView2's own
+/// hosts (research.md §6), the probe's attempts from the frames the content
+/// filter can't see (Edge's viewer, WebSockets), or anything else.
+#[cfg(windows)]
+fn start_reading_proxy(shared: &Arc<Shared>) -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shared, began) = (shared.clone(), Instant::now());
+    thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let shared = shared.clone();
+            thread::spawn(move || {
+                let mut stream = stream;
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+                let mut buf = [0u8; 512];
+                let read = stream.read(&mut buf).unwrap_or(0);
+                let line = String::from_utf8_lossy(&buf[..read])
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(120)
+                    .collect::<String>();
+                let at = began.elapsed().as_secs_f32();
+                let stage = *STAGE.lock().unwrap_or_else(|e| e.into_inner());
+                eprintln!("CHECK proxy saw at {at:.1}s during {stage}: {line:?}");
+                shared.proxied.lock().unwrap().push((stage, line));
+            });
+        }
+    });
+    addr
+}
+
+/// Windows: judges what reached the surface's proxy (the app's tripwire does
+/// the same job elsewhere, where any hit is a failure). On Windows the proxy is
+/// the layer that covers Edge's viewer frames and WebSockets, which the
+/// content filter can't see (research.md §6), so the probe's attempts from
+/// those frames *must* arrive here, and are expected:
+/// - a request line that names none of the probe's targets and is not a
+///   WebView2 host of its own (research.md §6: `config.edge.skype.com`,
+///   `edge.microsoft.com`) fails: it is the document's doing (its link, remote
+///   image, font, form, JavaScript) or something unexplained;
+/// - in the stage where only the top frame's probe runs, a request (not a
+///   WebSocket's CONNECT) got past the content filter and fails;
+/// - the DevTools probe's attempts must have arrived, or the proxy layer (or
+///   the probe) didn't work;
+/// - a connection that sent nothing is Chromium's idle preconnect to its
+///   proxy, which names no destination; they are counted.
+#[cfg(windows)]
+fn judge_proxied(seen: &[(&'static str, String)], victim_port: u16) -> Vec<String> {
+    const EDGE_OWN: &[&str] = &[".skype.com", ".microsoft.com", ".msedge.net", ".windows.net"];
+    let targets = [
+        "example.com/frame-fetch".to_string(),
+        "dns-leak-fetch.invalid".to_string(),
+        "dns-leak-ws.invalid".to_string(),
+        "dns-leak-img.invalid/x.png".to_string(),
+        "ipc.localhost/get_chooser_state".to_string(),
+        format!("127.0.0.1:{victim_port}"),
+        format!("localhost:{victim_port}"),
+    ];
+    let mut failures = Vec::new();
+    let (mut empty, mut own, mut probe, mut probe_by_devtools) = (0, 0, 0, 0);
+    for (stage, line) in seen {
+        let mut words = line.split_whitespace();
+        let (method, target) = (words.next().unwrap_or(""), words.next().unwrap_or(""));
+        let host = target
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(['/', ':'])
+            .next()
+            .unwrap_or("");
+        if line.is_empty() {
+            empty += 1;
+        } else if EDGE_OWN.iter().any(|suffix| host.ends_with(suffix)) {
+            own += 1;
+        } else if targets.iter().any(|t| target.contains(t.as_str())) {
+            if *stage == "the top frame's probe" && method != "CONNECT" {
+                failures.push(format!("the content filter let the top frame's {line:?} through"));
+            } else {
+                probe += 1;
+                probe_by_devtools += usize::from(*stage == "the probes");
+            }
+        } else {
+            failures.push(format!("{line:?} reached the proxy during {stage}"));
+        }
+    }
+    eprintln!(
+        "CHECK proxy: {} connection(s): {empty} with no request, {own} WebView2's own, \
+         {probe} the probe's ({probe_by_devtools} of them while the DevTools probe ran)",
+        seen.len()
+    );
+    if probe_by_devtools == 0 {
+        failures.push(
+            "the DevTools probe's attempts never reached the proxy: Edge's viewer frames \
+             were not covered by it, or the probe did not run"
+                .into(),
+        );
+    }
+    failures
+}
+
 /// The whole check, on a thread of its own (the main thread runs the window).
 fn run_check(run: Run) {
     let Run { app, shared, options, .. } = &run;
@@ -1191,6 +1370,7 @@ fn run_check(run: Run) {
     // The tripwire may see WebView2's own traffic on Windows (research.md
     // §6): what it sees while nothing is shown is the baseline.
 
+    stage("the first seconds");
     thread::sleep(Duration::from_secs(2));
     let hooks = counting_hooks(shared, app);
     // Opened on a document the handler doesn't have, so the probe can be put
@@ -1201,7 +1381,7 @@ fn run_check(run: Run) {
         run.fail(1, "the frame probe could not be installed in the surface");
     }
     thread::sleep(Duration::from_secs(3));
-    let tripwire_baseline = wire.connections();
+    let tripwire_baseline = proxied_count(shared, wire);
     eprintln!("CHECK tripwire baseline {tripwire_baseline}");
 
     // The window's place on the screen, for real input.
@@ -1226,12 +1406,13 @@ fn run_check(run: Run) {
             run.fail(4, "the HUD-on variant did not pass");
         }
         eprintln!("CHECK hud-on ok");
-        app.exit(0);
+        exit_with(app, 0);
         return;
     }
     #[cfg(not(target_os = "macos"))]
     let _ = &launched;
 
+    stage("the hostile PDF");
     // 1. The hostile PDF.
     let shown = Instant::now();
     let Some(load) = run.show(&surface, &hostile, options.timeout) else {
@@ -1244,9 +1425,16 @@ fn run_check(run: Run) {
         // (a PDF document shown by WebKit or Edge's viewer may run none: said
         // below), and on Windows in Edge's frames through the DevTools protocol.
         thread::sleep(Duration::from_secs(2));
+        stage("the top frame's probe");
         let _ = surface.webview().eval(run.probe_script());
         #[cfg(windows)]
         {
+            // Alone first: whatever of the top frame's reaches the proxy as a
+            // request (not a WebSocket's CONNECT) got past the content
+            // filter (`judge_proxied`). The probe waits 3 s, then tries each
+            // for up to 4 s, then gathers WebRTC candidates for 3 s.
+            thread::sleep(Duration::from_secs(14));
+            stage("the probes");
             let (reach, shared_) = (
                 REACH_PROBE
                     .replace("__IPC__", "http://ipc.localhost/")
@@ -1260,7 +1448,7 @@ fn run_check(run: Run) {
         }
     }
     // The first page drawn: Linux's viewer says so; elsewhere the load event
-    // stands for it.
+    // stands for it (Windows' large PDF is seen on the screen below).
     let first_paint = |since: Instant, loaded: Option<Duration>| -> (Duration, &'static str) {
         if cfg!(target_os = "linux") {
             let painted =
@@ -1323,6 +1511,7 @@ fn run_check(run: Run) {
         )),
     }
 
+    stage("real input");
     // Real input.
     match &input {
         None => eprintln!("CHECK note: no --input command: the real input steps were skipped"),
@@ -1330,6 +1519,7 @@ fn run_check(run: Run) {
     }
     thread::sleep(Duration::from_secs(2));
 
+    stage("the damaged PDFs");
     // 2. The truncated and bit-flipped PDFs: the viewer may fail on them.
     for (name, url) in [("truncated", &truncated), ("bit-flipped", &flipped)] {
         let ticks = shared.main_ticks.load(Ordering::SeqCst);
@@ -1342,7 +1532,24 @@ fn run_check(run: Run) {
     }
     judge_new(&mut failures);
 
+    stage("the 10 MB PDF");
     // 3. The 10 MB PDF.
+    #[cfg(windows)]
+    let drawn = {
+        // Watched from before the document is asked for.
+        let window = app.get_window("main").unwrap();
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let inner = window.inner_position().unwrap();
+        let x = f64::from(inner.x) + (BOUNDS.x + 300.0) * scale;
+        let y = f64::from(inner.y) + (BOUNDS.y + 300.0) * scale;
+        let drawn = pixels::watch(x as i32, y as i32);
+        if drawn.is_none() {
+            eprintln!(
+                "CHECK the surface looks drawn before the 10 MB PDF is asked for: first paint falls back to the load event"
+            );
+        }
+        drawn
+    };
     let shown = Instant::now();
     let load = run.show(&surface, &large, options.timeout);
     let served = shared
@@ -1353,6 +1560,15 @@ fn run_check(run: Run) {
         .find(|(p, _)| p.ends_with("/large.pdf"))
         .map(|(_, at)| at.duration_since(shown));
     let (paint, how) = first_paint(shown, load);
+    // Windows: the page seen on the screen, not the load event.
+    #[cfg(windows)]
+    let (paint, how) = match drawn {
+        Some(cell) if wait_until(Duration::from_secs(30), || cell.lock().unwrap().is_some()) => {
+            let at = cell.lock().unwrap().unwrap();
+            (at.duration_since(shown), "page 1 seen on the screen")
+        }
+        _ => (paint, how),
+    };
     let verdict = if paint <= FIRST_PAINT_BUDGET { "within" } else { "OVER" };
     eprintln!(
         "CHECK first paint of the 10 MB PDF: {paint:?} ({how}); asked for -> served {served:?}, \
@@ -1372,6 +1588,7 @@ fn run_check(run: Run) {
     eprintln!("CHECK main page ticks={}", shared.main_ticks.load(Ordering::SeqCst));
     thread::sleep(Duration::from_secs(3));
 
+    stage("settling");
     // What nothing may have seen.
     let tcp = shared.victim_tcp.load(Ordering::SeqCst);
     let udp = shared.victim_udp.load(Ordering::SeqCst);
@@ -1379,11 +1596,16 @@ fn run_check(run: Run) {
         failures
             .push(format!("the local test service saw {tcp} connection(s) and {udp} packet(s)"));
     }
-    let hits = wire.connections() - tripwire_baseline.min(wire.connections());
-    eprintln!("CHECK tripwire hits={} (baseline {tripwire_baseline})", wire.connections());
+    let hits = proxied_count(shared, wire) - tripwire_baseline.min(proxied_count(shared, wire));
+    eprintln!("CHECK tripwire hits={} (baseline {tripwire_baseline})", proxied_count(shared, wire));
+    #[cfg(not(windows))]
     if hits > 0 {
         failures.push(format!("the tripwire saw {hits} connection(s) beyond its baseline"));
     }
+    #[cfg(windows)]
+    failures.extend(judge_proxied(&shared.proxied.lock().unwrap(), run.tcp));
+    #[cfg(windows)]
+    let _ = hits;
     if let Some(log) = &options.dns_log {
         let names = std::fs::read_to_string(log).unwrap_or_default();
         let mut names: Vec<&str> = names.lines().collect();
@@ -1441,7 +1663,7 @@ fn run_check(run: Run) {
     eprintln!("CHECK finished after {:?}", started.elapsed());
     if failures.is_empty() {
         eprintln!("CHECK check ok");
-        app.exit(0);
+        exit_with(app, 0);
     } else {
         for failure in &failures {
             eprintln!("CHECK FAIL {failure}");
@@ -1451,10 +1673,10 @@ fn run_check(run: Run) {
     }
 }
 
-/// Exits with `code`. macOS's `App::exit` ends the process with 0 whatever the
-/// code, so a failure leaves it explicitly.
+/// Exits with `code`. macOS's and Windows' `App::exit` end the process with 0
+/// whatever the code, so a failure leaves it explicitly.
 fn exit_with(app: &AppHandle<Wry>, code: i32) {
-    if code != 0 && cfg!(target_os = "macos") {
+    if code != 0 && cfg!(any(target_os = "macos", windows)) {
         std::process::exit(code);
     }
     app.exit(code);
@@ -1791,7 +2013,7 @@ fn run_shows(run: Run) {
         Ok(b) => eprintln!("CHECK surface bounds {b:?}"),
         Err(e) => eprintln!("CHECK surface bounds unavailable: {e}"),
     }
-    eprintln!("CHECK tripwire hits={}", wire.connections());
+    eprintln!("CHECK tripwire hits={}", proxied_count(shared, wire));
     // The main page pings once a second: it must still be running (Linux
     // moves its web view to attach the surface).
     eprintln!("CHECK main page ticks={}", shared.main_ticks.load(Ordering::SeqCst));
@@ -1802,7 +2024,7 @@ fn run_shows(run: Run) {
         eprintln!("CHECK screenshot FAILED ({})", options.shot.display());
     }
     eprintln!("CHECK shows ok");
-    app.exit(0);
+    exit_with(app, 0);
 }
 
 fn main() {
@@ -1870,8 +2092,13 @@ fn main() {
     let (tcp, udp) = start_victim(&shared);
     let token = random_hex(16);
     let started = SystemTime::now();
-    let wire = tripwire::shared().expect("the tripwire binds");
-    eprintln!("CHECK mode={mode} proxy={} test service tcp={tcp} udp={udp}", wire.addr());
+    // Windows: a proxy that reads what reaches it (`start_reading_proxy`), in
+    // place of the app's tripwire, which only counts.
+    #[cfg(windows)]
+    let proxy = start_reading_proxy(&shared);
+    #[cfg(not(windows))]
+    let proxy = tripwire::shared().expect("the tripwire binds").addr();
+    eprintln!("CHECK mode={mode} proxy={proxy} test service tcp={tcp} udp={udp}");
 
     let mut ctx = tauri::generate_context!();
     ctx.config_mut().app.windows.clear();
@@ -1915,6 +2142,7 @@ fn main() {
                 token: token.clone(),
                 tcp,
                 udp,
+                proxy,
                 started,
             };
             thread::spawn(move || {

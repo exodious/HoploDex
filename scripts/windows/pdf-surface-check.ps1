@@ -17,7 +17,9 @@
 # the example's code (0 passed, 1 no window, 2 no load, 3 usage, 4 a check
 # failed).
 #
-# Untested: written before surface\windows.rs (T066) existed.
+# Here the surface's proxy is a listener the check reads, in place of the app's
+# tripwire (which only counts): `judge_proxied` in the example says what must and
+# may reach it.
 param([string]$Mode = 'check', [Parameter(ValueFromRemainingArguments)][string[]]$Rest = @())
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path "$PSScriptRoot\..\..").Path
@@ -49,8 +51,12 @@ if ($Mode -eq 'check') {
         '--skip', "$Root\src-tauri\target", '--skip', "$Root\node_modules", '--skip', $Out)
 }
 $exe = "$Root\src-tauri\target\debug\examples\pdf_surface_check.exe"
-$p = Start-Process -FilePath $exe -Wait -PassThru -NoNewWindow -RedirectStandardError "$Out\$Mode-windows.stderr.txt" `
+$p = Start-Process -FilePath $exe -PassThru -NoNewWindow -RedirectStandardError "$Out\$Mode-windows.stderr.txt" `
     -ArgumentList (@($Mode, '--scratch', "$S\scratch", '--screenshot', "$Out\$Mode-windows.png") + $flags + $Rest)
+# Windows PowerShell 5.1 reads a null ExitCode unless the process's handle was
+# taken while it ran.
+$null = $p.Handle
+$p.WaitForExit()
 $code = $p.ExitCode
 Get-Content "$Out\$Mode-windows.stderr.txt" | Set-Content $Log
 Remove-Item "$Out\$Mode-windows.stderr.txt"

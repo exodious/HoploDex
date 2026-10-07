@@ -17,7 +17,7 @@ use tauri::{Manager, Runtime, Url, Webview, Window, webview::WebviewBuilder};
 
 use std::{
     path::Path,
-    sync::{Arc, Weak, mpsc},
+    sync::{Arc, Mutex, Weak, mpsc},
     thread,
     time::Duration,
 };
@@ -73,13 +73,22 @@ fn browser_args(proxy_url: &Url) -> String {
     )
 }
 
-/// What the surface may request: its own scheme (`hdpreview:` is
-/// `http://hdpreview.localhost/` on Windows) and the URLs that name nothing
-/// outside the page. Everything else is answered with a 403 (research.md §6).
-/// The filter sees only the top frame.
-fn request_allowed(uri: &str) -> bool {
-    uri.starts_with("http://hdpreview.localhost/")
-        || ["blob:", "data:", "about:"].iter().any(|scheme| uri.starts_with(scheme))
+/// What the surface may request: its own document (`document`, the one URL
+/// the surface may show, which `surface/mod.rs` keeps current: the same
+/// address, whatever fragment) and the URLs that name nothing outside the page
+/// (`blob:`, `data:`, `about:`). Everything else is answered with a 403
+/// (research.md §6). The filter sees only the top frame, whose one request
+/// besides the document is for the viewer it embeds: Edge's viewer and its
+/// frames are not seen by it (the proxy is the layer there).
+fn request_allowed(uri: &str, document: &Url) -> bool {
+    if ["blob:", "data:", "about:"].iter().any(|scheme| uri.starts_with(scheme)) {
+        return true;
+    }
+    let Ok(mut requested) = Url::parse(uri) else { return false };
+    let mut document = document.clone();
+    requested.set_fragment(None);
+    document.set_fragment(None);
+    requested == document
 }
 
 /// A user data folder of its own, so the surface has a browser process of its
@@ -114,6 +123,7 @@ fn missing(name: &'static str) -> impl FnOnce(::windows::core::Error) -> String 
 fn configure(
     platform: &tauri::webview::PlatformWebview,
     hooks: &Arc<Hooks>,
+    document: &Arc<Mutex<Url>>,
 ) -> Result<(), String> {
     let err = |e: ::windows::core::Error| e.to_string();
     // SAFETY: COM calls on the web view's own objects, made on the thread
@@ -160,12 +170,14 @@ fn configure(
                 )
                 .map_err(err)?,
         }
+        let document = Arc::clone(document);
         let mut token = 0i64;
         webview
             .add_WebResourceRequested(
                 &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
                     let Some(args) = args else { return Ok(()) };
-                    if request_allowed(&text(|p| args.Request()?.Uri(p))) {
+                    let current = document.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    if request_allowed(&text(|p| args.Request()?.Uri(p)), &current) {
                         return Ok(());
                     }
                     let refusal = environment.CreateWebResourceResponse(
@@ -287,8 +299,7 @@ fn watch_input<R: Runtime>(webview: Webview<R>, hooks: Weak<Hooks>) {
             if webview.window().get_webview(super::LABEL).is_none() {
                 return;
             }
-            if hoplodex_is_foreground() && input_age_ms().is_some_and(|age| age < RECENT_INPUT_MS)
-            {
+            if hoplodex_is_foreground() && input_age_ms().is_some_and(|age| age < RECENT_INPUT_MS) {
                 hooks.activity();
             }
         }
@@ -299,17 +310,20 @@ fn watch_input<R: Runtime>(webview: Webview<R>, hooks: Weak<Hooks>) {
 }
 
 /// Sets the web view up (see the module's comment), refusing the surface if
-/// the runtime can't. Call it from a thread other than the main one: it
+/// the runtime can't. `document` is the one URL the surface may show, which
+/// `surface/mod.rs` keeps current and the request filter follows. Call it from a thread other than the main one: it
 /// waits for the main thread.
 pub(super) fn attach<R: Runtime>(
     _window: &Window<R>,
     webview: &Webview<R>,
     hooks: &Arc<Hooks>,
+    document: &Arc<Mutex<Url>>,
 ) -> tauri::Result<()> {
     let (done, result) = mpsc::channel::<Result<(), String>>();
     let for_handlers = Arc::clone(hooks);
+    let document = Arc::clone(document);
     webview.with_webview(move |platform| {
-        let _ = done.send(configure(&platform, &for_handlers));
+        let _ = done.send(configure(&platform, &for_handlers, &document));
     })?;
     match result.recv_timeout(ATTACH_TIMEOUT) {
         Ok(Ok(())) => {}
@@ -348,13 +362,23 @@ mod tests {
     }
 
     #[test]
-    fn only_the_surfaces_own_scheme_and_page_local_urls_may_be_requested() {
-        assert!(request_allowed("http://hdpreview.localhost/abc/document.pdf"));
-        assert!(request_allowed("blob:http://hdpreview.localhost/1234"));
-        assert!(request_allowed("about:blank"));
-        assert!(!request_allowed("https://example.com/"));
-        assert!(!request_allowed("http://hdpreview.localhost.evil.test/x"));
-        assert!(!request_allowed("http://127.0.0.1:4242/"));
-        assert!(!request_allowed("chrome-extension://abc/index.html"));
+    fn only_the_surfaces_current_document_and_page_local_urls_may_be_requested() {
+        let document: Url = "http://hdpreview.localhost/abc/document.pdf".parse().unwrap();
+        assert!(request_allowed("http://hdpreview.localhost/abc/document.pdf", &document));
+        assert!(request_allowed("http://hdpreview.localhost/abc/document.pdf#page=2", &document));
+        assert!(request_allowed("blob:http://hdpreview.localhost/1234", &document));
+        assert!(request_allowed("about:blank", &document));
+        // Another document of the origin, its other paths and everything else.
+        assert!(!request_allowed("http://hdpreview.localhost/abc/other.pdf", &document));
+        assert!(!request_allowed("http://hdpreview.localhost/__report?k=x", &document));
+        assert!(!request_allowed("http://hdpreview.localhost/abc/document.pdf?x=1", &document));
+        assert!(!request_allowed("https://example.com/", &document));
+        assert!(!request_allowed(
+            "http://hdpreview.localhost.evil.test/abc/document.pdf",
+            &document
+        ));
+        assert!(!request_allowed("http://127.0.0.1:4242/", &document));
+        assert!(!request_allowed("chrome-extension://abc/index.html", &document));
+        assert!(!request_allowed("not a url", &document));
     }
 }
