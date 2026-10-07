@@ -7,12 +7,21 @@
 //! Feature 006 adds every row of research.md §22 at 10,000 firearms and
 //! 10,000 accessories with 5,000 mounts (FR-026, SC-007).
 //!
+//! Feature 007 adds the rows of research.md §22 for the document preview
+//! (SC-001, SC-007), each on a database of 10,000 firearms and 10,000
+//! accessories: `open_preview` of a 10 MB TIFF (with the real helper), of a
+//! 10 MB PDF (to the recording surface and the `hdpreview` handler serving
+//! it) and of a 10 MB text, the text's decode, and searching a document name
+//! among 30,000 documents.
+//!
 //! Feature 003 adds opening a database, key derivation included, to the 1s
 //! action budget (SC-003), the first progress event of a backup, a
 //! passphrase change, a restore and a move of backups to the 100ms feedback
 //! budget (SC-005), and the take-over check every save makes (research.md
 //! §6).
 
+#[path = "support/preview_support.rs"]
+mod preview_support;
 mod support;
 
 use std::path::PathBuf;
@@ -41,8 +50,11 @@ use hoplodex_lib::services::entry_text::EntryField;
 use hoplodex_lib::services::insurance_status::InsuranceWarning;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::preview::protocol_handler;
+use hoplodex_lib::services::preview::text as preview_text;
 use hoplodex_lib::services::valuation::get_value_summary;
 use hoplodex_lib::session::{Session, lifecycle};
+use preview_support::Fixture;
 use rusqlite::{Connection, params};
 use serde_json::json;
 use support::{TEST_PASSPHRASE, TestDb, TestEvents, firearm, passphrase, policy};
@@ -1225,4 +1237,383 @@ fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_record
         });
         assert!(!output.suggestions.is_empty());
     }
+}
+
+// --- Feature 007: the document preview ------------------------------------------
+
+const DOCUMENT_COUNT: usize = 30_000;
+const TEN_MB: usize = 10 * 1024 * 1024;
+/// SC-001's budget for showing a document.
+const PREVIEW_BUDGET_MS: u128 = 1_000;
+
+/// An open session over a database of 10,000 firearms and 10,000 accessories
+/// (SC-001's collection size), with the recording surface and the real
+/// helper of the preview tests. Seeded through the session, as it is the
+/// preview's own.
+fn document_scale() -> Fixture {
+    let mut world = Fixture::new();
+    // The fixture's own firearm gives way to the seeded ones (the seed holds
+    // the count at exactly 10,000), and documents attach to the first.
+    let fixture_firearm = world.firearm;
+    world.firearm = world
+        .session
+        .write(|conn| {
+            conn.execute("DELETE FROM firearms WHERE id = ?1", [fixture_firearm]).unwrap();
+            let firearms = seed_10k_firearms(conn);
+            seed_10k_accessories(conn);
+            Ok(firearms[0])
+        })
+        .unwrap();
+    world
+}
+
+/// 30,000 small documents, two on a firearm for every one on an accessory,
+/// with names like a collection's ("2021 Appraisal 4711.pdf"), and one
+/// findable name on each side. One KiB each: the table's weight in rows and
+/// in `document_names_fts` is what a name search reads, not the bytes.
+fn seed_30k_documents(conn: &Connection) {
+    let kinds = [
+        "Receipt",
+        "Appraisal",
+        "Insurance rider",
+        "Transfer form 4473",
+        "Manual",
+        "Warranty card",
+        "Photo log",
+        "Registration",
+    ];
+    let firearms: Vec<i64> = conn
+        .prepare("SELECT id FROM firearms ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let accessories: Vec<i64> = conn
+        .prepare("SELECT id FROM accessories ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let bytes = vec![b'%'; 1024];
+    let tx = conn.unchecked_transaction().unwrap();
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO document_attachments
+                    (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
+                 VALUES (?1, ?2, ?3, ?4, 'application/pdf', datetime('now'))",
+            )
+            .unwrap();
+        for i in 0..DOCUMENT_COUNT {
+            let on_accessory = i % 3 == 0;
+            let owner = if on_accessory {
+                accessories[(i / 3) % accessories.len()]
+            } else {
+                firearms[i % firearms.len()]
+            };
+            let name = match i {
+                12_346 => "zebraquartz bill of sale.pdf".to_string(),
+                23_457 => "quixoticmarmot.pdf".to_string(),
+                _ => format!("{} {} {i}.pdf", 2000 + i % 25, kinds[i % kinds.len()]),
+            };
+            stmt.execute(params![
+                (!on_accessory).then_some(owner),
+                on_accessory.then_some(owner),
+                bytes,
+                name
+            ])
+            .unwrap();
+        }
+    }
+    tx.commit().unwrap();
+    let held: i64 =
+        conn.query_row("SELECT count(*) FROM document_attachments", [], |row| row.get(0)).unwrap();
+    assert_eq!(held, DOCUMENT_COUNT as i64);
+}
+
+/// Runs `run` and prints its time for the pull request's performance note,
+/// like [`within`], but gives the time back so that a row made of several
+/// steps is held to its budget as a whole. `SC-001`'s budgets are the
+/// release build's, with `within`'s three times for an unoptimised one.
+fn timed<T>(what: &str, run: impl FnOnce() -> T) -> (T, Duration) {
+    let started = Instant::now();
+    let result = run();
+    let elapsed = started.elapsed();
+    eprintln!("SC-001: {what} took {elapsed:?} (budget {PREVIEW_BUDGET_MS}ms)");
+    (result, elapsed)
+}
+
+fn assert_within_preview_budget(what: &str, elapsed: Duration) {
+    let budget_ms = if cfg!(debug_assertions) { PREVIEW_BUDGET_MS * 3 } else { PREVIEW_BUDGET_MS };
+    assert!(
+        elapsed.as_millis() < budget_ms,
+        "{what} took {}ms at {RECORD_COUNT} firearms and {ACCESSORY_COUNT} accessories; budget \
+         is {budget_ms}ms",
+        elapsed.as_millis()
+    );
+}
+
+/// A one-page LZW-compressed 8-bit grayscale TIFF at 300 DPI of at least
+/// `min_bytes`: letter size (2550 × 3300) of noise, which LZW hardly shrinks,
+/// made taller only if it comes out smaller than asked (research.md §22's
+/// "decode page 1 (LZW or G4, 300 DPI letter)").
+fn lzw_letter_tiff(min_bytes: usize) -> Vec<u8> {
+    use tiff::encoder::colortype::Gray8;
+    use tiff::encoder::{Compression, Rational, TiffEncoder};
+    use tiff::tags::ResolutionUnit;
+
+    let width = 2550u32;
+    let mut height = 3300u32;
+    loop {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let pixels: Vec<u8> = (0..width as usize * height as usize)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 32) as u8
+            })
+            .collect();
+        let mut out = std::io::Cursor::new(Vec::new());
+        {
+            let mut encoder =
+                TiffEncoder::new(&mut out).unwrap().with_compression(Compression::Lzw);
+            let mut image = encoder.new_image::<Gray8>(width, height).unwrap();
+            image.resolution(ResolutionUnit::Inch, Rational { n: 300, d: 1 });
+            image.write_data(&pixels).unwrap();
+        }
+        let bytes = out.into_inner();
+        if bytes.len() >= min_bytes {
+            return bytes;
+        }
+        height = (height as u64 * min_bytes as u64 * 21 / 20 / bytes.len() as u64) as u32;
+    }
+}
+
+/// A valid one-page PDF of at least `min_bytes`: its page's content stream
+/// carries comment lines (the size of a scan embedded in one).
+fn large_pdf(min_bytes: usize) -> Vec<u8> {
+    let mut content = b"BT /F1 12 Tf 72 700 Td (A 10 MB appraisal) Tj ET\n".to_vec();
+    let line = b"% padding padding padding padding padding padding padding padding\n";
+    while content.len() < min_bytes {
+        content.extend_from_slice(line);
+    }
+    let mut objects: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R \
+          /Resources << /Font << /F1 4 0 R >> >> >>"
+            .to_vec(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+    ];
+    let mut stream = format!("<< /Length {} >>\nstream\n", content.len()).into_bytes();
+    stream.extend(content);
+    stream.extend_from_slice(b"\nendstream");
+    objects.push(stream);
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend(format!("{} 0 obj\n", i + 1).into_bytes());
+        pdf.extend(body);
+        pdf.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = pdf.len();
+    pdf.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).into_bytes());
+    for offset in offsets {
+        pdf.extend(format!("{offset:010} 00000 n \n").into_bytes());
+    }
+    pdf.extend(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .into_bytes(),
+    );
+    pdf
+}
+
+/// At least `min_bytes` of text lines, as a spreadsheet export or a typed
+/// list would be: CR LF line ends, accented letters (`utf8`) or, when not,
+/// a stray 0xE9 near the start that makes the whole text Windows-1252.
+fn large_text(min_bytes: usize, utf8: bool) -> Vec<u8> {
+    let mut text = String::new();
+    let mut i = 0;
+    while text.len() < min_bytes {
+        text.push_str(&format!(
+            "{i},Colt,1911,caf\u{e9} receipt,\"$1,250.00\",2021-05-0{}\r\n",
+            i % 9 + 1
+        ));
+        i += 1;
+    }
+    if utf8 {
+        text.into_bytes()
+    } else {
+        let mut bytes = b"caf\xE9,".to_vec();
+        bytes.extend(
+            text.chars()
+                .map(|c| if c == '\u{e9}' { 'e' } else { c })
+                .collect::<String>()
+                .into_bytes(),
+        );
+        bytes
+    }
+}
+
+/// research.md §22 "open_preview -> page 1, 10 MB TIFF": the helper started,
+/// the TIFF piped to it and its first page rendered, as the viewer asks for
+/// it, within 1 s. The real helper binary and a 300 DPI letter page in LZW.
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn open_preview_of_a_10_mb_tiff_shows_page_one_within_a_second_at_10k_plus_10k_records() {
+    let _alone = one_at_a_time();
+    let world = document_scale();
+    let tiff = lzw_letter_tiff(TEN_MB);
+    assert!(tiff.len() >= TEN_MB, "{} bytes", tiff.len());
+    let id = world.add("scan.tif", &tiff);
+
+    let (info, opened) = timed("open_preview of a 10 MB TIFF", || world.open_ok(id));
+    assert_eq!(info["kind"], "tiff");
+    let preview_id = Fixture::id_of(&info);
+    // The first screen asks for page 1 at the width of the viewer's column.
+    let (png, rendered) = timed("render_preview_page of its page 1 (1400 px wide)", || {
+        hoplodex_lib::commands::preview::ops::render_preview_page(
+            &world.session,
+            preview_id,
+            0,
+            1400,
+        )
+        .unwrap()
+    });
+    assert_eq!(preview_support::png_size(&png).0, 1400);
+    eprintln!("SC-001: a 10 MB TIFF, open and page 1, took {:?} in all", opened + rendered);
+    assert_within_preview_budget("open_preview and page 1 of a 10 MB TIFF", opened + rendered);
+    world.close(preview_id);
+}
+
+/// The `hdpreview` handler, asked for `url` as the surface asks.
+fn get(world: &Fixture, url: &str) -> tauri::http::Response<Vec<u8>> {
+    let request = tauri::http::Request::builder().method("GET").uri(url).body(Vec::new()).unwrap();
+    protocol_handler::handle(&world.session, &request)
+}
+
+/// research.md §22 "open_preview -> PDF surface shown, 10 MB": what Rust does
+/// up to the surface showing it, with the recording surface and the
+/// `hdpreview` handler serving the document to it. The web view's own
+/// creation and first paint are the surface check's and the us13 E2E's.
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn open_preview_of_a_10_mb_pdf_is_served_to_its_surface_within_a_second_at_10k_plus_10k_records() {
+    let _alone = one_at_a_time();
+    let world = document_scale();
+    let pdf = large_pdf(TEN_MB);
+    assert!(pdf.len() >= TEN_MB);
+    let id = world.add("scan.pdf", &pdf);
+
+    let ((info, served), elapsed) =
+        timed("open_preview of a 10 MB PDF, served to the surface", || {
+            let info = world.open_ok(id);
+            let surface = world.preview.surfaces.only();
+            let served = get(&world, &surface.url());
+            // On Linux the surface's frame script also reports PDF.js's hook,
+            // which is what makes the preview ready there.
+            if cfg!(target_os = "linux") {
+                let mut hook = tauri::Url::parse(&surface.url()).unwrap();
+                hook.set_path(&format!("/hooked/{}", surface.secret()));
+                assert_eq!(get(&world, hook.as_str()).status().as_u16(), 204);
+            }
+            (info, served)
+        });
+    assert_eq!(info["kind"], "pdf");
+    assert_eq!(served.status().as_u16(), 200);
+    assert_eq!(served.body().len(), pdf.len(), "the whole document is served");
+    assert_eq!(world.events.payloads("preview:pdf-ready").len(), 1);
+    assert_within_preview_budget("open_preview of a 10 MB PDF up to its surface", elapsed);
+}
+
+/// research.md §22 "10 MB text shown": the decode of a 10 MB text, by each of
+/// the two encodings it can take (UTF-8, and the Windows-1252 fallback
+/// after a failed validation), and `open_preview` of a text of that size,
+/// whose answer is serialised as the viewer receives it.
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn a_10_mb_text_is_decoded_and_opened_within_a_second_at_10k_plus_10k_records() {
+    let _alone = one_at_a_time();
+    for (what, utf8) in [("UTF-8", true), ("Windows-1252", false)] {
+        let bytes = large_text(TEN_MB, utf8);
+        let (text, decoded) =
+            timed(&format!("decode of a 10 MB {what} text"), || preview_text::decode(&bytes));
+        assert!(text.len() >= TEN_MB * 9 / 10);
+        assert!(!text.contains('\r'), "CR LF is read as a line feed");
+        assert_within_preview_budget(&format!("decoding a 10 MB {what} text"), decoded);
+    }
+
+    let world = document_scale();
+    let id = world.add("export.txt", &large_text(TEN_MB, true));
+    let (info, opened) = timed("open_preview of a 10 MB text", || world.open_ok(id));
+    assert_eq!(info["kind"], "text");
+    assert!(info["text"].as_str().is_some_and(|text| text.len() >= TEN_MB * 9 / 10));
+    assert_within_preview_budget("open_preview of a 10 MB text", opened);
+}
+
+/// SC-007, research.md §22: a search finds a record by the name of its own
+/// document within 500 ms at 10,000 firearms, 10,000 accessories and 30,000
+/// documents, for the trigram index (three characters or more) and for the
+/// `LIKE` of one or two. Two 10 MB documents sit on the first firearm, so
+/// that reading a name beside a large file's bytes is in the timing too.
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and_30k_documents() {
+    let _alone = one_at_a_time();
+    let world = document_scale();
+    world
+        .session
+        .write(|conn| {
+            seed_30k_documents(conn);
+            Ok(())
+        })
+        .unwrap();
+    world.add("big appraisal.pdf", &large_pdf(TEN_MB));
+    world.add("big scan.tif", &lzw_letter_tiff(TEN_MB));
+    let session = &world.session;
+
+    let firearms = |query: &str| {
+        let input = ListFirearmsInput { query: Some(query.into()), ..Default::default() };
+        within(&format!("list_firearms search {query:?} (a document name)"), BUDGET_MS, || {
+            session.read(|conn| firearm_ops::list_firearms(conn, &input)).unwrap()
+        })
+        .groups
+        .iter()
+        .map(|group| group.firearms.len())
+        .sum::<usize>()
+    };
+    let accessories = |query: &str| {
+        let input = ListAccessoriesInput { query: Some(query.into()), ..Default::default() };
+        within(&format!("list_accessories search {query:?} (a document name)"), BUDGET_MS, || {
+            session.read(|conn| accessory_ops::list_accessories(conn, &input)).unwrap()
+        })
+        .groups
+        .iter()
+        .map(|group| group.accessories.len())
+        .sum::<usize>()
+    };
+
+    // One record has the name: the trigram index, then the one-or-two
+    // character `LIKE`.
+    assert_eq!(firearms("zebraquartz"), 1);
+    assert_eq!(accessories("quixoticmarmot"), 1);
+    assert_eq!(firearms("zebraquartz bill"), 1);
+    assert!(firearms("zq") <= 1);
+    assert!(firearms("ze") >= 1);
+    assert_eq!(accessories("qx"), 0);
+    assert!(accessories("qu") >= 1);
+    // A name most records' documents share, which is every record that has
+    // one and every kind of the seeded names.
+    assert!(firearms("appraisal") > 1_000);
+    assert!(accessories("appraisal") > 300);
+    assert!(firearms("big app") >= 1);
+    assert!(firearms("ap") > 1_000);
+    assert!(accessories("ap") > 300);
 }
