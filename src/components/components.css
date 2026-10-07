@@ -662,6 +662,12 @@
   width: min(820px, calc(100vw - 32px));
 }
 
+.hd-dialog__content--xl {
+  width: 90vw;
+  height: 90vh;
+  max-height: 90vh;
+}
+
 .hd-dialog__header {
   display: flex;
   align-items: flex-start;

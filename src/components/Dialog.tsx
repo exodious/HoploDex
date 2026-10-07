@@ -20,7 +20,8 @@ export interface DialogProps {
   description?: ReactNode;
   /** Pinned below the scrolling body — the dialog's actions. */
   footer?: ReactNode;
-  size?: "sm" | "md" | "lg";
+  /** `xl` is the document viewer's: 90 vw by 90 vh. */
+  size?: "sm" | "md" | "lg" | "xl";
   /** For forms: children render their own `.hd-dialog__body` and
    * `.hd-dialog__footer` (inside a `.hd-dialog__form`), keeping the submit
    * button inside the <form> so Enter submits and pending state is local. */
