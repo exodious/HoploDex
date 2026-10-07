@@ -259,6 +259,33 @@ artifacts.
     frame is same-origin and reached the parent's `__TAURI_INTERNALS__`
     (spike); on every OS it would put the viewer where the IPC is.
 
+- **Result of the first task, Linux (T006, 2026-10-06)**:
+  `examples/pdf_surface_check.rs` in "shows" mode, run by
+  `examples/pdf_surface_check.sh` in the dev container under Xvfb (WebKitGTK
+  2.54): the child web view `preview` (`Window::add_child`, incognito,
+  `proxy_url` to a loopback listener) loaded `hdpreview://localhost/<token>/document.pdf`,
+  PDF.js drew the 3-page fixture inside the main window over the requested
+  rectangle (reported as x=40, y=100, 920x660, and the main page stayed
+  alive around it), and a request the surface made to a name outside the
+  app reached the proxy (tripwire hit). So the child web view stands on
+  Linux, with two things Tauri doesn't do for us, both handled in
+  `surface/linux.rs`:
+  - **`add_child` can't place a child web view on Linux.** wry packs it into
+    the window's `GtkBox` beside the main web view and ignores its bounds
+    (the PDF filled the lower half of the window). The surface moves the main
+    web view into a `GtkOverlay`, puts itself over it, and positions itself
+    with margins and a size request. A moved web view shows nothing until its
+    page next changes, so the other web views are made to repaint. GTK is
+    called through its C API, since `gtk` isn't a dependency of this crate
+    (adding `gtk = "0.18"`, already in the tree, would make it safe Rust).
+  - **An incognito web view with no `data_directory` of its own gets no custom
+    protocols.** tauri-runtime-wry registers a protocol once for each context
+    key, on the first web view with that key, and an incognito web view builds
+    a context of its own that the registration never reaches ("The URL can't
+    be shown"). The surface's `data_directory` (a folder it never uses on
+    Linux) is the key that fixes it.
+  macOS (T007) and Windows (T008) are not yet run.
+
 ## 5. Keeping the surface unprivileged: the app ACL manifest
 
 - **Decision**: `build.rs` gives `tauri_build` an app manifest
