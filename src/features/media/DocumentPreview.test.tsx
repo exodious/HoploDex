@@ -2,6 +2,7 @@ import { useState } from "react";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { DocumentPreview } from "./DocumentPreview";
 import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
@@ -22,8 +23,11 @@ import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 // scroll area's size is read from the element (jsdom has none, so it is
 // stubbed below).
 //
-// "Open in another app…" is not asserted present here: tasks.md T079 leaves it
-// to US2 (T085), so only its absence (DOCUMENT_CONTENT_MISMATCH) is pinned.
+// "Open in another app…" is User Story 2's (tasks.md T085, the last describe):
+// the footer's button and the states' primary action call
+// `open_document` with { id } and answer { opened: boolean }. The viewer hides
+// the PDF surface (`set_preview_bounds` with visible: false) while it waits,
+// and for a PDF shows the result in the footer's status line, not a toast.
 
 const backend = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload: unknown) => void>>();
@@ -739,5 +743,240 @@ describe("DocumentPreview: states (contract §3)", () => {
     act(() => backend.emit("preview:pdf-ended", { previewId: 99, reason: "failed" }));
 
     expect(screen.getByRole("region", { name: "Purchase receipt.pdf, PDF" })).toBeInTheDocument();
+  });
+});
+
+// --- User Story 2 (T085) ------------------------------------------------------
+
+describe("DocumentPreview: Open in another app… (contract §2, §3)", () => {
+  const OPEN = "Open in another app…";
+
+  /** The viewer inside a ToastProvider, so that where a result goes (a toast, or
+   * the footer's status line) can be told apart. */
+  async function openWithToasts(props: Parameters<typeof Host>[0] = {}) {
+    const user = userEvent.setup();
+    render(
+      <ToastProvider>
+        <Host {...props} />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Open viewer" }));
+    return user;
+  }
+
+  const footer = () => viewer().querySelector("footer") as HTMLElement;
+  const footerStatus = () => footer().querySelector('[role="status"]');
+  const toast = () => document.querySelector(".hd-toast");
+
+  /** `set_preview_bounds` calls, in order. */
+  const boundsCalls = () =>
+    calls("set_preview_bounds") as { previewId: number; visible: boolean }[];
+  const lastVisible = () => boundsCalls().at(-1)?.visible;
+
+  describe("in the footer", () => {
+    it.each([
+      ["a PDF", 0],
+      ["a TIFF", 1],
+      ["text", 2],
+      ["a Word document", 4],
+    ])("is a secondary button next to Delete document for %s", async (_kind, start) => {
+      await openWithToasts({ start });
+      await waitFor(() =>
+        expect(within(footer()).getByRole("button", { name: OPEN })).toBeVisible(),
+      );
+
+      const button = within(footer()).getByRole("button", { name: OPEN });
+      expect(button).toBeEnabled();
+      expect(button).toHaveClass("hd-button--secondary");
+      expect(within(footer()).getByRole("button", { name: "Delete document" })).toBeInTheDocument();
+    });
+
+    it("calls open_document with just the id of the document shown", async () => {
+      const user = await openWithToasts({ start: 2 });
+      await screen.findByText("Field strip the pistol.");
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+
+      expect(calls("open_document")).toEqual([{ id: 3 }]);
+    });
+
+    it("stays beside a PDF the surface can't show, which is the viewer's own message (FR-006)", async () => {
+      await openWithToasts();
+      await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
+
+      expect(within(footer()).getByRole("button", { name: OPEN })).toBeEnabled();
+    });
+  });
+
+  describe("with a PDF shown", () => {
+    async function openPdf(answer: () => unknown) {
+      installBackend({ open_document: answer });
+      const user = await openWithToasts();
+      await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
+      await waitFor(() => expect(lastVisible()).toBe(true));
+      return user;
+    }
+
+    it("hides the PDF surface while the native dialog is up, and shows it again after", async () => {
+      const answer = deferred<{ opened: boolean }>();
+      const user = await openPdf(() => answer.promise);
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+
+      await waitFor(() => expect(lastVisible()).toBe(false));
+      expect(boundsCalls().at(-1)?.previewId).toBe(11);
+      const button = within(footer()).getByRole("button", { name: OPEN });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("aria-busy", "true");
+
+      await act(async () => answer.resolve({ opened: false }));
+
+      await waitFor(() => expect(lastVisible()).toBe(true));
+      expect(within(footer()).getByRole("button", { name: OPEN })).toBeEnabled();
+    });
+
+    it("says 'Opened {name} in another app.' in the footer's status line, with no toast", async () => {
+      const user = await openPdf(() => ({ opened: true }));
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+
+      await waitFor(() =>
+        expect(footerStatus()).toHaveTextContent("Opened Purchase receipt.pdf in another app."),
+      );
+      expect(toast()).toBeNull();
+      await waitFor(() => expect(lastVisible()).toBe(true));
+    });
+
+    it("says nothing when the user cancelled ({ opened: false })", async () => {
+      const user = await openPdf(() => ({ opened: false }));
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+      await waitFor(() => expect(calls("open_document")).toHaveLength(1));
+      await act(async () => {});
+
+      expect(footerStatus()).toHaveTextContent("");
+      expect(toast()).toBeNull();
+    });
+
+    it("shows a refusal in the footer's status line too, with no toast", async () => {
+      const message =
+        "This computer has no app that opens PDF documents. HoploDex deleted the copy it made.";
+      const user = await openPdf(() => {
+        throw failure("NO_APP_FOR_DOCUMENT", message);
+      });
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+
+      await waitFor(() => expect(footerStatus()).toHaveTextContent(message));
+      expect(toast()).toBeNull();
+      expect(lastVisible()).toBe(true);
+    });
+  });
+
+  describe("with no PDF surface", () => {
+    it("toasts the result of a TIFF or text document, and keeps the footer's status line to a PDF", async () => {
+      installBackend({ open_document: () => ({ opened: true }) });
+      const user = await openWithToasts({ start: 2 });
+      await screen.findByText("Field strip the pistol.");
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+
+      expect(await screen.findByText("Opened Notes.txt in another app.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Opened Notes.txt in another app.").closest(".hd-toast"),
+      ).not.toBeNull();
+      expect(footerStatus()).toBeNull();
+    });
+
+    it("toasts a refusal as an error, from the viewer's footer", async () => {
+      const message = "Notes.txt's content isn't a text document.";
+      installBackend({
+        open_document: () => {
+          throw failure("DOCUMENT_CONTENT_MISMATCH", message);
+        },
+      });
+      const user = await openWithToasts({ start: 2 });
+      await screen.findByText("Field strip the pistol.");
+
+      await user.click(within(footer()).getByRole("button", { name: OPEN }));
+
+      expect((await screen.findByText(message)).closest(".hd-toast")).toHaveClass(
+        "hd-toast--error",
+      );
+    });
+  });
+
+  describe("as the primary action of a state that can't show the document", () => {
+    const refuse = (code: string, message = "x") =>
+      installBackend({
+        open_preview: () => {
+          throw failure(code, message);
+        },
+        open_document: () => ({ opened: true }),
+      });
+
+    const cases: [string, number, () => void][] = [
+      ["PREVIEW_UNSUPPORTED", 4, () => refuse("PREVIEW_UNSUPPORTED")],
+      [
+        "PDF_PREVIEW_UNAVAILABLE",
+        0,
+        () =>
+          refuse(
+            "PDF_PREVIEW_UNAVAILABLE",
+            "This computer's PDF viewer couldn't be set up safely.",
+          ),
+      ],
+      ["PREVIEW_FAILED", 1, () => refuse("PREVIEW_FAILED")],
+      ["PREVIEW_DAMAGED", 1, () => refuse("PREVIEW_DAMAGED")],
+    ];
+
+    /** The viewer's state area, where the primary action sits. */
+    const stateArea = () => viewer().querySelector(".hd-preview__state") as HTMLElement;
+
+    it.each(cases)("%s offers it, and it calls open_document", async (_code, start, install) => {
+      install();
+      const user = await openWithToasts({ start });
+      await waitFor(() => expect(stateArea()).not.toBeNull());
+
+      const button = within(stateArea()).getByRole("button", { name: OPEN });
+      expect(button).toHaveClass("hd-button--primary");
+      await user.click(button);
+
+      expect(calls("open_document")).toEqual([{ id: documents[start].id }]);
+    });
+
+    it.each(["noViewer", "copyCaught", "failed"] as const)(
+      "preview:pdf-ended %s offers it in place of the surface",
+      async (reason) => {
+        installBackend({ open_document: () => ({ opened: true }) });
+        const user = await openWithToasts();
+        await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
+
+        act(() => backend.emit("preview:pdf-ended", { previewId: 11, reason }));
+
+        await waitFor(() =>
+          expect(
+            screen.queryByRole("region", { name: "Purchase receipt.pdf, PDF" }),
+          ).not.toBeInTheDocument(),
+        );
+        const button = within(stateArea()).getByRole("button", { name: OPEN });
+        expect(button).toHaveClass("hd-button--primary");
+        await user.click(button);
+
+        expect(calls("open_document")).toEqual([{ id: 1 }]);
+      },
+    );
+
+    it("DOCUMENT_CONTENT_MISMATCH offers it nowhere, footer included (US2-4, FR-017)", async () => {
+      refuse("DOCUMENT_CONTENT_MISMATCH");
+      await openWithToasts({ start: 4 });
+
+      await waitFor(() =>
+        expect(statuses().join(" ")).toContain("its content isn't a Word document"),
+      );
+
+      expect(within(viewer()).queryByRole("button", { name: OPEN })).not.toBeInTheDocument();
+      expect(within(footer()).queryByRole("button", { name: OPEN })).not.toBeInTheDocument();
+    });
   });
 });

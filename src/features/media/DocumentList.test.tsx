@@ -1,7 +1,9 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "../../components";
 import { formatDate } from "../../lib/dates";
+import type { FileDropEvent } from "../../services/tauriClient";
 import { DocumentList } from "./DocumentList";
 import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 
@@ -9,11 +11,22 @@ import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 // tasks.md T041 (User Story 1). The list is `<DocumentList owner />` and hosts
 // the viewer over the record. The backend is pinned at the IPC boundary
 // (`invoke`, `listen`) with the command names of contracts/tauri-commands.md.
+// The US2 part (T084) adds the picker's `accept`, drops (`listenForFileDrops`,
+// routed by ui contract §6), "Open in another app…" and its results; toasts
+// are read through a ToastProvider around the list.
 
 const backend = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload: unknown) => void>>();
+  const drops = new Set<(event: FileDropEvent) => void>();
   return {
     invoke: vi.fn(),
+    listenForFileDrops: vi.fn((handler: (event: FileDropEvent) => void) => {
+      drops.add(handler);
+      return () => drops.delete(handler);
+    }),
+    drop(paths: string[]) {
+      drops.forEach((handler) => handler({ type: "drop", paths }));
+    },
     listen: vi.fn((event: string, handler: (payload: unknown) => void) => {
       if (!handlers.has(event)) handlers.set(event, new Set());
       handlers.get(event)!.add(handler);
@@ -24,6 +37,7 @@ const backend = vi.hoisted(() => {
     },
     reset() {
       handlers.clear();
+      drops.clear();
     },
   };
 });
@@ -31,6 +45,7 @@ vi.mock("../../services/tauriClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../services/tauriClient")>()),
   invoke: backend.invoke,
   listen: backend.listen,
+  listenForFileDrops: backend.listenForFileDrops,
 }));
 
 import { CommandFailure } from "../../services/tauriClient";
@@ -116,6 +131,7 @@ afterAll(() => {
 beforeEach(() => {
   backend.reset();
   docs = [receipt(), scan(), notes(), billDocx(), oldScan()];
+  openAnswer = () => ({ opened: true });
   backend.invoke.mockReset().mockImplementation(async (command: string, args = {}) => {
     switch (command) {
       case "list_documents":
@@ -129,11 +145,17 @@ beforeEach(() => {
         }
         return previewOf(document);
       }
+      case "open_document":
+        return openAnswer(args);
       case "delete_document":
         docs = docs.filter((d) => d.id !== args.id);
         return { deleted: true };
       case "render_preview_page":
         return new ArrayBuffer(8);
+      case "add_document":
+        return doc(9, args.originalFilename as string, "application/pdf", "pdf");
+      case "add_document_from_path":
+        return doc(9, (args.path as string).split("/").pop()!, "application/pdf", "pdf");
       case "close_preview":
       case "set_preview_bounds":
       case "focus_preview":
@@ -162,10 +184,27 @@ afterEach(() => vi.restoreAllMocks());
 
 async function renderList() {
   const user = userEvent.setup();
-  render(<DocumentList owner={{ kind: "firearm", id: 1 }} />);
+  render(
+    <ToastProvider>
+      <DocumentList owner={{ kind: "firearm", id: 1 }} />
+    </ToastProvider>,
+  );
   await screen.findByRole("button", { name: "Purchase receipt.pdf" });
   return user;
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** What the backend answers `open_document` with, for a test to change. */
+let openAnswer: (args: Record<string, unknown>) => unknown;
 
 /** The list item for the document named `name`. */
 const row = (name: string) => screen.getByRole("button", { name }).closest("li") as HTMLElement;
@@ -332,5 +371,294 @@ describe("DocumentList: deleting from the viewer (contract §2 Footer)", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(calls("delete_document")).toEqual([{ id: 1, confirmed: true }]);
+  });
+});
+
+// --- User Story 2 (T084) ------------------------------------------------------
+
+const REFUSED =
+  "wasn't attached. Documents can be PDF, TIFF, text, CSV, RTF, Word, spreadsheet or OpenDocument files.";
+
+/** The toast showing `text`, or fails. */
+async function toastWith(text: string | RegExp): Promise<HTMLElement> {
+  return (await screen.findByText(text)).closest(".hd-toast") as HTMLElement;
+}
+
+const noToasts = () => document.querySelector(".hd-toast");
+
+/** The list with its document types loaded, which routing a drop and the
+ * picker's `accept` depend on. */
+async function renderListWithTypes() {
+  const user = await renderList();
+  await waitFor(() => expect(calls("list_document_types").length).toBeGreaterThan(0));
+  await act(async () => {});
+  return user;
+}
+
+describe("DocumentList: the picker (contract §6)", () => {
+  it("accepts the extensions of list_document_types, in its order, and no others", async () => {
+    await renderList();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Attach documents")).toHaveAttribute(
+        "accept",
+        ".pdf,.tif,.tiff,.txt,.docx",
+      ),
+    );
+  });
+
+  it("sends a chosen file's bytes and name to add_document", async () => {
+    const user = await renderList();
+
+    await user.upload(
+      screen.getByLabelText("Attach documents"),
+      new File(["%PDF-1.4"], "Receipt two.pdf", { type: "application/pdf" }),
+    );
+
+    await waitFor(() => expect(calls("add_document")).toHaveLength(1));
+    expect(calls("add_document")[0]).toMatchObject({
+      owner: { kind: "firearm", id: 1 },
+      originalFilename: "Receipt two.pdf",
+    });
+    expect(await toastWith("Attached 1 document.")).toBeInTheDocument();
+  });
+
+  it("shows '{name} is a photo. Add it under Photos instead.' when the backend refuses a photo", async () => {
+    backend.invoke.mockImplementation(async (command: string, args = {}) => {
+      if (command === "add_document") {
+        throw new CommandFailure({
+          code: "DOCUMENT_TYPE_NOT_ALLOWED",
+          message: "That isn't a document type HoploDex keeps.",
+        });
+      }
+      if (command === "list_documents") return docs.map((d) => ({ ...d }));
+      if (command === "list_document_types") return types;
+      throw new Error(`unexpected command ${command} ${JSON.stringify(args)}`);
+    });
+    // The input's own filter would keep the photo from being chosen at all.
+    const user = userEvent.setup({ applyAccept: false });
+    render(
+      <ToastProvider>
+        <DocumentList owner={{ kind: "firearm", id: 1 }} />
+      </ToastProvider>,
+    );
+    await screen.findByRole("button", { name: "Purchase receipt.pdf" });
+
+    await user.upload(
+      screen.getByLabelText("Attach documents"),
+      new File(["x"], "Range day.jpg", { type: "image/jpeg" }),
+    );
+
+    const toast = await toastWith("Range day.jpg is a photo. Add it under Photos instead.");
+    expect(toast).toHaveClass("hd-toast--error");
+  });
+
+  it("shows the backend's own message for another refusal, and carries on past it", async () => {
+    let added = 0;
+    backend.invoke.mockImplementation(async (command: string, args = {}) => {
+      if (command === "add_document") {
+        if ((args.originalFilename as string).endsWith(".bin")) {
+          throw new CommandFailure({
+            code: "DOCUMENT_CONTENT_MISMATCH",
+            message: "data.bin's content isn't a PDF document.",
+          });
+        }
+        added += 1;
+        return doc(9, args.originalFilename as string, "application/pdf", "pdf");
+      }
+      if (command === "list_documents") return docs.map((d) => ({ ...d }));
+      if (command === "list_document_types") return types;
+      throw new Error(`unexpected command ${command}`);
+    });
+    const user = userEvent.setup({ applyAccept: false });
+    render(
+      <ToastProvider>
+        <DocumentList owner={{ kind: "firearm", id: 1 }} />
+      </ToastProvider>,
+    );
+    await screen.findByRole("button", { name: "Purchase receipt.pdf" });
+
+    await user.upload(screen.getByLabelText("Attach documents"), [
+      new File(["x"], "data.bin", { type: "" }),
+      new File(["%PDF"], "Second.pdf", { type: "application/pdf" }),
+    ]);
+
+    expect(await toastWith("data.bin's content isn't a PDF document.")).toHaveClass(
+      "hd-toast--error",
+    );
+    expect(added).toBe(1);
+    expect(await toastWith("Attached 1 document.")).toBeInTheDocument();
+  });
+});
+
+describe("DocumentList: drops (contract §6)", () => {
+  it("attaches a dropped document of an allowed type through add_document_from_path", async () => {
+    await renderListWithTypes();
+
+    act(() => backend.drop(["/home/sam/Receipts/Bill of sale.DOCX"]));
+
+    await waitFor(() => expect(calls("add_document_from_path")).toHaveLength(1));
+    expect(calls("add_document_from_path")).toEqual([
+      { owner: { kind: "firearm", id: 1 }, path: "/home/sam/Receipts/Bill of sale.DOCX" },
+    ]);
+  });
+
+  it("refuses a dropped .exe before any command, with the toast of §6", async () => {
+    await renderListWithTypes();
+    const before = backend.invoke.mock.calls.length;
+
+    act(() => backend.drop(["/home/sam/Downloads/setup.exe"]));
+
+    const toast = await toastWith(`setup.exe ${REFUSED}`);
+    expect(toast).toHaveClass("hd-toast--error");
+    await act(async () => {});
+    const commandsSince = backend.invoke.mock.calls.slice(before).map(([name]) => name);
+    expect(commandsSince.filter((name) => name.startsWith("add_"))).toEqual([]);
+  });
+
+  it("names a Windows path's file in the refusal", async () => {
+    await renderListWithTypes();
+
+    act(() => backend.drop(["C:\\Users\\Sam\\Downloads\\setup.exe"]));
+
+    expect(await toastWith(`setup.exe ${REFUSED}`)).toBeInTheDocument();
+  });
+
+  it("leaves a dropped JPEG to Photos: no command from here, and no refusal", async () => {
+    await renderListWithTypes();
+    const before = backend.invoke.mock.calls.length;
+
+    act(() => backend.drop(["/home/sam/Pictures/Range day.jpg", "/home/sam/Pictures/Two.PNG"]));
+    await act(async () => {});
+
+    expect(backend.invoke.mock.calls.slice(before)).toEqual([]);
+    expect(noToasts()).toBeNull();
+  });
+
+  it("attaches the documents of a mixed drop, refuses the other, and leaves the photo alone", async () => {
+    await renderListWithTypes();
+
+    act(() => backend.drop(["/a/Receipt.pdf", "/a/Range day.jpg", "/a/virus.exe", "/a/Scan.tiff"]));
+
+    await waitFor(() => expect(calls("add_document_from_path")).toHaveLength(2));
+    expect(calls("add_document_from_path").map((args) => args.path)).toEqual([
+      "/a/Receipt.pdf",
+      "/a/Scan.tiff",
+    ]);
+    expect(await toastWith(`virus.exe ${REFUSED}`)).toBeInTheDocument();
+    expect(screen.queryByText(/Range day\.jpg/)).not.toBeInTheDocument();
+  });
+});
+
+describe("DocumentList: the empty state (contract §6)", () => {
+  it("says what can be dropped, and offers choose files", async () => {
+    docs = [];
+    render(
+      <ToastProvider>
+        <DocumentList owner={{ kind: "firearm", id: 1 }} />
+      </ToastProvider>,
+    );
+
+    const zone = await screen.findByRole("button", { name: /^Drop receipts/ });
+
+    expect(zone).toHaveTextContent(
+      "Drop receipts, bills of sale, registration forms or service records here (PDF, TIFF, text, Word or spreadsheet), or choose files",
+    );
+    expect(within(zone).getByText("choose files")).toHaveClass("hd-link");
+  });
+});
+
+describe("DocumentList: Open in another app… (contract §1)", () => {
+  const OPEN = "Open in another app…";
+  const openButton = (name: string) => within(row(name)).getByRole("button", { name: OPEN });
+
+  it("is a ghost button on every row, replacing Open", async () => {
+    await renderList();
+
+    for (const name of ["Purchase receipt.pdf", "Appraisal scan.tif", "Bill of sale.docx"]) {
+      const button = openButton(name);
+      expect(button).toBeEnabled();
+      expect(button).toHaveClass("hd-button--ghost");
+    }
+    expect(screen.queryByRole("button", { name: "Open" })).not.toBeInTheDocument();
+  });
+
+  it("calls open_document with just the id, and shows pending while the dialog is up", async () => {
+    const answer = deferred<{ opened: boolean }>();
+    openAnswer = () => answer.promise;
+    const user = await renderList();
+
+    await user.click(openButton("Bill of sale.docx"));
+
+    expect(calls("open_document")).toEqual([{ id: 4 }]);
+    expect(openButton("Bill of sale.docx")).toBeDisabled();
+    expect(openButton("Bill of sale.docx")).toHaveAttribute("aria-busy", "true");
+    // Another row's button is not held up by it.
+    expect(openButton("Purchase receipt.pdf")).toBeEnabled();
+
+    await act(async () => answer.resolve({ opened: true }));
+    await waitFor(() => expect(openButton("Bill of sale.docx")).toBeEnabled());
+    expect(openButton("Bill of sale.docx")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("toasts 'Opened {name} in another app.' on success", async () => {
+    const user = await renderList();
+
+    await user.click(openButton("Bill of sale.docx"));
+
+    const toast = await toastWith("Opened Bill of sale.docx in another app.");
+    expect(toast).not.toHaveClass("hd-toast--error");
+  });
+
+  it("says nothing when the user cancelled the native dialog ({ opened: false })", async () => {
+    openAnswer = () => ({ opened: false });
+    const user = await renderList();
+
+    await user.click(openButton("Bill of sale.docx"));
+    await waitFor(() => expect(openButton("Bill of sale.docx")).toBeEnabled());
+    await act(async () => {});
+
+    expect(calls("open_document")).toEqual([{ id: 4 }]);
+    expect(noToasts()).toBeNull();
+  });
+
+  it("toasts the NO_APP_FOR_DOCUMENT message as an error", async () => {
+    const message =
+      "This computer has no app that opens Word documents. HoploDex deleted the copy it made.";
+    openAnswer = () => {
+      throw new CommandFailure({ code: "NO_APP_FOR_DOCUMENT", message });
+    };
+    const user = await renderList();
+
+    await user.click(openButton("Bill of sale.docx"));
+
+    expect(await toastWith(message)).toHaveClass("hd-toast--error");
+    await waitFor(() => expect(openButton("Bill of sale.docx")).toBeEnabled());
+  });
+
+  it.each(["DOCUMENT_TYPE_NOT_ALLOWED", "DOCUMENT_CONTENT_MISMATCH"])(
+    "toasts the backend's message for %s as an error",
+    async (code) => {
+      const message = `Bill of sale.docx can't be opened (${code}).`;
+      openAnswer = () => {
+        throw new CommandFailure({ code, message });
+      };
+      const user = await renderList();
+
+      await user.click(openButton("Bill of sale.docx"));
+
+      expect(await toastWith(message)).toHaveClass("hd-toast--error");
+    },
+  );
+
+  it("is disabled, with its reason as the title, for a row that isn't a document type", async () => {
+    const user = await renderList();
+
+    const button = openButton("Old scan.jpg");
+    expect(button).toBeDisabled();
+    expect(button.getAttribute("title")).toMatch(/not a document type/i);
+
+    await user.click(button);
+    expect(calls("open_document")).toEqual([]);
   });
 });
