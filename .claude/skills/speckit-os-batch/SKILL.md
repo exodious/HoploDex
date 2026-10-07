@@ -1,6 +1,6 @@
 ---
 name: "speckit-os-batch"
-description: "Run a batch of a feature's tasks.md that the lead session sent over a cross-session message, on this machine's OS (Windows or macOS) as a sub-lead: pull, hand the named tasks to speckit-implementer subagents, review, commit by path, push, and report back to the lead. Use when a message from the lead names task IDs for this session to do."
+description: "Run a batch of a feature's tasks.md that the lead session, on another machine, sent over a cross-session message because the tasks need this machine's OS. Acts as a sub-lead: pull, hand the named tasks to speckit-implementer subagents, review, commit by path, push, and report back to the lead. Use when a message from the lead names task IDs for this session to do."
 argument-hint: "The lead's batch message, or the task IDs it names"
 compatibility: "Requires spec-kit project structure with .specify/ directory"
 user-invocable: true
@@ -9,8 +9,9 @@ disable-model-invocation: false
 
 # Run a per-OS batch for the lead
 
-The lead (the session running `speckit-orchestrate`, usually on Linux) sends
-this session batches of tasks that need this machine's OS: code behind a
+The lead (the session running `speckit-orchestrate`, on whichever machine the
+user leads from) sends this session batches of tasks that need this machine's
+OS, which the lead's machine can't run: code behind a
 `#[cfg(target_os = ...)]`, a test run, an E2E or screenshot run, a surface
 check. You are a sub-lead: you hand the batch to `speckit-implementer`
 subagents, review what comes back, commit it and report. You don't implement
