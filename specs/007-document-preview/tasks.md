@@ -215,7 +215,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T071 [US1] On Linux, run `scripts/dev-container.sh scripts/pdf-surface-check.sh` until it passes, and record the 10 MB PDF's time to first paint for the PR (Linux, dev container, WebKitGTK page 1 drawn: 342 ms for the 9.99 MB PDF, 368 ms for the hostile one, against SC-001's 1 s; the 10 MB PDF's load event came at 47 ms)
 - [X] T072 [US1] On macOS, run `scripts/macos/pdf-surface-check.sh` until it passes, and record the 10 MB PDF's time to first paint for the PR (depends on T065)
 - [X] T073 [US1] On macOS, run `scripts/macos/pdf-surface-check.sh --hud-on` until the watch deletes the copy before Preview opens it, the surface closes with `copyCaught` and the hold is set; then restart with the same version and see PDFs not previewable, and with a different version string and see them previewable again (FR-003a) (depends on T072)
-- [ ] T074 [US1] On Windows, run `scripts\windows\pdf-surface-check.ps1` until it passes, and record the 10 MB PDF's time to first paint for the PR (depends on T066)
+- [X] T074 [US1] On Windows, run `scripts\windows\pdf-surface-check.ps1` until it passes, and record the 10 MB PDF's time to first paint for the PR (depends on T066) (Windows test machine, WebView2 154, debug build, surface already warm: 10 MB PDF first paint seen on screen 1.25-1.34 s over four runs, over SC-001's 1 s; its load event comes at 0.09 s and the document is served in 11 ms, so this measures the viewer drawing the first page of two pages of random pixels, not what macOS's load figure measures; a first surface adds its browser process's start, research.md §22)
 
 #### Frontend
 
