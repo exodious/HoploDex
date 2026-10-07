@@ -298,6 +298,34 @@ through the filter and the tripwire.
   needs a decision for when it can't: preview with the other layers only,
   or no in-app preview on that computer.
 
+## If Open in Preview gets through (macOS, 2026-10-06)
+
+The HUD and the context menu are turned off through SPI and a frame script.
+An OS update could leave the switch in place but stop it working, which a
+startup check wouldn't notice. These runs (`pdf_spike_mac.sh` with
+`SPIKE_MAC_FLOW=names|close|watch-hud|watch-menu`, commit 76372ece) left the
+HUD and menu on, so the copy was written, and tested what HoploDex could do
+about it afterwards.
+
+| Check | Result |
+|---|---|
+| The copy's name | **The last segment of the URL path, nothing else.** Served at `hdpreview://localhost/<token>/document.pdf`, the copies were `document.pdf` (HUD) and `QJ12Py-document.pdf` (menu), and Preview's window title and Open Recent showed those. The token appeared nowhere. A `Content-Disposition` filename and the PDF's `/Title` were both ignored (not in the names, the titles or either sfl4 list) |
+| Deleting the copies when the preview window closes | The delete works (dir 0700, files 0400, owned by the user; `Destroyed` fires 13 ms after `close()`). **But Preview keeps the document**: its windows keep showing both pages, with no error, because it holds the files memory-mapped. The unlinked data stays on disk, readable through Preview, until Preview lets go. Deleting only unlinks |
+| Recent Documents after the delete | Open Recent stops listing them, but **both sfl4 files keep the entries** (the `WebKitPDFs-*` path and file name), through a quit and a relaunch |
+| Other records of the path | **The copy's full path is also kept in `~/Library/DuetExpertCenter/_ATXDataStore.db-wal`** (Siri suggestions) **and `~/Library/Biome/streams/restricted/App.DocumentInteraction/`** (with Preview as the app), for every copy in every run, earlier sessions' included. Name only, no content, and nothing HoploDex can reasonably clear |
+| Content after the delete | No file written during the run held the marker (HOME, the temp folders, Preview's container). Preview's container changed only its view-state plist (volume and inode, no name). The QuickLook thumbnail cache didn't change. Spotlight is off on the VM's volume, so it wasn't tested; a Mac with indexing on still needs to be checked |
+| Watching `$TMPDIR` for a new `WebKitPDFs-*` and deleting it at once (1 ms poll) | Seen 4 ms after the HUD click (373 ms after the menu click, mostly the menu closing). At that moment the folder held WebKit's atomic-write temp file (`document.pdf.sb-…`, full size, **mode 0644** until the rename; the 0700 folder still keeps other users out). **The delete beat Preview every time**: Preview never launched or launched to nothing, no error was shown, and nothing was added to Recents (so nothing went to Biome or Duet either). WebKit only logged "Cannot create PDF file in the temporary directory" |
+| The same, deleting 50 ms late | The rename had happened and Preview launched, but the delete still won: no window, nothing in Recents |
+| The same, 500 ms late | Preview had already opened it and Recents had the entry, as with deleting at close |
+
+So if the SPI stops working: **a generic last path segment** keeps the
+document's name out of every record; **a watch that deletes within tens of
+milliseconds** stops Preview getting the file at all, and so stops the
+Recents, Biome and Duet records; and **a sweep at close** removes the file,
+but not Preview's mapped copy while Preview stays open, and not the records.
+The watch must react well inside 50–500 ms; FSEvents' latency hasn't been
+measured against that.
+
 ## What a design on this needs
 
 1. **An app ACL manifest** (`tauri_build::AppManifest` in `build.rs`) so
@@ -333,7 +361,13 @@ through the filter and the tripwire.
    or remove: HoploDex must check at startup that both exist and are off,
    and show no in-app preview if not, and a macOS test must hover,
    right-click and click Open in Preview and fail if any `WebKitPDFs-*`
-   copy appears.
+   copy appears. As backstops (see "If Open in Preview gets through"):
+   serve the preview at a fixed generic name (`<token>/document.pdf`, since
+   the copy is named after the last path segment); while a preview is
+   open, watch `$TMPDIR` for a new `WebKitPDFs-*` folder, delete it within
+   tens of milliseconds, close the preview and turn in-app preview off on
+   that computer; and sweep folders that appeared during a preview when it
+   closes, at startup and on signals, deleting only those.
 7. **On Windows, a user data folder of the preview's own.** Browser
    arguments belong to the browser process, which every web view sharing a
    user data folder shares, so a preview with the proxy and the WebRTC
