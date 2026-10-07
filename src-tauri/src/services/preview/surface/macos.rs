@@ -605,16 +605,53 @@ fn run(
     }
 }
 
+/// How far the page's top is below the top of the window's content view: the
+/// title bar's height. The main window has a full-size content view (the
+/// style mask has `NSWindowStyleMaskFullSizeContentView`), so its content
+/// view runs under the title bar while the page starts below it
+/// (`contentLayoutRect`), and wry places a child web view by the content
+/// view's height. 0 for a window whose content view starts at the page, or
+/// when it can't be read.
+pub(super) fn title_bar_height<R: Runtime>(webview: &Webview<R>) -> f64 {
+    use objc2_foundation::NSRect;
+    let (sender, receiver) = mpsc::channel();
+    let asked = webview.with_webview(move |platform| {
+        // SAFETY: plain getters on the main thread: the surface's web view,
+        // its window and that window's content view.
+        let height = unsafe {
+            let view: *mut AnyObject = platform.inner().cast();
+            let window: *mut AnyObject = msg_send![view, window];
+            if window.is_null() {
+                0.0
+            } else {
+                let content: *mut AnyObject = msg_send![window, contentView];
+                let frame: NSRect = msg_send![content, frame];
+                let layout: NSRect = msg_send![window, contentLayoutRect];
+                (frame.size.height - layout.origin.y - layout.size.height).max(0.0)
+            }
+        };
+        let _ = sender.send(height);
+    });
+    if asked.is_err() {
+        return 0.0;
+    }
+    receiver.recv_timeout(Duration::from_secs(2)).unwrap_or(0.0)
+}
+
+/// Places the surface over `bounds`, which are in the page's own coordinates,
+/// as the layout reports them.
 pub(super) fn place<R: Runtime>(
     webview: &Webview<R>,
     bounds: Rect,
     visible: bool,
 ) -> tauri::Result<()> {
-    super::place_with_tauri(webview, bounds, visible)
+    let below_the_title_bar = Rect { y: bounds.y + title_bar_height(webview), ..bounds };
+    super::place_with_tauri(webview, below_the_title_bar, visible)
 }
 
 pub(super) fn bounds<R: Runtime>(webview: &Webview<R>) -> tauri::Result<Rect> {
-    super::bounds_from_tauri(webview)
+    let placed = super::bounds_from_tauri(webview)?;
+    Ok(Rect { y: placed.y - title_bar_height(webview), ..placed })
 }
 
 #[cfg(test)]

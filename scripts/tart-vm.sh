@@ -23,7 +23,7 @@
 # automatically at boot, turn off macOS's "bypass the private window picker"
 # question and, where SIP is off, give Terminal and SSH sessions Accessibility
 # and Screen Recording. Everything else runs as the test user, with the
-# toolchain (rustup, cargo-nextest, Node and npm at the Dockerfile's versions)
+# toolchain (rustup, cargo-nextest, cargo-deny, Node and npm at the Dockerfile's versions)
 # in its home, not Homebrew, which belongs to `admin` on the image.
 #
 # A GUI app started over SSH lands in launchd's Background session and never
@@ -325,9 +325,10 @@ ADMIN
 
   say "installing the toolchain in $user's home"
   {
-    printf 'node_version=%q npm_version=%q nextest_version=%q rust_toolchain=%q\n' \
+    printf 'node_version=%q npm_version=%q nextest_version=%q deny_version=%q rust_toolchain=%q\n' \
       "$(dockerfile_arg NODE_VERSION)" "$(dockerfile_arg NPM_VERSION)" \
-      "$(dockerfile_arg CARGO_NEXTEST_VERSION)" "$(dockerfile_arg RUST_TOOLCHAIN)"
+      "$(dockerfile_arg CARGO_NEXTEST_VERSION)" "$(dockerfile_arg CARGO_DENY_VERSION)" \
+      "$(dockerfile_arg RUST_TOOLCHAIN)"
     cat <<'USER'
 set -euo pipefail
 export PATH="$HOME/.cargo/bin:$HOME/.local/node/bin:$PATH"
@@ -362,6 +363,10 @@ esac
 case "$(cargo nextest --version 2>/dev/null | head -1)" in
   *" $nextest_version"*) ;;
   *) cargo install --locked cargo-nextest --version "$nextest_version" ;;
+esac
+case "$(cargo deny --version 2>/dev/null | head -1)" in
+  *" $deny_version"*) ;;
+  *) cargo install --locked cargo-deny --version "$deny_version" ;;
 esac
 
 # For non-interactive SSH commands and Terminal's .command files alike.
@@ -513,6 +518,7 @@ step npm test
 step cargo nextest run --manifest-path src-tauri/Cargo.toml
 step cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'binary(keyring_test)'
 step npm run build
+step npm run audit
 if [ ${#failures[@]} -gt 0 ]; then
   printf 'FAILED: %s\n' "${failures[@]}"
   exit 1

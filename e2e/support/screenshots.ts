@@ -150,18 +150,27 @@ export async function chooseTheme(label: "Light" | "Dark") {
 }
 
 /**
- * Saves the app's window as `<name>.png` from the X display (Linux) or the
- * desktop (Windows, `window-shot.ps1`), the way the user sees it. A WebDriver screenshot holds only the main web view, so it
- * leaves out 007's PDF surface, a child of the window that the viewer's
- * dialog leaves open over the PDF's place; this one has it. The window is the
- * only one on the display and is at its corner, so the picture is the
- * display's top-left SCREENSHOT_WINDOW corner. A no-op when screenshots are
- * off. Wait for the surface to be there first (the `preview:pdf-ready` event).
+ * Saves the app's window as `<name>.png` from the screen (the X display on
+ * Linux, the desktop through `window-shot.ps1` on Windows, `screencapture` on
+ * macOS), the way the user sees it. A WebDriver screenshot holds only the main
+ * web view, so it leaves out 007's PDF surface, a child of the window that the
+ * viewer's dialog leaves open over the PDF's place; this one has it. On Linux
+ * the window is the only one on the display and is at its corner, so the
+ * picture is the display's top-left SCREENSHOT_WINDOW corner; on Windows it is
+ * the window's client area; on macOS it is the page's rectangle, below the
+ * title bar. A no-op when screenshots are off. Wait for the surface to be
+ * there first (the `preview:pdf-ready` event).
  */
 export async function shotDisplay(name: string) {
   if (!outDir) return;
-  if (process.platform !== "linux" && process.platform !== "win32") {
-    throw new Error("shotDisplay needs the X display (Linux) or the Windows desktop");
+  if (
+    process.platform !== "linux" &&
+    process.platform !== "win32" &&
+    process.platform !== "darwin"
+  ) {
+    throw new Error(
+      "shotDisplay needs the X display (Linux), the Windows desktop or screencapture (macOS)",
+    );
   }
   fs.mkdirSync(outDir, { recursive: true });
   await settleForShot();
@@ -175,6 +184,7 @@ export async function shotDisplay(name: string) {
   });
   // The surface paints on its own clock, not the page's.
   await browser.pause(800);
+  const file = path.join(outDir, `${name}.png`);
   if (process.platform === "win32") {
     // The window's client area, the main web view's size (see window-shot.ps1).
     execFileSync(
@@ -186,20 +196,31 @@ export async function shotDisplay(name: string) {
         "-File",
         fileURLToPath(new URL("../scripts/window-shot.ps1", import.meta.url)),
         "-Out",
-        path.join(outDir, `${name}.png`),
+        file,
       ],
       { stdio: "pipe" },
     );
+  } else if (process.platform === "darwin") {
+    // WebDriver's rectangle is the window's frame, title bar included; the
+    // page fills the rest, below it (one pixel to a point on this display).
+    const frame = await browser.getWindowRect();
+    const view = await browser.execute(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }));
+    const left = frame.x + Math.round((frame.width - view.width) / 2);
+    const top = frame.y + (frame.height - view.height);
+    execFileSync("screencapture", [
+      "-x",
+      "-t",
+      "png",
+      "-R",
+      `${left},${top},${view.width},${view.height}`,
+      file,
+    ]);
   } else {
     const { width, height } = SCREENSHOT_WINDOW;
-    execFileSync("import", [
-      "-window",
-      "root",
-      "-crop",
-      `${width}x${height}+0+0`,
-      "+repage",
-      path.join(outDir, `${name}.png`),
-    ]);
+    execFileSync("import", ["-window", "root", "-crop", `${width}x${height}+0+0`, "+repage", file]);
   }
   await browser.execute(() => document.getElementById("hd-screenshot-freeze")?.remove());
 }

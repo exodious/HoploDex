@@ -1105,6 +1105,109 @@ mod pixels {
     }
 }
 
+/// macOS: WebKit's PDF viewer draws into a plugin no script reaches, so, as on
+/// Windows, the first paint of the 10 MB PDF (two pages of random pixels) is
+/// seen on the screen: a run of pixels in the surface's page area that are
+/// all different, read from the display with CoreGraphics (Screen Recording
+/// permission, which `scripts/tart-vm.sh setup` grants).
+#[cfg(target_os = "macos")]
+mod pixels {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct CGPoint {
+        x: f64,
+        y: f64,
+    }
+    #[repr(C)]
+    struct CGSize {
+        width: f64,
+        height: f64,
+    }
+    #[repr(C)]
+    struct CGRect {
+        origin: CGPoint,
+        size: CGSize,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGMainDisplayID() -> u32;
+        fn CGDisplayCreateImageForRect(display: u32, rect: CGRect) -> *mut c_void;
+        fn CGImageGetWidth(image: *mut c_void) -> usize;
+        fn CGImageGetBitsPerPixel(image: *mut c_void) -> usize;
+        fn CGImageGetDataProvider(image: *mut c_void) -> *mut c_void;
+        fn CGDataProviderCopyData(provider: *mut c_void) -> *mut c_void;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFDataGetBytePtr(data: *mut c_void) -> *const u8;
+        fn CFDataGetLength(data: *mut c_void) -> isize;
+        fn CFRelease(object: *mut c_void);
+    }
+
+    /// Whether the pixels along the top of the 24-point-wide strip at `(x, y)`
+    /// (points from the main display's top left) hold at least 12 colours (a
+    /// drawn page of noise; the viewer's grey and the toolbar hold 1 or 2).
+    /// `None` when the display can't be read.
+    pub fn noisy(x: f64, y: f64) -> Option<bool> {
+        let rect = CGRect { origin: CGPoint { x, y }, size: CGSize { width: 24.0, height: 1.0 } };
+        // SAFETY: CoreGraphics and CoreFoundation calls on the objects they
+        // return, each released before returning.
+        unsafe {
+            let image = CGDisplayCreateImageForRect(CGMainDisplayID(), rect);
+            if image.is_null() {
+                return None;
+            }
+            let bytes_per_pixel = CGImageGetBitsPerPixel(image) / 8;
+            let width = CGImageGetWidth(image).min(24);
+            let data = CGDataProviderCopyData(CGImageGetDataProvider(image));
+            let mut colours = std::collections::HashSet::new();
+            let mut readable = false;
+            if !data.is_null() {
+                let length = CFDataGetLength(data) as usize;
+                let first_row = std::slice::from_raw_parts(CFDataGetBytePtr(data), length);
+                if bytes_per_pixel >= 3 && first_row.len() >= width * bytes_per_pixel {
+                    readable = true;
+                    for pixel in 0..width {
+                        let at = pixel * bytes_per_pixel;
+                        colours.insert(first_row[at..at + bytes_per_pixel].to_vec());
+                    }
+                }
+                CFRelease(data);
+            }
+            CFRelease(image);
+            readable.then_some(colours.len() >= 12)
+        }
+    }
+
+    /// Starts watching the screen at `(x, y)`; the instant it first looks
+    /// drawn is put in the returned cell (nothing in 30 s: `None`). `None` is
+    /// returned at once if it looks drawn already or can't be read, since
+    /// nothing could then be told apart.
+    pub fn watch(
+        x: f64,
+        y: f64,
+    ) -> Option<std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>>> {
+        if noisy(x, y) != Some(false) {
+            return None;
+        }
+        let cell = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let found = cell.clone();
+        std::thread::spawn(move || {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while std::time::Instant::now() < until {
+                if noisy(x, y) == Some(true) {
+                    *found.lock().unwrap() = Some(std::time::Instant::now());
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+        Some(cell)
+    }
+}
+
 /// Windows: Edge's viewer lives in a frame no page script reaches, so the
 /// reach probe runs there through the DevTools protocol (attach to every
 /// target but the surface's own page, evaluate the probe).
@@ -1388,10 +1491,16 @@ fn run_check(run: Run) {
     let window = app.get_window("main").unwrap();
     let scale = window.scale_factor().unwrap_or(1.0);
     let inner = window.inner_position().unwrap();
+    // macOS: the content view's top is under the title bar; the page, which
+    // BOUNDS are in, starts below it.
+    #[cfg(target_os = "macos")]
+    let title_bar = hoplodex_lib::services::preview::surface::title_bar_height(surface.webview());
+    #[cfg(not(target_os = "macos"))]
+    let title_bar = 0.0;
     let input = (!options.input.is_empty()).then(|| Input {
         command: options.input.clone(),
         origin: if cfg!(target_os = "macos") {
-            (f64::from(inner.x) / scale, f64::from(inner.y) / scale)
+            (f64::from(inner.x) / scale, f64::from(inner.y) / scale + title_bar)
         } else {
             (f64::from(inner.x), f64::from(inner.y))
         },
@@ -1448,7 +1557,8 @@ fn run_check(run: Run) {
         }
     }
     // The first page drawn: Linux's viewer says so; elsewhere the load event
-    // stands for it (Windows' large PDF is seen on the screen below).
+    // stands for it (the large PDF is seen on the screen below, on Windows
+    // and macOS).
     let first_paint = |since: Instant, loaded: Option<Duration>| -> (Duration, &'static str) {
         if cfg!(target_os = "linux") {
             let painted =
@@ -1534,15 +1644,27 @@ fn run_check(run: Run) {
 
     stage("the 10 MB PDF");
     // 3. The 10 MB PDF.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let drawn = {
         // Watched from before the document is asked for.
         let window = app.get_window("main").unwrap();
         let scale = window.scale_factor().unwrap_or(1.0);
         let inner = window.inner_position().unwrap();
-        let x = f64::from(inner.x) + (BOUNDS.x + 300.0) * scale;
-        let y = f64::from(inner.y) + (BOUNDS.y + 300.0) * scale;
-        let drawn = pixels::watch(x as i32, y as i32);
+        #[cfg(windows)]
+        let drawn = {
+            let x = f64::from(inner.x) + (BOUNDS.x + 300.0) * scale;
+            let y = f64::from(inner.y) + (BOUNDS.y + 300.0) * scale;
+            pixels::watch(x as i32, y as i32)
+        };
+        // macOS reads the display in points.
+        #[cfg(target_os = "macos")]
+        let drawn = {
+            let x = f64::from(inner.x) / scale + BOUNDS.x + 300.0;
+            let title_bar =
+                hoplodex_lib::services::preview::surface::title_bar_height(surface.webview());
+            let y = f64::from(inner.y) / scale + title_bar + BOUNDS.y + 300.0;
+            pixels::watch(x, y)
+        };
         if drawn.is_none() {
             eprintln!(
                 "CHECK the surface looks drawn before the 10 MB PDF is asked for: first paint falls back to the load event"
@@ -1560,8 +1682,8 @@ fn run_check(run: Run) {
         .find(|(p, _)| p.ends_with("/large.pdf"))
         .map(|(_, at)| at.duration_since(shown));
     let (paint, how) = first_paint(shown, load);
-    // Windows: the page seen on the screen, not the load event.
-    #[cfg(windows)]
+    // Windows and macOS: the page seen on the screen, not the load event.
+    #[cfg(any(windows, target_os = "macos"))]
     let (paint, how) = match drawn {
         Some(cell) if wait_until(Duration::from_secs(30), || cell.lock().unwrap().is_some()) => {
             let at = cell.lock().unwrap().unwrap();

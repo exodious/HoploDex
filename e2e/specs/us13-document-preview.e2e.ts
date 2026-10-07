@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 import { relaunchApp } from "../support/app";
 import { writeLargePdf } from "../support/largePdf";
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
@@ -355,15 +356,116 @@ function filesHolding(needles: string[]): string[] {
 interface Screen {
   width: number;
   height: number;
+  /** Three bytes a pixel, red, green, blue. */
   pixels: Buffer;
+  /** Where the main web view's top left is on the screen (Linux's window
+   * sits at 0,0 with no frame; macOS's has a title bar above the page). */
+  originX: number;
+  originY: number;
+}
+
+/** A PNG's pixels, as three bytes each (8 bits a channel, RGB or RGBA, not
+ * interlaced: what macOS's `screencapture` writes). */
+function decodePng(png: Buffer): { width: number; height: number; pixels: Buffer } {
+  let at = 8; // the signature
+  let width = 0;
+  let height = 0;
+  let channels = 0;
+  const data: Buffer[] = [];
+  while (at < png.length) {
+    const length = png.readUInt32BE(at);
+    const type = png.toString("latin1", at + 4, at + 8);
+    const body = png.subarray(at + 8, at + 8 + length);
+    if (type === "IHDR") {
+      width = body.readUInt32BE(0);
+      height = body.readUInt32BE(4);
+      const depth = body[8];
+      const colour = body[9];
+      if (depth !== 8 || (colour !== 2 && colour !== 6) || body[12] !== 0) {
+        throw new Error(
+          `unsupported PNG: depth ${depth}, colour type ${colour}, interlace ${body[12]}`,
+        );
+      }
+      channels = colour === 2 ? 3 : 4;
+    } else if (type === "IDAT") {
+      data.push(body);
+    }
+    at += 12 + length;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(data));
+  const stride = width * channels;
+  const rows = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const left = x >= channels ? rows[y * stride + x - channels] : 0;
+      const up = y > 0 ? rows[(y - 1) * stride + x] : 0;
+      const upLeft = y > 0 && x >= channels ? rows[(y - 1) * stride + x - channels] : 0;
+      let predictor = 0;
+      if (filter === 1) predictor = left;
+      else if (filter === 2) predictor = up;
+      else if (filter === 3) predictor = (left + up) >> 1;
+      else if (filter === 4) {
+        const estimate = left + up - upLeft;
+        const dLeft = Math.abs(estimate - left);
+        const dUp = Math.abs(estimate - up);
+        const dUpLeft = Math.abs(estimate - upLeft);
+        predictor = dLeft <= dUp && dLeft <= dUpLeft ? left : dUp <= dUpLeft ? up : upLeft;
+      }
+      rows[y * stride + x] = (line[x] + predictor) & 0xff;
+    }
+  }
+  if (channels === 3) return { width, height, pixels: rows };
+  const pixels = Buffer.alloc(width * height * 3);
+  for (let i = 0; i < width * height; i++) {
+    pixels[i * 3] = rows[i * 4];
+    pixels[i * 3 + 1] = rows[i * 4 + 1];
+    pixels[i * 3 + 2] = rows[i * 4 + 2];
+  }
+  return { width, height, pixels };
 }
 
 /** The screen as the user sees it, which includes the PDF surface (a
  * WebDriver screenshot holds only the main web view): the whole X screen on
- * Linux, where the window sits at 0,0, and on Windows the window's client
- * area (e2e/scripts/window-shot.ps1), so a point in the page is the same point
- * in the picture on both. */
-function windowScreenshot(): Screen {
+ * Linux, where the window sits at 0,0; on Windows the window's client area
+ * (e2e/scripts/window-shot.ps1), so a point in the page is the same point in
+ * the picture on both; on macOS the whole screen, with the page's origin
+ * found in it. */
+async function windowScreenshot(): Promise<Screen> {
+  if (process.platform === "darwin") {
+    // The window has a title bar above the page, and WebDriver's rectangle
+    // doesn't say where the page starts, so a green square in the page's top
+    // left corner (clear of the surface) is found in the capture and gives
+    // the page's origin.
+    const size = 40;
+    await browser.execute((px) => {
+      const marker = document.createElement("div");
+      marker.id = "e2e-origin-marker";
+      marker.style.cssText = `position:fixed;left:0;top:0;width:${px}px;height:${px}px;background:#00ff00;z-index:2147483647`;
+      document.body.appendChild(marker);
+    }, size);
+    await browser.pause(300);
+    const file = path.join(os.tmpdir(), `hoplodex-e2e-screen-${process.pid}.png`);
+    try {
+      execFileSync("screencapture", ["-x", "-t", "png", file]);
+      const screen = decodePng(fs.readFileSync(file));
+      let originX = Infinity;
+      let originY = Infinity;
+      for (let i = 0; i + 2 < screen.pixels.length; i += 3) {
+        if (screen.pixels[i] < 60 && screen.pixels[i + 1] > 200 && screen.pixels[i + 2] < 60) {
+          const at = i / 3;
+          originX = Math.min(originX, at % screen.width);
+          originY = Math.min(originY, Math.floor(at / screen.width));
+        }
+      }
+      if (!Number.isFinite(originX)) throw new Error("the origin marker is not on the screen");
+      return { ...screen, originX, originY };
+    } finally {
+      fs.rmSync(file, { force: true });
+      await browser.execute(() => document.getElementById("e2e-origin-marker")?.remove());
+    }
+  }
   let ppm: Buffer;
   if (process.platform === "win32") {
     const file = path.join(os.tmpdir(), `hoplodex-window-${process.pid}.ppm`);
@@ -407,11 +509,17 @@ function windowScreenshot(): Screen {
     fields.push(field);
   }
   at++;
-  return { width: Number(fields[1]), height: Number(fields[2]), pixels: ppm.subarray(at) };
+  return {
+    width: Number(fields[1]),
+    height: Number(fields[2]),
+    pixels: ppm.subarray(at),
+    originX: 0,
+    originY: 0,
+  };
 }
 
-/** How many pixels are the page's magenta; with `inside`, how many are
- * outside that rectangle (grown by `slack` px; the window sits at 0,0). */
+/** How many pixels are the page's magenta; with `inside` (in the page's own
+ * coordinates), how many are outside that rectangle (grown by `slack` px). */
 function magentaPixels(
   screen: Screen,
   inside?: { left: number; top: number; right: number; bottom: number },
@@ -422,8 +530,8 @@ function magentaPixels(
     if (screen.pixels[i] > 225 && screen.pixels[i + 1] < 45 && screen.pixels[i + 2] > 225) {
       if (inside) {
         const at = i / 3;
-        const x = at % screen.width;
-        const y = Math.floor(at / screen.width);
+        const x = (at % screen.width) - screen.originX;
+        const y = Math.floor(at / screen.width) - screen.originY;
         if (
           x >= inside.left - slack &&
           x <= inside.right + slack &&
@@ -436,6 +544,28 @@ function magentaPixels(
     }
   }
   return count;
+}
+
+/** The rectangle the page's magenta covers, in the page's own coordinates. */
+function magentaBounds(screen: Screen): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+} {
+  const found = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+  for (let i = 0; i + 2 < screen.pixels.length; i += 3) {
+    if (screen.pixels[i] > 225 && screen.pixels[i + 1] < 45 && screen.pixels[i + 2] > 225) {
+      const at = i / 3;
+      const x = (at % screen.width) - screen.originX;
+      const y = Math.floor(at / screen.width) - screen.originY;
+      found.left = Math.min(found.left, x);
+      found.right = Math.max(found.right, x);
+      found.top = Math.min(found.top, y);
+      found.bottom = Math.max(found.bottom, y);
+    }
+  }
+  return found;
 }
 
 // --- The spec ---------------------------------------------------------------
@@ -707,15 +837,30 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
       const r = document.querySelector(".hd-preview__surface")!.getBoundingClientRect();
       return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
     });
-    const screen = windowScreenshot();
+    const screen = await windowScreenshot();
     expect(magentaPixels(screen)).toBeGreaterThan(5000);
     // Linux GTK allocated the surface its natural size, not the size asked
     // for, so it ran to the window's edges over the footer.
     expect(magentaPixels(screen, area)).toBeLessThan(100);
-    // And fills it (the page, less the viewer's toolbar and gutters, is most
-    // of the area), rather than sitting offset inside it.
-    const areaPixels = (area.right - area.left) * (area.bottom - area.top);
-    expect(magentaPixels(screen) - magentaPixels(screen, area)).toBeGreaterThan(0.7 * areaPixels);
+    if (process.platform === "darwin") {
+      // WebKit's viewer shows the page at its own size, centred, from just
+      // under the top and cut off at the bottom (it is taller than the
+      // area): so it must touch both ends and be centred, rather than sit
+      // offset inside the area.
+      const page = magentaBounds(screen);
+      expect(page.top - area.top).toBeGreaterThanOrEqual(0);
+      expect(page.top - area.top).toBeLessThan(40);
+      expect(area.bottom - page.bottom).toBeGreaterThanOrEqual(0);
+      expect(area.bottom - page.bottom).toBeLessThan(10);
+      expect(Math.abs((page.left + page.right) / 2 - (area.left + area.right) / 2)).toBeLessThan(
+        20,
+      );
+    } else {
+      // And fills it (the page, less the viewer's toolbar and gutters, is most
+      // of the area), rather than sitting offset inside it.
+      const areaPixels = (area.right - area.left) * (area.bottom - area.top);
+      expect(magentaPixels(screen) - magentaPixels(screen, area)).toBeGreaterThan(0.7 * areaPixels);
+    }
     await closeViewer();
   });
 
@@ -729,7 +874,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
       timeoutMsg: "the toasts never went",
     });
     await browser.pause(1000); // the viewer's first paint
-    expect(magentaPixels(windowScreenshot())).toBeGreaterThan(5000);
+    expect(magentaPixels(await windowScreenshot())).toBeGreaterThan(5000);
 
     // The viewer's own lock button, since the dialog covers the top bar's.
     await clickEl('.hd-dialog__content--xl button[aria-label="Lock now"]');
@@ -737,7 +882,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     await browser.pause(300);
 
     expect(await $('[role="dialog"]').isExisting()).toBe(false);
-    expect(magentaPixels(windowScreenshot())).toBeLessThan(100);
+    expect(magentaPixels(await windowScreenshot())).toBeLessThan(100);
 
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     await openRecord(GLOCK);

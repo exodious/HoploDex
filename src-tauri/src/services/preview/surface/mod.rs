@@ -207,6 +207,15 @@ fn place_with_tauri<R: Runtime>(
     if visible { webview.show() } else { webview.hide() }
 }
 
+/// macOS: the title bar's height, which the main window's content view runs
+/// under and the page starts below. `Surface::set_bounds` takes the page's own
+/// coordinates and adds it; a check that reads the window's inner position
+/// (the content view's top) adds it to find the page's.
+#[cfg(target_os = "macos")]
+pub fn title_bar_height<R: Runtime>(webview: &Webview<R>) -> f64 {
+    os::title_bar_height(webview)
+}
+
 /// `bounds` where Tauri's own geometry works (macOS and Windows).
 #[cfg(not(target_os = "linux"))]
 fn bounds_from_tauri<R: Runtime>(webview: &Webview<R>) -> tauri::Result<Rect> {
