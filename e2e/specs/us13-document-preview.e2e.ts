@@ -664,20 +664,32 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
       timeout: 5000,
       timeoutMsg: "Page Down never moved to page 2",
     });
-    // Each zoom key moves its own way (research.md §14; a fit outside 50-400% is
-    // covered by the unit tests): + raises the percent, − lowers it.
+    // Each zoom key moves its own way (research.md §14): − lowers the percent
+    // and + raises it. The fit this scan opens at can lie outside 50-400% (on
+    // Linux it is 789%), where the key that would move the wrong way does
+    // nothing, so + first has to be left alone above 400%, and − twice puts the
+    // zoom inside the range, where + raises it.
     const percentValue = async () => Number.parseInt(await percent(), 10);
     const startPercent = await percentValue();
+    if (startPercent >= 400) {
+      await realKey("KP_Add");
+      await browser.pause(300);
+      expect(await percentValue()).toBe(startPercent);
+    }
+    let previous = startPercent;
+    for (let step = 0; step < 2; step++) {
+      await realKey("KP_Subtract");
+      const from = previous;
+      await browser.waitUntil(async () => (await percentValue()) < from, {
+        timeout: 5000,
+        timeoutMsg: `− never lowered the zoom from ${from}% (it started at ${before})`,
+      });
+      previous = await percentValue();
+    }
     await realKey("KP_Add");
-    await browser.waitUntil(async () => (await percentValue()) > startPercent, {
+    await browser.waitUntil(async () => (await percentValue()) > previous, {
       timeout: 5000,
-      timeoutMsg: `+ never raised the zoom from ${before}`,
-    });
-    const raised = await percentValue();
-    await realKey("KP_Subtract");
-    await browser.waitUntil(async () => (await percentValue()) < raised, {
-      timeout: 5000,
-      timeoutMsg: `− never lowered the zoom from ${raised}%`,
+      timeoutMsg: `+ never raised the zoom from ${previous}%`,
     });
 
     // Tab leaves the page area for the footer, whose arrows move on to the text.
