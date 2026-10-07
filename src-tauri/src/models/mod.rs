@@ -43,6 +43,7 @@ pub mod action_type;
 pub mod database;
 pub mod disposition_history;
 pub mod document_attachment;
+pub mod document_opening;
 pub mod firearm;
 pub mod firearm_type;
 pub mod insurance_policy;
@@ -52,6 +53,7 @@ pub mod registration;
 pub(crate) mod rules;
 
 pub use document_attachment::DocumentAttachment;
+pub use document_opening::DocumentOpening;
 pub use firearm::{DispositionType, Firearm, FirearmInput, FirearmStatus};
 pub use insurance_policy::{InsurancePolicy, InsurancePolicyInput};
 pub use photo::Photo;

@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::models::database::{ChooserNotice, OperationKind};
+use hoplodex_lib::models::document_opening::DocumentOpening;
 use hoplodex_lib::services::machine_settings::{
     MachineSettings, UnfinishedBackup, UnfinishedBackupMove,
 };
@@ -297,4 +298,40 @@ fn remove_drops_only_the_entry_and_never_the_file() {
     assert_eq!(names(&MachineSettings::load(config.path()).unwrap()), ["B"]);
     assert_eq!(fs::read(&a).unwrap(), b"database A");
     assert_eq!(files_in(data.path()), ["A.hoplodex"]);
+}
+
+#[test]
+fn documents_open_in_the_preview_until_the_setting_is_changed() {
+    let config = TempDir::new().unwrap();
+
+    // A fresh file reads the default (US3-1, FR-011).
+    let settings = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(settings.document_opening(), DocumentOpening::Preview);
+
+    // A set value survives a reload, and so does setting it back.
+    settings.set_document_opening(DocumentOpening::External);
+    let json = fs::read_to_string(config.path().join("machine.json")).unwrap();
+    assert!(json.contains(r#""documentOpening": "external""#), "{json}");
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(reloaded.document_opening(), DocumentOpening::External);
+    reloaded.set_document_opening(DocumentOpening::Preview);
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(reloaded.document_opening(), DocumentOpening::Preview);
+}
+
+#[test]
+fn a_file_written_before_the_setting_existed_reads_preview_and_keeps_its_data() {
+    let config = TempDir::new().unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    fs::write(
+        config.path().join("machine.json"),
+        format!(r#"{{"version":1,"machineId":"{id}","recentDatabases":[]}}"#),
+    )
+    .unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert_eq!(settings.document_opening(), DocumentOpening::Preview);
+    assert_eq!(settings.machine_id(), id);
+    assert!(!config.path().join("machine.json.bad").exists());
 }

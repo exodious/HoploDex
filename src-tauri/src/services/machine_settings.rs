@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{now_utc, random_hex};
 use crate::models::database::ChooserNotice;
+use crate::models::document_opening::DocumentOpening;
 use crate::services::keyring::Keyring;
 
 const FILE_NAME: &str = "machine.json";
@@ -101,6 +102,10 @@ struct MachineFile {
     unfinished_backup_move: Option<UnfinishedBackupMove>,
     #[serde(default)]
     notices: Vec<ChooserNotice>,
+    /// FR-011. A file written before this field existed reads as Preview, so
+    /// `VERSION` stays 1.
+    #[serde(default)]
+    document_opening: DocumentOpening,
 }
 
 impl MachineFile {
@@ -112,6 +117,7 @@ impl MachineFile {
             unfinished_backup: None,
             unfinished_backup_move: None,
             notices: Vec::new(),
+            document_opening: DocumentOpening::default(),
         })
     }
 
@@ -326,6 +332,15 @@ impl MachineSettings {
         let mut taken = Vec::new();
         self.update(|file| taken = std::mem::take(&mut file.notices));
         taken
+    }
+
+    /// How this computer opens a document (FR-011), for every database.
+    pub fn document_opening(&self) -> DocumentOpening {
+        self.lock().document_opening
+    }
+
+    pub fn set_document_opening(&self, value: DocumentOpening) {
+        self.update(|file| file.document_opening = value);
     }
 
     pub fn unfinished_backup(&self) -> Option<UnfinishedBackup> {

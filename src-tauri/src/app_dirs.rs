@@ -11,11 +11,45 @@
 //! of the developer's real `machine.json` and Documents folder (#27, "Never
 //! touch the real databases" in CLAUDE.md). An E2E build launched without
 //! the sandbox fails to start rather than fall back to the real directories.
+//!
+//! It also names the two web views' data folders (research.md §6, "Windows'
+//! user data folder"): the main window's and the PDF preview surface's,
+//! each under the cache directory, so an E2E build puts both in the sandbox.
 
-#[cfg(any(test, feature = "e2e"))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use tauri::{AppHandle, Runtime};
 
 pub use resolve::{cache_dir, config_dir, document_dir, home_dir};
+
+/// The main window's web view data folder, `<cache>/main-webview/`. The
+/// window is built in `setup()` with it (research.md §6), so its folder is
+/// never the one the preview surface uses and no `WEBVIEW2_USER_DATA_FOLDER`
+/// is needed.
+#[allow(dead_code)] // used by main.rs's setup() from T014
+pub fn main_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<PathBuf> {
+    Ok(main_webview_dir(&cache_dir(app)?))
+}
+
+/// The PDF preview surface's web view data folder, `<cache>/preview-webview2/`
+/// (research.md §6). On Windows, browser arguments belong to the browser
+/// process every web view sharing a folder shares, so the surface has a
+/// folder of its own. Deleted at startup and after its browser process exits.
+#[allow(dead_code)] // used by the preview surface from T014's follow-on tasks
+pub fn preview_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<PathBuf> {
+    Ok(preview_webview_dir(&cache_dir(app)?))
+}
+
+const MAIN_WEBVIEW_FOLDER: &str = "main-webview";
+const PREVIEW_WEBVIEW_FOLDER: &str = "preview-webview2";
+
+fn main_webview_dir(cache: &Path) -> PathBuf {
+    cache.join(MAIN_WEBVIEW_FOLDER)
+}
+
+fn preview_webview_dir(cache: &Path) -> PathBuf {
+    cache.join(PREVIEW_WEBVIEW_FOLDER)
+}
 
 #[cfg(not(feature = "e2e"))]
 mod resolve {
@@ -66,6 +100,13 @@ mod resolve {
         Ok(sandbox_dir(CACHE_HOME)?.join(&app.config().identifier))
     }
 
+    /// The cache directory for `identifier` in the sandbox `value` names (the
+    /// value of [`CACHE_HOME`]), or nothing when it isn't an absolute path.
+    #[cfg(test)]
+    pub fn cache_dir_in(value: Option<std::ffi::OsString>, identifier: &str) -> Option<PathBuf> {
+        super::sandbox_dir(value).map(|home| home.join(identifier))
+    }
+
     pub fn document_dir<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<PathBuf> {
         sandbox_dir(DOCUMENTS)
     }
@@ -92,8 +133,34 @@ fn sandbox_dir(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::sandbox_dir;
+    use super::{main_webview_dir, preview_webview_dir, sandbox_dir};
     use std::path::PathBuf;
+
+    #[test]
+    fn the_web_views_have_data_folders_of_their_own_under_the_cache_directory() {
+        let cache = std::env::temp_dir().join("hoplodex-cache");
+        let (main, preview) = (main_webview_dir(&cache), preview_webview_dir(&cache));
+        assert_ne!(main, preview);
+        assert!(main.starts_with(&cache) && preview.starts_with(&cache));
+        assert_eq!(preview, cache.join("preview-webview2"));
+    }
+
+    /// An E2E build's cache directory, and so both web view folders, lie
+    /// under the sandbox, never the OS's real cache (#27).
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn an_e2e_builds_web_view_folders_fall_under_the_sandbox() {
+        let sandbox = std::env::temp_dir().join("hoplodex-e2e-cache-home");
+        let cache = super::resolve::cache_dir_in(
+            Some(sandbox.clone().into_os_string()),
+            "io.github.exodious.HoploDex",
+        )
+        .unwrap();
+        assert!(main_webview_dir(&cache).starts_with(&sandbox));
+        assert!(preview_webview_dir(&cache).starts_with(&sandbox));
+        assert_eq!(super::resolve::cache_dir_in(None, "x"), None);
+        assert_eq!(super::resolve::cache_dir_in(Some("cache".into()), "x"), None);
+    }
 
     #[test]
     fn an_absolute_path_is_the_sandbox_directory() {
