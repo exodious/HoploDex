@@ -7,7 +7,9 @@ import { formatDate } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
 import type { RecordRef } from "../mounts/types";
 import * as mediaService from "./mediaService";
-import type { DocumentSummary } from "./types";
+import type { DocumentSummary, DocumentType, PdfEndReason } from "./types";
+import { DocumentPreview } from "./DocumentPreview";
+import { documentKindLabel } from "./documentKind";
 import { fileName, isDocumentPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
 import "./media.css";
@@ -21,29 +23,41 @@ function failureMessage(e: unknown, fallback: string): string {
   return e instanceof CommandFailure ? e.message : fallback;
 }
 
-function kindLabel(doc: DocumentSummary): string {
-  if (doc.mimeType === "application/pdf") return "PDF";
-  if (doc.mimeType.startsWith("image/")) return "Image";
-  const extension = doc.originalFilename.split(".").pop();
-  return extension && extension !== doc.originalFilename ? extension.toUpperCase() : "File";
+const PDF_OFF = "PDFs can't be previewed on this computer.";
+
+/** What the meta line adds after the kind and date, where it applies
+ * (contract §1; FR-013: the list shows which documents can be previewed). */
+function metaSuffix(doc: DocumentSummary): string {
+  if (!doc.openable) return " · can't be opened: not a document type";
+  if (doc.previewKind === null) return " · opens in another app";
+  if (!doc.previewAvailable) return " · can't be previewed on this computer";
+  return "";
 }
 
 /** Documents attached to a firearm or an accessory — receipts, appraisals, manuals — that
- * open in the computer's default app for their type (US4, FR-010). */
+ * open in the computer's default app for their type (US4, FR-010), and that the viewer
+ * previews inside HoploDex (007). */
 export function DocumentList({ owner }: DocumentListProps) {
   const notify = useToast();
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [adding, setAdding] = useState(0);
   const [opening, setOpening] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<DocumentSummary | null>(null);
+  const [types, setTypes] = useState<DocumentType[]>([]);
+  // The document the viewer shows, by id: a reload of the list can't move it.
+  const [viewing, setViewing] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // The system's file chooser gives the window no input while it is open
   // (research.md §15).
   useEffect(() => (inputRef.current ? pauseIdleForFileInput(inputRef.current) : undefined), []);
 
-  async function load() {
+  /** Reloads the list. `then` runs with it in the same batch of updates as
+   * the list is set, so a viewer's position follows it without a frame between. */
+  async function load(then?: (list: DocumentSummary[]) => void) {
     try {
-      setDocuments(await mediaService.listDocuments(owner));
+      const list = await mediaService.listDocuments(owner);
+      setDocuments(list);
+      then?.(list);
     } catch (e) {
       notify(failureMessage(e, "Documents couldn't be loaded."), "error");
       setDocuments([]);
@@ -54,6 +68,13 @@ export function DocumentList({ owner }: DocumentListProps) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner.kind, owner.id]);
+
+  // The labels come from the backend's table, with no list of the app's own (FR-016).
+  useEffect(() => {
+    mediaService.listDocumentTypes().then(setTypes, () => {
+      // Rows then show their extension, which is what a pre-007 row shows anyway.
+    });
+  }, []);
 
   /** Attaches each document in turn, carrying on past one that fails so a
    * bad file doesn't cost the rest of a batch. */
@@ -108,7 +129,13 @@ export function DocumentList({ owner }: DocumentListProps) {
   async function remove(doc: DocumentSummary) {
     try {
       await mediaService.deleteDocument(doc.id, true);
-      await load();
+      const position = documents?.findIndex((d) => d.id === doc.id) ?? -1;
+      // From the viewer: on to the next document, or the one before it, or close.
+      await load((list) =>
+        setViewing((now) =>
+          now === null ? null : (list[Math.min(position, list.length - 1)]?.id ?? null),
+        ),
+      );
       notify(`Deleted ${doc.originalFilename}.`);
     } catch (e) {
       notify(failureMessage(e, "The document couldn't be deleted."), "error");
@@ -119,6 +146,15 @@ export function DocumentList({ owner }: DocumentListProps) {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
     if (files.length > 0) void addFiles(files);
+  }
+
+  const viewIndex =
+    viewing === null || !documents ? -1 : documents.findIndex((d) => d.id === viewing);
+
+  /** The backend closed the PDF surface and turned PDF preview off here, so PDFs
+   * show as not previewable (contracts/tauri-commands.md, `preview:pdf-ended`). */
+  function onPdfEnded(reason: PdfEndReason) {
+    if (reason === "copyCaught" || reason === "noViewer") void load();
   }
 
   const dragging = useFileDrop(isDocumentPath, (paths) => void addPaths(paths));
@@ -166,15 +202,28 @@ export function DocumentList({ owner }: DocumentListProps) {
                 <button
                   type="button"
                   className="hd-doc__name"
-                  onClick={() => open(doc)}
-                  title={`Open ${doc.originalFilename}`}
+                  onClick={() => setViewing(doc.id)}
+                  title={`Preview ${doc.originalFilename}`}
                 >
                   {doc.originalFilename}
                 </button>
                 <span className="hd-doc__meta">
-                  {kindLabel(doc)} · added {formatDate(doc.createdAt.slice(0, 10))}
+                  {documentKindLabel(doc, types)} · added {formatDate(doc.createdAt.slice(0, 10))}
+                  {metaSuffix(doc)}
                 </span>
               </div>
+              {doc.previewKind !== null && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="eye"
+                  disabled={!doc.previewAvailable}
+                  title={doc.previewAvailable ? undefined : PDF_OFF}
+                  onClick={() => setViewing(doc.id)}
+                >
+                  Preview
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -208,6 +257,18 @@ export function DocumentList({ owner }: DocumentListProps) {
         <div className="hd-dropzone-overlay" aria-hidden>
           Drop to attach
         </div>
+      )}
+
+      {documents && viewIndex >= 0 && (
+        <DocumentPreview
+          documents={documents}
+          index={viewIndex}
+          documentTypes={types}
+          onIndexChange={(next) => setViewing(documents[next].id)}
+          onClose={() => setViewing(null)}
+          onDelete={setDeleting}
+          onPdfEnded={onPdfEnded}
+        />
       )}
 
       <ConfirmDialog

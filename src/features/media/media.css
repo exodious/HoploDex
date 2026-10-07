@@ -186,6 +186,141 @@
   color: var(--ink-2);
 }
 
+/* ── Document preview: the viewer ────────────────────────────────────── */
+
+/* The viewer's dialog is as tall as the window (size xl): its body is a column
+   the page area fills, rather than a scrolling sheet. */
+.hd-dialog__content--xl > .hd-dialog__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hd-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hd-preview__toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.hd-preview__toolbar-rule {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px var(--space-1);
+  background: var(--rule);
+}
+
+.hd-preview__page-indicator {
+  min-width: 8ch;
+  padding: 0 var(--space-1);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.hd-preview__footer-status {
+  align-self: center;
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+/* The page area: a TIFF's scroll of pages, and the text. */
+.hd-preview__pages,
+.hd-preview__text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--sheet-sunk);
+}
+
+.hd-preview__pagelist {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: content-box;
+  /* Sideways room only: the pages' tops are the layout's, with no row above. */
+  padding: 0 var(--space-4);
+}
+
+.hd-preview__page {
+  flex: none;
+  position: relative;
+  margin: 0;
+  background: var(--sheet);
+  box-shadow: var(--shadow-raised);
+}
+
+.hd-preview__page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.hd-preview__page--note {
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.hd-preview__page--note p {
+  margin: 0;
+}
+
+.hd-preview__text {
+  margin: 0;
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+/* A message in place of the document, and the loading line. */
+.hd-preview__state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.hd-preview__state--loading {
+  flex-direction: row;
+  font-size: var(--text-sm);
+}
+
+.hd-preview__state p {
+  max-width: 60ch;
+  margin: 0;
+  color: var(--ink);
+}
+
+.hd-preview__state-icon {
+  color: var(--ink-3);
+}
+
 /* ── Document preview: the PDF surface's placeholder ─────────────────── */
 
 .hd-preview__surface {
@@ -196,6 +331,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--sheet-sunk);
 }
 
 .hd-preview__preparing {

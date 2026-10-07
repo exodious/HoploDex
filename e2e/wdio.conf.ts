@@ -212,6 +212,16 @@ export const config: WebdriverIO.Config = {
     } else {
       delete process.env.HOPLODEX_E2E_KEYRING;
     }
+    // A computer whose PDF viewer can't be used safely (007 FR-003a): PDFs
+    // are not previewable, TIFF and text still are. Only a spec named so
+    // gets it for its whole session; a spec that needs both sets
+    // HOPLODEX_E2E_PDF_PREVIEW itself and calls relaunchApp(), and a
+    // developer's own value never reaches the app.
+    if (specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts"))) {
+      process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
+    } else {
+      delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
+    }
     // The idle lock's minute lasts 3 s in the locking spec, so its test
     // doesn't wait a real minute; every other spec keeps the real one.
     if (specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts"))) {

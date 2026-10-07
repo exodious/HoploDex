@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import type { ReactElement, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icon } from "./Icon";
@@ -12,14 +12,32 @@ export interface MenuProps {
   /** `MenuItem`s and `MenuSeparator`s. */
   children: ReactNode;
   align?: "start" | "end";
+  /** Set for a menu inside a `Dialog`: a non-modal menu there doesn't get the focus, or closes the
+   * moment it opens, because the menu and the dialog each have their own copy of Radix's
+   * dismissable layer (react-dismissable-layer 1.1.19 under react-menu, 1.1.16 under react-dialog)
+   * and don't know of each other. A modal menu keeps focus and keys to itself. */
+  modal?: boolean;
 }
 
 /** A menu of actions opened from a button, with menu roles, arrow-key
  * navigation, and Escape returning focus to the button (WCAG 2.1 AA,
  * specs/003 contracts/ui-databases.md §0). */
-export function Menu({ trigger, children, align = "start" }: MenuProps) {
+export function Menu({ trigger, children, align = "start", modal = false }: MenuProps) {
+  // The same skew leaves `pointer-events: none` on the page when a dialog and a modal menu
+  // inside it are unmounted together (a lock while the menu is open): the menu's layer
+  // restores the value it saw, which was the dialog's. Once everything is gone, undo it.
+  useEffect(() => {
+    if (!modal) return;
+    return () => {
+      queueMicrotask(() => {
+        if (!document.querySelector('[role="dialog"], [role="alertdialog"]')) {
+          document.body.style.pointerEvents = "";
+        }
+      });
+    };
+  }, [modal]);
   return (
-    <DropdownMenu.Root modal={false}>
+    <DropdownMenu.Root modal={modal}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content

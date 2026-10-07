@@ -18,22 +18,19 @@ pub enum UnavailableReason {
 }
 
 impl UnavailableReason {
-    /// The plain sentence for a message: what is off and why, ending in what
-    /// still works.
+    /// The reason's sentence, shown after "PDFs can't be previewed on this
+    /// computer." (ui contract §3).
     pub fn message(self) -> &'static str {
         match self {
             Self::Held => {
-                "PDF previews are turned off on this computer until HoploDex is updated, because \
-                 this computer's PDF viewer saved a copy of a document to disk."
+                "This computer's PDF viewer saved a copy of a document to disk, so PDF previews \
+                 are off until HoploDex is updated."
             }
             Self::CheckFailed => {
-                "PDFs can't be previewed on this computer, because HoploDex couldn't confirm that \
-                 its PDF viewer is kept from saving copies of documents to disk."
+                "HoploDex couldn't confirm that this computer's PDF viewer is kept from saving \
+                 copies of documents to disk."
             }
-            Self::NoViewer => {
-                "PDFs can't be previewed on this computer, because its web view has no built-in \
-                 PDF viewer."
-            }
+            Self::NoViewer => "This computer's web view has no built-in PDF viewer.",
         }
     }
 }

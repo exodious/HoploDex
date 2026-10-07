@@ -121,8 +121,12 @@ function installBackend(overrides: Record<string, Handler> = {}) {
     const handler = overrides[command];
     if (handler) return handler(args);
     switch (command) {
-      case "open_preview":
-        return infos[args.documentId as number];
+      case "open_preview": {
+        // Like the backend: a document with no preview of its kind is refused.
+        const info = infos[args.documentId as number];
+        if (!info) throw failure("PREVIEW_UNSUPPORTED", "This document can't be previewed.");
+        return info;
+      }
       case "render_preview_page":
         return new ArrayBuffer(8);
       case "close_preview":
