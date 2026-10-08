@@ -106,6 +106,8 @@ unless it says otherwise.
 ### M1. The native confirmation is the system's and blocks the window
 
 1. Start the app with `scripts/human-testing.sh` (a throwaway database).
+   In the chooser, open the seeded database with the passphrase
+   `human testing passphrase` (the script prints it too).
 2. Open the seeded firearm "Glock 19 Gen5".
 3. In Documents, choose "Open in another app…" on "Purchase receipt.pdf".
 4. **Expected**: a system dialog titled "Open “Purchase receipt.pdf” in
@@ -162,7 +164,7 @@ unless it says otherwise.
    (protected).pdf".
 2. **Expected**: the computer's PDF viewer asks for the document's
    password inside the page area. HoploDex shows no dialog of its own.
-3. Type the seeded password and confirm.
+3. Type the password `hoplodex-test` and confirm.
 4. **Expected**: the document is shown.
 5. Close the viewer and preview the same document again.
 6. **Expected**: the password is asked for again.

@@ -154,7 +154,7 @@ Command ends after Phase 1 design. Report branch, IMPL_PLAN path, and generated 
    - Use links or references to contracts and data model details instead of duplicating them
    - Do not include full implementation code, model/service/controller bodies, migrations, or complete test suites
    - Keep this artifact as a validation/run guide; implementation details belong in `tasks.md` and the implementation phase
-   - Automate every check that reasonably can be. A check that stays manual is a numbered procedure: its setup, one action per step, and the expected result, never a paragraph holding several steps. Manual checks are done best effort before a release, not as merge gates
+   - Automate every check that reasonably can be. A check that stays manual is a numbered procedure: its setup, one action per step, and the expected result, never a paragraph holding several steps. Write every passphrase or password a step needs into that step (the database's, a protected document's), never "the seeded password". Manual checks are done best effort before a release, not as merge gates
 
 **Output**: data-model.md, /contracts/*, quickstart.md
 

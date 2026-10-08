@@ -322,10 +322,10 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 
 ### Manual checks (best effort before a release, not merge gates)
 
-- [ ] T121 [P] On Linux, do quickstart.md's manual check **M1** (the native confirmation is the system's and blocks the window) with `scripts/dev-container.sh --gui scripts/human-testing.sh`, and record the result for the PR
+- [X] T121 [P] On Linux, do quickstart.md's manual check **M1** (the native confirmation is the system's and blocks the window) with `scripts/dev-container.sh --gui scripts/human-testing.sh`, and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
 - [ ] T122 [P] On macOS, do quickstart.md's manual check **M1** with `scripts/human-testing.sh` in the macOS 26 VM, and record the result for the PR
 - [ ] T123 [P] On Windows, do quickstart.md's manual check **M1** on the Windows test machine, and record the result for the PR
-- [ ] T124 [P] On Linux, do quickstart.md's manual check **M2** (no app for the type), and record the result for the PR
+- [X] T124 [P] On Linux, do quickstart.md's manual check **M2** (no app for the type), and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
 - [ ] T125 [P] On macOS, do quickstart.md's manual check **M2**, and record the result for the PR
 - [ ] T126 [P] On Windows, do quickstart.md's manual check **M2**, and record the result for the PR
 - [ ] T127 [P] On Windows, do quickstart.md's manual check **M3**, steps 1–2 (Word opens the copy in Protected View), and record the result for the PR
@@ -333,7 +333,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [ ] T129 [P] On Linux, do quickstart.md's manual check **M4** (a screen reader reads a previewed PDF) with Orca, and record the result for the PR
 - [ ] T130 [P] On macOS, do quickstart.md's manual check **M4** with VoiceOver, and record the result for the PR
 - [ ] T131 [P] On Windows, do quickstart.md's manual check **M4** with NVDA, and record the result for the PR
-- [ ] T132 [P] On Linux, do quickstart.md's manual check **M5** (a password-protected PDF uses the viewer's own prompt), and record the result for the PR
+- [X] T132 [P] On Linux, do quickstart.md's manual check **M5** (a password-protected PDF uses the viewer's own prompt), and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
 - [ ] T133 [P] On macOS, do quickstart.md's manual check **M5**, and record the result for the PR
 - [ ] T134 [P] On Windows, do quickstart.md's manual check **M5**, and record the result for the PR
 - [ ] T135 [P] On macOS, do quickstart.md's manual check **M6** (Spotlight indexes nothing from a preview), and record the result for the PR
