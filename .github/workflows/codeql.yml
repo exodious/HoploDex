@@ -72,16 +72,17 @@ jobs:
       - uses: actions/checkout@v7
 
       # Extraction runs `cargo check` for build-script outputs and proc
-      # macros, so the system libraries the build needs have to be there
-      # (the same as .github/workflows-disabled/ci.yml installs).
+      # macros, so the libraries the -sys crates' build scripts look up with
+      # pkg-config have to be there. WebKitGTK's dev package brings the rest
+      # (GTK, libsoup, JavaScriptCore, D-Bus); libssl-dev is for SQLCipher.
+      # Only `cargo check`'s needs: the app's full build list in
+      # .github/workflows-disabled/ci.yml also covers linking and bundling.
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential pkg-config perl \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev \
-            libsoup-3.0-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libwebkit2gtk-4.1-dev libssl-dev
 
       # SQLCipher needs a crypto library; on Windows libsqlite3-sys's build
       # script refuses to continue without OPENSSL_DIR. Extraction only runs
