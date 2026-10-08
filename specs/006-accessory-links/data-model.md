@@ -147,12 +147,13 @@ CREATE INDEX idx_accessories_kind ON accessories (accessory_kind_id);
 CREATE INDEX idx_accessories_status ON accessories (status);
 CREATE INDEX idx_accessories_insurance_policy ON accessories (insurance_policy_id);
 -- research.md §16: suggest_entries' GROUP BY over both tables.
--- Not partial: make and model are NOT NULL, so a partial index is unusable.
-CREATE INDEX idx_accessories_make ON accessories (make);
-CREATE INDEX idx_accessories_make_model ON accessories (make, model);
+CREATE INDEX idx_accessories_make ON accessories (make) WHERE make IS NOT NULL;
+CREATE INDEX idx_accessories_make_model ON accessories (make, model) WHERE model IS NOT NULL;
 CREATE INDEX idx_accessories_caliber ON accessories (caliber) WHERE caliber IS NOT NULL;
 CREATE INDEX idx_accessories_cartridge ON accessories (cartridge) WHERE cartridge IS NOT NULL;
 ```
+
+_Amended 2026-10-07 (on 007's branch, with the suggestions warm-up): `idx_accessories_make` and `idx_accessories_make_model` are no longer partial, `ON accessories (make)` and `ON accessories (make, model)`. Make and model are `NOT NULL`, so SQLite drops `IS NOT NULL` from the query and can't use a partial index (the models over both tables took 51 ms on Windows, against 004's 50 ms). See research.md §16._
 
 The table gets the three `*_marks_backup_due_*` triggers. It has no
 nickname, no serial-or-attestation `CHECK`, no identity index and no

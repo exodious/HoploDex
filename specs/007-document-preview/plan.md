@@ -394,7 +394,8 @@ and link it from each:
   Linux, Windows and macOS (build, Rust, Vitest, lint and audits, all 15
   E2E spec files and the screenshot walk on each), and bring 001's
   `plan.md` up to date where it is stale (the embedded driver, not
-  `tauri-driver`; macOS 26, Apple silicon only). Run the release
+  `tauri-driver`; macOS 26, Apple silicon only), with amendment notes
+  beside its text, not by rewriting it (amended 2026-10-08). Run the release
   performance tests on the Windows and macOS machines and report them
   against the budgets. Comment with the results and tick #27, #28 and
   #29. CI (#25) is separate work: take it off #26's list and say it

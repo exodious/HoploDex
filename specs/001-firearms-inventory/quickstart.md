@@ -8,14 +8,15 @@ independent test from spec.md. Field/command names reference
 ## Prerequisites
 
 - Rust toolchain (stable, 1.97+) with `cargo`.
-- Node.js 24 LTS and npm 12+ for the frontend.
+- Node.js 18+ and a package manager (npm/pnpm) for the frontend.
 - Tauri 2.x CLI prerequisites for your OS (WebView2 on Windows,
-  WebKitGTK dev packages on Linux, Xcode Command Line Tools on macOS 26+ —
-  see Tauri's own platform prerequisites and DEVELOPMENT.md).
-- Nothing to install for E2E: the E2E build carries its own WebDriver
-  server (no `tauri-driver`). On Linux the tests also need `xvfb`.
+  WebKitGTK dev packages on Linux — see Tauri's own platform prerequisites).
+- `tauri-driver` installed (for E2E) and the platform's WebDriver server
+  available (WebView2 driver on Windows, `WebKitWebDriver` on Linux).
 - On Linux, the development container has all of the above
   (`scripts/dev-container.sh`; see DEVELOPMENT.md).
+
+_Superseded 2026-10-07 by DEVELOPMENT.md (noted by [spec 007](../007-document-preview/tasks.md) T119), the one source for development prerequisites: Node.js 24 LTS and npm 12+, Xcode Command Line Tools on macOS 26+, and nothing to install for E2E, whose build carries its own WebDriver server (no `tauri-driver`); on Linux the tests also need `xvfb`._
 
 ## Setup
 
@@ -45,10 +46,12 @@ cargo test --manifest-path src-tauri/Cargo.toml
 # Frontend unit tests
 npm run test        # Vitest
 
-# End-to-end acceptance-scenario tests (drives the E2E build through its embedded WebDriver server)
-npm run build       # the E2E build embeds whatever is in dist/
+# End-to-end acceptance-scenario tests (builds the app, drives it via tauri-driver)
+npm run build:tauri
 npm run test:e2e    # WebdriverIO against the built app
 ```
+
+_Superseded 2026-10-07 by DEVELOPMENT.md: run `npm run build`, not `build:tauri`, before `npm run test:e2e`, since the E2E build embeds whatever is in `dist/`._
 
 All three MUST pass before merge per the constitution's Development
 Workflow gate.
