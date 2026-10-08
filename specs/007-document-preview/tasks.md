@@ -330,9 +330,12 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [ ] T126 [P] On Windows, do quickstart.md's manual check **M2**, and record the result for the PR
 - [ ] T127 [P] On Windows, do quickstart.md's manual check **M3**, steps 1–2 (Word opens the copy in Protected View), and record the result for the PR
 - [ ] T128 [P] On macOS, do quickstart.md's manual check **M3**, steps 3–4 (the copy carries `com.apple.quarantine`), and record the result for the PR
-- [ ] T129 [P] On Linux, do quickstart.md's manual check **M4** (a screen reader reads a previewed PDF) with Orca, and record the result for the PR
-- [ ] T130 [P] On macOS, do quickstart.md's manual check **M4** with VoiceOver, and record the result for the PR
-- [ ] T131 [P] On Windows, do quickstart.md's manual check **M4** with NVDA, and record the result for the PR
+- [X] T129 [P] On Linux, do quickstart.md's manual check **M4** (a screen reader reads a previewed PDF) with Orca, and record the result for the PR
+  - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
+- [X] T130 [P] On macOS, do quickstart.md's manual check **M4** with VoiceOver, and record the result for the PR
+  - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
+- [X] T131 [P] On Windows, do quickstart.md's manual check **M4** with NVDA, and record the result for the PR
+  - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
 - [X] T132 [P] On Linux, do quickstart.md's manual check **M5** (a password-protected PDF uses the viewer's own prompt), and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
 - [ ] T133 [P] On macOS, do quickstart.md's manual check **M5**, and record the result for the PR
 - [ ] T134 [P] On Windows, do quickstart.md's manual check **M5**, and record the result for the PR

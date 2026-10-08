@@ -174,6 +174,8 @@ on macOS.
 
 ### M4. A screen reader reads a previewed PDF
 
+_Deferred 2026-10-08 to #48, which runs the screen reader checks of 004, 005, 006 and 007 together (tasks.md T129–T131)._
+
 1. With Orca (Linux), NVDA (Windows) or VoiceOver (macOS) running, do
    the Setup steps 1–4 and preview "Purchase receipt.pdf".
 2. Move to the page area.
