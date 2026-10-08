@@ -210,7 +210,11 @@ walk needs 1920×4200, since macOS keeps a window within the screen and the
 full-page shots grow to 4000, but tart's window shrinks a screen that tall
 until the desktop is too small to use by hand. tart changes the screen only
 while the VM is stopped, so `start` shuts a running VM down and starts it
-again when it has the other size. Set `HOPLODEX_VM_DISPLAY` (such as
+again when it has the other size. It also turns off tart's display refit
+(`--no-display-refit`), which otherwise reshapes the VM's screen to fit tart's
+window (one that remembered an earlier size gave a 1920×2012 screen for
+1080), so the screen is the size asked for and tart scales it into the
+window. Set `HOPLODEX_VM_DISPLAY` (such as
 `1440x900px`) for a usual screen that suits your own; keep it at least
 1200×800 for the E2E window.
 

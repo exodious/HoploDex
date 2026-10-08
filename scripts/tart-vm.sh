@@ -145,7 +145,10 @@ start_vm() {
       stop_vm
       ;;
   esac
-  tart set "$vm" --display "$want"
+  # Refit off, or tart reshapes the screen to its window, whose frame it
+  # remembers from earlier runs. In the same call: tart set clears a refit
+  # setting it isn't given.
+  tart set "$vm" --display "$want" --no-display-refit
   echo "$want" > "$state/display"
   say "starting $vm (log: $state/run.log)"
   nohup tart run "$vm" > "$state/run.log" 2>&1 &
