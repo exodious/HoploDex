@@ -113,7 +113,10 @@ before it opens.
 
 1. Start the app against the sandbox. On Linux, run
    `scripts/dev-container.sh --gui scripts/human-testing.sh`. On macOS,
-   run `scripts/human-testing.sh` in the macOS 26 VM. (The script is for
+   start the macOS 26 VM with `scripts/tart-vm.sh start` (not
+   `--tall`, whose screen is too tall to use by hand), copy the
+   checkout in with `scripts/tart-vm.sh sync`, and in a Terminal in the
+   VM run `cd ~/HoploDex && scripts/human-testing.sh`. (The script is for
    Linux and macOS only. Human testing on Windows is #81.)
 2. **Expected**: the database chooser lists "Main collection" and
    "Shared collection" under recent databases.

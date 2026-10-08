@@ -185,8 +185,8 @@ regressions, all of us10, us11 and us12) are skipped, and reported as
 pending. `quit-cleanup.py` runs there too (see below), and so does the
 screenshot walk, but macOS keeps a window within the screen, so the
 full-page shots are cut off at the screen's height unless the display is
-taller than the page (`scripts/tart-vm.sh` gives its VM 1920×4200, as Linux's
-Xvfb screen).
+taller than the page (`scripts/tart-vm.sh start --tall` gives its VM
+1920×4200, as Linux's Xvfb screen).
 
 **macOS in a VM:** to test macOS without your own account's data nearby,
 use a [tart](https://tart.run) VM made from a Cirrus Labs image with Xcode
@@ -195,11 +195,24 @@ and runs the tests in it as a standard (non-admin) user:
 
 ```bash
 scripts/tart-vm.sh setup                   # clone, create hoplotest, install the toolchain, log it in at boot
+scripts/tart-vm.sh start                   # start it with a 1920×1080 screen, for the tests and manual testing
 scripts/tart-vm.sh test                    # copy the checkout in, lint and test over SSH, E2E in its desktop
 scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.test.tsx   # one command
 scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
+scripts/tart-vm.sh start --tall            # restart it with a 1920×4200 screen, for the screenshot walk
+scripts/tart-vm.sh gui bash -c 'npm run build && npm run screenshots'
 scripts/tart-vm.sh fetch e2e/screenshots-out   # copy results back
+scripts/tart-vm.sh start                   # back to 1920×1080
 ```
+
+The VM's screen is 1920×1080 unless you ask for the tall one. The screenshot
+walk needs 1920×4200, since macOS keeps a window within the screen and the
+full-page shots grow to 4000, but tart's window shrinks a screen that tall
+until the desktop is too small to use by hand. tart changes the screen only
+while the VM is stopped, so `start` shuts a running VM down and starts it
+again when it has the other size. Set `HOPLODEX_VM_DISPLAY` (such as
+`1440x900px`) for a usual screen that suits your own; keep it at least
+1200×800 for the E2E window.
 
 `setup` uses the image's `admin` only to create the user, turn off sleep,
 skip the user's Setup Assistant, log it in automatically at boot and give

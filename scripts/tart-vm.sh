@@ -5,7 +5,10 @@
 #
 #   scripts/tart-vm.sh setup        clone the VM, create the test user, install
 #                                   the toolchain in its home, log it in
-#   scripts/tart-vm.sh start        start the VM (with its window) and wait for SSH
+#   scripts/tart-vm.sh start [--tall]
+#                                   start the VM (with its window) and wait for
+#                                   SSH; --tall gives it the 1920x4200 screen
+#                                   the screenshot walk needs (see below)
 #   scripts/tart-vm.sh stop         shut it down (from inside, as admin)
 #   scripts/tart-vm.sh sync         copy this checkout in (~/HoploDex, no .git)
 #   scripts/tart-vm.sh test         sync, then lint, unit and Rust tests over SSH,
@@ -42,10 +45,20 @@
 #                          ~/.ssh/hoplodex_tart, created if missing)
 #   HOPLODEX_VM_CPUS       CPUs (default 4)
 #   HOPLODEX_VM_MEMORY     memory in MB (default 8192)
+#   HOPLODEX_VM_DISPLAY    the VM's screen, for manual testing and the tests
+#                          (default 1920x1080px)
 #   HOPLODEX_VM_PASSWORD   the test user's password, for a user that already
 #                          exists (default: generated for a new one)
 #   HOPLODEX_VM_ADMIN_PASSWORD
 #                          the image's admin password (default admin)
+#
+# The screen: tart sets it only while the VM is stopped, so start shuts a
+# running VM down and starts it again when it has the other size. The usual
+# one is a desktop to use by hand; the screenshot walk's full-page shots need
+# --tall, since macOS keeps a window within the screen and they grow to 4000
+# px, as Linux's Xvfb screen is (e2e/support/display.ts). That one is too tall
+# for tart's window to show at a usable scale, so start without --tall again
+# when the walk is done.
 #
 # The test user's password is kept, with the VM's SSH host keys and the logs,
 # in ${XDG_STATE_HOME:-~/.local/state}/hoplodex-tart/<vm>/.
@@ -58,6 +71,11 @@ user="${HOPLODEX_VM_USER:-hoplotest}"
 key="${HOPLODEX_VM_KEY:-$HOME/.ssh/hoplodex_tart}"
 cpus="${HOPLODEX_VM_CPUS:-4}"
 memory="${HOPLODEX_VM_MEMORY:-8192}"
+# px, not pt: on a Retina host pt gives the VM a 2x framebuffer. Either needs
+# room for the E2E window (1200x800): with tart's default 1024x768 the
+# screenshot walk's resizeWindow times out.
+display="${HOPLODEX_VM_DISPLAY:-1920x1080px}"
+tall_display=1920x4200px
 admin_password="${HOPLODEX_VM_ADMIN_PASSWORD:-admin}"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/hoplodex-tart/$vm"
 checkout=HoploDex # in the test user's home
@@ -114,16 +132,23 @@ wait_for_ssh() { # $1: user_ssh or admin_ssh, $2: login
   die "no SSH answer from $2@$ip after 5 minutes"
 }
 
+# Starts the VM with the screen $1 (default $display). A running VM with a
+# different screen, or one this script didn't record, is shut down first.
 start_vm() {
+  local want="${1:-$display}"
   mkdir -p "$state"
   case "$(vm_state)" in
     missing) die "no VM named $vm; run: $0 setup" ;;
-    running) ;;
-    *)
-      say "starting $vm (log: $state/run.log)"
-      nohup tart run "$vm" > "$state/run.log" 2>&1 &
+    running)
+      [[ "$(cat "$state/display" 2>/dev/null)" == "$want" ]] && return 0
+      say "restarting $vm with a $want screen"
+      stop_vm
       ;;
   esac
+  tart set "$vm" --display "$want"
+  echo "$want" > "$state/display"
+  say "starting $vm (log: $state/run.log)"
+  nohup tart run "$vm" > "$state/run.log" 2>&1 &
 }
 
 # tart stop cuts a macOS guest's power at once, so whatever the guest hasn't
@@ -166,12 +191,7 @@ cmd_setup() {
     rm -f "$state/known_hosts"
   fi
   if [[ "$(vm_state)" != running ]]; then
-    # px, not pt: on a Retina host pt gives the VM a 2x framebuffer. The
-    # default 1024x768 shrinks the E2E window (1200x800) and the screenshot
-    # walk's resizeWindow times out. 4200 tall, as Linux's Xvfb screen, since
-    # macOS keeps a window within the screen and the walk's full-page shots
-    # grow to 4000.
-    tart set "$vm" --cpu "$cpus" --memory "$memory" --display 1920x4200px
+    tart set "$vm" --cpu "$cpus" --memory "$memory"
   fi
 
   if [[ ! -f "$key" ]]; then
@@ -539,7 +559,11 @@ shift
 case "$sub" in
   setup) cmd_setup ;;
   start)
-    start_vm
+    case "${1:-}" in
+      --tall) start_vm "$tall_display" ;;
+      "") start_vm ;;
+      *) usage 1 ;;
+    esac
     wait_for_ssh user_ssh "$user"
     say "$vm is up at $(vm_ip)"
     ;;
