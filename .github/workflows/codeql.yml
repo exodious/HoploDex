@@ -95,18 +95,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # `tauri::generate_context!` embeds the built frontend
-      # (tauri.conf.json's frontendDist), so it has to exist for main.rs's
-      # macros to expand.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Build the frontend
-        run: |
-          npm ci
-          npm run build
+      # `tauri::generate_context!` panics in a release build when
+      # tauri.conf.json's frontendDist is missing. The Rust scan doesn't need
+      # the built frontend (the JavaScript job scans its source), only the
+      # folder, so this skips `npm ci` and its packages' install scripts.
+      - name: Create a placeholder frontend dist
+        shell: bash
+        run: mkdir -p dist
 
       - uses: github/codeql-action/init@v4
         with:
