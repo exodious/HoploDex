@@ -103,24 +103,46 @@ These need a real desktop, real default apps or a screen reader, which
 the container doesn't have. Each is done on Windows, macOS and Linux
 unless it says otherwise.
 
+### Setup (every check starts here)
+
+`scripts/human-testing.sh` seeds **two** databases into
+`.human-testing/HoploDex/`: "Main collection" and "Shared collection".
+Every check uses **"Main collection"**. "Shared collection" has three
+firearms and no documents, and asks to take over from "Workshop PC"
+before it opens.
+
+1. Start the app against the sandbox. On Linux, run
+   `scripts/dev-container.sh --gui scripts/human-testing.sh`. On macOS,
+   run `scripts/human-testing.sh` in the macOS 26 VM. (The script is for
+   Linux and macOS only. Human testing on Windows is #81.)
+2. **Expected**: the database chooser lists "Main collection" and
+   "Shared collection" under recent databases.
+3. Choose "Main collection" and enter the passphrase
+   `human testing passphrase` (the script prints it too).
+4. Open the firearm "Glock 19 Gen5". Every document the checks use is in
+   its Documents section.
+
+The `opened-documents` folder the checks look in is under the
+sandbox's cache folder:
+`.human-testing/cache/io.github.exodious.HoploDex/opened-documents` on
+Linux, and
+`.human-testing/home/Library/Caches/io.github.exodious.HoploDex/opened-documents`
+on macOS.
+
 ### M1. The native confirmation is the system's and blocks the window
 
-1. Start the app with `scripts/human-testing.sh` (a throwaway database).
-   In the chooser, open the seeded database with the passphrase
-   `human testing passphrase` (the script prints it too).
-2. Open the seeded firearm "Glock 19 Gen5".
-3. In Documents, choose "Open in another app…" on "Purchase receipt.pdf".
-4. **Expected**: a system dialog titled "Open “Purchase receipt.pdf” in
+1. Do the Setup steps 1–4.
+2. In Documents, choose "Open in another app…" on "Purchase receipt.pdf".
+3. **Expected**: a system dialog titled "Open “Purchase receipt.pdf” in
    another app?", with the four consequences and the buttons "Open in
    another app" and "Cancel". The HoploDex window doesn't respond to
    clicks while it is shown.
-5. Press Escape.
-6. **Expected**: the dialog closes, no app starts, and the
-   `opened-documents` folder under the app's cache folder has no
-   `Purchase receipt.pdf`.
-7. Open the database menu, then Database settings, and in its Documents
+4. Press Escape.
+5. **Expected**: the dialog closes, no app starts, and the
+   `opened-documents` folder (Setup) has no `Purchase receipt.pdf`.
+6. Open the database menu, then Database settings, and in its Documents
    section change "Open documents" to "Open in another app".
-8. **Expected**: a system dialog titled "Open documents in another
+7. **Expected**: a system dialog titled "Open documents in another
    app?" with the buttons "Open in another app" and "Cancel", and the
    HoploDex window doesn't respond to clicks while it is shown. Press
    Escape: the dialog closes and the setting still reads "Preview in
@@ -128,27 +150,32 @@ unless it says otherwise.
 
 ### M2. No app for the type
 
-1. On a computer with no app for `.ods`, start the app as in M1.
-2. Choose "Open in another app…" on the seeded "Range log.ods".
+1. On a computer with no app for `.ods`, do the Setup steps 1–4.
+2. In Documents, choose "Open in another app…" on "Range log.ods".
 3. Choose "Open in another app" in the system dialog. (On Windows there is
    no dialog: the check comes first, amended 2026-10-07.)
 4. **Expected**: the toast "This computer has no app that opens
    OpenDocument spreadsheet documents." (On Linux and macOS, which find
    out only when they start the app, it continues "HoploDex deleted the
-   copy it made.") The `opened-documents` folder has no `Range log.ods`.
+   copy it made.") The `opened-documents` folder (Setup) has no
+   `Range log.ods`.
 
 ### M3. The copy is marked untrusted (Windows, macOS)
 
-1. On Windows, open the seeded "Bill of sale.docx" in another app and
-   confirm.
+1. On Windows, with "Main collection" open on "Glock 19 Gen5" (Setup
+   steps 3–4), choose "Open in another app…" on "Bill of sale.docx".
 2. **Expected**: Word opens it in Protected View.
-3. On macOS, run `xattr -l` on the copy in the `opened-documents` folder.
-4. **Expected**: a `com.apple.quarantine` attribute is listed.
+3. On macOS, do the Setup steps 1–4, choose "Open in another app…" on
+   "Bill of sale.docx", and choose "Open in another app" in the system
+   dialog.
+4. Run `xattr -l` on `Bill of sale.docx` in the `opened-documents` folder
+   (Setup).
+5. **Expected**: a `com.apple.quarantine` attribute is listed.
 
 ### M4. A screen reader reads a previewed PDF
 
-1. With Orca (Linux), NVDA (Windows) or VoiceOver (macOS) running, start
-   the app as in M1 and preview "Purchase receipt.pdf".
+1. With Orca (Linux), NVDA (Windows) or VoiceOver (macOS) running, do
+   the Setup steps 1–4 and preview "Purchase receipt.pdf".
 2. Move to the page area.
 3. **Expected**: the region is announced as "Purchase receipt.pdf, PDF",
    with the F6 hint.
@@ -160,8 +187,7 @@ unless it says otherwise.
 
 ### M5. A password-protected PDF uses the viewer's own prompt
 
-1. Start the app as in M1 and preview the seeded "Appraisal
-   (protected).pdf".
+1. Do the Setup steps 1–4 and preview "Appraisal (protected).pdf".
 2. **Expected**: the computer's PDF viewer asks for the document's
    password inside the page area. HoploDex shows no dialog of its own.
 3. Type the password `hoplodex-test` and confirm.
@@ -171,8 +197,11 @@ unless it says otherwise.
 
 ### M6. Spotlight doesn't index anything from a preview (macOS, indexing on)
 
-1. On a Mac with Spotlight indexing on for the start-up volume, start the
-   app as in M1 and preview "Purchase receipt.pdf".
+1. On a Mac with Spotlight indexing on for the start-up volume, do the
+   Setup steps 1–4 and preview "Purchase receipt.pdf".
 2. Close the viewer and quit HoploDex.
-3. Search Spotlight for a word that appears only in that document's text.
-4. **Expected**: no result.
+3. Search Spotlight for `waiting period`, a phrase from that document's
+   second page.
+4. **Expected**: no result outside the repository checkout
+   (`src-tauri/examples/human_seed.rs`, which writes the document, holds
+   the phrase too).
