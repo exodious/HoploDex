@@ -83,15 +83,22 @@ jobs:
             libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev \
             libsoup-3.0-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-      # SQLCipher needs a crypto library; on Windows rusqlite's build script
-      # refuses to continue without OPENSSL_DIR.
-      - name: Install OpenSSL for SQLCipher (Windows)
+      # SQLCipher needs a crypto library; on Windows libsqlite3-sys's build
+      # script refuses to continue without OPENSSL_DIR. Extraction only runs
+      # `cargo check`, which compiles SQLCipher against OpenSSL's headers but
+      # never links, so the runner image's own OpenSSL is enough and the slow
+      # vcpkg source build is only a fallback for an image without one.
+      - name: Point SQLCipher at OpenSSL (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install openssl:x64-windows-static-md
-          "OPENSSL_DIR=C:\vcpkg\installed\x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "OPENSSL_STATIC=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $dir = "C:\Program Files\OpenSSL"
+          if (-not (Test-Path "$dir\include\openssl\evp.h") -or -not (Test-Path "$dir\lib")) {
+            Write-Output "::warning::No OpenSSL in the runner image; building it with vcpkg"
+            vcpkg install openssl:x64-windows-static-md
+            $dir = "C:\vcpkg\installed\x64-windows-static-md"
+          }
+          "OPENSSL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - uses: dtolnay/rust-toolchain@stable
 
