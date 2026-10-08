@@ -61,6 +61,9 @@ fn is_user_table(name: &str) -> bool {
     !(name.starts_with("sqlite_")
         || name.starts_with("firearms_fts")
         || name.starts_with("accessories_fts")
+        // specs/007-document-preview data-model.md: the third index, over
+        // document names, and its shadow tables.
+        || name.starts_with("document_names_fts")
         || name == "accessory_kinds"
         || name == "schema_migrations"
         || name == "firearm_types"

@@ -9,7 +9,7 @@ import {
   focusedFieldLabel,
   settle,
 } from "../support/ui";
-import { realClick, realKey } from "../support/realInput";
+import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/005-regulated-item-types' User Story 2
@@ -72,6 +72,9 @@ async function highlightedOption(): Promise<string | null> {
 }
 
 describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
+  before(function () {
+    skipWithoutRealInput(this);
+  });
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

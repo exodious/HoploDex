@@ -28,6 +28,14 @@ fn marker_blob() -> Vec<u8> {
     MARKER.repeat(REPEATS)
 }
 
+/// The marker as a document: `add_document` keeps only what passes the
+/// content check (FR-016), and a PDF's signature may be followed by anything.
+fn marker_document() -> Vec<u8> {
+    let mut bytes = b"%PDF-1.4\n".to_vec();
+    bytes.extend(marker_blob());
+    bytes
+}
+
 /// A real PNG (so the thumbnail generator accepts it) with the marker
 /// appended after its final chunk, where decoders ignore it.
 fn marker_png() -> Vec<u8> {
@@ -87,9 +95,8 @@ fn the_search_can_see_the_marker_while_it_is_stored() {
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
 
@@ -113,9 +120,8 @@ fn deleting_a_document_wipes_its_bytes_and_returns_the_space() {
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
     let size_before = file_size(&db.conn);
@@ -163,9 +169,8 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
     let size_before = file_size(&db.conn);
@@ -268,9 +273,8 @@ fn deleting_one_attachment_leaves_the_others_intact() {
     let keep = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "keep.pdf",
-        "application/pdf",
     )
     .unwrap();
     let doomed = document_ops::add_document(
@@ -278,14 +282,13 @@ fn deleting_one_attachment_leaves_the_others_intact() {
         RecordRef::Firearm(created.id),
         b"%PDF-1.4 to be deleted",
         "gone.pdf",
-        "application/pdf",
     )
     .unwrap();
 
     document_ops::delete_document(&db.conn, doomed.id, true).unwrap();
 
     let kept = document_ops::get_document(&db.conn, keep.id).unwrap();
-    assert_eq!(kept.file_bytes, marker_blob(), "the vacuum must not disturb what stays");
+    assert_eq!(kept.file_bytes, marker_document(), "the vacuum must not disturb what stays");
 }
 
 #[test]
@@ -296,9 +299,8 @@ fn an_unconfirmed_delete_changes_nothing() {
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
-        &marker_blob(),
+        &marker_document(),
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
 
@@ -355,8 +357,7 @@ fn deleting_an_accessory_wipes_its_serial_number_notes_photo_and_document() {
     let kept = create_accessory(&db, "Aimpoint", "KEEP-1", "kept notes");
     let owner = RecordRef::Accessory(doomed);
     photo_ops::add_photo(&db.conn, owner, &marker_png(), "scope.png", "image/png").unwrap();
-    document_ops::add_document(&db.conn, owner, &marker_blob(), "warranty.pdf", "application/pdf")
-        .unwrap();
+    document_ops::add_document(&db.conn, owner, &marker_document(), "warranty.pdf").unwrap();
     // Guard: the search sees every one of them while stored.
     let before = decrypted_export(&db.conn, scratch.path());
     assert!(contains(&before, SERIAL));
@@ -398,9 +399,8 @@ fn deleting_an_accessorys_document_wipes_its_bytes_and_returns_the_space() {
     let document = document_ops::add_document(
         &db.conn,
         RecordRef::Accessory(id),
-        &marker_blob(),
+        &marker_document(),
         "warranty.pdf",
-        "application/pdf",
     )
     .unwrap();
     let size_before = file_size(&db.conn);
@@ -481,6 +481,7 @@ fn deleting_an_accessory_host_unmounts_what_was_on_it_and_wipes_its_values() {
 
 mod whole_files {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
 
@@ -573,6 +574,7 @@ mod whole_files {
         assert!(left[..MIB as usize].iter().all(|b| *b == 0));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_file_that_cannot_be_overwritten_is_left_alone_and_reported() {
         let dir = TempDir::new().unwrap();
@@ -583,5 +585,89 @@ mod whole_files {
 
         assert!(result.is_err());
         assert!(path.exists(), "unlinking it would leave its data unwiped");
+    }
+}
+
+// --- Document names (specs/007-document-preview T028, research.md §19) --------
+//
+// A document's filename is also kept in `document_names_fts`, a trigram index
+// (0002_fts5.sql): the whole name in `document_attachments`, its lowercased
+// three-character pieces in the index. Both must be gone after a delete,
+// including from the index's own segments, so the bytes are looked for in the
+// database's decrypted contents, as for every other test here (the encrypted
+// file itself can't hold plaintext, deleted or not).
+
+const DOCUMENT_NAME: &str = "Zqkvw-Xjhgf statement.pdf";
+/// The index's pieces of that name, leaving out the first, which the index
+/// does not keep as plain bytes.
+const DOCUMENT_NAME_TOKENS: [&str; 5] = ["qkv", "kvw", "xjh", "jhg", "hgf"];
+
+fn assert_no_document_name(bytes: &[u8]) {
+    assert!(!contains(bytes, DOCUMENT_NAME), "the filename is still in the database");
+    assert!(!contains(bytes, "Zqkvw"), "a remnant of the filename was left");
+    for token in DOCUMENT_NAME_TOKENS {
+        assert!(!contains(bytes, token), "the index kept {token:?}");
+    }
+}
+
+fn assert_document_name_stored(bytes: &[u8]) {
+    assert!(contains(bytes, DOCUMENT_NAME), "the search can't see the filename");
+    for token in DOCUMENT_NAME_TOKENS {
+        assert!(contains(bytes, token), "the full-text index holds {token:?}");
+    }
+}
+
+#[test]
+fn deleting_a_document_wipes_its_filename_from_the_table_and_the_index() {
+    let db = TestDb::new();
+    let scratch = tempfile::TempDir::new().unwrap();
+    let created =
+        firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-N1"), false, None)
+            .unwrap();
+    firearm_ops::create_firearm(&db.conn, &firearm("Ruger", "LCP", "W-N2"), false, None).unwrap();
+    let document = document_ops::add_document(
+        &db.conn,
+        RecordRef::Firearm(created.id),
+        b"%PDF-1.4\n%%EOF\n",
+        DOCUMENT_NAME,
+    )
+    .unwrap();
+    assert_document_name_stored(&decrypted_export(&db.conn, scratch.path()));
+
+    document_ops::delete_document(&db.conn, document.id, true).unwrap();
+
+    assert_no_document_name(&decrypted_export(&db.conn, scratch.path()));
+    assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
+}
+
+#[test]
+fn deleting_the_record_that_owned_a_document_wipes_its_filename_too() {
+    for owner_is_firearm in [true, false] {
+        let db = TestDb::new();
+        let scratch = tempfile::TempDir::new().unwrap();
+        let owner = if owner_is_firearm {
+            let id =
+                firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-N3"), false, None)
+                    .unwrap()
+                    .id;
+            RecordRef::Firearm(id)
+        } else {
+            RecordRef::Accessory(create_accessory(&db, "Leupold", "W-N4", "notes"))
+        };
+        document_ops::add_document(&db.conn, owner, b"%PDF-1.4\n%%EOF\n", DOCUMENT_NAME).unwrap();
+        assert_document_name_stored(&decrypted_export(&db.conn, scratch.path()));
+
+        match owner {
+            RecordRef::Firearm(id) => {
+                firearm_ops::delete_firearm(&db.conn, id, true).unwrap();
+            }
+            RecordRef::Accessory(id) => {
+                accessory_ops::delete_accessory(&db.conn, id, true).unwrap();
+            }
+        }
+
+        assert_no_document_name(&decrypted_export(&db.conn, scratch.path()));
+        assert_eq!(row_count(&db, "document_attachments"), 0);
+        assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
     }
 }

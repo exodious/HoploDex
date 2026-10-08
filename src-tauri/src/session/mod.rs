@@ -12,6 +12,7 @@ pub mod operations;
 pub mod pending;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use rusqlite::{Connection, InterruptHandle};
 use crate::commands::CommandError;
 use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings};
 use crate::services::machine_settings::MachineSettings;
+use crate::services::preview::{Preview, PreviewLoading};
 use clock::{Clock, SystemClock};
 use fingerprint::{FileFingerprint, FingerprintCheck};
 use idle::IdleClock;
@@ -54,6 +56,41 @@ pub struct OpenDatabase {
     pub notes: DatabaseNotes,
     /// The lock settings kept in the file, for the idle clock (FR-034).
     pub lock_settings: LockSettings,
+    /// The one open document preview, if any. It lives and dies with this
+    /// value, so every path that drops the `OpenDatabase` (lock, close,
+    /// switch, sleep, shutdown, quit) ends the preview too: its TIFF helper
+    /// is killed, its PDF bytes zeroized and its surface closed (research.md
+    /// §20).
+    pub preview: Option<Preview>,
+    /// The id the last `open_preview` of this open took. Ids count up by one
+    /// within a session, so a request for a replaced preview is refused
+    /// (data-model.md "Preview").
+    pub preview_seq: u64,
+    /// A TIFF's `Load` still under way, which `close_preview` can end
+    /// without waiting for it.
+    pub preview_loading: Option<PreviewLoading>,
+    /// Which open or unlock of a database this is, from a counter that only
+    /// goes up in this run. A command that asks the user something and acts
+    /// on the answer afterwards acts only if this is still the one that
+    /// asked ([`Session::with_generation`], research.md §18).
+    pub generation: u64,
+    /// The user answered "Open in another app" in the native confirmation
+    /// for a document during this open. It dies with this value, so a lock,
+    /// close or switch forgets it, and is never written anywhere (FR-012,
+    /// research.md §17).
+    pub external_open_confirmed: bool,
+}
+
+/// The last [`OpenDatabase::generation`] handed out.
+static GENERATIONS: AtomicU64 = AtomicU64::new(0);
+
+/// What a session knew about its open database when something was read from
+/// it: the part a later step needs to act on the same open (see
+/// [`Session::read_stamped`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenStamp {
+    pub generation: u64,
+    pub external_open_confirmed: bool,
 }
 
 impl OpenDatabase {
@@ -95,7 +132,26 @@ impl OpenDatabase {
             storage_lost: false,
             notes: DatabaseNotes::default(),
             lock_settings,
+            preview: None,
+            preview_seq: 0,
+            preview_loading: None,
+            generation: GENERATIONS.fetch_add(1, Ordering::Relaxed) + 1,
+            external_open_confirmed: false,
         })
+    }
+
+    /// Ends the document preview now, whatever it is: a TIFF's load is
+    /// stopped and its helper killed, a PDF's bytes are zeroized and its
+    /// surface closed (research.md §20). Returns the preview that was open,
+    /// so a PDF can hand its surface to the next one before it is dropped;
+    /// a caller that holds the session's lock drops it after letting go.
+    pub fn end_preview(&mut self) -> Option<Preview> {
+        if let Some(loading) = self.preview_loading.take()
+            && let Some(helper) = loading.helper
+        {
+            helper.shutdown();
+        }
+        self.preview.take()
     }
 }
 
@@ -106,7 +162,24 @@ pub fn database_name(path: &Path) -> String {
 
 /// Tauri state: the open database, or none, and where the session reports
 /// what happens to it.
-pub struct Session {
+///
+/// A handle to shared state, so it is cheap to clone: every clone is the same
+/// session. The preview commands need an `Arc<Session>` for the threads that
+/// outlive a call (research.md §8's hook timer), which a command gets from
+/// [`Session::shared`].
+#[derive(Clone)]
+pub struct Session(Arc<SessionInner>);
+
+impl std::ops::Deref for Session {
+    type Target = SessionInner;
+
+    fn deref(&self) -> &SessionInner {
+        &self.0
+    }
+}
+
+/// What a [`Session`] holds.
+pub struct SessionInner {
     open: Mutex<Option<OpenDatabase>>,
     events: Arc<dyn SessionEvents>,
     /// Where `open_document` puts decrypted copies, deleted at every close
@@ -160,7 +233,7 @@ impl Default for Session {
 
 impl Session {
     pub fn new(events: Arc<dyn SessionEvents>, opened_documents_dir: Option<PathBuf>) -> Self {
-        Self {
+        Self(Arc::new(SessionInner {
             open: Mutex::new(None),
             events,
             opened_documents_dir,
@@ -171,14 +244,25 @@ impl Session {
             open_path: Mutex::new(None),
             closing: Mutex::new(Closing::default()),
             closing_changed: Condvar::new(),
-        }
+        }))
     }
 
-    /// The same session on another clock, for the tests.
+    /// The same session on another clock, for the tests. Before any clone of
+    /// it exists.
     pub fn with_clock(self, clock: Arc<dyn Clock>) -> Self {
-        Self { clock, ..self }
+        let Ok(inner) = Arc::try_unwrap(self.0) else {
+            panic!("a session that has been cloned can't change its clock");
+        };
+        Self(Arc::new(SessionInner { clock, ..inner }))
     }
 
+    /// The session this handle is a handle to, as an `Arc` of its own.
+    pub fn shared(&self) -> Arc<Session> {
+        Arc::new(self.clone())
+    }
+}
+
+impl SessionInner {
     pub fn operations(&self) -> &Operations {
         &self.operations
     }
@@ -283,6 +367,47 @@ impl Session {
         }
         let result = query(&open.conn);
         storage_lost_if_unreachable(open, result)
+    }
+
+    /// [`read`](Self::read), and the [`OpenStamp`] of the open it read from,
+    /// for a command that acts on the open later (`open_document`).
+    pub fn read_stamped<T>(
+        &self,
+        query: impl FnOnce(&Connection) -> Result<T, CommandError>,
+    ) -> Result<(T, OpenStamp), CommandError> {
+        let mut open = self.open_guard()?;
+        let open = open.as_mut().ok_or_else(CommandError::database_closed)?;
+        if open.pending_unresolved {
+            return Err(CommandError::pending_changes_unresolved());
+        }
+        let stamp = OpenStamp {
+            generation: open.generation,
+            external_open_confirmed: open.external_open_confirmed,
+        };
+        let result = query(&open.conn);
+        storage_lost_if_unreachable(open, result).map(|value| (value, stamp))
+    }
+
+    /// Runs `act` under the session's lock, only if the open database is
+    /// still the one with this `generation`, else `DATABASE_CLOSED` with
+    /// `act` not run (research.md §18). A close or lock takes the same lock
+    /// before it clears the copies folder, so what `act` writes there is
+    /// either cleared by it or never written.
+    ///
+    /// Unlike [`write`](Self::write) it neither checks the file's
+    /// fingerprint nor refuses while pending changes wait: it is for what
+    /// the session itself keeps about the open (a confirmation, a copy
+    /// outside the database), never for the collection.
+    pub fn with_generation<T>(
+        &self,
+        generation: u64,
+        act: impl FnOnce(&mut OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let mut guard = self.open_guard()?;
+        match guard.as_mut() {
+            Some(open) if open.generation == generation => act(open),
+            _ => Err(CommandError::database_closed()),
+        }
     }
 
     /// Runs anything that changes the open database, after checking that
@@ -397,6 +522,16 @@ impl Session {
         taken
     }
 
+    /// Ends the open database's preview, if one is open, before anything else
+    /// of a close is announced: the surface is gone from the screen and the
+    /// helper dead by then (FR-014, SC-006). For a close that has begun but
+    /// has not yet taken the database (an immediate one). The preview is
+    /// dropped outside the session's lock.
+    pub(crate) fn end_preview(&self) {
+        let ended = self.lock().as_mut().and_then(OpenDatabase::end_preview);
+        drop(ended);
+    }
+
     /// Nothing is open any more: the idle clock stops.
     pub(crate) fn forget_open(&self) {
         self.idle.stop();
@@ -444,6 +579,12 @@ pub const CHOOSER_NOTICES: &str = "chooser:notices";
 /// `machine.json` in the app, a recorder in the tests.
 pub trait SessionEvents: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value);
+    /// Emits to the main web view only (the preview events, contracts/
+    /// tauri-commands.md "Events"), where the app keeps them from the PDF
+    /// surface's web view.
+    fn emit_to_main(&self, event: &str, payload: serde_json::Value) {
+        self.emit(event, payload);
+    }
     /// Keeps a notice for the chooser to show next.
     fn notice(&self, notice: ChooserNotice);
 }
@@ -451,6 +592,12 @@ pub trait SessionEvents: Send + Sync {
 impl<R: tauri::Runtime> SessionEvents for tauri::AppHandle<R> {
     fn emit(&self, event: &str, payload: serde_json::Value) {
         if let Err(err) = tauri::Emitter::emit(self, event, payload) {
+            log::warn!("could not emit {event}: {err}");
+        }
+    }
+
+    fn emit_to_main(&self, event: &str, payload: serde_json::Value) {
+        if let Err(err) = tauri::Emitter::emit_to(self, "main", event, payload) {
             log::warn!("could not emit {event}: {err}");
         }
     }

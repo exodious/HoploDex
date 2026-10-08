@@ -129,6 +129,8 @@ type RecordCounts = { firearms: number; accessories: number };
 
 ## Accessories (new)
 
+_Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#search-content-only): `list_accessories` also matches the names of the accessory's documents._
+
 Each mirrors its firearm counterpart, with the same session gating, error
 codes and transaction behavior.
 
@@ -283,6 +285,8 @@ output: {
 - It is read-only.
 
 ## Photos and documents (amended)
+
+_Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md): the document commands keep the `owner` and gain 007's rules (document types, preview, confirmation before another program); see 007's contract._
 
 The commands that take a firearm id now take an owner:
 

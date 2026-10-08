@@ -258,3 +258,38 @@ BEGIN
         new.notes
     );
 END;
+
+-- specs/007-document-preview FR-015 (data-model.md "Virtual table:
+-- document_names_fts", research.md §19): a third trigram index, over a
+-- document's file name, so the collection and Accessories searches find a
+-- record by the name of its own documents ("appraisal" finds "2024
+-- appraisal.pdf"). It belongs to neither table's index: a match is joined
+-- back to document_attachments for its firearm_id or accessory_id. A
+-- cascade from a firearm or accessory fires the delete trigger per document.
+CREATE VIRTUAL TABLE document_names_fts USING fts5(
+    original_filename,
+    content = 'document_attachments',
+    content_rowid = 'id',
+    tokenize = 'trigram remove_diacritics 1'
+);
+
+CREATE TRIGGER document_names_fts_after_insert AFTER INSERT ON document_attachments
+BEGIN
+    INSERT INTO document_names_fts (rowid, original_filename)
+    VALUES (new.id, new.original_filename);
+END;
+
+CREATE TRIGGER document_names_fts_after_delete AFTER DELETE ON document_attachments
+BEGIN
+    INSERT INTO document_names_fts (document_names_fts, rowid, original_filename)
+    VALUES ('delete', old.id, old.original_filename);
+END;
+
+-- Filenames don't change today; kept for safety, as in research.md §19.
+CREATE TRIGGER document_names_fts_after_update AFTER UPDATE OF original_filename ON document_attachments
+BEGIN
+    INSERT INTO document_names_fts (document_names_fts, rowid, original_filename)
+    VALUES ('delete', old.id, old.original_filename);
+    INSERT INTO document_names_fts (rowid, original_filename)
+    VALUES (new.id, new.original_filename);
+END;

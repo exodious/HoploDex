@@ -34,7 +34,7 @@ const SAMPLE_PDF_BASE64 = Buffer.from("%PDF-1.4 sample receipt contents").toStri
 // opened-document copies live under the cache dir. Checks that touch the
 // filesystem only run when the run is isolated, so they can never reach a
 // real user's data.
-const cacheHome = process.env.XDG_CACHE_HOME;
+const cacheHome = process.env.HOPLODEX_E2E_CACHE_HOME;
 const openedRoot =
   cacheHome && path.join(cacheHome, "io.github.exodious.HoploDex", "opened-documents");
 
@@ -141,23 +141,27 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     });
 
     await expect($(".hd-doc__name=receipt.pdf")).toExist();
-    await clickButton("Open");
-    // `open_document` has answered (and any failure toast is up) once the
+    await clickButton("Open in another app…");
+    // The native confirmation is answered "Open in another app" by the E2E
+    // build (HOPLODEX_E2E_CONSENT, set to `open` for every spec by
+    // wdio.conf.ts); `open_document` has answered (and any failure toast is up) once the
     // app is idle.
     await settle();
     await expect($(".hd-toast--error")).not.toExist();
 
     // Reopening hands the OS a temporary copy of the stored bytes. When the
-    // run isolates its data under XDG_CACHE_HOME, check that copy directly.
-    const cacheHome = process.env.XDG_CACHE_HOME;
-    if (cacheHome) {
-      const openedRoot = path.join(cacheHome, "io.github.exodious.HoploDex", "opened-documents");
+    // run isolates its cache (HOPLODEX_E2E_CACHE_HOME), check that copy directly.
+    if (openedRoot) {
       const copies = fs
         .readdirSync(openedRoot)
         .map((dir) => path.join(openedRoot, dir, "receipt.pdf"))
         .filter((file) => fs.existsSync(file));
       expect(copies.length).toBe(1);
       expect(fs.readFileSync(copies[0], "utf-8")).toBe("%PDF-1.4 sample receipt contents");
+      // An E2E build logs the copy it would have handed to the OS
+      // (wdio.conf.ts), rather than start a real viewer.
+      const log = process.env.HOPLODEX_E2E_OPENED_LOG;
+      expect(log && fs.readFileSync(log, "utf-8").trim().split(/\r?\n/)).toEqual(copies);
     }
   });
 

@@ -148,6 +148,9 @@ fn a_lock_at_sleep_records_the_time_too() {
     assert_eq!(world.listed().changed_since_left_at, None);
 }
 
+// Unix only: Windows refuses to rename over a file SQLite has open, so
+// nothing can replace an open database there.
+#[cfg(unix)]
 #[test]
 fn a_close_after_a_take_over_leaves_the_time_unknown() {
     let world = World::new();

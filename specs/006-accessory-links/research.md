@@ -436,6 +436,12 @@ stays readable at any depth without assuming an indent per level (FR-013).
     of the four fields. The model suggestions' "same make" rule reads both
     tables. Partial indexes on `accessories (make)`, `(make, model)`,
     `(caliber)` and `(cartridge)` keep `suggest_entries` within 004's 50 ms.
+    _Amended 2026-10-07: `FieldVocabulary::load` reads one query per table and
+    merges the groups, and the make and make-model indexes are not partial,
+    because make and model are `NOT NULL` (amended 2026-10-02), and SQLite then
+    drops `IS NOT NULL` from the query and can't use a partial index (the
+    models over both tables took 51 ms on Windows until then). The caliber and
+    cartridge indexes stay partial._
   - Make and model are required on an accessory, as on a firearm
     (amended 2026-10-02); the caliber is optional, so `check_entry_text`
     for an accessory treats a blank caliber as "none". The caps and

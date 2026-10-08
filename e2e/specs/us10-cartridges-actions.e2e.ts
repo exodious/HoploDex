@@ -11,7 +11,7 @@ import {
   groupBy,
   settle,
 } from "../support/ui";
-import { realClick, realKey } from "../support/realInput";
+import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/004-cartridges-action-types' User Story 2
@@ -22,6 +22,9 @@ import { realClick, realKey } from "../support/realInput";
  * input" in DEVELOPMENT.md.
  */
 describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-types)", () => {
+  before(function () {
+    skipWithoutRealInput(this);
+  });
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

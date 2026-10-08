@@ -1,3 +1,5 @@
+pub mod hostile_documents;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -383,4 +385,12 @@ pub fn firearm_records(ids: &[i64]) -> hoplodex_lib::commands::import_export::Ex
         firearm_ids: ids.to_vec(),
         accessory_ids: Vec::new(),
     }
+}
+
+/// The bytes of a checked-in document fixture from
+/// `tests/fixtures/documents/` (its `SOURCE.md` says how each was made).
+#[allow(dead_code)]
+pub fn document_fixture(name: &str) -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/documents").join(name);
+    std::fs::read(&path).unwrap_or_else(|e| panic!("reading fixture {}: {e}", path.display()))
 }

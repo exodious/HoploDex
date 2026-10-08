@@ -19,7 +19,7 @@ export interface MenuProps {
  * specs/003 contracts/ui-databases.md §0). */
 export function Menu({ trigger, children, align = "start" }: MenuProps) {
   return (
-    <DropdownMenu.Root modal={false}>
+    <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content

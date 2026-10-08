@@ -6,7 +6,7 @@ use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
 use crate::models::record::RecordRef;
-use crate::services::attachments::read_attachment_file;
+use crate::services::attachments::{mime_type_for, read_attachment_file};
 use crate::session::Session;
 
 /// What `set_thumbnail_photo` returns (contracts/tauri-commands.md "Photos
@@ -147,7 +147,7 @@ pub mod ops {
         path: &std::path::Path,
     ) -> Result<Photo, CommandError> {
         let file = read_attachment_file(path)?;
-        add_photo(conn, owner, &file.bytes, &file.filename, file.mime_type)
+        add_photo(conn, owner, &file.bytes, &file.filename, mime_type_for(&file.filename))
     }
 
     /// Makes `photo_id` the owner's thumbnail; a photo of a different owner

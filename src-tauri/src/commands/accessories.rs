@@ -483,6 +483,10 @@ pub mod ops {
                    AND (:has_query = 0
                         OR (:short_query = 0 AND a.id IN
                               (SELECT rowid FROM accessories_fts WHERE accessories_fts MATCH :query))
+                        -- The names of the accessory's own documents (FR-015,
+                        -- research.md §19), never those of a record mounted on it.
+                        OR (:short_query = 0 AND a.id IN (SELECT d.accessory_id FROM document_attachments d WHERE d.id IN (SELECT rowid FROM document_names_fts WHERE document_names_fts MATCH :query)))
+                        OR (:short_query = 1 AND EXISTS (SELECT 1 FROM document_attachments d WHERE d.accessory_id = a.id AND d.original_filename LIKE :like ESCAPE '\\'))
                         OR (:short_query = 1 AND (
                             k.name LIKE :like ESCAPE '\\'
                             OR a.make LIKE :like ESCAPE '\\'

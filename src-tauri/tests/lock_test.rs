@@ -5,6 +5,8 @@
 //! OS's notices are the lifecycle calls `main.rs` makes for them, some from
 //! another thread while an operation runs, as they arrive in the app.
 
+#[path = "support/preview_support.rs"]
+mod preview_support;
 mod support;
 
 use std::fs;
@@ -19,6 +21,7 @@ use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::import_export::{ImportSessionStore, ops as import_export};
+use hoplodex_lib::commands::preview::ops as preview;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
     BackupInfo, BackupLocationInput, BackupOutcome, BackupSettingsInput, BackupSettingsSaved,
@@ -31,8 +34,11 @@ use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::{Session, lifecycle};
+use preview_support::{SurfaceLog, TestPreview, wait_until_gone};
 use serde_json::{Value, json};
-use support::{ManualClock, TEST_PASSPHRASE, TestEvents, passphrase, peek, test_session_at};
+use support::{
+    ManualClock, TEST_PASSPHRASE, TestEvents, document_fixture, passphrase, peek, test_session_at,
+};
 use tempfile::TempDir;
 
 /// 14:30:05 on 25 September 2026 in a UTC+2 time zone.
@@ -985,4 +991,169 @@ fn a_shutdown_keeps_the_draft_deletes_document_copies_and_makes_no_backup() {
     assert!(!world.backup_folder().exists());
     assert_eq!(world.closed_file(), (1, true, false));
     assert_eq!(world.closed_reasons(), vec![json!("shutdown")]);
+}
+
+// --- A preview open at every way the collection goes (FR-014, SC-006; 007 T036) -
+//
+// Assumed API (T048, T049, T068; see tests/support/preview_support.rs): the
+// preview is part of what a close removes, and it is gone from the screen by
+// the time the close is announced (`session:closing` for a normal close,
+// `session:closed` for an immediate one): the PDF surface is closed then, and
+// the TIFF helper is killed, without waiting for the backup or the rest of the
+// close.
+
+#[derive(Clone, Copy, Debug)]
+enum Shown {
+    Pdf,
+    Tiff,
+}
+
+/// What a test looks at after a preview is shown.
+#[derive(Clone)]
+struct OpenPreview {
+    kind: Shown,
+    surface: Option<Arc<SurfaceLog>>,
+    helper: Option<u32>,
+}
+
+impl OpenPreview {
+    /// Whether the preview is off the screen and out of memory: the surface
+    /// closed, or the helper killed (given a moment to die).
+    fn is_over(&self) -> bool {
+        match self.kind {
+            Shown::Pdf => self.surface.as_ref().unwrap().is_closed(),
+            Shown::Tiff => wait_until_gone(self.helper.unwrap(), Duration::from_millis(100)),
+        }
+    }
+}
+
+impl World {
+    /// Opens a PDF or a TIFF preview on a document of a new firearm.
+    fn show(&self, preview_env: &TestPreview, kind: Shown) -> OpenPreview {
+        let firearm = self.change();
+        let (name, bytes) = match kind {
+            Shown::Pdf => ("receipt.pdf", document_fixture("three-pages.pdf")),
+            Shown::Tiff => ("scan.tif", document_fixture("one-page.tif")),
+        };
+        let document = preview_support::add_document(&self.session, firearm, name, &bytes);
+        preview::open_preview(&self.session, &preview_env.env, document).unwrap();
+        let shown = OpenPreview {
+            kind,
+            surface: preview_env.surfaces.built().pop(),
+            helper: preview_support::tiff_pid(&self.session),
+        };
+        match kind {
+            Shown::Pdf => assert!(shown.surface.is_some() && shown.helper.is_none()),
+            Shown::Tiff => assert!(shown.surface.is_none() && shown.helper.is_some()),
+        }
+        shown
+    }
+}
+
+/// Every way the collection goes, each as a function of the world.
+/// One way the collection goes, by name.
+type Way = (&'static str, Box<dyn Fn(&World)>);
+
+fn ways_the_collection_goes() -> Vec<Way> {
+    vec![
+        (
+            "lock now",
+            Box::new(|w| {
+                databases::lock_database(&w.session, &w.machine, None).unwrap();
+            }),
+        ),
+        (
+            "idle lock",
+            Box::new(|w| {
+                w.note_activity();
+                w.minutes(10);
+                w.seconds(1);
+                assert!(w.tick());
+            }),
+        ),
+        ("screen lock", Box::new(|w| lifecycle::screen_locked(&w.session, &w.machine))),
+        ("sleep", Box::new(|w| lifecycle::will_sleep(&w.session, &w.machine))),
+        (
+            "sleep, step 1 then waking",
+            Box::new(|w| {
+                assert!(lifecycle::begin_immediate(&w.session, CloseReason::Sleep));
+                lifecycle::finish_on_wake(&w.session, &w.machine);
+            }),
+        ),
+        ("shutdown", Box::new(|w| lifecycle::will_shut_down(&w.session, &w.machine))),
+        (
+            "close",
+            Box::new(|w| {
+                databases::close_database(&w.session, &w.machine, CloseReason::Closed).unwrap();
+            }),
+        ),
+        (
+            "switch",
+            Box::new(|w| {
+                let other = w.dir.path().join("Other.hoplodex");
+                lifecycle::create(&w.session, &w.machine, &other, &passphrase()).unwrap();
+            }),
+        ),
+    ]
+}
+
+/// A close announcement: its event, whether the preview was over by then, and
+/// how long after the close began.
+type Announced = (String, bool, Duration);
+
+fn a_preview_ends_with_every_way_the_collection_goes(kind: Shown) {
+    for (way, go) in ways_the_collection_goes() {
+        let world = World::new();
+        world.create();
+        // The idle lock and the lock at screen lock on, so each applies.
+        world.set_lock(true, 10, true);
+        let preview_env = TestPreview::new();
+        let shown = world.show(&preview_env, kind);
+        let database = world.database_id();
+        let announced: Arc<Mutex<Vec<Announced>>> = Arc::default();
+        let started = Instant::now();
+        {
+            let (announced, shown) = (Arc::clone(&announced), shown.clone());
+            world.events.on_event(move |event, _| {
+                if event == "session:closing" || event == "session:closed" {
+                    let over = shown.is_over();
+                    announced.lock().unwrap().push((event.to_owned(), over, started.elapsed()));
+                }
+            });
+        }
+
+        go(&world);
+
+        let announced = announced.lock().unwrap().clone();
+        assert!(!announced.is_empty(), "{kind:?}, {way}: the close was never announced");
+        for (event, over, after) in &announced {
+            assert!(over, "{kind:?}, {way}: the preview was still up at {event}");
+            assert!(
+                *after < Duration::from_secs(2),
+                "{kind:?}, {way}: the close was held up ({after:?} to {event})"
+            );
+        }
+        if way == "switch" {
+            assert_ne!(world.database_id(), database, "{way}: the old database is still open");
+        } else {
+            assert!(!world.session.is_open(), "{kind:?}, {way}: the database is still open");
+        }
+        match kind {
+            Shown::Pdf => assert!(shown.surface.as_ref().unwrap().is_closed(), "{kind:?}, {way}"),
+            Shown::Tiff => assert!(
+                wait_until_gone(shown.helper.unwrap(), Duration::from_secs(3)),
+                "{kind:?}, {way}: the helper is still running"
+            ),
+        }
+    }
+}
+
+#[test]
+fn a_pdf_preview_ends_with_every_lock_close_switch_sleep_and_shutdown() {
+    a_preview_ends_with_every_way_the_collection_goes(Shown::Pdf);
+}
+
+#[test]
+fn a_tiff_preview_ends_with_every_lock_close_switch_sleep_and_shutdown() {
+    a_preview_ends_with_every_way_the_collection_goes(Shown::Tiff);
 }

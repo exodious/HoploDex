@@ -7,11 +7,14 @@ mod support;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
+use hoplodex_lib::models::document_attachment::{DocumentAttachment, DocumentSummary, PreviewKind};
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::preview::availability::{PdfAvailability, UnavailableReason};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use support::TestDb;
+use support::hostile_documents as hostile;
+use support::{TestDb, document_fixture};
 
 fn sample_firearm() -> FirearmInput {
     FirearmInput {
@@ -70,7 +73,6 @@ fn scenario_4_attaches_and_reopens_a_document() {
         RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
     assert_eq!(attached.original_filename, "receipt.pdf");
@@ -89,7 +91,6 @@ fn deletes_a_document_only_when_confirmed() {
         RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
 
@@ -105,69 +106,13 @@ fn deletes_a_document_only_when_confirmed() {
 fn lists_every_document_for_a_firearm() {
     let db = TestDb::new();
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
-    document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "a.pdf",
-        "application/pdf",
-    )
-    .unwrap();
-    document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "b.pdf",
-        "application/pdf",
-    )
-    .unwrap();
+    document_ops::add_document(&db.conn, RecordRef::Firearm(firearm.id), SAMPLE_PDF_BYTES, "a.pdf")
+        .unwrap();
+    document_ops::add_document(&db.conn, RecordRef::Firearm(firearm.id), SAMPLE_PDF_BYTES, "b.pdf")
+        .unwrap();
 
     let listed = document_ops::list_documents(&db.conn, RecordRef::Firearm(firearm.id)).unwrap();
     assert_eq!(listed.len(), 2);
-}
-
-/// `open_document` hands the OS a temporary copy of the document (FR-010:
-/// "reopen them from the record") — the copy must hold the original bytes
-/// and keep the original filename, reduced to a safe single path component.
-#[test]
-fn writes_a_temporary_copy_under_a_safe_filename() {
-    let db = TestDb::new();
-    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
-    let dir = tempfile::TempDir::new().unwrap();
-
-    let attached = document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "receipt.pdf",
-        "application/pdf",
-    )
-    .unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &attached).unwrap();
-    assert_eq!(path, dir.path().join("receipt.pdf"));
-    assert_eq!(std::fs::read(&path).unwrap(), SAMPLE_PDF_BYTES);
-
-    let hostile = document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "../../escape:me?.pdf",
-        "application/pdf",
-    )
-    .unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &hostile).unwrap();
-    assert_eq!(path, dir.path().join("escape_me_.pdf"));
-
-    let unnamed = document_ops::add_document(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        SAMPLE_PDF_BYTES,
-        "..",
-        "text/plain",
-    )
-    .unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &unnamed).unwrap();
-    assert_eq!(path, dir.path().join("document"));
 }
 
 #[test]
@@ -219,10 +164,13 @@ fn clearing_opened_documents_overwrites_then_removes_each_copy() {
         RecordRef::Firearm(firearm.id),
         SAMPLE_PDF_BYTES,
         "receipt.pdf",
-        "application/pdf",
     )
     .unwrap();
-    let copy = document_ops::write_document_copy(&opened.join("1"), &attached).unwrap();
+    // What `open_document` leaves there (tests/open_document_test.rs writes
+    // it through the command's own path).
+    std::fs::create_dir_all(opened.join("1")).unwrap();
+    let copy = opened.join("1").join("receipt.pdf");
+    std::fs::write(&copy, &attached.file_bytes).unwrap();
     let survivor = scratch.path().join("survivor");
     std::fs::hard_link(&copy, &survivor).unwrap();
 
@@ -314,20 +262,15 @@ fn attaches_and_reopens_a_document_on_an_accessory() {
         RecordRef::Accessory(id),
         SAMPLE_PDF_BYTES,
         "warranty.pdf",
-        "application/pdf",
     )
     .unwrap();
 
     assert_eq!(attached.owner, RecordRef::Accessory(id));
     assert_eq!(attached.original_filename, "warranty.pdf");
-    // `open_document` reads it back by id and hands the OS a copy.
+    // `open_document` reads it back by id.
     let reopened = document_ops::get_document(&db.conn, attached.id).unwrap();
     assert_eq!(reopened.file_bytes, SAMPLE_PDF_BYTES);
     assert_eq!(reopened.mime_type, "application/pdf");
-    let dir = tempfile::TempDir::new().unwrap();
-    let path = document_ops::write_document_copy(dir.path(), &reopened).unwrap();
-    assert_eq!(path, dir.path().join("warranty.pdf"));
-    assert_eq!(std::fs::read(&path).unwrap(), SAMPLE_PDF_BYTES);
 }
 
 #[test]
@@ -357,8 +300,7 @@ fn documents_are_listed_by_owner_and_only_that_owners() {
     let other = create_accessory(&db, "A-2");
     assert_eq!(firearm.id, accessory, "both tables start at 1, which is the point of this test");
     let add = |owner, name: &str| {
-        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, name, "application/pdf")
-            .unwrap()
+        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, name).unwrap()
     };
     let on_firearm = add(RecordRef::Firearm(firearm.id), "firearm.pdf");
     let on_accessory = add(RecordRef::Accessory(accessory), "accessory.pdf");
@@ -430,10 +372,8 @@ fn deleting_an_accessory_deletes_its_documents_and_only_its_documents() {
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let gone = create_accessory(&db, "A-1");
     let kept = create_accessory(&db, "A-2");
-    let add = |owner| {
-        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "d.pdf", "application/pdf")
-            .unwrap()
-    };
+    let add =
+        |owner| document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "d.pdf").unwrap();
     add(RecordRef::Accessory(gone));
     add(RecordRef::Accessory(gone));
     add(RecordRef::Accessory(kept));
@@ -452,4 +392,206 @@ fn deleting_an_accessory_deletes_its_documents_and_only_its_documents() {
         document_ops::list_documents(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().len(),
         1
     );
+}
+
+// ---- Feature 007: the type rule at attach (FR-016) and what a list derives
+
+/// A row `add_document` would refuse, as a database from before this
+/// feature could hold it.
+fn insert_raw_document(
+    db: &TestDb,
+    owner: RecordRef,
+    name: &str,
+    mime_type: &str,
+) -> DocumentAttachment {
+    let (firearm_id, accessory_id) = owner.owner_columns();
+    db.conn
+        .execute(
+            "INSERT INTO document_attachments
+                (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
+            rusqlite::params![firearm_id, accessory_id, b"raw".to_vec(), name, mime_type],
+        )
+        .unwrap();
+    document_ops::get_document(&db.conn, db.conn.last_insert_rowid()).unwrap()
+}
+
+fn document_count(db: &TestDb) -> i64 {
+    db.conn.query_row("SELECT COUNT(*) FROM document_attachments", [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn refuses_what_is_not_a_document_and_stores_nothing() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let dir = tempfile::tempdir().unwrap();
+
+    for (file, code) in [
+        (hostile::jpg(), "DOCUMENT_TYPE_NOT_ALLOWED"),
+        (hostile::exe(), "DOCUMENT_TYPE_NOT_ALLOWED"),
+        (hostile::html_named_pdf(), "DOCUMENT_CONTENT_MISMATCH"),
+        (hostile::docm(), "DOCUMENT_TYPE_NOT_ALLOWED"),
+        (hostile::docx_with_remote_template(), "DOCUMENT_CONTENT_MISMATCH"),
+        (hostile::rtf_with_object(), "DOCUMENT_CONTENT_MISMATCH"),
+    ] {
+        let err = document_ops::add_document(&db.conn, owner, &file.bytes, &file.name)
+            .expect_err(&file.name);
+        assert_eq!(err.code, code, "{}", file.name);
+
+        let path = dir.path().join(&file.name);
+        std::fs::write(&path, &file.bytes).unwrap();
+        let err =
+            document_ops::add_document_from_path(&db.conn, owner, &path).expect_err(&file.name);
+        assert_eq!(err.code, code, "{} from a path", file.name);
+
+        assert_eq!(document_count(&db), 0, "{} left a row", file.name);
+    }
+}
+
+#[test]
+fn a_refused_photo_says_to_add_it_under_photos() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let file = hostile::png();
+    let err = document_ops::add_document(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        &file.bytes,
+        "front.png",
+    )
+    .unwrap_err();
+    assert_eq!(err.message, "front.png is a photo. Add it under Photos instead.");
+}
+
+#[test]
+fn a_missing_owner_is_still_not_found() {
+    let db = TestDb::new();
+    let err =
+        document_ops::add_document(&db.conn, RecordRef::Firearm(999), SAMPLE_PDF_BYTES, "a.pdf")
+            .unwrap_err();
+    assert_eq!(err.code, "NOT_FOUND");
+}
+
+#[test]
+fn records_the_canonical_type_whatever_the_names_case() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let dir = tempfile::tempdir().unwrap();
+
+    let upper =
+        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "RECEIPT.PDF").unwrap();
+    assert_eq!(upper.mime_type, "application/pdf");
+    let tiff =
+        document_ops::add_document(&db.conn, owner, &document_fixture("one-page.tif"), "Scan.Tiff")
+            .unwrap();
+    assert_eq!(tiff.mime_type, "image/tiff");
+    let docx =
+        document_ops::add_document(&db.conn, owner, &document_fixture("sample.docx"), "Bill.DOCX")
+            .unwrap();
+    assert_eq!(
+        docx.mime_type,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+
+    let path = dir.path().join("Round Count.CSV");
+    std::fs::write(&path, b"date,rounds\n2026-01-01,150\n").unwrap();
+    let csv = document_ops::add_document_from_path(&db.conn, owner, &path).unwrap();
+    assert_eq!(csv.mime_type, "text/csv");
+}
+
+#[test]
+fn list_documents_derives_the_preview_fields_from_the_recorded_type() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "a.pdf").unwrap();
+    document_ops::add_document(&db.conn, owner, &document_fixture("sample.docx"), "b.docx")
+        .unwrap();
+    document_ops::add_document(&db.conn, owner, &document_fixture("one-page.tif"), "c.tif")
+        .unwrap();
+    document_ops::add_document(&db.conn, owner, b"hello", "d.txt").unwrap();
+    insert_raw_document(&db, owner, "Old scan.jpg", "image/jpeg");
+
+    let summaries = |pdf: PdfAvailability| -> Vec<DocumentSummary> {
+        document_ops::list_documents(&db.conn, owner)
+            .unwrap()
+            .into_iter()
+            .map(|d| DocumentSummary::new(d, &pdf))
+            .collect()
+    };
+    let fields = |list: &[DocumentSummary]| -> Vec<(Option<PreviewKind>, bool, bool)> {
+        list.iter().map(|d| (d.preview_kind, d.preview_available, d.openable)).collect()
+    };
+
+    let available = summaries(PdfAvailability::Available);
+    assert_eq!(
+        fields(&available),
+        [
+            (Some(PreviewKind::Pdf), true, true),
+            (None, false, true),
+            (Some(PreviewKind::Tiff), true, true),
+            (Some(PreviewKind::Text), true, true),
+            (None, false, false),
+        ]
+    );
+
+    for reason in
+        [UnavailableReason::Held, UnavailableReason::CheckFailed, UnavailableReason::NoViewer]
+    {
+        let off = summaries(PdfAvailability::Unavailable { reason });
+        // Only the PDF changes: TIFF and text still preview (FR-003a).
+        assert_eq!(
+            fields(&off),
+            [
+                (Some(PreviewKind::Pdf), false, true),
+                (None, false, true),
+                (Some(PreviewKind::Tiff), true, true),
+                (Some(PreviewKind::Text), true, true),
+                (None, false, false),
+            ],
+            "{reason:?}"
+        );
+    }
+}
+
+#[test]
+fn the_summary_serializes_with_the_contracts_names() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let pdf = document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "a.pdf").unwrap();
+    let docx =
+        document_ops::add_document(&db.conn, owner, &document_fixture("sample.docx"), "b.docx")
+            .unwrap();
+
+    let value =
+        serde_json::to_value(DocumentSummary::new(pdf, &PdfAvailability::Available)).unwrap();
+    assert_eq!(value["previewKind"], "pdf");
+    assert_eq!(value["previewAvailable"], true);
+    assert_eq!(value["openable"], true);
+    let value =
+        serde_json::to_value(DocumentSummary::new(docx, &PdfAvailability::Available)).unwrap();
+    assert_eq!(value["previewKind"], Value::Null);
+}
+
+#[test]
+fn a_row_of_another_type_stays_listed_and_can_be_deleted() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let old = insert_raw_document(&db, owner, "Old scan.jpg", "image/jpeg");
+
+    let listed = document_ops::list_documents(&db.conn, owner).unwrap();
+    assert_eq!(listed.len(), 1);
+    let summary =
+        DocumentSummary::new(listed.into_iter().next().unwrap(), &PdfAvailability::Available);
+    assert_eq!(
+        (summary.preview_kind, summary.preview_available, summary.openable),
+        (None, false, false)
+    );
+
+    assert!(document_ops::delete_document(&db.conn, old.id, true).unwrap().deleted);
+    assert_eq!(document_count(&db), 0);
 }

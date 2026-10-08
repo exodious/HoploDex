@@ -1,7 +1,9 @@
 pub mod attachments;
 pub mod backups;
 pub mod cartridges;
+pub mod consent;
 pub mod disk_space;
+pub mod document_types;
 pub mod entry_text;
 pub mod file_swap;
 pub mod import_matching;
@@ -10,6 +12,7 @@ pub mod keyring;
 pub mod machine_settings;
 pub mod mounts;
 pub mod passphrase;
+pub mod preview;
 pub mod record_id;
 pub mod registration;
 pub mod secure_delete;

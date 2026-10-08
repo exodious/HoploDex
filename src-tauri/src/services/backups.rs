@@ -307,9 +307,10 @@ fn remove_journal(path: &Path) {
 }
 
 /// Flushes a finished copy to disk and renames it to its final name, which
-/// must not be taken.
+/// must not be taken. Opened for writing because Windows flushes a file only
+/// through a handle with write access.
 pub fn finalize(partial: &Path, final_path: &Path) -> io::Result<()> {
-    File::open(partial)?.sync_all()?;
+    OpenOptions::new().write(true).open(partial)?.sync_all()?;
     if fs::symlink_metadata(final_path).is_ok() {
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, "a backup has that name already"));
     }

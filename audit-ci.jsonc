@@ -31,5 +31,21 @@
     // @puppeteer/browsers 3.
     "GHSA-7pqw-9j4j-h8q3|*@wdio/utils>@puppeteer/browsers>extract-zip*",
     "GHSA-jmr9-qjv8-65gv|*@wdio/utils>@puppeteer/browsers>extract-zip*",
+
+    // braces: stack exhaustion (denial of service) when expanding deeply
+    // nested brace patterns (GHSA-vfj7-8cjw-p6xm, <= 3.0.3).
+    //
+    // No fix: 3.0.3 is braces' latest release and is affected.
+    // `npm audit fix --force` would move @wdio/mocha-framework to 10.0.0, a
+    // breaking major.
+    //
+    // Not reachable. Dev-only (E2E tooling); nothing ships in the app. The
+    // path is mocha's file watcher (chokidar), which only expands the glob
+    // patterns the harness itself passes (e2e/specs/*.e2e.ts), never input
+    // from a document, a database or the network, and the harness doesn't
+    // run mocha in watch mode.
+    //
+    // Review by 2026-12-31, or sooner if braces publishes a fix.
+    "GHSA-vfj7-8cjw-p6xm|*@wdio/mocha-framework>mocha>chokidar>braces*",
   ],
 }

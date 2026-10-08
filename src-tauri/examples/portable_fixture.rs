@@ -109,14 +109,8 @@ fn main() {
     let firearm = firearms::create_firearm(&conn, &firearm(), false, None).expect("the firearm");
     photos::add_photo(&conn, RecordRef::Firearm(firearm.id), PHOTO_PNG, PHOTO_NAME, "image/png")
         .expect("the photo");
-    documents::add_document(
-        &conn,
-        RecordRef::Firearm(firearm.id),
-        DOCUMENT,
-        DOCUMENT_NAME,
-        "text/plain",
-    )
-    .expect("the document");
+    documents::add_document(&conn, RecordRef::Firearm(firearm.id), DOCUMENT, DOCUMENT_NAME)
+        .expect("the document");
     // Closed as a normal close leaves it, so it opens anywhere without a
     // take-over.
     conn.execute(

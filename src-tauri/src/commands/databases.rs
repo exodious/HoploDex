@@ -6,15 +6,21 @@
 //! its paths and `machine.json` from the caller so the tests use throwaway
 //! ones.
 
+use std::sync::Arc;
+
 use tauri::{AppHandle, Manager, State};
 
+use crate::app_dirs;
 use crate::commands::CommandError;
+use crate::models::database::DocumentOpeningChanged;
 use crate::models::database::{
     BackupLocationInput, BackupSettingsInput, BackupSettingsSaved, ChooserState, CloseOutcome,
     CloseReason, CollectionSettings, DatabaseStatus, Draft, ExistingBackupsChoice, IdlePauseReason,
     LockSettingsInput, NoteKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
     RecentRemoved,
 };
+use crate::models::document_opening::DocumentOpening;
+use crate::services::consent::Consent;
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
@@ -30,7 +36,9 @@ pub mod ops {
 
     use crate::commands::CommandError;
     use crate::commands::backups::ops::delete_backups_in;
+    use crate::commands::documents::ops::IdlePause;
     use crate::db;
+    use crate::models::database::DocumentOpeningChanged;
     use crate::models::database::{
         BackupLocation, BackupLocationKind, BackupSettings, BackupSettingsInput,
         BackupSettingsSaved, BackupSummary, ChooserState, CloseOutcome, CloseReason,
@@ -40,7 +48,9 @@ pub mod ops {
         RecentRemoved, SuggestedLocation, validate_backup_settings_input,
         validate_create_database_input, validate_lock_settings_input,
     };
+    use crate::models::document_opening::DocumentOpening;
     use crate::services::backups::{self, MoveJob};
+    use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest};
     use crate::services::disk_space;
     use crate::services::machine_settings::{self, MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
@@ -325,6 +335,51 @@ pub mod ops {
             }
         }
         RecentRemoved { removed: true }
+    }
+
+    /// This computer's way of opening a document (007, FR-011); no database
+    /// need be open.
+    pub fn get_document_opening(machine: &MachineSettings) -> DocumentOpening {
+        machine.document_opening()
+    }
+
+    /// Sets this computer's way of opening a document (FR-011, FR-012).
+    /// Choosing `External` while it is `Preview` asks first, and Cancel
+    /// leaves it unchanged; every other change is made without asking; the
+    /// current value is a no-op. The answer is not the session's: it never
+    /// sets `external_open_confirmed` (US3-2). A change to `External` clears
+    /// an earlier yes in the open database (research.md §17, amended
+    /// 2026-10-07), so the next open asks once with the "won't be asked
+    /// again" line (US3-3). No database need be open: `session` is touched
+    /// only if one is. While the dialog is up the idle clock waits for it
+    /// (research.md §16).
+    pub fn set_document_opening(
+        session: &Session,
+        machine: &MachineSettings,
+        consent: &dyn Consent,
+        value: DocumentOpening,
+    ) -> DocumentOpeningChanged {
+        if machine.document_opening() == value {
+            return DocumentOpeningChanged { changed: false };
+        }
+        if value == DocumentOpening::External {
+            let answer = {
+                let _paused = session.is_open().then(|| IdlePause::new(session));
+                consent.ask(ConsentRequest::Setting)
+            };
+            if answer == ConsentAnswer::Cancel {
+                return DocumentOpeningChanged { changed: false };
+            }
+        }
+        machine.set_document_opening(value);
+        if value == DocumentOpening::External {
+            // `DATABASE_CLOSED` only means there is no earlier yes to clear.
+            let _ = session.inspect_mut(|open| {
+                open.external_open_confirmed = false;
+                Ok(())
+            });
+        }
+        DocumentOpeningChanged { changed: true }
     }
 
     /// Saves the open database's passphrase in this computer's keyring
@@ -760,8 +815,8 @@ pub async fn get_chooser_state(
     Ok(ops::chooser_state(
         &session,
         &machine,
-        app.path().document_dir().ok(),
-        app.path().home_dir().ok(),
+        app_dirs::document_dir(&app).ok(),
+        app_dirs::home_dir(&app).ok(),
     ))
 }
 
@@ -866,7 +921,7 @@ pub async fn save_passphrase(
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
     let passphrase = Passphrase::from_input(passphrase);
-    let scratch = app.path().app_cache_dir().map_err(|err| {
+    let scratch = app_dirs::cache_dir(&app).map_err(|err| {
         log::error!("no cache directory for the passphrase check: {err}");
         CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked.")
     })?;
@@ -937,6 +992,29 @@ pub async fn lock_database(
     machine: State<'_, MachineSettings>,
 ) -> Result<CloseOutcome, CommandError> {
     ops::lock_database(&session, &machine, draft)
+}
+
+#[tauri::command]
+pub async fn get_document_opening(
+    machine: State<'_, MachineSettings>,
+) -> Result<DocumentOpening, CommandError> {
+    Ok(ops::get_document_opening(&machine))
+}
+
+/// The confirmation blocks until it is answered, so not on an async thread.
+#[tauri::command]
+pub async fn set_document_opening(
+    value: DocumentOpening,
+    app: AppHandle,
+) -> Result<DocumentOpeningChanged, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let consent = app.state::<Arc<dyn Consent>>();
+        ops::set_document_opening(&session, &machine, &**consent, value)
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not change the setting: {e}")))
 }
 
 #[tauri::command]

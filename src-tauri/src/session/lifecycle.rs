@@ -20,16 +20,18 @@ use crate::services::backups::{self, BackupFailure, BackupJob, Due};
 use crate::services::file_swap;
 use crate::services::machine_settings::{self, MachineSettings};
 use crate::services::passphrase::Passphrase;
+use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
-use crate::session::{ImmediateClose, OpenDatabase, Session, pending};
+use crate::session::{ImmediateClose, OpenDatabase, Session, SessionInner, pending};
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most
 /// (research.md §14); what is not done by then is finished on waking.
 const IMMEDIATE_WAIT: Duration = Duration::from_secs(10);
 
-/// Creates a database at `path` and makes it the open one.
+/// Creates a database at `path` and makes it the open one, closing any other
+/// open database first as a switch.
 pub fn create(
     session: &Session,
     machine: &MachineSettings,
@@ -44,6 +46,11 @@ pub fn create(
             }
             other => other.into(),
         })?;
+    if session.is_open() {
+        // A switch, as in `open`: the other database is closed normally
+        // (its preview ends, its backup is made) rather than replaced.
+        close_normal(session, machine, CloseReason::Switched).ok();
+    }
     session.install(prepare(machine, conn, path)?);
     Ok(())
 }
@@ -72,10 +79,10 @@ pub fn open(
     Ok(())
 }
 
-/// Wraps a freshly opened connection for the session and records the open
-/// in the recent list, with what this computer should remember about the
-/// database. A backup opened directly becomes a database of its own here
-/// (research.md §9).
+/// Wraps a freshly opened connection for the session, warms what the first
+/// suggestion reads, and records the open in the recent list, with what this
+/// computer should remember about the database. A backup opened directly
+/// becomes a database of its own here (research.md §9).
 pub(crate) fn prepare(
     machine: &MachineSettings,
     conn: Connection,
@@ -85,6 +92,12 @@ pub(crate) fn prepare(
     let location: String = conn
         .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
         .map_err(CommandError::from_db)?;
+    // Before the connection goes into the session, so no command waits on
+    // it. It is part of the open: the 1s of SC-003 includes it, timed in
+    // `performance_test.rs`.
+    if let Err(err) = suggestions::warm(&conn) {
+        log::warn!("warming the suggestions failed: {err}");
+    }
     let mut open = OpenDatabase::new(conn, path)?;
     open.notes.opened_backup = opened_backup;
     machine.touch_recent(
@@ -156,6 +169,9 @@ pub fn close_normal(
     };
     // Unsaved input was kept by a lock, or dealt with by the user.
     open.staged_draft = None;
+    // The preview is off the screen and out of memory before the close is
+    // announced, however long the backup takes (FR-014, research.md §20).
+    drop(open.end_preview());
     let check = if open.storage_lost {
         FingerprintCheck::Unreachable
     } else {
@@ -345,6 +361,10 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
         (path, lock_announced)
     };
     session.set_last_closed(&path);
+    // Before `session:closed`, which is when the frontend drops the
+    // collection: the preview goes first, without waiting for the rest of
+    // the close (FR-014).
+    session.end_preview();
     let events = session.events();
     if is_lock(reason) && !lock_announced {
         events.notice(ChooserNotice::Closed {
@@ -615,7 +635,8 @@ fn backup_failed(
 /// then let go of it without writing anything more, so no backup and no
 /// marker clear. The frontend is told first, so it drops the collection
 /// view before anything else happens.
-pub(crate) fn close_taken_over(session: &Session, open: OpenDatabase) {
+pub(crate) fn close_taken_over(session: &SessionInner, mut open: OpenDatabase) {
+    drop(open.end_preview());
     log::warn!("{} was taken over by another computer", open.path.display());
     let path = open.path.to_string_lossy().into_owned();
     let events = session.events();

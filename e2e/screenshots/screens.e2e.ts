@@ -7,10 +7,10 @@ import {
   groupBy,
   clickButton,
   clickEl,
-  fieldValue,
   fill,
   goTo,
   openPhysicalGroup,
+  pressEscape,
   search,
   selectOption,
   settle,
@@ -24,8 +24,14 @@ import {
   unlock,
   waitForChooser,
 } from "../support/ui";
-import { SCREENSHOT_WINDOW, chooseTheme, resizeWindow, shot } from "../support/screenshots";
-import { realClick, realKey } from "../support/realInput";
+import { relaunchApp } from "../support/app";
+import {
+  SCREENSHOT_WINDOW,
+  chooseTheme,
+  resizeWindow,
+  shot,
+  shotDisplay,
+} from "../support/screenshots";
 
 /**
  * The standard screenshot set for pull requests that change the UI: the main
@@ -106,31 +112,133 @@ async function closeDialog() {
   await settle();
 }
 
-/** Types `text` with real key presses into the focused field (an X keysym
- * per character), since the suggestion lists answer to real input. */
-async function typeReal(text: string) {
-  const names: Record<string, string> = { " ": "space", ".": "period" };
-  for (const char of text) {
-    const upper = char !== char.toLowerCase();
-    await realKey(upper ? `Shift_L+${char.toLowerCase()}` : (names[char] ?? char));
-  }
+// --- 007's document viewer ----------------------------------------------------
+
+/** Starts recording `preview:pdf-ready` in the page, the way the frontend's
+ * own listener gets it, so a shot waits until the PDF surface is there. Safe
+ * to call again: it listens once per page. */
+async function recordPdfReady() {
+  await browser.execute(() => {
+    const page = window as unknown as {
+      __hdPdfReady?: number;
+      __TAURI_INTERNALS__: {
+        transformCallback: (callback: () => void) => number;
+        invoke: (cmd: string, args: unknown) => Promise<unknown>;
+      };
+    };
+    if (page.__hdPdfReady !== undefined) return;
+    page.__hdPdfReady = 0;
+    const handler = page.__TAURI_INTERNALS__.transformCallback(() => {
+      page.__hdPdfReady = (page.__hdPdfReady ?? 0) + 1;
+    });
+    void page.__TAURI_INTERNALS__.invoke("plugin:event|listen", {
+      event: "preview:pdf-ready",
+      target: { kind: "Any" },
+      handler,
+    });
+  });
 }
 
-/** Tab lands in Caliber and brings its list up, which the shots don't want.
- * Escape closes the list only if it is up: with none, it would close the form. */
-async function closeListIfOpen() {
-  // The list comes up when Tab's focus lands in Caliber, and its options come
-  // from the backend: wait for the focus, then for the app to be idle.
+const pdfReadyCount = () =>
+  browser.execute(() => (window as unknown as { __hdPdfReady?: number }).__hdPdfReady ?? 0);
+
+const VIEWER = ".hd-dialog__content--xl";
+
+/** Clicks the document's name in the record's list, which opens the viewer. */
+async function openDocument(name: string) {
   await browser.waitUntil(
     () =>
-      browser.execute(() =>
-        Boolean(document.activeElement?.closest('[role="dialog"] [data-field="caliber"]')),
+      browser.execute((wanted: string) => {
+        const button = [...document.querySelectorAll<HTMLElement>("button.hd-doc__name")].find(
+          (b) => b.textContent?.trim() === wanted,
+        );
+        button?.click();
+        return Boolean(button);
+      }, name),
+    { timeout: 5000, timeoutMsg: `no document "${name}" in the list` },
+  );
+  await $(`${VIEWER} .hd-dialog__title`).waitForExist();
+  await settle();
+}
+
+async function closeViewer() {
+  await pressEscape();
+  await $(VIEWER).waitForExist({ reverse: true });
+  await settle();
+}
+
+async function waitForViewerStatus(startsWith: string) {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (wanted: string) =>
+          [...document.querySelectorAll(`.hd-dialog__content--xl [role="status"]`)].some((el) =>
+            el.textContent?.trim().startsWith(wanted),
+          ),
+        startsWith,
       ),
-    { timeout: 5000, timeoutMsg: "Tab never reached Caliber" },
+    { timeout: 10000, timeoutMsg: `the viewer never said "${startsWith}"` },
+  );
+}
+
+/** Puts the focus in the input at `selector` (the first match). Scripted
+ * rather than real input, as is all of this walk's, so it runs on every
+ * platform. The suggestion lists answer to a scripted focus, change and
+ * keydown as to real ones. */
+async function focusInput(selector: string) {
+  const found = await browser.execute((selector: string) => {
+    const input = document.querySelector<HTMLInputElement>(selector);
+    input?.focus();
+    return Boolean(input);
+  }, selector);
+  if (!found) throw new Error(`focusInput: nothing matches "${selector}"`);
+}
+
+/** Focuses the input at `selector` and replaces its text with `text`, as
+ * selecting it all and typing would: the change brings its suggestion list up. */
+async function typeInto(selector: string, text: string) {
+  await browser.execute(
+    (selector: string, text: string) => {
+      const input = document.querySelector<HTMLInputElement>(selector)!;
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    selector,
+    text,
+  );
+}
+
+/** Presses Escape on whatever has focus. It must be cancelable like a real
+ * key press: an open suggestion list cancels it, so the dialog stays open. */
+async function pressEscapeKey() {
+  await browser.execute(() =>
+    (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    ),
+  );
+}
+
+/** Closes the suggestion list of the form field `field` (Caliber by default)
+ * if it comes up, which the shots don't want. Moving the focus to Caliber, or
+ * typing a cartridge, can bring a list up. Escape closes the list only if it
+ * is up: with none, it would close the form. The list's options come from
+ * the backend, so a list that is not up yet looks the same as one that never
+ * comes: this waits for the focus, then for the app to be idle, and only then
+ * decides. */
+async function closeListIfOpen(field = "caliber") {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (field: string) =>
+          Boolean(document.activeElement?.closest(`[role="dialog"] [data-field="${field}"]`)),
+        field,
+      ),
+    { timeout: 5000, timeoutMsg: `the focus never reached ${field}` },
   );
   await settle();
   if (await $('[role="listbox"]').isDisplayed()) {
-    await realKey("Escape");
+    await pressEscapeKey();
     await $('[role="listbox"]').waitForExist({ reverse: true });
   }
 }
@@ -232,21 +340,13 @@ async function chooseOpenMenuItem(label: string) {
 }
 
 /** Opens the "Mount on {name}" dialog from the record page's Mounted section,
- * and searches it with real key presses for `text` (the list answers to real
- * input). */
+ * and searches it for `text`. */
 async function searchMountDialog(text: string) {
   await openMenuButton(".hd-mounted-section", "Mount");
   await chooseOpenMenuItem("Existing accessory or firearm…");
   await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
   await settle();
-  await realClick('[role="dialog"] [role="combobox"]');
-  await typeReal(text);
-  // Real key presses reach the page a moment after they are sent, and the list
-  // answers each one: wait for the whole text, then for the last answer.
-  await browser.waitUntil(
-    async () => (await $('[role="dialog"] [role="combobox"]').getValue()) === text,
-    { timeout: 5000, timeoutMsg: "the search text was not typed as sent" },
-  );
+  await typeInto('[role="dialog"] [role="combobox"]', text);
   await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
   await settle();
 }
@@ -361,39 +461,27 @@ for (const theme of ["Light", "Dark"] as const) {
       await groupBy("Type");
 
       await openDialog("Add firearm");
-      await realClick('[data-field="make"] input');
-      await typeReal("Gl");
+      await typeInto('[data-field="make"] input', "Gl");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
       await centerField("make");
       await shot(`28-make-suggestions-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="listbox"]').waitForExist({ reverse: true });
 
       // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
       await centerField("cartridge");
-      await realClick('[data-field="cartridge"] input');
-      await typeReal("9mm");
+      await typeInto('[data-field="cartridge"] input', "9mm");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
       await centerField("cartridge");
       await shot(`29-cartridge-suggestions-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="listbox"]').waitForExist({ reverse: true });
 
       // A custom cartridge whose bore can be read from its name: the caliber
-      // is filled in, marked as a guess.
-      await browser.execute(() => {
-        const input = document.querySelector<HTMLInputElement>('[data-field="cartridge"] input');
-        input?.select();
-      });
-      await typeReal(".30 Custom Improved");
-      await browser.waitUntil(
-        async () => (await fieldValue("Cartridge")) === ".30 Custom Improved",
-        {
-          timeoutMsg: "the cartridge text was not typed as sent",
-        },
-      );
-      await realKey("Escape");
-      await realKey("Tab");
+      // is filled in, marked as a guess, once the focus moves on.
+      await typeInto('[data-field="cartridge"] input', ".30 Custom Improved");
+      await closeListIfOpen("cartridge");
+      await focusInput('[role="dialog"] [data-field="caliber"] input');
       await $(".hd-guess-tag").waitForExist({ timeout: 5000 });
       await closeListIfOpen();
       await centerField("caliber");
@@ -406,11 +494,9 @@ for (const theme of ["Light", "Dark"] as const) {
       await openDialog("Edit");
       // Mounted on (006) pushes Cartridge below the footer: bring it into view first.
       await centerField("cartridge");
-      await realClick('[data-field="cartridge"] input');
-      await realKey("Control_L+a");
-      await typeReal("9x19mm Parabellum");
-      await realKey("Escape");
-      await realKey("Tab");
+      await typeInto('[data-field="cartridge"] input', "9x19mm Parabellum");
+      await closeListIfOpen("cartridge");
+      await focusInput('[role="dialog"] [data-field="caliber"] input');
       await $(".hd-caliber-suggestion").waitForExist({ timeout: 5000 });
       await closeListIfOpen();
       await centerField("caliber");
@@ -490,13 +576,11 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`40-registration-closed-summary-${suffix}`);
       await setGroup("Registration", true);
       await centerField("registrationForm");
-      await realClick('[data-field="registrationForm"] input');
-      await realKey("Control_L+a");
-      await typeReal("F");
+      await typeInto('[data-field="registrationForm"] input', "F");
       await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
       await centerField("registrationForm");
       await shot(`42-registration-open-details-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="listbox"]').waitForExist({ reverse: true });
       await selectOption("Registered as", "Unspecified");
       await $('[role="alertdialog"]').waitForExist();
@@ -610,7 +694,7 @@ for (const theme of ["Light", "Dark"] as const) {
       );
       await openMenuButton(".hd-mounted-section", "Mount");
       await shot(`55-mount-menu-${suffix}`);
-      await realKey("Escape");
+      await pressEscapeKey();
       await $('[role="menu"]').waitForExist({ reverse: true });
 
       await searchMountDialog("holo");
@@ -736,6 +820,50 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
     });
 
+    // specs/007-document-preview contracts/ui-document-preview.md §10: the
+    // Glock's document list, and the viewer on each kind of document.
+    it("the document list and the viewer", async () => {
+      await recordPdfReady();
+      await openRecord(RECORD);
+      // The whole record: all eight rows of the list, down to the pre-007 JPEG.
+      await shot(`67-document-list-${suffix}`, { fullPage: true });
+
+      const ready = await pdfReadyCount();
+      await openDocument("Purchase receipt.pdf");
+      await browser.waitUntil(async () => (await pdfReadyCount()) > ready, {
+        timeout: 15000,
+        timeoutMsg: "the PDF never became ready",
+      });
+      await shotDisplay(`68-viewer-pdf-${suffix}`);
+      await closeViewer();
+
+      // The TIFF screen shows a scan that looks like one (US Letter, 200 DPI,
+      // three pages), on the suppressor's record; the Glock's own TIFF is a
+      // tiny test image the viewer has to zoom a long way.
+      await back();
+      await openRecord("Dead Air Sandman-K");
+      await openDocument("Bill of sale (scan).tif");
+      await $(`${VIEWER} img[alt="Bill of sale (scan).tif, page 1 of 3"]`).waitForExist({
+        timeout: 10000,
+      });
+      await shot(`69-viewer-tiff-${suffix}`);
+      await closeViewer();
+      await back();
+      await openRecord(RECORD);
+
+      await openDocument("owners-manual-notes.txt");
+      await $(`${VIEWER} pre.hd-preview__text`).waitForExist({ timeout: 10000 });
+      await shot(`70-viewer-text-${suffix}`);
+      await closeViewer();
+
+      await openDocument("Bill of sale.docx");
+      await waitForViewerStatus("Bill of sale.docx can't be previewed here.");
+      await shot(`71-viewer-cant-preview-${suffix}`);
+      await closeViewer();
+
+      await back();
+    });
+
     it("pending changes after a lock", async () => {
       // A lock with an edit under way keeps it, and the next open asks.
       await goTo("Collection");
@@ -802,7 +930,10 @@ describe("Screenshots: the import report", () => {
     await goTo("Collection");
     await chooseTheme("Light");
     // The seed keeps its import samples beside the config directory.
-    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
     await clickButton("Import");
     await fill("Spreadsheet file", path.join(samples, "import-cartridges.csv"));
     await clickButton("Import");
@@ -834,7 +965,10 @@ describe("Screenshots: the import report with mount warnings", () => {
   it("lists the mount warnings and the table of each row", async () => {
     await goTo("Collection");
     await chooseTheme("Light");
-    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
     await clickButton("Import");
     await fill("Spreadsheet file", path.join(samples, "import-accessory-mount-warnings.csv"));
     await clickButton("Import");
@@ -863,7 +997,10 @@ describe("Screenshots: replacing a record with a disposed row", () => {
   it("asks about each record mounted on it", async () => {
     await goTo("Collection");
     await chooseTheme("Light");
-    const samples = path.join(path.dirname(process.env.XDG_CONFIG_HOME!), "import-samples");
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
     await clickButton("Import");
     await fill("Spreadsheet file", path.join(samples, "import-dispose-receiver.csv"));
     await clickButton("Import");
@@ -879,6 +1016,35 @@ describe("Screenshots: replacing a record with a disposed row", () => {
     await clickButton("Cancel");
     await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await closeDialog();
+    await chooseTheme("Light");
+  });
+});
+
+// specs/007-document-preview FR-003a: a computer whose PDF viewer can't be
+// used safely. HOPLODEX_E2E_PDF_PREVIEW=off is an E2E-only switch the app reads
+// when it starts, so this one relaunches it (last in the walk: nothing after it
+// wants the default back, and it is put back anyway).
+describe("Screenshots: PDFs can't be previewed on this computer", () => {
+  after(async () => {
+    delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
+  });
+
+  it("says so in the viewer", async () => {
+    process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
+    await relaunchApp();
+    await waitForChooser();
+    const select = await $('button.hd-db-row__select[aria-label^="Main collection, "]');
+    if (await select.isExisting()) await select.click();
+    await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+    await goTo("Collection");
+    await openRecord(RECORD);
+    await openDocument("Purchase receipt.pdf");
+    await waitForViewerStatus("PDFs can't be previewed on this computer.");
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`72-viewer-pdf-unavailable-${theme.toLowerCase()}`);
+    }
+    await closeViewer();
     await chooseTheme("Light");
   });
 });

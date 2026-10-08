@@ -7,6 +7,7 @@
 mod support;
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -313,6 +314,7 @@ fn deleting_them_removes_only_this_databases_backups_at_the_old_folder() {
     assert_eq!(world.cached_folder(), Some(new));
 }
 
+#[cfg(unix)]
 #[test]
 fn a_backup_that_cannot_be_deleted_keeps_the_old_location() {
     let world = World::new();
@@ -497,6 +499,7 @@ fn a_name_already_taken_at_the_new_folder_is_left_behind_and_never_overwritten()
     assert_eq!(fs::read(new.join(&made[2].0.file_name)).unwrap(), made[2].1);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_failure_part_way_keeps_the_new_location_and_leaves_the_rest_behind() {
     let world = World::new();

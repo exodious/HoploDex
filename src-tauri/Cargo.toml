@@ -8,7 +8,10 @@ license = "GPL-3.0-only"
 
 [lib]
 name = "hoplodex_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Only an rlib: the binary and the tests link it. The template's staticlib
+# and cdylib are for iOS and Android, which HoploDex doesn't target, and each
+# cost hundreds of megabytes in every debug build.
+crate-type = ["rlib"]
 path = "src/lib.rs"
 
 [[bin]]
@@ -36,13 +39,16 @@ mock-keyring = ["dep:keyring-core"]
 # has no authentication and runs any script in the page; and
 # `HOPLODEX_E2E_IDLE_MINUTE_SECONDS` then sets how long the idle lock counts
 # as one minute, so a spec doesn't wait a real one (session/idle.rs).
-# `scripts/check-no-webdriver.sh` (in `npm run audit`, and on the release
+# `scripts/check-no-webdriver.mjs` (in `npm run audit`, and on the release
 # binary in build-appimage.sh) checks that a build without it has none of the
 # server.
 e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `unstable`: `Window::add_child`, the PDF preview's child web view
+# (research.md §4). `macos-proxy`, macOS only (below): `proxy_url` there
+# (research.md §6).
+tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
@@ -70,6 +76,22 @@ fs4 = "1.1.0"
 # Promoted from transitive, at the version already in Cargo.lock: wiping
 # passphrases from memory (research.md §1).
 zeroize = "1.9"
+# Document content checks, which read directory structures and decompress
+# nothing but small parts (research.md §2), text decoding (§12) and page
+# PNGs (§11).
+# Promoted from transitive, at the versions already in Cargo.lock: `zip` is
+# the 8.x `calamine` uses, `png` the 0.17 `image` uses.
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+cfb = "0.7.3"
+# An OOXML package's relationship parts (research.md §2), at the version and
+# with the feature `calamine` already brings.
+quick-xml = { version = "0.41", features = ["encoding"] }
+encoding_rs = "0.8.35"
+png = "0.17.16"
+# TIFF pages, decoded in the render helper on every OS (research.md §11).
+# `fax` is at 0.2, the one `tiff` uses, so the tree has a single copy.
+tiff = "0.11.3"
+fax = "0.2.7"
 
 # Promoted from transitive, at the version already in Cargo.lock: asking the
 # storage to discard a securely deleted file's blocks (research.md §12).
@@ -80,16 +102,41 @@ libc = "0.2.189"
 # already in the tree for its platform; only the features are switched on.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5.18"
+# The render helper's confinement (research.md §11).
+landlock = "0.4.7"
+# The PDF surface's filter, settings and signals (research.md §6-§10). The
+# version and features wry uses, `v2_40` on top of its `v2_38`.
+webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
+    "NSArray",
     "NSDistributedNotificationCenter",
+    "NSError",
     "NSNotification",
     "NSString",
+    "NSURL",
 ] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSWorkspace"] }
+# The PDF surface's content rule list, SPI switches and input (research.md
+# §6, §7, §10). Promoted from dev-dependencies.
+block2 = "0.6.2"
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-app-kit",
+    "WKContentRuleList",
+    "WKContentRuleListStore",
+    "WKPreferences",
+    "WKUserContentController",
+    "WKWebView",
+    "WKWebViewConfiguration",
+] }
+# `proxy_url` on macOS (research.md §6); macOS 14 and later, and the minimum
+# is 26.
+tauri = { version = "2", features = ["unstable", "macos-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
 # File identity for the take-over check (research.md §6). Unix uses `stat`
@@ -106,10 +153,67 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_RemoteDesktop",
     "Win32_System_Shutdown",
     "Win32_UI_WindowsAndMessaging",
+    # `GetLastInputInfo`, sampled for the idle lock while the PDF surface is
+    # up (research.md §10).
+    "Win32_UI_Input_KeyboardAndMouse",
+    # The render helper's job object and mitigations (research.md §11), the
+    # external copy's DACL (§18) and `GetLastInputInfo` (§10).
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    # The helper's error mode, parent watch and WER flags, and the mitigation
+    # policy structures (research.md §11).
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_ErrorReporting",
+    "Win32_System_SystemServices",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_SystemInformation",
+    # Opening the external copy's folder for its DACL without following a
+    # reparse point (research.md §18).
+    "Win32_Storage_FileSystem",
+    # The pipes of the render helper HoploDex starts into its job object
+    # (research.md §11, amended 2026-10-07).
+    "Win32_System_Pipes",
+    # `AssocQueryStringW`: whether a program is registered for a document type
+    # (research.md §18, amended 2026-10-07).
+    "Win32_UI_Shell",
 ] }
+# The PDF surface's settings and events (research.md §6-§10). The versions
+# wry uses.
+webview2-com = "0.38.2"
+windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+# Distributed notices arrive on the main thread's run loop, and libtest runs
+# each test on a thread of its own, so this one has its own `main`.
+[[test]]
+name = "macos_screen_lock_test"
+harness = false
+
+# WinSock, for the tripwire's exclusive bind (research.md §6).
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Networking_WinSock",
+    # The helper lookup of tests/support/preview_support.rs.
+    "Win32_System_Diagnostics_ToolHelp",
+    # Waiting for the helper to end when its parent is killed
+    # (tests/tiff_helper_test.rs).
+    "Win32_System_Threading",
+] }
+
+# Debug and test builds keep line tables, so panics and backtraces still name
+# the file and line, but not full debug info, and none for dependencies. Full
+# debug info made each of the ~60 test programs 140-260 MB (a .pdb on Windows,
+# inside the executable on Linux). For a debugging session, set
+# CARGO_PROFILE_DEV_DEBUG=true to get full debug info for HoploDex's own code.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 panic = "abort"
@@ -128,3 +232,13 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+# #79: tauri-plugin-wdio-webdriver 1.4.0, patched. It found windows only through
+# `AppHandle::webview_windows()`, which leaves out a window that holds more than one
+# web view, so the main window vanished from WebDriver ("no such window") while the
+# PDF preview's child web view was on it. The vendored copy finds a web view by its
+# label instead (`platform::WebviewHandle`, `server/mod.rs`, `server/handlers/window.rs`;
+# the executors take a `WebviewHandle` where they took a `WebviewWindow`). Only the
+# `e2e` feature builds it. Drop this patch when the fix is released upstream.
+[patch.crates-io]
+tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }

@@ -63,6 +63,7 @@ A collector records the scope they bought for their deer rifle: kind "Optic", ma
 10. **Given** an accessory, **When** the user deletes it after confirming, **Then** it and everything recorded on it are removed and its values are no longer suggested if nothing else uses them.
 11. **Given** a firearm with free text in its Accessories field, **When** this feature is in place, **Then** the text is unchanged, still editable, searchable and exported, and no accessory record is created from it.
 12. **Given** an Optic, **When** the user adds two photos and a receipt (by choosing files or dropping them on its record), **Then** the first photo is its thumbnail until the user picks the other, the receipt opens in the system's viewer, and the Accessories page shows the thumbnail in its tile view; **and Given** an accessory with no photos, **Then** its tile shows a generic picture for its kind; **and When** the accessory is deleted, **Then** its photos and documents are removed with it.
+    _Amended by [spec 007](../007-document-preview/spec.md): the receipt is previewed in the application by default, and opens in the system's viewer only after a confirmation (FR-007, FR-008, FR-013)._
 
 ---
 
@@ -197,6 +198,7 @@ The collector exports the collection and gets the firearms and, in their own tab
 - **FR-006**: An accessory MUST be able to be disposed of, its disposition reversed, and its disposition history kept or discarded exactly as a firearm's (001 FR-004, FR-023, FR-033), using the same dialogs. The rules that re-check a firearm's nickname, key and marks on reversal do not apply.
 - **FR-007**: A firearm's free-text Accessories field (001 FR-002) MUST be kept unchanged: its contents, editing, search, export and import are as today, and nothing converts it into records or records into it. On the firearm's record page it stays in its own Accessories section, as today, separate from the Mounted section (FR-013).
 - **FR-007a**: An accessory MUST be able to have photographs and attached documents exactly as a firearm can (001 FR-007, FR-008, FR-010), added by choosing files or dropping them on its record, with a thumbnail chosen as a firearm's is. An accessory with no photographs MUST show a generic picture for its kind (as 001 FR-009 does for a firearm's type). Decrypted copies of its documents MUST be handled as a firearm's are (001 FR-035, 003 FR-022). Deleting an accessory MUST remove its photographs and documents completely (constitution V); deleting or disposing of its host does not touch them.
+  _Amended by [spec 007](../007-document-preview/spec.md): an accessory's documents are previewed in the application by default and opened in another program only after a confirmation, as a firearm's are (FR-007, FR-008, FR-013)._
 
 **Value and insurance**
 
@@ -218,6 +220,7 @@ The collector exports the collection and gets the firearms and, in their own tab
 - **FR-016a**: The collection page MUST show, in its list and on its tiles, "Mounted on" with its direct host's name (FR-013; a firearm named as firearms are, 001 FR-031; an accessory by FR-005) linking to its record for a firearm that is mounted, and the number of items mounted on a firearm that has any, by kind ("1 firearm and 2 accessories mounted", FR-012), counting everything mounted on it, directly or through others, and not naming them. Nothing is shown for a firearm that is neither. The collection page's grouping and search are unchanged (FR-018).
 - **FR-017**: Accessories MUST be groupable by kind, make, caliber, cartridge and "Mounted on". An accessory with no value for the grouping field is under "Unspecified", and for "Mounted on" under "Not mounted"; grouped by "Mounted on", each host, firearm or accessory, is its own group. The grouping control MUST be the same one the collection page uses (constitution III).
 - **FR-018**: The Accessories page MUST search every recorded accessory field, notes and serial number included, matching as the collection's search does (001 FR-013). The collection page's search is unchanged: a firearm is not found through the items mounted on it.
+  _Amended by [spec 007](../007-document-preview/spec.md): the search also matches the names of the accessory's documents (FR-015)._
 
 **Export and import**
 

@@ -5,6 +5,8 @@ import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { ToastProvider } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
+import { loadDocumentOpening } from "../media/documentOpening";
+import * as mediaService from "../media/mediaService";
 import { DatabaseSettingsDialog } from "./DatabaseSettingsDialog";
 import * as databasesService from "./databasesService";
 import type {
@@ -18,6 +20,17 @@ import type {
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
+// The "Documents" fieldset reads and writes this computer's setting through the
+// documents store (src/features/media/documentOpening.ts), over these two
+// wrappers (specs/007-document-preview T096).
+vi.mock("../media/mediaService");
+
+// Every test starts with the default setting, "preview", loaded in the store.
+beforeEach(async () => {
+  vi.mocked(mediaService.getDocumentOpening).mockReset().mockResolvedValue("preview");
+  vi.mocked(mediaService.setDocumentOpening).mockReset();
+  await loadDocumentOpening();
+});
 
 const FOLDER = "/home/sam/Documents/HoploDex";
 const DEFAULT_BACKUPS = `${FOLDER}/HoploDex backups`;
@@ -385,13 +398,14 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
     return props;
   }
 
-  it("comes after Backups and before This computer", async () => {
+  it("comes after Backups and before Documents and This computer", async () => {
     await renderSettled();
 
     const sections = screen.getAllByRole("group");
     expect(sections.map((section) => section.querySelector("legend")?.textContent)).toEqual([
       "Backups",
       "Locking",
+      "Documents",
       "This computer",
     ]);
   });
@@ -735,5 +749,141 @@ describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.
       "aria-valuenow",
       "636000000",
     );
+  });
+});
+
+describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contracts/ui-document-preview.md §5, US3)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
+    vi.mocked(databasesService.updateBackupSettings).mockReset();
+    vi.mocked(databasesService.updateLockSettings).mockReset();
+  });
+
+  const documents = () => screen.getByRole("group", { name: "Documents" });
+  const control = () => within(documents()).getByRole("radiogroup", { name: "Open documents" });
+  const preview = () => within(control()).getByRole("radio", { name: "Preview in HoploDex" });
+  const external = () => within(control()).getByRole("radio", { name: "Open in another app" });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  it("is a Documents fieldset after Locking and before This computer, with the hint", () => {
+    renderSettings();
+
+    const legends = screen
+      .getAllByRole("group")
+      .map((section) => section.querySelector("legend")?.textContent);
+    expect(legends.indexOf("Documents")).toBe(legends.indexOf("Locking") + 1);
+    expect(legends.indexOf("This computer")).toBe(legends.indexOf("Documents") + 1);
+    expect(documents()).toHaveTextContent(
+      "Applies to every database on this computer. Saved for this computer as soon as you choose.",
+    );
+  });
+
+  it("offers Preview in HoploDex and Open in another app, at Preview by default (US3-1)", () => {
+    renderSettings();
+
+    expect(within(control()).getAllByRole("radio")).toHaveLength(2);
+    expect(preview()).toBeChecked();
+    expect(external()).not.toBeChecked();
+  });
+
+  it("shows the setting this computer has", async () => {
+    vi.mocked(mediaService.getDocumentOpening).mockResolvedValue("external");
+    await loadDocumentOpening();
+    renderSettings();
+
+    expect(external()).toBeChecked();
+    expect(preview()).not.toBeChecked();
+  });
+
+  it("calls setDocumentOpening for Open in another app, showing the old value as pending while the dialog is up", async () => {
+    const user = userEvent.setup();
+    const answer = deferred<{ changed: boolean }>();
+    vi.mocked(mediaService.setDocumentOpening).mockReturnValue(answer.promise);
+    renderSettings();
+
+    await user.click(external());
+
+    expect(mediaService.setDocumentOpening).toHaveBeenCalledTimes(1);
+    expect(mediaService.setDocumentOpening).toHaveBeenCalledWith("external");
+    expect(control()).toHaveAttribute("aria-busy", "true");
+    expect(preview()).toBeChecked();
+    expect(external()).not.toBeChecked();
+
+    await act(async () => answer.resolve({ changed: true }));
+
+    await waitFor(() => expect(external()).toBeChecked());
+    expect(preview()).not.toBeChecked();
+    expect(control()).not.toHaveAttribute("aria-busy", "true");
+  });
+
+  it("stays at Preview in HoploDex when the confirmation is cancelled ({ changed: false })", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mediaService.setDocumentOpening).mockResolvedValue({ changed: false });
+    renderSettings();
+
+    await user.click(external());
+
+    await waitFor(() => expect(control()).not.toHaveAttribute("aria-busy", "true"));
+    expect(mediaService.setDocumentOpening).toHaveBeenCalledWith("external");
+    expect(preview()).toBeChecked();
+    expect(external()).not.toBeChecked();
+  });
+
+  it("changes back to Preview in HoploDex at once, with setDocumentOpening('preview')", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mediaService.getDocumentOpening).mockResolvedValue("external");
+    await loadDocumentOpening();
+    vi.mocked(mediaService.setDocumentOpening).mockResolvedValue({ changed: true });
+    renderSettings();
+
+    await user.click(preview());
+
+    expect(mediaService.setDocumentOpening).toHaveBeenCalledWith("preview");
+    await waitFor(() => expect(preview()).toBeChecked());
+    expect(external()).not.toBeChecked();
+  });
+
+  it("saves both choices at once, without the dialog's Save, and leaves the dialog open and the database's settings alone", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mediaService.setDocumentOpening).mockResolvedValue({ changed: true });
+    const props = renderSettings();
+
+    await user.click(external());
+    await waitFor(() => expect(external()).toBeChecked());
+    await user.click(preview());
+    await waitFor(() => expect(preview()).toBeChecked());
+
+    expect(vi.mocked(mediaService.setDocumentOpening).mock.calls).toEqual([
+      ["external"],
+      ["preview"],
+    ]);
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+    expect(databasesService.updateLockSettings).not.toHaveBeenCalled();
+    expect(props.onSaved).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Database settings" })).toBeInTheDocument();
+  });
+
+  it("keeps the choice after Cancel: it was never the dialog's to take back", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mediaService.setDocumentOpening).mockResolvedValue({ changed: true });
+    renderSettings();
+
+    await user.click(external());
+    await waitFor(() => expect(external()).toBeChecked());
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Nothing was undone: the setting is the store's, not the form's.
+    expect(mediaService.setDocumentOpening).toHaveBeenCalledTimes(1);
+    expect(external()).toBeChecked();
   });
 });

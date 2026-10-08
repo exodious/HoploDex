@@ -219,6 +219,7 @@ fn verify_passphrase_checks_a_candidate_without_touching_the_open_file() {
 
 mod through_commands {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::sync::Arc;
@@ -530,12 +531,15 @@ mod through_commands {
         fs::write(&file, b"").unwrap();
         folder_error(&file.to_string_lossy());
 
-        let read_only = world.folder.path().join("read-only");
-        fs::create_dir(&read_only).unwrap();
-        fs::set_permissions(&read_only, fs::Permissions::from_mode(0o555)).unwrap();
-        let message = folder_error(&read_only.to_string_lossy());
-        fs::set_permissions(&read_only, fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(message.contains("write"), "{message}");
+        #[cfg(unix)]
+        {
+            let read_only = world.folder.path().join("read-only");
+            fs::create_dir(&read_only).unwrap();
+            fs::set_permissions(&read_only, fs::Permissions::from_mode(0o555)).unwrap();
+            let message = folder_error(&read_only.to_string_lossy());
+            fs::set_permissions(&read_only, fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(message.contains("write"), "{message}");
+        }
     }
 
     #[test]

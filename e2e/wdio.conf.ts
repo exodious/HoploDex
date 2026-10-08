@@ -93,26 +93,29 @@ function isolateAppData() {
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   });
+  // An E2E build takes its config and cache directories (and the app
+  // identifier's folder in each) and its documents folder from these, on
+  // every platform, and won't start without them (src-tauri/src/app_dirs.rs):
+  // Windows' known folders ignore APPDATA and the like (#27).
+  process.env.HOPLODEX_E2E_CONFIG_HOME = config;
+  process.env.HOPLODEX_E2E_CACHE_HOME = cache;
   process.env.HOPLODEX_E2E_DOCUMENTS = documents;
   // The E2E build's in-memory keyring is kept here between launches, so a
   // remembered passphrase outlives a relaunch (research.md §10).
   process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(sandbox, "keyring.json");
+  // An E2E build never hands an opened document to the OS, which would start
+  // a real viewer: it writes the copy's path here instead (open_document, #27).
+  process.env.HOPLODEX_E2E_OPENED_LOG = path.join(sandbox, "opened.log");
+  // Nor can a WebDriver click the native confirmation that comes before it
+  // (007 research.md §16): an E2E build appends each request's title here and
+  // answers from HOPLODEX_E2E_CONSENT, set per session below.
+  process.env.HOPLODEX_E2E_CONSENT_LOG = path.join(sandbox, "consent.log");
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;
     process.env.XDG_CACHE_HOME = cache;
     process.env.XDG_CONFIG_HOME = config;
     writeUserDirs(config, documents);
-    // The document test opens a PDF through xdg-open, which would start a real
-    // viewer. Mapping the type to a no-op in mimeapps.list isn't reliable (the
-    // desktop environment's own defaults win), so put a stub first on PATH.
-    const bin = path.join(sandbox, "bin");
-    fs.mkdirSync(bin, { recursive: true });
-    fs.writeFileSync(path.join(bin, "xdg-open"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-    process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
-  } else if (process.platform === "win32") {
-    process.env.APPDATA = data;
-    process.env.LOCALAPPDATA = cache;
   } else if (process.platform === "darwin") {
     // macOS ignores XDG_*: Tauri builds every directory (Application Support,
     // Caches, Documents) from HOME, so the app gets a home of its own inside
@@ -137,7 +140,7 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
 
 /**
  * Seeds the human-testing databases for the screenshot walk in
- * e2e/screenshots/, which wants a realistic collection rather than an empty
+ * e2e/screenshots/ and for 007's preview spec, which want a realistic collection rather than an empty
  * one. The seed writes only into a directory it creates, so it gets a new
  * `seed` folder inside the sandbox, with its databases, backups and a
  * `machine.json` whose recent list names them. The app's config directory
@@ -153,15 +156,7 @@ function seedCollection() {
   if (printed.status !== 0) throw new Error("reading the seed's passphrase failed");
   process.env.HOPLODEX_E2E_SEED_PASSPHRASE = printed.stdout.trim();
 
-  const config = path.join(dir, "config");
-  if (process.platform === "darwin") {
-    const support = path.join(process.env.HOPLODEX_E2E_HOME!, "Library", "Application Support");
-    fs.rmSync(support, { recursive: true, force: true });
-    fs.symlinkSync(config, support);
-  } else {
-    process.env.XDG_CONFIG_HOME = config;
-    writeUserDirs(config, process.env.HOPLODEX_E2E_DOCUMENTS!);
-  }
+  process.env.HOPLODEX_E2E_CONFIG_HOME = path.join(dir, "config");
 }
 
 export const config: WebdriverIO.Config = {
@@ -214,13 +209,39 @@ export const config: WebdriverIO.Config = {
     // WebdriverIO connects with this same config object once the hook
     // returns, so the session goes to this worker's app.
     config.port = assignWorkerPort(cid);
-    if (specs.some((spec) => spec.endsWith("/e2e/screenshots/screens.e2e.ts"))) seedCollection();
+    // The screenshot walk and 007's preview spec (which opens the seed's
+    // Glock and its documents) want the realistic collection.
+    if (
+      specs.some(
+        (spec) =>
+          spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
+          spec.endsWith("/e2e/specs/us13-document-preview.e2e.ts"),
+      )
+    ) {
+      seedCollection();
+    }
     // A computer with no keyring service (FR-019).
     if (specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts"))) {
       process.env.HOPLODEX_E2E_KEYRING = "unavailable";
     } else {
       delete process.env.HOPLODEX_E2E_KEYRING;
     }
+    // A computer whose PDF viewer can't be used safely (007 FR-003a): PDFs
+    // are not previewable, TIFF and text still are. Only a spec named so
+    // gets it for its whole session; a spec that needs both sets
+    // HOPLODEX_E2E_PDF_PREVIEW itself and calls relaunchApp(), and a
+    // developer's own value never reaches the app.
+    if (specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts"))) {
+      process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
+    } else {
+      delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
+    }
+    // The native confirmation before a document goes to another app is
+    // answered "Open in another app" unless a spec says otherwise: it sets
+    // HOPLODEX_E2E_CONSENT (`open` or `cancel`) itself and calls
+    // relaunchApp(), which launches with what it set, and puts `open` back
+    // when it is done. A developer's own value never reaches the app.
+    process.env.HOPLODEX_E2E_CONSENT = "open";
     // The idle lock's minute lasts 3 s in the locking spec, so its test
     // doesn't wait a real minute; every other spec keeps the real one.
     if (specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts"))) {

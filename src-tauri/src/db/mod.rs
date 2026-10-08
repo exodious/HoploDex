@@ -361,9 +361,12 @@ pub fn reclaim_freed_space(conn: &Connection) {
 /// the file (specs/004-cartridges-action-types SC-005, research.md §14).
 /// Both indexes are merged, since a delete cascades through a mount and
 /// either record's words may be in either one (specs/006-accessory-links
-/// SC-006). Failures are logged, as in [`reclaim_freed_space`].
+/// SC-006). A deleted document's file name is in a third one,
+/// `document_names_fts`, which a document delete and a cascade from either
+/// record both touch (specs/007-document-preview research.md §19), so it is
+/// merged too. Failures are logged, as in [`reclaim_freed_space`].
 pub fn reclaim_deleted_record(conn: &Connection) {
-    for index in ["firearms_fts", "accessories_fts"] {
+    for index in ["firearms_fts", "accessories_fts", "document_names_fts"] {
         if let Err(err) =
             conn.execute(&format!("INSERT INTO {index} ({index}) VALUES ('optimize')"), [])
         {

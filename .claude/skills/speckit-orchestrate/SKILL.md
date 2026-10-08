@@ -82,16 +82,49 @@ Ground rules:
 For **test-writing** batches, ask instead for "the API your tests assume, one line each,
 then ambiguities", and pass that list to the implementer of the same story.
 
+## 2a. Per-OS batches on other machines' sessions
+
+The lead runs on whichever machine the user leads from (usually Linux, the
+fastest; sometimes another). Tasks that need a different OS (code behind a
+`#[cfg(target_os = ...)]`, that OS's tests, E2E, screenshots or surface check)
+go to a Claude session on a machine with that OS, over `SendMessage`. Each
+runs under Remote Control in a HoploDex checkout; find them with `ListAgents`
+(the user's local notes say which session is which machine).
+
+- **The batch:** write it like a subagent prompt (§2), plus the lead's
+  session name to reply to and "use the speckit-os-batch skill". That skill
+  makes the other session a **sub-lead**: it always hands the tasks to new
+  `speckit-implementer` subagents, never implements them itself, and keeps
+  its own context small, since it takes batch after batch for the whole
+  feature. It pulls, commits by path, pushes and reports the hash. Don't ask
+  the user to type a command there.
+- **Acknowledge every report:** messages between machines carry no delivery
+  receipt in either direction, so answer each report at once with a one-line
+  `SendMessage`, "Received <hash>", before anything else. The session waits for
+  it rather than repeating its report to the user.
+- **Same permission mode:** a session in a different permission mode from
+  yours holds your messages for the user's approval. The sessions run in auto
+  mode; if a message from one shows `from-mode="prompting"` and batches stall,
+  tell the user.
+- **Pulling:** pull before reviewing its commits, and never while one of your
+  own agents would have files changed under it mid-run.
+- **Why sessions, not SSH:** subagents driving another machine over SSH were
+  considered and set aside. Windows' `sshd` ends every process when the
+  connection drops, an SSH session has no desktop for E2E, screenshots or
+  real input, and a key-authenticated session likely can't use Credential
+  Manager. The sessions run in the machine's desktop session instead.
+
 ## 3. Shared build environment
 
-When agents share one dev container's volumes (one `target/`, one `node_modules`, one
-`dist/`), cargo serialises on its lock but app builds don't:
+When agents share one checkout's build state (on Linux, the dev container's volumes; on
+macOS or Windows, the checkout itself: one `target/`, one `node_modules`, one `dist/`),
+cargo serialises on its lock but app builds don't:
 
 - Run **anything that builds or launches the app** (E2E, screenshots, the full gates, a
   release performance run) **one at a time**, with nothing else building the app.
 - Agents may run unit tests in parallel; a red test caused by another agent's
   in-progress file is expected. Tell agents to wait and retry rather than fix it.
-- Don't change the container script mid-feature to work around this.
+- Don't change the container script or test harness mid-feature to work around this.
 
 ## 4. Review and commit (the lead's job)
 
@@ -105,13 +138,17 @@ When a subagent reports:
 3. **Commit by path**, leaving out files a still-running agent is editing; push. One
    commit per batch, message naming the task IDs. Follow CLAUDE.md's commit rules.
 4. Note follow-ups that belong to a later batch, and put them in that batch's prompt.
+5. **Retest on the OS that failed.** A fix for a failure seen on only one OS is verified
+   only by rerunning it on that OS, several runs in a row for a flake. Passing elsewhere
+   doesn't count, even when the fix is in common code. Until that OS's session reports
+   back, call it "fixed, not yet verified on <OS>".
 
 ## 5. Interruptions
 
 - **Rate limit**: agents fail with a 429. Once it resets, resume each one with
   SendMessage ("you were cut off; resume <its tasks>; check git status/diff first; who
   else is resuming"). Don't respawn: their partial edits and context are worth keeping.
-- **Agent stuck or looping**: check `podman ps`/`ps` for its container before assuming;
+- **Agent stuck or looping**: check `ps` (and on Linux `podman ps` for its container) before assuming;
   report to the user.
 
 ## 6. Reporting to the user

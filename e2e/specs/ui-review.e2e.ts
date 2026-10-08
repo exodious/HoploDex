@@ -1,4 +1,14 @@
-import { $, addFirearm, back, browser, clickButton, clickEl, expect, fill, settle } from "../support/ui";
+import {
+  $,
+  addFirearm,
+  back,
+  browser,
+  clickButton,
+  clickEl,
+  expect,
+  fill,
+  settle,
+} from "../support/ui";
 import { goTo, openFirearm, selectOption } from "../support/ui";
 import { createDatabase } from "../support/ui";
 

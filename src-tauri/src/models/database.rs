@@ -155,6 +155,15 @@ pub struct RecentRemoved {
     pub removed: bool,
 }
 
+/// `set_document_opening`'s answer (007, contracts/tauri-commands.md "Setting
+/// commands"): whether the setting changed, `false` when the user cancelled
+/// the confirmation or the value was already set.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentOpeningChanged {
+    pub changed: bool,
+}
+
 /// `save_passphrase`'s and `forget_saved_passphrase`'s answer (FR-017,
 /// FR-018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

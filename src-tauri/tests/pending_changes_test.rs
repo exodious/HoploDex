@@ -4,6 +4,7 @@
 
 mod support;
 
+#[cfg(unix)]
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,7 +20,9 @@ use hoplodex_lib::models::database::{
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::{Session, lifecycle};
-use serde_json::{Value, json};
+#[cfg(unix)]
+use serde_json::Value;
+use serde_json::json;
 use support::{TestEvents, passphrase, peek, test_session};
 use tempfile::TempDir;
 
@@ -28,6 +31,8 @@ struct World {
     _config: TempDir,
     machine: MachineSettings,
     session: Session,
+    // Read only by the Unix-only tests.
+    #[cfg_attr(not(unix), allow(dead_code))]
     events: Arc<TestEvents>,
 }
 
@@ -93,6 +98,7 @@ impl World {
         .unwrap()
     }
 
+    #[cfg(unix)]
     fn notices(&self) -> Vec<Value> {
         self.events.payloads("notice")
     }
@@ -455,6 +461,9 @@ fn pending_changes_that_cant_be_written_still_lock_and_are_reported_lost() {
     assert_eq!(pending, 0);
 }
 
+// Unix only: Windows refuses to rename over a file SQLite has open, so
+// nothing can replace an open database there.
+#[cfg(unix)]
 #[test]
 fn a_take_over_found_while_finishing_on_waking_loses_the_draft_and_says_so() {
     let world = World::new();

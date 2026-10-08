@@ -747,3 +747,210 @@ fn a_make_stays_while_either_a_firearm_or_an_accessory_still_holds_it() {
     accessory_ops::delete_accessory(&db.conn, accessory, true).unwrap();
     assert!(suggest(&db, EntryField::Make, "shared").is_empty());
 }
+
+// --- The warm-up at open (SC-004's first keystroke) ---------------------------
+
+/// The bytes of page cache `conn` holds (SQLite's `SQLITE_DBSTATUS_CACHE_USED`).
+fn page_cache_bytes(conn: &rusqlite::Connection) -> i32 {
+    let (mut current, mut highest) = (0, 0);
+    // SAFETY: `conn`'s handle is live for the call, and the two outputs are
+    // plain integers.
+    let status = unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            conn.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED,
+            &mut current,
+            &mut highest,
+            0,
+        )
+    };
+    assert_eq!(status, rusqlite::ffi::SQLITE_OK);
+    current
+}
+
+/// A fresh connection decrypts each page from the file on first touch,
+/// which put the first suggestion after opening over 50ms on macOS at
+/// 10,000 firearms. Opening reads what the suggestions read, so their pages
+/// are already in the connection's cache: a bare connection holds none of
+/// them. A regression for the timing, which a Linux run can't show (the
+/// release `performance_test` times it where the cost is).
+#[test]
+fn opening_a_database_warms_the_pages_the_suggestions_read() {
+    use hoplodex_lib::db;
+    use hoplodex_lib::services::machine_settings::MachineSettings;
+    use hoplodex_lib::session::lifecycle;
+    use support::{passphrase, test_machine, test_session};
+
+    let db = TestDb::new();
+    {
+        let tx = db.conn.unchecked_transaction().unwrap();
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO firearms (uid, make, model, serial_number, caliber, cartridge,
+                                       firearm_type_id, created_at, updated_at)
+                 VALUES (?1, 'Ruger', ?2, ?3, '9mm', '9x19mm Parabellum', 1,
+                         datetime('now'), datetime('now'))",
+            )
+            .unwrap();
+        for i in 0..3_000 {
+            stmt.execute(rusqlite::params![support::uid(), format!("Model {i}"), format!("S-{i}")])
+                .unwrap();
+        }
+        drop(stmt);
+        tx.commit().unwrap();
+    }
+    let path = db.path();
+    let (conn, dir) = db.into_parts();
+    drop(conn);
+
+    let bare = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
+    let bare_bytes = page_cache_bytes(&bare);
+    drop(bare);
+
+    let config = tempfile::TempDir::new().unwrap();
+    let machine = MachineSettings::load(config.path()).unwrap();
+    let (session, _events) = test_session(&config.path().join("opened-documents"));
+    // Taking over the marker the tests' own computer left: not what is under test.
+    lifecycle::open(&session, &machine, &path, &passphrase(), true).unwrap();
+    let warmed_bytes = session.read(|conn| Ok(page_cache_bytes(conn))).unwrap();
+
+    eprintln!(
+        "page cache after a bare open: {bare_bytes}, after opening the session: {warmed_bytes}"
+    );
+    assert!(
+        warmed_bytes >= bare_bytes + 128 * 1024,
+        "opening left {warmed_bytes} bytes of pages in the cache, a bare connection {bare_bytes}"
+    );
+    drop(session);
+    drop(dir);
+}
+
+/// Each field's queries read a covering index in order, with no table scan
+/// and no sort. The accessories' make and model indexes were partial on
+/// columns that are `NOT NULL`, which SQLite can't use, so the models over
+/// both tables scanned and sorted the accessories and took 51ms on Windows
+/// at 10,000 firearms and 10,000 accessories, against SC-004's 50ms.
+#[test]
+fn every_suggestion_query_reads_a_covering_index_without_sorting() {
+    use hoplodex_lib::services::suggestions::vocabulary_queries;
+
+    let db = TestDb::new();
+    for field in EntryField::ALL {
+        for sql in vocabulary_queries(field) {
+            let mut stmt = db.conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            let steps: Vec<String> =
+                stmt.query_map([], |row| row.get(3)).unwrap().map(Result::unwrap).collect();
+            assert!(
+                steps.iter().all(|step| !step.contains("TEMP B-TREE")),
+                "{field:?}: {steps:?} sorts"
+            );
+            assert!(
+                steps.iter().all(|step| step.contains("USING COVERING INDEX")),
+                "{field:?}: {steps:?} doesn't read a covering index"
+            );
+        }
+    }
+}
+
+// --- specs/007-document-preview T162: a call reads the values as they are now ---
+
+#[test]
+fn a_suggestion_reflects_a_create_an_update_and_a_delete_at_once_in_both_tables() {
+    // Nothing is kept between calls (FR-011), so each write shows in the
+    // very next one, whichever table it was made in.
+    let db = TestDb::new();
+    assert!(suggest(&db, EntryField::Model, "tracer").is_empty());
+
+    let firearm_id = record(&db, "Zeta Arms", "Tracer One", None, ".22 LR");
+    let accessory_id = accessory_record(&db, "Zeta Optics", "Tracer Scope", None, None);
+    assert_eq!(values(&suggest(&db, EntryField::Model, "tracer")), ["Tracer One", "Tracer Scope"]);
+    assert_eq!(
+        values(&suggest_with(&db, EntryField::Model, "", Some("Zeta Optics"))),
+        ["Tracer Scope"]
+    );
+
+    // An update renames the value: the old one goes, the new one is there.
+    let serial: String = db
+        .conn
+        .query_row("SELECT serial_number FROM firearms WHERE id = ?1", [firearm_id], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let renamed =
+        FirearmInput { caliber: ".22 LR".into(), ..firearm("Zeta Arms", "Flare Two", &serial) };
+    ops::update_firearm(&db.conn, firearm_id, &renamed, false).unwrap();
+    assert_eq!(values(&suggest(&db, EntryField::Model, "tracer")), ["Tracer Scope"]);
+    assert_eq!(values(&suggest(&db, EntryField::Model, "flare")), ["Flare Two"]);
+
+    let mut scope: AccessoryInput = serde_json::from_value(serde_json::json!({
+        "accessoryKindId": 1, "make": "Zeta Optics", "model": "Glimmer", "status": "active"
+    }))
+    .unwrap();
+    scope.caliber = Some(".22 LR".into());
+    accessory_ops::update_accessory(&db.conn, accessory_id, &scope).unwrap();
+    assert!(suggest(&db, EntryField::Model, "tracer").is_empty());
+    assert_eq!(values(&suggest(&db, EntryField::Model, "glim")), ["Glimmer"]);
+
+    ops::delete_firearm(&db.conn, firearm_id, true).unwrap();
+    accessory_ops::delete_accessory(&db.conn, accessory_id, true).unwrap();
+    for text in ["flare", "glim", ""] {
+        assert!(suggest(&db, EntryField::Model, text).is_empty(), "{text:?}");
+    }
+}
+
+#[test]
+fn spellings_of_one_model_share_their_use_and_each_matches_by_its_own_make() {
+    // The call keeps only what matches the text, merging a value's spellings
+    // as the rows come: across makes, and across both tables.
+    let db = TestDb::new();
+    record(&db, "Colt", "Python 357", None, ".357");
+    record(&db, "Colt", "python-357", None, ".357");
+    record(&db, "Other", "Python 357", None, ".357");
+    accessory_record(&db, "Third", "PYTHON 357", None, None);
+    record(&db, "Colt", "Cobra", None, ".38");
+
+    let all = suggest(&db, EntryField::Model, "py");
+    assert_eq!(all.len(), 1, "{all:?}");
+    // "Python 357" is the most used spelling (two records), the later text
+    // winning no tie.
+    assert_eq!((all[0].value.as_str(), all[0].use_count), ("Python 357", 4));
+    assert_eq!(values(&suggest_with(&db, EntryField::Model, "py", Some("Third"))), ["Python 357"]);
+    assert_eq!(
+        suggest_with(&db, EntryField::Model, "py", Some("Third"))[0].use_count,
+        4,
+        "the use counts every make's records"
+    );
+    assert!(suggest_with(&db, EntryField::Model, "py", Some("Fourth")).is_empty());
+    assert_eq!(
+        values(&suggest_with(&db, EntryField::Model, "", Some("colt"))),
+        ["Python 357", "Cobra"]
+    );
+}
+
+#[test]
+fn entry_words_are_the_words_and_key_of_a_value_whatever_they_held_before() {
+    use hoplodex_lib::services::entry_text::{EntryWords, entry_key, words};
+
+    let mut reused = EntryWords::default();
+    for text in [
+        "Smith & Wesson",
+        "smith and wesson",
+        "9x19mm Parabellum",
+        "9 x 19",
+        "Grünig & Elmiger",
+        "ＳＩＧ Sauer",
+        "Mini-14",
+        "",
+        "   ",
+        "and",
+        "AND AND",
+    ] {
+        reused.set(text);
+        let fresh = EntryWords::new(text);
+        for entry in [&reused, &fresh] {
+            assert_eq!(entry.key(), entry_key(text), "{text:?}");
+            assert_eq!(entry.words().collect::<Vec<_>>(), words(text), "{text:?}");
+            assert_eq!(entry.is_empty(), words(text).is_empty(), "{text:?}");
+        }
+    }
+}

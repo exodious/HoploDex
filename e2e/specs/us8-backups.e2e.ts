@@ -21,7 +21,7 @@ import {
   waitForCollection,
   settle,
 } from "../support/ui";
-import { realClick } from "../support/realInput";
+import { realClick, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's User
@@ -156,12 +156,11 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(backupFiles()).toHaveLength(1);
   });
 
-  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async () => {
+  it("opens the restore dialog from a real click with no focus ring, sized to its content", async function () {
+    // Both regressions were WebKitGTK's, and need a real click, as a person
+    // makes, to show: WebDriver's own clicks don't bring them out.
+    skipWithoutRealInput(this);
     await unlock(E2E_PASSPHRASE);
-    expect(await listed("AfterBackup")).toBe(true);
-
-    // Opened with a real click, as a person does: WebDriver's own clicks
-    // don't bring out the focus ring.
     await realClick("button.hd-db-menu");
     await realClick('[role="menuitem"]*=Restore from a backup');
     await $('[role="dialog"] input[type="radio"]').waitForExist();
@@ -189,6 +188,18 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
       );
     });
     expect(Math.abs(slack)).toBeLessThan(1);
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await closeDatabase();
+  });
+
+  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async () => {
+    await unlock(E2E_PASSPHRASE);
+    expect(await listed("AfterBackup")).toBe(true);
+
+    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    await $('[role="dialog"] input[type="radio"]').waitForExist();
+    await settle();
     await fill("Passphrase for this backup", E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist();

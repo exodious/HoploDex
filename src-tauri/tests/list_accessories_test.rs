@@ -628,3 +628,77 @@ fn search_and_grouping_combine() {
     assert_eq!(keys(&output), ["Optic", "Sling"]);
     assert_eq!(group_ids(&output), [vec![optic], vec![sling]]);
 }
+
+// --- Document names (specs/007-document-preview T027, US1-9, FR-015) -----------------------
+
+mod document_names {
+    use super::*;
+    use hoplodex_lib::commands::documents::ops as document_ops;
+    use hoplodex_lib::commands::firearms::ListFirearmsInput;
+
+    /// What the content check accepts as a PDF.
+    const PDF: &[u8] = b"%PDF-1.4\n%%EOF\n";
+    const CASE: i64 = 11;
+
+    fn attach(db: &TestDb, owner: RecordRef, name: &str) -> i64 {
+        document_ops::add_document(&db.conn, owner, PDF, name).unwrap().id
+    }
+
+    fn firearms_found(db: &TestDb, query: &str) -> Vec<i64> {
+        firearm_ops::list_firearms(
+            &db.conn,
+            &ListFirearmsInput { query: Some(query.into()), ..Default::default() },
+        )
+        .unwrap()
+        .groups
+        .iter()
+        .flat_map(|g| &g.firearms)
+        .map(|f| f.id)
+        .collect()
+    }
+
+    #[test]
+    fn an_accessory_is_found_by_its_documents_name_while_its_host_firearm_is_not() {
+        let db = TestDb::new();
+        let optic = create(&db, &accessory(OPTIC, "Leupold", "VX"));
+        let host = firearm_record(&db, "Ruger", "Precision", "RU-1", None);
+        mount(&db, RecordRef::Accessory(optic), host);
+        let document = attach(&db, RecordRef::Accessory(optic), "Optic receipt.pdf");
+
+        assert_eq!(found(&db, "receipt"), [optic], "three or more characters, through the index");
+        assert_eq!(found(&db, "RECEIPT"), [optic], "in any case");
+        assert_eq!(found(&db, "pdf"), [optic]);
+        assert!(firearms_found(&db, "receipt").is_empty(), "the host firearm is not found");
+
+        document_ops::delete_document(&db.conn, document, true).unwrap();
+
+        assert!(found(&db, "receipt").is_empty(), "no longer after the delete");
+    }
+
+    #[test]
+    fn one_and_two_character_terms_match_a_document_name_through_like() {
+        let db = TestDb::new();
+        let optic = create(&db, &accessory(OPTIC, "Leupold", "VX"));
+        attach(&db, RecordRef::Accessory(optic), "Qzx scan.pdf");
+
+        assert_eq!(found(&db, "qz"), [optic]);
+        assert_eq!(found(&db, "q"), [optic]);
+    }
+
+    #[test]
+    fn an_accessory_is_not_found_through_the_documents_of_a_record_mounted_on_it() {
+        let db = TestDb::new();
+        let case = create(&db, &accessory(CASE, "Pelican", "1750"));
+        let optic = create(&db, &accessory(OPTIC, "Leupold", "VX"));
+        let firearm = firearm_record(&db, "Ruger", "Precision", "RU-1", None);
+        mount(&db, RecordRef::Accessory(optic), RecordRef::Accessory(case));
+        mount(&db, firearm, RecordRef::Accessory(case));
+        attach(&db, RecordRef::Accessory(optic), "scope receipt.pdf");
+        let RecordRef::Firearm(firearm_id) = firearm else { unreachable!() };
+        attach(&db, firearm, "bill of sale.pdf");
+
+        assert_eq!(found(&db, "receipt"), [optic], "only the accessory that owns it");
+        assert!(found(&db, "bill of sale").is_empty(), "not through a mounted firearm's document");
+        assert_eq!(firearms_found(&db, "bill of sale"), [firearm_id]);
+    }
+}

@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::models::database::{ChooserNotice, OperationKind};
+use hoplodex_lib::models::document_opening::DocumentOpening;
 use hoplodex_lib::services::machine_settings::{
     MachineSettings, UnfinishedBackup, UnfinishedBackupMove,
 };
@@ -297,4 +298,136 @@ fn remove_drops_only_the_entry_and_never_the_file() {
     assert_eq!(names(&MachineSettings::load(config.path()).unwrap()), ["B"]);
     assert_eq!(fs::read(&a).unwrap(), b"database A");
     assert_eq!(files_in(data.path()), ["A.hoplodex"]);
+}
+
+#[test]
+fn documents_open_in_the_preview_until_the_setting_is_changed() {
+    let config = TempDir::new().unwrap();
+
+    // A fresh file reads the default (US3-1, FR-011).
+    let settings = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(settings.document_opening(), DocumentOpening::Preview);
+
+    // A set value survives a reload, and so does setting it back.
+    settings.set_document_opening(DocumentOpening::External);
+    let json = fs::read_to_string(config.path().join("machine.json")).unwrap();
+    assert!(json.contains(r#""documentOpening": "external""#), "{json}");
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(reloaded.document_opening(), DocumentOpening::External);
+    reloaded.set_document_opening(DocumentOpening::Preview);
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(reloaded.document_opening(), DocumentOpening::Preview);
+}
+
+#[test]
+fn a_file_written_before_the_setting_existed_reads_preview_and_keeps_its_data() {
+    let config = TempDir::new().unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    fs::write(
+        config.path().join("machine.json"),
+        format!(r#"{{"version":1,"machineId":"{id}","recentDatabases":[]}}"#),
+    )
+    .unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert_eq!(settings.document_opening(), DocumentOpening::Preview);
+    assert_eq!(settings.machine_id(), id);
+    assert!(!config.path().join("machine.json.bad").exists());
+}
+
+// --- The PDF preview hold (specs/007-document-preview T035, FR-003a) -------------------
+//
+// Assumed API (services::machine_settings, T057): `pdf_preview_hold()` returns
+// `None`, or `Some(hold)` with `hold.version: Option<String>` and
+// `hold.leftovers: Vec<PathBuf>`; `hold_pdf_preview(version: &str)` sets the
+// version; `add_hold_leftover(&Path)` and `drop_hold_leftover(&Path)` edit the
+// leftovers; `clear_stale_hold(running: &str)` clears a version that differs
+// from `running`, keeping the leftovers.
+
+fn hold_json(config: &Path) -> serde_json::Value {
+    let text = fs::read_to_string(config.join("machine.json")).unwrap();
+    serde_json::from_str::<serde_json::Value>(&text).unwrap()["pdfPreviewHold"].clone()
+}
+
+#[test]
+fn the_pdf_preview_hold_defaults_to_null() {
+    let config = TempDir::new().unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert!(settings.pdf_preview_hold().is_none());
+    assert!(hold_json(config.path()).is_null());
+}
+
+#[test]
+fn a_file_written_without_the_hold_reads_null_and_keeps_its_data() {
+    let config = TempDir::new().unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    fs::write(
+        config.path().join("machine.json"),
+        format!(r#"{{"version":1,"machineId":"{id}","recentDatabases":[],"documentOpening":"external"}}"#),
+    )
+    .unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert!(settings.pdf_preview_hold().is_none());
+    assert_eq!(settings.machine_id(), id);
+    assert_eq!(settings.document_opening(), DocumentOpening::External);
+    assert!(!config.path().join("machine.json.bad").exists());
+}
+
+#[test]
+fn a_hold_with_its_version_and_leftovers_survives_a_reload() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let leftover = Path::new("/var/folders/xx/T/WebKitPDFs-abc123");
+
+    settings.hold_pdf_preview("1.2.3");
+    settings.add_hold_leftover(leftover);
+
+    let json = hold_json(config.path());
+    assert_eq!(json["version"], "1.2.3", "{json}");
+    assert_eq!(json["leftovers"], serde_json::json!([leftover.to_str().unwrap()]), "{json}");
+    let hold = MachineSettings::load(config.path()).unwrap().pdf_preview_hold().unwrap();
+    assert_eq!(hold.version.as_deref(), Some("1.2.3"));
+    assert_eq!(hold.leftovers, [leftover]);
+}
+
+#[test]
+fn clearing_a_stale_version_keeps_the_leftovers_and_a_current_one_stays() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let leftover = Path::new("/var/folders/xx/T/WebKitPDFs-abc123");
+    settings.hold_pdf_preview("1.2.3");
+    settings.add_hold_leftover(leftover);
+
+    settings.clear_stale_hold("1.2.3");
+    assert_eq!(settings.pdf_preview_hold().unwrap().version.as_deref(), Some("1.2.3"));
+
+    settings.clear_stale_hold("1.3.0");
+    let hold = MachineSettings::load(config.path()).unwrap().pdf_preview_hold().unwrap();
+    assert_eq!(hold.version, None, "a different version tries PDF preview again");
+    assert_eq!(hold.leftovers, [leftover], "the leftovers stay until each path is gone");
+}
+
+#[test]
+fn the_hold_returns_to_null_when_the_version_and_the_leftovers_are_both_empty() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let first = Path::new("/var/folders/xx/T/WebKitPDFs-one");
+    let second = Path::new("/var/folders/xx/T/WebKitPDFs-two");
+    settings.hold_pdf_preview("1.2.3");
+    settings.add_hold_leftover(first);
+    settings.add_hold_leftover(second);
+
+    settings.clear_stale_hold("1.3.0");
+    settings.drop_hold_leftover(first);
+    assert!(settings.pdf_preview_hold().is_some(), "one leftover is still recorded");
+    settings.drop_hold_leftover(second);
+
+    assert!(settings.pdf_preview_hold().is_none());
+    assert!(hold_json(config.path()).is_null());
+    assert!(MachineSettings::load(config.path()).unwrap().pdf_preview_hold().is_none());
 }

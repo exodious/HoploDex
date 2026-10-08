@@ -16,6 +16,8 @@ independent test from spec.md. Field/command names reference
 - On Linux, the development container has all of the above
   (`scripts/dev-container.sh`; see DEVELOPMENT.md).
 
+_Superseded 2026-10-07 by DEVELOPMENT.md (noted by [spec 007](../007-document-preview/tasks.md) T119), the one source for development prerequisites: Node.js 24 LTS and npm 12+, Xcode Command Line Tools on macOS 26+, and nothing to install for E2E, whose build carries its own WebDriver server (no `tauri-driver`); on Linux the tests also need `xvfb`._
+
 ## Setup
 
 ```bash
@@ -49,8 +51,12 @@ npm run build:tauri
 npm run test:e2e    # WebdriverIO against the built app
 ```
 
+_Superseded 2026-10-07 by DEVELOPMENT.md: run `npm run build`, not `build:tauri`, before `npm run test:e2e`, since the E2E build embeds whatever is in `dist/`._
+
 All three MUST pass before merge per the constitution's Development
 Workflow gate.
+
+_Amended by [spec 007](../007-document-preview/tasks.md) T166 (FR-022, issue #26): the gates above were last run in full, with lint, the audits and the screenshot walk, on all three operating systems after 007's Phase 7. Linux: the dev container, all 15 E2E spec files passing (T163). macOS: macOS 26.6.2 in a tart VM, all 15 passing (T164, with T115). Windows: Windows Server 2025 on the test machine, all 15 passing, 2026-10-07 (T165, with T116). See spec.md's FR-022._
 
 ## Manual / scripted validation per user story
 

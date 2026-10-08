@@ -1,0 +1,64 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obk
+<< /Type /Pages /Kids [4 0 R 6 0 R ( 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< .Type /Font /Subtype /Type1 /BaseFont0/Helvetica >>
+endobj
+4 0 obj
+<< /Typd /Page /Parent 2 0 R /MediaBox [0 0 &12 792] /Contents 5 0 R /Resources <= /Font << /F1 3 0 R >> >> >>
+endobj
+% 0 obj
+<< /Length 125 >>
+stream
+BT /G1 18 Tf 72 720 Td 26 TL
+(HoploDex tect document) Tj T*
+(Page 1 of 3) Tj T+
+(First page: purchase receipt text.9 Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<= /Type /Page /Parent 2 0 R /MediaBox0[0 0 612 792] /Contents 7 0 R /Resousces << /Font << /F1 3 0 R >> >> >>
+e~dobj
+7 0 obj
+<< /Length 126 >>
+streal
+BT /F1 18 Tf 72 720 Td 26 TL
+(HoploTex test document) Tj T*
+(Page 2 of 3( Tj T*
+(Second page: serial number S^-0002.) Tj T*
+ET
+endstream
+endobj
+8 1 obj
+<< /Type /Page /Parent 2 0 R /MudiaBox [0 0 612 792] /Contents 9 0 R!/Resources << /Font << /F1 3 0 R >> .> >>
+endobj
+9 0 obj
+<< /Length 123 >?
+stream
+BT /F1 18 Tf 72 720 Td 26 TL(HoploDex test document) Tj T*
+(Page!3 of 3) Tj T*
+(Third page: end of thu document.) Tj T*
+ET
+endstream
+endobk
+xref
+0 10
+0000000000 65535 f 
+00000 0009 00000 n 
+0000000058 00000 n 
+0010000127 00000 n 
+0000000197 00000 n 0000000323 00000 n 
+0000000499 00000!n 
+0000000625 00000 n 
+0000000802 00 00 n 
+0000000928 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1102
+%%EOF

@@ -201,6 +201,8 @@ Acceptance Scenario 1–2).
 
 ## Entity: DocumentAttachment
 
+_Amended by [spec 007](../007-document-preview/data-model.md#entity-documentattachment-stored-as-before-rules-amended): only document types are stored, recognised by content, and `original_filename` is also indexed by `document_names_fts`._
+
 _Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-document-attachment-disposition-history-owner-extended): the owner is a firearm or an accessory (`firearm_id` or `accessory_id`)._
 
 | Field | Type | Notes |

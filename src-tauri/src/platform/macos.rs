@@ -162,9 +162,23 @@ impl Observer {
     }
 }
 
+/// The distributed notices loginwindow posts when the screen locks and
+/// unlocks.
+const SCREEN_LOCKED: &str = "com.apple.screenIsLocked";
+const SCREEN_UNLOCKED: &str = "com.apple.screenIsUnlocked";
+
 /// Starts the listeners. The screen lock is always reported on macOS.
 pub fn spawn(sender: Sender<SystemEvent>) -> bool {
     listen_for_power(sender.clone());
+    observe_notifications(sender, SCREEN_LOCKED, SCREEN_UNLOCKED);
+    true
+}
+
+/// Observes the screen-lock notices, under the names given, and NSWorkspace's
+/// power-off notice. `tests/macos_screen_lock_test.rs` gives names of its
+/// own: posting the real ones would lock every HoploDex running on the
+/// computer, and write their pending changes to their databases.
+pub fn observe_notifications(sender: Sender<SystemEvent>, locked: &str, unlocked: &str) {
     // Kept for the life of the process: the centres don't retain observers.
     // SAFETY: leaked, so valid for the life of the process.
     let observer: &'static Observer = unsafe { &*Retained::into_raw(Observer::new(sender)) };
@@ -180,14 +194,14 @@ pub fn spawn(sender: Sender<SystemEvent>) -> bool {
         distributed.addObserver_selector_name_object_suspensionBehavior(
             observer,
             sel!(screenLocked:),
-            Some(&NSString::from_str("com.apple.screenIsLocked")),
+            Some(&NSString::from_str(locked)),
             None,
             immediately,
         );
         distributed.addObserver_selector_name_object_suspensionBehavior(
             observer,
             sel!(screenUnlocked:),
-            Some(&NSString::from_str("com.apple.screenIsUnlocked")),
+            Some(&NSString::from_str(unlocked)),
             None,
             immediately,
         );
@@ -198,5 +212,52 @@ pub fn spawn(sender: Sender<SystemEvent>) -> bool {
             None,
         );
     }
-    true
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::*;
+
+    /// The IOKit callback with a message, as the kernel would call it.
+    fn power_message(message: u32) -> Option<SystemEvent> {
+        let (sender, events) = mpsc::channel();
+        let power = Power { sender, root_port: AtomicU32::new(0) };
+        power_changed(&power as *const Power as *mut c_void, 0, message, std::ptr::null_mut());
+        events.try_recv().ok()
+    }
+
+    #[test]
+    fn a_sleep_notice_is_will_sleep_and_a_power_on_notice_is_woke() {
+        assert!(matches!(power_message(SYSTEM_WILL_SLEEP), Some(SystemEvent::WillSleep { .. })));
+        assert!(matches!(power_message(SYSTEM_HAS_POWERED_ON), Some(SystemEvent::Woke)));
+    }
+
+    #[test]
+    fn the_question_whether_the_system_may_sleep_is_answered_without_an_event() {
+        assert!(power_message(CAN_SYSTEM_SLEEP).is_none());
+    }
+
+    #[test]
+    fn the_power_off_notice_is_will_shut_down() {
+        let (sender, events) = mpsc::channel();
+        observe_notifications(sender, "unused.locked", "unused.unlocked");
+
+        // NSWorkspace's centre is the process's own, so posting to it reaches
+        // only this test. It delivers at once, on this thread.
+        // SAFETY: posts a notice with no object.
+        unsafe {
+            NSWorkspace::sharedWorkspace()
+                .notificationCenter()
+                .postNotificationName_object(NSWorkspaceWillPowerOffNotification, None)
+        };
+        assert!(matches!(events.try_recv(), Ok(SystemEvent::WillShutDown { .. })));
+    }
+
+    #[test]
+    fn the_real_screen_lock_notices_are_observed() {
+        assert_eq!(SCREEN_LOCKED, "com.apple.screenIsLocked");
+        assert_eq!(SCREEN_UNLOCKED, "com.apple.screenIsUnlocked");
+    }
 }

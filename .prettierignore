@@ -8,3 +8,4 @@ package-lock.json
 *.md
 .specify/
 e2e/screenshots-out/
+src-tauri/vendor/*/permissions/schemas/

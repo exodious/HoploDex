@@ -116,6 +116,8 @@ journal may exist next to it only while a write is in progress.
 
 ## Machine-local: `machine.json` (per OS account, never inside a database)
 
+_Amended by [spec 007](../007-document-preview/data-model.md#machine-local-machinejson-amended): the file gains `documentOpening` and `pdfPreviewHold`._
+
 Location: the OS app config directory (`~/.config/io.github.exodious.HoploDex/machine.json`
 on Linux). Written atomically. Plain JSON: it holds paths, names and times,
 never collection data or secrets (research §11).

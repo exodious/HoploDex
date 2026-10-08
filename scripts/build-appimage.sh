@@ -39,7 +39,7 @@ trap 'rm -rf "$check"' EXIT
 touch "$check/started"
 npx tauri build "$@"
 # The E2E-only WebDriver server must never ship (#29).
-scripts/check-no-webdriver.sh src-tauri/target/release/hoplodex
+node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
 
 # Check each AppImage this build made (not older ones left in the folder).
 shopt -s nullglob

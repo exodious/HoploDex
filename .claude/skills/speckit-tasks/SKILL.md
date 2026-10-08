@@ -208,7 +208,7 @@ Every task MUST strictly follow this format:
    - ✅ CORRECT: `- [ ] T050 [P] On macOS, run the test suite` and `- [ ] T051 [P] On Windows, run the test suite`
    - ❌ WRONG: `- [ ] T050 On macOS and Windows, run the test suite`
 
-6. **Manual checks**: prefer a task that automates the check. A check that stays manual points to its numbered procedure in quickstart.md rather than describing the steps itself.
+6. **Manual checks**: prefer a task that automates the check. A check that stays manual points to its numbered procedure in quickstart.md rather than describing the steps itself, and that procedure states every passphrase or password its steps need and names the exact database (of the two `scripts/human-testing.sh` seeds), record and file each step uses.
 
 ### Phase Structure
 

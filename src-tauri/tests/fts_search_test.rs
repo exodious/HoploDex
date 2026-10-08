@@ -627,3 +627,156 @@ fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_
     assert_eq!(search(&db.conn, "bipod"), 1, "the firearm's own free-text accessories do");
     assert_eq!(search(&db.conn, "Mini-14"), 1);
 }
+
+// --- Document names (specs/007-document-preview T026, FR-015, research.md §19) ---
+
+mod document_names {
+    use super::*;
+    use hoplodex_lib::commands::accessories::ops as accessory_ops;
+    use hoplodex_lib::commands::documents::ops as document_ops;
+    use hoplodex_lib::commands::mounts::ops as mount_ops;
+    use hoplodex_lib::commands::photos::ops as photo_ops;
+    use hoplodex_lib::models::record::RecordRef;
+    use support::sample_png_bytes;
+
+    /// What the content check accepts as a PDF.
+    const PDF: &[u8] = b"%PDF-1.4\n%%EOF\n";
+
+    fn firearm_with_no_other_text(db: &TestDb, make: &str, serial: &str) -> i64 {
+        firearm_of_type(db, make, serial, 1)
+    }
+
+    fn firearm_of_type(db: &TestDb, make: &str, serial: &str, firearm_type_id: i64) -> i64 {
+        let input = FirearmInput {
+            firearm_type_id,
+            make: make.into(),
+            model: "Plain".into(),
+            serial_number: Some(serial.into()),
+            notes: None,
+            accessories: None,
+            ..base_input()
+        };
+        ops::create_firearm(&db.conn, &input, false, None).unwrap().id
+    }
+
+    fn attach(db: &TestDb, owner: RecordRef, name: &str) -> i64 {
+        document_ops::add_document(&db.conn, owner, PDF, name).unwrap().id
+    }
+
+    fn ids_found(db: &TestDb, query: &str) -> Vec<i64> {
+        ops::list_firearms(
+            &db.conn,
+            &ListFirearmsInput { query: Some(query.into()), ..Default::default() },
+        )
+        .unwrap()
+        .groups
+        .iter()
+        .flat_map(|g| &g.firearms)
+        .map(|f| f.id)
+        .collect()
+    }
+
+    #[test]
+    fn a_document_name_is_found_by_a_word_in_it_and_by_its_extension_until_it_is_deleted() {
+        let db = TestDb::new();
+        let id = firearm_with_no_other_text(&db, "Colt", "CO-1");
+        let other = firearm_with_no_other_text(&db, "Ruger", "RU-1");
+        let document = attach(&db, RecordRef::Firearm(id), "2024 appraisal.pdf");
+        attach(&db, RecordRef::Firearm(other), "scan.txt");
+
+        assert_eq!(ids_found(&db, "appraisal"), [id], "a word in the name");
+        assert_eq!(ids_found(&db, "pdf"), [id], "the extension");
+        assert_eq!(ids_found(&db, "APPRAISAL"), [id], "any case");
+        assert_eq!(ids_found(&db, "24 appr"), [id], "across a space, from the middle");
+
+        document_ops::delete_document(&db.conn, document, true).unwrap();
+
+        assert!(ids_found(&db, "appraisal").is_empty(), "no longer after the delete");
+        assert!(ids_found(&db, "pdf").is_empty());
+        assert_eq!(ids_found(&db, "scan"), [other], "another record's document stays found");
+    }
+
+    #[test]
+    fn one_and_two_character_terms_match_a_document_name_through_like() {
+        let db = TestDb::new();
+        let id = firearm_with_no_other_text(&db, "Colt", "CO-1");
+        let document = attach(&db, RecordRef::Firearm(id), "Qzx scan.pdf");
+
+        assert_eq!(ids_found(&db, "qz"), [id], "two characters");
+        assert_eq!(ids_found(&db, "q"), [id], "one character");
+        assert!(ids_found(&db, "%").is_empty(), "LIKE wildcards are literal");
+        assert!(ids_found(&db, "_").is_empty());
+
+        document_ops::delete_document(&db.conn, document, true).unwrap();
+
+        assert!(ids_found(&db, "qz").is_empty());
+        assert!(ids_found(&db, "q").is_empty());
+    }
+
+    #[test]
+    fn deleting_the_firearm_removes_its_document_names_from_the_index() {
+        let db = TestDb::new();
+        let id = firearm_with_no_other_text(&db, "Colt", "CO-1");
+        attach(&db, RecordRef::Firearm(id), "bill of sale.pdf");
+        assert_eq!(ids_found(&db, "bill of sale"), [id]);
+
+        ops::delete_firearm(&db.conn, id, true).unwrap();
+
+        // The cascade through the foreign key fires the document delete
+        // trigger: no entry is left in the index (data-model.md).
+        let entries: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM document_names_fts WHERE document_names_fts MATCH 'sale'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(entries, 0, "the index still holds the deleted record's document name");
+        assert!(ids_found(&db, "bill of sale").is_empty());
+    }
+
+    #[test]
+    fn a_firearm_is_not_found_through_the_documents_of_what_is_mounted_on_it() {
+        let db = TestDb::new();
+        let host = firearm_of_type(&db, "Ruger", "RU-1", 2); // a rifle
+        let mounted_firearm = firearm_of_type(&db, "Mossberg", "MO-1", 5); // a suppressor
+        let accessory: hoplodex_lib::models::accessory::AccessoryInput = serde_json::from_value(
+            serde_json::json!({ "accessoryKindId": 1, "make": "Trijicon", "model": "ACOG", "status": "active" }),
+        )
+        .unwrap();
+        let accessory = accessory_ops::create_accessory(&db.conn, &accessory, None).unwrap().id;
+        attach(&db, RecordRef::Accessory(accessory), "optic receipt.pdf");
+        attach(&db, RecordRef::Firearm(mounted_firearm), "suppressor-stamp.pdf");
+        for item in [RecordRef::Accessory(accessory), RecordRef::Firearm(mounted_firearm)] {
+            mount_ops::mount_record(
+                &db.conn,
+                &serde_json::from_value(
+                    serde_json::json!({ "item": item, "host": RecordRef::Firearm(host) }),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
+
+        assert!(ids_found(&db, "receipt").is_empty(), "not through a mounted accessory's document");
+        assert_eq!(ids_found(&db, "stamp"), [mounted_firearm], "only the firearm that owns it");
+    }
+
+    #[test]
+    fn a_photos_filename_is_not_searched() {
+        let db = TestDb::new();
+        let id = firearm_with_no_other_text(&db, "Colt", "CO-1");
+        photo_ops::add_photo(
+            &db.conn,
+            RecordRef::Firearm(id),
+            &sample_png_bytes(),
+            "zebra-range.png",
+            "image/png",
+        )
+        .unwrap();
+
+        assert!(ids_found(&db, "zebra").is_empty());
+        assert!(ids_found(&db, "ze").is_empty());
+    }
+}

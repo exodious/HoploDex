@@ -12,6 +12,11 @@ use std::time::{Duration, Instant, SystemTime};
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+/// The macOS observers under screen-lock notice names of the caller's
+/// choosing, for `tests/macos_screen_lock_test.rs`.
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub use macos::observe_notifications;
 #[cfg(windows)]
 mod windows;
 

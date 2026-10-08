@@ -85,14 +85,8 @@ impl World {
                     "front.png",
                     "image/png",
                 )?;
-                documents::add_document(
-                    conn,
-                    RecordRef::Firearm(firearm.id),
-                    PDF_BYTES,
-                    "bill.pdf",
-                    "application/pdf",
-                )
-                .map(|_| ())
+                documents::add_document(conn, RecordRef::Firearm(firearm.id), PDF_BYTES, "bill.pdf")
+                    .map(|_| ())
             })
             .unwrap();
     }
