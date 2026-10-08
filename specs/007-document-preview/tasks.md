@@ -333,7 +333,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T126 [P] On Windows, do quickstart.md's manual check **M2**, and record the result for the PR
   - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T124). Windows' check before the dialog is covered by `tests/open_document_test.rs` (`a_type_with_no_registered_app_is_refused_before_the_dialog_and_nothing_is_written`, and `windows_asks_its_file_associations_whether_a_type_has_an_app` against the real file associations)
 - [X] T127 [P] On Windows, do quickstart.md's manual check **M3**, steps 1–2 (Word opens the copy in Protected View), and record the result for the PR
-  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. The copy's `Zone.Identifier` stream is covered by `tests/open_document_test.rs` (`the_copy_has_a_zone_identifier_stream_for_the_internet_zone`); whether Word honours it stays manual in #36, on a machine with Word
+  - **Deferred** (2026-10-08) to #37, the manual checks run best effort before a release: not run before the PR. The copy's `Zone.Identifier` stream is covered by `tests/open_document_test.rs` (`the_copy_has_a_zone_identifier_stream_for_the_internet_zone`); whether Word honours it can't be automated without Word, so it stays manual
 - [X] T128 [P] On macOS, do quickstart.md's manual check **M3**, steps 3–4 (the copy carries `com.apple.quarantine`), and record the result for the PR
   - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. The attribute itself is covered by `tests/open_document_test.rs` (`macos_the_copy_carries_a_quarantine_attribute`), which passed on macOS in T164's run
 - [X] T129 [P] On Linux, do quickstart.md's manual check **M4** (a screen reader reads a previewed PDF) with Orca, and record the result for the PR
@@ -348,7 +348,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T134 [P] On Windows, do quickstart.md's manual check **M5**, and record the result for the PR
   - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T132); #36 adds a password-protected PDF to `pdf-surface-check` on each OS
 - [X] T135 [P] On macOS, do quickstart.md's manual check **M6** (Spotlight indexes nothing from a preview), and record the result for the PR
-  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. #36 keeps it a best-effort manual check. The copy WebKit would write is caught by the surface check's `--hud-on` run on macOS (FR-003a)
+  - **Deferred** (2026-10-08) to #37, the manual checks run best effort before a release: not run before the PR. Spotlight's indexing timing can't prove a negative, so it stays manual. The copy WebKit would write is caught by the surface check's `--hud-on` run on macOS (FR-003a)
 
 ### Close-out (at pull request time)
 

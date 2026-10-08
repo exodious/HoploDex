@@ -169,7 +169,7 @@ _Passed on Linux 2026-10-08 (T124). Deferred 2026-10-08 on macOS and Windows to 
 
 ### M3. The copy is marked untrusted (Windows, macOS)
 
-_Deferred 2026-10-08 to #36 (tasks.md T127–T128). The marks themselves are covered by `tests/open_document_test.rs`; only Word's Protected View stays manual._
+_Deferred 2026-10-08: the macOS steps to #36 (tasks.md T128), and Word's Protected View, steps 1–2, to #37's pre-release manual checks (T127). The marks themselves are covered by `tests/open_document_test.rs`._
 
 1. On Windows, with "Main collection" open on "Glock 19 Gen5" (Setup
    steps 3–4), choose "Open in another app…" on "Bill of sale.docx".
@@ -210,7 +210,7 @@ _Passed on Linux 2026-10-08 (T132). Deferred 2026-10-08 on macOS and Windows to 
 
 ### M6. Spotlight doesn't index anything from a preview (macOS, indexing on)
 
-_Deferred 2026-10-08 to #36, where it stays a best-effort manual check (tasks.md T135)._
+_Deferred 2026-10-08 to #37's pre-release manual checks (tasks.md T135)._
 
 1. On a Mac with Spotlight indexing on for the start-up volume, do the
    Setup steps 1–4 and preview "Purchase receipt.pdf".
