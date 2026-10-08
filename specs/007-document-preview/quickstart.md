@@ -134,6 +134,8 @@ on macOS.
 
 ### M1. The native confirmation is the system's and blocks the window
 
+_Passed on Linux 2026-10-08 (T121). Deferred 2026-10-08 on macOS and Windows to #36, which automates it (tasks.md T122–T123)._
+
 1. Do the Setup steps 1–4.
 2. In Documents, choose "Open in another app…" on "Purchase receipt.pdf".
 3. **Expected**: a system dialog titled "Open “Purchase receipt.pdf” in
@@ -153,6 +155,8 @@ on macOS.
 
 ### M2. No app for the type
 
+_Passed on Linux 2026-10-08 (T124). Deferred 2026-10-08 on macOS and Windows to #36, which automates it (tasks.md T125–T126)._
+
 1. On a computer with no app for `.ods`, do the Setup steps 1–4.
 2. In Documents, choose "Open in another app…" on "Range log.ods".
 3. Choose "Open in another app" in the system dialog. (On Windows there is
@@ -164,6 +168,8 @@ on macOS.
    `Range log.ods`.
 
 ### M3. The copy is marked untrusted (Windows, macOS)
+
+_Deferred 2026-10-08 to #36 (tasks.md T127–T128). The marks themselves are covered by `tests/open_document_test.rs`; only Word's Protected View stays manual._
 
 1. On Windows, with "Main collection" open on "Glock 19 Gen5" (Setup
    steps 3–4), choose "Open in another app…" on "Bill of sale.docx".
@@ -192,6 +198,8 @@ _Deferred 2026-10-08 to #48, which runs the screen reader checks of 004, 005, 00
 
 ### M5. A password-protected PDF uses the viewer's own prompt
 
+_Passed on Linux 2026-10-08 (T132). Deferred 2026-10-08 on macOS and Windows to #36, which adds it to the surface check (tasks.md T133–T134)._
+
 1. Do the Setup steps 1–4 and preview "Appraisal (protected).pdf".
 2. **Expected**: the computer's PDF viewer asks for the document's
    password inside the page area. HoploDex shows no dialog of its own.
@@ -201,6 +209,8 @@ _Deferred 2026-10-08 to #48, which runs the screen reader checks of 004, 005, 00
 6. **Expected**: the password is asked for again.
 
 ### M6. Spotlight doesn't index anything from a preview (macOS, indexing on)
+
+_Deferred 2026-10-08 to #36, where it stays a best-effort manual check (tasks.md T135)._
 
 1. On a Mac with Spotlight indexing on for the start-up volume, do the
    Setup steps 1–4 and preview "Purchase receipt.pdf".

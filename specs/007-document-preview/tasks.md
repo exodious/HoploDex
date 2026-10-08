@@ -323,13 +323,19 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 ### Manual checks (best effort before a release, not merge gates)
 
 - [X] T121 [P] On Linux, do quickstart.md's manual check **M1** (the native confirmation is the system's and blocks the window) with `scripts/dev-container.sh --gui scripts/human-testing.sh`, and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
-- [ ] T122 [P] On macOS, do quickstart.md's manual check **M1** with `scripts/human-testing.sh` in the macOS 26 VM, and record the result for the PR
-- [ ] T123 [P] On Windows, do quickstart.md's manual check **M1** on the Windows test machine, and record the result for the PR
+- [X] T122 [P] On macOS, do quickstart.md's manual check **M1** with `scripts/human-testing.sh` in the macOS 26 VM, and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T121). What the app does around the dialog (the request's text, no copy until a yes, a cancel leaves nothing) is covered by `tests/open_document_test.rs` with a recording `Consent`
+- [X] T123 [P] On Windows, do quickstart.md's manual check **M1** on the Windows test machine, and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T121). What the app does around the dialog (the request's text, no copy until a yes, a cancel leaves nothing) is covered by `tests/open_document_test.rs` with a recording `Consent`
 - [X] T124 [P] On Linux, do quickstart.md's manual check **M2** (no app for the type), and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
-- [ ] T125 [P] On macOS, do quickstart.md's manual check **M2**, and record the result for the PR
-- [ ] T126 [P] On Windows, do quickstart.md's manual check **M2**, and record the result for the PR
-- [ ] T127 [P] On Windows, do quickstart.md's manual check **M3**, steps 1–2 (Word opens the copy in Protected View), and record the result for the PR
-- [ ] T128 [P] On macOS, do quickstart.md's manual check **M3**, steps 3–4 (the copy carries `com.apple.quarantine`), and record the result for the PR
+- [X] T125 [P] On macOS, do quickstart.md's manual check **M2**, and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T124). The copy deleted at once when the opener finds no app is covered by `tests/open_document_test.rs` (`an_opener_with_no_app_for_the_type_deletes_the_copy_at_once`)
+- [X] T126 [P] On Windows, do quickstart.md's manual check **M2**, and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T124). Windows' check before the dialog is covered by `tests/open_document_test.rs` (`a_type_with_no_registered_app_is_refused_before_the_dialog_and_nothing_is_written`, and `windows_asks_its_file_associations_whether_a_type_has_an_app` against the real file associations)
+- [X] T127 [P] On Windows, do quickstart.md's manual check **M3**, steps 1–2 (Word opens the copy in Protected View), and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. The copy's `Zone.Identifier` stream is covered by `tests/open_document_test.rs` (`the_copy_has_a_zone_identifier_stream_for_the_internet_zone`); whether Word honours it stays manual in #36, on a machine with Word
+- [X] T128 [P] On macOS, do quickstart.md's manual check **M3**, steps 3–4 (the copy carries `com.apple.quarantine`), and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. The attribute itself is covered by `tests/open_document_test.rs` (`macos_the_copy_carries_a_quarantine_attribute`), which passed on macOS in T164's run
 - [X] T129 [P] On Linux, do quickstart.md's manual check **M4** (a screen reader reads a previewed PDF) with Orca, and record the result for the PR
   - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
 - [X] T130 [P] On macOS, do quickstart.md's manual check **M4** with VoiceOver, and record the result for the PR
@@ -337,9 +343,12 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T131 [P] On Windows, do quickstart.md's manual check **M4** with NVDA, and record the result for the PR
   - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
 - [X] T132 [P] On Linux, do quickstart.md's manual check **M5** (a password-protected PDF uses the viewer's own prompt), and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
-- [ ] T133 [P] On macOS, do quickstart.md's manual check **M5**, and record the result for the PR
-- [ ] T134 [P] On Windows, do quickstart.md's manual check **M5**, and record the result for the PR
-- [ ] T135 [P] On macOS, do quickstart.md's manual check **M6** (Spotlight indexes nothing from a preview), and record the result for the PR
+- [X] T133 [P] On macOS, do quickstart.md's manual check **M5**, and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T132); #36 adds a password-protected PDF to `pdf-surface-check` on each OS
+- [X] T134 [P] On Windows, do quickstart.md's manual check **M5**, and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T132); #36 adds a password-protected PDF to `pdf-surface-check` on each OS
+- [X] T135 [P] On macOS, do quickstart.md's manual check **M6** (Spotlight indexes nothing from a preview), and record the result for the PR
+  - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. #36 keeps it a best-effort manual check. The copy WebKit would write is caught by the surface check's `--hud-on` run on macOS (FR-003a)
 
 ### Close-out (at pull request time)
 
