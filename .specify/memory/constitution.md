@@ -36,12 +36,12 @@ Templates requiring updates:
   - .specify/templates/spec-template.md: ✅ no change needed
   - .specify/templates/tasks-template.md: ✅ no change needed
   - .specify/templates/checklist-template.md: ✅ no change needed
-  - CLAUDE.md "Spec Kit workflow" gate list: ⚠ pending, it still says the
-    release review's dated report is committed; add the CodeQL gate and the
-    release alert gate (carried over from 1.2.0: the dependency and license
-    audit and the release gates)
+  - CLAUDE.md "Spec Kit workflow" gate list: ✅ updated (the CodeQL gate, the
+    release alert gate and advisories in place of the committed report; also
+    the license audit and the manual license checks carried over from 1.2.0)
+  - SECURITY.md: ✅ added, directing reporters to private vulnerability
+    reporting
 Follow-up TODOs:
-  - No SECURITY.md exists yet; private vulnerability reporting is enabled.
   - The release security review still has no tooling (#21): the whole-codebase
     scan, the upload of its findings to code scanning, and the release alert
     check.
