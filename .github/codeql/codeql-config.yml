@@ -20,6 +20,14 @@ name: HoploDex CodeQL config
 queries:
   - uses: security-extended
 
+# Treat local input as untrusted too: environment variables, command-line
+# arguments, file contents and stdin. The default (remote only) counts only
+# network input, which a local-only desktop app barely has, so most dataflow
+# queries would have no source to start from. The E2E-only environment
+# variables stay out, because the `e2e` and `mock-keyring` code that reads
+# them isn't extracted.
+threat-models: local
+
 paths:
   - src
   - index.html
