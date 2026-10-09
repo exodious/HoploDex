@@ -57,6 +57,7 @@ assumed. The workflow is intentionally kept disabled
 (`.github/workflows-disabled/`) until the owner enables it; until then the
 same checks are run locally, which is a documented, owner-approved deviation
 from Constitution I's automated-gate requirement.
+_Amended 2026-10-09: the parked workflow was deleted, unreviewed and never run; full CI isn't implemented yet ([#25](https://github.com/exodious/HoploDex/issues/25)). CodeQL and the dependency audit run as their own workflows (DEVELOPMENT.md, "Continuous integration")._
 
 _Amended 2026-10-07 (noted by [spec 007](../007-document-preview/tasks.md) T119): E2E tests drive the app's embedded WebDriver server (`tauri-plugin-wdio-webdriver`, compiled into the E2E build only and kept out of the shipped one by `npm run audit:webdriver`) instead of `tauri-driver`, and there are 15 E2E spec files. The gates, with the dependency and license audits, are run locally on all three operating systems (Linux in the dev container, macOS 26 in a VM, Windows on a test machine); spec.md's FR-022 records the last full run._
 

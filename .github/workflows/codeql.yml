@@ -75,8 +75,7 @@ jobs:
       # macros, so the libraries the -sys crates' build scripts look up with
       # pkg-config have to be there. WebKitGTK's dev package brings the rest
       # (GTK, libsoup, JavaScriptCore, D-Bus); libssl-dev is for SQLCipher.
-      # Only `cargo check`'s needs: the app's full build list in
-      # .github/workflows-disabled/ci.yml also covers linking and bundling.
+      # Only `cargo check`'s needs, not a full build's (linking, bundling).
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
