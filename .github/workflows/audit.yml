@@ -38,10 +38,11 @@ jobs:
       CARGO_DENY_VERSION: 0.20.2
 
     steps:
-      # Every action is pinned to a commit (#72); the comment is its release.
+      # GitHub's own actions are pinned to a release tag; third-party ones to a
+      # commit (#72). Dependabot updates both (.github/dependabot.yml).
       # Two commits deep: on a pull request, HEAD is GitHub's merge commit and
       # its first parent is main, so their diff is the pull request's change.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
           persist-credentials: false
@@ -61,14 +62,16 @@ jobs:
             echo "::notice::Only Markdown changed, so the dependency audit is skipped."
           fi
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@v7
         if: steps.scope.outputs.docs-only != 'true'
         with:
           node-version: 24
           cache: npm
 
       # The Rust version is pinned too: 1.99.0 was the latest stable release on
-      # 2026-10-09, as in codeql.yml.
+      # 2026-10-09, as in codeql.yml. This action has no release tags, only a
+      # branch per toolchain, so Dependabot may not move its pin; refresh it
+      # when the toolchain changes.
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         if: steps.scope.outputs.docs-only != 'true'
         with:
@@ -76,7 +79,7 @@ jobs:
 
       # cargo-deny is built from source, as in the Dockerfile, and the binary
       # cached so that only the first run pays for the build.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache@v6
         id: cargo-deny
         if: steps.scope.outputs.docs-only != 'true'
         with:

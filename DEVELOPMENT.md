@@ -1080,8 +1080,10 @@ side.
 
 Two focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`)
 on every pull request to `main`, on pushes to it and weekly, and the
-[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`). Third-party
-actions are pinned to a commit in both; the audit pins GitHub's own too (#72).
+[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`). In both,
+third-party actions are pinned to a commit (#72) and GitHub's own to a release
+tag. Dependabot (`.github/dependabot.yml`) opens a weekly pull request to
+update them.
 
 The full CI definition lives in `.github/workflows-disabled/ci.yml` and is
 **currently disabled**; move it to `.github/workflows/` to enable it. Until
