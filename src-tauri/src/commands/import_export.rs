@@ -16,6 +16,7 @@ use crate::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
+use crate::services::attachments::safe_basename;
 use crate::services::cartridges::{CaliberSource, derive_caliber};
 use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::mounts::{self, MountGraph};
@@ -455,10 +456,15 @@ pub mod ops {
         )
     }
 
-    /// [`export_collection`], checking `is_cancelled` between rows. A
-    /// stopped export removes the photos folder it made, and never gets to
-    /// the spreadsheet, which is written last; it fails with
-    /// `OPERATION_STOPPED` (FR-037).
+    /// [`export_collection`], checking `is_cancelled` between rows. An
+    /// export that stops or fails removes what it made and nothing else; a
+    /// stop fails with `OPERATION_STOPPED` (FR-037).
+    ///
+    /// Each export owns its outputs (issue #74): `base_name` is used as it
+    /// stands when nothing in `destination_folder` already has that name,
+    /// and `{base_name}-2`, `-3`, ... otherwise, so an earlier export's
+    /// spreadsheet and photos folder are never overwritten, reused or
+    /// cleared. The names actually used are in the result.
     pub fn export_collection_stoppable(
         conn: &Connection,
         destination_folder: &Path,
@@ -468,21 +474,21 @@ pub mod ops {
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<ExportResult, CommandError> {
-        let photos_folder_path = destination_folder.join(format!("{base_name}_photos"));
-        let spreadsheet_path =
-            destination_folder.join(format!("{base_name}.{}", format.extension()));
-        let accessory_csv_path = destination_folder.join(format!("{base_name}-accessories.csv"));
-        // Only what this export made is removed if it stops.
-        let made_folder = !photos_folder_path.exists();
-        let files = ExportFiles {
-            photos_folder: &photos_folder_path,
-            spreadsheet: &spreadsheet_path,
-            accessory_csv: &accessory_csv_path,
+        let mut reserved = ExportFiles::reserve(
+            destination_folder,
+            base_name,
             format,
-        };
-        let exported = export_rows(conn, &files, records, on_progress, is_cancelled);
-        if exported.as_ref().is_err_and(|err| err.code == "OPERATION_STOPPED") && made_folder {
-            let _ = std::fs::remove_dir_all(&photos_folder_path);
+            !records.accessory_ids.is_empty(),
+        )?;
+        let exported = export_rows(conn, &reserved, records, on_progress, is_cancelled);
+        match &exported {
+            // The accessory file was reserved for a table the export did not
+            // need after all (an id with no record).
+            Ok(result) if result.accessory_spreadsheet_path.is_none() => {
+                reserved.discard_accessory_csv();
+            }
+            Ok(_) => {}
+            Err(_) => reserved.discard(),
         }
         exported
     }
@@ -511,6 +517,54 @@ pub mod ops {
         Ok(found)
     }
 
+    /// Opens `path` for writing, failing if anything is there, a link
+    /// included (`O_EXCL`/`CREATE_NEW`): nothing existing is overwritten or
+    /// followed.
+    fn create_new(path: &Path) -> std::io::Result<std::fs::File> {
+        std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+    }
+
+    /// The name a photo is written under: `{prefix}{id}_{name}`, where
+    /// `name` is the stored name reduced to a basename, since a database
+    /// made before issue #68 may hold one with a path in it. Always one
+    /// normal component, so joined to the folder it stays inside it.
+    fn photo_file_name(prefix: &str, id: i64, stored: &str) -> String {
+        let name = format!("{prefix}{id}_{}", safe_basename(stored, "photo"));
+        let mut components = Path::new(&name).components();
+        match (components.next(), components.next()) {
+            (Some(std::path::Component::Normal(_)), None) => name,
+            _ => format!("{prefix}{id}_photo"),
+        }
+    }
+
+    /// `name` with `-{n}` before its extension: `1_front.png` to
+    /// `1_front-2.png`.
+    fn numbered(name: &str, n: usize) -> String {
+        match name.rsplit_once('.') {
+            Some((stem, extension)) if !stem.is_empty() => format!("{stem}-{n}.{extension}"),
+            _ => format!("{name}-{n}"),
+        }
+    }
+
+    /// Writes `bytes` into `folder` as a file named `name`, or `name` with a
+    /// number when the folder already holds one by that name (two photos
+    /// of a record can share a name). Returns the name used.
+    fn write_new_file(folder: &Path, name: &str, bytes: &[u8]) -> std::io::Result<String> {
+        use std::io::Write;
+        for n in 1..=10_000 {
+            let candidate = if n == 1 { name.to_owned() } else { numbered(name, n) };
+            match create_new(&folder.join(&candidate)) {
+                Ok(mut file) => {
+                    file.write_all(bytes)?;
+                    return Ok(candidate);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "too many photos of one name"))
+    }
+
     /// Writes the record's photos into the photos folder as
     /// `{prefix}{id}_{filename}` and returns the names, for the row's
     /// `photo_filenames` cell. `counted` gains one per photo.
@@ -524,41 +578,128 @@ pub mod ops {
         let photos = crate::commands::photos::ops::list_photos(conn, owner)?;
         let mut names = Vec::with_capacity(photos.len());
         for photo in &photos {
-            let dest_name = format!("{prefix}{}_{}", owner.id(), photo.original_filename);
-            std::fs::write(photos_folder_path.join(&dest_name), &photo.original_bytes).map_err(
-                |e| CommandError::new("INTERNAL_ERROR", format!("Could not write photo file: {e}")),
-            )?;
+            let dest_name = photo_file_name(prefix, owner.id(), &photo.original_filename);
+            let dest_name = write_new_file(photos_folder_path, &dest_name, &photo.original_bytes)
+                .map_err(|e| {
+                CommandError::new("INTERNAL_ERROR", format!("Could not write photo file: {e}"))
+            })?;
             names.push(dest_name);
             *counted += 1;
         }
         Ok(names.join(";"))
     }
 
-    /// Where an export writes, and in which format.
-    struct ExportFiles<'a> {
-        photos_folder: &'a Path,
-        spreadsheet: &'a Path,
+    /// What one export owns: the photos folder it made, the spreadsheet it
+    /// created and, for a CSV export with accessories, the accessory file.
+    /// All are created before anything is written, each new and
+    /// exclusively, under a name no earlier export in the folder has used
+    /// (issue #74).
+    struct ExportFiles {
+        photos_folder: PathBuf,
+        spreadsheet: std::fs::File,
+        spreadsheet_path: PathBuf,
         /// The accessory table's file, used only by a CSV export.
-        accessory_csv: &'a Path,
+        accessory_csv: Option<(std::fs::File, PathBuf)>,
         format: SpreadsheetFormat,
+    }
+
+    impl ExportFiles {
+        /// Reserves `base_name`, or the first of `{base_name}-2`, `-3`, ...
+        /// that is free: its photos folder by `create_dir` (which fails on
+        /// an existing one, empty or not) and its files by `create_new`. A
+        /// name is free only if all of its outputs are, so nothing of
+        /// another export is ever touched.
+        fn reserve(
+            destination_folder: &Path,
+            base_name: &str,
+            format: SpreadsheetFormat,
+            wants_accessory_csv: bool,
+        ) -> Result<Self, CommandError> {
+            let failed = |what: &str, e: std::io::Error| {
+                CommandError::new("INTERNAL_ERROR", format!("Could not create {what}: {e}"))
+            };
+            let taken = |e: &std::io::Error| e.kind() == std::io::ErrorKind::AlreadyExists;
+            // The destination itself may be new; only what is inside it is
+            // reserved exclusively.
+            std::fs::create_dir_all(destination_folder)
+                .map_err(|e| failed("the destination folder", e))?;
+            for n in 1..=10_000 {
+                let base = if n == 1 { base_name.to_owned() } else { format!("{base_name}-{n}") };
+                let photos_folder = destination_folder.join(format!("{base}_photos"));
+                match std::fs::create_dir(&photos_folder) {
+                    Ok(()) => {}
+                    Err(e) if taken(&e) => continue,
+                    Err(e) => return Err(failed("the photos folder", e)),
+                }
+                let spreadsheet_path =
+                    destination_folder.join(format!("{base}.{}", format.extension()));
+                let spreadsheet = match create_new(&spreadsheet_path) {
+                    Ok(file) => file,
+                    Err(e) => {
+                        let _ = std::fs::remove_dir(&photos_folder);
+                        if taken(&e) {
+                            continue;
+                        }
+                        return Err(failed("the export file", e));
+                    }
+                };
+                let accessory_csv = if wants_accessory_csv && format == SpreadsheetFormat::Csv {
+                    let path = destination_folder.join(format!("{base}-accessories.csv"));
+                    match create_new(&path) {
+                        Ok(file) => Some((file, path)),
+                        Err(e) => {
+                            drop(spreadsheet);
+                            let _ = std::fs::remove_file(&spreadsheet_path);
+                            let _ = std::fs::remove_dir(&photos_folder);
+                            if taken(&e) {
+                                continue;
+                            }
+                            return Err(failed("the accessory export file", e));
+                        }
+                    }
+                } else {
+                    None
+                };
+                return Ok(Self {
+                    photos_folder,
+                    spreadsheet,
+                    spreadsheet_path,
+                    accessory_csv,
+                    format,
+                });
+            }
+            Err(CommandError::new(
+                "INTERNAL_ERROR",
+                "Could not find a free name for the export in that folder.",
+            ))
+        }
+
+        /// Removes the accessory file, when the export turned out to have
+        /// no accessory table.
+        fn discard_accessory_csv(&mut self) {
+            if let Some((file, path)) = self.accessory_csv.take() {
+                drop(file);
+                let _ = std::fs::remove_file(path);
+            }
+        }
+
+        /// Removes everything this export made.
+        fn discard(mut self) {
+            self.discard_accessory_csv();
+            drop(self.spreadsheet);
+            let _ = std::fs::remove_file(&self.spreadsheet_path);
+            let _ = std::fs::remove_dir_all(&self.photos_folder);
+        }
     }
 
     fn export_rows(
         conn: &Connection,
-        files: &ExportFiles<'_>,
+        files: &ExportFiles,
         records: &ExportRecords,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<ExportResult, CommandError> {
-        let ExportFiles {
-            photos_folder: photos_folder_path,
-            spreadsheet: spreadsheet_path,
-            accessory_csv: accessory_csv_path,
-            format,
-        } = *files;
-        std::fs::create_dir_all(photos_folder_path).map_err(|e| {
-            CommandError::new("INTERNAL_ERROR", format!("Could not create the photos folder: {e}"))
-        })?;
+        let photos_folder_path = files.photos_folder.as_path();
 
         // Everything the rows name, read once rather than once per row.
         let firearm_types = names(conn, "firearm_types")?;
@@ -720,25 +861,27 @@ pub mod ops {
         // (contracts/spreadsheet-format.md "Two tables").
         let has_accessories = !accessory_rows.is_empty();
         let mut accessory_spreadsheet_path = None;
-        match format {
+        match files.format {
             SpreadsheetFormat::Csv => {
-                write_firearm_csv(spreadsheet_path, &firearm_rows)?;
-                if has_accessories {
-                    write_accessory_csv(accessory_csv_path, &accessory_rows)?;
-                    accessory_spreadsheet_path = Some(accessory_csv_path.to_owned());
+                write_firearm_csv(&files.spreadsheet, &firearm_rows)?;
+                if let (true, Some((accessory_file, accessory_path))) =
+                    (has_accessories, &files.accessory_csv)
+                {
+                    write_accessory_csv(accessory_file, &accessory_rows)?;
+                    accessory_spreadsheet_path = Some(accessory_path.clone());
                 }
             }
             SpreadsheetFormat::Xlsx => write_workbook(
-                spreadsheet_path,
+                &files.spreadsheet,
                 &firearm_rows,
                 has_accessories.then_some(accessory_rows.as_slice()),
             )?,
         }
 
         Ok(ExportResult {
-            spreadsheet_path: spreadsheet_path.to_owned(),
+            spreadsheet_path: files.spreadsheet_path.clone(),
             accessory_spreadsheet_path,
-            photos_folder_path: photos_folder_path.to_owned(),
+            photos_folder_path: files.photos_folder.clone(),
             exported_firearm_count: firearm_rows.len(),
             exported_accessory_count: accessory_rows.len(),
             exported_photo_count,

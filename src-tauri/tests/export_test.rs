@@ -872,3 +872,247 @@ fn get_export_scope_reports_no_accessories_and_the_registration_of_the_scope() {
     assert_eq!(filtered["includesRegistration"], false);
     assert_eq!(filtered["includesAccessories"], false);
 }
+
+// ------------------------------------------------- photo names (issue #68)
+
+/// A photo row as an older database could hold it: any stored name, as
+/// `add_photo` no longer lets in.
+fn insert_photo_row(db: &TestDb, owner: RecordRef, stored_name: &str) {
+    let (firearm_id, accessory_id) = owner.owner_columns();
+    db.conn
+        .execute(
+            "INSERT INTO photos (firearm_id, accessory_id, original_bytes, original_filename,
+                mime_type, thumbnail_bytes, sort_order, created_at)
+             VALUES (?1, ?2, ?3, ?4, 'image/png', ?3, 0, datetime('now'))",
+            rusqlite::params![firearm_id, accessory_id, sample_png_bytes(), stored_name],
+        )
+        .unwrap();
+}
+
+fn names_in(folder: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<_> = std::fs::read_dir(folder)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_photo_added_with_a_path_in_its_name_is_stored_and_exported_as_a_basename() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &firearm_with_photo("Rifle"));
+    let photo = hoplodex_lib::commands::photos::ops::add_photo(
+        &db.conn,
+        rifle,
+        &sample_png_bytes(),
+        "../../outside/../escape.png",
+        "image/png",
+    )
+    .unwrap();
+    assert_eq!(photo.original_filename, "escape.png");
+    let dest = TempDir::new().unwrap();
+
+    let result = export_all(&db, &dest, "photos", SpreadsheetFormat::Csv);
+
+    assert_eq!(names_in(&result.photos_folder_path), vec![format!("{}_escape.png", rifle.id())]);
+    assert_eq!(names_in(dest.path()), vec!["photos.csv", "photos_photos"]);
+}
+
+#[test]
+fn a_photo_row_with_an_unsafe_stored_name_still_exports_inside_the_photos_folder() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &firearm_with_photo("Rifle"));
+    let optic = new_accessory(&db, &accessory(OPTIC, "Leupold", "VX-5HD"));
+    // Rows from before the name was checked, made through SQL.
+    for name in [
+        "../../outside.png",
+        "sub/dir/inner.png",
+        r"..\..\win.png",
+        r"C:\Windows\drive.png",
+        r"\\server\share\unc.png",
+        "..",
+        "",
+        "nul\0byte.png",
+    ] {
+        insert_photo_row(&db, rifle, name);
+    }
+    insert_photo_row(&db, optic, "../accessory.png");
+    let dest = TempDir::new().unwrap();
+    let canary = dest.path().join("outside.png");
+
+    let result = export_all(&db, &dest, "photos", SpreadsheetFormat::Csv);
+
+    assert!(!canary.exists(), "nothing was written next to the photos folder");
+    assert_eq!(
+        names_in(dest.path()),
+        vec!["photos-accessories.csv", "photos.csv", "photos_photos"]
+    );
+    assert_eq!(result.exported_photo_count, 9);
+    let id = rifle.id();
+    let mut expected = vec![
+        format!("{id}_outside.png"),
+        format!("{id}_inner.png"),
+        format!("{id}_win.png"),
+        format!("{id}_drive.png"),
+        format!("{id}_unc.png"),
+        format!("{id}_photo"),
+        format!("{id}_photo-2"),
+        format!("{id}_nul_byte.png"),
+        format!("a{}_accessory.png", optic.id()),
+    ];
+    expected.sort();
+    assert_eq!(names_in(&result.photos_folder_path), expected);
+    // The cell names what was written, and each name is one plain file.
+    let firearms = sheets::read_csv(&result.spreadsheet_path);
+    for name in sheets::cell(&firearms, 0, "photo_filenames").split(';') {
+        assert!(result.photos_folder_path.join(name).is_file(), "{name}");
+    }
+}
+
+#[test]
+fn two_photos_of_one_record_with_the_same_name_are_both_exported_with_a_number() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &firearm_with_photo("Rifle"));
+    insert_photo_row(&db, rifle, "front.png");
+    insert_photo_row(&db, rifle, "other/front.png");
+    let dest = TempDir::new().unwrap();
+
+    let result = export_all(&db, &dest, "photos", SpreadsheetFormat::Csv);
+
+    let id = rifle.id();
+    assert_eq!(
+        names_in(&result.photos_folder_path),
+        vec![format!("{id}_front-2.png"), format!("{id}_front.png")]
+    );
+    assert_eq!(result.exported_photo_count, 2);
+}
+
+// ---------------------------------------- one export, one set of outputs (#74)
+
+fn export_to(
+    db: &TestDb,
+    dest: &TempDir,
+    base: &str,
+    format: SpreadsheetFormat,
+    records: &ExportRecords,
+) -> ExportResult {
+    import_export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        base,
+        format,
+        records,
+        &mut |_, _| {},
+    )
+    .unwrap()
+}
+
+#[test]
+fn exports_with_the_same_name_in_one_folder_each_get_their_own_spreadsheet_and_photos() {
+    let db = TestDb::new();
+    let first = new_firearm(&db, &firearm_with_photo("Glock"));
+    let second = new_firearm(&db, &firearm_with_photo("Sig"));
+    for (record, name) in [(first, "glock.png"), (second, "sig.png")] {
+        hoplodex_lib::commands::photos::ops::add_photo(
+            &db.conn,
+            record,
+            &sample_png_bytes(),
+            name,
+            "image/png",
+        )
+        .unwrap();
+    }
+    let dest = TempDir::new().unwrap();
+    let everything = firearms(&[first.id(), second.id()]);
+
+    let all = export_to(&db, &dest, "same-second", SpreadsheetFormat::Csv, &everything);
+    let all_spreadsheet = std::fs::read(&all.spreadsheet_path).unwrap();
+    let filtered =
+        export_to(&db, &dest, "same-second", SpreadsheetFormat::Csv, &firearms(&[first.id()]));
+    let third =
+        export_to(&db, &dest, "same-second", SpreadsheetFormat::Csv, &firearms(&[second.id()]));
+
+    assert_eq!(all.spreadsheet_path.file_name().unwrap(), "same-second.csv");
+    assert_eq!(filtered.spreadsheet_path.file_name().unwrap(), "same-second-2.csv");
+    assert_eq!(filtered.photos_folder_path.file_name().unwrap(), "same-second-2_photos");
+    assert_eq!(third.spreadsheet_path.file_name().unwrap(), "same-second-3.csv");
+    // The earlier export is exactly as it was written.
+    assert_eq!(std::fs::read(&all.spreadsheet_path).unwrap(), all_spreadsheet);
+    assert_eq!(
+        names_in(&all.photos_folder_path),
+        vec![format!("{}_glock.png", first.id()), format!("{}_sig.png", second.id())]
+    );
+    // Each later export holds only its own record's photo.
+    assert_eq!(names_in(&filtered.photos_folder_path), vec![format!("{}_glock.png", first.id())]);
+    assert_eq!(names_in(&third.photos_folder_path), vec![format!("{}_sig.png", second.id())]);
+    let contents = std::fs::read_to_string(&filtered.spreadsheet_path).unwrap();
+    assert!(contents.contains("Glock") && !contents.contains("Sig"));
+}
+
+#[test]
+fn an_export_never_uses_a_folder_or_file_that_is_already_there() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &firearm_with_photo("Rifle"));
+    let optic = new_accessory(&db, &accessory(OPTIC, "Leupold", "VX-5HD"));
+    let dest = TempDir::new().unwrap();
+    // Unrelated files that happen to be where the export would write.
+    let stray_folder = dest.path().join("base_photos");
+    std::fs::create_dir(&stray_folder).unwrap();
+    std::fs::write(stray_folder.join("keep.txt"), "mine").unwrap();
+    std::fs::write(dest.path().join("base-2.csv"), "mine").unwrap();
+    std::fs::write(dest.path().join("base-3-accessories.csv"), "mine").unwrap();
+    let records = ExportRecords { firearm_ids: vec![rifle.id()], accessory_ids: vec![optic.id()] };
+
+    let result = export_to(&db, &dest, "base", SpreadsheetFormat::Csv, &records);
+
+    assert_eq!(result.spreadsheet_path.file_name().unwrap(), "base-4.csv");
+    assert_eq!(accessory_csv_path(&result).file_name().unwrap(), "base-4-accessories.csv");
+    assert_eq!(names_in(&stray_folder), vec!["keep.txt"]);
+    assert_eq!(std::fs::read_to_string(dest.path().join("base-2.csv")).unwrap(), "mine");
+    assert_eq!(
+        std::fs::read_to_string(dest.path().join("base-3-accessories.csv")).unwrap(),
+        "mine"
+    );
+    // The names it skipped left nothing behind.
+    assert!(!dest.path().join("base-2_photos").exists());
+    assert!(!dest.path().join("base-3_photos").exists());
+    assert!(!dest.path().join("base-3.csv").exists());
+}
+
+#[test]
+fn a_workbook_export_reserves_its_name_the_same_way() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &firearm_with_photo("Rifle"));
+    let dest = TempDir::new().unwrap();
+
+    let first = export_to(&db, &dest, "book", SpreadsheetFormat::Xlsx, &firearms(&[rifle.id()]));
+    let second = export_to(&db, &dest, "book", SpreadsheetFormat::Xlsx, &firearms(&[rifle.id()]));
+
+    assert_eq!(first.spreadsheet_path.file_name().unwrap(), "book.xlsx");
+    assert_eq!(second.spreadsheet_path.file_name().unwrap(), "book-2.xlsx");
+    assert!(second.photos_folder_path.is_dir());
+}
+
+#[test]
+fn an_export_that_is_stopped_removes_only_what_it_made() {
+    let db = TestDb::new();
+    let rifle = new_firearm(&db, &firearm_with_photo("Rifle"));
+    let dest = TempDir::new().unwrap();
+    let earlier = export_to(&db, &dest, "base", SpreadsheetFormat::Csv, &firearms(&[rifle.id()]));
+
+    let stopped = import_export_ops::export_collection_stoppable(
+        &db.conn,
+        dest.path(),
+        "base",
+        SpreadsheetFormat::Csv,
+        &firearms(&[rifle.id()]),
+        &mut |_, _| {},
+        &|| true,
+    )
+    .unwrap_err();
+
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    assert_eq!(names_in(dest.path()), vec!["base.csv", "base_photos"]);
+    assert!(earlier.spreadsheet_path.is_file() && earlier.photos_folder_path.is_dir());
+}

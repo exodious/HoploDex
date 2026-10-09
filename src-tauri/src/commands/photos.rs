@@ -6,7 +6,7 @@ use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
 use crate::models::record::RecordRef;
-use crate::services::attachments::{mime_type_for, read_attachment_file};
+use crate::services::attachments::{mime_type_for, read_attachment_file, safe_basename};
 use crate::session::Session;
 
 /// What `set_thumbnail_photo` returns (contracts/tauri-commands.md "Photos
@@ -75,6 +75,9 @@ pub mod ops {
         validate_photo_mime_type(mime_type)?;
         let thumbnail_bytes = generate_thumbnail(file_bytes)?;
         require_owner(conn, owner)?;
+        // The name comes over IPC. A name is only ever a name: no path in it
+        // (issue #68; the export checks again, for rows made before this).
+        let original_filename = safe_basename(original_filename, "photo");
 
         let next_sort_order: i64 = conn
             .query_row(

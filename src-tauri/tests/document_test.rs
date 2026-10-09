@@ -82,6 +82,29 @@ fn scenario_4_attaches_and_reopens_a_document() {
     assert_eq!(reopened.mime_type, "application/pdf");
 }
 
+/// Issue #68: a name is only a name, whatever the webview sends.
+#[test]
+fn a_document_name_with_a_path_in_it_is_stored_as_its_basename() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+
+    for (sent, stored) in [
+        ("../../etc/receipt.pdf", "receipt.pdf"),
+        (r"C:\Users\me\receipt.pdf", "receipt.pdf"),
+        ("a/b\\c.pdf", "c.pdf"),
+    ] {
+        let attached = document_ops::add_document(
+            &db.conn,
+            RecordRef::Firearm(firearm.id),
+            SAMPLE_PDF_BYTES,
+            sent,
+        )
+        .unwrap();
+        assert_eq!(attached.original_filename, stored, "{sent}");
+        assert_eq!(attached.mime_type, "application/pdf");
+    }
+}
+
 #[test]
 fn deletes_a_document_only_when_confirmed() {
     let db = TestDb::new();

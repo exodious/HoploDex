@@ -12,7 +12,7 @@ use crate::models::database::IdlePauseReason;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
 use crate::models::document_opening::DocumentOpening;
 use crate::models::record::RecordRef;
-use crate::services::attachments::read_attachment_file;
+use crate::services::attachments::{read_attachment_file, safe_basename};
 use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest, needs_consent};
 use crate::services::document_types::{self, DocumentType, classify};
 use crate::services::machine_settings::MachineSettings;
@@ -103,6 +103,9 @@ pub mod ops {
         // The type recorded is the one the content check finds, whatever the
         // file chooser said (FR-016). Nothing is stored on a refusal.
         let document_type = classify(original_filename, file_bytes)?;
+        // The name comes over IPC. A name is only ever a name: no path in it
+        // (issue #68; the copy for another app uses `safe_stem` as well).
+        let original_filename = safe_basename(original_filename, "document");
         let exists: bool = conn
             .query_row(
                 &format!("SELECT EXISTS (SELECT 1 FROM {} WHERE id = :id)", owner.table()),

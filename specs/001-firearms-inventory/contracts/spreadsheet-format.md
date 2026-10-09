@@ -86,6 +86,8 @@ columns sit after `scheduled_coverage_amount` and before `photo_filenames`.
   spreadsheet (one row = one firearm, current state only); only the
   firearm's current disposition columns are exported.
 
+_Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo's file name is a basename; see [spec 006's "Two tables"](../../006-accessory-links/contracts/spreadsheet-format.md#two-tables)._
+
 - One spreadsheet file (`.csv` or `.xlsx`, per user's chosen format) plus
   one sibling folder (`<export-name>_photos/`) containing every stored
   photo in its original format and filename, deduplicated per firearm.

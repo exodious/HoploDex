@@ -393,6 +393,8 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#op
 
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): the record set comes from the added `get_export_scope`, and `ExportResult` gains `accessorySpreadsheetPath` and `exportedAccessoryCount`._
 
+_Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo's file name is a basename; see [spec 006's "Two tables"](../../006-accessory-links/contracts/spreadsheet-format.md#two-tables)._
+
 - **Input**: `{ format: "csv" | "xlsx", destinationFolder: string, scope: "all" | "filtered", filter?: ListFirearmsInput }`.
 - **Output (progress events, then)**: `{ spreadsheetPath: string, photosFolderPath: string, exportedFirearmCount: number, exportedPhotoCount: number }`.
 - **Behavior**: `scope` resolves the Edge Case "export while a filter is
