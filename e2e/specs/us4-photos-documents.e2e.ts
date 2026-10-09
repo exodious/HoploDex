@@ -224,7 +224,8 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
       const { port } = server.address() as AddressInfo;
-      const target = `http://127.0.0.1:${port}/leak?records=secret`;
+      // Each way names itself in the URL, so a failure says which got out.
+      const target = (way: string) => `http://127.0.0.1:${port}/leak?records=secret&way=${way}`;
       const appHref: string = await browser.execute(() => window.location.href);
 
       // Each way a page can leave: setting the location, replacing it, a link
@@ -235,13 +236,13 @@ describe("User Story 4 - Attach Photos and Documents", () => {
         setTimeout(() => {
           window.location.href = url;
         }, 0);
-      }, target);
+      }, target("href"));
       await browser.pause(500);
       await browser.execute((url: string) => {
         setTimeout(() => {
           window.location.replace(url);
         }, 0);
-      }, target);
+      }, target("replace"));
       await browser.pause(500);
       await browser.execute((url: string) => {
         setTimeout(() => {
@@ -251,7 +252,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
           link.click();
           link.remove();
         }, 0);
-      }, target);
+      }, target("link"));
       await browser.pause(500);
       await browser.execute((url: string) => {
         setTimeout(() => {
@@ -262,13 +263,13 @@ describe("User Story 4 - Attach Photos and Documents", () => {
           link.click();
           link.remove();
         }, 0);
-      }, target);
+      }, target("link-blank"));
       await browser.pause(500);
       await browser.execute((url: string) => {
         setTimeout(() => {
           window.open(url, "_blank");
         }, 0);
-      }, target);
+      }, target("window-open"));
       // Long enough for a navigation that was allowed to have loaded.
       await browser.pause(1500);
 
