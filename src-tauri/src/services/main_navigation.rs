@@ -9,6 +9,16 @@
 //! development run the dev server's. Everything else is refused, and so is a
 //! new window (`on_new_window` denies it, main.rs).
 //!
+//! On Windows the navigation handler is not enough on its own: WebView2 may
+//! send a navigation's GET request while `NavigationStarting` is still being
+//! answered ("for performance reasons, GET HTTP requests may happen, while
+//! the host is responding", per Microsoft's documentation of its `Cancel`),
+//! so a refused navigation leaves the window on the app but its URL, and
+//! whatever the URL carries, has reached the server. So the main web view
+//! there also gets a request filter (`refuse_foreign_documents`), as the PDF
+//! surface has: a document request to anywhere but the app's origins is
+//! answered by the web view itself and never goes out.
+//!
 //! The PDF surface's child web view has its own, narrower allowlist
 //! (`services::preview::surface`, research.md §6); this is the main window's
 //! (research.md §6, amended for #73).
@@ -49,6 +59,77 @@ pub fn navigation_allowed(origins: &[Url], target: &Url) -> bool {
             && target.host_str() == origin.host_str()
             && target.port_or_known_default() == origin.port_or_known_default()
     })
+}
+
+/// How long `refuse_foreign_documents` waits for the web view to be set up.
+/// From `setup()`, on the main thread, it is done before `with_webview`
+/// returns; this is for a call from elsewhere.
+#[cfg(windows)]
+const FILTER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Gives the main web view a request filter on Windows (see the module
+/// comment): every document request, a navigation's included, is checked
+/// with `navigation_allowed` before it goes out, and one to anywhere else is
+/// answered with a 403 by the web view. Other requests are left to the CSP.
+/// An error means the filter isn't in place, and the app shouldn't start.
+#[cfg(windows)]
+pub fn refuse_foreign_documents<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    origins: Vec<Url>,
+) -> tauri::Result<()> {
+    use ::windows::core::{HSTRING, PWSTR, Result as ComResult};
+    use std::sync::mpsc;
+    use webview2_com::{
+        Microsoft::Web::WebView2::Win32::COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+        WebResourceRequestedEventHandler, take_pwstr,
+    };
+
+    let (done, result) = mpsc::channel::<ComResult<()>>();
+    window.with_webview(move |platform| {
+        // SAFETY: COM calls on the web view's own objects, made on the
+        // thread that owns them; each out-parameter is a local that
+        // outlives its call.
+        let set = (|| unsafe {
+            let environment = platform.environment();
+            let webview = platform.controller().CoreWebView2()?;
+            webview.AddWebResourceRequestedFilter(
+                &HSTRING::from("*"),
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+            )?;
+            let mut token = 0i64;
+            webview.add_WebResourceRequested(
+                &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut uri = PWSTR::null();
+                    args.Request()?.Uri(&mut uri)?;
+                    let uri = take_pwstr(uri);
+                    if Url::parse(&uri).is_ok_and(|url| navigation_allowed(&origins, &url)) {
+                        return Ok(());
+                    }
+                    let refusal = environment.CreateWebResourceResponse(
+                        None,
+                        403,
+                        &HSTRING::from("Blocked"),
+                        &HSTRING::new(),
+                    )?;
+                    args.SetResponse(&refusal)
+                })),
+                &mut token,
+            )
+        })();
+        let _ = done.send(set);
+    })?;
+    match result.recv_timeout(FILTER_TIMEOUT) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(std::io::Error::other(format!(
+            "the main window's request filter could not be set: {e}"
+        ))
+        .into()),
+        Err(_) => {
+            Err(std::io::Error::other("the main window's request filter was not set in time")
+                .into())
+        }
+    }
 }
 
 #[cfg(test)]

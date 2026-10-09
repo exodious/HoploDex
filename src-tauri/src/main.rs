@@ -246,10 +246,14 @@ fn main() {
             // It may navigate only to the app's own page, and never opens
             // another window (#73, research.md §6): the CSP governs what the
             // page fetches, not where the window goes. The dev server's
-            // origin counts only in a development run.
+            // origin counts only in a development run. On Windows a request
+            // filter backs the navigation handler, which WebView2 may answer
+            // only after the request has gone out (main_navigation).
             let dev_url = if tauri::is_dev() { app.config().build.dev_url.clone() } else { None };
             let origins = main_navigation::app_origins(cfg!(windows), dev_url.as_ref());
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            #[cfg(windows)]
+            let filter_origins = origins.clone();
+            let _main = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .title("HoploDex")
@@ -257,6 +261,8 @@ fn main() {
                 .min_inner_size(800.0, 600.0)
                 .data_directory(app_dirs::main_webview_data_dir(app.handle())?)
                 .build()?;
+            #[cfg(windows)]
+            main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
             Ok(())
         })
         .on_window_event(|window, event| {

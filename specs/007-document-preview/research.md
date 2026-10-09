@@ -463,6 +463,13 @@ artifacts.
   `on_new_window` denies every new window. Neither the CSP nor the app ACL
   manifest governs where the window goes; this does. `us4-photos-documents`
   has the E2E check._
+  _Amended 2026-10-09 (#73): on Windows the main web view also gets a
+  `WebResourceRequested` filter on document requests
+  (`main_navigation::refuse_foreign_documents`), which answers one to
+  anywhere but the app's origins with a 403. WebView2 may send a
+  navigation's GET while `NavigationStarting` is still being answered, so
+  the E2E check found the URL reached the server for `location.href`,
+  `location.replace` and a link click although the window stayed._
 
   **The tripwire** (`services::preview::tripwire`): a `TcpListener` on
   `127.0.0.1:0`, bound when the first PDF is previewed and held for the

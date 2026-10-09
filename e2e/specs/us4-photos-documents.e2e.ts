@@ -213,7 +213,9 @@ describe("User Story 4 - Attach Photos and Documents", () => {
   // #73: the content security policy governs what the page fetches, not where
   // the window goes. The main window has a native navigation allowlist
   // (services::main_navigation), so a navigation to a page on the loopback is
-  // refused: the window stays on the app and the page is never requested.
+  // refused: the window stays on the app and the page is never requested. On
+  // Windows that takes the main web view's request filter too: WebView2 may
+  // send the GET before the navigation handler has answered.
   it("refuses a navigation of the window to another page (#73)", async () => {
     const requests: string[] = [];
     const server = http.createServer((req, res) => {
