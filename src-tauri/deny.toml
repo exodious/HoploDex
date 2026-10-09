@@ -35,8 +35,8 @@ ignore = [
     #
     # Not reachable. The only way in is `glib::Variant::array_iter_str()`,
     # and nothing calls it: not HoploDex (src/, build.rs), not the vendored
-    # WebDriver plugin, and not any of the 23 crates that depend on glib 0.18
-    # (only glib's own tests do). Checked 2026-10-09 at glib 0.18.5.
+    # WebDriver plugin, and not any of the 22 other crates that depend on
+    # glib 0.18 (only glib's own tests do). Checked 2026-10-09 at glib 0.18.5.
     #
     # Review by 2026-12-31, or sooner if Tauri moves off gtk-rs 0.18.
     { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter: unsound, not reachable (array_iter_str is never called), via gtk-rs 0.18 in Tauri" },
