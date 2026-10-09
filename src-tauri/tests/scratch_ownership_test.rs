@@ -5,13 +5,13 @@
 //! make scratch files (a passphrase change, a restore, a backup) have their
 //! collision tests beside their other tests.
 //!
-//! Real files in temp folders; the Unix-only cases are gated.
+//! Real files in temp folders. Hard links need no privilege on NTFS, so the
+//! hard-link cases run on every OS; the symlink cases are Unix-only.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::services::file_swap;
-use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::scratch;
 use hoplodex_lib::services::secure_delete::{self, WipeControl};
 use tempfile::TempDir;
@@ -72,9 +72,79 @@ fn a_scratch_file_is_created_exclusively() {
     assert_eq!(fs::read(&taken).unwrap(), b"already here", "not truncated");
 }
 
+#[test]
+fn recovery_leaves_a_folder_at_the_scratch_names_alone() {
+    let folder = Folder::new();
+    fs::write(folder.original(), b"contents").unwrap();
+    fs::create_dir(folder.new_copy()).unwrap();
+    fs::write(folder.new_copy().join("inside"), b"kept").unwrap();
+    fs::create_dir(folder.old_copy()).unwrap();
+
+    recover(&folder.original());
+
+    assert_eq!(fs::read(folder.new_copy().join("inside")).unwrap(), b"kept");
+    assert!(folder.old_copy().is_dir());
+}
+
+#[test]
+fn recovery_leaves_a_file_with_other_names_alone() {
+    let folder = Folder::new();
+    let (_elsewhere, victim) = victim();
+    fs::write(folder.original(), b"contents").unwrap();
+    fs::hard_link(&victim, folder.new_copy()).unwrap();
+    fs::hard_link(&victim, folder.old_copy()).unwrap();
+
+    recover(&folder.original());
+
+    assert_eq!(fs::read(&victim).unwrap(), b"precious", "not overwritten through the link");
+    assert!(folder.new_copy().exists() && folder.old_copy().exists(), "and not removed");
+}
+
+#[test]
+fn a_missing_database_is_not_replaced_by_a_file_with_other_names() {
+    let folder = Folder::new();
+    let (_elsewhere, victim) = victim();
+    fs::hard_link(&victim, folder.new_copy()).unwrap();
+
+    recover(&folder.original());
+
+    assert!(fs::symlink_metadata(folder.original()).is_err());
+    assert_eq!(folder.names(), vec![".Mine.hoplodex.new"]);
+    assert_eq!(fs::read(&victim).unwrap(), b"precious");
+}
+
+#[test]
+fn securely_deleting_a_hard_linked_file_leaves_the_other_name_intact() {
+    let folder = Folder::new();
+    let kept = folder.dir.path().join("kept.txt");
+    let planted = folder.dir.path().join("planted.txt");
+    fs::write(&kept, b"precious").unwrap();
+    fs::hard_link(&kept, &planted).unwrap();
+
+    secure_delete::secure_delete_file(&planted).unwrap();
+
+    assert!(!planted.exists());
+    assert_eq!(fs::read(&kept).unwrap(), b"precious", "the other name's contents survive");
+}
+
+#[test]
+fn securely_deleting_a_whole_hard_linked_file_leaves_the_other_name_intact() {
+    let folder = Folder::new();
+    let kept = folder.dir.path().join("kept.txt");
+    let planted = folder.dir.path().join("planted.txt");
+    fs::write(&kept, b"precious").unwrap();
+    fs::hard_link(&kept, &planted).unwrap();
+
+    secure_delete::secure_delete_whole_file(&planted, WipeControl::default()).unwrap();
+
+    assert!(!planted.exists());
+    assert_eq!(fs::read(&kept).unwrap(), b"precious");
+}
+
 #[cfg(unix)]
 mod unix {
     use super::*;
+    use hoplodex_lib::services::machine_settings::MachineSettings;
     use std::os::unix::fs::symlink;
 
     #[test]
@@ -120,47 +190,6 @@ mod unix {
     }
 
     #[test]
-    fn recovery_leaves_a_folder_at_the_scratch_names_alone() {
-        let folder = Folder::new();
-        fs::write(folder.original(), b"contents").unwrap();
-        fs::create_dir(folder.new_copy()).unwrap();
-        fs::write(folder.new_copy().join("inside"), b"kept").unwrap();
-        fs::create_dir(folder.old_copy()).unwrap();
-
-        recover(&folder.original());
-
-        assert_eq!(fs::read(folder.new_copy().join("inside")).unwrap(), b"kept");
-        assert!(folder.old_copy().is_dir());
-    }
-
-    #[test]
-    fn recovery_leaves_a_file_with_other_names_alone() {
-        let folder = Folder::new();
-        let (_elsewhere, victim) = victim();
-        fs::write(folder.original(), b"contents").unwrap();
-        fs::hard_link(&victim, folder.new_copy()).unwrap();
-        fs::hard_link(&victim, folder.old_copy()).unwrap();
-
-        recover(&folder.original());
-
-        assert_eq!(fs::read(&victim).unwrap(), b"precious", "not overwritten through the link");
-        assert!(folder.new_copy().exists() && folder.old_copy().exists(), "and not removed");
-    }
-
-    #[test]
-    fn a_missing_database_is_not_replaced_by_a_file_with_other_names() {
-        let folder = Folder::new();
-        let (_elsewhere, victim) = victim();
-        fs::hard_link(&victim, folder.new_copy()).unwrap();
-
-        recover(&folder.original());
-
-        assert!(fs::symlink_metadata(folder.original()).is_err());
-        assert!(folder.new_copy().exists());
-        assert_eq!(fs::read(&victim).unwrap(), b"precious");
-    }
-
-    #[test]
     fn replacing_refuses_a_new_copy_that_has_become_a_symlink() {
         let folder = Folder::new();
         let (_elsewhere, victim) = victim();
@@ -173,34 +202,6 @@ mod unix {
         assert_eq!(fs::read(folder.original()).unwrap(), b"old contents");
         assert_eq!(fs::read(&victim).unwrap(), b"precious");
         assert!(fs::symlink_metadata(folder.new_copy()).is_ok(), "the link is not ours to remove");
-    }
-
-    #[test]
-    fn securely_deleting_a_hard_linked_file_leaves_the_other_name_intact() {
-        let folder = Folder::new();
-        let kept = folder.dir.path().join("kept.txt");
-        let planted = folder.dir.path().join("planted.txt");
-        fs::write(&kept, b"precious").unwrap();
-        fs::hard_link(&kept, &planted).unwrap();
-
-        secure_delete::secure_delete_file(&planted).unwrap();
-
-        assert!(!planted.exists());
-        assert_eq!(fs::read(&kept).unwrap(), b"precious", "the other name's contents survive");
-    }
-
-    #[test]
-    fn securely_deleting_a_whole_hard_linked_file_leaves_the_other_name_intact() {
-        let folder = Folder::new();
-        let kept = folder.dir.path().join("kept.txt");
-        let planted = folder.dir.path().join("planted.txt");
-        fs::write(&kept, b"precious").unwrap();
-        fs::hard_link(&kept, &planted).unwrap();
-
-        secure_delete::secure_delete_whole_file(&planted, WipeControl::default()).unwrap();
-
-        assert!(!planted.exists());
-        assert_eq!(fs::read(&kept).unwrap(), b"precious");
     }
 
     #[test]
