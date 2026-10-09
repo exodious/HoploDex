@@ -435,6 +435,8 @@ are snapped._
 
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): an `overwrite` or `duplicate` applies the row's mount, and its warnings arrive in `warnings`._
 
+_Amended 2026-10-09 ([#64](https://github.com/exodious/HoploDex/issues/64)): an import's held conflicts belong to the open of the database that read them (`OpenDatabase::imports`), not to the app. A close, lock, idle lock, switch, restore, take-over, sleep or shutdown drops them, and reopening the same file starts with none, so `importSessionId` resolves only in the open that made it. Otherwise (resolved, never made, dropped for a newer one, or from another open) the command fails with `NOT_FOUND` and applies nothing. At most 3 imports are held, the oldest dropped first. An `overwrite` or `duplicate` applies only while the matched record still has the record identifier it had when the conflict was found; if it was deleted or replaced, the conflict is reported in `unresolved` (and is not kept: import the file again)._
+
 - **Input**: `{ importSessionId: string, resolutions: { conflictId: string; action: "skip" | "overwrite" | "duplicate" }[], applyToRemaining?: "skip" | "overwrite" | "duplicate" }`.
 - **Output**: `{ resolvedCount: number, unresolved: { row: number; message: string }[] }`.
 - **Behavior**: Implements FR-026's per-row resolution plus "apply to all

@@ -14,7 +14,6 @@ use hoplodex_lib::commands::documents::E2eOpener;
 use hoplodex_lib::commands::documents::{
     OPENED_DOCUMENTS_DIR, Opener, clear_opened_documents_cache,
 };
-use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::preview::{AppSurfaces, PreviewEnv};
 use hoplodex_lib::db;
 use hoplodex_lib::platform::{self, SystemEvent};
@@ -212,7 +211,6 @@ fn main() {
             surface::clear_data_directory(&app_dirs::preview_webview_data_dir(app.handle())?);
             let availability = PdfAvailabilityState::new(decide_at_startup(&machine));
             app.manage(machine);
-            app.manage(ImportSessionStore::new());
             app.manage(availability.clone());
             // The preview commands: the helper is this executable.
             app.manage(PreviewEnv::new(

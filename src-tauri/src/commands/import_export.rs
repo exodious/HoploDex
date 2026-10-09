@@ -241,6 +241,11 @@ struct PendingConflict {
     table: ImportTable,
     row: usize,
     existing: RecordRef,
+    /// The record identifier of `existing` when the conflict was found. An
+    /// overwrite or duplicate applies only while `existing` still has it:
+    /// a different record under the same row id is not what the row
+    /// matched (issue #64).
+    existing_uid: String,
     new_input: PendingInput,
     /// The row's `mounted_on` cell, applied when the row overwrites or is
     /// added as a duplicate (research.md §18).
@@ -259,16 +264,70 @@ struct ImportSession {
 
 /// Holds each in-progress import's matched-but-unresolved rows between the
 /// initial `import_collection` call and the follow-up
-/// `resolve_import_conflicts` call — Tauri-managed state (`app.manage`),
-/// analogous to `Session`.
+/// `resolve_import_conflicts` call.
+///
+/// One store belongs to one open of one database
+/// ([`OpenDatabase::imports`](crate::session::OpenDatabase::imports)), never
+/// to the app: what it holds is that file's plaintext and record ids, and
+/// applying it to another database, or to the same one after a lock, would
+/// write it where it was not read from. So whatever drops the open drops
+/// its imports, and a session id means nothing to any other open (issue
+/// #64). It holds at most [`MAX_HELD_IMPORTS`] imports.
 #[derive(Default)]
 pub struct ImportSessionStore {
-    pending: Mutex<HashMap<String, ImportSession>>,
+    held: Mutex<Held>,
 }
+
+#[derive(Default)]
+struct Held {
+    /// The number the next kept import takes: the oldest has the lowest.
+    next: u64,
+    sessions: HashMap<String, (u64, ImportSession)>,
+}
+
+/// The most imports a store holds. The dialog has one at a time, so an
+/// import past this is one abandoned, and the oldest goes.
+pub const MAX_HELD_IMPORTS: usize = 3;
 
 impl ImportSessionStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// How many imports wait to be resolved.
+    pub fn len(&self) -> usize {
+        self.held().sessions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn held(&self) -> std::sync::MutexGuard<'_, Held> {
+        self.held.lock().expect("import session mutex poisoned")
+    }
+
+    /// Keeps `import` under `session_id`, newest, dropping the oldest ones
+    /// past [`MAX_HELD_IMPORTS`].
+    fn keep(&self, session_id: &str, import: ImportSession) {
+        let mut held = self.held();
+        held.next += 1;
+        let number = held.next;
+        held.sessions.insert(session_id.to_string(), (number, import));
+        while held.sessions.len() > MAX_HELD_IMPORTS {
+            let oldest = held
+                .sessions
+                .iter()
+                .min_by_key(|(_, (number, _))| *number)
+                .map(|(id, _)| id.clone())
+                .expect("the store is not empty");
+            held.sessions.remove(&oldest);
+        }
+    }
+
+    /// Takes the import out, if this store holds it.
+    fn take(&self, session_id: &str) -> Option<ImportSession> {
+        self.held().sessions.remove(session_id).map(|(_, import)| import)
     }
 }
 
@@ -1896,6 +1955,8 @@ pub mod ops {
                         table,
                         row,
                         existing,
+                        // Read once the run ends, where there is a connection.
+                        existing_uid: String::new(),
                         new_input: input,
                         mounted_on,
                     });
@@ -1960,6 +2021,59 @@ pub mod ops {
             firearms.map(|(_, rows)| rows).unwrap_or_default(),
             accessories.map(|(_, rows)| rows).unwrap_or_default(),
         ))
+    }
+
+    /// The record identifier `record` has now (`NOT_FOUND` when it is gone).
+    fn record_uid(conn: &Connection, record: RecordRef) -> Result<String, CommandError> {
+        let (table, id) = match record {
+            RecordRef::Firearm(id) => ("firearms", id),
+            RecordRef::Accessory(id) => ("accessories", id),
+        };
+        conn.query_row(&format!("SELECT uid FROM {table} WHERE id = ?1"), [id], |row| row.get(0))
+            .optional()
+            .map_err(CommandError::from_db)?
+            .ok_or_else(|| CommandError::not_found("That record no longer exists."))
+    }
+
+    /// [`import_collection_stoppable`] into the session's open database,
+    /// holding its conflicts with that open and no other (issue #64).
+    pub fn import_in_session(
+        session: &Session,
+        files: &[ImportFile],
+        on_progress: &mut dyn FnMut(usize, usize),
+        is_cancelled: &dyn Fn() -> bool,
+        record_imported: &dyn Fn(u64),
+    ) -> Result<ImportResult, CommandError> {
+        session.write_open(|open| {
+            import_collection_stoppable(
+                &open.conn,
+                files,
+                &open.imports,
+                on_progress,
+                is_cancelled,
+                record_imported,
+            )
+        })
+    }
+
+    /// [`resolve_import_conflicts`] against the session's open database, which
+    /// finds only the imports made in this open: `NOT_FOUND` for one made in
+    /// another database, or before this one was last opened or unlocked.
+    pub fn resolve_in_session(
+        session: &Session,
+        session_id: &str,
+        resolutions: &[ConflictResolution],
+        apply_to_remaining: Option<&str>,
+    ) -> Result<ResolveResult, CommandError> {
+        session.write_open(|open| {
+            resolve_import_conflicts(
+                &open.conn,
+                &open.imports,
+                session_id,
+                resolutions,
+                apply_to_remaining,
+            )
+        })
     }
 
     /// Each row is validated independently; a failing row is reported in
@@ -2042,8 +2156,11 @@ pub mod ops {
         list_mounted(conn, &mut run.conflicts, &run.pending)?;
 
         if !run.pending.is_empty() {
-            store.pending.lock().expect("import session mutex poisoned").insert(
-                session_id.clone(),
+            for conflict in &mut run.pending {
+                conflict.existing_uid = record_uid(conn, conflict.existing)?;
+            }
+            store.keep(
+                &session_id,
                 ImportSession {
                     pending: std::mem::take(&mut run.pending),
                     outcomes: std::mem::take(&mut run.outcomes),
@@ -2104,12 +2221,12 @@ pub mod ops {
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
-        let ImportSession { pending, outcomes } = store
-            .pending
-            .lock()
-            .expect("import session mutex poisoned")
-            .remove(session_id)
-            .unwrap_or_else(|| ImportSession { pending: Vec::new(), outcomes: HashMap::new() });
+        // An import this store doesn't hold is gone, whatever the reason: it
+        // was resolved, dropped for a newer one, or belongs to an open that
+        // has closed (issue #64).
+        let Some(ImportSession { pending, outcomes }) = store.take(session_id) else {
+            return Err(CommandError::not_found("That import is no longer open."));
+        };
 
         let explicit: HashMap<&str, &ConflictResolution> =
             resolutions.iter().map(|r| (r.conflict_id.as_str(), r)).collect();
@@ -2127,6 +2244,17 @@ pub mod ops {
             // untouched — never saved, so it never carries a warning.
             if action != "overwrite" && action != "duplicate" {
                 resolved_count += 1;
+                continue;
+            }
+            // The row matched a record; it applies only to that record.
+            if record_uid(conn, conflict.existing).ok().as_deref() != Some(&conflict.existing_uid) {
+                unresolved.push(RowError {
+                    table: conflict.table,
+                    row: conflict.row,
+                    message: "The record this row matched has changed since the file was \
+                              read. Import the file again."
+                        .to_string(),
+                });
                 continue;
             }
             let overwrite = action == "overwrite";
@@ -2200,11 +2328,7 @@ pub mod ops {
         resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings)?;
 
         if !still_open.is_empty() {
-            store
-                .pending
-                .lock()
-                .expect("import session mutex poisoned")
-                .insert(session_id.to_string(), ImportSession { pending: still_open, outcomes });
+            store.keep(session_id, ImportSession { pending: still_open, outcomes });
         }
 
         Ok(ResolveResult { resolved_count, unresolved, warnings })
@@ -2304,33 +2428,28 @@ pub async fn import_collection(
     input: ImportCollectionInput,
     app: tauri::AppHandle,
     session: State<'_, Session>,
-    session_store: State<'_, ImportSessionStore>,
 ) -> Result<ImportResult, CommandError> {
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
     let operation = session.operations().begin(OperationKind::Import, None)?;
-    session.write(|conn| {
-        let files = input
-            .files
-            .iter()
-            .map(|file| {
-                Ok(ImportFile {
-                    file_path: PathBuf::from(&file.file_path),
-                    format: parse_format(&file.format)?,
-                })
+    let files = input
+        .files
+        .iter()
+        .map(|file| {
+            Ok(ImportFile {
+                file_path: PathBuf::from(&file.file_path),
+                format: parse_format(&file.format)?,
             })
-            .collect::<Result<Vec<_>, CommandError>>()?;
-        ops::import_collection_stoppable(
-            conn,
-            &files,
-            &session_store,
-            &mut |processed, total| {
-                let _ =
-                    app.emit("import_collection:progress", ProgressPayload { processed, total });
-            },
-            &|| operation.is_cancelled(),
-            &|imported| operation.record_done(imported),
-        )
-    })
+        })
+        .collect::<Result<Vec<_>, CommandError>>()?;
+    ops::import_in_session(
+        &session,
+        &files,
+        &mut |processed, total| {
+            let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
+        },
+        &|| operation.is_cancelled(),
+        &|imported| operation.record_done(imported),
+    )
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2345,15 +2464,11 @@ pub struct ResolveImportConflictsInput {
 pub async fn resolve_import_conflicts(
     input: ResolveImportConflictsInput,
     session: State<'_, Session>,
-    session_store: State<'_, ImportSessionStore>,
 ) -> Result<ResolveResult, CommandError> {
-    session.write(|conn| {
-        ops::resolve_import_conflicts(
-            conn,
-            &session_store,
-            &input.import_session_id,
-            &input.resolutions,
-            input.apply_to_remaining.as_deref(),
-        )
-    })
+    ops::resolve_in_session(
+        &session,
+        &input.import_session_id,
+        &input.resolutions,
+        input.apply_to_remaining.as_deref(),
+    )
 }
