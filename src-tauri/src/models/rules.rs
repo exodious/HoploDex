@@ -43,17 +43,51 @@ pub(crate) fn checked_date(
     }
 }
 
+/// The largest amount any single money field may hold, in whole dollars
+/// (#67). The frontend repeats it as `MAX_DOLLARS` in `src/lib/money.ts`; the
+/// two must agree. It is a rule on what is *entered*: totals never rely on
+/// it, because a row written before the cap existed may be larger (see
+/// [`saturating_total`]).
+pub const MAX_AMOUNT_DOLLARS: i64 = 99_999_999;
+
+/// The largest total sent over IPC: JavaScript's `Number.MAX_SAFE_INTEGER`
+/// (2^53 - 1), so a sum never reaches the web view as a rounded number. With
+/// every amount within [`MAX_AMOUNT_DOLLARS`] no real collection comes near
+/// it; it only bounds rows an older database or a future path may have left
+/// above the cap.
+pub const MAX_TOTAL_DOLLARS: i64 = (1 << 53) - 1;
+
+/// Adds amounts without ever failing or wrapping (#67): the sum saturates at
+/// [`MAX_TOTAL_DOLLARS`], so one oversized row can neither make a listing
+/// error out nor wrap into a wrong total. A negative stored value (which the
+/// schema's CHECK forbids) counts as 0.
+pub fn saturating_total(amounts: impl IntoIterator<Item = i64>) -> i64 {
+    let total = amounts.into_iter().fold(0i128, |sum, amount| sum + i128::from(amount.max(0)));
+    i64::try_from(total).map_or(MAX_TOTAL_DOLLARS, |total| total.min(MAX_TOTAL_DOLLARS))
+}
+
+/// `a + b` for two totals, saturating as [`saturating_total`] does.
+pub fn saturating_add(a: i64, b: i64) -> i64 {
+    saturating_total([a, b])
+}
+
 /// FR-037: an amount is a whole number of dollars, so once it has decoded
-/// (a fractional number never does) the only thing left to refuse is a
-/// negative one.
+/// (a fractional number never does) the only things left to refuse are a
+/// negative one and one above [`MAX_AMOUNT_DOLLARS`] (#67).
 pub(crate) fn checked_amount(
     field: &str,
     label: &str,
     value: Option<i64>,
     errors: &mut FieldErrors,
 ) {
-    if value.is_some_and(|dollars| dollars < 0) {
-        errors.insert(field.into(), format!("{label} can't be negative."));
+    match value {
+        Some(dollars) if dollars < 0 => {
+            errors.insert(field.into(), format!("{label} can't be negative."));
+        }
+        Some(dollars) if dollars > MAX_AMOUNT_DOLLARS => {
+            errors.insert(field.into(), format!("{label} can't be more than $99,999,999."));
+        }
+        _ => {}
     }
 }
 

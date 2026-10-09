@@ -922,14 +922,16 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Browning", "Auto-5 Light Twelve", "1V12345", "12 gauge", SHOTGUN)
     });
 
-    // Long text everywhere, to check truncation and wrapping in tiles/rows.
+    // Long text everywhere, to check truncation and wrapping in tiles/rows,
+    // and the largest amount a field takes ($99,999,999, #67) in its value and
+    // its scheduled amount, to check how a long amount fits a tile and a row.
     let commemorative = add(FirearmInput {
         nickname: text("The Really Long Nickname Used To Check How Tiles And Rows Truncate"),
         notes: text("Commemorative presentation piece. ".repeat(12).trim_end()),
-        estimated_value: Some(3_200),
+        estimated_value: Some(99_999_999),
         acquisition_date: text("2011-11-11"),
         insurance_policy_id: Some(policies.vault),
-        scheduled_coverage_amount: Some(3_500),
+        scheduled_coverage_amount: Some(99_999_999),
         ..base(
             "Smith & Wesson",
             "Model 1911 A1 Government Commemorative Limited Edition Engraved Presentation Grade",

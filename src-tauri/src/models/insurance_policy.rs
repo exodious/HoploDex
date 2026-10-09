@@ -4,6 +4,7 @@ use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
+use crate::models::rules::checked_amount;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,12 +84,12 @@ pub fn validate_insurance_policy_input(input: &InsurancePolicyInput) -> Result<(
     if input.insurance_company.trim().is_empty() {
         errors.insert("insuranceCompany".into(), "Insurance company is required.".into());
     }
-    if input.blanket_coverage_limit.is_some_and(|limit| limit < 0) {
-        errors.insert(
-            "blanketCoverageLimit".into(),
-            "Blanket coverage limit cannot be negative.".into(),
-        );
-    }
+    checked_amount(
+        "blanketCoverageLimit",
+        "Blanket coverage limit",
+        input.blanket_coverage_limit,
+        &mut errors,
+    );
 
     match (
         chrono::NaiveDate::parse_from_str(&input.effective_start_date, "%Y-%m-%d"),

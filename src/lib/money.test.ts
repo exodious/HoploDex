@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dollarsToInput, formatDollars, parseDollars } from "./money";
+import {
+  MAX_DOLLARS,
+  TOO_LARGE_MESSAGE,
+  dollarsToInput,
+  formatDollars,
+  parseDollars,
+} from "./money";
 
 describe("parseDollars (FR-037)", () => {
   it("treats a blank field as no value", () => {
@@ -37,6 +43,17 @@ describe("parseDollars (FR-037)", () => {
 
   it("rejects an amount too large to hold exactly", () => {
     expect(parseDollars("99999999999999999999").ok).toBe(false);
+  });
+
+  it("caps an amount at $99,999,999 (#67), as the backend does", () => {
+    expect(MAX_DOLLARS).toBe(99_999_999);
+    expect(parseDollars("99999999")).toEqual({ ok: true, dollars: 99_999_999 });
+    expect(parseDollars("$99,999,999")).toEqual({ ok: true, dollars: 99_999_999 });
+    expect(parseDollars("000000099999999")).toEqual({ ok: true, dollars: 99_999_999 });
+    for (const text of ["100000000", "$100,000,000", "9007199254740993", "9".repeat(400)]) {
+      expect(parseDollars(text), text).toEqual({ ok: false, error: TOO_LARGE_MESSAGE });
+    }
+    expect(TOO_LARGE_MESSAGE).toBe("Enter an amount of $99,999,999 or less.");
   });
 });
 

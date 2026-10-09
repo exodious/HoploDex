@@ -81,6 +81,25 @@ describe("CoverageDialog (FR-014, FR-036)", () => {
     expect(onSave).toHaveBeenCalledWith({ policyId: 7, scheduledCoverageAmount: 3500 });
   });
 
+  it("refuses a scheduled amount above $99,999,999, and accepts exactly that (#67)", async () => {
+    const user = userEvent.setup();
+    const onSave = renderDialog();
+
+    await user.click(screen.getByRole("combobox", { name: "Policy" }));
+    await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
+    await user.type(screen.getByLabelText("Scheduled amount"), "100000000");
+    await user.click(screen.getByRole("button", { name: "Save coverage" }));
+
+    expect(screen.getByText("Enter an amount of $99,999,999 or less.")).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+
+    const amount = screen.getByLabelText("Scheduled amount");
+    await user.clear(amount);
+    await user.type(amount, "99999999");
+    await user.click(screen.getByRole("button", { name: "Save coverage" }));
+    expect(onSave).toHaveBeenCalledWith({ policyId: 7, scheduledCoverageAmount: 99_999_999 });
+  });
+
   it("has no per-firearm blanket option: choosing not to schedule is the blanket", async () => {
     const user = userEvent.setup();
     renderDialog();

@@ -67,6 +67,8 @@ surrounding whitespace; a value with non-zero cents (`450.50`), a negative
 value, or any other text is a row error naming the column (FR-020). Values
 are never rounded.
 
+_Amended 2026-10-09 (#67): every amount is also capped at $99,999,999 (`MAX_AMOUNT_DOLLARS` in `src-tauri/src/models/rules.rs`, `MAX_DOLLARS` in `src/lib/money.ts`; the two must agree). A larger one is refused with a field error ("Estimated value can't be more than $99,999,999."); on import it is a row error naming the column, as for cents, and the other rows still import. Totals are summed overflow-safe and saturate at 2^53 - 1 rather than fail, since a row from before the cap may be larger._
+
 ## Physical details (FR-039)
 
 The six physical-detail columns follow the same rules as Amounts: blank is

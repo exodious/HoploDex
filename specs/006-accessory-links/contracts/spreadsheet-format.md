@@ -6,7 +6,7 @@ as amended by 002, 004 and 005. It adds a second table, the accessory table,
 and two columns to the firearm table. Every rule not named here is
 unchanged:
 - cells are formatted as before;
-- amounts are whole dollars with no separators;
+- amounts are whole dollars with no separators, and at most $99,999,999 (_amended 2026-10-09 (#67): a larger one is a row error naming the column_);
 - dates are `YYYY-MM-DD`;
 - columns are read by header, trimmed and in any letter case;
 - unknown headers are ignored;

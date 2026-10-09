@@ -23,6 +23,8 @@ a fractional number never decodes into the integer argument at all (Tauri
 refuses the call before the command runs); it never rounds. Thousands separators are a display
 concern of the frontend only and never cross this boundary.
 
+_Amended 2026-10-09 (#67): every amount is also capped at $99,999,999 (`MAX_AMOUNT_DOLLARS` in `src-tauri/src/models/rules.rs`, `MAX_DOLLARS` in `src/lib/money.ts`; the two must agree). A larger one is refused with a field error ("Estimated value can't be more than $99,999,999."); on import it is a row error naming the column. Totals (`total`, `collectionTotal`, the subtotals) are summed overflow-safe and saturate at 2^53 - 1 rather than fail, since a row from before the cap may be larger._
+
 All error returns use a common shape:
 
 ```ts

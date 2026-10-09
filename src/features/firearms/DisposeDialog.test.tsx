@@ -66,6 +66,27 @@ describe("DisposeDialog", () => {
     );
   });
 
+  it("refuses a price above $99,999,999, and accepts exactly that (#67)", async () => {
+    const user = userEvent.setup();
+    const onDispose = vi.fn().mockResolvedValue(undefined);
+    render(<Harness onDispose={onDispose} />);
+
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(screen.getByRole("radio", { name: "Sold" }));
+    await user.type(screen.getByLabelText("Transferred to"), "Jane Doe");
+    await user.type(screen.getByLabelText("Price received"), "100000000");
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+    expect(screen.getByText("Enter an amount of $99,999,999 or less.")).toBeInTheDocument();
+    expect(onDispose).not.toHaveBeenCalled();
+
+    const price = screen.getByLabelText("Price received");
+    await user.clear(price);
+    await user.type(price, "99999999");
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+    expect(onDispose).toHaveBeenCalledWith(expect.objectContaining({ price: 99_999_999 }));
+  });
+
   it("blocks a disposition date before the acquisition date", async () => {
     const user = userEvent.setup();
     const onDispose = vi.fn().mockResolvedValue(undefined);

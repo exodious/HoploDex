@@ -37,6 +37,25 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(onSubmit.mock.calls[0][0].blanketCoverageLimit).toBe(25_000);
   });
 
+  it("refuses a limit above $99,999,999 before sending, and accepts exactly that (#67)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<InsurancePolicyForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(screen.getByLabelText("Blanket coverage limit"), "100000000");
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+
+    expect(screen.getByText("Enter an amount of $99,999,999 or less.")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    const limit = screen.getByLabelText("Blanket coverage limit");
+    await user.clear(limit);
+    await user.type(limit, "99999999");
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+    expect(onSubmit.mock.calls[0][0].blanketCoverageLimit).toBe(99_999_999);
+  });
+
   it("explains what the limit means", () => {
     render(<InsurancePolicyForm onSubmit={vi.fn()} />);
 
