@@ -29,8 +29,8 @@
     // each worker's port) of the app's own embedded WebDriver server, and the
     // browserName is "wry", not chrome or firefox.
     //
-    // Review by 2026-12-31, or with the move to WebdriverIO 10, which removes
-    // this path.
+    // Review by 2026-12-31, or with the move to WebdriverIO 10 (#86), which
+    // removes this path.
     "GHSA-7pqw-9j4j-h8q3|*@wdio/utils>@puppeteer/browsers>extract-zip*",
     "GHSA-jmr9-qjv8-65gv|*@wdio/utils>@puppeteer/browsers>extract-zip*",
 
@@ -47,8 +47,8 @@
     // that code is never loaded, let alone given input from a document, a
     // database or the network.
     //
-    // Review by 2026-12-31, or with the move to WebdriverIO 10, which removes
-    // this path.
+    // Review by 2026-12-31, or with the move to WebdriverIO 10 (#86), which
+    // removes this path.
     "GHSA-vfj7-8cjw-p6xm|*@wdio/mocha-framework>mocha>chokidar>braces*",
   ],
 }
