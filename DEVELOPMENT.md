@@ -862,6 +862,15 @@ the page reloads with them as its values; the built page lists your changes
 to copy into it instead. A link can open it on a preset and paused at a
 moment: `?preset=2&view=cycle&at=8.5`.
 
+Because Save rewrites a source file, `npm run tuner` listens on loopback
+only (`localhost:1430`) and accepts a save only from its own page: each run
+makes a random token, puts it in the page it serves, and refuses a request
+without it, from another `Origin` or `Host`, that isn't `application/json`,
+is over 64 KiB, or holds anything but known timing names with numbers (a
+switch, a style name) in range. So open the tuner at the address it prints,
+and reload the page after restarting the server (an older page's token no
+longer works).
+
 Inside the [development container](#development-container-linux-recommended)
 the tuner's server can't be reached from your browser, so there use
 `npm run tuner:build` and open `dist-tuner/plate-tuner.html` from your

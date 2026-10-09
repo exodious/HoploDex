@@ -1,23 +1,33 @@
 import type { PlateTiming } from "../../src/features/databases/plate/timing";
+import { validateTiming } from "./timingSchema";
 
-/** A value as timing.ts writes it. */
+function number(value: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("not a finite number");
+  return String(Number(value.toFixed(3)));
+}
+
+/**
+ * A value as timing.ts writes it. Only numbers, booleans and strings
+ * (written as JSON strings) are ever written, whatever the caller passes.
+ */
 export function literal(value: PlateTiming[keyof PlateTiming]): string {
-  if (Array.isArray(value)) return `[${value.join(", ")}]`;
+  if (Array.isArray(value)) return `[${value.map(number).join(", ")}]`;
   if (typeof value === "string") return JSON.stringify(value);
   if (typeof value === "boolean") return String(value);
-  return String(Number(value.toFixed(3)));
+  return number(value);
 }
 
 /**
  * Writes `values` into timing.ts's source, keeping everything else in it:
  * each `NAME: value,` line has its value replaced and its comment kept. A
  * name the file doesn't have, or has more than once, is an error, so the
- * tuner never saves half its changes.
+ * tuner never saves half its changes. `input` is checked first
+ * (`validateTiming`), and only what passes is written.
  */
-export function writeTiming(source: string, values: Partial<PlateTiming>): string {
+export function writeTiming(source: string, input: Partial<PlateTiming>): string {
+  const values = validateTiming(input);
   let out = source;
   for (const [name, value] of Object.entries(values)) {
-    if (!/^[A-Z][A-Z0-9_]*$/.test(name)) throw new Error(`${name} isn't a timing name`);
     const line = new RegExp(`^([ \\t]*${name}: )(.+?)(,[ \\t]*(?://.*)?)$`, "m");
     const matches = out.match(new RegExp(line.source, "gm")) ?? [];
     if (matches.length !== 1)
