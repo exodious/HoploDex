@@ -175,16 +175,26 @@ pub mod ops {
     }
 
     /// Checks the backup's passphrase against its first page before
-    /// anything is copied, so a wrong one is refused at once.
-    fn check_backup_passphrase(backup: &Path, passphrase: &Passphrase) -> Result<(), CommandError> {
+    /// anything is copied, so a wrong one is refused at once. Returns the
+    /// database id stored inside the backup, which is what says whose
+    /// backup it is (the file's name is only a convenience).
+    fn check_backup_passphrase(
+        backup: &Path,
+        passphrase: &Passphrase,
+    ) -> Result<String, CommandError> {
         let checked = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .and_then(|conn| {
                 conn.pragma_update(None, "key", passphrase.as_str())?;
                 cipher::apply_cipher_settings(&conn, "main")?;
-                conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get::<_, i64>(0))
+                conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
+                    row.get::<_, i64>(0)
+                })?;
+                conn.query_row("SELECT database_id FROM app_state", [], |row| {
+                    row.get::<_, String>(0)
+                })
             });
         match checked {
-            Ok(_) => Ok(()),
+            Ok(database_id) => Ok(database_id),
             Err(err) => Err(match OpenError::classify(err) {
                 OpenError::Damaged => CommandError::database_damaged(false),
                 other => other.into(),
@@ -375,10 +385,62 @@ pub mod ops {
         restored
     }
 
+    /// Whether the restore may replace `path` with `backup`, decided only
+    /// from what the backend knows, never from the web view's say-so: `path`
+    /// must be a database on the recent list that this computer has opened
+    /// (its id and backup folder are cached then), and `backup` must be in
+    /// that backup folder, where the dialog lists them from. Returns the
+    /// database id the backup must carry (SECURITY: issue #62).
+    fn authorize_damaged_restore(
+        machine: &MachineSettings,
+        backup: &Path,
+        path: &Path,
+    ) -> Result<String, CommandError> {
+        let (folder, database_id) = cached_backups_of(machine, path)?;
+        if backup.parent() != Some(folder.as_path()) {
+            return Err(not_its_backup());
+        }
+        Ok(database_id)
+    }
+
+    fn not_its_backup() -> CommandError {
+        let message = "That isn't one of this database's backups.";
+        CommandError::validation(
+            message,
+            HashMap::from([("backupPath".to_owned(), message.to_owned())]),
+        )
+    }
+
+    /// What is at the file a restore replaces: `true` for a regular file,
+    /// `false` for nothing (the restore puts the database back). A symlink,
+    /// a directory or anything else is refused, and a symlink is never
+    /// followed.
+    fn replaceable_target(path: &Path) -> Result<bool, CommandError> {
+        let message = "That isn't a database file, so it can't be replaced.";
+        match fs::symlink_metadata(path) {
+            Ok(meta) if meta.file_type().is_file() => Ok(true),
+            Ok(_) => Err(CommandError::validation(
+                message,
+                HashMap::from([("databasePath".to_owned(), message.to_owned())]),
+            )),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(err) => {
+                log::error!("could not look at {}: {err}", path.display());
+                Err(CommandError::replace_failed(path))
+            }
+        }
+    }
+
     /// Restores a database that no longer opens (US3-6). No "before
     /// restoring" backup can be made of it, so it is kept, renamed
     /// `<name> damaged <YYYY-MM-DD HHMMSS>.hoplodex` beside the restored
     /// database, and only the room for the restored copy is needed.
+    ///
+    /// The target is authorized first ([`authorize_damaged_restore`]), then
+    /// the backup must be this database's (by the id inside it), and the
+    /// target must be a regular file or nothing, checked again right before
+    /// it is renamed aside and the file renamed is checked once more
+    /// (issue #62).
     fn restore_damaged(
         session: &Session,
         machine: &MachineSettings,
@@ -386,6 +448,9 @@ pub mod ops {
         passphrase: &Passphrase,
         path: &Path,
     ) -> Result<DatabaseStatus, CommandError> {
+        // Before anything is closed or written.
+        let expected_id = authorize_damaged_restore(machine, backup, path)?;
+        replaceable_target(path)?;
         if session.is_open() {
             lifecycle::close_normal(session, machine, CloseReason::Switched).ok();
         }
@@ -395,7 +460,9 @@ pub mod ops {
         let restored_len = backup_len(backup)?;
         disk_space::check_room_for_copy(restored_len, &database_folder)?;
         progress(events, "copying", 0, restored_len);
-        check_backup_passphrase(backup, passphrase)?;
+        if check_backup_passphrase(backup, passphrase)? != expected_id {
+            return Err(not_its_backup());
+        }
         let new = file_swap::new_path(path);
         let made_at = prepare_restored_copy(session, &operation, backup, &new, passphrase)?;
 
@@ -411,20 +478,13 @@ pub mod ops {
             now.format("%Y-%m-%d %H%M%S"),
             crate::models::database::DATABASE_EXTENSION,
         ));
-        let set_aside = path.exists();
-        if set_aside && let Err(err) = fs::rename(path, &kept) {
-            log::error!("could not set {} aside: {err}", path.display());
-            remove_copy(&new);
-            return Err(CommandError::replace_failed(path));
-        }
-        if let Err(err) = fs::rename(&new, path) {
-            log::error!("could not put the restored copy at {}: {err}", path.display());
-            if set_aside {
-                let _ = fs::rename(&kept, path);
+        let set_aside = match set_aside_and_replace(path, &kept, &new) {
+            Ok(set_aside) => set_aside,
+            Err(err) => {
+                remove_copy(&new);
+                return Err(err);
             }
-            remove_copy(&new);
-            return Err(CommandError::replace_failed(path));
-        }
+        };
         let conn = db::open_database(path, passphrase, &machine.identity(), false)?;
         let mut restored = lifecycle::prepare(machine, conn, path)?;
         restored.notes.restored_with_passphrase_of = made_at;
@@ -433,6 +493,42 @@ pub mod ops {
         refresh_saved(machine, path, &restored.database_id, passphrase);
         session.install(restored);
         crate::commands::databases::ops::database_status(session, machine)
+    }
+
+    /// Renames the file at `path` (when there is one) to `kept`, then the
+    /// restored copy `new` to `path`. std has no rename that refuses to
+    /// follow a swap, so the target is looked at again right before the
+    /// first rename and what was renamed is looked at after it: anything
+    /// but a regular file is put back and the restore refused. The restored
+    /// copy is not removed here. Returns whether a file was set aside.
+    /// Nothing already at `kept` is overwritten.
+    fn set_aside_and_replace(path: &Path, kept: &Path, new: &Path) -> Result<bool, CommandError> {
+        let set_aside = replaceable_target(path)?;
+        if set_aside {
+            if fs::symlink_metadata(kept).is_ok() {
+                log::error!("{} is already there", kept.display());
+                return Err(CommandError::replace_failed(path));
+            }
+            if let Err(err) = fs::rename(path, kept) {
+                log::error!("could not set {} aside: {err}", path.display());
+                return Err(CommandError::replace_failed(path));
+            }
+            if !fs::symlink_metadata(kept).is_ok_and(|meta| meta.file_type().is_file()) {
+                log::error!("{} was swapped for something else, put back", path.display());
+                let _ = fs::rename(kept, path);
+                return Err(CommandError::replace_failed(path));
+            }
+        }
+        // Nothing may have appeared at `path` meanwhile, for the rename
+        // would replace a file.
+        if fs::symlink_metadata(path).is_ok() || fs::rename(new, path).is_err() {
+            log::error!("could not put the restored copy at {}", path.display());
+            if set_aside {
+                let _ = fs::rename(kept, path);
+            }
+            return Err(CommandError::replace_failed(path));
+        }
+        Ok(set_aside)
     }
 
     /// Reports a passphrase change's progress (contracts/tauri-commands.md).
