@@ -102,9 +102,11 @@ jobs:
           "OPENSSL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       # Third-party actions are pinned to a commit. This is the head of the
-      # action's `stable` branch on 2026-10-09, whose `toolchain` input
-      # defaults to `stable`, so it still installs the current stable Rust.
+      # action's `stable` branch on 2026-10-09. The Rust version is pinned
+      # too: 1.99.0 was the latest stable release then.
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: 1.99.0
 
       # `tauri::generate_context!` panics in a release build when
       # tauri.conf.json's frontendDist is missing. The Rust scan doesn't need
