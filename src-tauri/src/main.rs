@@ -26,11 +26,13 @@ use hoplodex_lib::services::consent::DialogConsent;
 use hoplodex_lib::services::consent::E2eConsent;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::main_navigation;
 use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide_at_startup};
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
 use hoplodex_lib::session::{Session, lifecycle};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// What the frontend is sent when the user closes the window or quits: it
@@ -242,7 +244,16 @@ fn main() {
             // so its web view gets a data folder of its own, apart from the
             // preview surface's (research.md §6). Same title and sizes as the
             // config gave it.
+            //
+            // It may navigate only to the app's own page, and never opens
+            // another window (#73, research.md §6): the CSP governs what the
+            // page fetches, not where the window goes. The dev server's
+            // origin counts only in a development run.
+            let dev_url = if tauri::is_dev() { app.config().build.dev_url.clone() } else { None };
+            let origins = main_navigation::app_origins(cfg!(windows), dev_url.as_ref());
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
+                .on_new_window(|_, _| NewWindowResponse::Deny)
                 .title("HoploDex")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0)

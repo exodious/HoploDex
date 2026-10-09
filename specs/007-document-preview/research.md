@@ -438,6 +438,8 @@ artifacts.
 - **Also**: this hardens the whole app, not just the preview. Any other
   page that ever loads in a HoploDex web view is refused too (relevant to
   #73).
+  _Amended 2026-10-09 (#73): the main window's navigation is now
+  restricted too; see §6._
 
 ## 6. Keeping the surface off the network
 
@@ -451,6 +453,16 @@ artifacts.
   | Proxy to the **tripwire**, a port HoploDex holds | `proxy_url`; loopback goes through it (wry's empty bypass list) | `proxy_url` (Tauri's `macos-proxy` feature); loopback **bypasses** it, so the filter is the layer that matters | browser arguments `--proxy-server=…` and `--proxy-bypass-list=<-loopback>`: **the layer that covers Edge's viewer frames**, which the filter can't see |
   | WebRTC | off by default and absent; set off explicitly | off through WebKit SPI (`-[WKPreferences _setPeerConnectionEnabled:]`), checked at startup (§7) | `--webrtc-ip-handling-policy=disable_non_proxied_udp` |
   | Navigation | `on_navigation` allows only the surface's current URL, `about:blank`, and on Linux `webkit-pdfjs-viewer:`; `on_new_window` denies | same | same |
+
+  _Amended 2026-10-09 (#73): the table is the PDF surface's. The main
+  window now has a native navigation allowlist of its own
+  (`services::main_navigation`, wired in `main.rs`'s `setup()`):
+  `on_navigation` allows only the app's own origin (`tauri://localhost` on
+  Linux and macOS, `http://tauri.localhost` on Windows, and in a
+  development run the `devUrl`), compared by scheme, host and port, and
+  `on_new_window` denies every new window. Neither the CSP nor the app ACL
+  manifest governs where the window goes; this does. `us4-photos-documents`
+  has the E2E check._
 
   **The tripwire** (`services::preview::tripwire`): a `TcpListener` on
   `127.0.0.1:0`, bound when the first PDF is previewed and held for the

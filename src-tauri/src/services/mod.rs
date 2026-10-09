@@ -10,6 +10,7 @@ pub mod import_matching;
 pub mod insurance_status;
 pub mod keyring;
 pub mod machine_settings;
+pub mod main_navigation;
 pub mod mounts;
 pub mod passphrase;
 pub mod preview;
