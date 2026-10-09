@@ -1,0 +1,98 @@
+# The dependency audit (`npm run audit`): npm and RustSec advisories, the
+# license audit and the check that no WebDriver code ships. See "Dependency
+# audit" in DEVELOPMENT.md. It runs on every pull request to main, Dependabot's
+# included, and daily on main, since new advisories can fail it on code that
+# hasn't changed.
+#
+# A pull request that changes only Markdown (`*.md`) has nothing for the audit
+# to check, so the job passes without running it (constitution, Development
+# Workflow & Quality Gates). It skips by step rather than by a `paths` filter or
+# a job-level `if`, so the required check always reports a result, and a fault
+# in deciding fails the job rather than skipping the audit.
+name: Dependency audit
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      CARGO_TERM_COLOR: always
+      # The Dockerfile's version, so CI and the dev container agree.
+      CARGO_DENY_VERSION: 0.20.2
+
+    steps:
+      # Every action is pinned to a commit (#72); the comment is its release.
+      # Two commits deep: on a pull request, HEAD is GitHub's merge commit and
+      # its first parent is main, so their diff is the pull request's change.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # --no-renames lists a renamed file under both names, so renaming code to
+      # `.md` doesn't count as a docs-only change.
+      - name: Check whether only Markdown changed
+        id: scope
+        if: github.event_name == 'pull_request'
+        run: |
+          changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          printf 'Changed files:\n%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -v -q -E '\.md$'; then
+            echo "docs-only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs-only=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Only Markdown changed, so the dependency audit is skipped."
+          fi
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.docs-only != 'true'
+        with:
+          node-version: 24
+          cache: npm
+
+      # The Rust version is pinned too: 1.99.0 was the latest stable release on
+      # 2026-10-09, as in codeql.yml.
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        if: steps.scope.outputs.docs-only != 'true'
+        with:
+          toolchain: 1.99.0
+
+      # cargo-deny is built from source, as in the Dockerfile, and the binary
+      # cached so that only the first run pays for the build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cargo-deny
+        if: steps.scope.outputs.docs-only != 'true'
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: cargo-deny-${{ env.CARGO_DENY_VERSION }}-rust-1.99.0-${{ runner.os }}
+
+      - name: Build cargo-deny
+        if: steps.scope.outputs.docs-only != 'true' && steps.cargo-deny.outputs.cache-hit != 'true'
+        run: cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked
+
+      # audit-ci is a devDependency. No package install scripts: the audit
+      # only reads package-lock.json and runs audit-ci.
+      - name: Install npm packages
+        if: steps.scope.outputs.docs-only != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Audit
+        if: steps.scope.outputs.docs-only != 'true'
+        run: npm run audit
