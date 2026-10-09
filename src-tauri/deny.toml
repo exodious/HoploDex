@@ -22,7 +22,24 @@ all-features = true
 
 [advisories]
 unmaintained = "all"
+# cargo-deny checks only the workspace's own crates for unsound notices
+# unless told otherwise, which let a dependency's through.
+unsound = "all"
 ignore = [
+    # glib 0.18: `VariantStrIter`'s iterator reads a string pointer the C call
+    # never wrote back, so it can dereference NULL (RUSTSEC-2024-0429).
+    #
+    # No fix for 0.18: glib 0.20 has it, but Tauri's Linux backend (gtk,
+    # webkit2gtk, tao, wry, muda) is on gtk-rs 0.18. The glib 0.21 in the
+    # tree is a different, patched version.
+    #
+    # Not reachable. The only way in is `glib::Variant::array_iter_str()`,
+    # and nothing calls it: not HoploDex (src/, build.rs), not the vendored
+    # WebDriver plugin, and not any of the 23 crates that depend on glib 0.18
+    # (only glib's own tests do). Checked 2026-10-09 at glib 0.18.5.
+    #
+    # Review by 2026-12-31, or sooner if Tauri moves off gtk-rs 0.18.
+    { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter: unsound, not reachable (array_iter_str is never called), via gtk-rs 0.18 in Tauri" },
     # Compile-time proc macro pulled in by the gtk-rs 0.18 macros
     # (glib-macros, gtk3-macros) under Tauri's Linux backend; it isn't in the
     # built binary. Goes when Tauri moves off gtk-rs 0.18.

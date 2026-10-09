@@ -1,0 +1,15 @@
+# Dependabot version updates for the workflows' actions only. Third-party
+# actions are pinned to a commit (#72), and Dependabot raises no alerts for a
+# commit-pinned action, so these update pull requests are how a pin moves.
+# GitHub's own actions, pinned to a release tag, are updated the same way.
+# npm and Cargo dependencies get Dependabot's security alerts and are updated
+# by hand (DEVELOPMENT.md, "Dependency audit").
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -52,8 +52,6 @@ Follow-up TODOs:
   - Uploading the AI-assisted review's findings needs a script that gives them
     stable fingerprints and severities GitHub reads, and keeps a finding a
     later scan misses from being closed as fixed while its code is unchanged.
-  - Nothing runs the dependency and license audit on Dependabot pull requests
-    while CI is disabled; it is run by hand before merging one.
   - Releases do not yet ship third-party license notices; a generated notices
     file and an About / Licenses screen are planned before the first release.
   - The license audit result is not yet recorded in research.md.

@@ -933,6 +933,8 @@ opened on Linux. A second test asserts that the file's first 16 bytes
 are a random salt and that no machine-local state (settings file, keyring) is
 consulted to open it.
 
+_Amended 2026-10-09: the parked workflow was deleted, unreviewed and never run; full CI isn't implemented yet ([#25](https://github.com/exodious/HoploDex/issues/25)). CodeQL and the dependency audit run as their own workflows (DEVELOPMENT.md, "Continuous integration")._
+
 ---
 
 ## §21 Constitution: the local-backup, test-isolation and licensing amendments

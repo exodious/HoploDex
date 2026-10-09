@@ -33,6 +33,8 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --check
 npm run lint && npm run format:check
 ```
 
+_Amended 2026-10-09: the parked workflow was deleted, unreviewed and never run; full CI isn't implemented yet ([#25](https://github.com/exodious/HoploDex/issues/25)). CodeQL and the dependency audit run as their own workflows (DEVELOPMENT.md, "Continuous integration")._
+
 E2E specs run **one at a time**. `npm run test:e2e` builds the release binary
 and runs under `xvfb` on Linux, and `e2e/wdio.conf.ts` points every launch at
 scratch `XDG_*` directories so a spec can never touch the real database.

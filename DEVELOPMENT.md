@@ -956,7 +956,10 @@ npm run audit:licenses   # the license audit, see below
 ```
 
 Run it with the lint and test commands before every pull request. It fetches
-the advisory databases, so it needs network access. `cargo-deny` comes with the
+the advisory databases, so it needs network access. The `Dependency audit`
+workflow (`.github/workflows/audit.yml`) also runs it on every pull request to
+`main`, Dependabot's included, and daily on `main`. A pull request that changes
+only Markdown (`*.md`) passes without the audit running. `cargo-deny` comes with the
 [development container](#development-container-linux-recommended). On a host,
 install it with `cargo install cargo-deny --locked`.
 
@@ -1075,13 +1078,14 @@ side.
 
 ## Continuous integration
 
-The CI definition lives in `.github/workflows-disabled/ci.yml` and is
-**currently disabled**; move it to `.github/workflows/` to enable it. Until
-then, run the lint and test commands above locally. When enabled it runs on
-every push to `main`/`develop` and on every pull request, on Windows, macOS
-and Linux: it builds the frontend, then runs `cargo fmt --check`,
-`cargo clippy --all-targets -- -D warnings`, `cargo test`, `eslint`,
-`prettier --check`, `vitest`, and finally `tauri build --no-bundle`.
-The Rust crate embeds the built frontend, which is why the frontend builds
-first. The WebdriverIO E2E suite isn't part of CI: it needs a display and a
-platform WebDriver, so run `npm run test:e2e` locally.
+Two focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`)
+on every pull request to `main`, on pushes to it and weekly, and the
+[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`). In both,
+third-party actions are pinned to a commit (#72) and GitHub's own to a release
+tag. Dependabot (`.github/dependabot.yml`) opens a weekly pull request to
+update them.
+
+Full CI, the format, lint and test commands above and the app build on
+Windows, macOS and Linux, **isn't implemented yet** (#25). Run them locally
+before every pull request. The WebdriverIO E2E suite needs a display and a
+platform WebDriver, so it runs locally too (`npm run test:e2e`).
