@@ -1,0 +1,34 @@
+# CodeQL configuration for .github/workflows/codeql.yml.
+#
+# Scans only what ships in the app: the frontend under src/ (plus index.html)
+# and the backend under src-tauri/src/ (plus build.rs, which runs in every
+# release build). Everything else is development or test code and is left
+# out: the E2E suite (e2e/), the Rust integration tests and their fixtures
+# (src-tauri/tests/), the human-testing seed (src-tauri/examples/), the
+# vendored WebDriver plugin only E2E builds compile (src-tauri/vendor/),
+# developer tools and scripts (tools/, scripts/, container/), build and lint
+# configuration, and the Vitest specs and helpers inside src/.
+#
+# `paths` and `paths-ignore` apply to both languages: JavaScript/TypeScript
+# and Rust are both extracted without a build (build-mode none), and both
+# extractors honour these filters. Rust's inline `#[cfg(test)]` modules and
+# `#[cfg(feature = "e2e")]` code can't be excluded by path, so the workflow
+# turns `cfg(test)` off and enables only the release build's features
+# instead (see the Rust job's environment there).
+name: HoploDex CodeQL config
+
+queries:
+  - uses: security-extended
+
+paths:
+  - src
+  - index.html
+  - src-tauri/src
+  - src-tauri/build.rs
+
+paths-ignore:
+  # Vitest setup, fixtures and polyfills.
+  - src/test
+  # Unit and component tests beside the code they test.
+  - "**/*.test.ts"
+  - "**/*.test.tsx"

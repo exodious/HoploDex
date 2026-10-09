@@ -1,0 +1,127 @@
+# CodeQL advanced setup: scans the production code (the React frontend and
+# the Rust backend) and leaves out the development and test code. Which paths
+# count as production is in .github/codeql/codeql-config.yml.
+#
+# Rust is scanned on each OS the app ships for, because much of the backend
+# is behind `cfg(target_os = ...)` (platform/, the PDF surface, the render
+# helper's confinement), and CodeQL extracts only the code enabled for the OS
+# it runs on. JavaScript/TypeScript is the same everywhere, so it runs once.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 05:17 UTC, to pick up new queries against unchanged code.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  javascript-typescript:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+
+  rust:
+    name: Analyze (rust, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    env:
+      CARGO_TERM_COLOR: always
+      # Analyze the code a release build compiles, not the test build's.
+      # `-test` turns off `cfg(test)`, which the Rust extractor otherwise
+      # turns on, so inline `#[cfg(test)]` modules aren't extracted. Only
+      # `custom-protocol` is enabled (the extractor otherwise enables every
+      # feature), so the E2E-only `e2e` and `mock-keyring` code (the embedded
+      # WebDriver server, the mock keyring) is left out too.
+      CODEQL_EXTRACTOR_RUST_OPTION_CARGO_CFG_OVERRIDES: -test
+      CODEQL_EXTRACTOR_RUST_OPTION_CARGO_FEATURES: custom-protocol
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Extraction runs `cargo check` for build-script outputs and proc
+      # macros, so the libraries the -sys crates' build scripts look up with
+      # pkg-config have to be there. WebKitGTK's dev package brings the rest
+      # (GTK, libsoup, JavaScriptCore, D-Bus); libssl-dev is for SQLCipher.
+      # Only `cargo check`'s needs: the app's full build list in
+      # .github/workflows-disabled/ci.yml also covers linking and bundling.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libwebkit2gtk-4.1-dev libssl-dev
+
+      # SQLCipher needs a crypto library; on Windows libsqlite3-sys's build
+      # script refuses to continue without OPENSSL_DIR. Extraction only runs
+      # `cargo check`, which compiles SQLCipher against OpenSSL's headers but
+      # never links, so the runner image's own OpenSSL is enough and the slow
+      # vcpkg source build is only a fallback for an image without one.
+      - name: Point SQLCipher at OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = "C:\Program Files\OpenSSL"
+          if (-not (Test-Path "$dir\include\openssl\evp.h") -or -not (Test-Path "$dir\lib")) {
+            Write-Output "::warning::No OpenSSL in the runner image; building it with vcpkg"
+            vcpkg install openssl:x64-windows-static-md
+            $dir = "C:\vcpkg\installed\x64-windows-static-md"
+          }
+          "OPENSSL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # Third-party actions are pinned to a commit. This is the head of the
+      # action's `stable` branch on 2026-10-09. The Rust version is pinned
+      # too: 1.99.0 was the latest stable release then.
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: 1.99.0
+
+      # `tauri::generate_context!` panics in a release build when
+      # tauri.conf.json's frontendDist is missing. The Rust scan doesn't need
+      # the built frontend (the JavaScript job scans its source), only the
+      # folder, so this skips `npm ci` and its packages' install scripts.
+      - name: Create a placeholder frontend dist
+        shell: bash
+        run: mkdir -p dist
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:rust/os:${{ runner.os }}
