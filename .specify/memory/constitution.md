@@ -1,23 +1,34 @@
 <!--
 Sync Impact Report
-Version change: 1.1.0 → 1.2.0
-Bump rationale: MINOR. A new section (Licensing) and a materially expanded
-principle (test isolation added to Testing Standards).
-Modified principles:
-  - II. Testing Standards: tests and any tooling that runs the application
-    MUST NOT read, write or delete the user's real database, its stored key
-    or passphrase, or other real application data; they use throwaway
-    locations and test keys
+Version change: 1.2.0 → 1.3.0
+Bump rationale: MINOR. Materially changed guidance in Development Workflow &
+Quality Gates: where security findings are recorded, a new CodeQL merge gate,
+an expanded release security gate, and handling of vulnerabilities found after
+a release. No principle is removed or redefined.
+Modified principles: none
 Modified sections:
-  - Development Workflow & Quality Gates: the pull request dependency audit
-    gate now names its license check; licensing added to the release gates
-    (manual license checks and third-party notices)
-Added sections:
-  - Licensing: HoploDex is GPL-3.0-only; every dependency, library and asset
-    shipped with it MUST be under a GPLv3-compatible license; scoped
-    exceptions for licenses acceptable only for particular packages;
-    development-only dependencies that are not distributed are exempt;
-    releases MUST carry the required copyright and license notices
+  - Development Workflow & Quality Gates:
+    - Security findings are recorded in GitHub's security features (code
+      scanning, Dependabot and secret scanning alerts, repository security
+      advisories), not in documents committed to the repository; the release
+      review's committed, dated report is dropped
+    - CodeQL scans every pull request to main, and a pull request MUST NOT
+      introduce an error-level or high-or-above code scanning alert (held by
+      the repository ruleset)
+    - The optional per-PR AI-assisted review, when run, uploads its findings
+      to code scanning against the pull request
+    - The release review runs at the release commit and uploads its findings
+      to code scanning; a release is blocked by any open critical or high
+      code scanning, Dependabot or secret scanning alert until it is fixed or
+      dismissed with its reason (a dismissed dependency alert matches a
+      recorded audit exception)
+    - After a release, a vulnerability affecting a released version is
+      handled through a private repository security advisory, not a public
+      issue; SECURITY.md directs reporters to private vulnerability reporting;
+      before the first release, findings MAY be tracked as ordinary issues
+    - Pull requests opened by Dependabot or other automation are held to the
+      same gates, including the dependency and license audit
+Added sections: none
 Removed sections: none
 Templates requiring updates:
   - .specify/templates/plan-template.md: ✅ no change needed (Constitution Check
@@ -25,16 +36,25 @@ Templates requiring updates:
   - .specify/templates/spec-template.md: ✅ no change needed
   - .specify/templates/tasks-template.md: ✅ no change needed
   - .specify/templates/checklist-template.md: ✅ no change needed
-  - DEVELOPMENT.md "Test isolation" and "License audit": ✅ already describe
-    the enforced isolation and the license audit (`npm run audit` includes it)
-  - CLAUDE.md "Spec Kit workflow" gate list: ⚠ pending, add the dependency and
-    license audit and the release gates
+  - CLAUDE.md "Spec Kit workflow" gate list: ⚠ pending, it still says the
+    release review's dated report is committed; add the CodeQL gate and the
+    release alert gate (carried over from 1.2.0: the dependency and license
+    audit and the release gates)
 Follow-up TODOs:
+  - No SECURITY.md exists yet; private vulnerability reporting is enabled.
+  - The release security review still has no tooling (#21): the whole-codebase
+    scan, the upload of its findings to code scanning, and the release alert
+    check.
+  - Uploading the AI-assisted review's findings needs a script that gives them
+    stable fingerprints and severities GitHub reads, and keeps a finding a
+    later scan misses from being closed as fixed while its code is unchanged.
+  - Nothing runs the dependency and license audit on Dependabot pull requests
+    while CI is disabled; it is run by hand before merging one.
   - Releases do not yet ship third-party license notices; a generated notices
     file and an About / Licenses screen are planned before the first release.
   - The license audit result is not yet recorded in research.md.
-  - No written release process exists yet for the release gates to live in.
-  - The release security review (1.1.0) still has no tooling.
+  - No written release process exists yet for the release gates to live in
+    (#19).
 -->
 
 # HoploDex Constitution
@@ -182,19 +202,41 @@ Constraints above. Performance-sensitive changes (queries, list rendering,
 import/export) MUST include a note on expected impact against the budgets in
 Principle IV.
 
-Before every release, an AI-assisted security review of the whole codebase,
-not only a diff, MUST be run against the application's attack surface: the
-commands exposed to the frontend, the Tauri capabilities and content security
-policy, filesystem path handling, spreadsheet import parsing and export
-(including formula injection), handling of the database key and passphrase,
-secure deletion, and decrypted document copies. Its dated report MUST be
-committed to the repository, and every critical or high finding MUST be fixed,
-or justified in the report, before the release. The review MAY use Anthropic
-or another AI vendor. It sends source code, never collection data, to that
-vendor, which is consistent with Principle V. A diff-scoped security review of
-individual pull requests is optional. Before every release, the license
-checks the tools cannot make MUST also be done by hand, and the release MUST
-include its third-party license notices.
+Pull requests opened by Dependabot or other automation are held to the same
+gates.
+
+Security findings are recorded in the repository's GitHub security features
+(code scanning, Dependabot and secret scanning alerts, and repository security
+advisories), not in documents committed to the repository. Every pull request
+to the main branch MUST be scanned by CodeQL and MUST NOT introduce a code
+scanning alert at error level or of high severity or above; the repository
+ruleset enforces this. An AI-assisted security review of a pull request's diff
+is optional; when one is run, its findings MUST be uploaded to code scanning
+against that pull request.
+
+Before every release, an AI-assisted security review of the whole codebase at
+the release commit, not only a diff, MUST be run against the application's
+attack surface: the commands exposed to the frontend, the Tauri capabilities
+and content security policy, filesystem path handling, spreadsheet import
+parsing and export (including formula injection), handling of the database key
+and passphrase, secure deletion, and decrypted document copies. Its findings
+MUST be uploaded to code scanning. A release MUST NOT proceed while any
+critical or high code scanning, Dependabot, or secret scanning alert is open.
+Each such alert MUST be fixed, or dismissed with its reason stated; a dismissed
+dependency alert MUST match an exception recorded under the Security & Data
+Handling Constraints above. The review MAY use Anthropic or another AI vendor.
+It sends source code, never collection data, to that vendor, which is
+consistent with Principle V.
+
+Before the first release, security findings MAY also be tracked as ordinary
+issues. After a release, a vulnerability that affects a released version MUST
+be handled through a private repository security advisory that records the
+affected and patched versions, and MUST NOT be described in a public issue or
+pull request before a fixed release is available. The repository's
+SECURITY.md MUST direct reporters to private vulnerability reporting.
+
+Before every release, the license checks the tools cannot make MUST also be
+done by hand, and the release MUST include its third-party license notices.
 
 ## Governance
 
@@ -213,4 +255,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.2.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-09-26
+**Version**: 1.3.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-10-09
