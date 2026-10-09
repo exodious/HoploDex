@@ -486,6 +486,76 @@ fn a_change_stopped_just_before_the_replacement_changes_nothing() {
 }
 
 #[test]
+fn leftovers_beside_a_database_go_only_once_its_passphrase_has_opened_it() {
+    // #63: recovery ran before the passphrase was checked.
+    let world = World::new();
+    world.close();
+    let old = file_swap::old_path(&world.path());
+    let new = file_swap::new_path(&world.path());
+    fs::write(&old, b"left by a crash").unwrap();
+    fs::write(&new, b"left by a crash").unwrap();
+
+    let refused = world.open_with("not the passphrase at all").unwrap_err();
+
+    assert_eq!(refused.code, "PASSPHRASE_INCORRECT");
+    assert!(old.exists() && new.exists(), "a refused open changes nothing");
+    world.open_with(support::TEST_PASSPHRASE).unwrap();
+    assert!(!old.exists() && !new.exists(), "an open that succeeded tidies up");
+}
+
+#[test]
+fn a_swap_interrupted_between_its_renames_is_completed_by_the_next_open() {
+    let world = World::new();
+    world.close();
+    // The two-rename fallback stopped after the first rename: the old file
+    // waits as `.old`, and the verified copy as `.new`.
+    let old = file_swap::old_path(&world.path());
+    let new = file_swap::new_path(&world.path());
+    fs::copy(world.path(), &new).unwrap();
+    fs::rename(world.path(), &old).unwrap();
+
+    world.open_with(support::TEST_PASSPHRASE).unwrap();
+
+    assert!(world.path().exists());
+    assert!(!old.exists() && !new.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_planted_at_the_copys_name_is_not_followed_and_the_change_fails() {
+    // #63: `.new` was truncated through a link, and then removed.
+    let world = World::new();
+    let rows = world.collection();
+    let victim = world.scratch.path().join("victim.txt");
+    fs::write(&victim, b"precious").unwrap();
+    let planted = file_swap::new_path(&world.path());
+    std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+    let refused = world.change_to_new().unwrap_err();
+
+    assert_eq!(refused.code, "INTERNAL_ERROR");
+    assert_eq!(fs::read(&victim).unwrap(), b"precious", "the target is unchanged");
+    assert!(fs::symlink_metadata(&planted).is_ok(), "the link is not ours to remove");
+    assert!(world.session.is_open());
+    assert_eq!(world.collection(), rows);
+    world.close();
+    world.open_with(support::TEST_PASSPHRASE).unwrap();
+}
+
+#[test]
+fn a_file_planted_at_the_copys_name_is_left_alone_and_the_change_fails() {
+    let world = World::new();
+    let planted = file_swap::new_path(&world.path());
+    fs::write(&planted, b"somebody else's file").unwrap();
+
+    let refused = world.change_to_new().unwrap_err();
+
+    assert_eq!(refused.code, "INTERNAL_ERROR");
+    assert_eq!(fs::read(&planted).unwrap(), b"somebody else's file");
+    assert!(world.session.is_open());
+}
+
+#[test]
 fn a_refused_replacement_keeps_the_old_file_and_the_session_open() {
     let world = World::new();
     let rows = world.collection();

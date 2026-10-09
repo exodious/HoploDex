@@ -3,8 +3,10 @@
 //! file"). The connection is closed first: Windows cannot replace an open
 //! file. The verified copy waits at `.<file>.new` in the same folder, and the
 //! previous contents at `.<file>.old` until they are securely deleted. The
-//! two fixed names are the journal: [`recover`], called before every open of
-//! a path, finishes or undoes a replacement a crash interrupted.
+//! two fixed names are the journal: [`finish_interrupted`], called before every
+//! open of a path, finishes or undoes a replacement a crash interrupted, and
+//! [`remove_leftovers`], after it opened, tidies what is left. Neither acts on
+//! anything but a plain file of ours (#63; services/scratch.rs).
 
 use std::cell::Cell;
 use std::fs;
@@ -14,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::commands::CommandError;
+use crate::services::scratch;
 use crate::services::secure_delete::{self, WipeControl};
 
 /// How long a refused final rename is retried: a sync client or antivirus
@@ -61,6 +64,12 @@ fn exists(path: &Path) -> bool {
 pub fn replace(original: &Path) -> Result<Replaced, CommandError> {
     let new = new_path(original);
     let old = old_path(original);
+    if !scratch::is_plain_file(&new) {
+        // Not the copy this operation made (it was swapped for a link, say):
+        // never move it into the database's place, and never touch it.
+        log::error!("{} is not a plain file of ours: not replacing", new.display());
+        return Err(CommandError::replace_failed(original));
+    }
     remove_old(original, &old);
     let linked = !testing::hard_links_disabled() && fs::hard_link(original, &old).is_ok();
     if !linked && let Err(err) = fs::rename(original, &old) {
@@ -131,54 +140,85 @@ fn same_file(a: &Path, b: &Path) -> bool {
 
 /// Removes a leftover `.old`: a second name for the original is only
 /// unlinked, since overwriting it would wipe the original; anything else is
-/// previous contents, deleted securely.
+/// previous contents, deleted securely, but only a plain file of ours (see
+/// [`scratch::is_plain_file`]): a symlink, a folder or a file with other
+/// names at that name is left alone.
 fn remove_old(original: &Path, old: &Path) {
     if !exists(old) {
         return;
     }
-    let removed = if same_file(original, old) {
+    let removed = if is_regular(old) && same_file(original, old) {
         fs::remove_file(old)
-    } else {
+    } else if scratch::is_plain_file(old) {
         secure_delete::secure_delete_whole_file(old, WipeControl::default()).map(|_| ())
+    } else {
+        log::warn!("{} is not a plain file of ours: leaving it alone", old.display());
+        return;
     };
     if let Err(err) = removed {
         log::warn!("could not remove {}: {err}", old.display());
     }
 }
 
-/// Finishes or undoes a replacement of `path` that a crash interrupted,
-/// before `path` is opened (research.md §4):
-/// - the database missing and `.new` present: the two-rename swap stopped
-///   between its renames, and is completed;
-/// - the database missing and only `.old` present: it is renamed back;
-/// - `.old` present beside the database: the swap finished, or never got to
-///   its rename, and `.old` goes (unlinked when it is the database under a
-///   second name);
-/// - `.new` present beside the database: the swap never happened, and the
-///   copy goes.
-pub fn recover(path: &Path) {
-    let new = new_path(path);
-    let old = old_path(path);
-    let recovered = if !exists(path) && exists(&new) {
-        log::warn!("completing an interrupted replacement of {}", path.display());
-        fs::rename(&new, path)
-    } else if !exists(path) && exists(&old) {
-        log::warn!("undoing an interrupted replacement of {}", path.display());
-        fs::rename(&old, path)
-    } else {
-        Ok(())
-    };
-    if let Err(err) = recovered {
-        log::error!("could not recover {}: {err}", path.display());
+fn is_regular(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+}
+
+/// Finishes or undoes a replacement of `path` that a crash interrupted
+/// between its two renames, before `path` is opened (research.md §4), when
+/// the database is missing:
+/// - `.new` present: it is renamed into place, completing the swap;
+/// - only `.old` present: it is renamed back.
+///
+/// Only a plain file of ours is renamed (#63); a symlink, a folder or a file
+/// with other names at those names is left alone and the open that follows
+/// finds no database. Everything that merely tidies up waits for
+/// [`remove_leftovers`], after the passphrase has opened the database.
+pub fn finish_interrupted(path: &Path) {
+    if exists(path) {
         return;
     }
-    if exists(path) {
-        remove_old(path, &old);
-        if exists(&new)
-            && let Err(err) = secure_delete::secure_delete_file(&new)
-        {
-            log::warn!("could not remove {}: {err}", new.display());
+    let new = new_path(path);
+    let old = old_path(path);
+    let (from, what) = if scratch::is_plain_file(&new) {
+        (new, "completing")
+    } else if scratch::is_plain_file(&old) {
+        (old, "undoing")
+    } else {
+        for leftover in [&new, &old] {
+            if exists(leftover) {
+                log::warn!("{} is not a plain file of ours: leaving it alone", leftover.display());
+            }
         }
+        return;
+    };
+    log::warn!("{what} an interrupted replacement of {}", path.display());
+    if let Err(err) = fs::rename(&from, path) {
+        log::error!("could not recover {}: {err}", path.display());
+    }
+}
+
+/// Removes what a finished or abandoned replacement left beside `path`, once
+/// the database has opened with its passphrase (so a wrong passphrase, or
+/// anyone who can only reach the folder, can't make the app delete anything):
+/// - `.old` present: the swap finished, or never got to its rename, and
+///   `.old` goes (unlinked when it is the database under a second name);
+/// - `.new` present: the swap never happened, and the copy goes.
+///
+/// Both only when they are plain files of ours (#63).
+pub fn remove_leftovers(path: &Path) {
+    if !exists(path) {
+        return;
+    }
+    remove_old(path, &old_path(path));
+    let new = new_path(path);
+    if !exists(&new) {
+        return;
+    }
+    if !scratch::is_plain_file(&new) {
+        log::warn!("{} is not a plain file of ours: leaving it alone", new.display());
+    } else if let Err(err) = secure_delete::secure_delete_file(&new) {
+        log::warn!("could not remove {}: {err}", new.display());
     }
 }
 

@@ -16,6 +16,7 @@ pub mod passphrase;
 pub mod preview;
 pub mod record_id;
 pub mod registration;
+pub mod scratch;
 pub mod secure_delete;
 pub mod spreadsheet;
 pub mod suggestions;

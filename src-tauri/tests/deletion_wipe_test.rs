@@ -490,14 +490,24 @@ mod whole_files {
 
     const MIB: u64 = 1 << 20;
 
-    /// A file of `len` non-zero bytes, and a second name for the same data
-    /// that outlives the deletion, so the test can see what was left in it.
-    fn file_with_witness(dir: &TempDir, len: u64) -> (PathBuf, PathBuf) {
+    /// A file of `len` non-zero bytes, and a handle on the same data that
+    /// outlives the deletion, so the test can see what was left in it. (Not a
+    /// second hard link: a file with other names is only unlinked, never
+    /// overwritten, #63.)
+    fn file_with_witness(dir: &TempDir, len: u64) -> (PathBuf, fs::File) {
         let path = dir.path().join("Backup.hoplodex");
         fs::write(&path, vec![0xA5u8; len as usize]).unwrap();
-        let witness = dir.path().join("witness");
-        fs::hard_link(&path, &witness).unwrap();
+        let witness = fs::File::open(&path).unwrap();
         (path, witness)
+    }
+
+    /// What the witness handle still holds.
+    fn left_in(mut witness: &fs::File) -> Vec<u8> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut bytes = Vec::new();
+        witness.seek(SeekFrom::Start(0)).unwrap();
+        witness.read_to_end(&mut bytes).unwrap();
+        bytes
     }
 
     fn delete_with_progress(path: &Path) -> (std::io::Result<Wiped>, Vec<(u64, u64)>) {
@@ -521,7 +531,7 @@ mod whole_files {
         assert!(matches!(result, Ok(Wiped::Deleted)), "{result:?}");
         assert!(!path.exists());
         assert_eq!(reported, vec![(MIB, len), (2 * MIB, len), (len, len)]);
-        assert!(fs::read(&witness).unwrap().iter().all(|b| *b == 0), "the data was overwritten");
+        assert!(left_in(&witness).iter().all(|b| *b == 0), "the data was overwritten");
     }
 
     #[test]
@@ -546,7 +556,7 @@ mod whole_files {
 
         assert!(matches!(result, Ok(Wiped::Deleted)), "{result:?}");
         assert!(!path.exists());
-        assert!(fs::read(&witness).unwrap().iter().all(|b| *b == 0));
+        assert!(left_in(&witness).iter().all(|b| *b == 0));
     }
 
     #[test]
@@ -570,7 +580,7 @@ mod whole_files {
         assert!(matches!(result, Ok(Wiped::Stopped)), "{result:?}");
         assert!(!path.exists(), "nothing half overwritten is left to look like a backup");
         assert_eq!(chunks, 1);
-        let left = fs::read(&witness).unwrap();
+        let left = left_in(&witness);
         assert!(left[..MIB as usize].iter().all(|b| *b == 0));
     }
 

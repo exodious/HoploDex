@@ -322,6 +322,8 @@ but a Windows-only path to test for no gain over hard links, which NTFS
 supports); a swap journal file (rejected: the fixed names `.new`/`.old`
 already are the journal).
 
+_Amended 2026-10-09 ([#63](https://github.com/exodious/HoploDex/issues/63)): a predictable name proves nothing about who put a file there, so the names stay but are treated that way. Every scratch file (`.new`, a backup's `.partial`, a restore's copy) is created exclusively (`services::scratch::create`), and an operation removes only a file it created: a file already at the name makes the operation fail and is left alone. Recovery is split in two: `file_swap::finish_interrupted` runs before the open and only completes or undoes the two-rename gap when the database is missing, and `file_swap::remove_leftovers` runs after the passphrase has opened the database, so a wrong passphrase deletes nothing. Both act only on a plain file of ours (`scratch::is_plain_file`: a regular file, not a symlink or folder, with one name, owned by this user on Unix) and skip and log anything else; `replace` refuses a `.new` that isn't one. Secure deletion never writes through a symlink and only unlinks a file with other names. `machine.json`'s temporary file has an unpredictable name and is created exclusively. A journal tied to file identities stays rejected; these checks cover the reported cases without one._
+
 ---
 
 ## §5 What counts as a change: triggers on collection tables, housekeeping kept apart

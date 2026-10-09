@@ -39,6 +39,7 @@ pub mod ops {
     use crate::services::file_swap;
     use crate::services::machine_settings::MachineSettings;
     use crate::services::passphrase::{Passphrase, new_passphrase_problem};
+    use crate::services::scratch;
     use crate::services::secure_delete::{self, WipeControl, Wiped};
     use crate::session::fingerprint::FingerprintCheck;
     use crate::session::lifecycle;
@@ -206,7 +207,9 @@ pub mod ops {
     /// its passphrase, proves it sound and stamps it as the restored
     /// database: nothing waiting to be backed up (its content is a backup),
     /// no backup stamp, no open marker, and its identity kept. Returns when
-    /// the backup was made. On any failure the copy is removed.
+    /// the backup was made. The copy is created exclusively: whatever is
+    /// already at that name is not ours and stays, and the restore fails
+    /// (#63). On any later failure the copy, which is ours, is removed.
     fn prepare_restored_copy(
         session: &Session,
         operation: &OperationGuard,
@@ -214,7 +217,8 @@ pub mod ops {
         new: &Path,
         passphrase: &Passphrase,
     ) -> Result<Option<String>, CommandError> {
-        let prepared = copy_check_and_stamp(session, operation, backup, new, passphrase);
+        let out = scratch::create(new).map_err(|err| io_failure(new, &err))?;
+        let prepared = copy_check_and_stamp(session, operation, backup, out, new, passphrase);
         if prepared.is_err() {
             remove_copy(new);
         }
@@ -225,6 +229,7 @@ pub mod ops {
         session: &Session,
         operation: &OperationGuard,
         backup: &Path,
+        out: File,
         new: &Path,
         passphrase: &Passphrase,
     ) -> Result<Option<String>, CommandError> {
@@ -232,7 +237,7 @@ pub mod ops {
         let source = File::open(backup).map_err(|err| io_failure(backup, &err))?;
         let copied = backups::copy_chunked(
             &source,
-            new,
+            out,
             &|| operation.is_cancelled(),
             &mut |done, total| progress(events, "copying", done, total),
         );
@@ -504,6 +509,13 @@ pub mod ops {
     /// Nothing already at `kept` is overwritten.
     fn set_aside_and_replace(path: &Path, kept: &Path, new: &Path) -> Result<bool, CommandError> {
         let set_aside = replaceable_target(path)?;
+        // `new` must still be the copy this restore made (#63): not swapped
+        // for a link or given other names, which would be moved into the
+        // database's place.
+        if !scratch::is_plain_file(new) {
+            log::error!("{} is not a plain file of ours: not restoring", new.display());
+            return Err(CommandError::replace_failed(path));
+        }
         if set_aside {
             if fs::symlink_metadata(kept).is_ok() {
                 log::error!("{} is already there", kept.display());
@@ -624,6 +636,11 @@ pub mod ops {
 
         // 5–7. The copy, stamped and proved sound.
         let new_copy = file_swap::new_path(&path);
+        // The session's connection can't create files, only attach one that
+        // exists. Created exclusively (#63): a symlink or file already at
+        // that name is not followed, truncated or removed, and the change
+        // fails.
+        scratch::create(&new_copy).map_err(|err| change_io_failure(&new_copy, &err))?;
         let prepared = rekeyed_copy(&open.conn, &operation, events, &new_copy, new, total)
             .and_then(|()| check_rekeyed_copy(&open.conn, &operation, events, &new_copy, new));
         if let Err(err) = prepared {
@@ -694,9 +711,9 @@ pub mod ops {
         Ok(u64::try_from(total).unwrap_or(0))
     }
 
-    /// Makes `.<file>.new`, keyed with `new`, by `sqlcipher_export` into an
-    /// attachment (research.md §3), reporting its size as it grows, and
-    /// stamps it: no open marker, no pending changes, and a change waiting
+    /// Fills the empty `.<file>.new` the caller created, keyed with `new`, by
+    /// `sqlcipher_export` into an attachment (research.md §3), reporting its
+    /// size as it grows, and stamps it: no open marker, no pending changes, and a change waiting
     /// to be backed up, since backups made before now keep the old
     /// passphrase (FR-025, research.md §5).
     fn rekeyed_copy(
@@ -707,9 +724,6 @@ pub mod ops {
         new: &Passphrase,
         total: u64,
     ) -> Result<(), CommandError> {
-        // The session's connection can't create files, only attach one that
-        // exists.
-        File::create(new_copy).map_err(|err| change_io_failure(new_copy, &err))?;
         let Some(copy_path) = new_copy.to_str() else {
             return Err(change_io_failure(
                 new_copy,

@@ -12,6 +12,13 @@ use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::file_swap::{self, testing};
 use tempfile::TempDir;
 
+/// What `lifecycle::open` does around opening the database: finish an
+/// interrupted swap first, tidy what is left once the passphrase has opened it.
+fn recover(path: &std::path::Path) {
+    file_swap::finish_interrupted(path);
+    file_swap::remove_leftovers(path);
+}
+
 struct Folder {
     dir: TempDir,
 }
@@ -104,7 +111,7 @@ fn recovery_completes_a_swap_stopped_between_the_two_renames() {
     fs::write(folder.old_copy(), b"old contents").unwrap();
     fs::write(folder.new_copy(), b"new contents").unwrap();
 
-    file_swap::recover(&folder.original());
+    recover(&folder.original());
 
     assert_eq!(fs::read(folder.original()).unwrap(), b"new contents");
     assert_eq!(folder.names(), vec!["Mine.hoplodex"]);
@@ -115,7 +122,7 @@ fn recovery_puts_back_an_original_left_only_as_old() {
     let folder = Folder::new();
     fs::write(folder.old_copy(), b"old contents").unwrap();
 
-    file_swap::recover(&folder.original());
+    recover(&folder.original());
 
     assert_eq!(fs::read(folder.original()).unwrap(), b"old contents");
     assert_eq!(folder.names(), vec!["Mine.hoplodex"]);
@@ -129,7 +136,7 @@ fn recovery_undoes_a_swap_stopped_before_its_rename() {
     folder.ready();
     fs::hard_link(folder.original(), folder.old_copy()).unwrap();
 
-    file_swap::recover(&folder.original());
+    recover(&folder.original());
 
     assert_eq!(fs::read(folder.original()).unwrap(), b"old contents");
     assert_eq!(folder.names(), vec!["Mine.hoplodex"]);
@@ -141,7 +148,7 @@ fn recovery_finishes_deleting_an_old_copy_after_a_completed_swap() {
     fs::write(folder.original(), b"new contents").unwrap();
     fs::write(folder.old_copy(), b"old contents").unwrap();
 
-    file_swap::recover(&folder.original());
+    recover(&folder.original());
 
     assert_eq!(fs::read(folder.original()).unwrap(), b"new contents");
     assert_eq!(folder.names(), vec!["Mine.hoplodex"]);
@@ -152,7 +159,7 @@ fn recovery_removes_a_copy_that_never_got_as_far_as_the_swap() {
     let folder = Folder::new();
     folder.ready();
 
-    file_swap::recover(&folder.original());
+    recover(&folder.original());
 
     assert_eq!(fs::read(folder.original()).unwrap(), b"old contents");
     assert_eq!(folder.names(), vec!["Mine.hoplodex"]);
@@ -163,8 +170,8 @@ fn recovery_with_nothing_to_recover_changes_nothing() {
     let folder = Folder::new();
     fs::write(folder.original(), b"contents").unwrap();
 
-    file_swap::recover(&folder.original());
-    file_swap::recover(&folder.dir.path().join("Missing.hoplodex"));
+    recover(&folder.original());
+    recover(&folder.dir.path().join("Missing.hoplodex"));
 
     assert_eq!(folder.names(), vec!["Mine.hoplodex"]);
 }

@@ -341,6 +341,45 @@ fn a_wrong_backup_passphrase_changes_nothing() {
     assert!(world.session.is_open(), "the current database stays open");
 }
 
+#[test]
+fn a_file_planted_at_the_copys_name_fails_the_restore_and_is_left_alone() {
+    // #63: the failure path removed whatever was at `.new`.
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let before = fs::read(world.path()).unwrap();
+    let planted = world.dir.path().join(".Mine.hoplodex.new");
+    fs::write(&planted, b"somebody else's file").unwrap();
+
+    let refused = world.restore(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
+
+    assert_eq!(refused.code, "INTERNAL_ERROR");
+    assert_eq!(fs::read(&planted).unwrap(), b"somebody else's file", "not truncated or removed");
+    assert_eq!(fs::read(world.path()).unwrap(), before);
+    assert!(world.session.is_open());
+}
+
+#[test]
+fn a_file_planted_at_the_copys_name_fails_the_restore_of_a_damaged_database() {
+    let world = World::new();
+    let listed = damaged(&world);
+    let planted = world.dir.path().join(".Mine.hoplodex.new");
+    fs::write(&planted, b"somebody else's file").unwrap();
+    let damaged_bytes = fs::read(world.path()).unwrap();
+
+    let refused = backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &listed[0].path,
+        &passphrase(),
+        Some(&world.path().to_string_lossy()),
+    )
+    .unwrap_err();
+
+    assert_eq!(refused.code, "INTERNAL_ERROR");
+    assert_eq!(fs::read(&planted).unwrap(), b"somebody else's file");
+    assert_eq!(fs::read(world.path()).unwrap(), damaged_bytes, "the damaged file stays put");
+}
+
 /// Stops the restore at the first `restore:progress` of `phase` (after
 /// some bytes, for `copying`), then checks the database is as it was, open,
 /// and reopens with its old passphrase and content.

@@ -57,7 +57,8 @@ pub fn create(
 
 /// Opens the database at `path` with `passphrase` and makes it the open
 /// one, closing any other open database first as a switch. A replacement of
-/// the file that a crash interrupted is finished or undone first
+/// the file that a crash interrupted is finished or undone first, and what
+/// it left beside the database removed once the passphrase has opened it
 /// (research.md §4). A refused open installs nothing and changes nothing.
 /// A database marked open on another computer opens only with `take_over`
 /// (FR-032).
@@ -73,8 +74,10 @@ pub fn open(
         // this covers anything else. It can only fail when nothing is open.
         close_normal(session, machine, CloseReason::Switched).ok();
     }
-    file_swap::recover(path);
+    file_swap::finish_interrupted(path);
     let conn = db::open_database(path, passphrase, &machine.identity(), take_over)?;
+    // The passphrase opened it: now what a replacement left beside it can go.
+    file_swap::remove_leftovers(path);
     session.install(prepare(machine, conn, path)?);
     Ok(())
 }

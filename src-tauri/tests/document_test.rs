@@ -194,14 +194,17 @@ fn clearing_opened_documents_overwrites_then_removes_each_copy() {
     std::fs::create_dir_all(opened.join("1")).unwrap();
     let copy = opened.join("1").join("receipt.pdf");
     std::fs::write(&copy, &attached.file_bytes).unwrap();
-    let survivor = scratch.path().join("survivor");
-    std::fs::hard_link(&copy, &survivor).unwrap();
+    // A handle that outlives the deletion shows what was left in the data (a
+    // second hard link would not do: a file with other names is only
+    // unlinked, #63).
+    let mut survivor = std::fs::File::open(&copy).unwrap();
 
     let leftovers = document_ops::clear_opened_documents(&opened);
 
     assert!(leftovers.is_empty());
     assert!(!opened.exists(), "the folder itself is removed");
-    let remaining = std::fs::read(&survivor).unwrap();
+    let mut remaining = Vec::new();
+    std::io::Read::read_to_end(&mut survivor, &mut remaining).unwrap();
     assert_eq!(remaining.len(), SAMPLE_PDF_BYTES.len());
     assert!(
         remaining.iter().all(|&b| b == 0),
