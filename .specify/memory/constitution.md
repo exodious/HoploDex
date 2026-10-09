@@ -28,6 +28,10 @@ Modified sections:
       before the first release, findings MAY be tracked as ordinary issues
     - Pull requests opened by Dependabot or other automation are held to the
       same gates, including the dependency and license audit
+    - A pull request that changes only Markdown documentation is exempt from
+      the automated gates (linting, tests, the dependency audit, CodeQL) and
+      the UI, data-handling and performance notes, but not from peer review;
+      the ruleset still runs CodeQL on it, since it can't skip by path
 Added sections: none
 Removed sections: none
 Templates requiring updates:
@@ -203,7 +207,10 @@ import/export) MUST include a note on expected impact against the budgets in
 Principle IV.
 
 Pull requests opened by Dependabot or other automation are held to the same
-gates.
+gates. A pull request that changes only Markdown documentation (`*.md` files
+that neither the application nor its build includes) is exempt from the
+automated gates (linting, the test suite, the dependency audit, and CodeQL)
+and from the evidence and notes above, but not from peer review.
 
 Security findings are recorded in the repository's GitHub security features
 (code scanning, Dependabot and secret scanning alerts, and repository security
