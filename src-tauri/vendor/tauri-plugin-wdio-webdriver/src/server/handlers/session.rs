@@ -10,6 +10,22 @@ use crate::server::response::{WebDriverErrorResponse, WebDriverResponse, WebDriv
 use crate::server::AppState;
 use crate::webdriver::Timeouts;
 
+/// The label a session starts on when its capabilities name none: the app's
+/// `main` web view if there is one, otherwise the first label in order.
+///
+/// `get_window_labels` lists the web views in a `HashMap`'s order, which changes
+/// from run to run, so taking its first label put a session created while a
+/// child web view was open (HoploDex's PDF preview, #79) on that child at random.
+/// WebdriverIO 10 makes a new session after a failed test, which is when that
+/// happened (#86).
+fn default_window_label(labels: &[String]) -> Option<String> {
+    labels
+        .iter()
+        .find(|label| label.as_str() == "main")
+        .or_else(|| labels.iter().min())
+        .cloned()
+}
+
 /// Wait for a window to become available, polling with timeout
 async fn wait_for_window<R: Runtime>(
     state: &AppState<R>,
@@ -28,8 +44,9 @@ async fn wait_for_window<R: Runtime>(
             if window_labels.contains(&label.to_string()) {
                 return Ok(label.to_string());
             }
-        } else if let Some(label) = window_labels.first().cloned() {
-            // No specific label requested, use first available
+        } else if let Some(label) = default_window_label(&window_labels) {
+            // No specific label requested: the main web view, else the first
+            // label in order
             return Ok(label);
         }
 
@@ -213,5 +230,35 @@ pub async fn delete<R: Runtime>(
         Ok(WebDriverResponse::null())
     } else {
         Err(WebDriverErrorResponse::invalid_session_id(&session_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_window_label;
+
+    fn labels(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_string()).collect()
+    }
+
+    #[test]
+    fn a_new_session_starts_on_the_main_web_view_whatever_the_order() {
+        assert_eq!(
+            default_window_label(&labels(&["preview", "main"])).as_deref(),
+            Some("main")
+        );
+        assert_eq!(
+            default_window_label(&labels(&["main", "preview"])).as_deref(),
+            Some("main")
+        );
+    }
+
+    #[test]
+    fn without_a_main_web_view_it_starts_on_the_first_label_in_order() {
+        assert_eq!(
+            default_window_label(&labels(&["two", "one"])).as_deref(),
+            Some("one")
+        );
+        assert_eq!(default_window_label(&[]), None);
     }
 }

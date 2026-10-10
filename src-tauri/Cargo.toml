@@ -238,7 +238,11 @@ incremental = true
 # web view, so the main window vanished from WebDriver ("no such window") while the
 # PDF preview's child web view was on it. The vendored copy finds a web view by its
 # label instead (`platform::WebviewHandle`, `server/mod.rs`, `server/handlers/window.rs`;
-# the executors take a `WebviewHandle` where they took a `WebviewWindow`). Only the
+# the executors take a `WebviewHandle` where they took a `WebviewWindow`).
+# #86: a new session with no `windowLabel` capability started on the first label of a
+# `HashMap`, so one made while the preview's child web view was open could land on it
+# instead of the main web view (WebdriverIO 10 makes one after a failed test). It now
+# starts on `main` (`default_window_label`, `server/handlers/session.rs`). Only the
 # `e2e` feature builds it. Drop this patch when the fix is released upstream.
 [patch.crates-io]
 tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }
