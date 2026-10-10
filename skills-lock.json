@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "wdio-v10-migration": {
+      "source": "webdriverio/webdriverio",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/wdio-v10-migration/SKILL.md",
+      "computedHash": "3c7a0cd6fb7e6e0522e8352caebcc63a46a6be7c388e372cd1d3b4c510899f49"
+    }
+  }
+}
