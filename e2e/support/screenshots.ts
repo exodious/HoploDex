@@ -32,7 +32,7 @@ const outDir = process.env.HOPLODEX_SCREENSHOTS;
  */
 export async function settleForShot(timeout = 10000) {
   await settle(timeout);
-  const state = await browser.executeAsync((limit: number, done: (outcome: string) => void) => {
+  const state = await browser.execute(async (limit: number) => {
     const running = () =>
       document
         .getAnimations()
@@ -41,25 +41,27 @@ export async function settleForShot(timeout = 10000) {
             (a.playState === "running" || a.pending) &&
             a.effect?.getComputedTiming().iterations !== Infinity,
         ).length;
-    let calm = 0;
-    let last = 0;
-    let over = false;
-    const deadline = window.setTimeout(() => {
-      over = true;
-      done(`${last} animations never finished`);
-    }, limit);
-    const frame = () => {
-      if (over) return;
-      last = running();
-      calm = last ? 0 : calm + 1;
-      if (calm >= 2) {
-        window.clearTimeout(deadline);
-        done("");
-      } else {
-        requestAnimationFrame(frame);
-      }
-    };
-    requestAnimationFrame(frame);
+    return new Promise<string>((resolve) => {
+      let calm = 0;
+      let last = 0;
+      let over = false;
+      const deadline = window.setTimeout(() => {
+        over = true;
+        resolve(`${last} animations never finished`);
+      }, limit);
+      const frame = () => {
+        if (over) return;
+        last = running();
+        calm = last ? 0 : calm + 1;
+        if (calm >= 2) {
+          window.clearTimeout(deadline);
+          resolve("");
+        } else {
+          requestAnimationFrame(frame);
+        }
+      };
+      requestAnimationFrame(frame);
+    });
   }, timeout);
   if (state) throw new Error(`The page has ${state}`);
 }

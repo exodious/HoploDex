@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import {
   $,
+  $$,
   addFirearm,
   attachFile,
   back,
@@ -84,11 +85,13 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     // The record's plate now shows the photo instead of the drawing, and it
     // really decoded: a Content-Security-Policy that refused `data:` images
     // would leave the element in place with nothing drawn.
-    await expect($(".hd-plate__figure img")).toExist();
+    await expect($(".hd-plate__figure img.hd-thumb__photo")).toExist();
     await browser.waitUntil(
       () =>
         browser.execute(() => {
-          const img = document.querySelector<HTMLImageElement>(".hd-plate__figure img");
+          const img = document.querySelector<HTMLImageElement>(
+            ".hd-plate__figure img.hd-thumb__photo",
+          );
           return Boolean(img?.complete && img.naturalWidth > 0);
         }),
       { timeoutMsg: "the photo on the record never rendered" },
@@ -149,7 +152,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     // wdio.conf.ts); `open_document` has answered (and any failure toast is up) once the
     // app is idle.
     await settle();
-    await expect($(".hd-toast--error")).not.toExist();
+    await expect($$(".hd-toast--error")).toBeElementsArrayOfSize(0);
 
     // Reopening hands the OS a temporary copy of the stored bytes. When the
     // run isolates its cache (HOPLODEX_E2E_CACHE_HOME), check that copy directly.
@@ -189,7 +192,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
   it("refuses every request that would leave the device (FR-021, SC-008)", async () => {
     // A restrictive Content-Security-Policy is what stops the webview, and so
     // anything the UI is ever made to run, from sending records anywhere.
-    const violations: string[] = await browser.executeAsync((done: (blocked: string[]) => void) => {
+    const violations: string[] = await browser.execute(async () => {
       const blocked: string[] = [];
       document.addEventListener("securitypolicyviolation", (e) =>
         blocked.push(e.effectiveDirective),
@@ -203,7 +206,9 @@ describe("User Story 4 - Attach Photos and Documents", () => {
           img.src = "https://example.com/pixel.png";
         }),
       ];
-      Promise.all(attempts).then(() => setTimeout(() => done(blocked), 300));
+      await Promise.all(attempts);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return blocked;
     });
 
     expect(violations).toContain("connect-src");
@@ -279,7 +284,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       expect(await browser.execute(() => window.location.href)).toBe(appHref);
       expect(await browser.execute(() => document.title)).not.toBe("elsewhere");
       // The app is still there and answers.
-      await expect($("#root > *")).toExist();
+      await expect($$("#root > *")).toBeElementsArrayOfSize({ gte: 1 });
     } finally {
       // WebKit may open a connection to a link's host ahead of the policy
       // decision (a preconnect: no request is sent). Close it, or close()

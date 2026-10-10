@@ -250,7 +250,7 @@ async function backToCollectionByKeys() {
     if (onBack) break;
   }
   await realKey("Return");
-  await $(".hd-row__name").waitForExist({ timeout: 8000 });
+  await $$(".hd-row__name")[0].waitForExist({ timeout: 8000 });
 }
 
 /** The name of the radio group the focused radio button is in (a group's
@@ -473,7 +473,7 @@ describe("User Story 4 - Browsing accessories by what they are mounted on (specs
     // Back to the AR's page for the next story, which starts on a record.
     await shiftTabToControl("Collection");
     await realKey("Return");
-    await $(".hd-row__name").waitForExist({ timeout: 8000 });
+    await $$(".hd-row__name")[0].waitForExist({ timeout: 8000 });
     await openFirearmByKeys("Daniel Defense DDM4");
   });
 });
@@ -560,7 +560,7 @@ describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-lin
         .find((t) => t.textContent?.trim().startsWith("Collection"))
         ?.click();
     });
-    await $(".hd-row__name").waitForExist({ timeout: 8000 });
+    await $$(".hd-row__name")[0].waitForExist({ timeout: 8000 });
     await openFirearmByKeys("Daniel Defense DDM4");
     expect(await $(".hd-plate__mounted").isExisting()).toBe(false);
     expect(await mountedSectionText()).toContain("SilencerCo Omega 300");
