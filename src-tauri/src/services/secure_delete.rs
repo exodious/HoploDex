@@ -11,23 +11,43 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use crate::services::scratch;
+
 /// The chunk small files (decrypted document copies) are overwritten in.
 const SMALL_CHUNK: u64 = 64 * 1024;
 /// The chunk files over 1 MiB (databases, backups) are overwritten in.
 const LARGE_CHUNK: u64 = 1024 * 1024;
 
+/// Opens `path` for the overwrite, or says it must only be unlinked
+/// (`None`): something that is not a regular file (a symlink would be
+/// written through to its target) or a file with other names (a hard link
+/// someone planted would carry the overwrite to its referent, and the
+/// overwrite would destroy the other name's contents, #63). The checks are
+/// made on the open handle, which does not follow a symlink, so nothing can
+/// swap the path in between.
+fn open_for_wipe(path: &Path) -> io::Result<Option<File>> {
+    if !fs::symlink_metadata(path)?.file_type().is_file() {
+        return Ok(None);
+    }
+    let mut options = OpenOptions::new();
+    options.write(true);
+    let file = scratch::open_no_follow(&mut options, path)?;
+    if !file.metadata()?.file_type().is_file() || scratch::link_count(&file)? > 1 {
+        log::warn!("{} has other names: unlinking it without overwriting", path.display());
+        return Ok(None);
+    }
+    Ok(Some(file))
+}
+
 /// Overwrites `path` with zeros (same length), flushes that to disk, asks
 /// the storage to discard the blocks, and removes it. A failed overwrite
 /// doesn't stop the unlink (the file is deleted either way) and only a
-/// failure to unlink is returned. A symlink is just unlinked: overwriting
-/// would write through it to its target.
+/// failure to unlink is returned. A symlink, or a file with more than one
+/// hard link, is just unlinked: overwriting would write through to the
+/// target, or destroy the other name's contents.
 pub fn secure_delete_file(path: &Path) -> io::Result<()> {
-    let is_symlink = fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink());
-    if !is_symlink {
-        let _ = OpenOptions::new()
-            .write(true)
-            .open(path)
-            .and_then(|file| overwrite_with_zeros(&file, &mut WipeControl::default()));
+    if let Ok(Some(file)) = open_for_wipe(path) {
+        let _ = overwrite_with_zeros(&file, &mut WipeControl::default());
     }
     fs::remove_file(path)
 }
@@ -56,12 +76,9 @@ pub enum Wiped {
 /// can't be opened for the overwrite (read-only, say) is left in place and
 /// the error returned, because unlinking it would leave its data unwiped.
 pub fn secure_delete_whole_file(path: &Path, mut control: WipeControl) -> io::Result<Wiped> {
-    let is_symlink = fs::symlink_metadata(path)?.file_type().is_symlink();
-    let outcome = if is_symlink {
-        Wiped::Deleted
-    } else {
-        let file = OpenOptions::new().write(true).open(path)?;
-        overwrite_with_zeros(&file, &mut control)?
+    let outcome = match open_for_wipe(path)? {
+        Some(file) => overwrite_with_zeros(&file, &mut control)?,
+        None => Wiped::Deleted,
     };
     fs::remove_file(path)?;
     Ok(outcome)

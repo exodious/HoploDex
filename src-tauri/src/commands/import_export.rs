@@ -16,6 +16,7 @@ use crate::models::firearm::{
     Condition, DispositionType, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
+use crate::services::attachments::safe_basename;
 use crate::services::cartridges::{CaliberSource, derive_caliber};
 use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::mounts::{self, MountGraph};
@@ -240,6 +241,11 @@ struct PendingConflict {
     table: ImportTable,
     row: usize,
     existing: RecordRef,
+    /// The record identifier of `existing` when the conflict was found. An
+    /// overwrite or duplicate applies only while `existing` still has it:
+    /// a different record under the same row id is not what the row
+    /// matched (issue #64).
+    existing_uid: String,
     new_input: PendingInput,
     /// The row's `mounted_on` cell, applied when the row overwrites or is
     /// added as a duplicate (research.md §18).
@@ -258,16 +264,70 @@ struct ImportSession {
 
 /// Holds each in-progress import's matched-but-unresolved rows between the
 /// initial `import_collection` call and the follow-up
-/// `resolve_import_conflicts` call — Tauri-managed state (`app.manage`),
-/// analogous to `Session`.
+/// `resolve_import_conflicts` call.
+///
+/// One store belongs to one open of one database
+/// ([`OpenDatabase::imports`](crate::session::OpenDatabase::imports)), never
+/// to the app: what it holds is that file's plaintext and record ids, and
+/// applying it to another database, or to the same one after a lock, would
+/// write it where it was not read from. So whatever drops the open drops
+/// its imports, and a session id means nothing to any other open (issue
+/// #64). It holds at most [`MAX_HELD_IMPORTS`] imports.
 #[derive(Default)]
 pub struct ImportSessionStore {
-    pending: Mutex<HashMap<String, ImportSession>>,
+    held: Mutex<Held>,
 }
+
+#[derive(Default)]
+struct Held {
+    /// The number the next kept import takes: the oldest has the lowest.
+    next: u64,
+    sessions: HashMap<String, (u64, ImportSession)>,
+}
+
+/// The most imports a store holds. The dialog has one at a time, so an
+/// import past this is one abandoned, and the oldest goes.
+pub const MAX_HELD_IMPORTS: usize = 3;
 
 impl ImportSessionStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// How many imports wait to be resolved.
+    pub fn len(&self) -> usize {
+        self.held().sessions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn held(&self) -> std::sync::MutexGuard<'_, Held> {
+        self.held.lock().expect("import session mutex poisoned")
+    }
+
+    /// Keeps `import` under `session_id`, newest, dropping the oldest ones
+    /// past [`MAX_HELD_IMPORTS`].
+    fn keep(&self, session_id: &str, import: ImportSession) {
+        let mut held = self.held();
+        held.next += 1;
+        let number = held.next;
+        held.sessions.insert(session_id.to_string(), (number, import));
+        while held.sessions.len() > MAX_HELD_IMPORTS {
+            let oldest = held
+                .sessions
+                .iter()
+                .min_by_key(|(_, (number, _))| *number)
+                .map(|(id, _)| id.clone())
+                .expect("the store is not empty");
+            held.sessions.remove(&oldest);
+        }
+    }
+
+    /// Takes the import out, if this store holds it.
+    fn take(&self, session_id: &str) -> Option<ImportSession> {
+        self.held().sessions.remove(session_id).map(|(_, import)| import)
     }
 }
 
@@ -455,10 +515,15 @@ pub mod ops {
         )
     }
 
-    /// [`export_collection`], checking `is_cancelled` between rows. A
-    /// stopped export removes the photos folder it made, and never gets to
-    /// the spreadsheet, which is written last; it fails with
-    /// `OPERATION_STOPPED` (FR-037).
+    /// [`export_collection`], checking `is_cancelled` between rows. An
+    /// export that stops or fails removes what it made and nothing else; a
+    /// stop fails with `OPERATION_STOPPED` (FR-037).
+    ///
+    /// Each export owns its outputs (issue #74): `base_name` is used as it
+    /// stands when nothing in `destination_folder` already has that name,
+    /// and `{base_name}-2`, `-3`, ... otherwise, so an earlier export's
+    /// spreadsheet and photos folder are never overwritten, reused or
+    /// cleared. The names actually used are in the result.
     pub fn export_collection_stoppable(
         conn: &Connection,
         destination_folder: &Path,
@@ -468,21 +533,21 @@ pub mod ops {
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<ExportResult, CommandError> {
-        let photos_folder_path = destination_folder.join(format!("{base_name}_photos"));
-        let spreadsheet_path =
-            destination_folder.join(format!("{base_name}.{}", format.extension()));
-        let accessory_csv_path = destination_folder.join(format!("{base_name}-accessories.csv"));
-        // Only what this export made is removed if it stops.
-        let made_folder = !photos_folder_path.exists();
-        let files = ExportFiles {
-            photos_folder: &photos_folder_path,
-            spreadsheet: &spreadsheet_path,
-            accessory_csv: &accessory_csv_path,
+        let mut reserved = ExportFiles::reserve(
+            destination_folder,
+            base_name,
             format,
-        };
-        let exported = export_rows(conn, &files, records, on_progress, is_cancelled);
-        if exported.as_ref().is_err_and(|err| err.code == "OPERATION_STOPPED") && made_folder {
-            let _ = std::fs::remove_dir_all(&photos_folder_path);
+            !records.accessory_ids.is_empty(),
+        )?;
+        let exported = export_rows(conn, &reserved, records, on_progress, is_cancelled);
+        match &exported {
+            // The accessory file was reserved for a table the export did not
+            // need after all (an id with no record).
+            Ok(result) if result.accessory_spreadsheet_path.is_none() => {
+                reserved.discard_accessory_csv();
+            }
+            Ok(_) => {}
+            Err(_) => reserved.discard(),
         }
         exported
     }
@@ -511,6 +576,54 @@ pub mod ops {
         Ok(found)
     }
 
+    /// Opens `path` for writing, failing if anything is there, a link
+    /// included (`O_EXCL`/`CREATE_NEW`): nothing existing is overwritten or
+    /// followed.
+    fn create_new(path: &Path) -> std::io::Result<std::fs::File> {
+        std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+    }
+
+    /// The name a photo is written under: `{prefix}{id}_{name}`, where
+    /// `name` is the stored name reduced to a basename, since a database
+    /// made before issue #68 may hold one with a path in it. Always one
+    /// normal component, so joined to the folder it stays inside it.
+    fn photo_file_name(prefix: &str, id: i64, stored: &str) -> String {
+        let name = format!("{prefix}{id}_{}", safe_basename(stored, "photo"));
+        let mut components = Path::new(&name).components();
+        match (components.next(), components.next()) {
+            (Some(std::path::Component::Normal(_)), None) => name,
+            _ => format!("{prefix}{id}_photo"),
+        }
+    }
+
+    /// `name` with `-{n}` before its extension: `1_front.png` to
+    /// `1_front-2.png`.
+    fn numbered(name: &str, n: usize) -> String {
+        match name.rsplit_once('.') {
+            Some((stem, extension)) if !stem.is_empty() => format!("{stem}-{n}.{extension}"),
+            _ => format!("{name}-{n}"),
+        }
+    }
+
+    /// Writes `bytes` into `folder` as a file named `name`, or `name` with a
+    /// number when the folder already holds one by that name (two photos
+    /// of a record can share a name). Returns the name used.
+    fn write_new_file(folder: &Path, name: &str, bytes: &[u8]) -> std::io::Result<String> {
+        use std::io::Write;
+        for n in 1..=10_000 {
+            let candidate = if n == 1 { name.to_owned() } else { numbered(name, n) };
+            match create_new(&folder.join(&candidate)) {
+                Ok(mut file) => {
+                    file.write_all(bytes)?;
+                    return Ok(candidate);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "too many photos of one name"))
+    }
+
     /// Writes the record's photos into the photos folder as
     /// `{prefix}{id}_{filename}` and returns the names, for the row's
     /// `photo_filenames` cell. `counted` gains one per photo.
@@ -524,41 +637,128 @@ pub mod ops {
         let photos = crate::commands::photos::ops::list_photos(conn, owner)?;
         let mut names = Vec::with_capacity(photos.len());
         for photo in &photos {
-            let dest_name = format!("{prefix}{}_{}", owner.id(), photo.original_filename);
-            std::fs::write(photos_folder_path.join(&dest_name), &photo.original_bytes).map_err(
-                |e| CommandError::new("INTERNAL_ERROR", format!("Could not write photo file: {e}")),
-            )?;
+            let dest_name = photo_file_name(prefix, owner.id(), &photo.original_filename);
+            let dest_name = write_new_file(photos_folder_path, &dest_name, &photo.original_bytes)
+                .map_err(|e| {
+                CommandError::new("INTERNAL_ERROR", format!("Could not write photo file: {e}"))
+            })?;
             names.push(dest_name);
             *counted += 1;
         }
         Ok(names.join(";"))
     }
 
-    /// Where an export writes, and in which format.
-    struct ExportFiles<'a> {
-        photos_folder: &'a Path,
-        spreadsheet: &'a Path,
+    /// What one export owns: the photos folder it made, the spreadsheet it
+    /// created and, for a CSV export with accessories, the accessory file.
+    /// All are created before anything is written, each new and
+    /// exclusively, under a name no earlier export in the folder has used
+    /// (issue #74).
+    struct ExportFiles {
+        photos_folder: PathBuf,
+        spreadsheet: std::fs::File,
+        spreadsheet_path: PathBuf,
         /// The accessory table's file, used only by a CSV export.
-        accessory_csv: &'a Path,
+        accessory_csv: Option<(std::fs::File, PathBuf)>,
         format: SpreadsheetFormat,
+    }
+
+    impl ExportFiles {
+        /// Reserves `base_name`, or the first of `{base_name}-2`, `-3`, ...
+        /// that is free: its photos folder by `create_dir` (which fails on
+        /// an existing one, empty or not) and its files by `create_new`. A
+        /// name is free only if all of its outputs are, so nothing of
+        /// another export is ever touched.
+        fn reserve(
+            destination_folder: &Path,
+            base_name: &str,
+            format: SpreadsheetFormat,
+            wants_accessory_csv: bool,
+        ) -> Result<Self, CommandError> {
+            let failed = |what: &str, e: std::io::Error| {
+                CommandError::new("INTERNAL_ERROR", format!("Could not create {what}: {e}"))
+            };
+            let taken = |e: &std::io::Error| e.kind() == std::io::ErrorKind::AlreadyExists;
+            // The destination itself may be new; only what is inside it is
+            // reserved exclusively.
+            std::fs::create_dir_all(destination_folder)
+                .map_err(|e| failed("the destination folder", e))?;
+            for n in 1..=10_000 {
+                let base = if n == 1 { base_name.to_owned() } else { format!("{base_name}-{n}") };
+                let photos_folder = destination_folder.join(format!("{base}_photos"));
+                match std::fs::create_dir(&photos_folder) {
+                    Ok(()) => {}
+                    Err(e) if taken(&e) => continue,
+                    Err(e) => return Err(failed("the photos folder", e)),
+                }
+                let spreadsheet_path =
+                    destination_folder.join(format!("{base}.{}", format.extension()));
+                let spreadsheet = match create_new(&spreadsheet_path) {
+                    Ok(file) => file,
+                    Err(e) => {
+                        let _ = std::fs::remove_dir(&photos_folder);
+                        if taken(&e) {
+                            continue;
+                        }
+                        return Err(failed("the export file", e));
+                    }
+                };
+                let accessory_csv = if wants_accessory_csv && format == SpreadsheetFormat::Csv {
+                    let path = destination_folder.join(format!("{base}-accessories.csv"));
+                    match create_new(&path) {
+                        Ok(file) => Some((file, path)),
+                        Err(e) => {
+                            drop(spreadsheet);
+                            let _ = std::fs::remove_file(&spreadsheet_path);
+                            let _ = std::fs::remove_dir(&photos_folder);
+                            if taken(&e) {
+                                continue;
+                            }
+                            return Err(failed("the accessory export file", e));
+                        }
+                    }
+                } else {
+                    None
+                };
+                return Ok(Self {
+                    photos_folder,
+                    spreadsheet,
+                    spreadsheet_path,
+                    accessory_csv,
+                    format,
+                });
+            }
+            Err(CommandError::new(
+                "INTERNAL_ERROR",
+                "Could not find a free name for the export in that folder.",
+            ))
+        }
+
+        /// Removes the accessory file, when the export turned out to have
+        /// no accessory table.
+        fn discard_accessory_csv(&mut self) {
+            if let Some((file, path)) = self.accessory_csv.take() {
+                drop(file);
+                let _ = std::fs::remove_file(path);
+            }
+        }
+
+        /// Removes everything this export made.
+        fn discard(mut self) {
+            self.discard_accessory_csv();
+            drop(self.spreadsheet);
+            let _ = std::fs::remove_file(&self.spreadsheet_path);
+            let _ = std::fs::remove_dir_all(&self.photos_folder);
+        }
     }
 
     fn export_rows(
         conn: &Connection,
-        files: &ExportFiles<'_>,
+        files: &ExportFiles,
         records: &ExportRecords,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<ExportResult, CommandError> {
-        let ExportFiles {
-            photos_folder: photos_folder_path,
-            spreadsheet: spreadsheet_path,
-            accessory_csv: accessory_csv_path,
-            format,
-        } = *files;
-        std::fs::create_dir_all(photos_folder_path).map_err(|e| {
-            CommandError::new("INTERNAL_ERROR", format!("Could not create the photos folder: {e}"))
-        })?;
+        let photos_folder_path = files.photos_folder.as_path();
 
         // Everything the rows name, read once rather than once per row.
         let firearm_types = names(conn, "firearm_types")?;
@@ -720,25 +920,27 @@ pub mod ops {
         // (contracts/spreadsheet-format.md "Two tables").
         let has_accessories = !accessory_rows.is_empty();
         let mut accessory_spreadsheet_path = None;
-        match format {
+        match files.format {
             SpreadsheetFormat::Csv => {
-                write_firearm_csv(spreadsheet_path, &firearm_rows)?;
-                if has_accessories {
-                    write_accessory_csv(accessory_csv_path, &accessory_rows)?;
-                    accessory_spreadsheet_path = Some(accessory_csv_path.to_owned());
+                write_firearm_csv(&files.spreadsheet, &firearm_rows)?;
+                if let (true, Some((accessory_file, accessory_path))) =
+                    (has_accessories, &files.accessory_csv)
+                {
+                    write_accessory_csv(accessory_file, &accessory_rows)?;
+                    accessory_spreadsheet_path = Some(accessory_path.clone());
                 }
             }
             SpreadsheetFormat::Xlsx => write_workbook(
-                spreadsheet_path,
+                &files.spreadsheet,
                 &firearm_rows,
                 has_accessories.then_some(accessory_rows.as_slice()),
             )?,
         }
 
         Ok(ExportResult {
-            spreadsheet_path: spreadsheet_path.to_owned(),
+            spreadsheet_path: files.spreadsheet_path.clone(),
             accessory_spreadsheet_path,
-            photos_folder_path: photos_folder_path.to_owned(),
+            photos_folder_path: files.photos_folder.clone(),
             exported_firearm_count: firearm_rows.len(),
             exported_accessory_count: accessory_rows.len(),
             exported_photo_count,
@@ -1753,6 +1955,8 @@ pub mod ops {
                         table,
                         row,
                         existing,
+                        // Read once the run ends, where there is a connection.
+                        existing_uid: String::new(),
                         new_input: input,
                         mounted_on,
                     });
@@ -1817,6 +2021,59 @@ pub mod ops {
             firearms.map(|(_, rows)| rows).unwrap_or_default(),
             accessories.map(|(_, rows)| rows).unwrap_or_default(),
         ))
+    }
+
+    /// The record identifier `record` has now (`NOT_FOUND` when it is gone).
+    fn record_uid(conn: &Connection, record: RecordRef) -> Result<String, CommandError> {
+        let (table, id) = match record {
+            RecordRef::Firearm(id) => ("firearms", id),
+            RecordRef::Accessory(id) => ("accessories", id),
+        };
+        conn.query_row(&format!("SELECT uid FROM {table} WHERE id = ?1"), [id], |row| row.get(0))
+            .optional()
+            .map_err(CommandError::from_db)?
+            .ok_or_else(|| CommandError::not_found("That record no longer exists."))
+    }
+
+    /// [`import_collection_stoppable`] into the session's open database,
+    /// holding its conflicts with that open and no other (issue #64).
+    pub fn import_in_session(
+        session: &Session,
+        files: &[ImportFile],
+        on_progress: &mut dyn FnMut(usize, usize),
+        is_cancelled: &dyn Fn() -> bool,
+        record_imported: &dyn Fn(u64),
+    ) -> Result<ImportResult, CommandError> {
+        session.write_open(|open| {
+            import_collection_stoppable(
+                &open.conn,
+                files,
+                &open.imports,
+                on_progress,
+                is_cancelled,
+                record_imported,
+            )
+        })
+    }
+
+    /// [`resolve_import_conflicts`] against the session's open database, which
+    /// finds only the imports made in this open: `NOT_FOUND` for one made in
+    /// another database, or before this one was last opened or unlocked.
+    pub fn resolve_in_session(
+        session: &Session,
+        session_id: &str,
+        resolutions: &[ConflictResolution],
+        apply_to_remaining: Option<&str>,
+    ) -> Result<ResolveResult, CommandError> {
+        session.write_open(|open| {
+            resolve_import_conflicts(
+                &open.conn,
+                &open.imports,
+                session_id,
+                resolutions,
+                apply_to_remaining,
+            )
+        })
     }
 
     /// Each row is validated independently; a failing row is reported in
@@ -1899,8 +2156,11 @@ pub mod ops {
         list_mounted(conn, &mut run.conflicts, &run.pending)?;
 
         if !run.pending.is_empty() {
-            store.pending.lock().expect("import session mutex poisoned").insert(
-                session_id.clone(),
+            for conflict in &mut run.pending {
+                conflict.existing_uid = record_uid(conn, conflict.existing)?;
+            }
+            store.keep(
+                &session_id,
                 ImportSession {
                     pending: std::mem::take(&mut run.pending),
                     outcomes: std::mem::take(&mut run.outcomes),
@@ -1961,12 +2221,12 @@ pub mod ops {
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
-        let ImportSession { pending, outcomes } = store
-            .pending
-            .lock()
-            .expect("import session mutex poisoned")
-            .remove(session_id)
-            .unwrap_or_else(|| ImportSession { pending: Vec::new(), outcomes: HashMap::new() });
+        // An import this store doesn't hold is gone, whatever the reason: it
+        // was resolved, dropped for a newer one, or belongs to an open that
+        // has closed (issue #64).
+        let Some(ImportSession { pending, outcomes }) = store.take(session_id) else {
+            return Err(CommandError::not_found("That import is no longer open."));
+        };
 
         let explicit: HashMap<&str, &ConflictResolution> =
             resolutions.iter().map(|r| (r.conflict_id.as_str(), r)).collect();
@@ -1984,6 +2244,17 @@ pub mod ops {
             // untouched — never saved, so it never carries a warning.
             if action != "overwrite" && action != "duplicate" {
                 resolved_count += 1;
+                continue;
+            }
+            // The row matched a record; it applies only to that record.
+            if record_uid(conn, conflict.existing).ok().as_deref() != Some(&conflict.existing_uid) {
+                unresolved.push(RowError {
+                    table: conflict.table,
+                    row: conflict.row,
+                    message: "The record this row matched has changed since the file was \
+                              read. Import the file again."
+                        .to_string(),
+                });
                 continue;
             }
             let overwrite = action == "overwrite";
@@ -2057,11 +2328,7 @@ pub mod ops {
         resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings)?;
 
         if !still_open.is_empty() {
-            store
-                .pending
-                .lock()
-                .expect("import session mutex poisoned")
-                .insert(session_id.to_string(), ImportSession { pending: still_open, outcomes });
+            store.keep(session_id, ImportSession { pending: still_open, outcomes });
         }
 
         Ok(ResolveResult { resolved_count, unresolved, warnings })
@@ -2161,33 +2428,28 @@ pub async fn import_collection(
     input: ImportCollectionInput,
     app: tauri::AppHandle,
     session: State<'_, Session>,
-    session_store: State<'_, ImportSessionStore>,
 ) -> Result<ImportResult, CommandError> {
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
     let operation = session.operations().begin(OperationKind::Import, None)?;
-    session.write(|conn| {
-        let files = input
-            .files
-            .iter()
-            .map(|file| {
-                Ok(ImportFile {
-                    file_path: PathBuf::from(&file.file_path),
-                    format: parse_format(&file.format)?,
-                })
+    let files = input
+        .files
+        .iter()
+        .map(|file| {
+            Ok(ImportFile {
+                file_path: PathBuf::from(&file.file_path),
+                format: parse_format(&file.format)?,
             })
-            .collect::<Result<Vec<_>, CommandError>>()?;
-        ops::import_collection_stoppable(
-            conn,
-            &files,
-            &session_store,
-            &mut |processed, total| {
-                let _ =
-                    app.emit("import_collection:progress", ProgressPayload { processed, total });
-            },
-            &|| operation.is_cancelled(),
-            &|imported| operation.record_done(imported),
-        )
-    })
+        })
+        .collect::<Result<Vec<_>, CommandError>>()?;
+    ops::import_in_session(
+        &session,
+        &files,
+        &mut |processed, total| {
+            let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
+        },
+        &|| operation.is_cancelled(),
+        &|imported| operation.record_done(imported),
+    )
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2202,15 +2464,11 @@ pub struct ResolveImportConflictsInput {
 pub async fn resolve_import_conflicts(
     input: ResolveImportConflictsInput,
     session: State<'_, Session>,
-    session_store: State<'_, ImportSessionStore>,
 ) -> Result<ResolveResult, CommandError> {
-    session.write(|conn| {
-        ops::resolve_import_conflicts(
-            conn,
-            &session_store,
-            &input.import_session_id,
-            &input.resolutions,
-            input.apply_to_remaining.as_deref(),
-        )
-    })
+    ops::resolve_in_session(
+        &session,
+        &input.import_session_id,
+        &input.resolutions,
+        input.apply_to_remaining.as_deref(),
+    )
 }

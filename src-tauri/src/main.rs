@@ -14,7 +14,6 @@ use hoplodex_lib::commands::documents::E2eOpener;
 use hoplodex_lib::commands::documents::{
     OPENED_DOCUMENTS_DIR, Opener, clear_opened_documents_cache,
 };
-use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::preview::{AppSurfaces, PreviewEnv};
 use hoplodex_lib::db;
 use hoplodex_lib::platform::{self, SystemEvent};
@@ -26,11 +25,13 @@ use hoplodex_lib::services::consent::DialogConsent;
 use hoplodex_lib::services::consent::E2eConsent;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::main_navigation;
 use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide_at_startup};
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
 use hoplodex_lib::session::{Session, lifecycle};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// What the frontend is sent when the user closes the window or quits: it
@@ -210,7 +211,6 @@ fn main() {
             surface::clear_data_directory(&app_dirs::preview_webview_data_dir(app.handle())?);
             let availability = PdfAvailabilityState::new(decide_at_startup(&machine));
             app.manage(machine);
-            app.manage(ImportSessionStore::new());
             app.manage(availability.clone());
             // The preview commands: the helper is this executable.
             app.manage(PreviewEnv::new(
@@ -242,12 +242,27 @@ fn main() {
             // so its web view gets a data folder of its own, apart from the
             // preview surface's (research.md §6). Same title and sizes as the
             // config gave it.
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            //
+            // It may navigate only to the app's own page, and never opens
+            // another window (#73, research.md §6): the CSP governs what the
+            // page fetches, not where the window goes. The dev server's
+            // origin counts only in a development run. On Windows a request
+            // filter backs the navigation handler, which WebView2 may answer
+            // only after the request has gone out (main_navigation).
+            let dev_url = if tauri::is_dev() { app.config().build.dev_url.clone() } else { None };
+            let origins = main_navigation::app_origins(cfg!(windows), dev_url.as_ref());
+            #[cfg(windows)]
+            let filter_origins = origins.clone();
+            let _main = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
+                .on_new_window(|_, _| NewWindowResponse::Deny)
                 .title("HoploDex")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0)
                 .data_directory(app_dirs::main_webview_data_dir(app.handle())?)
                 .build()?;
+            #[cfg(windows)]
+            main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
             Ok(())
         })
         .on_window_event(|window, event| {

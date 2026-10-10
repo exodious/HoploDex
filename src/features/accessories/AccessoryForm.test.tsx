@@ -371,6 +371,33 @@ describe("AccessoryForm saving (US1-1, US1-2)", () => {
     });
   });
 
+  it("refuses an amount above $99,999,999 before sending, and accepts exactly that (#67)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<AccessoryForm onSubmit={onSubmit} />);
+
+    await chooseKind(user, "Sling");
+    await user.type(screen.getByLabelText(/^Make/), "Vortex");
+    await user.type(screen.getByLabelText(/^Model/), "Padded");
+    await user.type(screen.getByLabelText(/^Estimated value/), "100000000");
+    await user.type(screen.getByLabelText(/^Price paid/), "100000000");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getAllByText("Enter an amount of $99,999,999 or less.")).toHaveLength(2);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    for (const label of [/^Estimated value/, /^Price paid/]) {
+      const field = screen.getByLabelText(label);
+      await user.clear(field);
+      await user.type(field, "99999999");
+    }
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      estimatedValue: 99_999_999,
+      acquisitionPrice: 99_999_999,
+    });
+  });
+
   it("prefills every field when editing", () => {
     render(<AccessoryForm initialValues={saved} onSubmit={vi.fn()} />);
 

@@ -85,3 +85,5 @@ and `.<file>.old` (the previous content, until securely deleted). A reader
 that finds the database path missing and `.<file>.new` present completes the
 replacement. One that finds only `.<file>.old` renames it back. Both cases
 are handled at the next open of that path (research §4).
+
+_Amended 2026-10-09 ([#63](https://github.com/exodious/HoploDex/issues/63)): these files are created exclusively and acted on only when they are plain files of ours (one name, not a link, on Unix owned by the user); anything else at those names is left alone and fails the operation. The tidying of a leftover `.new` or `.old` waits until the passphrase has opened the database. See research §4._

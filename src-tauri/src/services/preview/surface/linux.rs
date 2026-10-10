@@ -480,14 +480,15 @@ unsafe extern "C" fn filter_saved(
             &mut error,
         );
         if filter.is_null() {
-            let message = if error.is_null() {
-                "no reason given".to_owned()
-            } else {
-                let text = CStr::from_ptr((*error).message as *const c_char)
-                    .to_string_lossy()
-                    .into_owned();
-                glib::ffi::g_error_free(error);
-                text
+            let message = match error.as_ref() {
+                None => "no reason given".to_owned(),
+                Some(failure) => {
+                    let text = CStr::from_ptr(failure.message as *const c_char)
+                        .to_string_lossy()
+                        .into_owned();
+                    glib::ffi::g_error_free(error);
+                    text
+                }
             };
             Err(format!("the content filter could not be compiled: {message}"))
         } else {

@@ -21,6 +21,7 @@ import type { PlateTiming } from "../../src/features/databases/plate/timing";
 import { EASES, GROUPS, PRESETS, STYLES } from "./knobs";
 import type { Knob } from "./knobs";
 import { literal } from "./saveTiming";
+import { TOKEN_HEADER, TOKEN_META } from "./token";
 import "./tuner.css";
 
 /*
@@ -382,8 +383,12 @@ if (import.meta.env.DEV) {
   save.hidden = false;
   save.addEventListener("click", async () => {
     const values = Object.fromEntries(changed().map((n) => [n, k[n]]));
+    // the server puts this run's token in the page it serves
+    const token =
+      document.querySelector<HTMLMetaElement>(`meta[name="${TOKEN_META}"]`)?.content ?? "";
     const response = await fetch("/__plate-timing", {
       method: "POST",
+      headers: { "Content-Type": "application/json", [TOKEN_HEADER]: token },
       body: JSON.stringify(values),
     }).catch(() => null);
     $("#saved").textContent = response?.ok

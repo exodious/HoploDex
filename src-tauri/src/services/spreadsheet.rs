@@ -630,12 +630,11 @@ fn unprotect_csv_cell(cell: &str) -> &str {
 }
 
 fn write_csv_table<const N: usize>(
-    path: &Path,
+    out: impl std::io::Write,
     columns: &[&str],
     rows: impl Iterator<Item = [String; N]>,
 ) -> Result<(), CommandError> {
-    let mut writer = csv::Writer::from_path(path)
-        .map_err(|e| export_error("Could not create the export file", e))?;
+    let mut writer = csv::Writer::from_writer(out);
     writer.write_record(columns).map_err(|e| export_error("Failed writing export header", e))?;
     for row in rows {
         writer
@@ -645,19 +644,22 @@ fn write_csv_table<const N: usize>(
     writer.flush().map_err(|e| export_error("Failed saving the export file", e))
 }
 
-/// Writes the firearm table as a CSV file.
-pub fn write_firearm_csv(path: &Path, rows: &[FirearmExportRow]) -> Result<(), CommandError> {
-    write_csv_table(
-        path,
-        FIREARM_COLUMNS,
-        rows.iter().map(|row| row.as_fields().map(str::to_owned)),
-    )
+/// Writes the firearm table as CSV to `out`, a file the export created
+/// exclusively (issue #74), so no existing file is ever opened or truncated.
+pub fn write_firearm_csv(
+    out: impl std::io::Write,
+    rows: &[FirearmExportRow],
+) -> Result<(), CommandError> {
+    write_csv_table(out, FIREARM_COLUMNS, rows.iter().map(|row| row.as_fields().map(str::to_owned)))
 }
 
-/// Writes the accessory table as a CSV file.
-pub fn write_accessory_csv(path: &Path, rows: &[AccessoryExportRow]) -> Result<(), CommandError> {
+/// Writes the accessory table as CSV to `out`, as [`write_firearm_csv`].
+pub fn write_accessory_csv(
+    out: impl std::io::Write,
+    rows: &[AccessoryExportRow],
+) -> Result<(), CommandError> {
     write_csv_table(
-        path,
+        out,
         ACCESSORY_COLUMNS,
         rows.iter().map(|row| row.as_fields().map(str::to_owned)),
     )
@@ -688,9 +690,10 @@ fn write_sheet<'a>(
 
 /// Writes one workbook: the "Firearms" sheet, and the "Accessories" sheet
 /// when `accessories` is given (contracts/spreadsheet-format.md "Two
-/// tables").
+/// tables"). The workbook goes to `out`, a file the export created
+/// exclusively (issue #74).
 pub fn write_workbook(
-    path: &Path,
+    out: impl std::io::Write + std::io::Seek + Send,
     firearms: &[FirearmExportRow],
     accessories: Option<&[AccessoryExportRow]>,
 ) -> Result<(), CommandError> {
@@ -709,7 +712,7 @@ pub fn write_workbook(
             accessories.iter().map(|row| row.as_fields().to_vec()),
         )?;
     }
-    workbook.save(path).map_err(|e| export_error("Failed saving the export file", e))
+    workbook.save_to_writer(out).map_err(|e| export_error("Failed saving the export file", e))
 }
 
 /// The rows of one recognised table.
@@ -909,7 +912,12 @@ mod tests {
         let path = dir.path().join("t.csv");
         let rows =
             vec![["=1+1".to_owned(), "\tTab".to_owned(), "\rCR".to_owned(), "ok".to_owned()]];
-        write_csv_table(&path, &["a", "b", "c", "d"], rows.into_iter()).unwrap();
+        write_csv_table(
+            std::fs::File::create(&path).unwrap(),
+            &["a", "b", "c", "d"],
+            rows.into_iter(),
+        )
+        .unwrap();
 
         let raw = std::fs::read_to_string(&path).unwrap();
         assert_eq!(raw, "a,b,c,d\n'=1+1,'\tTab,\"'\rCR\",ok\n");

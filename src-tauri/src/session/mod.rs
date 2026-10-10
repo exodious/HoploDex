@@ -19,6 +19,7 @@ use std::time::Duration;
 use rusqlite::{Connection, InterruptHandle};
 
 use crate::commands::CommandError;
+use crate::commands::import_export::ImportSessionStore;
 use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::{Preview, PreviewLoading};
@@ -79,6 +80,13 @@ pub struct OpenDatabase {
     /// close or switch forgets it, and is never written anywhere (FR-012,
     /// research.md §17).
     pub external_open_confirmed: bool,
+    /// The imports of this open whose conflicts wait to be decided (issue
+    /// #64). They hold the file's plaintext rows and its record ids, so they
+    /// belong to this value and nothing else: any path that drops the
+    /// `OpenDatabase` (lock, idle lock, close, switch, restore, take-over,
+    /// sleep, shutdown) drops them, and a later open of the same file starts
+    /// with none.
+    pub imports: ImportSessionStore,
 }
 
 /// The last [`OpenDatabase::generation`] handed out.
@@ -137,6 +145,7 @@ impl OpenDatabase {
             preview_loading: None,
             generation: GENERATIONS.fetch_add(1, Ordering::Relaxed) + 1,
             external_open_confirmed: false,
+            imports: ImportSessionStore::new(),
         })
     }
 
@@ -427,6 +436,16 @@ impl SessionInner {
         &self,
         change: impl FnOnce(&Connection) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
+        self.write_checked(true, |open| change(&open.conn))
+    }
+
+    /// [`write`](Self::write), for a change that also needs what the open
+    /// itself keeps (an import's held conflicts, [`OpenDatabase::imports`]):
+    /// they are reached only through the open that made them.
+    pub fn write_open<T>(
+        &self,
+        change: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
         self.write_checked(true, change)
     }
 
@@ -437,13 +456,13 @@ impl SessionInner {
         &self,
         change: impl FnOnce(&Connection) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
-        self.write_checked(false, change)
+        self.write_checked(false, |open| change(&open.conn))
     }
 
     fn write_checked<T>(
         &self,
         collection: bool,
-        change: impl FnOnce(&Connection) -> Result<T, CommandError>,
+        change: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
         let mut guard = self.open_guard()?;
         let open = guard.as_mut().ok_or_else(CommandError::database_closed)?;
@@ -467,7 +486,7 @@ impl SessionInner {
                 return Err(CommandError::database_unavailable(&open.path));
             }
         }
-        let result = change(&open.conn);
+        let result = change(open);
         let result = storage_lost_if_unreachable(open, result);
         if !open.storage_lost {
             match FileFingerprint::capture(&open.path) {

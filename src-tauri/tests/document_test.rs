@@ -82,6 +82,29 @@ fn scenario_4_attaches_and_reopens_a_document() {
     assert_eq!(reopened.mime_type, "application/pdf");
 }
 
+/// Issue #68: a name is only a name, whatever the webview sends.
+#[test]
+fn a_document_name_with_a_path_in_it_is_stored_as_its_basename() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+
+    for (sent, stored) in [
+        ("../../etc/receipt.pdf", "receipt.pdf"),
+        (r"C:\Users\me\receipt.pdf", "receipt.pdf"),
+        ("a/b\\c.pdf", "c.pdf"),
+    ] {
+        let attached = document_ops::add_document(
+            &db.conn,
+            RecordRef::Firearm(firearm.id),
+            SAMPLE_PDF_BYTES,
+            sent,
+        )
+        .unwrap();
+        assert_eq!(attached.original_filename, stored, "{sent}");
+        assert_eq!(attached.mime_type, "application/pdf");
+    }
+}
+
 #[test]
 fn deletes_a_document_only_when_confirmed() {
     let db = TestDb::new();
@@ -171,14 +194,17 @@ fn clearing_opened_documents_overwrites_then_removes_each_copy() {
     std::fs::create_dir_all(opened.join("1")).unwrap();
     let copy = opened.join("1").join("receipt.pdf");
     std::fs::write(&copy, &attached.file_bytes).unwrap();
-    let survivor = scratch.path().join("survivor");
-    std::fs::hard_link(&copy, &survivor).unwrap();
+    // A handle that outlives the deletion shows what was left in the data (a
+    // second hard link would not do: a file with other names is only
+    // unlinked, #63).
+    let mut survivor = std::fs::File::open(&copy).unwrap();
 
     let leftovers = document_ops::clear_opened_documents(&opened);
 
     assert!(leftovers.is_empty());
     assert!(!opened.exists(), "the folder itself is removed");
-    let remaining = std::fs::read(&survivor).unwrap();
+    let mut remaining = Vec::new();
+    std::io::Read::read_to_end(&mut survivor, &mut remaining).unwrap();
     assert_eq!(remaining.len(), SAMPLE_PDF_BYTES.len());
     assert!(
         remaining.iter().all(|&b| b == 0),

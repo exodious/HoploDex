@@ -6,7 +6,7 @@ as amended by 002, 004 and 005. It adds a second table, the accessory table,
 and two columns to the firearm table. Every rule not named here is
 unchanged:
 - cells are formatted as before;
-- amounts are whole dollars with no separators;
+- amounts are whole dollars with no separators, and at most $99,999,999 (_amended 2026-10-09 (#67): a larger one is a row error naming the column_);
 - dates are `YYYY-MM-DD`;
 - columns are read by header, trimmed and in any letter case;
 - unknown headers are ignored;
@@ -43,6 +43,8 @@ An export writes firearms and accessories as **separate tables** (FR-020):
 |---|---|---|
 | XLSX | sheet **"Firearms"** of `{base}.xlsx` | sheet **"Accessories"** of the same workbook |
 | CSV | `{base}.csv` | `{base}-accessories.csv`, beside it |
+
+_Amended 2026-10-09 (#74, #68): `{base}` is `hoplodex-export-YYYYMMDD-HHMMSS`, or that with `-2`, `-3`, … added when the destination folder already holds an export of that name; an export reserves its spreadsheet, accessory file and `{base}_photos/` folder as new (never reusing, overwriting or clearing an existing one), so the names to use are the ones in `ExportResult`. A photo's file name is its stored name reduced to a basename (no folders, drive prefix or control characters), with `-2`, `-3`, … before the extension when two photos of one record share a name._
 
 - `{base}` is `hoplodex-export-YYYYMMDD-HHMMSS`, as before.
 - Photos go to `{base}_photos/` as before. A firearm's photos are named

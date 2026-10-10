@@ -67,6 +67,8 @@ surrounding whitespace; a value with non-zero cents (`450.50`), a negative
 value, or any other text is a row error naming the column (FR-020). Values
 are never rounded.
 
+_Amended 2026-10-09 (#67): every amount is also capped at $99,999,999 (`MAX_AMOUNT_DOLLARS` in `src-tauri/src/models/rules.rs`, `MAX_DOLLARS` in `src/lib/money.ts`; the two must agree). A larger one is refused with a field error ("Estimated value can't be more than $99,999,999."); on import it is a row error naming the column, as for cents, and the other rows still import. Totals are summed overflow-safe and saturate at 2^53 - 1 rather than fail, since a row from before the cap may be larger._
+
 ## Physical details (FR-039)
 
 The six physical-detail columns follow the same rules as Amounts: blank is
@@ -85,6 +87,8 @@ columns sit after `scheduled_coverage_amount` and before `photo_filenames`.
 - Retained `DispositionHistory` rows (FR-033) are not represented in the
   spreadsheet (one row = one firearm, current state only); only the
   firearm's current disposition columns are exported.
+
+_Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo's file name is a basename; see [spec 006's "Two tables"](../../006-accessory-links/contracts/spreadsheet-format.md#two-tables)._
 
 - One spreadsheet file (`.csv` or `.xlsx`, per user's chosen format) plus
   one sibling folder (`<export-name>_photos/`) containing every stored

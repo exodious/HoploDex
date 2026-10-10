@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::commands::CommandError;
 use crate::models::record::RecordRef;
+use crate::models::rules::saturating_add;
 use crate::services::insurance_status::{InsuranceContext, load_context_as_of};
 
 #[derive(Debug, Clone, Serialize)]
@@ -116,8 +117,8 @@ pub fn get_value_summary_as_of(
             row.map_err(CommandError::from_db)?;
         let value = estimated_value.unwrap_or(0);
         match record {
-            RecordRef::Firearm(_) => firearms_total += value,
-            RecordRef::Accessory(_) => accessories_total += value,
+            RecordRef::Firearm(_) => firearms_total = saturating_add(firearms_total, value),
+            RecordRef::Accessory(_) => accessories_total = saturating_add(accessories_total, value),
         }
 
         match policy_id {
@@ -155,7 +156,7 @@ pub fn get_value_summary_as_of(
     });
 
     Ok(ValueSummary {
-        collection_total: firearms_total + accessories_total,
+        collection_total: saturating_add(firearms_total, accessories_total),
         firearms_total,
         accessories_total,
         blanket,

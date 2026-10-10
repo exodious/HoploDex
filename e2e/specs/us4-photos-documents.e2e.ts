@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import {
   $,
@@ -206,5 +208,84 @@ describe("User Story 4 - Attach Photos and Documents", () => {
 
     expect(violations).toContain("connect-src");
     expect(violations).toContain("img-src");
+  });
+
+  // #73: the content security policy governs what the page fetches, not where
+  // the window goes. The main window has a native navigation allowlist
+  // (services::main_navigation), so a navigation to a page on the loopback is
+  // refused: the window stays on the app and the page is never requested. On
+  // Windows that takes the main web view's request filter too: WebView2 may
+  // send the GET before the navigation handler has answered.
+  it("refuses a navigation of the window to another page (#73)", async () => {
+    const requests: string[] = [];
+    const server = http.createServer((req, res) => {
+      requests.push(req.url ?? "");
+      res.setHeader("content-type", "text/html");
+      res.end("<!doctype html><title>elsewhere</title><p>not the app</p>");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      // Each way names itself in the URL, so a failure says which got out.
+      const target = (way: string) => `http://127.0.0.1:${port}/leak?records=secret&way=${way}`;
+      const appHref: string = await browser.execute(() => window.location.href);
+
+      // Each way a page can leave: setting the location, replacing it, a link
+      // (in the window and in a new one), and a new window. Each starts from
+      // a timer, so the script returns before the navigation does. (The CSP
+      // forbids eval, so each is written out.)
+      await browser.execute((url: string) => {
+        setTimeout(() => {
+          window.location.href = url;
+        }, 0);
+      }, target("href"));
+      await browser.pause(500);
+      await browser.execute((url: string) => {
+        setTimeout(() => {
+          window.location.replace(url);
+        }, 0);
+      }, target("replace"));
+      await browser.pause(500);
+      await browser.execute((url: string) => {
+        setTimeout(() => {
+          const link = document.createElement("a");
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }, 0);
+      }, target("link"));
+      await browser.pause(500);
+      await browser.execute((url: string) => {
+        setTimeout(() => {
+          const link = document.createElement("a");
+          link.href = url;
+          link.target = "_blank";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        }, 0);
+      }, target("link-blank"));
+      await browser.pause(500);
+      await browser.execute((url: string) => {
+        setTimeout(() => {
+          window.open(url, "_blank");
+        }, 0);
+      }, target("window-open"));
+      // Long enough for a navigation that was allowed to have loaded.
+      await browser.pause(1500);
+
+      expect(requests).toEqual([]);
+      expect(await browser.execute(() => window.location.href)).toBe(appHref);
+      expect(await browser.execute(() => document.title)).not.toBe("elsewhere");
+      // The app is still there and answers.
+      await expect($("#root > *")).toExist();
+    } finally {
+      // WebKit may open a connection to a link's host ahead of the policy
+      // decision (a preconnect: no request is sent). Close it, or close()
+      // waits for it.
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

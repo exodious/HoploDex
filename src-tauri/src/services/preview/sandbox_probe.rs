@@ -27,6 +27,9 @@ use webkit2gtk::glib::{
 /// checked before anything else, as the render helper's is.
 pub const ARGUMENT: &str = "--webkit-sandbox-probe";
 
+/// This process's own executable, as the kernel has it.
+const SELF_EXE: &str = "/proc/self/exe";
+
 /// How long the probe may take before it counts as having failed.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -102,12 +105,11 @@ pub fn decide_and_apply() -> WebKitSandbox {
 }
 
 /// Starts this executable as the probe and waits for it, for at most
-/// [`PROBE_TIMEOUT`].
+/// [`PROBE_TIMEOUT`]. It runs `/proc/self/exe`, the image this process is
+/// running, rather than the path it was started from, which may since have
+/// been replaced or removed.
 fn run_child() -> ProbeOutcome {
-    let Ok(exe) = std::env::current_exe() else {
-        return ProbeOutcome::Exited(-1);
-    };
-    let spawned = Command::new(exe)
+    let spawned = Command::new(SELF_EXE)
         .arg(ARGUMENT)
         .env("WEBKIT_FORCE_SANDBOX", "1")
         .stdin(Stdio::null())

@@ -175,7 +175,7 @@ and import, FR-024):
 | `make`, `model` | Required; trimmed; 004's entry rules (FR-015), checked only when changed from the stored value | "Make is required." / "Model is required." (`make`, `model`), else as 004 |
 | `caliber`, `cartridge` | Optional; otherwise 004's entry rules (FR-015), checked only when changed from the stored value | as 004 |
 | `serialNumber`, `acquisitionSource`, `notes` | Optional free text; trimmed; blank → `null` | none |
-| `estimatedValue`, `acquisitionPrice`, `dispositionPrice`, `scheduledCoverageAmount` | Whole dollars, not negative (001 FR-037) | as for a firearm |
+| `estimatedValue`, `acquisitionPrice`, `dispositionPrice`, `scheduledCoverageAmount` | Whole dollars, not negative (001 FR-037), at most $99,999,999 (_amended 2026-10-09 (#67): the cap is shared with the firearm through `models::rules`_) | as for a firearm ("… can't be more than $99,999,999.") |
 | `acquisitionDate` | `YYYY-MM-DD`, not after today (local) | as for a firearm |
 | disposition | When `disposed`: type, recipient and date required; price optional (research.md §9). When `active`: none of the four | as for a firearm |
 | `dispositionDate` | Not before `acquisitionDate` | as for a firearm |

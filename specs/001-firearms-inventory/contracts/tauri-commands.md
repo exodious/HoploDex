@@ -23,6 +23,8 @@ a fractional number never decodes into the integer argument at all (Tauri
 refuses the call before the command runs); it never rounds. Thousands separators are a display
 concern of the frontend only and never cross this boundary.
 
+_Amended 2026-10-09 (#67): every amount is also capped at $99,999,999 (`MAX_AMOUNT_DOLLARS` in `src-tauri/src/models/rules.rs`, `MAX_DOLLARS` in `src/lib/money.ts`; the two must agree). A larger one is refused with a field error ("Estimated value can't be more than $99,999,999."); on import it is a row error naming the column. Totals (`total`, `collectionTotal`, the subtotals) are summed overflow-safe and saturate at 2^53 - 1 rather than fail, since a row from before the cap may be larger._
+
 All error returns use a common shape:
 
 ```ts
@@ -393,6 +395,8 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#op
 
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): the record set comes from the added `get_export_scope`, and `ExportResult` gains `accessorySpreadsheetPath` and `exportedAccessoryCount`._
 
+_Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo's file name is a basename; see [spec 006's "Two tables"](../../006-accessory-links/contracts/spreadsheet-format.md#two-tables)._
+
 - **Input**: `{ format: "csv" | "xlsx", destinationFolder: string, scope: "all" | "filtered", filter?: ListFirearmsInput }`.
 - **Output (progress events, then)**: `{ spreadsheetPath: string, photosFolderPath: string, exportedFirearmCount: number, exportedPhotoCount: number }`.
 - **Behavior**: `scope` resolves the Edge Case "export while a filter is
@@ -430,6 +434,8 @@ are snapped._
 ### `resolve_import_conflicts`
 
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): an `overwrite` or `duplicate` applies the row's mount, and its warnings arrive in `warnings`._
+
+_Amended 2026-10-09 ([#64](https://github.com/exodious/HoploDex/issues/64)): an import's held conflicts belong to the open of the database that read them (`OpenDatabase::imports`), not to the app. A close, lock, idle lock, switch, restore, take-over, sleep or shutdown drops them, and reopening the same file starts with none, so `importSessionId` resolves only in the open that made it. Otherwise (resolved, never made, dropped for a newer one, or from another open) the command fails with `NOT_FOUND` and applies nothing. At most 3 imports are held, the oldest dropped first. An `overwrite` or `duplicate` applies only while the matched record still has the record identifier it had when the conflict was found; if it was deleted or replaced, the conflict is reported in `unresolved` (and is not kept: import the file again)._
 
 - **Input**: `{ importSessionId: string, resolutions: { conflictId: string; action: "skip" | "overwrite" | "duplicate" }[], applyToRemaining?: "skip" | "overwrite" | "duplicate" }`.
 - **Output**: `{ resolvedCount: number, unresolved: { row: number; message: string }[] }`.

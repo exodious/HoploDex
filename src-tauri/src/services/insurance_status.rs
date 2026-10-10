@@ -13,6 +13,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::commands::CommandError;
+use crate::models::rules::{MAX_TOTAL_DOLLARS, saturating_add, saturating_total};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -131,8 +132,8 @@ pub fn load_context_as_of(
             Some(BlanketInForce {
                 policy_id: policy.id,
                 policy_name: policy.name.clone(),
-                limit: policy.blanket_limit.unwrap_or(0),
-                total: firearm_total + accessory_total,
+                limit: policy.blanket_limit.unwrap_or(0).min(MAX_TOTAL_DOLLARS),
+                total: saturating_add(firearm_total, accessory_total),
                 firearm_count,
                 accessory_count,
             })
@@ -144,16 +145,25 @@ pub fn load_context_as_of(
 
 /// The summed value and the count of a table's active records that no policy
 /// schedules. `table` is one of the two fixed table names, never user input.
+///
+/// The values are added here, not with SQL's `SUM`: SQLite raises an integer
+/// overflow error when a sum leaves 64 bits, which would fail every listing
+/// that needs the blanket total (#67). [`saturating_total`] cannot fail, so
+/// oversized rows from an older database only make the total saturate.
 fn unscheduled_active(conn: &Connection, table: &str) -> Result<(i64, i64), CommandError> {
-    conn.query_row(
-        &format!(
-            "SELECT COALESCE(SUM(COALESCE(estimated_value, 0)), 0), COUNT(*)
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT COALESCE(estimated_value, 0)
              FROM {table} WHERE status = 'active' AND insurance_policy_id IS NULL"
-        ),
-        [],
-        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-    )
-    .map_err(CommandError::from_db)
+        ))
+        .map_err(CommandError::from_db)?;
+    let values = stmt
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(CommandError::from_db)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(CommandError::from_db)?;
+    let count = i64::try_from(values.len()).unwrap_or(i64::MAX);
+    Ok((saturating_total(values), count))
 }
 
 fn status_of(policy: &PolicyDates, all: &[PolicyDates], today: NaiveDate) -> PolicyStatus {

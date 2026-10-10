@@ -261,7 +261,25 @@ fn locate_replaces_the_path_and_keeps_everything_else() {
     assert_eq!(located.database_id, before[1].database_id);
     assert_eq!(located.backup_folder, before[1].backup_folder);
     assert_eq!(located.passphrase_saved, before[1].passphrase_saved);
+    assert!(!before[1].located);
+    assert!(located.located, "marked until it opens at the new path");
     assert_eq!(settings.locate_recent(Path::new("/nowhere.hoplodex"), &a), None);
+}
+
+#[test]
+fn an_open_at_the_located_path_clears_located() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let a = PathBuf::from("/data/A.hoplodex");
+    let found = PathBuf::from("/usb/A.hoplodex");
+    settings.touch_recent(&a, "A", &"a".repeat(32), Path::new("/data/HoploDex backups"));
+    settings.locate_recent(&a, &found).unwrap();
+
+    settings.touch_recent(&found, "A", &"a".repeat(32), Path::new("/usb/HoploDex backups"));
+
+    let recent = MachineSettings::load(config.path()).unwrap().recent();
+    assert_eq!(recent.len(), 1);
+    assert!(!recent[0].located);
 }
 
 #[test]

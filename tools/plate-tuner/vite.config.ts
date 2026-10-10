@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { writeTiming } from "./saveTiming";
+import { saveHandler } from "./saveRequest";
+import { TOKEN_META } from "./token";
 
 /*
  * The chooser plate's tuner: `npm run tuner` serves it, with a Save button
@@ -12,36 +13,37 @@ import { writeTiming } from "./saveTiming";
  * (without Save: copy the changes out instead).
  */
 
+const PORT = 1430;
 const here = fileURLToPath(new URL(".", import.meta.url));
 const TIMING = fileURLToPath(
   new URL("../../src/features/databases/plate/timing.ts", import.meta.url),
 );
 
-/** POST /__plate-timing with the changed values writes them into timing.ts. */
+/**
+ * POST /__plate-timing with the changed values writes them into timing.ts,
+ * for the tuner page this server serves and nothing else: see
+ * saveRequest.ts. The page gets this run's token from a <meta> in its HTML.
+ */
 function saveTiming(): Plugin {
+  const token = randomBytes(32).toString("hex");
   return {
     name: "plate-tuner-save",
     apply: "serve",
+    transformIndexHtml: () => [
+      { tag: "meta", attrs: { name: TOKEN_META, content: token }, injectTo: "head" },
+    ],
     configureServer(server) {
-      server.middlewares.use("/__plate-timing", (req, res) => {
-        if (req.method !== "POST") {
-          res.statusCode = 405;
-          res.end();
-          return;
-        }
-        let body = "";
-        req.on("data", (chunk) => (body += chunk));
-        req.on("end", () => {
-          try {
-            writeFileSync(TIMING, writeTiming(readFileSync(TIMING, "utf8"), JSON.parse(body)));
-            res.statusCode = 204;
-            res.end();
-          } catch (error) {
-            res.statusCode = 400;
-            res.end(String(error instanceof Error ? error.message : error));
-          }
-        });
-      });
+      server.middlewares.use(
+        "/__plate-timing",
+        saveHandler({
+          token,
+          timingPath: TIMING,
+          port: () => {
+            const address = server.httpServer?.address();
+            return typeof address === "object" && address ? address.port : PORT;
+          },
+        }),
+      );
     },
   };
 }
@@ -84,7 +86,15 @@ export default defineConfig({
   root: here,
   base: "./",
   plugins: [react(), saveTiming(), oneFile()],
-  server: { port: 1430, fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] } },
+  server: {
+    port: PORT,
+    // loopback only, whatever the environment says
+    host: "localhost",
+    // Vite lets other localhost origins read what it serves; the page's
+    // Save token must not be readable by them
+    cors: false,
+    fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] },
+  },
   build: {
     outDir: fileURLToPath(new URL("../../dist-tuner", import.meta.url)),
     emptyOutDir: true,

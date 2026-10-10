@@ -101,6 +101,7 @@ human-readable errors):
   Input parsing accepts digits only (a pasted "$", commas, or spaces are
   dropped; a fractional part is rejected, not rounded, and on import a zero
   fraction such as "450.00" is accepted).
+  _Amended 2026-10-09 (#67): every amount is also capped at $99,999,999 (`MAX_AMOUNT_DOLLARS` in `src-tauri/src/models/rules.rs`, `MAX_DOLLARS` in `src/lib/money.ts`; the two must agree). A larger one is refused with a field error ("Estimated value can't be more than $99,999,999."); on import it is a row error naming the column. Totals are summed overflow-safe and saturate at 2^53 - 1 rather than fail, since a row from before the cap may be larger._
 - **Physical details (FR-039)**: all six columns are optional for every
   firearm type. The columns hold scaled integers (inches × 100, ounces × 10),
   so a measurement is never a float. The input layers (form and import) round
@@ -226,7 +227,7 @@ _Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-documen
 | `agent_name` | TEXT, nullable | |
 | `agent_contact` | TEXT, nullable | |
 | `notes` | TEXT, nullable | FR-027: optional free-form notes; blank input stored as null (as `company_contact`); no length cap; not indexed by FTS5 (search covers firearms only, FR-013) and not exported |
-| `blanket_coverage_limit` | INTEGER (whole dollars, ≥ 0), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy |
+| `blanket_coverage_limit` | INTEGER (whole dollars, ≥ 0), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy. _Amended 2026-10-09 (#67): at most $99,999,999 on entry; see Amounts above._ |
 | `effective_start_date` | TEXT (ISO 8601 date), not null | |
 | `effective_end_date` | TEXT (ISO 8601 date), not null | drives 30-day and expired warnings (FR-028) |
 | `created_at` / `updated_at` | TEXT (ISO 8601 datetime), not null | |

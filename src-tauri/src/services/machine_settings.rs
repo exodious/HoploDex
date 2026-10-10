@@ -4,7 +4,7 @@
 //! data or secrets. The config directory is always passed in, so tests and
 //! tools use throwaway ones.
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -15,6 +15,7 @@ use crate::db::{now_utc, random_hex};
 use crate::models::database::ChooserNotice;
 use crate::models::document_opening::DocumentOpening;
 use crate::services::keyring::Keyring;
+use crate::services::scratch;
 use crate::services::secure_delete::{secure_delete_dir, secure_delete_file};
 
 const FILE_NAME: &str = "machine.json";
@@ -54,6 +55,12 @@ pub struct RecentEntry {
     /// then nothing is said about changes made elsewhere.
     #[serde(default)]
     pub left_modified_at: Option<String>,
+    /// Set when the user re-located the entry and cleared at the next open:
+    /// until the database has opened at this path, nothing says the file
+    /// there is the one its id and backup folder were cached from, so a
+    /// damaged restore won't replace it (SECURITY: issue #62).
+    #[serde(default)]
+    pub located: bool,
 }
 
 /// The modification time of the file at `path`, as `left_modified_at`
@@ -252,6 +259,7 @@ impl MachineSettings {
                     backup_folder: Some(backup_folder.to_owned()),
                     passphrase_saved,
                     left_modified_at: None,
+                    located: false,
                 },
             );
         });
@@ -321,8 +329,9 @@ impl MachineSettings {
 
     /// Points the recent entry for `path` at `new_path`, where the user found
     /// the file, keeping everything else about it but the time it was left
-    /// (FR-012, FR-040). An entry already at `new_path` is merged away, since
-    /// entries are identified by path. `None` when `path` isn't in the list.
+    /// (FR-012, FR-040), and marks it `located` until it next opens. An entry
+    /// already at `new_path` is merged away, since entries are identified by
+    /// path. `None` when `path` isn't in the list.
     pub fn locate_recent(&self, path: &Path, new_path: &Path) -> Option<RecentEntry> {
         let mut located = None;
         self.update(|file| {
@@ -334,6 +343,7 @@ impl MachineSettings {
             entry.path = new_path.to_owned();
             // The file found may be a copy, with a time of its own.
             entry.left_modified_at = None;
+            entry.located = true;
             file.recent_databases.retain(|other| other.path != new_path);
             let index = index.min(file.recent_databases.len());
             file.recent_databases.insert(index, entry.clone());
@@ -488,14 +498,18 @@ fn normalize_hold(hold: &mut Option<PdfPreviewHold>) {
 }
 
 /// Writes to a temporary file beside `path`, flushes it, then renames it
-/// over `path`, so a crash leaves either the old file or the new one.
+/// over `path`, so a crash leaves either the old file or the new one. The
+/// temporary file has an unpredictable name (nothing recovers it by name) and
+/// is created exclusively, so a file or symlink planted in the folder is
+/// never truncated or followed, and only a file this call created is removed
+/// (#63).
 fn write_atomically(path: &Path, file: &MachineFile) -> io::Result<()> {
-    let temp = path.with_extension("json.tmp");
+    let id = random_hex(8).map_err(io::Error::other)?;
+    let temp = path.with_extension(format!("json.{id}.tmp"));
     let json = serde_json::to_vec_pretty(file).map_err(io::Error::other)?;
-    let written = File::create(&temp).and_then(|mut out| {
-        out.write_all(&json)?;
-        out.sync_all()
-    });
+    let mut out = scratch::create(&temp)?;
+    let written = out.write_all(&json).and_then(|()| out.sync_all());
+    drop(out);
     match written.and_then(|()| fs::rename(&temp, path)) {
         Ok(()) => Ok(()),
         Err(err) => {

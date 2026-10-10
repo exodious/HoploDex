@@ -341,6 +341,45 @@ fn a_wrong_backup_passphrase_changes_nothing() {
     assert!(world.session.is_open(), "the current database stays open");
 }
 
+#[test]
+fn a_file_planted_at_the_copys_name_fails_the_restore_and_is_left_alone() {
+    // #63: the failure path removed whatever was at `.new`.
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let before = fs::read(world.path()).unwrap();
+    let planted = world.dir.path().join(".Mine.hoplodex.new");
+    fs::write(&planted, b"somebody else's file").unwrap();
+
+    let refused = world.restore(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
+
+    assert_eq!(refused.code, "INTERNAL_ERROR");
+    assert_eq!(fs::read(&planted).unwrap(), b"somebody else's file", "not truncated or removed");
+    assert_eq!(fs::read(world.path()).unwrap(), before);
+    assert!(world.session.is_open());
+}
+
+#[test]
+fn a_file_planted_at_the_copys_name_fails_the_restore_of_a_damaged_database() {
+    let world = World::new();
+    let listed = damaged(&world);
+    let planted = world.dir.path().join(".Mine.hoplodex.new");
+    fs::write(&planted, b"somebody else's file").unwrap();
+    let damaged_bytes = fs::read(world.path()).unwrap();
+
+    let refused = backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &listed[0].path,
+        &passphrase(),
+        Some(&world.path().to_string_lossy()),
+    )
+    .unwrap_err();
+
+    assert_eq!(refused.code, "INTERNAL_ERROR");
+    assert_eq!(fs::read(&planted).unwrap(), b"somebody else's file");
+    assert_eq!(fs::read(world.path()).unwrap(), damaged_bytes, "the damaged file stays put");
+}
+
 /// Stops the restore at the first `restore:progress` of `phase` (after
 /// some bytes, for `copying`), then checks the database is as it was, open,
 /// and reopens with its old passphrase and content.
@@ -457,6 +496,200 @@ fn a_damaged_database_is_restored_and_kept_aside() {
     assert_eq!(fs::read(&kept).unwrap(), damaged_bytes, "the damaged file is kept as it was");
     assert_eq!(open_collection(&world), expected);
     assert_eq!(world.listed().len(), 2, "no before-restoring backup of a file that won't open");
+}
+
+// --- Who and what a damaged restore may replace (issue #62) ------------------
+
+impl World {
+    /// Restores into `target`, which is whatever the web view sent.
+    fn restore_into(&self, backup: &str, target: &Path) -> Result<DatabaseStatus, CommandError> {
+        backups_ops::restore_backup(
+            &self.session,
+            &self.machine,
+            backup,
+            &passphrase(),
+            Some(&target.to_string_lossy()),
+        )
+    }
+}
+
+/// `damaged`, then the damaged file's bytes and what is beside it.
+fn damaged_with_listing(world: &World) -> (Vec<BackupInfo>, Vec<u8>, Vec<String>) {
+    let listed = damaged(world);
+    (listed, fs::read(world.path()).unwrap(), World::names(world.dir.path()))
+}
+
+#[test]
+fn issue_62_a_path_that_is_not_a_recent_database_is_never_replaced() {
+    let world = World::new();
+    let (listed, _, _) = damaged_with_listing(&world);
+    let stranger = world.dir.path().join("Not a database.txt");
+    fs::write(&stranger, b"precious").unwrap();
+    let names = World::names(world.dir.path());
+
+    let refused = world.restore_into(&listed[0].path, &stranger).unwrap_err();
+
+    assert_eq!(refused.code, "NOT_FOUND");
+    assert_eq!(fs::read(&stranger).unwrap(), b"precious");
+    assert_eq!(World::names(world.dir.path()), names, "nothing was set aside or added");
+}
+
+#[test]
+fn issue_62_a_recent_entry_located_onto_another_file_does_not_authorize_it() {
+    let world = World::new();
+    let (listed, _, _) = damaged_with_listing(&world);
+    let stranger = world.dir.path().join("Not a database.txt");
+    fs::write(&stranger, b"precious").unwrap();
+    // The web view re-points Mine's entry, cached id and folder included,
+    // at a file of its choosing.
+    databases::locate_database(
+        &world.machine,
+        &world.path().to_string_lossy(),
+        &stranger.to_string_lossy(),
+    )
+    .unwrap();
+    let names = World::names(world.dir.path());
+
+    let refused = world.restore_into(&listed[0].path, &stranger).unwrap_err();
+
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert!(refused.field_errors.unwrap().contains_key("databasePath"));
+    assert_eq!(fs::read(&stranger).unwrap(), b"precious");
+    assert_eq!(World::names(world.dir.path()), names, "nothing was set aside or added");
+}
+
+#[test]
+fn issue_62_a_located_database_is_restorable_once_it_has_opened_there() {
+    let world = World::new();
+    world.with_two_backups();
+    world.close();
+    let moved = world.dir.path().join("Moved.hoplodex");
+    fs::rename(world.path(), &moved).unwrap();
+    databases::locate_database(
+        &world.machine,
+        &world.path().to_string_lossy(),
+        &moved.to_string_lossy(),
+    )
+    .unwrap();
+    databases::open_database(
+        &world.session,
+        &world.machine,
+        &moved.to_string_lossy(),
+        databases::Unlock::typed(&passphrase()),
+        false,
+    )
+    .unwrap();
+    world.close();
+    let listed =
+        backups_ops::list_backups(&world.session, &world.machine, Some(&moved.to_string_lossy()))
+            .unwrap()
+            .backups;
+    let expected = collection(&peek(Path::new(&listed[0].path)));
+    let bytes = fs::read(&moved).unwrap();
+    fs::write(&moved, &bytes[..2 * 4096]).unwrap();
+
+    let status = world.restore_into(&listed[0].path, &moved).unwrap();
+
+    assert!(status.notes.damaged_file_kept_at.is_some());
+    assert_eq!(open_collection(&world), expected);
+}
+
+#[test]
+fn issue_62_a_backup_outside_the_cached_backup_folder_is_refused() {
+    let world = World::new();
+    let (listed, bytes, names) = damaged_with_listing(&world);
+    let elsewhere = TempDir::new().unwrap();
+    let copy = elsewhere.path().join(&listed[0].file_name);
+    fs::copy(&listed[0].path, &copy).unwrap();
+
+    let refused = world.restore_into(copy.to_str().unwrap(), &world.path()).unwrap_err();
+
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert!(refused.field_errors.unwrap().contains_key("backupPath"));
+    assert_eq!(fs::read(world.path()).unwrap(), bytes);
+    assert_eq!(World::names(world.dir.path()), names);
+}
+
+#[test]
+fn issue_62_a_backup_of_another_database_is_refused_whatever_its_name_and_place() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    world.close();
+    // Another database whose backups share the folder, with the same
+    // passphrase: it is only the id inside the backup that tells them apart.
+    let other = world.dir.path().join("Other.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+    let other_id = world.database_id();
+    world.add_firearm("Z9");
+    world.close();
+    let theirs = backups::list(&world.default_folder(), &other_id).unwrap().remove(0);
+    // Named as Mine's backup, in Mine's folder.
+    let disguised = Path::new(&listed[0].path).with_file_name(&listed[1].file_name);
+    fs::copy(&theirs.path, world.dir.path().join("scratch")).unwrap();
+    fs::remove_file(&listed[1].path).unwrap();
+    fs::rename(world.dir.path().join("scratch"), &disguised).unwrap();
+    let bytes = fs::read(world.path()).unwrap();
+    let names = World::names(world.dir.path());
+
+    for backup in [theirs.path.as_str(), disguised.to_str().unwrap()] {
+        let refused = world.restore_into(backup, &world.path()).unwrap_err();
+        assert_eq!(refused.code, "VALIDATION_ERROR", "{backup}");
+    }
+
+    assert_eq!(fs::read(world.path()).unwrap(), bytes, "Mine is as it was");
+    assert_eq!(World::names(world.dir.path()), names);
+    assert!(world.leftovers().is_empty());
+}
+
+#[test]
+fn issue_62_a_directory_at_the_target_is_refused_and_left_alone() {
+    let world = World::new();
+    let (listed, _, _) = damaged_with_listing(&world);
+    fs::remove_file(world.path()).unwrap();
+    fs::create_dir(world.path()).unwrap();
+    fs::write(world.path().join("inside.txt"), b"mine").unwrap();
+    let names = World::names(world.dir.path());
+
+    let refused = world.restore_into(&listed[0].path, &world.path()).unwrap_err();
+
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert!(refused.field_errors.unwrap().contains_key("databasePath"));
+    assert!(world.path().is_dir());
+    assert_eq!(fs::read(world.path().join("inside.txt")).unwrap(), b"mine");
+    assert_eq!(World::names(world.dir.path()), names);
+}
+
+#[cfg(unix)]
+#[test]
+fn issue_62_a_symlink_at_the_target_is_refused_and_not_followed() {
+    let world = World::new();
+    let (listed, _, _) = damaged_with_listing(&world);
+    let outside = TempDir::new().unwrap();
+    let victim = outside.path().join("victim.txt");
+    fs::write(&victim, b"precious").unwrap();
+    fs::remove_file(world.path()).unwrap();
+    std::os::unix::fs::symlink(&victim, world.path()).unwrap();
+    let names = World::names(world.dir.path());
+
+    let refused = world.restore_into(&listed[0].path, &world.path()).unwrap_err();
+
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert_eq!(fs::read_link(world.path()).unwrap(), victim, "the link is as it was");
+    assert_eq!(fs::read(&victim).unwrap(), b"precious");
+    assert_eq!(World::names(world.dir.path()), names);
+}
+
+#[test]
+fn issue_62_a_database_file_that_is_gone_is_put_back() {
+    let world = World::new();
+    let (listed, _, _) = damaged_with_listing(&world);
+    let expected = collection(&peek(Path::new(&listed[0].path)));
+    fs::remove_file(world.path()).unwrap();
+
+    let status = world.restore_into(&listed[0].path, &world.path()).unwrap();
+
+    assert_eq!(status.notes.damaged_file_kept_at, None, "there was nothing to keep");
+    assert_eq!(open_collection(&world), expected);
 }
 
 // --- Preconditions and failures (FR-028, research.md §8) --------------------

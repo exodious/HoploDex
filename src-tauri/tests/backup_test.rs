@@ -545,6 +545,49 @@ fn an_unwritable_backup_location_fails_the_backup() {
 }
 
 #[test]
+fn a_file_already_at_the_partial_name_fails_the_backup_and_is_left_alone() {
+    // #63: the partial's name is predictable, so what is at it is not ours.
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    fs::create_dir_all(world.default_folder()).unwrap();
+    let planted = world
+        .default_folder()
+        .join(format!("Mine 2026-09-25 143005 {}.hoplodex.partial", &id[..8]));
+    fs::write(&planted, b"somebody else's file").unwrap();
+
+    let outcome = world.close();
+
+    assert_eq!(fs::read(&planted).unwrap(), b"somebody else's file", "not truncated or removed");
+    assert_eq!(world.machine.unfinished_backup(), None, "nothing is recorded to sweep");
+    assert_eq!(World::file_names(&world.default_folder()).len(), 1, "and no backup was made");
+    assert_failed_and_waiting(&world, outcome, BackupFailureReason::Io);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_at_the_partial_name_is_not_followed_by_the_backup() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    fs::create_dir_all(world.default_folder()).unwrap();
+    let victim = world.dir.path().join("victim.txt");
+    fs::write(&victim, b"precious").unwrap();
+    let planted = world
+        .default_folder()
+        .join(format!("Mine 2026-09-25 143005 {}.hoplodex.partial", &id[..8]));
+    std::os::unix::fs::symlink(&victim, &planted).unwrap();
+
+    let outcome = world.close();
+
+    assert_eq!(fs::read(&victim).unwrap(), b"precious");
+    assert!(fs::symlink_metadata(&planted).is_ok(), "the link is not ours to remove");
+    assert_failed_and_waiting(&world, outcome, BackupFailureReason::Io);
+}
+
+#[test]
 fn a_full_backup_location_fails_the_backup() {
     let world = World::new();
     world.create();

@@ -19,6 +19,7 @@ use crate::models::database::{
 };
 use crate::services::disk_space::{self, InsufficientSpace};
 use crate::services::machine_settings::{MachineSettings, UnfinishedBackup, UnfinishedBackupMove};
+use crate::services::scratch;
 use crate::services::secure_delete::{self, WipeControl};
 
 /// The default backup folder's name, in the database's own folder.
@@ -238,18 +239,18 @@ impl From<io::Error> for CopyError {
     }
 }
 
-/// Copies `src` byte for byte to the new file `dst`, in 1 MiB chunks,
-/// reporting `(bytes copied, total)` first with nothing copied and then
-/// after each chunk, and asking `cancel` before each chunk. The caller
-/// removes `dst` when it fails.
+/// Copies `src` byte for byte to `out`, a new file the caller created
+/// exclusively ([`scratch::create`]), in 1 MiB chunks, reporting `(bytes
+/// copied, total)` first with nothing copied and then after each chunk, and
+/// asking `cancel` before each chunk. The file is the caller's: it removes it
+/// when the copy fails, and only because it created it (#63).
 pub fn copy_chunked(
     src: &dyn ReadAt,
-    dst: &Path,
+    mut out: File,
     cancel: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<(), CopyError> {
     let total = src.size()?;
-    let mut out = OpenOptions::new().write(true).create_new(true).open(dst)?;
     progress(0, total);
     let mut buf = vec![0u8; COPY_CHUNK as usize];
     let mut done = 0;
@@ -461,13 +462,19 @@ pub fn make_backup(machine: &MachineSettings, job: BackupJob) -> Result<PathBuf,
     let mut partial = final_path.clone().into_os_string();
     partial.push(PARTIAL_SUFFIX);
     let partial = PathBuf::from(partial);
+    // Created exclusively and before it is recorded: a file already at that
+    // name is not ours, so it stays, and nothing is swept or removed for it.
+    let out = scratch::create(&partial).map_err(|err| {
+        log::error!("could not create {}: {err}", partial.display());
+        BackupFailure::Io(err)
+    })?;
     machine.set_unfinished_backup(UnfinishedBackup {
         database_path: job.database_path.to_owned(),
         partial_path: partial.clone(),
         started_at: utc_text(&job.now),
     });
 
-    let made = copy_chunked(&source, &partial, job.cancel, job.progress)
+    let made = copy_chunked(&source, out, job.cancel, job.progress)
         .and_then(|()| {
             stamp_backup(job.conn, &partial, job.name, &job.now)
                 .map_err(|err| CopyError::Io(io::Error::other(err)))
@@ -721,8 +728,11 @@ fn move_one(
     let mut partial = dst.as_os_str().to_owned();
     partial.push(PARTIAL_SUFFIX);
     let partial = PathBuf::from(partial);
+    // Exclusive, and before it is recorded, as for a backup: what is already
+    // there is not ours and is left alone.
+    let out = scratch::create(&partial)?;
     machine.set_unfinished_backup_move_partial(Some(&partial));
-    let copied = copy_and_verify(src, &partial, dst, cancel, progress);
+    let copied = copy_and_verify(src, out, &partial, dst, cancel, progress);
     if copied.is_err() {
         remove_partial(&partial);
     }
@@ -742,6 +752,7 @@ fn move_one(
 /// with `src`, then renames it to `dst`, which must not be taken.
 fn copy_and_verify(
     src: &Path,
+    out: File,
     partial: &Path,
     dst: &Path,
     cancel: &dyn Fn() -> bool,
@@ -749,7 +760,7 @@ fn copy_and_verify(
 ) -> Result<(), MoveFailure> {
     let source = File::open(src)?;
     let len = ReadAt::size(&source)?;
-    copy_chunked(&source, partial, cancel, &mut |done, _| progress(done))?;
+    copy_chunked(&source, out, cancel, &mut |done, _| progress(done))?;
     testing::after_copy(partial);
     let copy = File::open(partial)?;
     if ReadAt::size(&copy)? != len {

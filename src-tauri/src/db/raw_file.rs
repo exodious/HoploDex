@@ -41,7 +41,10 @@ impl<'conn> RawFile<'conn> {
         };
         // SAFETY: a non-null `file` from SQLite points at its open file
         // object, whose `pMethods` is null only while the file is closed.
-        if rc != ffi::SQLITE_OK || file.is_null() || unsafe { (*file).pMethods.is_null() } {
+        // `as_ref` is `None` for a null `file`.
+        let open = rc == ffi::SQLITE_OK
+            && unsafe { file.as_ref() }.is_some_and(|object| !object.pMethods.is_null());
+        if !open {
             return Err(io::Error::other("the database file is not open"));
         }
         Ok(Self { file, _conn: PhantomData })

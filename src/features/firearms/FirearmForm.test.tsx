@@ -187,6 +187,33 @@ function tomorrowIso(): string {
   return next.toISOString().slice(0, 10);
 }
 
+describe("FirearmForm amount cap (#67)", () => {
+  it("refuses an amount above $99,999,999 before sending, and accepts exactly that", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.type(screen.getByLabelText("Estimated replacement value"), "100000000");
+    await user.type(screen.getByLabelText("Price paid"), "100000000");
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(screen.getAllByText("Enter an amount of $99,999,999 or less.")).toHaveLength(2);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    for (const label of ["Estimated replacement value", "Price paid"]) {
+      const field = screen.getByLabelText(label);
+      await user.clear(field);
+      await user.type(field, "99999999");
+    }
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      estimatedValue: 99_999_999,
+      acquisitionPrice: 99_999_999,
+    });
+  });
+});
+
 describe("FirearmForm date rules (FR-003 / FR-004)", () => {
   it("blocks a future acquisition date with a field-level message", async () => {
     const user = userEvent.setup();
