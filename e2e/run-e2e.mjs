@@ -14,7 +14,13 @@ const repoRoot = path.resolve(__dirname, "..");
 // the first-run screens, which need a sandbox with no databases.
 const SCREENSHOT_SPECS = ["e2e/screenshots/screens.e2e.ts", "e2e/screenshots/first-run.e2e.ts"];
 let screenshotDir;
+// --act (#89 trial): the act() specs, with wdio.act.conf.ts.
+let configFile = "e2e/wdio.conf.ts";
 const extraArgs = process.argv.slice(2).filter((arg) => {
+  if (arg === "--act") {
+    configFile = "e2e/wdio.act.conf.ts";
+    return false;
+  }
   const match = /^--screenshots(?:=(.+))?$/.exec(arg);
   if (!match) return true;
   screenshotDir = path.resolve(match[1] ?? path.join(repoRoot, "e2e/screenshots-out"));
@@ -45,7 +51,7 @@ const env = { ...process.env, GDK_BACKEND: "x11" };
 delete env.WAYLAND_DISPLAY;
 if (screenshotDir) env.HOPLODEX_SCREENSHOTS = screenshotDir;
 
-const result = spawnSync(process.execPath, [wdioBin, "run", "e2e/wdio.conf.ts", ...extraArgs], {
+const result = spawnSync(process.execPath, [wdioBin, "run", configFile, ...extraArgs], {
   stdio: "inherit",
   env,
 });

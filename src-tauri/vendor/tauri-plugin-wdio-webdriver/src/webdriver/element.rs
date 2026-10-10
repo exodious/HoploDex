@@ -44,7 +44,40 @@ impl ElementStore {
     pub fn get(&self, id: &str) -> Option<&ElementRef> {
         self.elements.get(id)
     }
+
+    /// Adds every web element reference in a script's result to the store.
+    /// The execute wrapper keeps each element it returns under `__wd_el_<id>`
+    /// (`platform::executor`), as find-element does, but only the store makes
+    /// the id usable in later commands (#89). An id that isn't a UUID is left
+    /// out, since it becomes part of the scripts that use the element.
+    pub fn adopt_references(&mut self, value: &serde_json::Value) {
+        match value {
+            serde_json::Value::Array(items) => {
+                items.iter().for_each(|item| self.adopt_references(item));
+            }
+            serde_json::Value::Object(map) => {
+                if let Some(serde_json::Value::String(id)) = map.get(ELEMENT_KEY) {
+                    if map.len() == 1 && Uuid::parse_str(id).is_ok() {
+                        let js_ref = format!("__wd_el_{}", id.replace('-', ""));
+                        self.elements.insert(
+                            id.clone(),
+                            ElementRef {
+                                id: id.clone(),
+                                js_ref,
+                            },
+                        );
+                    }
+                    return;
+                }
+                map.values().for_each(|item| self.adopt_references(item));
+            }
+            _ => {}
+        }
+    }
 }
+
+/// The key of a W3C web element reference.
+const ELEMENT_KEY: &str = "element-6066-11e4-a52e-4f735466cecf";
 
 #[cfg(test)]
 mod tests {
@@ -86,5 +119,28 @@ mod tests {
             elem2.js_ref,
             format!("__wd_el_{}", elem2.id.replace('-', ""))
         );
+    }
+
+    #[test]
+    fn adopts_element_references_from_a_script_result() {
+        let mut store = ElementStore::new();
+        let id = Uuid::new_v4().to_string();
+        let nested = Uuid::new_v4().to_string();
+        store.adopt_references(&serde_json::json!({
+            "found": [{ ELEMENT_KEY: id }],
+            "deeper": { "el": { ELEMENT_KEY: nested } },
+        }));
+
+        let adopted = store.get(&id).expect("returned element should be stored");
+        assert_eq!(adopted.js_ref, format!("__wd_el_{}", id.replace('-', "")));
+        assert!(store.get(&nested).is_some());
+    }
+
+    #[test]
+    fn ignores_ids_that_are_not_uuids() {
+        let mut store = ElementStore::new();
+        let bad = "x; alert(1)";
+        store.adopt_references(&serde_json::json!([{ ELEMENT_KEY: bad }]));
+        assert!(store.get(bad).is_none());
     }
 }

@@ -1097,9 +1097,23 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
                     if (Array.isArray(value)) {{
                         return value.map(serializeValue);
                     }}
+                    if (value instanceof NodeList || value instanceof HTMLCollection) {{
+                        return Array.prototype.map.call(value, serializeValue);
+                    }}
                     if (typeof value === 'object') {{
                         if (value[ELEMENT_KEY]) return value;
-                        if (value && value.nodeType && value.nodeType === 1) return null;
+                        // An element: keep it the way find-element does, under
+                        // `__wd_el_<id>`, and return its web element reference
+                        // (W3C WebDriver §13.2.3). The handler adds the id to the
+                        // session's element store (#89).
+                        if (value.nodeType === 1) {{
+                            var id = crypto.randomUUID();
+                            window['__wd_el_' + id.replace(/-/g, '')] = value;
+                            var reference = {{}};
+                            reference[ELEMENT_KEY] = id;
+                            return reference;
+                        }}
+                        if (value.nodeType) return null;
                         var result = {{}};
                         for (var key in value) {{
                             if (value.hasOwnProperty(key)) {{
