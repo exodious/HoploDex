@@ -17,6 +17,9 @@ e2e/wdio-logs/
 e2e/.wdio-tauri-driver*
 e2e/screenshots-out/
 
+# wdio session's artifacts: snapshots, screenshots and exports (npm run session)
+.wdio/
+
 # Human-testing data: database, webview state and import samples (scripts/human-testing.sh)
 .human-testing/
 

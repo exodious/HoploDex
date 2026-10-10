@@ -25,16 +25,22 @@ if (screenshotDir && !extraArgs.some((arg) => arg === "--spec" || arg.startsWith
 }
 
 // On Linux, each worker starts an isolated Xvfb virtual display of its own
-// and points DISPLAY at it (e2e/support/display.ts), so the app never
-// renders on the developer's real desktop and parallel workers' windows and
-// real input don't share a screen. Windows and macOS have no equivalent
-// concern.
+// (through @wdio/display-server) and points DISPLAY at it
+// (e2e/support/display.ts), so the app never renders on the developer's real
+// desktop and parallel workers' windows and real input don't share a screen.
+// Windows and macOS have no equivalent concern.
 //
 // GTK3 prefers a Wayland connection over X11 when $WAYLAND_DISPLAY is
 // present in the environment, regardless of $DISPLAY — which would make
 // the app connect straight to the developer's real Wayland compositor
 // instead of the worker's Xvfb display. Forcing the X11 backend (and
 // dropping WAYLAND_DISPLAY) makes GTK honor $DISPLAY unconditionally.
+//
+// Dropping WAYLAND_DISPLAY matters to WebdriverIO 10 as well: its testrunner
+// treats a host with WAYLAND_DISPLAY but no DISPLAY as already having a
+// display, and sets GDK_BACKEND=wayland and XDG_SESSION_TYPE=wayland for the
+// run, even with displayServerEnabled: false (wdio.conf.ts). Without it, the
+// workers would inherit those.
 const env = { ...process.env, GDK_BACKEND: "x11" };
 delete env.WAYLAND_DISPLAY;
 if (screenshotDir) env.HOPLODEX_SCREENSHOTS = screenshotDir;

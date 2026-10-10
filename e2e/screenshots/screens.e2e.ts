@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   $,
+  $$,
   back,
   browser,
   choose,
@@ -84,14 +85,18 @@ async function openDialog(button: string) {
  * resolved and the page has settled; a caller waits for what it expects to
  * appear. (This call bypasses `invoke()`, so the busy count doesn't see it.) */
 async function emitFromBackend(event: string, payload: unknown) {
-  await browser.executeAsync(
-    (name: string, data: unknown, done: () => void) => {
+  await browser.execute(
+    async (name: string, data: unknown) => {
       const internals = (
         window as unknown as {
           __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
         }
       ).__TAURI_INTERNALS__;
-      internals.invoke("plugin:event|emit", { event: name, payload: data }).finally(done);
+      try {
+        await internals.invoke("plugin:event|emit", { event: name, payload: data });
+      } catch {
+        // Settled either way: a rejected emit is not this helper's to report.
+      }
     },
     event,
     payload,
@@ -404,11 +409,11 @@ for (const theme of ["Light", "Dark"] as const) {
     });
 
     it("collection", async () => {
-      await $(".hd-row__name").waitForExist();
+      await $$(".hd-row__name")[0].waitForExist();
       await shot(`01-collection-list-${suffix}`);
 
       await choose("Tiles");
-      await $(".hd-tile__name").waitForExist();
+      await $$(".hd-tile__name")[0].waitForExist();
       await shot(`02-collection-tiles-${suffix}`);
       await choose("List");
 
@@ -456,7 +461,7 @@ for (const theme of ["Light", "Dark"] as const) {
     // specs/004-cartridges-action-types contracts/ui-entry.md §9.
     it("suggestions, guesses and notes in the firearm form", async () => {
       await groupBy("Cartridge");
-      await $("h2.hd-group__title").waitForExist();
+      await $$("h2.hd-group__title")[0].waitForExist();
       await shot(`31-grouped-by-cartridge-${suffix}`);
       await groupBy("Type");
 
@@ -612,12 +617,12 @@ for (const theme of ["Light", "Dark"] as const) {
           .find((m) => (m.textContent ?? "").trim() === "Registered as")
           ?.click();
       });
-      await $("h2.hd-group__title").waitForExist();
+      await $$("h2.hd-group__title")[0].waitForExist();
       await shot(`46-grouped-by-registered-as-${suffix}`);
       await groupBy("Type");
 
       await choose("Tiles");
-      await $(".hd-tile__name").waitForExist();
+      await $$(".hd-tile__name")[0].waitForExist();
       await browser.execute(() => {
         [...document.querySelectorAll<HTMLElement>(".hd-tile__name")]
           .find((t) => t.textContent?.includes("Sparrow 22"))
@@ -633,18 +638,18 @@ for (const theme of ["Light", "Dark"] as const) {
     it("the Accessories page", async () => {
       await goTo("Accessories");
       await $("h1=Accessories").waitForExist();
-      await $(".hd-row__name").waitForExist();
+      await $$(".hd-row__name")[0].waitForExist();
       await groupBy("Kind");
-      await $("h2.hd-group__title").waitForExist();
+      await $$("h2.hd-group__title")[0].waitForExist();
       await shot(`48-accessories-list-${suffix}`);
 
       await choose("Tiles");
-      await $(".hd-tile__name").waitForExist();
+      await $$(".hd-tile__name")[0].waitForExist();
       await shot(`49-accessories-tiles-${suffix}`);
       await choose("List");
 
       await groupBy("Mounted on");
-      await $("h2.hd-group__title").waitForExist();
+      await $$("h2.hd-group__title")[0].waitForExist();
       await shot(`50-accessories-grouped-by-mounted-on-${suffix}`, { fullPage: true });
       await groupBy("Kind");
     });
@@ -741,7 +746,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`60-collection-mount-lines-${suffix}`);
 
       await choose("Tiles");
-      await $(".hd-tile__name").waitForExist();
+      await $$(".hd-tile__name")[0].waitForExist();
       await showRow("PredatAR lower");
       await shot(`61-collection-tiles-mount-lines-${suffix}`);
       await choose("List");
@@ -749,7 +754,7 @@ for (const theme of ["Light", "Dark"] as const) {
 
     it("the value summary and the export disclosure", async () => {
       await goTo("Insurance");
-      await $(".hd-policy").waitForExist();
+      await $$(".hd-policy")[0].waitForExist();
       await shot(`62-value-summary-${suffix}`);
       await goTo("Collection");
 
@@ -760,10 +765,10 @@ for (const theme of ["Light", "Dark"] as const) {
 
     it("insurance", async () => {
       await goTo("Insurance");
-      await $(".hd-policy").waitForExist();
+      await $$(".hd-policy")[0].waitForExist();
       await shot(`09-insurance-${suffix}`, { fullPage: true });
 
-      await clickEl(".hd-policy__open");
+      await clickEl("button.hd-policy__open=Collector Schedule");
       await $(".hd-backlink").waitForExist();
       await shot(`10-policy-${suffix}`, { fullPage: true });
       await back();
@@ -805,7 +810,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
 
       await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
-      await $('[role="dialog"] input[type="radio"]').waitForExist();
+      await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
       await shot(`21-restore-backup-${suffix}`, { fullPage: true });
       await closeDialog();
 

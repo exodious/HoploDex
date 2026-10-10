@@ -180,7 +180,7 @@ describe("UI review follow-ups", () => {
     await goTo("Insurance");
     await expect($(".hd-page-title")).toHaveText("Insurance");
 
-    await clickEl(".hd-policy__open");
+    await clickEl("button.hd-policy__open=InsE2E Review Policy");
     await $(".hd-policy").waitForExist({ timeout: 4000 });
     await expect($(".hd-policy__name")).toHaveText("InsE2E Review Policy");
     expect(await $$(".hd-policy").length).toBe(1);

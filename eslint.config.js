@@ -6,7 +6,7 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "build", "node_modules", "src-tauri/target", "e2e/wdio-logs"],
+    ignores: ["dist", "build", "node_modules", "src-tauri/target", "e2e/wdio-logs", ".wdio"],
   },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

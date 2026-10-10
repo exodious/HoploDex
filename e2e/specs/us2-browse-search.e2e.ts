@@ -1,4 +1,4 @@
-import { $, addFirearm, back, choose, expect, groupBy, listedNames } from "../support/ui";
+import { $, $$, addFirearm, back, choose, expect, groupBy, listedNames } from "../support/ui";
 import { openFirearm, search } from "../support/ui";
 import { createDatabase } from "../support/ui";
 
@@ -55,7 +55,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     );
 
     await choose("Tiles");
-    await expect($(".hd-tile")).toExist();
+    await expect($$(".hd-tile")).toBeElementsArrayOfSize(3);
     expect((await listedNames()).sort()).toEqual([...inList].sort());
 
     await choose("List");
@@ -70,7 +70,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await expect($("h2.hd-group__title*=Shotgun")).toExist();
 
     await groupBy("None");
-    await expect($("h2.hd-group__title")).not.toExist();
+    await expect($$("h2.hd-group__title")).toBeElementsArrayOfSize(0);
   });
 
   it("searches free-form notes and returns only the matching firearm (Scenario 3)", async () => {

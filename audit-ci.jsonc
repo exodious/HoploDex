@@ -11,44 +11,5 @@
   "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
   "high": true,
   "report-type": "summary",
-  "allowlist": [
-    // extract-zip: symlink path traversal and arbitrary file writes when
-    // unpacking a crafted zip (GHSA-7pqw-9j4j-h8q3, GHSA-jmr9-qjv8-65gv).
-    //
-    // No fix in WebdriverIO 9: every extract-zip release is affected, and
-    // @wdio/utils 9.32.0 (the last 9.x) requires @puppeteer/browsers ^2.
-    // WebdriverIO 10 (2026-10-07) moved to @puppeteer/browsers 3, which no
-    // longer uses extract-zip, but it is a breaking major not yet taken.
-    //
-    // Not reachable. Dev-only (E2E tooling); nothing ships in the app.
-    // @puppeteer/browsers only unzips a Chrome or Firefox download, which
-    // WebdriverIO fetches when it has to start a browser itself. @wdio/cli
-    // loads the module that imports it, but neither of its callers gets that
-    // far: the launcher's setupBrowser() and each worker's startWebDriver()
-    // see a remote driver, because e2e/wdio.conf.ts sets the hostname (and
-    // each worker's port) of the app's own embedded WebDriver server, and the
-    // browserName is "wry", not chrome or firefox.
-    //
-    // Review by 2026-12-31, or with the move to WebdriverIO 10 (#86), which
-    // removes this path.
-    "GHSA-7pqw-9j4j-h8q3|*@wdio/utils>@puppeteer/browsers>extract-zip*",
-    "GHSA-jmr9-qjv8-65gv|*@wdio/utils>@puppeteer/browsers>extract-zip*",
-
-    // braces: stack exhaustion (denial of service) when expanding deeply
-    // nested brace patterns (GHSA-vfj7-8cjw-p6xm, <= 3.0.3).
-    //
-    // No fix: 3.0.3 is braces' latest release and is affected. WebdriverIO
-    // 10's @wdio/mocha-framework takes mocha 12, whose chokidar 5 no longer
-    // uses braces, but it is a breaking major not yet taken.
-    //
-    // Not reachable. Dev-only (E2E tooling); nothing ships in the app. Mocha
-    // uses chokidar only for its command line's watch mode
-    // (lib/cli/watch-run.js), and WebdriverIO runs mocha through its API, so
-    // that code is never loaded, let alone given input from a document, a
-    // database or the network.
-    //
-    // Review by 2026-12-31, or with the move to WebdriverIO 10 (#86), which
-    // removes this path.
-    "GHSA-vfj7-8cjw-p6xm|*@wdio/mocha-framework>mocha>chokidar>braces*",
-  ],
+  "allowlist": [],
 }

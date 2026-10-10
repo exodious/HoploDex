@@ -10,6 +10,7 @@ import { writeLargePdf } from "../support/largePdf";
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 import {
   $,
+  $$,
   attachFile,
   browser,
   choose,
@@ -232,17 +233,19 @@ async function invokeFailure(
   cmd: string,
   args: Record<string, unknown>,
 ): Promise<{ code: string } | null> {
-  return browser.executeAsync(
-    (name: string, data: Record<string, unknown>, done: (outcome: unknown) => void) => {
+  return browser.execute(
+    async (name: string, data: Record<string, unknown>) => {
       const internals = (
         window as unknown as {
           __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
         }
       ).__TAURI_INTERNALS__;
-      internals.invoke(name, data).then(
-        () => done(null),
-        (error) => done(error),
-      );
+      try {
+        await internals.invoke(name, data);
+        return null;
+      } catch (error) {
+        return error;
+      }
     },
     cmd,
     args,
@@ -851,7 +854,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     await waitForEvent("preview:pdf-ready", mark);
     // A toast hides the surface, which is a web view above the page (the
     // attach above left one): wait for them to go.
-    await browser.waitUntil(async () => !(await $(".hd-toast").isExisting()), {
+    await browser.waitUntil(async () => (await $$(".hd-toast").length) === 0, {
       timeout: 15000,
       timeoutMsg: "the toasts never went",
     });
@@ -901,7 +904,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     const mark = await eventMark();
     await openDocument("Magenta.pdf");
     await waitForEvent("preview:pdf-ready", mark);
-    await browser.waitUntil(async () => !(await $(".hd-toast").isExisting()), {
+    await browser.waitUntil(async () => (await $$(".hd-toast").length) === 0, {
       timeout: 15000,
       timeoutMsg: "the toasts never went",
     });
@@ -1114,7 +1117,7 @@ describe("User Story 2 (007) - Open a Document in Another App, After Asking", ()
     expect(logLines("HOPLODEX_E2E_OPENED_LOG")).toHaveLength(opened);
     // A cancel is the user's own answer: no toast, success or error.
     expect(await toastTexts()).not.toContainEqual(expect.stringContaining("Purchase receipt.pdf"));
-    await expect($(".hd-toast--error")).not.toExist();
+    await expect($$(".hd-toast--error")).toBeElementsArrayOfSize(0);
   });
 
   it("with the confirmation accepted, writes the copy and names it in the opened log", async function () {

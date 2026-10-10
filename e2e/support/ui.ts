@@ -38,8 +38,8 @@ const DECORATIVE_MS = 1000;
  * that condition.
  */
 export async function settle(timeout = 10000) {
-  const state = await browser.executeAsync(
-    (limit: number, decorativeMs: number, done: (outcome: string) => void) => {
+  const state = await browser.execute(
+    async (limit: number, decorativeMs: number) => {
       const unsettled = () => {
         const busy = (window as unknown as { __hoplodexBusy?: number }).__hoplodexBusy ?? 0;
         const animating = document.getAnimations().filter((a) => {
@@ -52,25 +52,27 @@ export async function settle(timeout = 10000) {
         }).length;
         return busy || animating ? `busy ${busy}, animations ${animating}` : "";
       };
-      let calm = 0;
-      let last = "";
-      let over = false;
-      const deadline = window.setTimeout(() => {
-        over = true;
-        done(`never settled: ${last}`);
-      }, limit);
-      const frame = () => {
-        if (over) return;
-        last = unsettled();
-        calm = last ? 0 : calm + 1;
-        if (calm >= 2) {
-          window.clearTimeout(deadline);
-          done("");
-        } else {
-          requestAnimationFrame(frame);
-        }
-      };
-      requestAnimationFrame(frame);
+      return new Promise<string>((resolve) => {
+        let calm = 0;
+        let last = "";
+        let over = false;
+        const deadline = window.setTimeout(() => {
+          over = true;
+          resolve(`never settled: ${last}`);
+        }, limit);
+        const frame = () => {
+          if (over) return;
+          last = unsettled();
+          calm = last ? 0 : calm + 1;
+          if (calm >= 2) {
+            window.clearTimeout(deadline);
+            resolve("");
+          } else {
+            requestAnimationFrame(frame);
+          }
+        };
+        requestAnimationFrame(frame);
+      });
     },
     timeout,
     DECORATIVE_MS,
@@ -444,7 +446,10 @@ export async function openFirearm(name: string) {
 
 /** Leaves a record for the page it was opened from. */
 export async function back() {
-  await clickEl(".hd-backlink");
+  // A scrolled record page also shows the link in its pinned strip (FR-041);
+  // either one goes back, so take the first.
+  await $$(".hd-backlink")[0].waitForExist();
+  await browser.execute(() => document.querySelector<HTMLElement>(".hd-backlink")!.click());
   await settle();
 }
 

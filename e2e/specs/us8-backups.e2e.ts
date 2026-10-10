@@ -163,7 +163,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     await unlock(E2E_PASSPHRASE);
     await realClick("button.hd-db-menu");
     await realClick('[role="menuitem"]*=Restore from a backup');
-    await $('[role="dialog"] input[type="radio"]').waitForExist();
+    await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     // Regression: the backup it starts on showed the keyboard focus ring,
     // after a mouse click, as though already chosen.
     expect(
@@ -198,7 +198,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(await listed("AfterBackup")).toBe(true);
 
     await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
-    await $('[role="dialog"] input[type="radio"]').waitForExist();
+    await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
     await fill("Passphrase for this backup", E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');

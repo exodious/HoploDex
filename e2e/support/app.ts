@@ -31,8 +31,26 @@ export const application = path.resolve(
  * next one up. */
 const FIRST_PORT = 4445;
 
-/** Where this worker's app's WebDriver server listens. */
-let port = FIRST_PORT;
+/**
+ * This worker's port and app. They live on `globalThis`, not in module
+ * variables, because WebdriverIO 10 loads `wdio.conf.ts` (and everything it
+ * imports) apart from the spec files, so this module is evaluated twice in a
+ * worker: the config's copy launches the app and gives the worker its port,
+ * and a spec's copy, which `relaunchApp()` belongs to, would otherwise start
+ * with the first port and no app. It would then clear the first worker's port
+ * (killing that worker's app), start a second app there, and leave the first
+ * one running while the new session still went to the worker's own port (#86).
+ * One state per process is what every copy needs.
+ */
+interface WorkerApp {
+  /** Where this worker's app's WebDriver server listens. */
+  port: number;
+  app: ChildProcess | undefined;
+}
+
+const stateKey = Symbol.for("io.github.exodious.HoploDex.e2e.workerApp");
+const globals = globalThis as { [stateKey]?: WorkerApp };
+const state: WorkerApp = (globals[stateKey] ??= { port: FIRST_PORT, app: undefined });
 
 /**
  * Gives this worker a WebDriver port of its own, so the apps of workers
@@ -43,11 +61,15 @@ let port = FIRST_PORT;
 export function assignWorkerPort(cid: string): number {
   const worker = Number(cid.split("-")[1]);
   if (!Number.isInteger(worker) || worker < 0) throw new Error(`unexpected worker id "${cid}"`);
-  port = FIRST_PORT + worker;
-  return port;
+  return setPort(FIRST_PORT + worker);
 }
 
-let app: ChildProcess | undefined;
+/** Sets the port the app's WebDriver server will listen on, and returns it.
+ * The `wdio session` launcher (session.ts) picks one clear of the workers'. */
+export function setPort(next: number): number {
+  state.port = next;
+  return state.port;
+}
 
 function exited(child: ChildProcess): boolean {
   return child.exitCode !== null || child.signalCode !== null;
@@ -102,10 +124,10 @@ function clearPort(taken: number) {
 }
 
 /** The app's own environment. On macOS that includes the sandbox's HOME
- * (wdio.conf.ts), which only the app gets; a launch without one would use
+ * (support/sandbox.ts), which only the app gets; a launch without one would use
  * the developer's real Application Support folder, so it refuses. */
 function appEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, TAURI_WEBDRIVER_PORT: String(port) };
+  const env: NodeJS.ProcessEnv = { ...process.env, TAURI_WEBDRIVER_PORT: String(state.port) };
   if (process.platform === "darwin") {
     const home = process.env.HOPLODEX_E2E_HOME;
     if (!home) throw new Error("HOPLODEX_E2E_HOME is unset: the app would see the real home");
@@ -121,20 +143,20 @@ function appEnv(): NodeJS.ProcessEnv {
  * until its WebDriver server answers on the worker's port.
  */
 export async function launchApp(timeout = 30000) {
-  if (running(app)) throw new Error("the app is already running");
-  clearPort(port);
+  if (running(state.app)) throw new Error("the app is already running");
+  clearPort(state.port);
   const child = spawn(application, [], {
     env: appEnv(),
     stdio: ["ignore", "inherit", "inherit"],
   });
-  app = child;
+  state.app = child;
   const deadline = Date.now() + timeout;
   for (;;) {
     if (exited(child)) {
       throw new Error(`the app exited at launch (${child.exitCode ?? child.signalCode})`);
     }
     try {
-      const status = await fetch(`http://127.0.0.1:${port}/status`);
+      const status = await fetch(`http://127.0.0.1:${state.port}/status`);
       if (status.ok) return;
     } catch {
       // not listening yet
@@ -146,7 +168,7 @@ export async function launchApp(timeout = 30000) {
 
 /** Waits for the app's process to end, failing after `timeout` ms. */
 export async function waitForAppToQuit(timeout = 15000) {
-  const child = app;
+  const child = state.app;
   if (!running(child)) return;
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("the app never quit")), timeout);
@@ -163,8 +185,8 @@ export async function waitForAppToQuit(timeout = 15000) {
  * own quit, or e2e/scripts/quit-cleanup.py.
  */
 export async function killApp() {
-  const child = app;
-  app = undefined;
+  const child = state.app;
+  state.app = undefined;
   if (!running(child)) return;
   const exited = new Promise((resolve) => child.once("exit", resolve));
   child.kill("SIGKILL");
