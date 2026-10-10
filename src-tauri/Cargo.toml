@@ -242,7 +242,11 @@ incremental = true
 # #86: a new session with no `windowLabel` capability started on the first label of a
 # `HashMap`, so one made while the preview's child web view was open could land on it
 # instead of the main web view (WebdriverIO 10 makes one after a failed test). It now
-# starts on `main` (`default_window_label`, `server/handlers/session.rs`). Only the
-# `e2e` feature builds it. Drop this patch when the fix is released upstream.
+# starts on `main` (`default_window_label`, `server/handlers/session.rs`).
+# #90: an element a script returned came back as `null`, so `role/` selectors and
+# `wdio session` refs found nothing over WebDriver classic. Every execute wrapper now
+# returns a web element reference (`SERIALIZE_VALUE_JS`, `platform/executor.rs`) and
+# the script handlers add it to the session's store (`ElementStore::adopt_references`).
+# Only the `e2e` feature builds it. Drop this patch when the fixes are released upstream.
 [patch.crates-io]
 tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }

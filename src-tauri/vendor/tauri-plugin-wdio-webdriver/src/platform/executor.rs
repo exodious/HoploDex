@@ -271,6 +271,51 @@ impl ModifierState {
 
 /// Platform-agnostic trait for `WebView` operations.
 /// Each platform (macOS, Windows, Linux) implements this trait.
+/// The script result serializer every execute wrapper shares (`execute_script`
+/// here, and each desktop executor's `execute_async_script`): it turns a
+/// result into JSON the way W3C WebDriver §13.2.3 does. An element is kept
+/// the way find-element keeps one, under `window.__wd_el_<id>`, and comes back
+/// as a web element reference; the script handlers add its id to the
+/// session's element store (`ElementStore::adopt_references`). Needs
+/// `ELEMENT_KEY` in scope. Returned elements were `null` before (#90).
+pub(crate) const SERIALIZE_VALUE_JS: &str = r"function serializeValue(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+        if (!isFinite(value)) return null;
+        return value;
+    }
+    if (typeof value === 'string') return value;
+    if (typeof value === 'function') return null;
+    if (typeof value === 'symbol') return null;
+    if (typeof value === 'bigint') return Number(value);
+    if (Array.isArray(value)) {
+        return value.map(serializeValue);
+    }
+    if (value instanceof NodeList || value instanceof HTMLCollection) {
+        return Array.prototype.map.call(value, serializeValue);
+    }
+    if (typeof value === 'object') {
+        if (value[ELEMENT_KEY]) return value;
+        if (value.nodeType === 1) {
+            var id = crypto.randomUUID();
+            window['__wd_el_' + id.replace(/-/g, '')] = value;
+            var reference = {};
+            reference[ELEMENT_KEY] = id;
+            return reference;
+        }
+        if (value.nodeType) return null;
+        var result = {};
+        for (var key in value) {
+            if (value.hasOwnProperty(key)) {
+                result[key] = serializeValue(value[key]);
+            }
+        }
+        return result;
+    }
+    return null;
+}";
+
 #[async_trait]
 #[allow(clippy::too_many_lines)]
 pub trait PlatformExecutor<R: Runtime>: Send + Sync {
@@ -1083,33 +1128,7 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
             r"(function() {{
                 var ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 
-                function serializeValue(value) {{
-                    if (value === null || value === undefined) return null;
-                    if (typeof value === 'boolean') return value;
-                    if (typeof value === 'number') {{
-                        if (!isFinite(value)) return null;
-                        return value;
-                    }}
-                    if (typeof value === 'string') return value;
-                    if (typeof value === 'function') return null;
-                    if (typeof value === 'symbol') return null;
-                    if (typeof value === 'bigint') return Number(value);
-                    if (Array.isArray(value)) {{
-                        return value.map(serializeValue);
-                    }}
-                    if (typeof value === 'object') {{
-                        if (value[ELEMENT_KEY]) return value;
-                        if (value && value.nodeType && value.nodeType === 1) return null;
-                        var result = {{}};
-                        for (var key in value) {{
-                            if (value.hasOwnProperty(key)) {{
-                                result[key] = serializeValue(value[key]);
-                            }}
-                        }}
-                        return result;
-                    }}
-                    return null;
-                }}
+                {SERIALIZE_VALUE_JS}
 
                 function deserializeArg(arg) {{
                     if (arg === null || arg === undefined) return arg;

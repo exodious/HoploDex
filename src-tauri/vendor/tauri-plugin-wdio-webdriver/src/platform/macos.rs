@@ -25,7 +25,9 @@ use tokio::sync::oneshot;
 
 use crate::eval_channel::EvalResultRegistry;
 use crate::platform::alert_state::{AlertState, AlertStateManager, AlertType, PendingAlert};
-use crate::platform::{wrap_script_for_frame_context, FrameId, PlatformExecutor, PrintOptions};
+use crate::platform::{
+    wrap_script_for_frame_context, FrameId, PlatformExecutor, PrintOptions, SERIALIZE_VALUE_JS,
+};
 use crate::server::response::WebDriverErrorResponse;
 use crate::webdriver::Timeouts;
 
@@ -271,6 +273,7 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
         let wrapper = format!(
             r"return new Promise((resolve, reject) => {{
                 var ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
+                {SERIALIZE_VALUE_JS}
                 function deserializeArg(arg) {{
                     if (arg === null || arg === undefined) return arg;
                     if (Array.isArray(arg)) return arg.map(deserializeArg);
@@ -292,7 +295,7 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
                     if (error) {{
                         reject(new Error(typeof error === 'string' ? error : String(error)));
                     }} else {{
-                        resolve(result);
+                        resolve(serializeValue(result));
                     }}
                 }};
                 var __args = {args_json}.map(deserializeArg);

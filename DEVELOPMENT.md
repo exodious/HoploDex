@@ -776,7 +776,7 @@ stops the display and removes the sandbox. In another terminal:
 
 ```bash
 npx wdio session snapshot --interactive            # the page as text; what is clickable
-npx wdio session click 'button=Open'               # a selector (see below), not a ref
+npx wdio session click e3                          # a ref from the snapshot, or a selector such as 'button=Open'
 npx wdio session fill 'aria/Passphrase for “Main collection”' '<passphrase>'
 npx wdio session exec -e "await browser.getTitle()"
 npx wdio session screenshot
@@ -798,14 +798,11 @@ override that:
   `open` runs none of a config's hooks (verified), so nothing would start the
   app. `e2e/session.conf.ts`, which the launcher opens, holds only the app's
   WebDriver endpoint.
-- **Refs don't work.** `click e3` fails with "e3 no longer exists on the
-  page": WebdriverIO looks a ref up with a function selector, which returns a
-  DOM element from a script, and the embedded server
-  (`tauri-plugin-wdio-webdriver`) answers `null` for an element. Read the
-  snapshot, then act on a selector: `aria/<accessible name>`, `button=<text>`,
-  or CSS. A selector that matches more than one element fails (`$` is strict);
-  narrow it. `snapshot` itself, `exec` with selectors, `screenshot`,
-  `find` and `export` work.
+- **Refs or selectors.** `click e3` acts on a ref from the latest snapshot,
+  and the export records it as a stable selector, usually
+  `role/<role>[name="<accessible name>"]`. A selector works too:
+  `aria/<accessible name>`, `button=<text>`, or CSS. A selector that matches
+  more than one element fails (`$` is strict); narrow it.
 - The artifacts (snapshots, screenshots, exports without `--out`) go to
   `.wdio/session/default/`, git-ignored. The window is on the virtual display
   on Linux: use `screenshot`.
