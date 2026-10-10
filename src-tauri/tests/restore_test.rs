@@ -535,6 +535,66 @@ fn issue_62_a_path_that_is_not_a_recent_database_is_never_replaced() {
 }
 
 #[test]
+fn issue_62_a_recent_entry_located_onto_another_file_does_not_authorize_it() {
+    let world = World::new();
+    let (listed, _, _) = damaged_with_listing(&world);
+    let stranger = world.dir.path().join("Not a database.txt");
+    fs::write(&stranger, b"precious").unwrap();
+    // The web view re-points Mine's entry, cached id and folder included,
+    // at a file of its choosing.
+    databases::locate_database(
+        &world.machine,
+        &world.path().to_string_lossy(),
+        &stranger.to_string_lossy(),
+    )
+    .unwrap();
+    let names = World::names(world.dir.path());
+
+    let refused = world.restore_into(&listed[0].path, &stranger).unwrap_err();
+
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert!(refused.field_errors.unwrap().contains_key("databasePath"));
+    assert_eq!(fs::read(&stranger).unwrap(), b"precious");
+    assert_eq!(World::names(world.dir.path()), names, "nothing was set aside or added");
+}
+
+#[test]
+fn issue_62_a_located_database_is_restorable_once_it_has_opened_there() {
+    let world = World::new();
+    world.with_two_backups();
+    world.close();
+    let moved = world.dir.path().join("Moved.hoplodex");
+    fs::rename(world.path(), &moved).unwrap();
+    databases::locate_database(
+        &world.machine,
+        &world.path().to_string_lossy(),
+        &moved.to_string_lossy(),
+    )
+    .unwrap();
+    databases::open_database(
+        &world.session,
+        &world.machine,
+        &moved.to_string_lossy(),
+        databases::Unlock::typed(&passphrase()),
+        false,
+    )
+    .unwrap();
+    world.close();
+    let listed =
+        backups_ops::list_backups(&world.session, &world.machine, Some(&moved.to_string_lossy()))
+            .unwrap()
+            .backups;
+    let expected = collection(&peek(Path::new(&listed[0].path)));
+    let bytes = fs::read(&moved).unwrap();
+    fs::write(&moved, &bytes[..2 * 4096]).unwrap();
+
+    let status = world.restore_into(&listed[0].path, &moved).unwrap();
+
+    assert!(status.notes.damaged_file_kept_at.is_some());
+    assert_eq!(open_collection(&world), expected);
+}
+
+#[test]
 fn issue_62_a_backup_outside_the_cached_backup_folder_is_refused() {
     let world = World::new();
     let (listed, bytes, names) = damaged_with_listing(&world);

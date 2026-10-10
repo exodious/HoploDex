@@ -394,13 +394,24 @@ pub mod ops {
     /// from what the backend knows, never from the web view's say-so: `path`
     /// must be a database on the recent list that this computer has opened
     /// (its id and backup folder are cached then), and `backup` must be in
-    /// that backup folder, where the dialog lists them from. Returns the
-    /// database id the backup must carry (SECURITY: issue #62).
+    /// that backup folder, where the dialog lists them from. An entry the
+    /// web view re-located (`locate_database`) is refused until the database
+    /// has opened at its new path, since only that shows the file there is
+    /// the one the id and folder were cached from. Returns the database id
+    /// the backup must carry (SECURITY: issue #62).
     fn authorize_damaged_restore(
         machine: &MachineSettings,
         backup: &Path,
         path: &Path,
     ) -> Result<String, CommandError> {
+        if machine.recent().iter().any(|entry| entry.path == path && entry.located) {
+            let message = "HoploDex hasn't opened this database where it was found yet, so it \
+                           won't restore a backup over that file.";
+            return Err(CommandError::validation(
+                message,
+                HashMap::from([("databasePath".to_owned(), message.to_owned())]),
+            ));
+        }
         let (folder, database_id) = cached_backups_of(machine, path)?;
         if backup.parent() != Some(folder.as_path()) {
             return Err(not_its_backup());
