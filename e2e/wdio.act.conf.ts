@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { config as base } from "./wdio.conf";
 
 /**
@@ -39,7 +40,7 @@ export const config: WebdriverIO.Config = {
         model: modelOption(),
         cache,
         maxSteps: 25,
-        instructions: new URL("./act-specs/instructions.md", import.meta.url).pathname,
+        instructions: fileURLToPath(new URL("./act-specs/instructions.md", import.meta.url)),
         workspace: { keep: "always" },
       },
     ],
