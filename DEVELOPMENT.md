@@ -814,6 +814,10 @@ override that:
   the real idle minute. A spec's own settings (`-no-keyring`, `-pdf-off`, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
+- In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on
+  the VM's side, so give a selector with spaces or quotes as one plain
+  single-quoted argument: `scripts/tart-vm.sh ssh npx wdio session fill
+  'aria/Passphrase for “Main collection”' '<passphrase>'`.
 
 An exported spec is a starting point, not a test, and needs review before it
 joins the suite. It records only your steps, in WebdriverIO's style, so
