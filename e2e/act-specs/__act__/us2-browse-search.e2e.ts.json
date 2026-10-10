@@ -1,0 +1,941 @@
+{
+    "version": 1,
+    "entries": {
+        "back after BrowseMossberg": {
+            "instruction": "Go back to the collection",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Collection\"]"
+                    },
+                    "code": "await $('role/button[name=\"Collection\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Collection\"]",
+                        "role": "button",
+                        "name": "Collection",
+                        "candidates": [
+                            "role/button[name=\"Collection\"]",
+                            "aria/Collection",
+                            "#root > div:nth-of-type(1) > main > div > div:nth-of-type(1) > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:37:57.939Z"
+        },
+        "back after BrowseRuger": {
+            "instruction": "Go back to the collection",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Collection\"]"
+                    },
+                    "code": "await $('role/button[name=\"Collection\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Collection\"]",
+                        "role": "button",
+                        "name": "Collection",
+                        "candidates": [
+                            "role/button[name=\"Collection\"]",
+                            "aria/Collection",
+                            "#root > div:nth-of-type(1) > main > div > div:nth-of-type(1) > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:36:35.098Z"
+        },
+        "back after BrowseSig": {
+            "instruction": "Go back to the collection",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Collection\"]"
+                    },
+                    "code": "await $('role/button[name=\"Collection\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Collection\"]",
+                        "role": "button",
+                        "name": "Collection",
+                        "candidates": [
+                            "role/button[name=\"Collection\"]",
+                            "aria/Collection",
+                            "#root > div:nth-of-type(1) > main > div > div:nth-of-type(1) > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:35:27.679Z"
+        },
+        "clearing search shows the full collection again (Scenario 5) › #1": {
+            "instruction": "Clear the collection search",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button"
+                    },
+                    "code": "await $('#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button').click()",
+                    "target": {
+                        "selector": "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button",
+                        "role": "button",
+                        "name": "Clear search",
+                        "candidates": [
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:40:26.700Z"
+        },
+        "details BrowseSig": {
+            "instruction": "Open the Physical details group of the Add firearm form and fill in finish \"distinctivefinishnitrocarb\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "div:nth-of-type(3) > form > div > section:nth-of-type(3) > div > h3 > button"
+                    },
+                    "code": "await $('div:nth-of-type(3) > form > div > section:nth-of-type(3) > div > h3 > button').click()",
+                    "target": {
+                        "selector": "div:nth-of-type(3) > form > div > section:nth-of-type(3) > div > h3 > button",
+                        "role": "button",
+                        "name": "Physical details",
+                        "candidates": [
+                            "role/button[name=\"Physical details\"]",
+                            "button=Physical details",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(3) > div > h3 > button"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/textbox[name=\"Finish\"]",
+                        "text": "distinctivefinishnitrocarb"
+                    },
+                    "code": "await $('role/textbox[name=\"Finish\"]').setValue('distinctivefinishnitrocarb')",
+                    "target": {
+                        "selector": "role/textbox[name=\"Finish\"]",
+                        "role": "textbox",
+                        "name": "Finish",
+                        "candidates": [
+                            "role/textbox[name=\"Finish\"]",
+                            "aria/Finish",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(3) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:41:23.480Z"
+        },
+        "fill BrowseMossberg": {
+            "instruction": "In the Add firearm form, fill in make \"BrowseMossberg\", model \"500-Browse\", type Shotgun, caliber \"9mm-Browse\" and serial number \"BR-003\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/combobox[name=\"Make\"]"
+                    },
+                    "code": "await $('role/combobox[name=\"Make\"]').click()",
+                    "target": {
+                        "selector": "role/combobox[name=\"Make\"]",
+                        "role": "combobox",
+                        "name": "Make",
+                        "candidates": [
+                            "role/combobox[name=\"Make\"]",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "type",
+                    "args": {
+                        "text": "BrowseMossberg"
+                    },
+                    "code": "await browser.keys('BrowseMossberg')"
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/combobox[name=\"Model\"]"
+                    },
+                    "code": "await $('role/combobox[name=\"Model\"]').click()",
+                    "target": {
+                        "selector": "role/combobox[name=\"Model\"]",
+                        "role": "combobox",
+                        "name": "Model",
+                        "candidates": [
+                            "role/combobox[name=\"Model\"]",
+                            "aria/Model",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "type",
+                    "args": {
+                        "text": "500-Browse"
+                    },
+                    "code": "await browser.keys('500-Browse')"
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/radio[name=\"Shotgun\"]"
+                    },
+                    "code": "await $('role/radio[name=\"Shotgun\"]').click()",
+                    "target": {
+                        "selector": "role/radio[name=\"Shotgun\"]",
+                        "role": "radio",
+                        "name": "Shotgun",
+                        "candidates": [
+                            "role/radio[name=\"Shotgun\"]",
+                            "aria/Shotgun",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(3) > div > div > label:nth-of-type(3) > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/combobox[name=\"Caliber\"]"
+                    },
+                    "code": "await $('role/combobox[name=\"Caliber\"]').click()",
+                    "target": {
+                        "selector": "role/combobox[name=\"Caliber\"]",
+                        "role": "combobox",
+                        "name": "Caliber",
+                        "candidates": [
+                            "role/combobox[name=\"Caliber\"]",
+                            "#ff-caliber",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/option[name=\"9mm-Browse 1 in collection\"]"
+                    },
+                    "code": "await $('role/option[name=\"9mm-Browse 1 in collection\"]').click()",
+                    "target": {
+                        "selector": "role/option[name=\"9mm-Browse 1 in collection\"]",
+                        "role": "option",
+                        "name": "9mm-Browse 1 in collection",
+                        "candidates": [
+                            "role/option[name=\"9mm-Browse 1 in collection\"]",
+                            "aria/9mm-Browse 1 in collection",
+                            "div:nth-of-type(4) > div > ul > li:nth-of-type(2)"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/textbox[name=\"Serial number\"]",
+                        "text": "BR-003"
+                    },
+                    "code": "await $('role/textbox[name=\"Serial number\"]').setValue('BR-003')",
+                    "target": {
+                        "selector": "role/textbox[name=\"Serial number\"]",
+                        "role": "textbox",
+                        "name": "Serial number",
+                        "candidates": [
+                            "role/textbox[name=\"Serial number\"]",
+                            "aria/Serial number",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(7) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:37:29.455Z"
+        },
+        "fill BrowseRuger": {
+            "instruction": "In the Add firearm form, fill in make \"BrowseRuger\", model \"10-22-Browse\", type Rifle, caliber \".22 LR\", serial number \"BR-002\" and notes \"distinctivenotecrackedhandle\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/combobox[name=\"Make\"]",
+                        "text": "BrowseRuger"
+                    },
+                    "code": "await $('role/combobox[name=\"Make\"]').setValue('BrowseRuger')",
+                    "target": {
+                        "selector": "role/combobox[name=\"Make\"]",
+                        "role": "combobox",
+                        "name": "Make",
+                        "candidates": [
+                            "role/combobox[name=\"Make\"]",
+                            "aria/Make",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/combobox[name=\"Model\"]",
+                        "text": "10-22-Browse"
+                    },
+                    "code": "await $('role/combobox[name=\"Model\"]').setValue('10-22-Browse')",
+                    "target": {
+                        "selector": "role/combobox[name=\"Model\"]",
+                        "role": "combobox",
+                        "name": "Model",
+                        "candidates": [
+                            "role/combobox[name=\"Model\"]",
+                            "aria/Model",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/radio[name=\"Rifle\"]"
+                    },
+                    "code": "await $('role/radio[name=\"Rifle\"]').click()",
+                    "target": {
+                        "selector": "role/radio[name=\"Rifle\"]",
+                        "role": "radio",
+                        "name": "Rifle",
+                        "candidates": [
+                            "role/radio[name=\"Rifle\"]",
+                            "aria/Rifle",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(3) > div > div > label:nth-of-type(2) > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/combobox[name=\"Caliber\"]",
+                        "text": ".22 LR"
+                    },
+                    "code": "await $('role/combobox[name=\"Caliber\"]').setValue('.22 LR')",
+                    "target": {
+                        "selector": "role/combobox[name=\"Caliber\"]",
+                        "role": "combobox",
+                        "name": "Caliber",
+                        "candidates": [
+                            "role/combobox[name=\"Caliber\"]",
+                            "#ff-caliber",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/textbox[name=\"Serial number\"]",
+                        "text": "BR-002"
+                    },
+                    "code": "await $('role/textbox[name=\"Serial number\"]').setValue('BR-002')",
+                    "target": {
+                        "selector": "role/textbox[name=\"Serial number\"]",
+                        "role": "textbox",
+                        "name": "Serial number",
+                        "candidates": [
+                            "role/textbox[name=\"Serial number\"]",
+                            "aria/Serial number",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(7) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/textbox[name=\"Notes\"]",
+                        "text": "distinctivenotecrackedhandle"
+                    },
+                    "code": "await $('role/textbox[name=\"Notes\"]').setValue('distinctivenotecrackedhandle')",
+                    "target": {
+                        "selector": "role/textbox[name=\"Notes\"]",
+                        "role": "textbox",
+                        "name": "Notes",
+                        "candidates": [
+                            "role/textbox[name=\"Notes\"]",
+                            "aria/Notes",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(6) > div > div:nth-of-type(1) > textarea"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:36:09.595Z"
+        },
+        "fill BrowseSig": {
+            "instruction": "In the Add firearm form, fill in make \"BrowseSig\", model \"P226\", type Handgun, caliber \"9mm-Browse\" and serial number \"BR-001\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/combobox[name=\"Make\"]",
+                        "text": "BrowseSig"
+                    },
+                    "code": "await $('role/combobox[name=\"Make\"]').setValue('BrowseSig')",
+                    "target": {
+                        "selector": "role/combobox[name=\"Make\"]",
+                        "role": "combobox",
+                        "name": "Make",
+                        "candidates": [
+                            "role/combobox[name=\"Make\"]",
+                            "aria/Make",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/combobox[name=\"Model\"]",
+                        "text": "P226"
+                    },
+                    "code": "await $('role/combobox[name=\"Model\"]').setValue('P226')",
+                    "target": {
+                        "selector": "role/combobox[name=\"Model\"]",
+                        "role": "combobox",
+                        "name": "Model",
+                        "candidates": [
+                            "role/combobox[name=\"Model\"]",
+                            "aria/Model",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/radio[name=\"Handgun\"]"
+                    },
+                    "code": "await $('role/radio[name=\"Handgun\"]').click()",
+                    "target": {
+                        "selector": "role/radio[name=\"Handgun\"]",
+                        "role": "radio",
+                        "name": "Handgun",
+                        "candidates": [
+                            "role/radio[name=\"Handgun\"]",
+                            "aria/Handgun",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(3) > div > div > label:nth-of-type(1) > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/combobox[name=\"Caliber\"]",
+                        "text": "9mm-Browse"
+                    },
+                    "code": "await $('role/combobox[name=\"Caliber\"]').setValue('9mm-Browse')",
+                    "target": {
+                        "selector": "role/combobox[name=\"Caliber\"]",
+                        "role": "combobox",
+                        "name": "Caliber",
+                        "candidates": [
+                            "role/combobox[name=\"Caliber\"]",
+                            "aria/Caliber",
+                            "#ff-caliber",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(2) > div > div > input"
+                        ]
+                    }
+                },
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/textbox[name=\"Serial number\"]",
+                        "text": "BR-001"
+                    },
+                    "code": "await $('role/textbox[name=\"Serial number\"]').setValue('BR-001')",
+                    "target": {
+                        "selector": "role/textbox[name=\"Serial number\"]",
+                        "role": "textbox",
+                        "name": "Serial number",
+                        "candidates": [
+                            "role/textbox[name=\"Serial number\"]",
+                            "aria/Serial number",
+                            "div:nth-of-type(3) > form > div > section:nth-of-type(1) > div:nth-of-type(7) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:34:49.466Z"
+        },
+        "finds a firearm by a word in its finish (US1 Scenario 17) › #1": {
+            "instruction": "Search the collection for \"distinctivefinishnitrocarb\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/searchbox[name=\"Search the collection\"]",
+                        "text": "distinctivefinishnitrocarb"
+                    },
+                    "code": "await $('role/searchbox[name=\"Search the collection\"]').setValue('distinctivefinishnitrocarb')",
+                    "target": {
+                        "selector": "role/searchbox[name=\"Search the collection\"]",
+                        "role": "searchbox",
+                        "name": "Search the collection",
+                        "candidates": [
+                            "role/searchbox[name=\"Search the collection\"]",
+                            "aria/Search the collection",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:40:37.545Z"
+        },
+        "finds a firearm by a word in its finish (US1 Scenario 17) › #2": {
+            "instruction": "Clear the collection search",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button"
+                    },
+                    "code": "await $('#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button').click()",
+                    "target": {
+                        "selector": "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button",
+                        "role": "button",
+                        "name": "Clear search",
+                        "candidates": [
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:40:46.783Z"
+        },
+        "groups firearms by type (Scenario 2) › #1": {
+            "instruction": "Group the collection by type",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Group by, None\"]"
+                    },
+                    "code": "await $('role/button[name=\"Group by, None\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Group by, None\"]",
+                        "role": "button",
+                        "name": "Group by, None",
+                        "candidates": [
+                            "role/button[name=\"Group by, None\"]",
+                            "aria/Group by, None",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > button"
+                        ]
+                    }
+                },
+                {
+                    "action": "press",
+                    "args": {
+                        "keys": "Enter"
+                    },
+                    "code": "await browser.keys('Enter')"
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/menuitemradio[name=\"Type\"]"
+                    },
+                    "code": "await $('role/menuitemradio[name=\"Type\"]').click()",
+                    "target": {
+                        "selector": "role/menuitemradio[name=\"Type\"]",
+                        "role": "menuitemradio",
+                        "name": "Type",
+                        "candidates": [
+                            "role/menuitemradio[name=\"Type\"]",
+                            "div:nth-of-type(2) > div > div:nth-of-type(3) > div:nth-of-type(2)"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:42:01.493Z"
+        },
+        "groups firearms by type (Scenario 2) › #2": {
+            "instruction": "Stop grouping the collection",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "press",
+                    "args": {
+                        "keys": "Enter"
+                    },
+                    "code": "await browser.keys('Enter')"
+                },
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/menuitemradio[name=\"None\"]"
+                    },
+                    "code": "await $('role/menuitemradio[name=\"None\"]').click()",
+                    "target": {
+                        "selector": "role/menuitemradio[name=\"None\"]",
+                        "role": "menuitemradio",
+                        "name": "None",
+                        "candidates": [
+                            "role/menuitemradio[name=\"None\"]",
+                            "aria/None",
+                            "div:nth-of-type(2) > div > div:nth-of-type(1) > div"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:42:20.329Z"
+        },
+        "keeps the search when returning from a record › #1": {
+            "instruction": "Open the record of \"BrowseSig P226\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"BrowseSig P226\"]"
+                    },
+                    "code": "await $('role/button[name=\"BrowseSig P226\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"BrowseSig P226\"]",
+                        "role": "button",
+                        "name": "BrowseSig P226",
+                        "candidates": [
+                            "role/button[name=\"BrowseSig P226\"]",
+                            "aria/BrowseSig P226",
+                            "button=BrowseSig P226",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(3) > section:nth-of-type(1) > table > tbody > tr > td:nth-of-type(1) > div > div:nth-of-type(2) > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:40:04.465Z"
+        },
+        "keeps the search when returning from a record › #2": {
+            "instruction": "Go back to the collection",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Collection\"]"
+                    },
+                    "code": "await $('role/button[name=\"Collection\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Collection\"]",
+                        "role": "button",
+                        "name": "Collection",
+                        "candidates": [
+                            "role/button[name=\"Collection\"]",
+                            "aria/Collection",
+                            "#root > div:nth-of-type(1) > main > div > div:nth-of-type(1) > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:40:16.684Z"
+        },
+        "open form BrowseMossberg": {
+            "instruction": "Open the Add firearm form",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Add firearm\"]"
+                    },
+                    "code": "await $('role/button[name=\"Add firearm\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Add firearm\"]",
+                        "role": "button",
+                        "name": "Add firearm",
+                        "candidates": [
+                            "role/button[name=\"Add firearm\"]",
+                            "aria/Add firearm",
+                            "button=Add firearm",
+                            "#root > div:nth-of-type(1) > main > header > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:36:45.984Z"
+        },
+        "open form BrowseRuger": {
+            "instruction": "Open the Add firearm form",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Add firearm\"]"
+                    },
+                    "code": "await $('role/button[name=\"Add firearm\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Add firearm\"]",
+                        "role": "button",
+                        "name": "Add firearm",
+                        "candidates": [
+                            "role/button[name=\"Add firearm\"]",
+                            "aria/Add firearm",
+                            "button=Add firearm",
+                            "#root > div:nth-of-type(1) > main > header > button"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:35:38.029Z"
+        },
+        "open form BrowseSig": {
+            "instruction": "Open the Add firearm form",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Add firearm\"]"
+                    },
+                    "code": "await $('role/button[name=\"Add firearm\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Add firearm\"]",
+                        "role": "button",
+                        "name": "Add firearm",
+                        "candidates": [
+                            "role/button[name=\"Add firearm\"]",
+                            "aria/Add firearm",
+                            "button=Add firearm",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div > button:nth-of-type(1)"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:34:23.230Z"
+        },
+        "save BrowseMossberg": {
+            "instruction": "Save the new firearm with the form's Add firearm button",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Add firearm\"]"
+                    },
+                    "code": "await $('role/button[name=\"Add firearm\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Add firearm\"]",
+                        "role": "button",
+                        "name": "Add firearm",
+                        "candidates": [
+                            "role/button[name=\"Add firearm\"]",
+                            "div:nth-of-type(3) > form > footer > button:nth-of-type(2)"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:37:46.500Z"
+        },
+        "save BrowseRuger": {
+            "instruction": "Save the new firearm with the form's Add firearm button",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Add firearm\"]"
+                    },
+                    "code": "await $('role/button[name=\"Add firearm\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Add firearm\"]",
+                        "role": "button",
+                        "name": "Add firearm",
+                        "candidates": [
+                            "role/button[name=\"Add firearm\"]",
+                            "div:nth-of-type(3) > form > footer > button:nth-of-type(2)"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:36:23.762Z"
+        },
+        "save BrowseSig": {
+            "instruction": "Save the new firearm with the form's Add firearm button",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/button[name=\"Add firearm\"]"
+                    },
+                    "code": "await $('role/button[name=\"Add firearm\"]').click()",
+                    "target": {
+                        "selector": "role/button[name=\"Add firearm\"]",
+                        "role": "button",
+                        "name": "Add firearm",
+                        "candidates": [
+                            "role/button[name=\"Add firearm\"]",
+                            "div:nth-of-type(3) > form > footer > button:nth-of-type(2)"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:35:17.209Z"
+        },
+        "searches a caliber value shared by multiple firearms (Scenario 4) › #1": {
+            "instruction": "Search the collection for \"9mm-Browse\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/searchbox[name=\"Search the collection\"]",
+                        "text": "9mm-Browse"
+                    },
+                    "code": "await $('role/searchbox[name=\"Search the collection\"]').setValue('9mm-Browse')",
+                    "target": {
+                        "selector": "role/searchbox[name=\"Search the collection\"]",
+                        "role": "searchbox",
+                        "name": "Search the collection",
+                        "candidates": [
+                            "role/searchbox[name=\"Search the collection\"]",
+                            "aria/Search the collection",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:39:51.813Z"
+        },
+        "searches free-form notes and returns only the matching firearm (Scenario 3) › #1": {
+            "instruction": "Search the collection for \"distinctivenotecrackedhandle\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/searchbox[name=\"Search the collection\"]",
+                        "text": "distinctivenotecrackedhandle"
+                    },
+                    "code": "await $('role/searchbox[name=\"Search the collection\"]').setValue('distinctivenotecrackedhandle')",
+                    "target": {
+                        "selector": "role/searchbox[name=\"Search the collection\"]",
+                        "role": "searchbox",
+                        "name": "Search the collection",
+                        "candidates": [
+                            "role/searchbox[name=\"Search the collection\"]",
+                            "aria/Search the collection",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:39:41.221Z"
+        },
+        "shows the same firearms in both list and tile view (Scenario 1) › #1": {
+            "instruction": "Search the collection for \"Browse\"",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "fill",
+                    "args": {
+                        "target": "role/searchbox[name=\"Search the collection\"]",
+                        "text": "Browse"
+                    },
+                    "code": "await $('role/searchbox[name=\"Search the collection\"]').setValue('Browse')",
+                    "target": {
+                        "selector": "role/searchbox[name=\"Search the collection\"]",
+                        "role": "searchbox",
+                        "name": "Search the collection",
+                        "candidates": [
+                            "role/searchbox[name=\"Search the collection\"]",
+                            "aria/Search the collection",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(1) > div > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:38:05.882Z"
+        },
+        "shows the same firearms in both list and tile view (Scenario 1) › #2": {
+            "instruction": "Show the collection as tiles",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/radio[name=\"Tiles\"]"
+                    },
+                    "code": "await $('role/radio[name=\"Tiles\"]').click()",
+                    "target": {
+                        "selector": "role/radio[name=\"Tiles\"]",
+                        "role": "radio",
+                        "name": "Tiles",
+                        "candidates": [
+                            "role/radio[name=\"Tiles\"]",
+                            "aria/Tiles",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > label:nth-of-type(2) > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:38:17.903Z"
+        },
+        "shows the same firearms in both list and tile view (Scenario 1) › #3": {
+            "instruction": "Show the collection as a list",
+            "platform": "web",
+            "steps": [
+                {
+                    "action": "click",
+                    "args": {
+                        "target": "role/radio[name=\"List\"]"
+                    },
+                    "code": "await $('role/radio[name=\"List\"]').click()",
+                    "target": {
+                        "selector": "role/radio[name=\"List\"]",
+                        "role": "radio",
+                        "name": "List",
+                        "candidates": [
+                            "role/radio[name=\"List\"]",
+                            "aria/List",
+                            "#root > div:nth-of-type(1) > main > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > label:nth-of-type(1) > input"
+                        ]
+                    }
+                }
+            ],
+            "model": "llama-cpp:qwen3.8-27b",
+            "recordedAt": "2026-10-10T16:38:28.452Z"
+        }
+    }
+}

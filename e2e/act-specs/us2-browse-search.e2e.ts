@@ -11,33 +11,60 @@ import { $, $$, browser, createDatabase, expect, listedNames, settle } from "../
 
 // Each act() is followed by the harness's settle(), as every ui.ts helper
 // does. act() calls are direct statements with a literal instruction, the
-// shape `npx wdio-ai eject` replaces; those in the before hook have an `id`,
-// since a hook has no test title to key them by.
+// shape `npx wdio-ai eject` replaces; the setup steps have an `id` too,
+// so a reordering doesn't mix up their entries.
 
 describe("User Story 2 - Browse, Search, and Group (act)", () => {
   before(async () => {
     await createDatabase();
   });
 
-  before(async () => {
+  // Setup is a test, not a before hook: act() caches only inside a test, so
+  // a hook's calls would go to the model on every run (#89). Smaller
+  // instructions than "add a firearm with ... and save it": the local model
+  // stopped short of saving that one.
+  it("adds three firearms to browse", async () => {
+    await browser.act("Open the Add firearm form", { id: "open form BrowseSig" });
+    await settle();
     await browser.act(
-      `Add a firearm: make "BrowseSig", model "P226", type Handgun, caliber "9mm-Browse", serial number "BR-001", and finish "distinctivefinishnitrocarb" (the finish is in the Physical details group). Save it.`,
-      { id: "add BrowseSig" },
+      `In the Add firearm form, fill in make "BrowseSig", model "P226", type Handgun, caliber "9mm-Browse" and serial number "BR-001"`,
+      { id: "fill BrowseSig" },
     );
+    await settle();
+    await browser.act(
+      `Open the Physical details group of the Add firearm form and fill in finish "distinctivefinishnitrocarb"`,
+      { id: "details BrowseSig" },
+    );
+    await settle();
+    await browser.act("Save the new firearm with the form's Add firearm button", {
+      id: "save BrowseSig",
+    });
     await settle();
     await browser.act("Go back to the collection", { id: "back after BrowseSig" });
     await settle();
+    await browser.act("Open the Add firearm form", { id: "open form BrowseRuger" });
+    await settle();
     await browser.act(
-      `Add a firearm: make "BrowseRuger", model "10-22-Browse", type Rifle, caliber ".22 LR", serial number "BR-002", and notes "distinctivenotecrackedhandle". Save it.`,
-      { id: "add BrowseRuger" },
+      `In the Add firearm form, fill in make "BrowseRuger", model "10-22-Browse", type Rifle, caliber ".22 LR", serial number "BR-002" and notes "distinctivenotecrackedhandle"`,
+      { id: "fill BrowseRuger" },
     );
+    await settle();
+    await browser.act("Save the new firearm with the form's Add firearm button", {
+      id: "save BrowseRuger",
+    });
     await settle();
     await browser.act("Go back to the collection", { id: "back after BrowseRuger" });
     await settle();
+    await browser.act("Open the Add firearm form", { id: "open form BrowseMossberg" });
+    await settle();
     await browser.act(
-      `Add a firearm: make "BrowseMossberg", model "500-Browse", type Shotgun, caliber "9mm-Browse", serial number "BR-003". Save it.`,
-      { id: "add BrowseMossberg" },
+      `In the Add firearm form, fill in make "BrowseMossberg", model "500-Browse", type Shotgun, caliber "9mm-Browse" and serial number "BR-003"`,
+      { id: "fill BrowseMossberg" },
     );
+    await settle();
+    await browser.act("Save the new firearm with the form's Add firearm button", {
+      id: "save BrowseMossberg",
+    });
     await settle();
     await browser.act("Go back to the collection", { id: "back after BrowseMossberg" });
     await settle();

@@ -29,6 +29,9 @@ function modelOption() {
 export const config: WebdriverIO.Config = {
   ...base,
   specs: ["./act-specs/**/*.e2e.ts"],
+  // Recording calls the model several times per act(), seconds each on a
+  // local model, so a test with many calls outlasts the suite's 60 s.
+  mochaOpts: { ...base.mochaOpts, timeout: 15 * 60 * 1000 },
   services: [
     [
       "ai",
@@ -36,6 +39,7 @@ export const config: WebdriverIO.Config = {
         model: modelOption(),
         cache,
         maxSteps: 25,
+        instructions: new URL("./act-specs/instructions.md", import.meta.url).pathname,
         workspace: { keep: "always" },
       },
     ],
