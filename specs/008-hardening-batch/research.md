@@ -1318,6 +1318,39 @@ quickstart.md. In outline:
 - **Browser controls**: one capture listener each for `contextmenu`,
   `keydown`, and the mouse button events.
 
+### Measured: Linux, dev container, 2026-10-11 (T098)
+
+Release build, one test at a time, nothing else running. Budgets are
+unchanged.
+
+- **Largest export** (`import_largest_test`, 10,000 firearms and 10,000
+  accessories, every text field at its maximum; made in 111.5 s; no row
+  refused, every row imported). Informational, no budget (above):
+
+  | Format | File size | Reading | Import | Parent's rise while reading and importing |
+  |---|---|---|---|---|
+  | Workbook | 75 MB | 1.1 s | 528.9 s | 33 MB reading, 35 MB overall |
+  | Two CSV files | 107 MB + 52 MB | 0.72 s | 529.1 s | 2 MB reading, 2 MB overall |
+
+  The test process's own peak is 615 MB (workbook) and 619 MB (CSV); that is
+  mostly the 20,000-record collection the test built before it began, not the
+  reading (the rise is the figure SC-002 limits).
+- **Slowest refusal in the hostile corpus** (`import_reader_test`, 40 tests
+  pass; the 5 s budget has no debug allowance in a release build,
+  `SLOW_IN_DEBUG` applies under `debug_assertions` only): `cells-16-sheets`,
+  2.19 s against 5 s. The next slowest is `rows-xlsx`, 0.22 s.
+- **Largest memory rise in the corpus**: `total-text`, 213 MB against
+  512 MB (`rows-xlsx` 140 MB, `rows-csv` 117 MB, `cells-16-sheets` 111 MB).
+- **Cancel** at 1%, 25% and 60%: 61, 60 and 104 ms against 1 s. **Session end
+  (lock)** at 1%, 25% and 60%: 63, 58 and 93 ms against 1 s.
+- **`performance_test`**: all 24 pass. Slowest search 250 ms against 500 ms
+  (a two-letter document-name prefix); slowest action 86 ms against 1 s;
+  the take-over check costs 2.5 us per save. The session check does not
+  show.
+- **Test fix**: `get_value_summary_completes_within_budget_at_10k_records`
+  created a blanket policy with a limit of $100,000,000, which §10's new
+  maximum ($99,999,999) refuses; it now uses $99,999,999.
+
 ## §20 Security and data handling (for the pull request)
 
 - **#69**: the backend refuses every request of an ended session, reads

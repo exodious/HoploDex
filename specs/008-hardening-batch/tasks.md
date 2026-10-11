@@ -246,7 +246,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 
 ### Performance (constitution IV, research.md §19)
 
-- [ ] T098 On Linux, run `scripts/dev-container.sh bash -c 'cd src-tauri && cargo test --release -- --ignored import_largest'` and the release `performance_test` (as DEVELOPMENT.md runs it); record for the PR: the largest export's reading and import times and the parent's peak memory as a workbook and as two CSVs, the slowest refusal in the hostile corpus against 5 s, the largest memory rise against 512 MB, cancel and lock times against 1 s, and that search ≤ 500 ms and actions ≤ 1 s still hold with the session check; fix anything over budget
+- [X] T098 On Linux, run `scripts/dev-container.sh bash -c 'cd src-tauri && cargo test --release -- --ignored import_largest'` and the release `performance_test` (as DEVELOPMENT.md runs it); record for the PR: the largest export's reading and import times and the parent's peak memory as a workbook and as two CSVs, the slowest refusal in the hostile corpus against 5 s, the largest memory rise against 512 MB, cancel and lock times against 1 s, and that search ≤ 500 ms and actions ≤ 1 s still hold with the session check; fix anything over budget
 - [ ] T099 On macOS, in the macOS 26 VM, run the release `import_largest` and `performance_test` as T098 and record the same figures
 - [ ] T100 On Windows, on the Windows test machine, run the release `import_largest` and `performance_test` as T098 and record the same figures
 

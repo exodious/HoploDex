@@ -562,7 +562,7 @@ fn get_value_summary_completes_within_budget_at_10k_records() {
 
     insurance_ops::create_policy(
         &db.conn,
-        &policy("Perf blanket", "2020-01-01", "2099-01-01", Some(100_000_000)),
+        &policy("Perf blanket", "2020-01-01", "2099-01-01", Some(99_999_999)),
     )
     .unwrap();
     let rider = insurance_ops::create_policy(
