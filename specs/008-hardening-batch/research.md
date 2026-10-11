@@ -155,9 +155,30 @@ force the fallback by hand) and passed all 8 checks on both IPC paths:
   without it and with another id. The header survives
   `options.headers` -> `InvokeMessage::headers()`.
 
-Not yet run on macOS (T007) or Windows (T008), where the custom protocol is
-`ipc://localhost` and `http://ipc.localhost`; the probe's `fetch` filter
-covers both. The probe stays in `e2e/specs/` until those are recorded.
+**Verified on macOS (T007, 2026-10-11)**: the tart VM `hoplodex-macos`
+(macOS 26.6.2, WKWebView 605.1.15), the checkout copied in with
+`scripts/tart-vm.sh sync`, `npm run build`, then every spec run in the VM's
+desktop session through `scripts/tart-vm.sh gui`, with `ScopedSession` on
+`list_firearms` only. The same probe passed 8/8 on **both** IPC paths, with
+the same three results each: served with the header, `DATABASE_CLOSED`
+without it and with another session's id.
+- **`ipc://` custom protocol**: exercised (3 checks).
+- **`postMessage` fallback**: forced by the probe's own `window.fetch`
+  replacement (no change to the app). It counted exactly one rejected
+  `fetch`, saw the "IPC custom protocol failed" warning, and made no further
+  custom-protocol request, so the other 5 checks went through `postMessage`.
+  WKWebView delivers `options.headers` on both paths.
+
+The full suite, one spec file at a time, passed on macOS: `ui-review`, `us1`,
+`us2`, `us3`, `us4`, `us5`, `us6`, `us7-databases`, `us7-databases-no-keyring`,
+`us8`, `us9`, `us13` and `webdriver-plugin` with no failures; `us10`, `us11`
+and `us12` are the real-input specs that macOS skips by decision (#27): `us12`
+reported its 4 tests skipped, and `us10` and `us11` each ended as 1 spec file
+passed (their per-test counts weren't logged). No failure, no rerun needed.
+
+Not yet run on Windows (T008), where the custom protocol is
+`http://ipc.localhost`; the probe's `fetch` filter covers it. The probe stays
+in `e2e/specs/` until that is recorded.
 
 ## §3 The frontend's session scope
 
