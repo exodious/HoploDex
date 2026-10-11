@@ -20,27 +20,28 @@ scripts/dev-container.sh bash -c 'cd src-tauri && cargo test --release -- --igno
 |---|---|
 | US1-1 thumbnail of the same photo id in another database | `e2e/specs/us14-session-isolation.e2e.ts` "shows B's own thumbnail after locking A"; `FirearmThumbnail.test.tsx` "two scopes with colliding photo ids" |
 | US1-2 a load finishing after the switch | `FirearmThumbnail.test.tsx`, `PhotoGallery.test.tsx` and `DocumentList.test.tsx` "a deferred response after the scope ended is dropped"; `sessionScope.test.ts` |
-| US1-3 resumed draft never fills B's form | `usePendingDraft.test.tsx` "a draft resumed in one scope is not matched in another"; `SessionProvider.test.tsx` "lock while opening keeps the changes for the next open"; `pending_resume_test.rs` "row kept across a lock while resuming" |
+| US1-3 resumed draft never fills B's form | `usePendingDraft.test.tsx` "a draft resumed in one scope is not matched in another"; `SessionProvider.test.tsx` "lock while opening keeps the changes for the next open"; `pending_resume_test.rs` "row kept across a lock while resuming" and "opened stages the draft: a lock or sleep right after keeps the changes" |
 | US1-4 form can't open → dialog again | `SessionProvider.test.tsx` "a failed record load brings the dialog back with its error"; `FirearmRecordPage.test.tsx`, `AccessoryRecordPage.test.tsx`, `PolicyEditors.test.tsx` "report notOpened"; `pending_resume_test.rs` "notOpened blocks the collection again" |
 | US1-5 batch of attachments interrupted | `PhotoGallery.test.tsx` and `DocumentList.test.tsx` "stops at the scope's end, keeps what was added"; `session_scope_test.rs` "an add with an ended id writes nothing to the next database" |
 | US1-6 notifications | `SessionProvider.test.tsx` "toasts go with the session; a late notify shows nothing; the chooser notice stays" |
-| US1-7 any late request refused | `session_scope_test.rs`: every accessor with an ended id, a never-issued id and no header; the command lists |
+| US1-7 any late request refused | `session_scope_test.rs`: every accessor with an ended id (after a close, lock, reopen, second open, restore and take-over), a never-issued id and no header; "a late close or lock leaves the next session open"; the command lists |
 | SC-001 | `us14-session-isolation.e2e.ts` and `session_scope_test.rs` "colliding ids" (two databases seeded with the same ids through `ops`) |
 | US2-1 impossible declared count | `import_reader_test.rs` "uniqueCount beyond the limit is refused as unreadable, the helper ends, the app doesn't" |
 | US2-2 too large, or expands too far | `import_reader_test.rs` "file over 256 MiB", "1000× zip bomb" |
-| US2-3 rows, columns, sheets, cell text | `import_reader_test.rs`, one test per limit, checking the message names the file, the sheet and the limit |
+| US2-3 rows, columns, sheets, cells, cell text | `import_reader_test.rs`, one test per limit, checking the message names the file, the sheet and the limit |
 | US2-4 cancel | `import_reader_test.rs` "cancel_import stops the reading within 1 s"; `us5-export-import.e2e.ts` "Stop reading" |
-| US2-5 lock while reading | `import_reader_test.rs` "a lock goes ahead at once and the reading ends within 1 s"; `lock_test.rs` "screen lock and sleep during reading" |
+| US2-5 lock while reading | `import_reader_test.rs` "a lock goes ahead at once and the reading ends within 1 s"; `lock_test.rs` "screen lock, sleep and quit during reading" (each `DATABASE_CLOSED`, nothing imported) |
 | US2-6, SC-003 the largest export imports | `import_largest_test.rs` (release, `--ignored`): generated workbook and two CSVs |
-| SC-002 | `import_reader_test.rs` over `support/hostile_spreadsheets.rs`'s corpus: refused within 5 s, parent's resident memory rise ≤ 512 MB, helper dead after |
+| SC-002 | `import_reader_test.rs` over `support/hostile_spreadsheets.rs`'s corpus (including the many-empty-cells CSV and the sparse workbook): refused within 5 s, parent's resident memory rise ≤ 512 MB, helper dead after |
 | SC-004 | the two 1 s tests above |
 | US3-1 to US3-3 menus (page side) | `browserControls.test.ts`; `us15-browser-controls.e2e.ts` "contextmenu is prevented on blank, row, card, button, image; allowed on fields and selections" |
 | US3-1 to US3-3 menus (native side), SC-005 | the window controls check, below, on each OS |
-| US3-4 reload and navigation keys | `us15-browser-controls.e2e.ts` "real F5, Ctrl+R, Alt+Left and mouse back keep typed input" (Linux, XTest); the window controls check on macOS and Windows |
+| US3-4 reload and navigation keys | `us15-browser-controls.e2e.ts` "real F5, Ctrl+R, Alt+Left and mouse back keep typed input" (Linux, XTest); the window controls check on macOS and Windows; `browserControls.test.ts` "Option+←/→ moves by word on macOS" |
+| FR-011 look-ups without a menu (macOS) | `browserControls.test.ts` "force click is prevented on macOS" and ⌃⌘D in the key table; the macOS window controls check; M1 steps 8 and 9 |
 | US3-5 page shortcuts off, app shortcuts on | `browserControls.test.ts`; `us15-browser-controls.e2e.ts` "/, Ctrl+L, Escape and editing keys still work" |
 | US3-6 development build | `browserControls.test.ts` "not installed when DEV"; `window_controls` unit test "filters compiled for release and e2e only" |
 | US4-1, US4-6 wording, version | `PendingChangesDialog.test.tsx`, one test per wording; `last_saved_version_test.rs` |
-| US4-2, US4-3, SC-006 close and resume with the right version | `us9-locking.e2e.ts` "pending changes from another version: close, then reopen" (seeded `--pending-from 1.2.0`); `pending_resume_test.rs` "close leaves the row; backup has no pending changes" |
+| US4-2, US4-3, SC-006 close and resume with the right version | `us9-locking.e2e.ts` "pending changes from another version: close, then reopen" (seeded `--pending-from 1.2.0`) and "close from the dialog, reopen and resume" (the default seed, kept by this version: every field as kept); `pending_resume_test.rs` "close leaves the row; backup has no pending changes" and "resume after a close returns the draft as kept" |
 | US4-4 discard asks first | `PendingChangesDialog.test.tsx` (existing, kept) |
 | US4-5 Close offered in every case | `PendingChangesDialog.test.tsx` "Close the database in all three cases" |
 | FR-015 when the version is and isn't written | `last_saved_version_test.rs`: create, each write kind, `write_pending` (lock and immediate), and no change on open, close, backup, restore bookkeeping, passphrase change, a write that changed nothing |
@@ -96,8 +97,13 @@ click and force click.
    none of the items step 5 excludes.
 8. Force-click (press hard on) the selected word. Expected: no Look Up
    panel.
-9. On the trackpad, swipe two fingers left, then right. Expected: the page
-   doesn't move back or forward.
+9. Tap the selected word with three fingers (if the trackpad is set to
+   look up with a three-finger tap), then press ⌃⌘D. Expected: no Look Up
+   panel either time.
+10. Click in the search field, type `glock lookup`, and press Option+← twice.
+    Expected: the caret moves back one word each time.
+11. On the trackpad, swipe two fingers left, then right. Expected: the page
+    doesn't move back or forward.
 
 ### M2: Import a workbook saved by other programs
 

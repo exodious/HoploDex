@@ -74,8 +74,20 @@ the open one?" without waiting on a close (§11).
    `DATABASE_CLOSED`, with nothing changed and nothing returned. The check
    happens under the same lock as the work, so a close or switch can't come
    between them. `ScopedSession` delegates to these with its id.
+
+   The close paths take the id as well. `close_normal` and `lock` (in
+   `session/lifecycle.rs`) end a session through `Session::take`, which
+   checks no id today, and `lock` with no draft reaches no other accessor.
+   So `take` becomes `take(id)`, comparing under the mutex and returning
+   nothing (→ `DATABASE_CLOSED`) for another session, and `close_normal` and
+   `lock` take the `SessionId` they pass to it. The `ops` in `databases.rs`
+   and `backups.rs` that reach the open database take `&Session` and the
+   request's `SessionId`; `ScopedSession` doesn't `Deref` to `Session`, so a
+   command can't reach the open database without its id. The immediate
+   close (`hold_for_close`, at sleep or shutdown) acts on whatever is open,
+   as point 4 says.
 4. **The backend's own callers** (the idle lock, screen lock, sleep,
-   shutdown, take-over, `lock_with_staged`) act on whatever is open. They
+   shutdown, quit, take-over, `lock_with_staged`) act on whatever is open. They
    read `session.current_id()` and pass that, through the same accessors.
    There is no unscoped variant of the accessors (no `_with_x` siblings).
 5. **Unscoped commands**: a short list in `commands_list.rs`,
@@ -262,11 +274,19 @@ with them, and the dialog stays up until then.
   | Action | Allowed in | What it does |
   |---|---|---|
   | `resume` | `Unresolved` | Returns the draft and moves to `Resuming`. The row stays. |
-  | `opened` | `Resuming` | The form has opened with the draft: deletes the row. → `None` |
+  | `opened` | `Resuming` | The form has opened with the draft: deletes the row and makes the draft the session's staged draft. → `None` |
   | `notOpened` | `Resuming` | The form couldn't open: back to `Unresolved`. Returns the summary for the dialog. |
   | `discard` | `Unresolved` | Deletes the row. → `None`. Unchanged. |
 
   An action in the wrong state is a `VALIDATION_ERROR`, with nothing changed.
+- **`opened` stages the draft.** The form's own staging is debounced, so
+  between the form opening and its first staging the backend would hold
+  neither the row nor a staged draft, and a lock, sleep or shutdown then
+  would lose the changes. `opened` therefore sets
+  `OpenDatabase.staged_draft` to the draft under the same hold of the
+  session's mutex that deletes the row, and the frontend's `resumeOpened()`
+  marks the draft as staged. The form's later staging replaces it as
+  usual.
 - **A session that ends while `Resuming`** leaves the row in place: the
   lock's `write_pending` writes only a staged draft, and nothing is staged
   before the form opens. The next open of that database finds the row and
@@ -434,6 +454,7 @@ parent, as a second line.
 | Sheets | 16 | workbook part | 2 |
 | Rows in a table | 100,000 | while reading | 10,000 |
 | Columns in a row | 256 | while reading | 42 |
+| Cells in all, empty ones included | 5,000,000 per import | while reading | ≈ 630,000 |
 | Text in a cell | 32,767 characters (Excel's own cell limit) | while reading | 4,000 (a note; §10) |
 | Text in all, once read | 256 MiB (UTF-8 bytes) | while reading | ≈ 166 MB of ASCII text |
 | Shared strings declared or present | 2,000,000 | pre-read, then while reading | ≈ 630,000 |
@@ -470,8 +491,17 @@ recorded as an accepted edge.
 
 **Memory** (SC-002, measured as the HoploDex process's resident memory; the
 helper is a separate process capped at 512 MiB):
-- The parent holds at most the rows the helper streams back, bounded by the
-  256 MB total-text limit plus `String` overhead (about 25 bytes a cell).
+- The parent holds at most the rows the helper streams back. The text is
+  bounded by the 256 MiB total-text limit, but each cell also costs about
+  32 bytes (a `String` and its allocation) whether it holds text or not.
+  Without a bound on cells, a 25 MB CSV of 100,000 lines of 255 commas
+  (25.6 million empty cells, within every other limit) would cost the
+  parent over 600 MB, and two such files over 1.2 GB. `MAX_CELLS` (5,000,000
+  per import, every cell position the helper sends counted, a sparse row
+  padded up to its last cell) bounds that at about 160 MB, so the parent
+  stays near 420 MB at worst.
+- The parent turns each `Rows` batch into import rows as it arrives (the
+  sheet's header first), so the cells aren't held twice.
 - The helper holds the workbook's bytes, its shared strings and the batch
   being sent.
 
@@ -553,7 +583,12 @@ trimming:
   `!is_current()`, kills the helper within 100 ms and returns
   `DATABASE_CLOSED`.
   - A sleep or shutdown stops the operation through the registry, as
-    today.
+    today, and begins an immediate close. The loop returns
+    `DATABASE_CLOSED` for it too: `OPERATION_STOPPED` is only for a stop
+    made by `cancel_import`, which marks the operation as cancelled by the
+    user, in a session that is still current. Whichever the loop notices
+    first, the result is the same for each trigger, and nothing is
+    imported. The dialog has gone with the session, so nothing is shown.
   - The idle lock can't fall due while a file is read, because a running
     operation pauses the idle clock (003 research.md §15, unchanged). The
     idle case of US2-5 therefore can't arise. If it ever did, it would take
@@ -588,8 +623,12 @@ trimming:
 - **`keydown`** (capture phase), `preventDefault()` and
   `stopPropagation()` for:
   - F5, Shift+F5, Ctrl+F5, Ctrl/⌘+R and Ctrl/⌘+Shift+R;
-  - Alt+←/→, and on macOS ⌘[, ⌘], ⌘← and ⌘→ when focus isn't in editable
-    text, where ⌘←/→ move the caret (FR-013);
+  - Alt+←/→ on Windows and Linux only. On macOS, Alt is Option, and
+    Option+←/→ moves the caret by word in text (FR-013), so it is left
+    alone there; WKWebView binds no navigation to it;
+  - on macOS, ⌘[ and ⌘], and ⌘← and ⌘→ when focus isn't in editable text,
+    where ⌘←/→ move the caret (FR-013);
+  - on macOS, ⌃⌘D (Look Up, FR-011);
   - `BrowserBack`, `BrowserForward`, `BrowserRefresh`, `BrowserStop`,
     `BrowserHome`;
   - Ctrl/⌘+P (print), Ctrl/⌘+S (save), Ctrl/⌘+U (view source), Ctrl/⌘+F, F3
@@ -599,7 +638,13 @@ trimming:
   The app's own keys ("/", Ctrl/⌘+L, Escape) and the editing keys (Ctrl/⌘+C,
   X, V, Z, Y, Shift+Z, A, and the arrow, Home and End keys with Shift) are
   not in the list, so they work as before. Ctrl/⌘+L is handled by
-  `SessionProvider`'s own capture listener, which runs first.
+  `SessionProvider`'s own capture listener, which runs after this one
+  (this one is installed before React renders) and isn't stopped by it,
+  since Ctrl/⌘+L isn't in the table.
+- **The platform** is read once from `navigator.userAgent` at install; the
+  key table is a function of it, so the tests check both.
+- **Force click** (macOS): `webkitmouseforcewillbegin` is prevented, which
+  stops WebKit's default force-click action, Look Up (FR-011).
 - **Mouse buttons**: `mousedown`, `mouseup` and `auxclick` with `button` 3
   or 4 (back, forward) are prevented, in the capture phase.
 - **One list, unit-tested**: the key table is exported, and
@@ -625,15 +670,15 @@ someone looks at it.
 
 - **Linux (WebKitGTK)**: `connect_context_menu`, as the PDF surface does
   (`services/preview/surface/linux.rs`). It keeps the stock actions:
-  - `Cut`, `Copy`, `Paste`, `Delete`, `SelectAll`, `InputMethods`,
-    `UnicodeInsertEmoji`;
+  - `Cut`, `Copy`, `Paste`, `Delete`, `SelectAll`, `UnicodeInsertEmoji`;
   - the spelling actions (`SpellingGuess`, `NoGuessesFound`,
     `IgnoreSpelling`, `LearnSpelling`, `IgnoreGrammar`) and `Custom`
     spelling items.
 
   It removes everything else, including `GoBack`, `GoForward`, `Stop`,
   `Reload`, `InspectElement`, link, image and media items, and Paste as
-  Plain Text, which isn't on FR-011's list. A menu left empty isn't shown
+  Plain Text and the Input Methods submenu, which aren't on FR-011's list
+  (the input method is still chosen from the desktop's own controls). A menu left empty isn't shown
   (return `true`).
 - **Windows (WebView2)**: `ICoreWebView2_11::add_ContextMenuRequested` on
   the main web view, as the surface does. It keeps items by `Name`:
@@ -661,6 +706,13 @@ someone looks at it.
   It removes Look Up, Translate, Search With Google, Share, Services,
   Speech, Font, Substitutions, Transformations, Writing Direction, Writing
   Tools, AutoFill, Inspect Element and Reload, then tidies separators.
+
+  The same class also gains `quickLookWithEvent:` (NSResponder's public
+  method for the three-finger-tap Look Up), doing nothing. With the page's
+  `webkitmouseforcewillbegin` and ⌃⌘D handling (§12), that covers FR-011's
+  look-ups without a menu. Each is confirmed in the macOS 26 VM in the same
+  first task; one that can't be stopped goes to the owner with the menu
+  items.
   **This hook is unproven** on macOS 26. It is the first task of Story 3
   (plan.md "First tasks"). If AppKit adds an item after the hook runs (Writing
   Tools and Services are the likely ones), the plan's fallback is the
@@ -876,8 +928,9 @@ quickstart.md. In outline:
   It covers SC-005 on macOS and Windows, where real input isn't available
   to the E2E specs (DEVELOPMENT.md "Real keyboard and mouse input").
 - **Manual** (best effort before a release, numbered in quickstart.md):
-  the menus on a real Mac's trackpad, and on Windows with a pen. The
-  check covers mice and keyboards.
+  the menus and look-ups on a real Mac's trackpad (M1), workbooks saved by
+  other programs (M2), and pending changes from another version by hand
+  (M3). The check covers mice and keyboards.
 
 ## §19 Performance
 
@@ -946,6 +999,12 @@ Nothing is bundled or fetched.
   changes case is atomic.
 - **A collection at every field's maximum in 3- or 4-byte characters**
   passes the 256 MB total-text limit (§9).
+- **macOS's look-ups without a menu** (force click, three-finger tap,
+  ⌃⌘D) depend on WebKit honouring `webkitmouseforcewillbegin` and on the
+  responder chain reaching `quickLookWithEvent:`. The first task of Story 3
+  confirms them; one that can't be stopped goes to the owner (§13).
+- **The parent's memory bound** rests on `MAX_CELLS` and the total-text
+  limit together (§9); a change to either needs the arithmetic redone.
 - **Notifications raised by the session layer** (none today) would not be
   covered by the keyed `ToastProvider`. The Vitest guard of §4 catches a new
   one.

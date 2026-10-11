@@ -19,6 +19,7 @@ or from the other file of a two-file import, is imported.
 | Sheets | 16 | XLSX |
 | Rows | 100,000 data rows per table | each sheet or CSV |
 | Columns | 256 cells in a row | each sheet or CSV |
+| Cells | 5,000,000 in all, empty ones included (a row counts up to its last cell) | all rows read in one import |
 | Cell text | 32,767 characters | every cell |
 | Text in all | 256 MiB (UTF-8) | all cells read in one import |
 | Shared strings | 2,000,000, declared or present | XLSX |
@@ -30,7 +31,7 @@ not read the file.`), as is any file the reader fails on.
 **What the export writes stays inside the limits**: at the largest
 supported collection (10,000 firearms and 10,000 accessories, every text
 field at its maximum below), about 170 MB as two CSV files, or about 100 MB
-as one workbook (210 MB unpacked), with at most 42 columns, 2 sheets and
+as one workbook (210 MB unpacked), with at most 42 columns, about 630,000 cells, 2 sheets and
 4,000 characters in a cell other than `photo_filenames` (SC-003).
 
 ## Free-text maximums (research.md §10)

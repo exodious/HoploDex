@@ -87,7 +87,7 @@ means "none".
     │      resolve(discard)    │   │      resolve(notOpened)      │
     ├──────────────────────────┘   └──────────────────────────────┤
     │                                                             │
-    │                     resolve(opened)                         │
+    │          resolve(opened): deletes the row, stages the draft │
     └─────────────────────────────────────────────────────────────┘
 
  Any session end (lock, close, switch, restore, take-over, sleep, shutdown)
@@ -101,15 +101,23 @@ means "none".
 | `Unresolved` | kept | `PENDING_CHANGES_UNRESOLVED` |
 | `Resuming` | kept | served (the record loads and its form opens) |
 
+`opened` deletes the row and, under the same hold of the session's mutex,
+makes the draft the session's staged draft (`OpenDatabase.staged_draft`), as
+if the form had staged it. A lock, sleep or shutdown before the form's own
+first staging then writes it back as pending changes, so the changes are
+never lost between the form opening and its first staging (FR-003).
+
 `close_database` is served in every state. It is session housekeeping,
 which `close_normal` never refused.
 
 ### `ScopedSession` (Tauri command argument)
 
 `{ session: Session, id: SessionId }`, built from the `Session` state and the
-`HoploDex-Session` header. Its `read`, `write`, `write_open`,
-`write_housekeeping`, `inspect`, `inspect_mut` and `hold` delegate to
-`Session`'s with `id`. It also has `is_current()`, a lock-free comparison
+`HoploDex-Session` header. Its `read`, `read_stamped`, `write`,
+`write_open`, `write_housekeeping`, `inspect`, `inspect_mut` and `hold`
+delegate to `Session`'s with `id`, and `take`, `close_normal` and `lock` are
+reached with `id` too (research.md §2). It doesn't `Deref` to `Session`;
+the `ops` that reach the open database take `&Session` and the `SessionId`. It also has `is_current()`, a lock-free comparison
 with `SessionInner::current`. A missing or unparsable header refuses with
 `DATABASE_CLOSED`.
 
@@ -123,7 +131,7 @@ with `SessionInner::current`. A missing or unparsable header refuses with
 | `ended: boolean`, `end()` | `end()` is synchronous and idempotent. It clears `thumbnails`, drops `resumed`, and resets the staging state (research.md §4). |
 | `invoke<T>(command, args)` | Sends `HoploDex-Session: id`. Once ended, it rejects with `CommandFailure("DATABASE_CLOSED")` without sending, and a response arriving after `end()` is rejected the same way. |
 | `thumbnails: Map<number, string>` | Photo id → data URL, for this session only. |
-| `resumed: { draft: Draft; state: "opening" } \| null` | The resumed draft until its form opens (research.md §6). `resumeOpened()` and `resumeFailed(reason)` report the outcome. |
+| `resumed: { draft: Draft; state: "opening" } \| null` | The resumed draft until its form opens (research.md §6). `resumeOpened()` and `resumeFailed(reason)` report the outcome. `resumeOpened()` marks the draft as staged, since `opened` staged it in the backend. |
 
 Lifetime: from `opened(status)` to the first of `session:closing` or
 `session:closed` with its `sessionId`, "Lock now", the next `opened()`, or
@@ -141,6 +149,7 @@ Lifetime: from `opened(status)` to the first of `session:closing` or
 | `MAX_SHEETS` | 16 | sheets per workbook |
 | `MAX_ROWS` | 100,000 | data rows per table |
 | `MAX_COLUMNS` | 256 | cells per row |
+| `MAX_CELLS` | 5,000,000 | cells in all the rows sent to the parent, per import, empty ones included (a row is padded up to its last cell) |
 | `MAX_CELL_CHARS` | 32,767 | characters per cell |
 | `MAX_TOTAL_TEXT_BYTES` | 268,435,456 (256 MiB) | UTF-8 bytes of all cells read, per import |
 | `MAX_SHARED_STRINGS` | 2,000,000 | declared (`count`, `uniqueCount`) or present |
@@ -149,7 +158,13 @@ Lifetime: from `opened(status)` to the first of `session:closing` or
 
 `ImportLimit` (serialized camelCase, for `IMPORT_LIMIT_EXCEEDED.details.limit`):
 `fileSize`, `unpackedSize`, `zipEntries`, `sheets`, `rows`, `columns`,
-`cellText`, `totalText`, `sharedStrings`.
+`cells`, `cellText`, `totalText`, `sharedStrings`.
+
+`MAX_CELLS` and `MAX_TOTAL_TEXT_BYTES` together bound the parent's memory
+(SC-002): at most 256 MiB of text plus about 32 bytes a cell (the `String`
+and its allocation) for 5,000,000 cells, about 160 MB, ≈ 420 MB in all. The
+parent turns each `Rows` batch into import rows as it arrives, so the cells
+aren't held twice.
 
 ### Import helper frames
 

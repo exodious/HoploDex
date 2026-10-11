@@ -26,8 +26,10 @@ Four issues, each a story that can be built and tested on its own:
   the HoploDex executable started again with `--import-helper`. It shares
   007's TIFF helper core (confinement, job object, framing), with a 512 MiB
   memory cap.
-  - Limits on file size, unpacked size, sheets, rows, columns, cell text,
-    total text and shared strings are enforced as the data arrives.
+  - Limits on file size, unpacked size, sheets, rows, columns, cells, cell
+    text, total text and shared strings are enforced as the data arrives.
+    The cells and total-text limits together bound the main process's
+    memory (research.md §9).
   - The reading holds no session lock, shows progress, and stops within 1 s
     on **Stop reading** or a lock.
   - Free-text fields get maximum lengths (200 and 4,000 characters), so
@@ -38,7 +40,8 @@ Four issues, each a story that can be built and tested on its own:
     view-source and developer-tools keys and the mouse's back and forward
     buttons;
   - a native filter on each OS trims the menus that remain to editing,
-    copying, spelling and emoji;
+    copying, spelling and emoji, and on macOS the look-ups without a menu
+    (force click, three-finger tap, ⌃⌘D) do nothing;
   - WebView2's browser accelerator keys and swipe navigation are off.
 
   Development builds keep the web view's menu and reload.
@@ -231,7 +234,7 @@ src-tauri/
 │   │   │                            #  frames.rs (import frames)
 │   │   └── spreadsheet.rs           # read_csv/read_xlsx removed; read_table/recognise kept for the parent
 │   └── window_controls/             # NEW: mod.rs, linux.rs (context-menu allowlist), macos.rs
-│                                    #  (willOpenMenu: hook), windows.rs (ContextMenuRequested allowlist,
+│                                    #  (willOpenMenu: and quickLookWithEvent: hooks), windows.rs (ContextMenuRequested allowlist,
 │                                    #  browser accelerator keys and swipe off); release and e2e only
 ├── examples/
 │   ├── human_seed.rs                # --pending-from <version>; last_saved_version on the seeded pending;
@@ -367,7 +370,7 @@ The final phase of tasks.md, done as part of opening the pull request:
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
-| A second helper process mode (`--import-helper`), and the helper core moved to a shared module | FR-007's "however crafted, including parts read by third-party components" in a process that aborts on panic; SC-002's memory bound; SC-004's 1 s cancel. Owner's choice, 2026-10-11 | In-process hardening leaves unknown calamine panics able to end the app; a vendored calamine has the same gap plus a fork to maintain (research.md §7) |
+| A second helper process mode (`--import-helper`), and the helper core moved to a shared module | FR-007's "however crafted, including parts read by third-party components" in a process that aborts on panic; SC-002's memory bound; SC-004's 1 s cancel. Owner's choice, 2026-10-11. **Principle I** lets duplication be factored out only at a third occurrence; sharing the core between its second user and its first is a deliberate exception: the code is confinement (Landlock, `sandbox_init`, the job object), where a second copy that drifts is a security defect, and moving it is reuse of tested code, not a speculative abstraction | In-process hardening leaves unknown calamine panics able to end the app; a vendored calamine has the same gap plus a fork to maintain (research.md §7) |
 | Per-OS native code on the main web view (a context-menu filter on each OS; a runtime-added AppKit method on macOS) | FR-011 asks for the system's menu, trimmed; a page can only cancel a menu outright, not remove Look Up or Reload from it | Our own Radix menu loses the system's spelling suggestions and emoji, which #40 and the spec keep; it stays as macOS's fallback if the hook can't remove an item (research.md §13) |
 | A parameter on every collection service function and a header on every scoped command | FR-004 requires every request to name the session it was begun in; only a value captured when the work began can (research.md §3) | A module-level "current session" names the session open when the request is sent, which is #69's attachment bug |
 | Free-text maximums across four forms and the import (a rule the spec didn't state) | SC-003 needs a "longest" to size the limits against; a note over 32,767 characters already breaks the workbook export. Owner's choice, 2026-10-11 | Unbounded fields leave SC-003 without a size and the limits arbitrary (research.md §10) |
@@ -417,8 +420,12 @@ Confirmed by the owner on 2026-10-11 at planning (spec.md clarifications):
 
 Design choices made at planning that the spec left open (worth a look):
 - **The session id is the existing per-open counter**, carried in an IPC
-  header and checked under the session's lock. A late request is refused
-  with the existing `DATABASE_CLOSED` (research.md §1, §2).
+  header and checked under the session's lock, including where a close or
+  lock takes the open database. A late request is refused with the existing
+  `DATABASE_CLOSED` (research.md §1, §2).
+- **Resuming's `opened` also stages the draft**, so a lock or sleep between
+  the form opening and its first staging keeps the changes (research.md
+  §6).
 - **The unscoped commands** are the chooser, `get_database_status`, quit,
   idle reporting, `skip_backup`, `cancel_import`, the per-computer
   document-opening setting, and `restore_backup` from the chooser.
@@ -438,8 +445,9 @@ Design choices made at planning that the spec left open (worth a look):
   therefore can't arise; a user lock, screen lock, sleep or quit goes ahead
   (research.md §11).
 - **The limits' values** (research.md §9): 256 MiB per file, 1 GiB
-  unpacked, 16 sheets, 100,000 rows, 256 columns, 32,767 characters per cell
-  (Excel's own), 256 MiB of text, and 2,000,000 shared strings.
+  unpacked, 16 sheets, 100,000 rows, 256 columns, 5,000,000 cells per
+  import, 32,767 characters per cell (Excel's own), 256 MiB of text, and
+  2,000,000 shared strings.
 - **The version is recorded at creation**, inside `write_pending`'s
   transaction, and after any scoped write that changed rows. Collection
   writes record it just after their commit, not atomically (research.md

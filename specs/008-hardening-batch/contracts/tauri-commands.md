@@ -13,7 +13,9 @@ gain the session header below.
   only through `SessionScope.invoke` (research.md §3).
 - **The check**: the backend compares the header with the open database's
   session id under the session's lock, before anything else the command
-  does. On a missing or malformed header, nothing open, or another session
+  does. For `close_database` and `lock_database` the check is made where the
+  close takes the open database from the session, so a late close or lock
+  can't end the session opened after it. On a missing or malformed header, nothing open, or another session
   open:
   - **Error**: `DATABASE_CLOSED`;
   - nothing is read, changed or returned, of any database.
@@ -70,7 +72,7 @@ output: { draft?: Draft; pending?: PendingSummary }
 | Action | When | Effect | Output |
 |---|---|---|---|
 | `resume` | pending changes are unresolved | Moves to resuming; collection commands are served; **the row stays** | `{ draft }` |
-| `opened` | resuming | The form has opened with the draft: deletes the row | `{}` |
+| `opened` | resuming | The form has opened with the draft: deletes the row and keeps the draft as the session's staged draft, so a lock, sleep or shutdown before the form's first staging writes it back | `{}` |
 | `notOpened` | resuming | The form couldn't open: collection commands are refused again (`PENDING_CHANGES_UNRESOLVED`) | `{ pending }`, for the dialog |
 | `discard` | unresolved | Deletes the row (unchanged) | `{}` |
 
@@ -104,11 +106,11 @@ Input and `ImportResult` are unchanged. The backend now:
 |---|---|---|
 | `IMPORT_LIMIT_EXCEEDED` | `{ file: string; sheet?: string; limit: ImportLimit }` | A file passed one of the limits (data-model.md "Import limits"). The message names the file, the sheet of a workbook, and the limit, for example `inventory.xlsx, sheet "Sheet3": more than 100,000 rows. HoploDex imports at most 100,000 rows per table.` |
 | `VALIDATION_ERROR` | — | As before: the file couldn't be read (`<file>: could not read the file.`), now also when the helper died, passed its time limit or sent a malformed frame, and when a workbook's declared sizes don't match its content. No parser detail is shown. |
-| `OPERATION_STOPPED` | `{ operation: "import", importedCount: 0 }` | `cancel_import` stopped the reading. Nothing was imported. |
-| `DATABASE_CLOSED` | — | The session ended while the file was read (a lock, close, switch or take-over). The helper was killed and nothing was imported. |
+| `OPERATION_STOPPED` | `{ operation: "import", importedCount: 0 }` | `cancel_import` stopped the reading, and only that. Nothing was imported. |
+| `DATABASE_CLOSED` | — | The session ended, or began an immediate close, while the file was read (a lock, screen lock, close, switch, take-over, sleep, shutdown or quit). The helper was killed and nothing was imported. The frontend's scope has ended, so nothing is shown. |
 
 `ImportLimit` = `"fileSize" | "unpackedSize" | "zipEntries" | "sheets" |
-"rows" | "columns" | "cellText" | "totalText" | "sharedStrings"`.
+"rows" | "columns" | "cells" | "cellText" | "totalText" | "sharedStrings"`.
 
 Row-level errors are unchanged (FR-009), except that the free-text field
 maximums (below) now give row errors.

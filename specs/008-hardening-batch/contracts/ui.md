@@ -63,8 +63,9 @@ Discard is never the default.
   error banner (`role="alert"`), for example: `inventory.xlsx, sheet
   "Sheet3": more than 100,000 rows. HoploDex imports at most 100,000 rows
   per table.` The chosen files stay listed.
-- **A lock while reading** ends the session. The dialog goes with the
-  collection, and no message is shown afterwards (FR-005).
+- **A lock, screen lock, sleep, shutdown or quit while reading** ends the
+  session. The dialog goes with the collection, and no message about the
+  import is shown afterwards (FR-005).
 
 ## 3. Free-text maximums in forms (research.md §10)
 
@@ -88,18 +89,18 @@ In a release (and E2E) build:
 | Where | Right-click shows |
 |---|---|
 | Blank area, a row, a card, a button, an image, a dialog's body | nothing |
-| A text field, text area or editable text | the system's editing menu, trimmed: cut, copy, paste, delete, select all, undo and redo where each applies and the system has it, plus its spelling suggestions and emoji |
+| A text field, text area or editable text | the system's editing menu, trimmed: cut, copy, paste, delete, select all, undo and redo where each applies and the system has it, plus its spelling suggestions and emoji (no input-method submenu) |
 | Text selected anywhere (a read-only field included) | the system's menu with copy (and select all where the system adds it) |
 
 No menu ever offers back, forward, reload, stop, print, save, view source,
 inspect, share, look up, translate, web search, services, speech or writing
-tools.
+tools. On macOS, a force click, a three-finger tap and ⌃⌘D look nothing up.
 
 | Keys and buttons | Effect |
 |---|---|
-| F5, Shift+F5, Ctrl+F5, Ctrl/⌘+R, Ctrl/⌘+Shift+R, Alt+←/→, ⌘[ / ⌘], the keyboard's Back, Forward and Refresh keys, the mouse's back and forward buttons | nothing; typed input is kept |
+| F5, Shift+F5, Ctrl+F5, Ctrl/⌘+R, Ctrl/⌘+Shift+R, Alt+←/→ (Windows, Linux), ⌘[ / ⌘] and ⌘←/→ outside editable text (macOS), the keyboard's Back, Forward and Refresh keys, the mouse's back and forward buttons | nothing; typed input is kept |
 | Ctrl/⌘+P, Ctrl/⌘+S, Ctrl/⌘+U, Ctrl/⌘+F, F3, Ctrl/⌘+G, F7, F12, Ctrl/⌘+Shift+I/J/C | nothing |
-| "/", Ctrl/⌘+L, Escape, and cut, copy, paste, undo, redo, select all, moving and selecting within text | unchanged |
+| "/", Ctrl/⌘+L, Escape, and cut, copy, paste, undo, redo, select all, moving and selecting within text (Option+←/→ by word on macOS included) | unchanged |
 
 In a development build (`npm run tauri dev`) the web view's own menu and
 reload are as before.
