@@ -520,8 +520,10 @@ fn a_helper_that_dies_or_says_nonsense_makes_the_file_unreadable() {
     let dir = TempDir::new().unwrap();
     let path = valid_export_csv(&dir.path().join("valid.csv"));
 
-    // `true` ends at once; `echo` writes a line, which isn't a frame.
-    for program in ["/bin/true", "/bin/echo"] {
+    // `true` ends at once; `echo` writes a line, which isn't a frame. (macOS
+    // keeps `true` in /usr/bin, not /bin.)
+    let true_program = if cfg!(target_os = "macos") { "/usr/bin/true" } else { "/bin/true" };
+    for program in [true_program, "/bin/echo"] {
         let error = read_files(
             Path::new(program),
             &[import_file(&path)],
