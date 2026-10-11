@@ -19,16 +19,16 @@ use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
 use crate::services::attachments::safe_basename;
 use crate::services::cartridges::{CaliberSource, derive_caliber};
 use crate::services::entry_text::{EntryField, check_entry_text};
+use crate::services::import_reader::read_files;
 use crate::services::mounts::{self, MountGraph};
 use crate::services::record_id;
 use crate::services::spreadsheet::{
     AccessoryExportRow, FirearmExportRow, RawAccessoryRow, RawImportRow, ReadTable,
     SpreadsheetFormat, TableKind, TableRows, dollars_to_string, parse_scaled_decimal,
-    parse_whole_dollars, read_spreadsheet, scaled_to_string, write_accessory_csv,
-    write_firearm_csv, write_workbook,
+    parse_whole_dollars, scaled_to_string, write_accessory_csv, write_firearm_csv, write_workbook,
 };
 use crate::services::suggestions::{FieldVocabulary, SheetSpellings, snap_for_import};
-use crate::session::Session;
+use crate::session::{Session, SessionId};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1966,13 +1966,9 @@ pub mod ops {
         }
     }
 
-    /// FR-022: reads and recognises every file and sheet before anything is
-    /// saved, and stops with `VALIDATION_ERROR` naming the file (and the
-    /// sheet) when a sheet is no table, two sheets hold the same table, or
-    /// more than two files are given.
-    fn read_files(
-        files: &[ImportFile],
-    ) -> Result<(Vec<RawImportRow>, Vec<RawAccessoryRow>), CommandError> {
+    /// FR-022: the files of an import, checked before any is read: at least
+    /// one, and at most two (a firearm table and an accessory table).
+    pub fn check_files(files: &[ImportFile]) -> Result<(), CommandError> {
         if files.is_empty() {
             return Err(CommandError::new("VALIDATION_ERROR", "Choose a file to import."));
         }
@@ -1982,10 +1978,16 @@ pub mod ops {
                 "Pick one firearm table and at most one accessory table: at most two files.",
             ));
         }
-        let mut tables: Vec<ReadTable> = Vec::new();
-        for file in files {
-            tables.extend(read_spreadsheet(&file.file_path, file.format)?);
-        }
+        Ok(())
+    }
+
+    /// FR-022: the tables read from the files (`import_reader::read_files`),
+    /// as the firearm rows and the accessory rows; stops with
+    /// `VALIDATION_ERROR` naming the file (and the sheet) when two sheets
+    /// hold the same table.
+    fn collect_tables(
+        tables: Vec<ReadTable>,
+    ) -> Result<(Vec<RawImportRow>, Vec<RawAccessoryRow>), CommandError> {
         let mut firearms: Option<(String, Vec<RawImportRow>)> = None;
         let mut accessories: Option<(String, Vec<RawAccessoryRow>)> = None;
         let same_table = |first: &str, second: &str, noun: &str| {
@@ -2039,7 +2041,7 @@ pub mod ops {
     /// holding its conflicts with that open and no other (issue #64).
     pub fn import_in_session(
         session: &Session,
-        files: &[ImportFile],
+        tables: Vec<ReadTable>,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
         record_imported: &dyn Fn(u64),
@@ -2047,7 +2049,7 @@ pub mod ops {
         session.write_open(|open| {
             import_collection_stoppable(
                 &open.conn,
-                files,
+                tables,
                 &open.imports,
                 on_progress,
                 is_cancelled,
@@ -2083,15 +2085,17 @@ pub mod ops {
     /// `store`) rather than being silently applied.
     pub fn import_collection(
         conn: &Connection,
-        files: &[ImportFile],
+        tables: Vec<ReadTable>,
         store: &ImportSessionStore,
         on_progress: &mut dyn FnMut(usize, usize),
     ) -> Result<ImportResult, CommandError> {
         let never = || false;
-        import_collection_stoppable(conn, files, store, on_progress, &never, &|_| {})
+        import_collection_stoppable(conn, tables, store, on_progress, &never, &|_| {})
     }
 
-    /// [`import_collection`], checking `is_cancelled` between rows and
+    /// [`import_collection`] on the tables the files hold, already read
+    /// (`import_reader::read_files`, outside the session's lock), checking
+    /// `is_cancelled` between rows and
     /// reporting each imported row to `record_imported`. Each row is saved
     /// on its own, so a stop keeps every row imported before it, and fails
     /// with `OPERATION_STOPPED` and their number (FR-037). The firearm
@@ -2099,13 +2103,13 @@ pub mod ops {
     /// (research.md §17, §18).
     pub fn import_collection_stoppable(
         conn: &Connection,
-        files: &[ImportFile],
+        tables: Vec<ReadTable>,
         store: &ImportSessionStore,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
-        let (firearm_rows, accessory_rows) = read_files(files)?;
+        let (firearm_rows, accessory_rows) = collect_tables(tables)?;
         let snapping = Snapping::new(conn, &firearm_rows, &accessory_rows)?;
         let total = firearm_rows.len() + accessory_rows.len();
         let session_id = format!("import-{}", chrono::Utc::now().timestamp_micros());
@@ -2431,6 +2435,10 @@ pub async fn import_collection(
 ) -> Result<ImportResult, CommandError> {
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
     let operation = session.operations().begin(OperationKind::Import, None)?;
+    let began_in = session.current_id();
+    if began_in == SessionId::NONE {
+        return Err(CommandError::database_closed());
+    }
     let files = input
         .files
         .iter()
@@ -2441,9 +2449,26 @@ pub async fn import_collection(
             })
         })
         .collect::<Result<Vec<_>, CommandError>>()?;
+    ops::check_files(&files)?;
+    let helper_exe = std::env::current_exe().map_err(|err| {
+        log::error!("could not find the import reader's program: {err}");
+        CommandError::new("INTERNAL_ERROR", "The import reader could not be started.")
+    })?;
+    // The files are read in the import helper without the session's lock, so
+    // a lock goes ahead at once and ends the reading (research.md §11).
+    // T064 gives this its own phase, progress and the user's cancel
+    // (`cancel_import`); until then the reading reports no progress and
+    // `is_cancelled` also covers a sleep's stop.
+    let tables = read_files(
+        &helper_exe,
+        &files,
+        &|| operation.is_cancelled(),
+        &|| session.current_id() == began_in,
+        &mut |_, _| {},
+    )?;
     ops::import_in_session(
         &session,
-        &files,
+        tables,
         &mut |processed, total| {
             let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
         },

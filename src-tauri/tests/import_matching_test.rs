@@ -81,7 +81,7 @@ fn a_matching_make_model_serial_produces_a_conflict_not_a_silent_overwrite() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &store,
         &mut |_, _| {},
     )
@@ -110,7 +110,7 @@ fn no_serial_attested_rows_are_always_inserted_as_new() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &store,
         &mut |_, _| {},
     )
@@ -136,7 +136,7 @@ fn resolving_a_conflict_as_overwrite_updates_the_existing_record() {
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &store,
         &mut |_, _| {},
     )
@@ -167,7 +167,7 @@ fn import_glock(
     let path = write_csv(&dir, &csv_file(rows));
     import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         store,
         &mut |_, _| {},
     )
@@ -427,7 +427,7 @@ fn resolving_a_conflict_as_skip_leaves_the_original_untouched() {
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &store,
         &mut |_, _| {},
     )
@@ -478,7 +478,7 @@ fn apply_to_remaining_resolves_conflicts_not_explicitly_listed() {
     let path = write_csv(&dir, &csv);
     let import_result = import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &store,
         &mut |_, _| {},
     )
@@ -527,7 +527,7 @@ fn overwriting_a_conflict_updates_the_physical_details() {
     );
     let imported = import_export_ops::import_collection(
         &db.conn,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &store,
         &mut |_, _| {},
     )

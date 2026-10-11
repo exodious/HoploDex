@@ -8,7 +8,7 @@
 use std::io::{self, Read, Write};
 
 use super::PageSize;
-use crate::services::helper::frames::{invalid, read_frame, write_frame};
+use crate::services::helper::frames::{MAX_FRAME, invalid, read_frame, write_frame};
 
 const LOAD: u8 = 1;
 const RENDER: u8 = 2;
@@ -46,7 +46,7 @@ pub enum Response {
 
 /// Sends a `Load` without copying the document into a request first.
 pub fn write_load(w: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
-    write_frame(w, LOAD, bytes)
+    write_frame(w, LOAD, bytes, MAX_FRAME)
 }
 
 pub fn write_request(w: &mut impl Write, request: &Request) -> io::Result<()> {
@@ -56,14 +56,14 @@ pub fn write_request(w: &mut impl Write, request: &Request) -> io::Result<()> {
             let mut payload = [0u8; 8];
             payload[..4].copy_from_slice(&page.to_be_bytes());
             payload[4..].copy_from_slice(&width_px.to_be_bytes());
-            write_frame(w, RENDER, &payload)
+            write_frame(w, RENDER, &payload, MAX_FRAME)
         }
     }
 }
 
 /// The next request, or `None` when the parent has closed the pipe.
 pub fn read_request(r: &mut impl Read) -> io::Result<Option<Request>> {
-    let Some((tag, payload)) = read_frame(r)? else { return Ok(None) };
+    let Some((tag, payload)) = read_frame(r, MAX_FRAME)? else { return Ok(None) };
     match tag {
         LOAD => Ok(Some(Request::Load(payload))),
         RENDER => {
@@ -86,17 +86,17 @@ pub fn write_response(w: &mut impl Write, response: &Response) -> io::Result<()>
                 payload.extend_from_slice(&page.width.to_be_bytes());
                 payload.extend_from_slice(&page.height.to_be_bytes());
             }
-            write_frame(w, LOADED, &payload)
+            write_frame(w, LOADED, &payload, MAX_FRAME)
         }
-        Response::Failed { reason } => write_frame(w, FAILED, reason.as_bytes()),
-        Response::Page { png } => write_frame(w, PAGE, png),
-        Response::PageFailed => write_frame(w, PAGE_FAILED, &[]),
+        Response::Failed { reason } => write_frame(w, FAILED, reason.as_bytes(), MAX_FRAME),
+        Response::Page { png } => write_frame(w, PAGE, png, MAX_FRAME),
+        Response::PageFailed => write_frame(w, PAGE_FAILED, &[], MAX_FRAME),
     }
 }
 
 /// The next response, or `None` when the helper has closed the pipe.
 pub fn read_response(r: &mut impl Read) -> io::Result<Option<Response>> {
-    let Some((tag, payload)) = read_frame(r)? else { return Ok(None) };
+    let Some((tag, payload)) = read_frame(r, MAX_FRAME)? else { return Ok(None) };
     match tag {
         LOADED => {
             let count = payload

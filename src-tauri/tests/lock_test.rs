@@ -533,7 +533,7 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
     let imported = world.session.write(|conn| {
         import_export::import_collection_stoppable(
             conn,
-            &support::import_files(&file, SpreadsheetFormat::Csv),
+            support::read_import(&file, SpreadsheetFormat::Csv),
             &store,
             &mut |processed, _| {
                 if processed == 2 && sleeper.is_none() {

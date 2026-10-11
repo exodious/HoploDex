@@ -7,3 +7,5 @@ pub mod client;
 pub mod frames;
 pub mod limits;
 pub mod reader;
+
+pub use client::read_files;

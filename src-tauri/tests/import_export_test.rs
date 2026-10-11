@@ -5,8 +5,8 @@
 mod support;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
-use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
+use hoplodex_lib::commands::import_export::{ImportFile, ImportSessionStore};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, csv_file, csv_firearm};
 use tempfile::TempDir;
@@ -32,7 +32,7 @@ fn scenario_2_imports_new_records_from_a_spreadsheet() {
     let mut progress_calls = Vec::new();
     let result = import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |done, total| progress_calls.push((done, total)),
     )
@@ -63,7 +63,7 @@ fn scenario_3_reports_a_failing_row_without_discarding_successful_ones() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |_, _| {},
     )
@@ -91,7 +91,7 @@ fn rejects_an_unknown_firearm_type_with_a_row_error() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |_, _| {},
     )
@@ -110,7 +110,7 @@ fn import_one_row(row: String) -> hoplodex_lib::commands::import_export::ImportR
     let path = write_csv(&dir, &csv_file(&[row]));
     import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &store,
         &mut |_, _| {},
     )
@@ -246,7 +246,7 @@ fn import_into(
     let path = write_csv(&dir, &csv_file(rows));
     import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -388,7 +388,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
+        support::read_import(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -487,7 +487,7 @@ fn import_accepts_a_numeric_xlsx_cell() {
 
     let result = import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Xlsx),
+        support::read_import(&path, SpreadsheetFormat::Xlsx),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -528,7 +528,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     let db2 = TestDb::new();
     let reimported = import_export_ops::import_collection(
         &db2.conn,
-        &support::import_files(&result.spreadsheet_path, SpreadsheetFormat::Csv),
+        support::read_import(&result.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -676,7 +676,7 @@ fn an_export_re_imports_with_all_six_intact() {
         let db2 = TestDb::new();
         let reimported = import_export_ops::import_collection(
             &db2.conn,
-            &support::import_files(&result.spreadsheet_path, format),
+            support::read_import(&result.spreadsheet_path, format),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -865,7 +865,7 @@ mod identification_spreadsheet {
         let db2 = TestDb::new();
         let result = import_export_ops::import_collection(
             &db2.conn,
-            &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
+            support::read_import(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1061,7 +1061,7 @@ fn a_stopped_import_keeps_the_rows_imported_before_it() {
 
     let stopped = import_export_ops::import_collection_stoppable(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &store,
         // Asked to stop once three rows are done.
         &mut |done, _| cancelled.set(done == 3),
@@ -1169,7 +1169,7 @@ mod cartridge_spreadsheet {
         let path = write_csv(&dir, text);
         import_export_ops::import_collection(
             &db.conn,
-            &support::import_files(&path, SpreadsheetFormat::Csv),
+            support::read_import(&path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1218,7 +1218,7 @@ mod cartridge_spreadsheet {
     fn reimport(path: &std::path::Path, into: &TestDb) -> ImportResult {
         import_export_ops::import_collection(
             &into.conn,
-            &support::import_files(path, SpreadsheetFormat::Csv),
+            support::read_import(path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -1517,7 +1517,7 @@ mod cartridge_spreadsheet {
         );
         let result = import_export_ops::import_collection(
             &db.conn,
-            &support::import_files(&path, SpreadsheetFormat::Csv),
+            support::read_import(&path, SpreadsheetFormat::Csv),
             &store,
             &mut |_, _| {},
         )
@@ -1673,12 +1673,11 @@ mod cartridge_spreadsheet {
             &dir,
             "make,model,caliber,serial_number,Caliber,firearm_type\nGlock,19,9mm,A1,9mm,Handgun\n",
         );
-        let error = import_export_ops::import_collection(
-            &db.conn,
-            &support::import_files(&path, SpreadsheetFormat::Csv),
-            &ImportSessionStore::new(),
-            &mut |_, _| {},
-        )
+        // The file is read, and refused, before any row reaches the database.
+        let error = support::try_read_files(&[ImportFile {
+            file_path: path,
+            format: SpreadsheetFormat::Csv,
+        }])
         .unwrap_err();
         assert_eq!(error.code, "VALIDATION_ERROR");
         assert_eq!(error.message, "import.csv: the header has two \"caliber\" columns.");
@@ -1734,7 +1733,7 @@ mod registration_spreadsheet {
     fn reimport(path: &std::path::Path, into: &TestDb) -> ImportResult {
         import_export_ops::import_collection(
             &into.conn,
-            &support::import_files(path, SpreadsheetFormat::Csv),
+            support::read_import(path, SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )

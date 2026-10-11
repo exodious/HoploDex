@@ -2,8 +2,9 @@
 //! (research.md §8, data-model.md "Import helper frames").
 //!
 //! They ride on [`services::helper::frames`]' framing (a big-endian length,
-//! then a tag byte and the payload), with a lower limit of their own: either
-//! side refuses a frame over [`MAX_IMPORT_FRAME`] before it allocates for it.
+//! then a tag byte and the payload), with a lower limit of their own, which
+//! they give it: either side refuses a frame over [`MAX_IMPORT_FRAME`] before
+//! it allocates for it.
 //! Every number is big-endian and every string is a `u32` length and UTF-8
 //! bytes. A decoder checks each count against the bytes that remain before it
 //! allocates, so a hostile count costs nothing.
@@ -73,31 +74,13 @@ const REFUSED: u8 = 0x15;
 const UNREADABLE: u8 = 0x16;
 
 fn send(w: &mut impl Write, tag: u8, payload: &[u8]) -> io::Result<()> {
-    if payload.len() + 1 > MAX_IMPORT_FRAME {
-        return Err(invalid("frame too large"));
-    }
-    write_frame(w, tag, payload)
+    write_frame(w, tag, payload, MAX_IMPORT_FRAME)
 }
 
-/// The next frame, or `None` at a clean end of input. The length is checked
-/// against [`MAX_IMPORT_FRAME`] before the shared reader sees it.
+/// The next frame, or `None` at a clean end of input. A length over
+/// [`MAX_IMPORT_FRAME`] is refused before any of the frame is read.
 fn receive(r: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
-    let mut prefix = [0u8; 4];
-    let mut filled = 0;
-    while filled < prefix.len() {
-        match r.read(&mut prefix[filled..]) {
-            Ok(0) if filled == 0 => return Ok(None),
-            Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
-            Ok(n) => filled += n,
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
-            Err(err) => return Err(err),
-        }
-    }
-    let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > MAX_IMPORT_FRAME {
-        return Err(invalid("frame length out of range"));
-    }
-    read_frame(&mut (&prefix[..]).chain(&mut *r))
+    read_frame(r, MAX_IMPORT_FRAME)
 }
 
 fn put_u32(out: &mut Vec<u8>, n: usize) -> io::Result<()> {
@@ -405,8 +388,8 @@ mod tests {
         assert!(send(&mut Sink, CHUNK, &payload[..MAX_IMPORT_FRAME - 1]).is_ok());
         assert!(write_chunk(&mut Sink, &vec![0u8; MAX_CHUNK + 1]).is_err());
 
-        // Receiving: the length alone is enough, and it is below the shared
-        // framing's own limit, so only this layer refuses it.
+        // Receiving: the length alone is enough, and it is below the TIFF
+        // mode's limit, which shows the limit is the mode's own.
         let mut wire = (MAX_IMPORT_FRAME as u32 + 1).to_be_bytes().to_vec();
         wire.push(CHUNK);
         for err in [
@@ -440,7 +423,7 @@ mod tests {
 
         let frame = |tag: u8, payload: &[u8]| {
             let mut wire = Vec::new();
-            write_frame(&mut wire, tag, payload).unwrap();
+            write_frame(&mut wire, tag, payload, MAX_IMPORT_FRAME).unwrap();
             wire
         };
         let bad: &[(u8, &[u8])] = &[

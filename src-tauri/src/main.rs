@@ -23,6 +23,7 @@ use hoplodex_lib::services::consent::Consent;
 use hoplodex_lib::services::consent::DialogConsent;
 #[cfg(feature = "e2e")]
 use hoplodex_lib::services::consent::E2eConsent;
+use hoplodex_lib::services::import_reader::reader as import_helper;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::main_navigation;
@@ -137,7 +138,7 @@ fn tick_idle_clock(app: AppHandle) {
 }
 
 fn main() {
-    // The render helper and the sandbox probe are this executable started
+    // The render helper, the import helper and the sandbox probe are this executable started
     // again (research.md §9, §11): before any Tauri, keyring, session or
     // logging setup, so they have none of them, and they never return here.
     let args: Vec<String> =
@@ -148,6 +149,9 @@ fn main() {
     }
     if args.first().map(String::as_str) == Some(render_helper::ARGUMENT) {
         render_helper::run(&args);
+    }
+    if args.first().map(String::as_str) == Some(import_helper::ARGUMENT) {
+        import_helper::run(&args);
     }
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the

@@ -3,23 +3,27 @@
 //!
 //! A frame is a big-endian `u32` length, then that many bytes: a one-byte tag
 //! and the payload. What the tags and payloads mean is the mode's
-//! (`preview::helper_protocol` for TIFF). A reader refuses a frame over
-//! [`MAX_FRAME`] before it allocates for it, and reads a large frame in
-//! pieces, so a hostile length costs nothing until the bytes arrive.
+//! (`preview::helper_protocol` for TIFF, `import_reader::frames` for the
+//! import). Each mode gives the largest frame it accepts as `max`
+//! ([`MAX_FRAME`] for TIFF); a reader refuses a longer frame before it
+//! allocates for it, and reads a large frame in pieces, so a hostile length
+//! costs nothing until the bytes arrive.
 
 use std::io::{self, Read, Write};
 
-/// The largest frame either end accepts: 768 MiB, above the largest document
-/// the parent loads or the largest page the helper renders.
+/// The largest frame the TIFF mode accepts at either end: 768 MiB, above the
+/// largest document the parent loads or the largest page the helper renders.
 pub const MAX_FRAME: usize = 768 * 1024 * 1024;
 
 pub fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_owned())
 }
 
-pub fn write_frame(w: &mut impl Write, tag: u8, payload: &[u8]) -> io::Result<()> {
+/// Writes one frame, refusing one whose length (the tag and the payload)
+/// is over `max`.
+pub fn write_frame(w: &mut impl Write, tag: u8, payload: &[u8], max: usize) -> io::Result<()> {
     let length = payload.len() + 1;
-    if length > MAX_FRAME {
+    if length > max {
         return Err(invalid("frame too large"));
     }
     w.write_all(&(length as u32).to_be_bytes())?;
@@ -28,9 +32,10 @@ pub fn write_frame(w: &mut impl Write, tag: u8, payload: &[u8]) -> io::Result<()
     w.flush()
 }
 
-/// Reads one frame's tag and payload. `None` at a clean end of input
-/// (nothing at all before the end).
-pub fn read_frame(r: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
+/// Reads one frame's tag and payload, refusing a length over `max` before
+/// reading any of it. `None` at a clean end of input (nothing at all before
+/// the end).
+pub fn read_frame(r: &mut impl Read, max: usize) -> io::Result<Option<(u8, Vec<u8>)>> {
     let mut prefix = [0u8; 4];
     let mut filled = 0;
     while filled < prefix.len() {
@@ -43,7 +48,7 @@ pub fn read_frame(r: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
         }
     }
     let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > MAX_FRAME {
+    if length == 0 || length > max {
         return Err(invalid("frame length out of range"));
     }
     let mut body = Vec::new();
@@ -63,21 +68,21 @@ mod tests {
     #[test]
     fn frames_round_trip_and_follow_one_another() {
         let mut wire = Vec::new();
-        write_frame(&mut wire, 1, &[1, 2, 3, 0, 255]).unwrap();
-        write_frame(&mut wire, 2, &[]).unwrap();
+        write_frame(&mut wire, 1, &[1, 2, 3, 0, 255], MAX_FRAME).unwrap();
+        write_frame(&mut wire, 2, &[], MAX_FRAME).unwrap();
         let mut reader = &wire[..];
-        assert_eq!(read_frame(&mut reader).unwrap(), Some((1, vec![1, 2, 3, 0, 255])));
-        assert_eq!(read_frame(&mut reader).unwrap(), Some((2, Vec::new())));
-        assert_eq!(read_frame(&mut reader).unwrap(), None, "a clean end");
+        assert_eq!(read_frame(&mut reader, MAX_FRAME).unwrap(), Some((1, vec![1, 2, 3, 0, 255])));
+        assert_eq!(read_frame(&mut reader, MAX_FRAME).unwrap(), Some((2, Vec::new())));
+        assert_eq!(read_frame(&mut reader, MAX_FRAME).unwrap(), None, "a clean end");
     }
 
     #[test]
     fn a_truncated_frame_is_an_error_and_not_a_clean_end() {
         let mut wire = Vec::new();
-        write_frame(&mut wire, 1, &[1; 100]).unwrap();
+        write_frame(&mut wire, 1, &[1; 100], MAX_FRAME).unwrap();
         for cut in [1, 3, 4, 5, 50, wire.len() - 1] {
             let mut reader = &wire[..cut];
-            let err = read_frame(&mut reader).unwrap_err();
+            let err = read_frame(&mut reader, MAX_FRAME).unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof, "cut at {cut}");
         }
     }
@@ -86,14 +91,24 @@ mod tests {
     fn an_oversized_or_empty_frame_is_refused_before_any_allocation() {
         let mut huge = (MAX_FRAME as u32 + 1).to_be_bytes().to_vec();
         huge.push(1);
-        let err = read_frame(&mut &huge[..]).unwrap_err();
+        let err = read_frame(&mut &huge[..], MAX_FRAME).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 
-        let err = read_frame(&mut &u32::MAX.to_be_bytes()[..]).unwrap_err();
+        let err = read_frame(&mut &u32::MAX.to_be_bytes()[..], MAX_FRAME).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 
-        let err = read_frame(&mut &0u32.to_be_bytes()[..]).unwrap_err();
+        let err = read_frame(&mut &0u32.to_be_bytes()[..], MAX_FRAME).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn each_mode_gives_its_own_largest_frame() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, 1, &[0; 99], 100).unwrap();
+        assert_eq!(read_frame(&mut &wire[..], 100).unwrap().unwrap().1.len(), 99);
+        assert!(write_frame(&mut Vec::new(), 1, &[0; 100], 100).is_err());
+        let err = read_frame(&mut &wire[..], 99).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData, "refused before its bytes are read");
     }
 
     #[test]
@@ -110,7 +125,7 @@ mod tests {
             }
         }
         let payload = vec![0u8; MAX_FRAME];
-        assert!(write_frame(&mut Sink, 1, &payload).is_err());
-        assert!(write_frame(&mut Sink, 1, &payload[..MAX_FRAME - 1]).is_ok());
+        assert!(write_frame(&mut Sink, 1, &payload, MAX_FRAME).is_err());
+        assert!(write_frame(&mut Sink, 1, &payload[..MAX_FRAME - 1], MAX_FRAME).is_ok());
     }
 }

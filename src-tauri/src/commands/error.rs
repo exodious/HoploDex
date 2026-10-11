@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use crate::db::{DbError, OpenError};
 use crate::models::database::OperationKind;
+use crate::services::import_reader::limits::ImportLimit;
 
 /// The single error shape returned by every Tauri IPC command, per
 /// contracts/tauri-commands.md. `code` is a stable, machine-matchable
@@ -188,6 +189,24 @@ impl CommandError {
         }
         Self::new("OPERATION_STOPPED", "The operation was stopped before it finished.")
             .with_details(Some(details))
+    }
+
+    /// 008 FR-006: a file passed one of the import's limits
+    /// (`IMPORT_LIMIT_EXCEEDED`, contracts/tauri-commands.md). The message
+    /// names the file, the sheet of a workbook, and the limit.
+    pub fn import_limit_exceeded(file: &str, sheet: Option<&str>, limit: ImportLimit) -> Self {
+        let mut details = json!({ "file": file, "limit": limit });
+        if let Some(sheet) = sheet {
+            details["sheet"] = sheet.into();
+        }
+        Self::new("IMPORT_LIMIT_EXCEEDED", limit.message(file, sheet)).with_details(Some(details))
+    }
+
+    /// 008 FR-007: an import file couldn't be read: not a table, damaged,
+    /// or the reader's child died, timed out or sent a malformed frame. No
+    /// parser detail is shown.
+    pub fn import_unreadable(file: &str) -> Self {
+        Self::new("VALIDATION_ERROR", format!("{file}: could not read the file."))
     }
 
     /// FR-037: a sleep stopped a move of backups (FR-026), with

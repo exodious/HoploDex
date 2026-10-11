@@ -364,10 +364,20 @@ pub fn assert_gone(pid: u32, what: &str) {
     assert!(wait_until_gone(pid, Duration::from_secs(3)), "helper {pid} still runs {what}");
 }
 
-/// The PIDs of this process's render helpers: through `/proc` on Linux, a
-/// snapshot of the processes on Windows (a child named `hoplodex.exe`, the
-/// helper being the app's own executable), `ps` on macOS, empty elsewhere.
+/// The PIDs of this process's render helpers: [`helper_children_of`]
+/// `--render-helper`.
 pub fn helper_children() -> Vec<u32> {
+    helper_children_of("--render-helper")
+}
+
+/// The PIDs of this process's helpers started with `mode` (`--render-helper`,
+/// or feature 008's `--import-helper`): through `/proc` on Linux, a snapshot
+/// of the processes on Windows (any child named `hoplodex.exe`, the helper
+/// being the app's own executable, so `mode` is not looked at), `ps` on
+/// macOS, empty elsewhere.
+pub fn helper_children_of(mode: &str) -> Vec<u32> {
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let _ = mode;
     #[cfg(target_os = "linux")]
     {
         let me = std::process::id();
@@ -385,7 +395,7 @@ pub fn helper_children() -> Vec<u32> {
                 continue;
             }
             let Ok(cmdline) = fs::read(format!("/proc/{pid}/cmdline")) else { continue };
-            if String::from_utf8_lossy(&cmdline).contains("--render-helper") {
+            if String::from_utf8_lossy(&cmdline).contains(mode) {
                 found.push(pid);
             }
         }
@@ -438,8 +448,7 @@ pub fn helper_children() -> Vec<u32> {
                 let ppid = fields.next()?.parse::<u32>().ok()?;
                 let state = fields.next()?;
                 let command = fields.collect::<Vec<_>>().join(" ");
-                (ppid == me && !state.starts_with('Z') && command.contains("--render-helper"))
-                    .then_some(pid)
+                (ppid == me && !state.starts_with('Z') && command.contains(mode)).then_some(pid)
             })
             .collect()
     }

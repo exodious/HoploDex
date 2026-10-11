@@ -366,17 +366,42 @@ pub fn date(iso: &str) -> chrono::NaiveDate {
     chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").unwrap()
 }
 
-/// One file for `import_collection` (specs/006-accessory-links: it takes
-/// one or two files).
+/// The tables of the files an import takes, read as the app reads them: in
+/// the import helper (`CARGO_BIN_EXE_hoplodex --import-helper`), under the
+/// import limits, without being stopped (008 FR-006).
 #[allow(dead_code)]
-pub fn import_files(
+pub fn try_read_files(
+    files: &[hoplodex_lib::commands::import_export::ImportFile],
+) -> Result<Vec<hoplodex_lib::services::spreadsheet::ReadTable>, hoplodex_lib::commands::CommandError>
+{
+    hoplodex_lib::services::import_reader::read_files(
+        Path::new(env!("CARGO_BIN_EXE_hoplodex")),
+        files,
+        &|| false,
+        &|| true,
+        &mut |_, _| {},
+    )
+}
+
+/// [`try_read_files`] for files that read.
+#[allow(dead_code)]
+pub fn read_files(
+    files: &[hoplodex_lib::commands::import_export::ImportFile],
+) -> Vec<hoplodex_lib::services::spreadsheet::ReadTable> {
+    try_read_files(files).unwrap_or_else(|e| panic!("reading the import files: {e:?}"))
+}
+
+/// One file for `import_collection`, read (specs/006-accessory-links: an
+/// import takes one or two files).
+#[allow(dead_code)]
+pub fn read_import(
     path: impl AsRef<std::path::Path>,
     format: hoplodex_lib::services::spreadsheet::SpreadsheetFormat,
-) -> [hoplodex_lib::commands::import_export::ImportFile; 1] {
-    [hoplodex_lib::commands::import_export::ImportFile {
+) -> Vec<hoplodex_lib::services::spreadsheet::ReadTable> {
+    read_files(&[hoplodex_lib::commands::import_export::ImportFile {
         file_path: path.as_ref().to_path_buf(),
         format,
-    }]
+    }])
 }
 
 /// The record set of an export of these firearms alone.

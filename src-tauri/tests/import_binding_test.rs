@@ -71,7 +71,7 @@ fn import_conflict(session: &Session, dir: &TempDir) -> ImportResult {
     .unwrap();
     let result = import_ops::import_in_session(
         session,
-        &[sheets::import_file(&path)],
+        sheets::read_import(&path),
         &mut |_, _| {},
         &|| false,
         &|_| {},

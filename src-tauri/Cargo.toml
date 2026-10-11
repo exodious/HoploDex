@@ -61,6 +61,10 @@ tauri-plugin-wdio-webdriver = { version = "1.4.0", optional = true }
 rust_xlsxwriter = "0.96"
 calamine = "0.36"
 csv = "1.4"
+# The import helper's CSV parser, bounded by the field (008's research.md §8):
+# `csv`'s own reader grows a record's buffer to the size of the field.
+# Promoted from transitive, at the version already in Cargo.lock.
+csv-core = "0.1.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 thiserror = "2"
 chrono = "0.4"
@@ -202,6 +206,9 @@ windows-sys = { version = "0.61", features = [
     # Waiting for the helper to end when its parent is killed
     # (tests/tiff_helper_test.rs).
     "Win32_System_Threading",
+    # This process's working set, sampled while the import reads a file
+    # (tests/import_reader_test.rs).
+    "Win32_System_ProcessStatus",
 ] }
 
 # Debug and test builds keep line tables, so panics and backtraces still name
@@ -214,6 +221,31 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# What the import helper reads a file with (008's research.md §8), optimized in
+# debug and test builds too: a refusal is to take under 5 s (SC-003), and an
+# unoptimized `miniz_oxide` inflates a gibibyte in far longer, and unoptimized
+# `calamine` and `quick-xml` read a workbook of five million cells in over half
+# a minute. Only these crates: the rest of a test build stays as quick to
+# compile.
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.flate2]
+opt-level = 3
+[profile.dev.package."zip@8.6.0"]
+opt-level = 3
+[profile.dev.package.calamine]
+opt-level = 3
+[profile.dev.package.quick-xml]
+opt-level = 3
+[profile.dev.package.csv-core]
+opt-level = 3
+[profile.dev.package.atoi_simd]
+opt-level = 3
+[profile.dev.package.memchr]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
 
 [profile.release]
 panic = "abort"

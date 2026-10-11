@@ -279,7 +279,7 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
     let import = |name: &str| {
         import_export_ops::import_collection(
             &db.conn,
-            &support::import_files(dir.path().join(name), SpreadsheetFormat::Csv),
+            support::read_import(dir.path().join(name), SpreadsheetFormat::Csv),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -345,7 +345,7 @@ fn the_accessory_import_samples_show_each_part_of_the_report() {
         let files: Vec<ImportFile> = names.iter().map(|name| file(name)).collect();
         import_export_ops::import_collection(
             &db.conn,
-            &files,
+            support::read_files(&files),
             &ImportSessionStore::new(),
             &mut |_, _| {},
         )
@@ -416,10 +416,10 @@ fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
 
     let result = ops::import_collection(
         &conn,
-        &[ImportFile {
+        support::read_files(&[ImportFile {
             file_path: samples.join("import-dispose-receiver.csv"),
             format: SpreadsheetFormat::Csv,
-        }],
+        }]),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
