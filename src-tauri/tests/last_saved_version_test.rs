@@ -240,7 +240,13 @@ fn recording_it_does_not_make_a_backup_due() {
     assert!(!world.changes_waiting());
     world.seed(OLD);
 
-    world.session.inspect(|open| Ok(db::record_saved_version(&open.conn).unwrap())).unwrap();
+    world
+        .session
+        .inspect(|open| {
+            db::record_saved_version(&open.conn).unwrap();
+            Ok(())
+        })
+        .unwrap();
 
     assert_eq!(world.saved().as_deref(), Some(APP_VERSION));
     assert!(!world.changes_waiting(), "app_state has no change-tracking triggers");

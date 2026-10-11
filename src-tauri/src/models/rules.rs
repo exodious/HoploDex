@@ -29,12 +29,25 @@ pub const MAX_SHORT_TEXT_CHARS: usize = 200;
 /// `src/lib/textLimits.ts`.
 pub const MAX_LONG_TEXT_CHARS: usize = 4_000;
 
+/// `1,234,567`: a number as the app's messages write it.
+pub(crate) fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Once trimmed, `value` is at most `max` characters (Unicode scalar values,
 /// as `check_entry_text` counts them, so a four-byte character is one).
 /// The error is the message to show under the field.
 pub(crate) fn check_text_length(label: &str, value: &str, max: usize) -> Result<(), String> {
     if value.trim().chars().count() > max {
-        return Err(format!("{label} can be at most {max} characters."));
+        return Err(format!("{label} can be at most {} characters.", thousands(max as u64)));
     }
     Ok(())
 }
@@ -234,5 +247,19 @@ pub(crate) fn check_coverage_pair(
             );
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thousands_groups_digits() {
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(1_000), "1,000");
+        assert_eq!(thousands(5_000_000), "5,000,000");
+        assert_eq!(thousands(32_767), "32,767");
     }
 }

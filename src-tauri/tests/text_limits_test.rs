@@ -30,8 +30,13 @@ fn field_error(err: &CommandError, field: &str) -> Option<String> {
     err.field_errors.as_ref().and_then(|fields| fields.get(field).cloned())
 }
 
+/// The message, with the maximum written as the app writes numbers ("4,000").
 fn too_long(label: &str, max: usize) -> String {
-    format!("{label} can be at most {max} characters.")
+    let n = match max {
+        4_000 => "4,000".to_string(),
+        n => n.to_string(),
+    };
+    format!("{label} can be at most {n} characters.")
 }
 
 /// `n` ASCII characters.
