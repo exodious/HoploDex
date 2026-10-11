@@ -33,6 +33,10 @@ pub async fn execute_sync<R: Runtime + 'static>(
     let result = executor
         .execute_script(&request.script, &request.args)
         .await?;
+    // Elements the script returned (#90): only an id in the store can be used.
+    if let Ok(session) = state.sessions.write().await.get_mut(&session_id) {
+        session.elements.adopt_references(&result);
+    }
     Ok(WebDriverResponse::success(result))
 }
 
@@ -53,5 +57,8 @@ pub async fn execute_async<R: Runtime + 'static>(
     let result = executor
         .execute_async_script(&request.script, &request.args)
         .await?;
+    if let Ok(session) = state.sessions.write().await.get_mut(&session_id) {
+        session.elements.adopt_references(&result);
+    }
     Ok(WebDriverResponse::success(result))
 }

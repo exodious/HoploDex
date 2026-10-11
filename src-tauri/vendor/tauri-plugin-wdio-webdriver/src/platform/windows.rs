@@ -25,7 +25,9 @@ use windows::Win32::System::Com::{
 use windows_core::BOOL;
 
 use crate::platform::alert_state::{AlertState, AlertStateManager, AlertType, PendingAlert};
-use crate::platform::{wrap_script_for_frame_context, FrameId, PlatformExecutor, PrintOptions};
+use crate::platform::{
+    wrap_script_for_frame_context, FrameId, PlatformExecutor, PrintOptions, SERIALIZE_VALUE_JS,
+};
 use crate::server::response::WebDriverErrorResponse;
 use crate::webdriver::Timeouts;
 
@@ -570,6 +572,7 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for WindowsExecutor<R> {
         let wrapper = format!(
             r"(function() {{
                 var ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
+                {SERIALIZE_VALUE_JS}
                 function deserializeArg(arg) {{
                     if (arg === null || arg === undefined) return arg;
                     if (Array.isArray(arg)) return arg.map(deserializeArg);
@@ -591,7 +594,7 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for WindowsExecutor<R> {
                     window.chrome.webview.postMessage(JSON.stringify({{
                         handler: '{HANDLER_NAME}',
                         id: '{async_id}',
-                        result: r,
+                        result: serializeValue(r),
                         error: null
                     }}));
                 }};

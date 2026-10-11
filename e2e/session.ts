@@ -187,7 +187,7 @@ ${
 }
 Next, from ${repoRoot}:
   npx wdio session snapshot --interactive
-  npx wdio session click 'aria/<accessible name>'    (refs such as e3 don't work here)
+  npx wdio session click e3      (a ref from the snapshot, or a selector such as 'aria/<name>')
   npx wdio session exec -e "await browser.getTitle()"
   npx wdio session export --out e2e/specs/<name>.e2e.ts
   npx wdio session close          (also ends this launcher and removes the sandbox)
