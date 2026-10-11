@@ -308,7 +308,7 @@ Done when the pull request is opened, not before (CLAUDE.md; plan.md "Close-out 
 - [X] T130 [FR-011 note, contracts/ui.md §4, quickstart.md M1; partial] Add the macOS AutoFill exception (spec.md Clarifications 2026-10-11) to contracts/ui.md §4 and to quickstart.md M1 steps 5 and 7
 - [X] T131 [Constitution gates; partial] On Linux, run `keyring_test` with `--features mock-keyring` (DEVELOPMENT.md) and clippy with that feature; it couldn't compile before c999882, so T106 didn't run it
 - [X] T132 Delete the throwaway probe `e2e/specs/zz-session-header-probe.e2e.ts` (T006–T008 are recorded in research.md §2; us4's Windows custom-protocol test stays)
-- [ ] T133 On Linux, rerun the gates T123–T132 touch (`cargo test` with and without `mock-keyring`, `npm test`, clippy, lint, and `us14`, `us5`, `us1`, `us12` E2E one at a time); on macOS run `cargo test`, T129's check and `us14`; on Windows run `cargo test` and `us14`
+- [X] T133 On Linux, rerun the gates T123–T132 touch (`cargo test` with and without `mock-keyring`, `npm test`, clippy, lint, and `us14`, `us5`, `us1`, `us12` E2E one at a time); on macOS run `cargo test`, T129's check and `us14`; on Windows run `cargo test` and `us14`
 - [ ] T134 (at pull request time) Open a follow-up issue with `gh issue create`: "Import: commit rows in batches", with the measurements (research.md §19; ~12 ms a row at 3,000 + 3,000 rows, a third of the save time spent committing each row) and the constraint that a stop or sleep part-way must still leave whole rows (FR-037)
 
 ---
