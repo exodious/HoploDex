@@ -1351,6 +1351,44 @@ unchanged.
   created a blanket policy with a limit of $100,000,000, which §10's new
   maximum ($99,999,999) refuses; it now uses $99,999,999.
 
+### Measured: macOS 26.6.2, tart VM `hoplodex-macos` (4 CPUs, 8 GB), 2026-10-11 (T099)
+
+Release build, one test at a time, nothing else running in the VM. Budgets
+are unchanged. The tests ran as `DEVELOPMENT.md` gives them
+(`CARGO_PROFILE_RELEASE_PANIC=unwind`, `--nocapture`).
+
+- **Largest export** (`import_largest_test`, as Linux above; made in 87.7 s;
+  no row refused, every row imported). Informational, no budget:
+
+  | Format | File size | Reading | Import | Parent's rise while reading and importing |
+  |---|---|---|---|---|
+  | Workbook | 75 MB | 1.2 s | 534.4 s | 169 MB reading, 177 MB overall |
+  | Two CSV files | 107 MB + 52 MB | 0.49 s | 542.5 s | 9 MB reading, 12 MB overall |
+
+  The test process's own peak is 820 MB (workbook) and 799 MB (CSV), mostly
+  the collection the test built before it began. The workbook's rise is
+  larger than Linux's (169 MB against 33 MB): the macOS figure is the
+  process's resident size as the OS reports it, which counts memory the
+  allocator hasn't returned. It is the figure SC-002 limits, and it is well
+  under 512 MB.
+- **Slowest refusal in the hostile corpus** (`import_reader_test`, 40 tests
+  pass in release): `cells-16-sheets`, 2.04 s against 5 s. The next
+  slowest is `zip-bomb`, 0.18 s, then `rows-xlsx`, 0.18 s.
+- **Largest memory rise in the corpus**: `total-text`, 260 MB against
+  512 MB (`rows-xlsx` 93 MB, `cells-16-sheets` 91 MB, `rows-csv` 116 MB).
+- **Cancel** at 1%, 25% and 60%: 105, 20 and 125 ms against 1 s. **Session
+  end (lock)** at 1%, 25% and 60%: 102, 22 and 129 ms against 1 s.
+  `lock_test` (debug) passes too, 38 tests.
+- **`performance_test`**: all 24 pass. Slowest search 174 ms against 500 ms
+  (`zq`, a two-letter document-name prefix); slowest action 11 ms against
+  1 s (`dispose_firearm` with 20 records below); suggestions 10 ms against
+  50 ms; the take-over check costs 3.2 us per save. The session check does
+  not show.
+- **Test fix**: none here. The first run failed
+  `get_value_summary_completes_within_budget_at_10k_records` on the stale
+  $100,000,000 blanket limit that the Linux run (T098) had already fixed;
+  the second run, on that fix, passed.
+
 ## §20 Security and data handling (for the pull request)
 
 - **#69**: the backend refuses every request of an ended session, reads
