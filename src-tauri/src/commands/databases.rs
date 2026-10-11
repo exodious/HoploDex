@@ -800,13 +800,14 @@ pub mod ops {
         pending::stage(session, id, draft)
     }
 
-    /// Resumes or discards the pending changes (FR-039).
+    /// Moves the pending changes along: resume, opened, notOpened or discard
+    /// (FR-039; 008 FR-003, contracts/tauri-commands.md).
     pub fn resolve_pending_changes(
         session: &Session,
         id: SessionId,
         action: PendingAction,
     ) -> Result<PendingResolved, CommandError> {
-        Ok(PendingResolved { draft: pending::resolve(session, id, action)? })
+        pending::resolve(session, id, action)
     }
 
     /// Input to the application's windows restarts the idle time (FR-035).

@@ -434,7 +434,7 @@ fn collection_commands_wait_until_the_pending_changes_are_resolved() {
 }
 
 #[test]
-fn resuming_returns_the_exact_draft_and_removes_it() {
+fn resuming_returns_the_exact_draft_and_opening_the_form_removes_it() {
     let world = World::new();
     let id = locked_while_editing(&world);
     world.open();
@@ -447,6 +447,14 @@ fn resuming_returns_the_exact_draft_and_removes_it() {
     .unwrap();
 
     assert_eq!(resolved.draft, Some(edit_draft(id)));
+    // The row stays until the form has opened (008 FR-003; pending_resume_test).
+    assert_eq!(world.pending_rows(), 1);
+    databases::resolve_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        PendingAction::Opened,
+    )
+    .unwrap();
     assert_eq!(world.pending_rows(), 0);
     assert!(
         databases::database_status(&world.session, &world.machine)
@@ -726,6 +734,13 @@ fn an_accessory_draft_in_each_mode_is_kept_by_a_lock_and_resumed_with_its_label(
         )
         .unwrap();
         assert_eq!(resolved.draft, Some(draft), "{mode:?}: the exact draft comes back");
+        assert_eq!(world.pending_rows(), 1, "{mode:?}: kept until the form has opened");
+        databases::resolve_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            PendingAction::Opened,
+        )
+        .unwrap();
         assert_eq!(world.pending_rows(), 0, "{mode:?}");
     }
 }

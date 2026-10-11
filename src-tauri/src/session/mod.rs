@@ -22,7 +22,7 @@ use serde::Serialize;
 
 use crate::commands::CommandError;
 use crate::commands::import_export::ImportSessionStore;
-use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings};
+use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings, PendingState};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::{Preview, PreviewLoading};
 use clock::{Clock, SystemClock};
@@ -44,9 +44,11 @@ pub struct OpenDatabase {
     /// The open form's unsaved input, mirrored from the frontend and written
     /// only by a lock or an OS shutdown (research.md §16).
     pub staged_draft: Option<Draft>,
-    /// The database holds pending changes not yet resumed or discarded
-    /// (FR-039).
-    pub pending_unresolved: bool,
+    /// Where the database's pending changes stand (FR-039; 008 FR-003,
+    /// research.md §6): a row that waits to be resumed or discarded blocks
+    /// collection commands (`Unresolved`); one resumed whose form hasn't
+    /// opened yet stays and lets them through (`Resuming`).
+    pub pending: PendingState,
     /// The file as this session last left it, to notice a take-over
     /// (research.md §6).
     pub fingerprint: FileFingerprint,
@@ -144,9 +146,12 @@ impl OpenDatabase {
         let database_id: String = conn
             .query_row("SELECT database_id FROM app_state", [], |row| row.get(0))
             .map_err(CommandError::from_db)?;
-        let pending_unresolved: bool = conn
+        let has_pending: bool = conn
             .query_row("SELECT EXISTS (SELECT 1 FROM pending_changes)", [], |row| row.get(0))
             .map_err(CommandError::from_db)?;
+        // Every open starts a row in `Unresolved`, even one a session ended
+        // while `Resuming` (research.md §6).
+        let pending = if has_pending { PendingState::Unresolved } else { PendingState::None };
         let lock_settings = conn
             .query_row(
                 "SELECT idle_lock_enabled, idle_lock_minutes, lock_on_screen_lock
@@ -171,7 +176,7 @@ impl OpenDatabase {
             database_id,
             interrupt,
             staged_draft: None,
-            pending_unresolved,
+            pending,
             fingerprint,
             storage_lost: false,
             notes: DatabaseNotes::default(),
@@ -441,7 +446,8 @@ impl SessionInner {
     ///
     /// Collection commands are refused with `PENDING_CHANGES_UNRESOLVED`
     /// while the database's pending changes wait to be resumed or discarded
-    /// (FR-039), and this and [`write`](Self::write) are how they reach it.
+    /// (FR-039; `PendingState::Unresolved`, and not once they are being
+    /// resumed), and this and [`write`](Self::write) are how they reach it.
     pub fn read<T>(
         &self,
         id: SessionId,
@@ -449,7 +455,7 @@ impl SessionInner {
     ) -> Result<T, CommandError> {
         let mut open = self.open_guard_of(id)?;
         let open = open.as_mut().ok_or_else(CommandError::database_closed)?;
-        if open.pending_unresolved {
+        if open.pending == PendingState::Unresolved {
             return Err(CommandError::pending_changes_unresolved());
         }
         let result = query(&open.conn);
@@ -465,7 +471,7 @@ impl SessionInner {
     ) -> Result<(T, OpenStamp), CommandError> {
         let mut open = self.open_guard_of(id)?;
         let open = open.as_mut().ok_or_else(CommandError::database_closed)?;
-        if open.pending_unresolved {
+        if open.pending == PendingState::Unresolved {
             return Err(CommandError::pending_changes_unresolved());
         }
         let stamp = OpenStamp { external_open_confirmed: open.external_open_confirmed };
@@ -502,7 +508,7 @@ impl SessionInner {
         id: SessionId,
         change: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
-        self.write_checked(id, true, change)
+        self.write_checked(id, true, |open| change(open))
     }
 
     /// Like [`write`](Self::write), for the session's own housekeeping (a
@@ -516,15 +522,19 @@ impl SessionInner {
         self.write_checked(id, false, |open| change(&open.conn))
     }
 
+    /// The one place a write is checked. `collection` is false for the
+    /// session's own housekeeping, which unresolved pending changes don't
+    /// hold up; `change` may alter what the session keeps about the open
+    /// (resolving pending changes does).
     fn write_checked<T>(
         &self,
         id: SessionId,
         collection: bool,
-        change: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
+        change: impl FnOnce(&mut OpenDatabase) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
         let mut guard = self.open_guard_of(id)?;
         let open = guard.as_mut().ok_or_else(CommandError::database_closed)?;
-        if collection && open.pending_unresolved {
+        if collection && open.pending == PendingState::Unresolved {
             return Err(CommandError::pending_changes_unresolved());
         }
         if open.storage_lost {

@@ -85,11 +85,29 @@ text_enum!(BackupLocationKind {
     Custom => "custom",
 });
 
-// What the pending-changes prompt chose (FR-039).
+// What `resolve_pending_changes` is told (FR-039; 008 FR-003, research.md
+// §6): the prompt's two choices, and the two reports of whether the resumed
+// form opened.
 text_enum!(PendingAction {
     Resume => "resume",
+    Opened => "opened",
+    NotOpened => "notOpened",
     Discard => "discard",
 });
+
+/// Where a session's pending changes stand (008 data-model.md "PendingState",
+/// research.md §6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingState {
+    /// The database holds none.
+    None,
+    /// A row exists and collection commands are refused until the user
+    /// resumes or discards it.
+    Unresolved,
+    /// The user chose Resume: the row stays, and collection commands are
+    /// served so the record can load and its form open.
+    Resuming,
+}
 
 // What to do with the backups at the old location when it changes (FR-026,
 // research.md §22).
@@ -396,13 +414,16 @@ pub struct LockSettingsInput {
     pub on_screen_lock: bool,
 }
 
-/// `resolve_pending_changes`'s answer: the draft to resume, or none after a
-/// discard.
+/// `resolve_pending_changes`'s answer: the draft after `resume`, the
+/// summary for the dialog after `notOpened`, and nothing after `opened` or
+/// `discard`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingResolved {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub draft: Option<Draft>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending: Option<PendingSummary>,
 }
 
 /// `update_backup_settings`'s input (FR-024, FR-026).

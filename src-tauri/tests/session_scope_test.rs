@@ -5,6 +5,8 @@
 //! SQLCipher files in temp directories; machine settings in a temp config
 //! directory.
 
+#[path = "support/preview_support.rs"]
+mod preview_support;
 mod support;
 
 use std::cell::Cell;
@@ -13,17 +15,23 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::accessories::ops as accessories;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
+use hoplodex_lib::commands::documents::ops as documents;
 use hoplodex_lib::commands::firearms::ops as firearms;
+use hoplodex_lib::commands::photos::ops as photos;
+use hoplodex_lib::commands::preview::ops as preview;
 use hoplodex_lib::commands_list::{COMMANDS, UNSCOPED_COMMANDS};
 use hoplodex_lib::models::database::{CloseReason, Draft, DraftKind, DraftMode};
+use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::session::scoped::{SESSION_HEADER, ScopedSession, Target};
 use hoplodex_lib::session::{Session, SessionId, lifecycle};
+use preview_support::TestPreview;
 use serde_json::json;
-use support::{TestEvents, passphrase, test_session};
+use support::{TestEvents, passphrase, sample_png_bytes, test_session};
 use tempfile::TempDir;
 
 /// A throwaway world: a folder for databases, a config directory for
@@ -522,6 +530,180 @@ fn a_close_or_lock_of_the_current_session_still_works() {
     let id = world.open("Mine");
     databases::close_database(&world.session, id, &world.machine, CloseReason::Closed).unwrap();
     assert!(!world.session.is_open());
+}
+
+// --- Colliding ids: a late request after a switch ------------------------------
+
+/// What a database holds that a late request could read or add to.
+#[derive(Debug, PartialEq)]
+struct Footprint {
+    photos: i64,
+    documents: i64,
+    total_changes: u64,
+    changes_waiting: bool,
+}
+
+/// A database seeded through `ops` so that its first firearm, accessory,
+/// photo and document have the ids every other database's first ones have.
+struct Seeded {
+    firearm: i64,
+    accessory: i64,
+    photo: i64,
+    document: i64,
+}
+
+impl World {
+    /// Seeds the open database `id`. `tag` goes into the names and the
+    /// document's bytes, so a read of the wrong database shows.
+    fn seed_colliding(&self, id: SessionId, tag: &str) -> Seeded {
+        self.session
+            .write(id, |conn| {
+                let firearm = firearms::create_firearm(
+                    conn,
+                    &support::firearm("Colt", tag, &format!("SC-{tag}")),
+                    false,
+                    None,
+                )?
+                .id;
+                let input = json!({
+                    "accessoryKindId": 1, "make": "Leupold", "model": tag, "status": "active",
+                });
+                let accessory = accessories::create_accessory(
+                    conn,
+                    &serde_json::from_value(input).unwrap(),
+                    None,
+                )?
+                .id;
+                let photo = photos::add_photo(
+                    conn,
+                    RecordRef::Firearm(firearm),
+                    &sample_png_bytes(),
+                    &format!("{tag}.png"),
+                    "image/png",
+                )?
+                .id;
+                let document = documents::add_document(
+                    conn,
+                    RecordRef::Firearm(firearm),
+                    format!("note of {tag}").as_bytes(),
+                    &format!("{tag}.txt"),
+                )?
+                .id;
+                Ok(Seeded { firearm, accessory, photo, document })
+            })
+            .unwrap()
+    }
+
+    fn footprint(&self, id: SessionId) -> Footprint {
+        self.session
+            .inspect(id, |open| {
+                let count = |table: &str| {
+                    open.conn
+                        .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                        .map_err(CommandError::from_db)
+                };
+                Ok(Footprint {
+                    photos: count("photos")?,
+                    documents: count("document_attachments")?,
+                    total_changes: open.conn.total_changes(),
+                    changes_waiting: open
+                        .conn
+                        .query_row("SELECT changes_waiting FROM app_state", [], |r| r.get(0))
+                        .map_err(CommandError::from_db)?,
+                })
+            })
+            .unwrap()
+    }
+}
+
+/// Two databases with the same ids for their first firearm, accessory,
+/// photo and document, A opened and then B opened over it (a switch).
+/// Returns A's ended session, B's, and B's seeded ids.
+fn colliding_worlds(world: &World) -> (SessionId, SessionId, Seeded) {
+    let a = world.create("A");
+    let seeded_a = world.seed_colliding(a, "alpha");
+    world.close(a);
+    let b = world.create("B");
+    let seeded_b = world.seed_colliding(b, "bravo");
+    world.close(b);
+    assert_eq!(
+        (seeded_a.firearm, seeded_a.accessory, seeded_a.photo, seeded_a.document),
+        (seeded_b.firearm, seeded_b.accessory, seeded_b.photo, seeded_b.document),
+        "the two databases must hand out the same ids"
+    );
+    let a = world.open("A");
+    let b = world.open("B");
+    assert_ne!(a, b);
+    (a, b, seeded_b)
+}
+
+#[test]
+fn with_colliding_ids_a_late_read_after_a_switch_gets_nothing_of_the_other_database() {
+    let world = World::new();
+    let (a, b, ids) = colliding_worlds(&world);
+    let owner = RecordRef::Firearm(ids.firearm);
+
+    // The control: B's own session reads B.
+    let own = world.session.read(b, |conn| photos::list_photos(conn, owner)).unwrap();
+    assert_eq!(own[0].original_filename, "bravo.png");
+
+    let session = &world.session;
+    let refused = |what: &str, code: &str| assert_eq!(code, "DATABASE_CLOSED", "{what}");
+    refused(
+        "list_photos",
+        &session.read(a, |conn| photos::list_photos(conn, owner)).unwrap_err().code,
+    );
+    refused(
+        "get_photo",
+        &session.read(a, |conn| photos::get_photo(conn, ids.photo)).unwrap_err().code,
+    );
+    refused(
+        "get_firearm",
+        &session.read(a, |conn| firearms::get_firearm(conn, ids.firearm)).unwrap_err().code,
+    );
+    refused(
+        "list_documents",
+        &session.read(a, |conn| documents::list_documents(conn, owner)).unwrap_err().code,
+    );
+    let preview_env = TestPreview::new();
+    let late = preview::open_preview(&session.shared(), a, &preview_env.env, ids.document);
+    refused("open_preview", &late.unwrap_err().code);
+    assert!(
+        session.inspect(b, |open| Ok(open.preview.is_none())).unwrap(),
+        "no preview of B's document was opened"
+    );
+    assert!(preview_env.surfaces.built().is_empty(), "no surface was built for it");
+}
+
+#[test]
+fn with_colliding_ids_a_late_add_after_a_switch_writes_nothing_to_the_other_database() {
+    let world = World::new();
+    let (a, b, ids) = colliding_worlds(&world);
+    let owner = RecordRef::Firearm(ids.firearm);
+    let files = TempDir::new().unwrap();
+    let photo = files.path().join("late.png");
+    fs::write(&photo, sample_png_bytes()).unwrap();
+    let document = files.path().join("late.txt");
+    fs::write(&document, b"late").unwrap();
+
+    let before = world.footprint(b);
+    let late_photo =
+        world.session.write(a, |conn| photos::add_photo_from_path(conn, owner, &photo));
+    assert_eq!(late_photo.unwrap_err().code, "DATABASE_CLOSED");
+    let late_document =
+        world.session.write(a, |conn| documents::add_document_from_path(conn, owner, &document));
+    assert_eq!(late_document.unwrap_err().code, "DATABASE_CLOSED");
+    let late_accessory = world.session.write(a, |conn| {
+        photos::add_photo_from_path(conn, RecordRef::Accessory(ids.accessory), &photo)
+    });
+    assert_eq!(late_accessory.unwrap_err().code, "DATABASE_CLOSED");
+
+    assert_eq!(world.footprint(b), before, "B's rows and change tracking are as they were");
+    let kept = world.session.read(b, |conn| photos::list_photos(conn, owner)).unwrap();
+    assert_eq!(kept.len(), 1);
+    // The control: B's own session adds.
+    world.session.write(b, |conn| photos::add_photo_from_path(conn, owner, &photo)).unwrap();
+    assert_eq!(world.footprint(b).photos, before.photos + 1);
 }
 
 // --- Which commands name their session -----------------------------------------

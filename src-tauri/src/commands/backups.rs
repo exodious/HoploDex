@@ -35,6 +35,7 @@ pub mod ops {
     use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
         BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind, PassphraseChanged,
+        PendingState,
     };
     use crate::services::backups::{self, BackupFailure, BackupJob, CopyError};
     use crate::services::disk_space;
@@ -618,8 +619,9 @@ pub mod ops {
         }
         let mut slot = hold_still_ours(session, id)?;
         let open = slot.as_mut().expect("held open");
-        // The copy would leave pending changes behind (FR-039).
-        if open.pending_unresolved {
+        // The copy would carry the row (FR-039), and a form still opening is
+        // not the moment to re-key the file.
+        if open.pending != PendingState::None {
             return Err(CommandError::pending_changes_unresolved());
         }
 
