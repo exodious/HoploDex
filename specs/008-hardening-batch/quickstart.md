@@ -89,12 +89,13 @@ click and force click.
 3. With two fingers, click the row **Glock 19 Gen5**. Expected: no menu.
 4. Click the search field and type `glock`.
 5. With two fingers, click the search field. Expected: a menu with Cut,
-   Copy, Paste (and Spelling and Emoji & Symbols where offered). No Look Up,
+   Copy, Paste (and Spelling and Emoji & Symbols where offered, and macOS's
+   own AutoFill item, which stays: FR-011's note). No Look Up,
    Translate, Search With Google, Share, Services, Speech, Writing Tools,
    Reload or Inspect Element.
 6. Open **Glock 19 Gen5** and double-click the word `Glock` in the record's heading to select it.
-7. With two fingers, click the selection. Expected: a menu with Copy, and
-   none of the items step 5 excludes.
+7. With two fingers, click the selection. Expected: a menu with Copy (and
+   AutoFill, as in step 5), and none of the items step 5 excludes.
 8. Force-click (press hard on) the selected word. Expected: no Look Up
    panel.
 9. Tap the selected word with three fingers (if the trackpad is set to

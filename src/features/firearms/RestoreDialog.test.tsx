@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -83,6 +83,50 @@ describe("RestoreDialog (FR-033)", () => {
     await user.click(screen.getByRole("button", { name: "Restore to collection" }));
 
     expect(onRestore).toHaveBeenLastCalledWith({ history: "keep", nickname: "Old Faithful II" });
+  });
+
+  it("shows the nickname maximum at once and refuses to restore past it", async () => {
+    // specs/008-hardening-batch research.md §10, contracts/ui.md §3
+    const user = userEvent.setup();
+    const message = 'That nickname is already used by Sig P226 "Old Faithful".';
+    const onRestore = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "VALIDATION_ERROR",
+          message,
+          fieldErrors: { nickname: message },
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const { onOpenChange } = renderDialog(onRestore);
+
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+    const rename = await screen.findByLabelText("New nickname");
+    expect(onRestore).toHaveBeenCalledTimes(1);
+
+    // 200 characters are fine; the 201st shows the error without a submit.
+    fireEvent.change(rename, { target: { value: "n".repeat(200) } });
+    expect(screen.queryByText(/can be at most/)).not.toBeInTheDocument();
+    fireEvent.change(rename, { target: { value: "n".repeat(201) } });
+    expect(screen.getByText("New nickname can be at most 200 characters.")).toBeInTheDocument();
+    expect(rename).toHaveAttribute("aria-invalid", "true");
+    // No maxLength: a paste is never cut off.
+    expect(rename).not.toHaveAttribute("maxlength");
+
+    // The restore is refused, the field gets the focus, the dialog stays open.
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+    expect(onRestore).toHaveBeenCalledTimes(1);
+    expect(rename).toHaveFocus();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    // Shortened, it goes through.
+    fireEvent.change(rename, { target: { value: "n".repeat(200) } });
+    expect(screen.queryByText(/can be at most/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+    expect(onRestore).toHaveBeenCalledTimes(2);
+    expect(onRestore).toHaveBeenLastCalledWith({ history: "keep", nickname: "n".repeat(200) });
   });
 
   it("shows a make/model/serial clash without a rename field", async () => {

@@ -118,6 +118,46 @@ async function toastCount(): Promise<number> {
   return (await $$(".hd-toast")).length;
 }
 
+/** How long an error toast stays up (src/components/Toast.tsx), in ms. */
+const ERROR_TOAST_MS = 8000;
+
+/** Raises a toast the way the app does: opens `name`'s record and drops a
+ * file that isn't a document type on it, which DocumentList refuses with an
+ * error toast (the native drop event, since WebDriver can't drag from the
+ * desktop; the file needn't exist). Returns when the toast showed, so the
+ * caller can tell whether it could still be up. */
+async function raiseToast(name: string): Promise<number> {
+  await browser.waitUntil(
+    () =>
+      browser.execute((wanted: string) => {
+        const button = [...document.querySelectorAll<HTMLElement>(".hd-row__name")].find((b) =>
+          b.textContent?.trim().startsWith(wanted),
+        );
+        button?.click();
+        return Boolean(button);
+      }, name),
+    { timeout: 5000, timeoutMsg: `no firearm "${name}" in the list` },
+  );
+  await $("#record-name").waitForExist();
+  await settle();
+  await browser.execute(() => {
+    const internals = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__;
+    void internals.invoke("plugin:event|emit", {
+      event: "tauri://drag-drop",
+      payload: { paths: ["/tmp/hoplodex-e2e-setup.exe"], position: { x: 10, y: 10 } },
+    });
+  });
+  await $(".hd-toast--error").waitForExist({
+    timeout: 5000,
+    timeoutMsg: "the dropped .exe never raised its toast",
+  });
+  return Date.now();
+}
+
 describe("User Story 1 (008) - Nothing of one session reaches the next", () => {
   let mainPicture = "";
   let mainPhotoOne = "";
@@ -176,9 +216,17 @@ describe("User Story 1 (008) - Nothing of one session reaches the next", () => {
     expect(await toastCount()).toBe(0);
   });
 
-  it("shows Shared's own thumbnail after locking the restored Main", async () => {
+  it("shows Shared's own thumbnail, and none of Main's toasts, after locking the restored Main", async () => {
+    // A toast raised in Main belongs to Main's session (FR-005): it is up
+    // when Main is locked, and gone when Shared's collection shows, though it
+    // would still have had time left.
+    const raised = await raiseToast(GLOCK);
+    expect(await toastCount()).toBeGreaterThan(0);
     await pressLockShortcut();
     await openShared();
+    const elapsed = Date.now() - raised;
+    expect(elapsed).toBeLessThan(ERROR_TOAST_MS - 1000);
+    expect(await toastCount()).toBe(0);
 
     expect(await photoOneThumbnail()).not.toBe(mainPhotoOne);
     const picture = await rowPicture(BERETTA);

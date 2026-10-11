@@ -70,8 +70,8 @@ Discard is never the default.
 ## 3. Free-text maximums in forms (research.md §10)
 
 Carried to every form with these fields (constitution III): FirearmForm,
-AccessoryForm, DisposeDialog (recipient, for both kinds of record), and
-InsurancePolicyForm.
+AccessoryForm, DisposeDialog (recipient, for both kinds of record),
+RestoreDialog (the new nickname), and InsurancePolicyForm.
 - **Over the maximum**: the field shows its error at once, as the entry
   fields do ("<Label> can be at most <n> characters."), and the form's
   submit is refused with the same message from the backend. No `maxLength`
@@ -95,6 +95,16 @@ In a release (and E2E) build:
 No menu ever offers back, forward, reload, stop, print, save, view source,
 inspect, share, look up, translate, web search, services, speech or writing
 tools. On macOS, a force click, a three-finger tap and ⌃⌘D look nothing up.
+
+**macOS exception (spec.md Clarifications 2026-10-11, FR-011's note)**: the
+system adds an AutoFill item (filling a field from the user's Contacts or
+Passwords) to every context menu after the web view's hook runs, and no
+public API removes it. It stays in the editing and copying menus, since it
+brings the user's own data in and sends nothing out. Where the hook's filter
+leaves nothing else (a blank area, a row, a button), the hook cancels the menu
+with the public `cancelTracking` API, so no menu opens and AutoFill is never
+seen there. The window controls check doesn't log it (AppKit adds it outside the
+menu's items) and allows it.
 
 | Keys and buttons | Effect |
 |---|---|
