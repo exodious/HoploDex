@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import type { Accessory } from "../accessories/types";
@@ -584,5 +584,76 @@ describe("DisposeDialog with mounted records (US3)", () => {
     expect(screen.getByLabelText(`Price for ${OPTIC}`)).toHaveValue("150");
     expect(within(row(LIGHT)).getByRole("radio", { name: "Keep" })).toBeChecked();
     setResumedDraft(null);
+  });
+});
+
+// specs/008-hardening-batch research.md §10, contracts/ui.md §3: the recipient
+// has a maximum of 200 characters, for both kinds of record.
+describe("DisposeDialog recipient maximum", () => {
+  const accessory = {
+    id: 3,
+    accessoryKindId: 1,
+    make: "Leupold",
+    model: "VX-5HD 3-15x44",
+    status: "active",
+    acquisitionDate: "2025-03-01",
+  } as Accessory;
+  const collection = {
+    firearms: [],
+    firearmsById: new Map(),
+    accessories: [],
+    accessoriesById: new Map(),
+    policies: [],
+    policiesById: new Map(),
+    summary: null,
+    accessoryKinds: { kinds: ACCESSORY_KINDS },
+    accessoryKindsFailed: false,
+    loaded: true,
+    error: null,
+    revision: 1,
+    refresh: async () => {},
+  } as unknown as CollectionState;
+  const MESSAGE = "Transferred to can be at most 200 characters.";
+
+  it.each([
+    [
+      "a firearm",
+      (onDispose: () => Promise<void>) => (
+        <DisposeDialog open onOpenChange={vi.fn()} firearm={firearm} onDispose={onDispose} />
+      ),
+    ],
+    [
+      "an accessory",
+      (onDispose: () => Promise<void>) => (
+        <CollectionContext.Provider value={collection}>
+          <DisposeDialog open onOpenChange={vi.fn()} accessory={accessory} onDispose={onDispose} />
+        </CollectionContext.Provider>
+      ),
+    ],
+  ])("shows the message at once for %s, refuses to save and has no maxLength", async (_n, ui) => {
+    const user = userEvent.setup();
+    const onDispose = vi.fn().mockResolvedValue(undefined);
+    render(ui(onDispose));
+    await user.click(screen.getByRole("radio", { name: "Sold" }));
+    await user.type(screen.getByLabelText("Price received"), "10");
+    const recipient = screen.getByLabelText("Transferred to");
+
+    fireEvent.change(recipient, { target: { value: "x".repeat(200) } });
+    expect(screen.queryByText(MESSAGE)).not.toBeInTheDocument();
+
+    // Pasted text is never cut off, and the error shows before submitting.
+    const long = "x".repeat(201);
+    fireEvent.change(recipient, { target: { value: long } });
+    expect(screen.getByText(MESSAGE)).toBeInTheDocument();
+    expect(recipient).toHaveValue(long);
+    expect(recipient).toHaveAccessibleDescription(expect.stringContaining(MESSAGE));
+    expect(screen.getByRole("dialog").querySelectorAll("[maxlength]")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+    expect(onDispose).not.toHaveBeenCalled();
+
+    fireEvent.change(recipient, { target: { value: "x".repeat(200) } });
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+    expect(onDispose).toHaveBeenCalledTimes(1);
   });
 });

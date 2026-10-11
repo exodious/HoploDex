@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
+import { MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
 import { MountedChoices } from "../mounts/MountedChoices";
 import { mountedStatements } from "../mounts/mountedStatements";
@@ -147,9 +148,12 @@ function DisposeForm({
 
   const parsedDate = parseDateInput(date);
   const parsedPrice = parseDollars(price);
+  // specs/008-hardening-batch research.md §10: over its maximum, the
+  // recipient shows the message at once, since text is usually pasted in.
+  const recipientTooLong = textLengthError("Transferred to", recipient, MAX_SHORT_TEXT_CHARS);
   const errors = {
     dispositionType: dispositionType ? undefined : "Choose what happened to it.",
-    recipient: recipient.trim() ? undefined : "Enter who received it.",
+    recipient: recipientTooLong ?? (recipient.trim() ? undefined : "Enter who received it."),
     date: !parsedDate.ok
       ? parsedDate.error
       : !parsedDate.iso
@@ -282,7 +286,7 @@ function DisposeForm({
           value={recipient}
           onChange={(e) => setRecipient(e.target.value)}
           hint={dispositionType ? RECIPIENT_HINTS[dispositionType] : undefined}
-          error={shown(errors.recipient)}
+          error={recipientTooLong ?? shown(errors.recipient)}
         />
         <div className="hd-form-grid hd-form-grid--3 hd-form-grid--short">
           <DateField

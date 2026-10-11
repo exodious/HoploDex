@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Button, DateField, MoneyField, TextArea, TextField } from "../../components";
 import { parseDateInput } from "../../lib/dates";
 import { dollarsToInput, parseDollars } from "../../lib/money";
+import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
@@ -54,11 +55,35 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/** specs/008-hardening-batch research.md §10: the free-text fields with a
+ * maximum, by their label (the backend's, so the two messages match). */
+const TEXT_LIMITS: readonly (readonly [Field, string, number])[] = [
+  ["name", "Policy name", MAX_SHORT_TEXT_CHARS],
+  ["policyNumber", "Policy number", MAX_SHORT_TEXT_CHARS],
+  ["insuranceCompany", "Insurance company", MAX_SHORT_TEXT_CHARS],
+  ["companyContact", "Company contact", MAX_SHORT_TEXT_CHARS],
+  ["agentName", "Agent name", MAX_SHORT_TEXT_CHARS],
+  ["agentContact", "Agent contact", MAX_SHORT_TEXT_CHARS],
+  ["notes", "Notes", MAX_LONG_TEXT_CHARS],
+];
+
+/** The fields over their maximum. They show their message at once, not on
+ * leaving the field, since text is usually pasted in. */
+function lengthErrors(form: FormState): Partial<Record<Field, string>> {
+  const errors: Partial<Record<Field, string>> = {};
+  for (const [field, label, max] of TEXT_LIMITS) {
+    const problem = textLengthError(label, form[field], max);
+    if (problem) errors[field] = problem;
+  }
+  return errors;
+}
+
 function validate(form: FormState): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (form.name.trim() === "") errors.name = "Give the policy a name you'll recognize.";
   if (form.policyNumber.trim() === "") errors.policyNumber = "Enter the policy number.";
   if (form.insuranceCompany.trim() === "") errors.insuranceCompany = "Enter the insurance company.";
+  Object.assign(errors, lengthErrors(form));
   const limit = parseDollars(form.blanketCoverageLimit);
   if (!limit.ok) errors.blanketCoverageLimit = limit.error;
 
@@ -81,6 +106,10 @@ const FIELD_ORDER: Field[] = [
   "blanketCoverageLimit",
   "effectiveStartDate",
   "effectiveEndDate",
+  "companyContact",
+  "agentName",
+  "agentContact",
+  "notes",
 ];
 
 /** Create/edit form for an insurance policy (US3, FR-027). Renders its own
@@ -109,10 +138,12 @@ export function InsurancePolicyForm({
   const [serverError, setServerError] = useState<CommandFailure | null>(null);
 
   const clientErrors = validate(form);
+  const overLength = lengthErrors(form);
   const errorFor = (field: Field): string | undefined =>
-    touched[field] || submitted
+    overLength[field] ??
+    (touched[field] || submitted
       ? (clientErrors[field] ?? serverError?.fieldErrors?.[field])
-      : undefined;
+      : undefined);
   // Blurring an empty field doesn't flag it; "required" errors wait for a
   // submit attempt.
   const touch = (field: Field) => () => {
@@ -146,7 +177,9 @@ export function InsurancePolicyForm({
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
-      formRef.current?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] input`)?.focus();
+      formRef.current
+        ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea)`)
+        ?.focus();
       return false;
     }
 
@@ -263,19 +296,25 @@ export function InsurancePolicyForm({
             Contacts
           </h3>
           <div className="hd-form-grid hd-form-grid--2">
-            <TextField
-              label="Company contact"
-              placeholder="Claims phone, email, or address"
-              {...bind("companyContact")}
-            />
+            <div data-field="companyContact">
+              <TextField
+                label="Company contact"
+                placeholder="Claims phone, email, or address"
+                {...bind("companyContact")}
+              />
+            </div>
           </div>
           <div className="hd-form-grid hd-form-grid--2">
-            <TextField label="Agent name" {...bind("agentName")} />
-            <TextField
-              label="Agent contact"
-              placeholder="Phone or email"
-              {...bind("agentContact")}
-            />
+            <div data-field="agentName">
+              <TextField label="Agent name" {...bind("agentName")} />
+            </div>
+            <div data-field="agentContact">
+              <TextField
+                label="Agent contact"
+                placeholder="Phone or email"
+                {...bind("agentContact")}
+              />
+            </div>
           </div>
         </section>
 
@@ -283,13 +322,17 @@ export function InsurancePolicyForm({
           <h3 className="hd-form-section__title" id="pf-notes">
             Other details
           </h3>
-          <TextArea
-            label="Notes"
-            hint="Renewal reminders, endorsements, where the paperwork is kept — anything worth recording."
-            rows={4}
-            value={form.notes}
-            onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
-          />
+          <div data-field="notes">
+            <TextArea
+              label="Notes"
+              hint="Renewal reminders, endorsements, where the paperwork is kept — anything worth recording."
+              rows={4}
+              value={form.notes}
+              onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+              error={errorFor("notes")}
+              limit={MAX_LONG_TEXT_CHARS}
+            />
+          </div>
         </section>
       </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import { InsurancePolicyForm } from "./InsurancePolicyForm";
@@ -168,5 +168,63 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     );
 
     expect(screen.getByLabelText("Notes")).toHaveValue("Keep the appraisal with this policy.");
+  });
+
+  // specs/008-hardening-batch research.md §10, contracts/ui.md §3.
+  it.each([
+    ["Policy name", 200],
+    ["Policy number", 200],
+    ["Insurance company", 200],
+    ["Company contact", 200],
+    ["Agent name", 200],
+    ["Agent contact", 200],
+    ["Notes", 4000],
+  ])("shows %s's maximum of %i at once and refuses to save", async (label, max) => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<InsurancePolicyForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+    const message = `${label} can be at most ${max.toLocaleString("en-US")} characters.`;
+
+    const field = screen.getByLabelText(new RegExp(`^${label}`));
+    fireEvent.change(field, { target: { value: "x".repeat(max) } });
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+
+    // Pasted text is never cut off, and the error shows before leaving the field.
+    const long = "x".repeat(max + 1);
+    fireEvent.change(field, { target: { value: long } });
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(field).toHaveValue(long);
+    expect(field).toHaveAccessibleDescription(expect.stringContaining(message));
+
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: "x".repeat(max) } });
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts characters, after trimming, and puts no maxLength on any field", () => {
+    const { container } = render(<InsurancePolicyForm onSubmit={vi.fn()} />);
+    const name = screen.getByLabelText(/Policy name/);
+
+    fireEvent.change(name, { target: { value: `  ${"\u{1F52B}".repeat(200)}  ` } });
+    expect(screen.queryByText(/can be at most/)).not.toBeInTheDocument();
+
+    expect(container.querySelectorAll("[maxlength]")).toHaveLength(0);
+  });
+
+  it("shows a count under the notes from 3,600 characters, as the error style over 4,000", () => {
+    render(<InsurancePolicyForm onSubmit={vi.fn()} />);
+    const notes = screen.getByLabelText("Notes");
+
+    fireEvent.change(notes, { target: { value: "x".repeat(3599) } });
+    expect(screen.queryByText(/of 4,000/)).not.toBeInTheDocument();
+    fireEvent.change(notes, { target: { value: "x".repeat(3600) } });
+    expect(screen.getByText("3,600 of 4,000")).toBeInTheDocument();
+    fireEvent.change(notes, { target: { value: "x".repeat(4001) } });
+    expect(screen.getByText("4,001 of 4,000")).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render as renderBase, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render as renderBase, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -634,6 +634,57 @@ describe("AccessoryForm structure", () => {
     expect(form).not.toBeNull();
     const first = within(form!).getAllByRole("combobox")[0];
     expect(first).toBe(kindField());
+  });
+});
+
+// specs/008-hardening-batch research.md §10, contracts/ui.md §3: the free-text
+// maximums, shown at once and never cut off.
+describe("AccessoryForm free-text maximums", () => {
+  it.each([
+    ["Serial number", 200],
+    ["Acquired from", 200],
+    ["Notes", 4000],
+  ])("shows %s's maximum of %i at once and refuses to save", async (label, max) => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<AccessoryForm onSubmit={onSubmit} />);
+    await chooseKind(user, "Sling");
+    await nameIt(user);
+    const message = `${label} can be at most ${max.toLocaleString("en-US")} characters.`;
+    const field = screen.getByLabelText(label);
+
+    fireEvent.change(field, { target: { value: "x".repeat(max) } });
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+
+    const long = "x".repeat(max + 1);
+    fireEvent.change(field, { target: { value: long } });
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(field).toHaveValue(long);
+    expect(field).toHaveAccessibleDescription(expect.stringContaining(message));
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: "x".repeat(max) } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it("counts characters after trimming, shows a count under the notes from 3,600, and sets no maxLength", () => {
+    const { container } = render(<AccessoryForm onSubmit={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Serial number"), {
+      target: { value: `  ${"\u{1F52B}".repeat(200)}  ` },
+    });
+    expect(screen.queryByText(/can be at most/)).not.toBeInTheDocument();
+
+    const notes = screen.getByLabelText("Notes");
+    fireEvent.change(notes, { target: { value: "x".repeat(3599) } });
+    expect(screen.queryByText(/of 4,000/)).not.toBeInTheDocument();
+    fireEvent.change(notes, { target: { value: "x".repeat(3600) } });
+    expect(screen.getByText("3,600 of 4,000")).toBeInTheDocument();
+
+    expect(container.querySelectorAll("[maxlength]")).toHaveLength(0);
   });
 });
 

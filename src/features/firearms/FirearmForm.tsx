@@ -23,6 +23,7 @@ import {
 } from "../../lib/dates";
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
+import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
 import {
   firearmName,
@@ -519,6 +520,36 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/** specs/008-hardening-batch research.md §10: the free-text fields with a
+ * maximum, by their label (the backend's, so the two messages match). The
+ * disposition recipient counts only on a disposed record. */
+const TEXT_LIMITS: readonly (readonly [Field, string, number])[] = [
+  ["nickname", "Nickname", MAX_SHORT_TEXT_CHARS],
+  ["serialNumber", "Serial number", MAX_SHORT_TEXT_CHARS],
+  ["finish", "Finish", MAX_SHORT_TEXT_CHARS],
+  ["acquisitionSource", "Acquired from", MAX_SHORT_TEXT_CHARS],
+  ["dispositionRecipient", "Transferred to", MAX_SHORT_TEXT_CHARS],
+  ["countryOfManufacture", "Country of manufacture", MAX_SHORT_TEXT_CHARS],
+  ["importerName", "Importer", MAX_SHORT_TEXT_CHARS],
+  ["originalMake", "Original maker", MAX_SHORT_TEXT_CHARS],
+  ["originalModel", "Original model", MAX_SHORT_TEXT_CHARS],
+  ["originalSerialNumber", "Original serial number", MAX_SHORT_TEXT_CHARS],
+  ["notes", "Notes", MAX_LONG_TEXT_CHARS],
+  ["accessories", "Accessories", MAX_LONG_TEXT_CHARS],
+];
+
+/** The fields over their maximum. They show their message at once, not on
+ * leaving the field, since text is usually pasted in. */
+function lengthErrors(form: FormState, disposed: boolean): Partial<Record<Field, string>> {
+  const errors: Partial<Record<Field, string>> = {};
+  for (const [field, label, max] of TEXT_LIMITS) {
+    if (field === "dispositionRecipient" && !disposed) continue;
+    const problem = textLengthError(label, String(form[field]), max);
+    if (problem) errors[field] = problem;
+  }
+  return errors;
+}
+
 /** Client-side mirror of the backend's validation (serial attestation,
  * FR-029; disposition completeness), plus amount and date formats, so the
  * user gets immediate feedback instead of a round-trip error. */
@@ -543,6 +574,7 @@ function validate(
     const problem = entryTextError(label, form[field]);
     if (problem) errors[field] = problem;
   }
+  Object.assign(errors, lengthErrors(form, disposed));
   if (form.serialNumber.trim() === "" && !form.noSerialAttested) {
     errors.serialNumber = "Enter a serial number, or confirm this firearm has none.";
   }
@@ -630,6 +662,11 @@ const FIELD_ORDER: Field[] = [
   "caliber",
   "serialNumber",
   "yearOfManufacture",
+  "countryOfManufacture",
+  "importerName",
+  "originalMake",
+  "originalModel",
+  "originalSerialNumber",
   "registrationClassId",
   "registrationForm",
   "registrationApproved",
@@ -639,9 +676,13 @@ const FIELD_ORDER: Field[] = [
   "weightPounds",
   "weightOunces",
   "capacity",
+  "finish",
   "estimatedValue",
+  "acquisitionSource",
   "acquisitionDate",
   "acquisitionPrice",
+  "notes",
+  "accessories",
   "dispositionType",
   "dispositionRecipient",
   "dispositionDate",
@@ -761,10 +802,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   const rules = rulesFor(form.firearmTypeId);
   const clientErrors = validate(form, disposed, rules);
+  const overLength = lengthErrors(form, disposed);
   const errorFor = (field: Field): string | undefined =>
-    touched[field] || submitted
+    overLength[field] ??
+    (touched[field] || submitted
       ? (clientErrors[field] ?? serverError?.fieldErrors?.[SERVER_FIELD[field] ?? field])
-      : undefined;
+      : undefined);
   // Blurring an empty field doesn't flag it; "required" errors wait for a
   // submit attempt, so tabbing through the form isn't a wall of red.
   const touch = (field: Field) => () => {
@@ -1690,11 +1733,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     />
                   </div>
                 )}
-                <div className="hd-form-span-2">
+                <div className="hd-form-span-2" data-field="finish">
                   <TextField
                     label="Finish"
                     value={form.finish}
                     onChange={(e) => update("finish", e.target.value)}
+                    error={errorFor("finish")}
                     placeholder="e.g. Blued, Cerakote"
                     hint="Searchable."
                   />
@@ -1733,11 +1777,12 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               Acquisition
             </h3>
             <div className="hd-form-grid hd-form-grid--4">
-              <div className="hd-form-span-2">
+              <div className="hd-form-span-2" data-field="acquisitionSource">
                 <TextField
                   label="Acquired from"
                   value={form.acquisitionSource}
                   onChange={(e) => update("acquisitionSource", e.target.value)}
+                  error={errorFor("acquisitionSource")}
                   placeholder="Seller, shop, or person"
                 />
               </div>
@@ -1772,22 +1817,30 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               Condition and accessories
             </h3>
             <div className="hd-form-grid hd-form-grid--2">
-              <TextArea
-                ref={notesRef}
-                label="Notes"
-                value={form.notes}
-                onChange={(e) => update("notes", e.target.value)}
-                hint="Condition, markings, repairs — anything worth recording. All of it is searchable."
-                rows={4}
-              />
-              <TextArea
-                ref={accessoriesRef}
-                label="Accessories"
-                value={form.accessories}
-                onChange={(e) => update("accessories", e.target.value)}
-                hint="e.g. two magazines, original box, holster."
-                rows={4}
-              />
+              <div data-field="notes">
+                <TextArea
+                  ref={notesRef}
+                  label="Notes"
+                  value={form.notes}
+                  onChange={(e) => update("notes", e.target.value)}
+                  error={errorFor("notes")}
+                  limit={MAX_LONG_TEXT_CHARS}
+                  hint="Condition, markings, repairs — anything worth recording. All of it is searchable."
+                  rows={4}
+                />
+              </div>
+              <div data-field="accessories">
+                <TextArea
+                  ref={accessoriesRef}
+                  label="Accessories"
+                  value={form.accessories}
+                  onChange={(e) => update("accessories", e.target.value)}
+                  error={errorFor("accessories")}
+                  limit={MAX_LONG_TEXT_CHARS}
+                  hint="e.g. two magazines, original box, holster."
+                  rows={4}
+                />
+              </div>
             </div>
           </section>
 
