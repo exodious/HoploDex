@@ -6,5 +6,20 @@
     "security-guidance@anthropic-plugin-directory": true,
     "claude-security@anthropic-plugin-directory": true,
     "code-review@anthropic-plugin-directory": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr create*)",
+            "command": "printf '%s\\n' '{\"systemMessage\":\"Reminder: run /security-review on this branch before opening the PR.\",\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Reminder: run /security-review on this branch before opening the PR.\",\"additionalContext\":\"The user wants a reminder to run the security-review skill (/security-review) on the branch before any PR is opened. If it has not been run for this branch, say so and offer to run it.\"}}'",
+            "statusMessage": "Security review reminder"
+          }
+        ]
+      }
+    ]
   }
 }
