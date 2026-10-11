@@ -148,11 +148,17 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
  * then moves there, keeping the sandbox's documents folder, and the specs
  * read the seed's fixed passphrase from HOPLODEX_E2E_SEED_PASSPHRASE.
  * Returns that passphrase.
+ *
+ * Shared collection's pending changes are kept by this build; with
+ * `pendingFrom` they were kept by that version of HoploDex, in a form this
+ * build can't resume (008 FR-016).
  */
-export function seedCollection(): string {
+export function seedCollection(options: { pendingFrom?: string } = {}): string {
   if (!sandbox) throw new Error("seedCollection() needs isolateAppData() first");
   const dir = path.join(sandbox, "seed");
-  if (runSeed(["--dir", dir], "inherit").status !== 0) {
+  const seedArgs = ["--dir", dir];
+  if (options.pendingFrom) seedArgs.push("--pending-from", options.pendingFrom);
+  if (runSeed(seedArgs, "inherit").status !== 0) {
     throw new Error("seeding the screenshot collection failed");
   }
   const printed = runSeed(["--print-passphrase"], "pipe");

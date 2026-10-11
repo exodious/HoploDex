@@ -35,6 +35,21 @@ function canResume(pending: PendingSummary): boolean {
   );
 }
 
+/** Where changes a form this build doesn't know came from (contracts/ui.md
+ * §1): the version that kept them when one is recorded and differs from this
+ * build's, the same version number when only the build differs, or neither
+ * known. */
+function keptBy(pending: PendingSummary): string {
+  const { savedByVersion, appVersion } = pending;
+  if (savedByVersion === null) {
+    return "They were kept by another version of HoploDex. Open the database with that version to resume them, or discard them here.";
+  }
+  if (savedByVersion === appVersion) {
+    return `They were kept by a different build of HoploDex ${appVersion}. Open the database with that build to resume them, or discard them here.`;
+  }
+  return `They were kept by HoploDex ${savedByVersion}. Open the database with that version to resume them, or discard them here.`;
+}
+
 export interface PendingChangesDialogProps {
   pending: PendingSummary;
   /** The changes were resumed and their form is opening beneath the dialog,
@@ -47,23 +62,41 @@ export interface PendingChangesDialogProps {
    * opens, and the dialog goes when it reports so. */
   onResume: () => Promise<void>;
   onDiscard: () => Promise<void>;
+  /** A normal close of the database; the changes stay kept for the next
+   * open. */
+  onClose: () => Promise<void>;
 }
 
 /** Unsaved changes kept at a lock, offered before the collection can be
  * used (FR-039, contracts/ui-databases.md §13). It can't be dismissed: the
- * changes are resumed or discarded, and discarding asks first. */
+ * changes are resumed or discarded, and discarding asks first, or the
+ * database is closed with the changes kept (specs/008 contracts/ui.md §1). */
 export function PendingChangesDialog({
   pending,
   opening = false,
   failed = false,
   onResume,
   onDiscard,
+  onClose,
 }: PendingChangesDialogProps) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
   const resumable = canResume(pending);
   const resuming = busy || opening;
+
+  async function close() {
+    setClosing(true);
+    setProblem(null);
+    try {
+      await onClose();
+    } catch {
+      setProblem("The database couldn't be closed. Try again.");
+    } finally {
+      setClosing(false);
+    }
+  }
 
   async function resume() {
     setBusy(true);
@@ -89,6 +122,16 @@ export function PendingChangesDialog({
             <Button variant="danger" disabled={resuming} onClick={() => setConfirming(true)}>
               Discard changes
             </Button>
+            {/* Available while Opening… too, and the default when there is no
+              Resume editing to be (Discard never is). */}
+            <Button
+              variant="secondary"
+              autoFocus={!resumable}
+              pending={closing}
+              onClick={() => void close()}
+            >
+              Close the database
+            </Button>
             {resumable && (
               <Button variant="primary" autoFocus pending={resuming} onClick={() => void resume()}>
                 {resuming ? "Opening…" : "Resume editing"}
@@ -103,9 +146,7 @@ export function PendingChangesDialog({
           {!pending.resumable && (
             <> {pending.label} no longer exists, so these changes can only be discarded.</>
           )}
-          {pending.resumable && !resumable && (
-            <> They were kept by another version of HoploDex, so they can only be discarded.</>
-          )}
+          {pending.resumable && !resumable && <> {keptBy(pending)}</>}
         </p>
         {failed && !opening && (
           <p className="hd-field__error" role="alert">

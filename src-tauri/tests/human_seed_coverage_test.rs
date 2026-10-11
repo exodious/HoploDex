@@ -124,7 +124,7 @@ fn count(conns: &[Connection], sql: &str) -> i64 {
 #[test]
 fn the_seed_uses_every_column_of_every_table() {
     let dir = TempDir::new().unwrap();
-    let paths = human_seed::seed_sandbox(dir.path(), 0);
+    let paths = human_seed::seed_sandbox(dir.path(), 0, None);
     let open = |path| {
         // "Shared collection" is marked open on another computer.
         let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
@@ -403,7 +403,7 @@ fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
     use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 
     let dir = TempDir::new().unwrap();
-    let paths = human_seed::seed_sandbox(dir.path(), 0);
+    let paths = human_seed::seed_sandbox(dir.path(), 0, None);
     let samples = human_seed::write_import_samples(&dir.path().join("import-samples"));
     let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
     let conn = db::open_database(
@@ -436,4 +436,42 @@ fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
         below,
         [("RECCE-16 upper", 1), ("SLx 1-6x24", 2), ("HS403B micro red dot", 3), ("M300A Scout", 2)]
     );
+}
+
+/// 008 FR-015, FR-016: the shared collection's seeded pending changes were
+/// kept by this build (a form version it knows) unless `--pending-from`
+/// names another version, whose form version it doesn't know.
+#[test]
+fn the_seeded_pending_changes_name_the_version_that_kept_them() {
+    let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+    for (pending_from, saved_by, resumable_form) in
+        [(None, hoplodex_lib::APP_VERSION, true), (Some("1.2.0"), "1.2.0", false)]
+    {
+        let dir = TempDir::new().unwrap();
+        let paths = human_seed::seed_sandbox(dir.path(), 0, pending_from);
+        let conn = db::open_database(
+            &paths.shared,
+            &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+            &machine,
+            true,
+        )
+        .unwrap();
+
+        let (label, form_version, saved): (String, i64, Option<String>) = conn
+            .query_row(
+                "SELECT label, form_version, (SELECT last_saved_version FROM app_state)
+                 FROM pending_changes",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(label, "Beretta 92FS — edit");
+        assert_eq!(saved.as_deref(), Some(saved_by), "{pending_from:?}");
+        assert_eq!(
+            form_version == 4,
+            resumable_form,
+            "{pending_from:?}: the form version is the current one only without the option"
+        );
+    }
 }

@@ -23,6 +23,7 @@
 //! directory, and never touches the keyring (constitution 1.2.0).
 //!
 //! Usage: cargo run --example human_seed -- [--dir <path>] [--extra <n>] [--reset]
+//!                                          [--pending-from <version>]
 //!        cargo run --example human_seed -- --print-passphrase
 
 use std::io::Cursor;
@@ -117,10 +118,20 @@ macro_rules! seed_photo {
     };
 }
 
+/// The version of the firearm edit form's kept drafts that this build knows
+/// (`FORM_VERSION` in `src/features/firearms/FirearmForm.tsx`): the seeded
+/// pending changes carry it, so they can be resumed. Keep it in step.
+const FIREARM_FORM_VERSION: i64 = 4;
+/// The form version of pending changes kept by another version of HoploDex
+/// (`--pending-from`): one this build doesn't know, so they can't be resumed.
+const OTHER_FORM_VERSION: i64 = 3;
+
 struct Args {
     dir: PathBuf,
     extra: usize,
     reset: bool,
+    /// The version the shared collection's pending changes were kept by.
+    pending_from: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -128,6 +139,7 @@ fn parse_args() -> Args {
         dir: Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".human-testing"),
         extra: 0,
         reset: false,
+        pending_from: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -140,6 +152,13 @@ fn parse_args() -> Args {
                     .unwrap_or_else(|| usage("--extra needs a number"));
             }
             "--reset" => args.reset = true,
+            "--pending-from" => {
+                args.pending_from = Some(
+                    it.next()
+                        .filter(|version| !version.is_empty())
+                        .unwrap_or_else(|| usage("--pending-from needs a version")),
+                );
+            }
             "--print-passphrase" => {
                 println!("{PASSPHRASE}");
                 std::process::exit(0);
@@ -161,6 +180,8 @@ fn usage(problem: &str) -> ! {
          \x20                     new, empty, or one this seed made\n\
          --extra <n>           also generate n plain firearms, to test scrolling and search\n\
          --reset               delete and recreate the seeded databases\n\
+         --pending-from <ver>  the shared collection's pending changes were kept by HoploDex\n\
+         \x20                     <ver> (an older form that can't be resumed); without it, by this build\n\
          --print-passphrase    print the seeded databases' passphrase and exit"
     );
     std::process::exit(if problem.is_empty() { 0 } else { 2 });
@@ -185,7 +206,7 @@ fn main() {
         paths.remove();
     }
 
-    seed_sandbox(&args.dir, args.extra);
+    seed_sandbox(&args.dir, args.extra, args.pending_from.as_deref());
     let samples = write_import_samples(&args.dir.join("import-samples"));
 
     let identity = must(MachineSettings::load(&paths.config), "machine.json").identity();
@@ -239,8 +260,10 @@ impl SandboxPaths {
 }
 
 /// Seeds both databases and `machine.json` into `dir`, which the caller has
-/// checked is a sandbox.
-pub fn seed_sandbox(dir: &Path, extra: usize) -> SandboxPaths {
+/// checked is a sandbox. The shared collection's pending changes were kept by
+/// this build, or, with `pending_from`, by that version of HoploDex, with a
+/// form version this build doesn't know (008 FR-015, FR-016).
+pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> SandboxPaths {
     let paths = SandboxPaths::new(dir);
     must(std::fs::create_dir_all(&paths.databases), "the databases folder");
     let machine = must(MachineSettings::load(&paths.config), "machine.json");
@@ -264,9 +287,10 @@ pub fn seed_sandbox(dir: &Path, extra: usize) -> SandboxPaths {
         shared.execute(
             "INSERT INTO pending_changes (id, kind, mode, target_id, label, form_version,
                                           values_json, saved_at)
-             VALUES (1, 'firearm', 'edit', ?1, 'Beretta 92FS — edit', 1, ?2, ?3)",
+             VALUES (1, 'firearm', 'edit', ?1, 'Beretta 92FS — edit', ?2, ?3, ?4)",
             rusqlite::params![
                 shared_firearm,
+                if pending_from.is_some() { OTHER_FORM_VERSION } else { FIREARM_FORM_VERSION },
                 serde_json::json!({
                     "make": "Beretta", "model": "92FS", "serialNumber": "BER92-0417",
                     "caliber": "9mm", "notes": "Swapped the grips for the walnut set; half typed"
@@ -277,6 +301,14 @@ pub fn seed_sandbox(dir: &Path, extra: usize) -> SandboxPaths {
         ),
         "the shared database's pending changes",
     );
+    // The version that kept them: this build, which creating the database
+    // recorded, or the one `--pending-from` names.
+    if let Some(version) = pending_from {
+        must(
+            shared.execute("UPDATE app_state SET last_saved_version = ?1", [version]),
+            "the version that kept the shared database's pending changes",
+        );
+    }
     must(
         shared.execute(
             "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",

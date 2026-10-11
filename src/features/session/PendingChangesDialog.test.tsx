@@ -53,6 +53,8 @@ const pending: PendingSummary = {
   label: "Collector Floater (edit)",
   savedAt: SAVED_AT,
   resumable: true,
+  savedByVersion: "1.3.0",
+  appVersion: "1.3.0",
 };
 
 const draft: Draft = {
@@ -217,14 +219,149 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(within(dialog).getByRole("button", { name: "Discard changes" })).toBeInTheDocument();
   });
 
-  it("offers only discarding for changes kept by another version of the form", async () => {
-    renderOpen({ ...pending, formVersion: FORM_VERSION + 1 });
+  describe("changes of a form this build doesn't know (US4, contracts/ui.md §1)", () => {
+    const unknownForm = { ...pending, formVersion: FORM_VERSION + 1 };
+    const resumeButton = (dialog: HTMLElement) =>
+      within(dialog).queryByRole("button", { name: "Resume editing" });
 
-    const dialog = await prompt();
-    expect(dialog).toHaveTextContent("They were kept by another version of HoploDex");
-    expect(
-      within(dialog).queryByRole("button", { name: "Resume editing" }),
-    ).not.toBeInTheDocument();
+    it("names the version that kept them when it is recorded and isn't this build's", async () => {
+      renderOpen({ ...unknownForm, savedByVersion: "1.2.0", appVersion: "1.3.0" });
+
+      const dialog = await prompt();
+      expect(dialog).toHaveTextContent(
+        "They were kept by HoploDex 1.2.0. Open the database with that version to resume them, or discard them here.",
+      );
+      expect(resumeButton(dialog)).not.toBeInTheDocument();
+    });
+
+    it("says a different build when the version number is this build's", async () => {
+      renderOpen({ ...unknownForm, savedByVersion: "1.3.0", appVersion: "1.3.0" });
+
+      expect(await prompt()).toHaveTextContent(
+        "They were kept by a different build of HoploDex 1.3.0. Open the database with that build to resume them, or discard them here.",
+      );
+    });
+
+    it("says another version when none is recorded", async () => {
+      renderOpen({ ...unknownForm, savedByVersion: null });
+
+      const dialog = await prompt();
+      expect(dialog).toHaveTextContent(
+        "They were kept by another version of HoploDex. Open the database with that version to resume them, or discard them here.",
+      );
+      expect(dialog).not.toHaveTextContent("so they can only be discarded");
+    });
+
+    it("keeps the record-gone sentence, and no version sentence, when the record is gone", async () => {
+      renderOpen({ ...unknownForm, resumable: false, savedByVersion: "1.2.0" });
+
+      const dialog = await prompt();
+      expect(dialog).toHaveTextContent(
+        "Collector Floater (edit) no longer exists, so these changes can only be discarded.",
+      );
+      expect(dialog).not.toHaveTextContent("They were kept by");
+    });
+
+    it("still offers Resume editing for a form this build knows, whichever version kept it", async () => {
+      renderOpen({ ...pending, savedByVersion: "1.2.0", appVersion: "1.3.0" });
+
+      const dialog = await prompt();
+      expect(resumeButton(dialog)).toBeInTheDocument();
+      expect(dialog).not.toHaveTextContent("They were kept by");
+    });
+  });
+
+  describe("Close the database (US4, contracts/ui.md §1)", () => {
+    const cases: [string, PendingSummary, string[]][] = [
+      ["a resumable change", pending, ["Discard changes", "Close the database", "Resume editing"]],
+      [
+        "changes of another version",
+        { ...pending, formVersion: FORM_VERSION + 1, savedByVersion: "1.2.0" },
+        ["Discard changes", "Close the database"],
+      ],
+      [
+        "a record that is gone",
+        { ...pending, resumable: false },
+        ["Discard changes", "Close the database"],
+      ],
+    ];
+
+    it.each(cases)(
+      "is offered between Discard and Resume for %s",
+      async (_name, summary, names) => {
+        renderOpen(summary);
+
+        const dialog = await prompt();
+        expect(
+          within(dialog)
+            .getAllByRole("button")
+            .map((button) => button.textContent),
+        ).toEqual(names);
+      },
+    );
+
+    it.each(cases)("closes the database, keeping the changes, for %s", async (_name, summary) => {
+      const user = userEvent.setup();
+      vi.mocked(sessionService.closeDatabase).mockReset().mockResolvedValue({ backup: "notDue" });
+      vi.mocked(databasesService.getChooserState).mockResolvedValue({
+        recent: [
+          {
+            path: status(null).path,
+            name: "Main collection",
+            lastOpenedAt: SAVED_AT,
+            available: true,
+            passphraseSaved: false,
+            backups: null,
+            changedSinceLeftAt: null,
+          },
+        ],
+        selectedPath: status(null).path,
+        keyringAvailable: false,
+        screenLockSupported: false,
+        suggested: { folder: "/home/sam/Documents/HoploDex", name: "My collection" },
+        notices: [],
+      });
+      renderOpen(summary);
+
+      await user.click(within(await prompt()).getByRole("button", { name: "Close the database" }));
+
+      await waitFor(() =>
+        expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "closed"),
+      );
+      expect(sessionService.resolvePendingChanges).not.toHaveBeenCalled();
+      // The chooser, with this database selected, and the changes kept.
+      expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("focuses Resume editing when it is offered", async () => {
+      renderOpen(pending);
+
+      const dialog = await prompt();
+      expect(within(dialog).getByRole("button", { name: "Resume editing" })).toHaveFocus();
+    });
+
+    it.each(cases.slice(1))(
+      "focuses Close the database, not Discard, for %s",
+      async (_name, summary) => {
+        renderOpen(summary);
+
+        const dialog = await prompt();
+        expect(within(dialog).getByRole("button", { name: "Close the database" })).toHaveFocus();
+        expect(within(dialog).getByRole("button", { name: "Discard changes" })).not.toHaveFocus();
+      },
+    );
+
+    it("stays available while Resume editing shows Opening…", async () => {
+      const user = userEvent.setup();
+      renderOpen(pending);
+
+      const dialog = await prompt();
+      await user.click(within(dialog).getByRole("button", { name: "Resume editing" }));
+      await within(dialog).findByRole("button", { name: "Opening…" });
+
+      expect(within(dialog).getByRole("button", { name: "Close the database" })).toBeEnabled();
+    });
   });
 
   it("shows the collection at once when nothing is pending", async () => {
@@ -262,6 +399,8 @@ describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
         label,
         savedAt: SAVED_AT,
         resumable: true,
+        savedByVersion: "1.3.0",
+        appVersion: "1.3.0",
       },
       kept: { formVersion, kind: "accessory", mode, targetId, label, values: {} },
     };

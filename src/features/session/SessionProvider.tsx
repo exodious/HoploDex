@@ -373,6 +373,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             failed={resume.state === "failed"}
             onResume={() => resolvePending("resume")}
             onDiscard={() => resolvePending("discard")}
+            onClose={() => closeDatabase("closed")}
           />
         )}
         {phase.kind === "open" && (!phase.status.pendingChanges || resume.state !== "idle") && (

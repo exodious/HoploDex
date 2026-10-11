@@ -65,8 +65,9 @@ pub fn stage(session: &Session, id: SessionId, draft: Option<Draft>) -> Result<(
 
 /// Writes `draft` as the database's pending changes, replacing any, and,
 /// with `clear_marker`, clears the open marker in the same transaction
-/// (FR-037's step 2 at sleep and shutdown). With no draft only the marker
-/// is cleared: a row already there, such as one resumed whose form never
+/// (FR-037's step 2 at sleep and shutdown). A draft also records this build's
+/// version as the one that saved the database (FR-015). With no draft only
+/// the marker is cleared: a row already there, such as one resumed whose form never
 /// opened, is left as it is (008 research.md §6).
 pub fn write_pending(
     conn: &Connection,
@@ -93,6 +94,11 @@ pub fn write_pending(
         )
         .map_err(CommandError::from_db)?;
     }
+    if draft.is_some() {
+        // The version that kept the changes, atomically with them (FR-015,
+        // research.md §16).
+        crate::db::record_saved_version(&tx).map_err(CommandError::from_db)?;
+    }
     if clear_marker {
         tx.execute(
             "UPDATE app_state SET open_machine_id = NULL, open_machine_name = NULL, open_since = NULL",
@@ -106,7 +112,9 @@ pub fn write_pending(
 /// The pending changes the database holds, if any, as the prompt describes
 /// them. `resumable` is whether the record or policy they belong to still
 /// exists: it may have been deleted on another computer. The frontend also
-/// treats a form version it doesn't know as not resumable.
+/// treats a form version it doesn't know as not resumable. `saved_by_version`
+/// is the version that last saved the database, and `app_version` this
+/// build's, so the dialog can word where the changes came from (FR-016).
 pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError> {
     let row = conn
         .query_row(
@@ -142,7 +150,20 @@ pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError
             .map_err(CommandError::from_db)?
         }
     };
-    Ok(Some(PendingSummary { form_version, kind, mode, target_id, label, saved_at, resumable }))
+    let saved_by_version = conn
+        .query_row("SELECT last_saved_version FROM app_state", [], |row| row.get(0))
+        .map_err(CommandError::from_db)?;
+    Ok(Some(PendingSummary {
+        form_version,
+        kind,
+        mode,
+        target_id,
+        label,
+        saved_at,
+        resumable,
+        saved_by_version,
+        app_version: crate::APP_VERSION.to_owned(),
+    }))
 }
 
 /// The kept row as a draft, exactly as it was written.

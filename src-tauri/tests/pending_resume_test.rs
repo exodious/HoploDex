@@ -8,13 +8,16 @@ mod support;
 
 use std::path::PathBuf;
 
+use hoplodex_lib::APP_VERSION;
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::models::database::{
     CloseReason, Draft, DraftKind, DraftMode, PendingAction, PendingResolved,
 };
+use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::session::fingerprint::FileFingerprint;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::json;
 use support::{passphrase, peek, test_session};
@@ -147,6 +150,36 @@ impl World {
 
     fn staged(&self) -> Option<Draft> {
         self.session.inspect(self.id(), |open| Ok(open.staged_draft.clone())).unwrap()
+    }
+
+    /// Writes `version` as the recorded one, bypassing every rule, and
+    /// refreshes the fingerprint as a write of the session's own would.
+    fn seed_saved_version(&self, version: &str) {
+        self.session
+            .inspect_mut(self.id(), |open| {
+                open.conn
+                    .execute("UPDATE app_state SET last_saved_version = ?1", [version])
+                    .map_err(CommandError::from_db)?;
+                open.fingerprint = FileFingerprint::capture(&open.path).unwrap();
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// The recorded version, in the open database.
+    fn saved_version(&self) -> Option<String> {
+        self.session
+            .inspect(self.id(), |open| {
+                open.conn
+                    .query_row("SELECT last_saved_version FROM app_state", [], |row| row.get(0))
+                    .map_err(CommandError::from_db)
+            })
+            .unwrap()
+    }
+
+    /// The database's id, from the open session.
+    fn database_id(&self) -> String {
+        self.session.inspect(self.id(), |open| Ok(open.database_id.clone())).unwrap()
     }
 
     /// Rows in the closed file's `pending_changes`.
@@ -432,4 +465,88 @@ fn the_forms_own_staging_replaces_the_one_opened_made() {
 
     world.open();
     assert_eq!(world.resolve(PendingAction::Resume).unwrap().draft, Some(typed_on));
+}
+
+// --- Closing from the dialog (US4-2, US4-3, US4-5) --------------------------------
+
+#[test]
+fn a_close_leaves_the_row_and_its_backup_has_no_pending_changes() {
+    for state in [State::Unresolved, State::Resuming] {
+        let world = World::new();
+        world.reach(state);
+        // Something to back up: a saved change (the form's record can load
+        // while resuming; while unresolved only the creation's remains).
+        if state == State::Resuming {
+            world
+                .session
+                .write(world.id(), |conn| {
+                    firearms::create_firearm(
+                        conn,
+                        &support::firearm("Colt", "Python", "R2"),
+                        false,
+                        None,
+                    )
+                })
+                .unwrap();
+        }
+        let id = world.database_id();
+        let folder = world.dir.path().join("HoploDex backups");
+
+        lifecycle::close_normal(&world.session, world.id(), &world.machine, CloseReason::Closed)
+            .unwrap();
+
+        assert_eq!(world.closed_rows(), 1, "{state:?}: the row is untouched");
+        let made = backups::list(&folder, &id).unwrap();
+        if state == State::Resuming {
+            assert!(!made.is_empty(), "{state:?}: a change waiting makes the normal close back up");
+        }
+        for backup in &made {
+            let rows: i64 = peek(std::path::Path::new(&backup.path))
+                .query_row("SELECT count(*) FROM pending_changes", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(rows, 0, "{state:?}: a backup never carries pending changes");
+        }
+        // The next open reports them again.
+        world.open();
+        assert_eq!(world.observed(), shows(State::Unresolved), "{state:?}");
+    }
+}
+
+#[test]
+fn resume_after_a_close_returns_every_field_as_written() {
+    let world = World::new();
+    let firearm = world.unresolved();
+    lifecycle::close_normal(&world.session, world.id(), &world.machine, CloseReason::Closed)
+        .unwrap();
+
+    world.open();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.pending_changes.map(|p| p.target_id), Some(Some(firearm)));
+    let resumed = world.resolve(PendingAction::Resume).unwrap();
+
+    assert_eq!(resumed.draft, Some(edit_draft(firearm)));
+}
+
+// --- The version that kept them (FR-015) ------------------------------------------
+
+#[test]
+fn opened_and_discard_record_this_version_and_resume_and_not_opened_do_not() {
+    // `opened`, after `resume`.
+    let world = World::new();
+    world.unresolved();
+    world.seed_saved_version("1.2.0");
+    world.resolve(PendingAction::Resume).unwrap();
+    assert_eq!(world.saved_version().as_deref(), Some("1.2.0"), "resume changes no rows");
+    world.resolve(PendingAction::NotOpened).unwrap();
+    assert_eq!(world.saved_version().as_deref(), Some("1.2.0"), "notOpened changes no rows");
+    world.resolve(PendingAction::Resume).unwrap();
+    world.resolve(PendingAction::Opened).unwrap();
+    assert_eq!(world.saved_version().as_deref(), Some(APP_VERSION), "opened deletes the row");
+
+    // `discard`.
+    let world = World::new();
+    world.unresolved();
+    world.seed_saved_version("1.2.0");
+    world.resolve(PendingAction::Discard).unwrap();
+    assert_eq!(world.saved_version().as_deref(), Some(APP_VERSION), "discard deletes the row");
 }

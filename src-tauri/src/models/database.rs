@@ -287,6 +287,13 @@ pub struct PendingSummary {
     pub saved_at: String,
     /// False when the target no longer exists or the form version is unknown.
     pub resumable: bool,
+    /// The HoploDex version that last saved the database
+    /// (`app_state.last_saved_version`), `None` when none is recorded
+    /// (008 FR-015, FR-016).
+    pub saved_by_version: Option<String>,
+    /// This build's version, so the frontend words the message without
+    /// guessing which is newer.
+    pub app_version: String,
 }
 
 /// A form's unsaved input, mirrored from the frontend (research.md §16).

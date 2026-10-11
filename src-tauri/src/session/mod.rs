@@ -22,6 +22,7 @@ use serde::Serialize;
 
 use crate::commands::CommandError;
 use crate::commands::import_export::ImportSessionStore;
+use crate::db;
 use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings, PendingState};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::{Preview, PreviewLoading};
@@ -554,8 +555,18 @@ impl SessionInner {
                 return Err(CommandError::database_unavailable(&open.path));
             }
         }
+        let changes_before = open.conn.total_changes();
         let result = change(open);
         let result = storage_lost_if_unreachable(open, result);
+        // FR-015: a write that succeeded and changed rows (a trigger's
+        // included) is a save by this version.
+        if result.is_ok()
+            && !open.storage_lost
+            && open.conn.total_changes() != changes_before
+            && let Err(err) = db::record_saved_version(&open.conn)
+        {
+            log::warn!("could not record the saving version: {err}");
+        }
         if !open.storage_lost {
             match FileFingerprint::capture(&open.path) {
                 Ok(fingerprint) => open.fingerprint = fingerprint,

@@ -852,6 +852,8 @@ describe("SessionProvider (008: notifications go with the session)", () => {
         label: "Collector Floater (edit)",
         savedAt: "2026-09-25T12:30:05Z",
         resumable: true,
+        savedByVersion: "1.3.0",
+        appVersion: "1.3.0",
       },
     });
     await user.type(
@@ -894,6 +896,8 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     label: "Collector Floater (edit)",
     savedAt: "2026-09-25T12:30:05Z",
     resumable: true,
+    savedByVersion: "1.3.0",
+    appVersion: "1.3.0",
   };
   const draft: Draft = {
     formVersion: FORM_VERSION,

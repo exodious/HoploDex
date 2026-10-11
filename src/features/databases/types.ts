@@ -89,6 +89,12 @@ export interface PendingSummary {
   savedAt: string;
   /** False when the target no longer exists or `formVersion` is unknown. */
   resumable: boolean;
+  /** The HoploDex version that last saved the database; null when none is
+   * recorded (specs/008 FR-015). */
+  savedByVersion: string | null;
+  /** This build's version, so the dialog words the message without guessing
+   * which is newer. */
+  appVersion: string;
 }
 
 export interface Draft {
