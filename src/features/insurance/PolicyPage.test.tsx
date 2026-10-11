@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectionObserver";
 import { CollectionContext } from "../app/collectionStore";
@@ -10,6 +10,7 @@ import * as insuranceService from "./insuranceService";
 import { PolicyPage } from "./PolicyPage";
 import type { InsurancePolicy } from "./types";
 import { FIREARM_TYPES, ACCESSORY_KINDS } from "../../test/collectionFixtures";
+import { render } from "../../test/sessionScope";
 
 vi.mock("./insuranceService");
 

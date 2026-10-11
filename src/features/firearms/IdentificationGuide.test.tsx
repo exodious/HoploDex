@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { IdentificationGuide } from "./IdentificationGuide";
 import type { GuidePart } from "./IdentificationGuide";
+import { render } from "../../test/sessionScope";
 
 function Wrapper({ part }: { part?: GuidePart }) {
   const [open, setOpen] = useState(false);

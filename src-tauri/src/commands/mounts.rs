@@ -6,7 +6,6 @@ use std::collections::HashSet;
 
 use rusqlite::{Connection, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
@@ -14,7 +13,7 @@ use crate::commands::firearms::ops as firearm_ops;
 use crate::commands::firearms::{DisposeInput, DisposeWith, Disposition};
 use crate::models::record::{RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// A dispose dialog's list no longer matches what is mounted (research.md
 /// §9).
@@ -350,7 +349,7 @@ pub mod ops {
 #[tauri::command]
 pub async fn mount_record(
     input: MountRecordInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<MountRecordOutput, CommandError> {
     session.write(|conn| ops::mount_record(conn, &input))
 }
@@ -358,7 +357,7 @@ pub async fn mount_record(
 #[tauri::command]
 pub async fn list_mount_candidates(
     input: ListMountCandidatesInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ListMountCandidatesOutput, CommandError> {
     session.read(|conn| ops::list_mount_candidates(conn, &input))
 }

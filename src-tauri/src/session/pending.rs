@@ -7,8 +7,10 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::commands::CommandError;
-use crate::models::database::{Draft, DraftKind, DraftMode, PendingAction, PendingSummary};
-use crate::session::Session;
+use crate::models::database::{
+    Draft, DraftKind, DraftMode, PendingAction, PendingResolved, PendingState, PendingSummary,
+};
+use crate::session::{Session, SessionId};
 
 /// The most a draft's `values` may take, serialized (data-model.md).
 pub const MAX_VALUES_BYTES: usize = 1 << 20;
@@ -51,11 +53,11 @@ pub fn validate_draft(draft: &Draft) -> Result<String, CommandError> {
 
 /// Keeps `draft` as the open form's unsaved input, in memory only; `None`
 /// clears it (`stage_pending_changes`). Nothing is written to the database.
-pub fn stage(session: &Session, draft: Option<Draft>) -> Result<(), CommandError> {
+pub fn stage(session: &Session, id: SessionId, draft: Option<Draft>) -> Result<(), CommandError> {
     if let Some(draft) = &draft {
         validate_draft(draft)?;
     }
-    session.inspect_mut(|open| {
+    session.inspect_mut(id, |open| {
         open.staged_draft = draft;
         Ok(())
     })
@@ -63,8 +65,10 @@ pub fn stage(session: &Session, draft: Option<Draft>) -> Result<(), CommandError
 
 /// Writes `draft` as the database's pending changes, replacing any, and,
 /// with `clear_marker`, clears the open marker in the same transaction
-/// (FR-037's step 2 at sleep and shutdown). With no draft only the marker
-/// is cleared.
+/// (FR-037's step 2 at sleep and shutdown). A draft also records this build's
+/// version as the one that saved the database (FR-015). With no draft only
+/// the marker is cleared: a row already there, such as one resumed whose form never
+/// opened, is left as it is (008 research.md §6).
 pub fn write_pending(
     conn: &Connection,
     draft: Option<&Draft>,
@@ -90,6 +94,11 @@ pub fn write_pending(
         )
         .map_err(CommandError::from_db)?;
     }
+    if draft.is_some() {
+        // The version that kept the changes, atomically with them (FR-015,
+        // research.md §16).
+        crate::db::record_saved_version(&tx).map_err(CommandError::from_db)?;
+    }
     if clear_marker {
         tx.execute(
             "UPDATE app_state SET open_machine_id = NULL, open_machine_name = NULL, open_since = NULL",
@@ -103,7 +112,9 @@ pub fn write_pending(
 /// The pending changes the database holds, if any, as the prompt describes
 /// them. `resumable` is whether the record or policy they belong to still
 /// exists: it may have been deleted on another computer. The frontend also
-/// treats a form version it doesn't know as not resumable.
+/// treats a form version it doesn't know as not resumable. `saved_by_version`
+/// is the version that last saved the database, and `app_version` this
+/// build's, so the dialog can word where the changes came from (FR-016).
 pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError> {
     let row = conn
         .query_row(
@@ -139,54 +150,120 @@ pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError
             .map_err(CommandError::from_db)?
         }
     };
-    Ok(Some(PendingSummary { form_version, kind, mode, target_id, label, saved_at, resumable }))
+    let saved_by_version = conn
+        .query_row("SELECT last_saved_version FROM app_state", [], |row| row.get(0))
+        .map_err(CommandError::from_db)?;
+    Ok(Some(PendingSummary {
+        form_version,
+        kind,
+        mode,
+        target_id,
+        label,
+        saved_at,
+        resumable,
+        saved_by_version,
+        app_version: crate::APP_VERSION.to_owned(),
+    }))
 }
 
-/// Resumes or discards the database's pending changes (FR-039): either way
-/// they are removed, and the collection can be used again. `resume` returns
-/// the draft exactly as it was kept.
-pub fn resolve(session: &Session, action: PendingAction) -> Result<Option<Draft>, CommandError> {
-    session
-        .write_housekeeping(|conn| {
-            let kept = conn
-                .query_row(
-                    "SELECT form_version, kind, mode, target_id, label, values_json
-                 FROM pending_changes",
-                    [],
-                    |row| {
-                        Ok((
-                            row.get::<_, i64>(0)?,
-                            row.get::<_, DraftKind>(1)?,
-                            row.get::<_, DraftMode>(2)?,
-                            row.get::<_, Option<i64>>(3)?,
-                            row.get::<_, String>(4)?,
-                            row.get::<_, String>(5)?,
-                        ))
-                    },
-                )
-                .optional()
-                .map_err(CommandError::from_db)?;
-            let draft = match (action, kept) {
-                (
-                    PendingAction::Resume,
-                    Some((form_version, kind, mode, target_id, label, values)),
-                ) => {
-                    let values = serde_json::from_str(&values).map_err(|err| {
-                        log::error!("kept pending changes are not JSON: {err}");
-                        CommandError::new("INTERNAL_ERROR", "The unsaved changes couldn't be read.")
-                    })?;
-                    Some(Draft { form_version, kind, mode, target_id, label, values })
-                }
-                _ => None,
-            };
-            conn.execute("DELETE FROM pending_changes", []).map_err(CommandError::from_db)?;
-            Ok(draft)
-        })
-        .and_then(|draft| {
-            session.inspect_mut(|open| {
-                open.pending_unresolved = false;
-                Ok(())
-            })?;
-            Ok(draft)
-        })
+/// The kept row as a draft, exactly as it was written.
+fn kept_draft(conn: &Connection) -> Result<Option<Draft>, CommandError> {
+    let kept = conn
+        .query_row(
+            "SELECT form_version, kind, mode, target_id, label, values_json
+             FROM pending_changes",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, DraftKind>(1)?,
+                    row.get::<_, DraftMode>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(CommandError::from_db)?;
+    let Some((form_version, kind, mode, target_id, label, values)) = kept else {
+        return Ok(None);
+    };
+    let values = serde_json::from_str(&values).map_err(|err| {
+        log::error!("kept pending changes are not JSON: {err}");
+        CommandError::new("INTERNAL_ERROR", "The unsaved changes couldn't be read.")
+    })?;
+    Ok(Some(Draft { form_version, kind, mode, target_id, label, values }))
+}
+
+/// The row is gone but the session thought it was there: nothing a caller
+/// can do, and nothing was changed.
+fn row_missing() -> CommandError {
+    log::error!("the pending changes the session expected are not in the database");
+    CommandError::new("INTERNAL_ERROR", "The unsaved changes couldn't be read.")
+}
+
+/// Moves the database's pending changes along (FR-039; 008 FR-003,
+/// research.md §6, data-model.md "PendingState"). The row, the state and the
+/// session's staged draft change together, under one hold of the session's
+/// mutex:
+/// - `Resume` (from `Unresolved`) returns the draft and moves to `Resuming`;
+///   the row stays, so a lock, close or crash before the form has opened
+///   loses nothing;
+/// - `Opened` (from `Resuming`) deletes the row and makes the draft the
+///   session's staged draft, so a lock or sleep before the form's own first
+///   staging writes it back;
+/// - `NotOpened` (from `Resuming`) goes back to `Unresolved` and returns the
+///   summary for the dialog;
+/// - `Discard` (from `Unresolved`) deletes the row.
+///
+/// An action in the wrong state is a `VALIDATION_ERROR` that changes nothing.
+pub fn resolve(
+    session: &Session,
+    id: SessionId,
+    action: PendingAction,
+) -> Result<PendingResolved, CommandError> {
+    session.write_checked(id, false, |open| {
+        let state = open.pending;
+        let allowed = matches!(
+            (state, action),
+            (PendingState::Unresolved, PendingAction::Resume | PendingAction::Discard)
+                | (PendingState::Resuming, PendingAction::Opened | PendingAction::NotOpened)
+        );
+        if !allowed {
+            return Err(CommandError::validation(
+                "That doesn't apply to the unsaved changes as they are now.",
+                [("action".to_owned(), "Not allowed in this state.".to_owned())].into(),
+            ));
+        }
+        let conn = &open.conn;
+        let resolved = match action {
+            PendingAction::Resume => {
+                let draft = kept_draft(conn)?.ok_or_else(row_missing)?;
+                open.pending = PendingState::Resuming;
+                PendingResolved { draft: Some(draft), pending: None }
+            }
+            PendingAction::Opened => {
+                let draft = kept_draft(conn)?.ok_or_else(row_missing)?;
+                conn.execute("DELETE FROM pending_changes", []).map_err(CommandError::from_db)?;
+                open.staged_draft = Some(draft);
+                open.pending = PendingState::None;
+                PendingResolved { draft: None, pending: None }
+            }
+            PendingAction::NotOpened => {
+                let summary = summary(conn)?.ok_or_else(row_missing)?;
+                // The row holds the changes; whatever the form that never
+                // opened staged must not replace them at a lock.
+                open.staged_draft = None;
+                open.pending = PendingState::Unresolved;
+                PendingResolved { draft: None, pending: Some(summary) }
+            }
+            PendingAction::Discard => {
+                conn.execute("DELETE FROM pending_changes", []).map_err(CommandError::from_db)?;
+                open.pending = PendingState::None;
+                PendingResolved { draft: None, pending: None }
+            }
+        };
+        Ok(resolved)
+    })
 }

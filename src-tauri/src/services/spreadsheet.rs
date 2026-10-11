@@ -1,14 +1,13 @@
-//! CSV/XLSX export (`rust_xlsxwriter`/`csv`) and import (`calamine`/`csv`)
-//! per contracts/spreadsheet-format.md. Kept in the Rust backend
+//! CSV/XLSX export (`rust_xlsxwriter`/`csv`) and the recognition of an
+//! imported table's rows per contracts/spreadsheet-format.md. Reading the file
+//! itself is `services::import_reader`'s, in a confined child (feature 008).
+//! Kept in the Rust backend
 //! (research.md §6) so the business logic that must be tested against a
 //! real SQLCipher DB — matching, validation, conflict resolution — never
 //! crosses the IPC boundary mid-computation.
 
-use std::borrow::Cow;
-use std::path::Path;
-
-use calamine::Reader;
 use rust_xlsxwriter::Workbook;
+use std::borrow::Cow;
 
 use crate::commands::CommandError;
 
@@ -622,7 +621,7 @@ fn protect_csv_cell(cell: &str) -> Cow<'_, str> {
 /// Removes the one leading `'` that `protect_csv_cell` adds: a `'` followed by
 /// a formula trigger. A cell that genuinely starts with `'` and a trigger
 /// character loses its `'` too, the one accepted ambiguity.
-fn unprotect_csv_cell(cell: &str) -> &str {
+pub fn unprotect_csv_cell(cell: &str) -> &str {
     match cell.strip_prefix('\'') {
         Some(rest) if rest.starts_with(FORMULA_TRIGGERS) => rest,
         _ => cell,
@@ -747,11 +746,6 @@ pub struct ReadTable {
     pub rows: TableRows,
 }
 
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned())
-}
-
 /// FR-022: the header row decides. `firearm_type` without `kind` is the
 /// firearm table, `kind` without `firearm_type` the accessory table; both or
 /// neither is not a table, and stops the import naming `source`.
@@ -771,96 +765,150 @@ fn recognise(headers: &[String], source: &str) -> Result<TableKind, CommandError
     }
 }
 
-/// Reads and recognises every non-blank sheet of the file, without saving
-/// anything. A sheet with no header row is ignored.
-pub fn read_spreadsheet(
-    path: &Path,
-    format: SpreadsheetFormat,
-) -> Result<Vec<ReadTable>, CommandError> {
-    match format {
-        SpreadsheetFormat::Csv => read_csv(path),
-        SpreadsheetFormat::Xlsx => read_xlsx(path),
-    }
-}
-
 /// One sheet's header and data rows, as text.
-fn read_table(
+pub fn read_table(
     headers: &[String],
     data: impl Iterator<Item = Vec<String>>,
     source: String,
 ) -> Result<ReadTable, CommandError> {
-    let header_refs = || headers.iter().map(String::as_str);
-    let rows = match recognise(headers, &source)? {
-        TableKind::Firearms => {
-            let map = HeaderMap::new(FIREARM_COLUMNS, header_refs(), &source)?;
-            TableRows::Firearms(
-                data.map(|cells| RawImportRow::from_cells(map.cells(&cells))).collect(),
-            )
-        }
-        TableKind::Accessories => {
-            let map = HeaderMap::new(ACCESSORY_COLUMNS, header_refs(), &source)?;
-            TableRows::Accessories(
-                data.map(|cells| RawAccessoryRow::from_cells(map.cells(&cells))).collect(),
-            )
-        }
-    };
-    Ok(ReadTable { source, rows })
+    let mut reader = TableReader::new();
+    reader.push_row(headers.to_vec());
+    for row in data {
+        reader.push_row(row);
+    }
+    reader
+        .finish(source)?
+        .ok_or_else(|| CommandError::new("VALIDATION_ERROR", "The table has no header row."))
 }
 
 fn is_blank_header(headers: &[String]) -> bool {
     headers.iter().all(|h| h.trim().is_empty())
 }
 
-fn read_csv(path: &Path) -> Result<Vec<ReadTable>, CommandError> {
-    let source = file_name(path);
-    let unreadable = |e: csv::Error| {
-        CommandError::new("VALIDATION_ERROR", format!("{source}: could not read the file: {e}"))
-    };
-    let mut reader =
-        csv::ReaderBuilder::new().has_headers(true).from_path(path).map_err(unreadable)?;
-    let headers: Vec<String> =
-        reader.headers().map_err(unreadable)?.iter().map(str::to_string).collect();
-    if is_blank_header(&headers) {
-        return Ok(Vec::new());
-    }
-    let mut data = Vec::new();
-    for record in reader.records() {
-        let record = record.map_err(|e| {
-            CommandError::new("VALIDATION_ERROR", format!("{source}: could not parse a row: {e}"))
-        })?;
-        data.push(record.iter().map(|cell| unprotect_csv_cell(cell).to_string()).collect());
-    }
-    Ok(vec![read_table(&headers, data.into_iter(), source)?])
+/// How a [`TableReader`] treats the rows after its header.
+enum Rows {
+    /// No row yet.
+    Waiting,
+    /// A header with no name in it: the sheet is ignored.
+    Blank,
+    /// The header is no table, or names a column twice. The reason is made
+    /// by `finish`, which knows the source's name, and no row is kept.
+    Failed,
+    Firearms(HeaderMap, Vec<RawImportRow>),
+    Accessories(HeaderMap, Vec<RawAccessoryRow>),
+    /// A table of a kind the import already has one of, which is an error
+    /// (FR-022) whose message needs only the source: its rows are not kept.
+    Discarded(TableKind),
 }
 
-fn read_xlsx(path: &Path) -> Result<Vec<ReadTable>, CommandError> {
-    let file = file_name(path);
-    let unreadable = |e: &dyn std::fmt::Display| {
-        CommandError::new("VALIDATION_ERROR", format!("{file}: could not read the file: {e}"))
-    };
-    let mut workbook: calamine::Xlsx<_> =
-        calamine::open_workbook(path).map_err(|e| unreadable(&e))?;
-    // Every sheet's text, blank sheets dropped, before any is recognised.
-    let mut sheets: Vec<(String, Vec<Vec<String>>)> = Vec::new();
-    for name in workbook.sheet_names() {
-        let range = workbook.worksheet_range(&name).map_err(|e| unreadable(&e))?;
-        let mut rows = range.rows().map(|row| row.iter().map(|c| c.to_string()).collect());
-        let Some(headers) = rows.next().filter(|h: &Vec<String>| !is_blank_header(h)) else {
-            continue;
-        };
-        let mut all = vec![headers];
-        all.extend(rows);
-        sheets.push((name, all));
+/// The table a header row makes, or why it makes none.
+fn start(headers: &[String], source: &str) -> Result<Rows, CommandError> {
+    let header_refs = || headers.iter().map(String::as_str);
+    Ok(match recognise(headers, source)? {
+        TableKind::Firearms => {
+            Rows::Firearms(HeaderMap::new(FIREARM_COLUMNS, header_refs(), source)?, Vec::new())
+        }
+        TableKind::Accessories => {
+            Rows::Accessories(HeaderMap::new(ACCESSORY_COLUMNS, header_refs(), source)?, Vec::new())
+        }
+    })
+}
+
+/// One sheet's rows turned into import rows as they arrive, batch by batch,
+/// so the cells of a large table are not held beside the rows made of them
+/// (008's research.md §9). The first row is the header: it decides the table
+/// (FR-022), and each later row is mapped through it and its cells dropped.
+///
+/// A sheet whose header row is blank, or that has no row, is ignored
+/// (`finish` gives `None`). A header that is no table, or names a column
+/// twice, is an error only `finish` makes, since the error names the source
+/// (the file, and the sheet of a workbook that holds several), which is known
+/// only once every sheet has been read.
+pub struct TableReader {
+    headers: Vec<String>,
+    rows: Rows,
+}
+
+impl Default for TableReader {
+    fn default() -> Self {
+        Self::new()
     }
-    let several = sheets.len() > 1;
-    sheets
-        .into_iter()
-        .map(|(name, mut rows)| {
-            let headers = rows.remove(0);
-            let source = if several { format!("{file}, sheet \"{name}\"") } else { file.clone() };
-            read_table(&headers, rows.into_iter(), source)
-        })
-        .collect()
+}
+
+impl TableReader {
+    pub fn new() -> Self {
+        Self { headers: Vec::new(), rows: Rows::Waiting }
+    }
+
+    /// The next row of the sheet: its header, the first time.
+    pub fn push_row(&mut self, cells: Vec<String>) {
+        match &mut self.rows {
+            Rows::Waiting => {
+                self.rows = if is_blank_header(&cells) {
+                    Rows::Blank
+                } else {
+                    // The error, if any, is made again by `finish`, with the
+                    // real source.
+                    start(&cells, "").unwrap_or(Rows::Failed)
+                };
+                self.headers = cells;
+            }
+            Rows::Blank | Rows::Failed | Rows::Discarded(_) => {}
+            Rows::Firearms(map, rows) => rows.push(RawImportRow::from_cells(map.cells(&cells))),
+            Rows::Accessories(map, rows) => {
+                rows.push(RawAccessoryRow::from_cells(map.cells(&cells)));
+            }
+        }
+    }
+
+    /// Which table the header made this, once there is a header that does.
+    pub fn kind(&self) -> Option<TableKind> {
+        match &self.rows {
+            Rows::Firearms(..) => Some(TableKind::Firearms),
+            Rows::Accessories(..) => Some(TableKind::Accessories),
+            Rows::Discarded(kind) => Some(*kind),
+            Rows::Waiting | Rows::Blank | Rows::Failed => None,
+        }
+    }
+
+    /// Keeps none of the rows from now on, and none so far: the import
+    /// already has a table of this kind, and two are an error whatever they
+    /// hold, so a workbook of many such sheets is not held in memory.
+    pub fn discard_rows(&mut self) {
+        if let Some(kind) = self.kind() {
+            self.rows = Rows::Discarded(kind);
+        }
+    }
+
+    /// Has a header with a name in it been given, so that `finish` gives a
+    /// table or an error rather than `None`?
+    pub fn has_header(&self) -> bool {
+        !matches!(self.rows, Rows::Waiting | Rows::Blank)
+    }
+
+    /// The table, named `source`; `None` for a sheet with no header; an error
+    /// naming `source` for a header that is no table.
+    pub fn finish(self, source: String) -> Result<Option<ReadTable>, CommandError> {
+        match self.rows {
+            Rows::Waiting | Rows::Blank => Ok(None),
+            Rows::Failed => match start(&self.headers, &source) {
+                Err(err) => Err(err),
+                Ok(_) => Err(CommandError::new("INTERNAL_ERROR", "A table's header changed.")),
+            },
+            Rows::Discarded(TableKind::Firearms) => {
+                Ok(Some(ReadTable { source, rows: TableRows::Firearms(Vec::new()) }))
+            }
+            Rows::Discarded(TableKind::Accessories) => {
+                Ok(Some(ReadTable { source, rows: TableRows::Accessories(Vec::new()) }))
+            }
+            Rows::Firearms(_, rows) => {
+                Ok(Some(ReadTable { source, rows: TableRows::Firearms(rows) }))
+            }
+            Rows::Accessories(_, rows) => {
+                Ok(Some(ReadTable { source, rows: TableRows::Accessories(rows) }))
+            }
+        }
+    }
 }
 
 #[cfg(test)]

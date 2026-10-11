@@ -10,7 +10,6 @@ import { firearmName, useCollection } from "../app/collectionStore";
 import { FirearmName } from "../app/FirearmName";
 import { useNavigation } from "../app/navigation";
 import { RunningHead } from "../app/RunningHead";
-import { peekResumedDraft } from "../session/usePendingDraft";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { CoverageDialog } from "../insurance/CoverageDialog";
 import { coverageStatus, expiryLabel } from "../insurance/coverage";
@@ -25,6 +24,7 @@ import { MountedOnChain } from "../mounts/MountedOnChain";
 import { MountedSection } from "../mounts/MountedSection";
 import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
 import type { RecordLabel } from "../mounts/types";
+import { useSessionScope } from "../session/sessionScope";
 import { DispositionHistoryList } from "./DispositionHistoryList";
 import { DisposeDialog } from "./DisposeDialog";
 import { FirearmForm } from "./FirearmForm";
@@ -60,6 +60,7 @@ function failureMessage(e: unknown, fallback: string): string {
 /** One firearm's full record (US1, US3, US4): identity plate, coverage,
  * photos, documents, acquisition and disposition history. */
 export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
+  const scope = useSessionScope();
   const {
     firearmsById,
     policiesById,
@@ -83,7 +84,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   useEffect(() => {
     let cancelled = false;
     firearmsService
-      .getFirearm(id)
+      .getFirearm(scope, id)
       .then((loaded) => !cancelled && setFirearm(loaded))
       .catch(
         (e) => !cancelled && setLoadError(failureMessage(e, "This firearm couldn't be loaded.")),
@@ -91,17 +92,26 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [id, revision]);
+  }, [scope, id, revision]);
 
   // Pending changes the user resumed for this firearm reopen their form
   // (FR-039), which takes them as its unsaved input.
   const loadedId = firearm?.id;
   useEffect(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (loadedId === undefined || resumed?.kind !== "firearm" || resumed.targetId !== loadedId)
       return;
     if (resumed.mode !== "add") setDialog(resumed.mode);
-  }, [loadedId]);
+  }, [scope, loadedId]);
+
+  // A record that can't be loaded can't open the form those changes belong
+  // to: tell the scope, so the pending changes dialog comes back
+  // (specs/008 research.md §6). A draft for another record isn't this page's.
+  useEffect(() => {
+    const resumed = scope.resumed?.draft;
+    if (!loadError || resumed?.kind !== "firearm" || resumed.targetId !== id) return;
+    void scope.resumeFailed(loadError);
+  }, [scope, id, loadError]);
 
   if (loadError) {
     return (
@@ -164,12 +174,12 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   }
 
   async function handleUpdate(input: FirearmInput, confirmedWarnings?: boolean) {
-    const updated = await firearmsService.updateFirearm(id, input, confirmedWarnings);
+    const updated = await firearmsService.updateFirearm(scope, id, input, confirmedWarnings);
     await afterChange(updated, `Saved changes to ${firearmName(updated)}.`);
   }
 
   async function handleDispose(input: DisposeInput) {
-    const updated = await firearmsService.disposeFirearm(id, input);
+    const updated = await firearmsService.disposeFirearm(scope, id, input);
     await afterChange(
       updated,
       `Marked ${firearmName(updated)} as ${dispositionLabel(updated.dispositionType).toLowerCase()}.`,
@@ -177,18 +187,18 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   }
 
   async function handleRestore(input: ReverseDispositionInput) {
-    const restored = await firearmsService.reverseDisposition(id, input);
+    const restored = await firearmsService.reverseDisposition(scope, id, input);
     await afterChange(restored, `Restored ${firearmName(restored)} to the collection.`);
   }
 
   async function handleCoverage(input: AssignCoverageInput) {
-    const updated = await insuranceService.assignFirearmCoverage(id, input);
+    const updated = await insuranceService.assignFirearmCoverage(scope, id, input);
     await afterChange(updated, `Updated coverage for ${firearmName(updated)}.`);
   }
 
   async function handleDelete() {
     try {
-      await firearmsService.deleteFirearm(id, true);
+      await firearmsService.deleteFirearm(scope, id, true);
       await refresh();
       notify(`Deleted ${name}.`);
       back?.go();
@@ -198,7 +208,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   }
 
   async function handleMediaChanged() {
-    const updated = await firearmsService.getFirearm(id);
+    const updated = await firearmsService.getFirearm(scope, id);
     setFirearm(updated);
     await refresh();
   }
@@ -594,6 +604,7 @@ export function PlateFigure({
   thumbnailPhotoId: number | null;
   typeKey: string;
 }) {
+  const scope = useSessionScope();
   const [original, setOriginal] = useState<string | null>(null);
 
   useEffect(() => {
@@ -602,7 +613,7 @@ export function PlateFigure({
     let url: string | null = null;
     let cancelled = false;
     mediaService
-      .getPhotoOriginal(thumbnailPhotoId)
+      .getPhotoOriginal(scope, thumbnailPhotoId)
       .then((buffer) => {
         if (cancelled) return;
         url = URL.createObjectURL(new Blob([buffer]));
@@ -615,7 +626,7 @@ export function PlateFigure({
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [thumbnailPhotoId]);
+  }, [scope, thumbnailPhotoId]);
 
   return (
     <div className="hd-plate__figure">

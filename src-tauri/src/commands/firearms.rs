@@ -1,6 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::models::disposition_history::DispositionHistoryEntry;
@@ -8,8 +7,9 @@ use crate::models::firearm::{
     DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
+use crate::models::rules::{MAX_SHORT_TEXT_CHARS, check_text_length};
 use crate::services::mounts::{self, MountGraph};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// Input for the `dispose_firearm` and `dispose_accessory` commands, per
 /// contracts/tauri-commands.md. Without `with_mounted`, equivalent to
@@ -30,6 +30,21 @@ pub struct DisposeInput {
 }
 
 impl DisposeInput {
+    /// The recipient's maximum (specs/008-hardening-batch research.md §10),
+    /// checked before anything is changed. The message is the error's own,
+    /// because the dialog shows a command's message when it has no field to
+    /// put it on; it is also on `recipient`, the dispose input's own name for
+    /// the field (contracts/tauri-commands.md; saving the record names it
+    /// `dispositionRecipient`).
+    pub fn check_recipient(&self) -> Result<(), CommandError> {
+        check_text_length("Transferred to", &self.recipient, MAX_SHORT_TEXT_CHARS).map_err(
+            |message| {
+                CommandError::validation(message.clone(), Default::default())
+                    .on_field("recipient", message)
+            },
+        )
+    }
+
     pub fn disposition(&self) -> Disposition<'_> {
         Disposition {
             disposition_type: self.disposition_type,
@@ -254,6 +269,16 @@ pub mod ops {
         }
     }
 
+    /// The nickname clash query: the active firearm (other than the record
+    /// being edited) whose nickname equals `:nickname` trimmed, ignoring
+    /// case. It compares the column under `COLLATE NOCASE`, as
+    /// `idx_firearms_active_nickname` is built, so that index serves it
+    /// (research.md §19). A stored nickname is already trimmed (`trimmed()`
+    /// on every save and import), so only the argument needs trimming.
+    pub const NICKNAME_CLASH_SQL: &str = "SELECT make, model, nickname, serial_number FROM firearms
+         WHERE status = 'active' AND id IS NOT :exclude
+           AND nickname = trim(:nickname) COLLATE NOCASE";
+
     /// The active firearm (other than `exclude_id`, the record being edited,
     /// which never clashes with itself) whose nickname matches, ignoring case
     /// and surrounding whitespace.
@@ -263,15 +288,25 @@ pub mod ops {
         nickname: &str,
     ) -> Result<Option<Clash>, CommandError> {
         conn.query_row(
-            "SELECT make, model, nickname, serial_number FROM firearms
-             WHERE status = 'active' AND id IS NOT :exclude
-               AND lower(trim(nickname)) = lower(trim(:nickname))",
+            NICKNAME_CLASH_SQL,
             named_params! { ":exclude": exclude_id, ":nickname": nickname },
             Clash::from_row,
         )
         .optional()
         .map_err(CommandError::from_db)
     }
+
+    /// The identity clash query. Its three `lower(trim(...))` terms are
+    /// those of `idx_firearms_identity_key` (research.md §19).
+    pub const IDENTITY_CLASH_SQL: &str = "SELECT id FROM firearms
+         WHERE status = 'active' AND id IS NOT :exclude
+           AND lower(trim(make)) = lower(trim(:make))
+           AND lower(trim(model)) = lower(trim(:model))
+           AND lower(trim(serial_number)) = lower(trim(:serial))
+           AND NOT (
+               :year IS NOT NULL AND year_of_manufacture IS NOT NULL
+               AND year_of_manufacture <> :year
+           )";
 
     /// The active firearm (other than `exclude_id`) with the same make,
     /// model and serial number, ignoring case and surrounding whitespace —
@@ -287,15 +322,7 @@ pub mod ops {
         year_of_manufacture: Option<i64>,
     ) -> Result<Option<i64>, CommandError> {
         conn.query_row(
-            "SELECT id FROM firearms
-             WHERE status = 'active' AND id IS NOT :exclude
-               AND lower(trim(make)) = lower(trim(:make))
-               AND lower(trim(model)) = lower(trim(:model))
-               AND lower(trim(serial_number)) = lower(trim(:serial))
-               AND NOT (
-                   :year IS NOT NULL AND year_of_manufacture IS NOT NULL
-                   AND year_of_manufacture <> :year
-               )",
+            IDENTITY_CLASH_SQL,
             named_params! {
                 ":exclude": exclude_id,
                 ":make": make,
@@ -818,6 +845,7 @@ pub mod ops {
         input: &DisposeInput,
     ) -> Result<Firearm, CommandError> {
         get_firearm(conn, id)?;
+        input.check_recipient()?;
         crate::commands::mounts::ops::dispose_with_mounted(conn, RecordRef::Firearm(id), input)?;
         get_firearm(conn, id)
     }
@@ -1207,7 +1235,7 @@ pub mod ops {
 pub async fn create_firearm(
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session
         .write(|conn| ops::create_firearm(conn, &input, confirmed_warnings.unwrap_or(false), None))
@@ -1218,7 +1246,7 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::update_firearm(conn, id, &input, confirmed_warnings.unwrap_or(false)))
 }
@@ -1227,7 +1255,7 @@ pub async fn update_firearm(
 pub async fn dispose_firearm(
     id: i64,
     input: DisposeInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::dispose_firearm(conn, id, &input))
 }
@@ -1236,7 +1264,7 @@ pub async fn dispose_firearm(
 pub async fn reverse_disposition(
     id: i64,
     input: ReverseDispositionInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::reverse_disposition(conn, id, &input))
 }
@@ -1245,23 +1273,20 @@ pub async fn reverse_disposition(
 pub async fn delete_firearm(
     id: i64,
     confirmed: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<DeleteResult, CommandError> {
     session.write(|conn| ops::delete_firearm(conn, id, confirmed))
 }
 
 #[tauri::command]
-pub async fn get_firearm(
-    id: i64,
-    session: State<'_, Session>,
-) -> Result<FirearmDetail, CommandError> {
+pub async fn get_firearm(id: i64, session: ScopedSession) -> Result<FirearmDetail, CommandError> {
     session.read(|conn| ops::get_firearm_detail(conn, id))
 }
 
 #[tauri::command]
 pub async fn list_firearms(
     input: ListFirearmsInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ListFirearmsOutput, CommandError> {
     session.read(|conn| ops::list_firearms(conn, &input))
 }

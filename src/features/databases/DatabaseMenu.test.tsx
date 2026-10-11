@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import * as sessionService from "../session/sessionService";
 import { SessionProvider } from "../session/SessionProvider";
@@ -8,6 +9,7 @@ import * as databasesService from "./databasesService";
 import { DatabaseMenu } from "./DatabaseMenu";
 import type { ChooserState, DatabaseStatus } from "./types";
 
+const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
 vi.mock("../session/sessionService");
@@ -15,6 +17,7 @@ vi.mock("../session/sessionService");
 const PATH = "/home/sam/Documents/HoploDex/Main collection.hoplodex";
 
 const status = {
+  sessionId: 1,
   path: PATH,
   name: "Main collection",
   passphraseSaved: false,
@@ -175,7 +178,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     expect(
       await screen.findByRole("dialog", { name: "Restore from a backup" }),
     ).toBeInTheDocument();
-    expect(databasesService.listBackups).toHaveBeenCalledWith(undefined);
+    expect(databasesService.listBackups).toHaveBeenCalledWith(SCOPE, undefined);
   });
 });
 
@@ -210,7 +213,7 @@ describe("Lock now (FR-033, FR-035)", () => {
     expect(item).toHaveTextContent("Ctrl+L");
     await user.click(item);
 
-    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(SCOPE, draft));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(sessionService.closeDatabase).not.toHaveBeenCalled();
   });
@@ -221,7 +224,7 @@ describe("Lock now (FR-033, FR-035)", () => {
 
     await user.click(await screen.findByRole("button", { name: "Lock now" }));
 
-    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(null));
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(SCOPE, null));
   });
 
   it("locks with Ctrl+L from anywhere, inside a dialog too", async () => {
@@ -234,7 +237,7 @@ describe("Lock now (FR-033, FR-035)", () => {
 
     await user.keyboard("{Control>}l{/Control}");
 
-    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(SCOPE, draft));
     expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1);
   });
 
@@ -249,7 +252,7 @@ describe("Lock now (FR-033, FR-035)", () => {
     expect(lock).toHaveAttribute("title", "Lock now (Ctrl+L)");
     await user.click(lock);
 
-    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(draft));
+    await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledWith(SCOPE, draft));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 

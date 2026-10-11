@@ -4,7 +4,7 @@
 //! The app starts itself again as `hoplodex --render-helper`. `main()` hands
 //! the arguments to [`run`] before it sets up anything else, so the helper
 //! has no Tauri, no keyring, no session and no logging. `run` confines the
-//! process ([`super::confine`]) and only then reads a frame, serves them
+//! process ([`confine`](crate::services::helper::confine)) and only then reads a frame, serves them
 //! over stdin and stdout with [`super::tiff`], and exits when stdin ends.
 //! Nothing a document says is written anywhere else: stderr is discarded by
 //! the parent and the helper writes nothing to it.
@@ -12,10 +12,15 @@
 use std::io::{self, BufReader, BufWriter, Write};
 
 use super::helper_protocol::{Request, Response, read_request, write_response};
-use super::{confine, tiff};
+use super::tiff;
+use crate::services::helper::confine;
 
 /// What the app starts its helper with.
 pub const ARGUMENT: &str = "--render-helper";
+
+/// The most the TIFF helper may allocate: 2 GiB, as `RLIMIT_DATA` on Linux
+/// and the job object's limit on Windows (007's research.md §11).
+pub const MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
 /// Runs the helper to its end and exits the process: `args` are the
 /// process's arguments after the program name, the first being
@@ -28,7 +33,7 @@ pub fn run(args: &[String]) -> ! {
         std::process::exit(self_check::run(&args[2..]));
     }
     let _ = args;
-    if confine::confine().is_err() {
+    if confine::confine(MEMORY_LIMIT).is_err() {
         // Not confined: read no document.
         std::process::exit(3);
     }
@@ -82,7 +87,7 @@ mod self_check {
 
     use serde_json::json;
 
-    use super::confine;
+    use super::{MEMORY_LIMIT, confine};
 
     /// A program that exists on the OS and exits at once: whether the
     /// confined helper can start it is the probe.
@@ -101,7 +106,7 @@ mod self_check {
         let can_connect = || TcpStream::connect(("127.0.0.1", port)).is_ok();
         let file_before = can_open();
         let tcp_before = can_connect();
-        let Ok(confinement) = confine::confine() else { return 3 };
+        let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
         let exec_after = Command::new(PROGRAM)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

@@ -1,6 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::Deserialize;
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::{accessories, firearms};
@@ -12,7 +11,7 @@ use crate::models::insurance_policy::{
 use crate::models::record::{RecordCounts, RecordLabel, RecordRef};
 use crate::services::insurance_status::{PolicyStatus, load_context};
 use crate::services::valuation::{self, ValueSummary};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// Input for `assign_firearm_coverage`, per contracts/tauri-commands.md.
 #[derive(Debug, Clone, Deserialize)]
@@ -481,7 +480,7 @@ pub mod ops {
 
 #[tauri::command]
 pub async fn list_insurance_policies(
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Vec<InsurancePolicyView>, CommandError> {
     session.read(ops::list_policy_views)
 }
@@ -489,7 +488,7 @@ pub async fn list_insurance_policies(
 #[tauri::command]
 pub async fn create_insurance_policy(
     input: InsurancePolicyInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<InsurancePolicyView, CommandError> {
     session.write(|conn| {
         let policy = ops::create_policy(conn, &input)?;
@@ -501,7 +500,7 @@ pub async fn create_insurance_policy(
 pub async fn update_insurance_policy(
     id: i64,
     input: InsurancePolicyInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<InsurancePolicyView, CommandError> {
     session.write(|conn| {
         let policy = ops::update_policy(conn, id, &input)?;
@@ -512,7 +511,7 @@ pub async fn update_insurance_policy(
 #[tauri::command]
 pub async fn get_policy_deletion_impact(
     id: i64,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<PolicyDeletionImpact, CommandError> {
     session.read(|conn| ops::get_policy_deletion_impact(conn, id))
 }
@@ -522,7 +521,7 @@ pub async fn delete_insurance_policy(
     id: i64,
     confirmed: bool,
     scheduled_firearms: Option<ScheduledFirearmsAction>,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<DeletePolicyResult, CommandError> {
     session.write(|conn| ops::delete_policy(conn, id, confirmed, scheduled_firearms.as_ref()))
 }
@@ -531,7 +530,7 @@ pub async fn delete_insurance_policy(
 pub async fn assign_firearm_coverage(
     firearm_id: i64,
     input: AssignCoverageInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| {
         ops::assign_firearm_coverage(
@@ -547,7 +546,7 @@ pub async fn assign_firearm_coverage(
 pub async fn assign_accessory_coverage(
     accessory_id: i64,
     input: AssignCoverageInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Accessory, CommandError> {
     session.write(|conn| {
         ops::assign_accessory_coverage(
@@ -560,6 +559,6 @@ pub async fn assign_accessory_coverage(
 }
 
 #[tauri::command]
-pub async fn get_value_summary(session: State<'_, Session>) -> Result<ValueSummary, CommandError> {
+pub async fn get_value_summary(session: ScopedSession) -> Result<ValueSummary, CommandError> {
     session.read(ops::get_value_summary)
 }

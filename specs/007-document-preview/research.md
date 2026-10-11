@@ -686,6 +686,8 @@ artifacts.
 
 ## 11. TIFF: decoded in a helper process
 
+_Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (confinement, the Windows job object, framing, spawn and kill) moved to `services/helper/`, with the memory cap a parameter, and the import reader (`--import-helper`, 008 research.md §8) shares it. The TIFF mode and its requests stay in `services/preview/`._
+
 - **Decision**: Decode TIFF with the `tiff` crate (MIT, pure Rust), plus
   the `fax` crate (MIT) for CCITT Group 3 and 4, the usual compression of
   black-and-white scans, in a **render helper**: the HoploDex executable
@@ -784,7 +786,7 @@ artifacts.
   `PROC_THREAD_ATTRIBUTE_JOB_LIST` attribute, so the helper is in the job
   before it runs any code. The same attribute list carries
   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (its three standard handles and
-  nothing else), and the environment is empty, as before (`helper_job.rs`).
+  nothing else), and the environment is empty, as before (`services/helper/job.rs`).
   Any end of HoploDex, including `TerminateProcess`, closes the handle and
   the kernel kills the helper at once (`tests/tiff_helper_test.rs` kills a
   parent and expects the helper gone within a second). The helper checks that

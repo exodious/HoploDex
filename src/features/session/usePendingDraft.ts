@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Draft } from "../databases/types";
+import type { SessionScope } from "./sessionScope";
+import { useSessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
 
 /**
@@ -39,6 +41,9 @@ export interface RegisteredForm extends DirtyForm {
 
 interface Registration {
   current: RegisteredForm;
+  /** The session the form belongs to: its drafts are staged through it
+   * (specs/008 research.md §4). */
+  scope: SessionScope;
 }
 
 /** Every mounted form, the most recently opened last. */
@@ -65,11 +70,20 @@ function flush(): void {
   if (!waiting) return;
   const { from, draft } = waiting;
   waiting = null;
+  // Its session ended meanwhile: the draft is no longer anyone's to stage.
+  if (from.scope.ended) return;
   const json = JSON.stringify(draft);
   if (json === staged.json) return;
   staged = { json, from: draft ? from : null };
   // Best-effort: nothing is open any more, or the next edit tries again.
-  void Promise.resolve(sessionService.stagePendingChanges(draft)).catch(() => {});
+  void Promise.resolve(sessionService.stagePendingChanges(from.scope, draft)).catch(() => {});
+}
+
+function resetStaging(): void {
+  clearTimeout(timer);
+  timer = undefined;
+  waiting = null;
+  staged = { json: "null", from: null };
 }
 
 function schedule(from: Registration, draft: Draft | null): void {
@@ -89,13 +103,19 @@ export function flushPendingDraft(): void {
  * edit, or at once when a field loses focus, and `null` once it is clean or
  * gone. */
 export function useDirtyForm(form: RegisteredForm): void {
-  const registration = useRef<Registration>({ current: form });
+  const scope = useSessionScope();
+  const registration = useRef<Registration>({ current: form, scope });
   registration.current.current = form;
 
   useEffect(() => {
     const entry = registration.current;
     registered.push(entry);
+    // The session ends: what the backend held for it goes with it, so the
+    // next session's first draft is never thought to be staged already
+    // (research.md §4).
+    const forgetStaged = entry.scope.onEnd(resetStaging);
     return () => {
+      forgetStaged();
       const index = registered.indexOf(entry);
       if (index >= 0) registered.splice(index, 1);
       // Saved, cancelled or unmounted: its draft is not unsaved input any
@@ -157,22 +177,13 @@ export function currentDraft(): Draft | null {
 }
 
 // --- Resuming -----------------------------------------------------------------
+//
+// The draft the user chose to resume lives in the session scope
+// (`scope.resumed`, specs/008 research.md §6): a form matches it only through
+// the scope it rendered under, so another session's form, however alike, can't
+// take it.
 
-/** Pending changes the user chose to resume (FR-039), until their form
- * opens with them. */
-let resumed: Draft | null = null;
-
-/** Keeps `draft` for its form to open with. */
-export function setResumedDraft(draft: Draft | null): void {
-  resumed = draft;
-}
-
-/** The draft waiting to be resumed, for the page that opens its form. */
-export function peekResumedDraft(): Draft | null {
-  return resumed;
-}
-
-function matches(draft: Draft, target: DraftTarget): boolean {
+function matches(draft: DraftTarget, target: DraftTarget): boolean {
   return (
     draft.formVersion === target.formVersion &&
     draft.kind === target.kind &&
@@ -182,15 +193,20 @@ function matches(draft: Draft, target: DraftTarget): boolean {
 }
 
 /** The state a form opening as `target` starts with: `base`, what it would
- * start with anyway, overlaid with the resumed draft's values when the draft
- * belongs to it. A draft's values come from the database, perhaps written
- * on another computer, so only the fields `base` has are taken, and only
- * when they are of the same kind: a draft that is short of fields, or has a
- * field of another shape, can't break the form, whose own values fill the
- * gaps. Read in a state initializer, which may run twice;
- * {@link useResumedDraftTaken} then clears the draft once the form is
+ * start with anyway, overlaid with `scope`'s resumed draft's values when the
+ * draft belongs to it. A draft's values come from the database, perhaps
+ * written on another computer, so only the fields `base` has are taken, and
+ * only when they are of the same kind: a draft that is short of fields, or
+ * has a field of another shape, can't break the form, whose own values fill
+ * the gaps. Read in a state initializer, which may run twice;
+ * {@link useResumedDraftTaken} then reports the draft taken once the form is
  * mounted. */
-export function resumedValues<T extends object>(target: DraftTarget, base: T): T {
+export function resumedValues<T extends object>(
+  scope: SessionScope,
+  target: DraftTarget,
+  base: T,
+): T {
+  const resumed = scope.resumed?.draft;
   if (!resumed || !matches(resumed, target)) return base;
   const values: unknown = resumed.values;
   if (typeof values !== "object" || values === null || Array.isArray(values)) return base;
@@ -203,10 +219,36 @@ export function resumedValues<T extends object>(target: DraftTarget, base: T): T
   return merged;
 }
 
-/** Clears the resumed draft once the form it belongs to has opened with it. */
+/** Tells the scope the form its resumed draft belongs to has opened with it
+ * (`scope.resumeOpened()`: the backend now holds the draft as the session's
+ * staged one), then drops the draft. */
 export function useResumedDraftTaken(target: DraftTarget): void {
+  const scope = useSessionScope();
   const first = useRef(target);
   useEffect(() => {
-    if (resumed && matches(resumed, first.current)) resumed = null;
-  }, []);
+    const resumed = scope.resumed;
+    if (!resumed || !matches(resumed.draft, first.current)) return;
+    const { draft } = resumed;
+    const opened = scope.resumeOpened();
+    scope.resumed = null;
+    void Promise.resolve(opened).then(
+      () => markStaged(scope, draft, first.current),
+      // The session ended meanwhile, or the backend refused: the form is open
+      // either way, and its own staging goes on as usual.
+      () => {},
+    );
+  }, [scope]);
+}
+
+/** The backend holds `draft` as the staged draft of the form that opened with
+ * it (`resolve_pending_changes("opened")`), so the form's own first staging
+ * of the same input is not sent again, and saving or closing it clears the
+ * backend's copy. */
+function markStaged(scope: SessionScope, draft: Draft, target: DraftTarget): void {
+  if (scope.ended) return;
+  const from = registered.find(
+    (entry) => entry.scope === scope && matches(entry.current.draft, target),
+  );
+  if (!from || staged.from === from) return;
+  staged = { json: JSON.stringify(draft), from };
 }

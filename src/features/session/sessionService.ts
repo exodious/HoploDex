@@ -1,4 +1,5 @@
 import { invoke, listen } from "../../services/tauriClient";
+import type { SessionScope } from "./sessionScope";
 import type {
   BackupProgress,
   CloseOutcome,
@@ -7,6 +8,7 @@ import type {
   Draft,
   NoteKind,
   OperationKind,
+  PendingSummary,
 } from "../databases/types";
 
 // Typed wrappers for the open session's own commands and events (specs/003
@@ -17,14 +19,17 @@ export function getDatabaseStatus(): Promise<DatabaseStatus> {
   return invoke<DatabaseStatus>("get_database_status");
 }
 
-export function dismissNote(note: NoteKind): Promise<void> {
-  return invoke<void>("dismiss_note", { note });
+export function dismissNote(scope: SessionScope, note: NoteKind): Promise<void> {
+  return scope.invoke<void>("dismiss_note", { note });
 }
 
 /** The normal close, or a switch away (FR-010). Unsaved changes have been
  * dealt with first. */
-export function closeDatabase(reason: "closed" | "switched"): Promise<CloseOutcome> {
-  return invoke<CloseOutcome>("close_database", { reason });
+export function closeDatabase(
+  scope: SessionScope,
+  reason: "closed" | "switched",
+): Promise<CloseOutcome> {
+  return scope.invoke<CloseOutcome>("close_database", { reason });
 }
 
 /** Stops the backup the current close is making (FR-027). Its changes stay
@@ -40,20 +45,30 @@ export function quitApplication(): Promise<void> {
 
 /** "Lock now" (FR-033, FR-035): `draft`, the form's unsaved input, is kept
  * as pending changes, then the database closes as a lock. */
-export function lockDatabase(draft: Draft | null): Promise<CloseOutcome> {
-  return invoke<CloseOutcome>("lock_database", { draft });
+export function lockDatabase(scope: SessionScope, draft: Draft | null): Promise<CloseOutcome> {
+  return scope.invoke<CloseOutcome>("lock_database", { draft });
 }
 
 /** Mirrors the open form's unsaved input into the backend's memory, for a
  * lock it starts on its own (research.md §16); `null` when clean. */
-export function stagePendingChanges(draft: Draft | null): Promise<void> {
-  return invoke<void>("stage_pending_changes", { draft });
+export function stagePendingChanges(scope: SessionScope, draft: Draft | null): Promise<void> {
+  return scope.invoke<void>("stage_pending_changes", { draft });
 }
 
-/** Resumes or discards the open database's pending changes (FR-039). */
-export function resolvePendingChanges(action: "resume" | "discard"): Promise<{ draft?: Draft }> {
-  return invoke<{ draft?: Draft }>("resolve_pending_changes", { action });
+/** Answers the open database's pending changes (FR-039, specs/008 research.md
+ * §6): `resume` gives back the draft and serves the collection while its form
+ * opens; `opened` says it did; `notOpened` says it couldn't, and gives back
+ * the summary for the dialog; `discard` removes them. */
+export function resolvePendingChanges(
+  scope: SessionScope,
+  action: PendingAction,
+): Promise<{ draft?: Draft; pending?: PendingSummary }> {
+  return scope.invoke<{ draft?: Draft; pending?: PendingSummary }>("resolve_pending_changes", {
+    action,
+  });
 }
+
+export type PendingAction = "resume" | "opened" | "notOpened" | "discard";
 
 /** Input to the window: the idle time starts again (FR-035). */
 export function noteActivity(): Promise<void> {
@@ -67,6 +82,9 @@ export function setIdlePaused(paused: boolean): Promise<void> {
 
 /** `session:closed`'s payload. */
 export interface SessionClosed {
+  /** The session that closed: the frontend ends only that session's scope
+   * (specs/008 research.md §3). */
+  sessionId: number;
   reason: CloseReason;
   databasePath: string;
   outcome?: CloseOutcome;
@@ -74,10 +92,16 @@ export interface SessionClosed {
   stoppedOperation?: OperationKind;
 }
 
+/** `session:closing`'s payload. */
+export interface SessionClosing {
+  sessionId: number;
+  reason: CloseReason;
+}
+
 /** A normal close has started: show the closing screen, as a backup may
  * follow. */
-export function onSessionClosing(handler: (closing: { reason: CloseReason }) => void): () => void {
-  return listen<{ reason: CloseReason }>("session:closing", handler);
+export function onSessionClosing(handler: (closing: SessionClosing) => void): () => void {
+  return listen<SessionClosing>("session:closing", handler);
 }
 
 /** The backup a close is making, in bytes. */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { useSessionScope } from "../session/sessionScope";
 import { withIdlePaused } from "../session/useIdleActivity";
 import { Button, ChoiceCards, Dialog, Icon, ProgressBar, TextField } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
@@ -55,6 +56,7 @@ export function ExportDialog({ open, onOpenChange, browse }: ExportDialogProps) 
 }
 
 function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => void }) {
+  const sessionScope = useSessionScope();
   const { firearms } = useCollection();
   const [format, setFormat] = useState<SpreadsheetFormat>("csv");
   const [scope, setScope] = useState<"all" | "filtered">("all");
@@ -76,25 +78,25 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   useEffect(() => {
     let current = true;
     importExportService
-      .getExportScope({ scope: "all" })
+      .getExportScope(sessionScope, { scope: "all" })
       .then((r) => current && setAllScope(r))
       .catch(() => current && setAllScope("unknown"));
     return () => {
       current = false;
     };
-  }, []);
+  }, [sessionScope]);
   useEffect(() => {
     if (!filterActive) return;
     let current = true;
     importExportService
-      .getExportScope({ scope: "filtered", filter })
+      .getExportScope(sessionScope, { scope: "filtered", filter })
       .then((r) => current && setFilteredScope(r))
       .catch(() => current && setFilteredScope("unknown"));
     return () => {
       current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterActive, query, browse.includeDisposed]);
+  }, [sessionScope, filterActive, query, browse.includeDisposed]);
 
   const chosen = filterActive && scope === "filtered" ? filteredScope : allScope;
   // FR-020, FR-021: registration details and accessories leave the database
@@ -128,7 +130,7 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
     setExporting(true);
     try {
       setResult(
-        await importExportService.exportCollection({
+        await importExportService.exportCollection(sessionScope, {
           format,
           destinationFolder: folder.trim(),
           scope,

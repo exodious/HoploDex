@@ -235,12 +235,27 @@ fn close_preview_closes_the_surface_ignores_a_stale_id_and_replaced_ids_are_refu
     let bounds = SurfaceBounds { x: 1.0, y: 2.0, width: 300.0, height: 400.0 };
 
     assert_eq!(
-        code_of(preview::set_preview_bounds(&world.session, first, bounds, true)),
+        code_of(preview::set_preview_bounds(
+            &world.session,
+            world.session.current_id(),
+            first,
+            bounds,
+            true
+        )),
         "PREVIEW_CLOSED"
     );
-    assert_eq!(code_of(preview::focus_preview(&world.session, first)), "PREVIEW_CLOSED");
     assert_eq!(
-        code_of(preview::render_preview_page(&world.session, first, 0, 100)),
+        code_of(preview::focus_preview(&world.session, world.session.current_id(), first)),
+        "PREVIEW_CLOSED"
+    );
+    assert_eq!(
+        code_of(preview::render_preview_page(
+            &world.session,
+            world.session.current_id(),
+            first,
+            0,
+            100
+        )),
         "PREVIEW_CLOSED"
     );
     world.close(first);
@@ -248,12 +263,18 @@ fn close_preview_closes_the_surface_ignores_a_stale_id_and_replaced_ids_are_refu
     assert_eq!(get(&world, &surface.url()).status().as_u16(), 200);
     assert_eq!(surface.focus_calls(), 0);
 
-    preview::focus_preview(&world.session, second).unwrap();
+    preview::focus_preview(&world.session, world.session.current_id(), second).unwrap();
     assert_eq!(surface.focus_calls(), 1);
     world.close(second);
     assert!(surface.is_closed());
     assert_eq!(
-        code_of(preview::set_preview_bounds(&world.session, second, bounds, true)),
+        code_of(preview::set_preview_bounds(
+            &world.session,
+            world.session.current_id(),
+            second,
+            bounds,
+            true
+        )),
         "PREVIEW_CLOSED"
     );
     world.close(second);
@@ -286,7 +307,13 @@ fn bounds_are_validated_and_the_surface_stays_hidden_until_ready() {
     ];
     for bounds in refused {
         assert_eq!(
-            code_of(preview::set_preview_bounds(&world.session, preview_id, bounds, true)),
+            code_of(preview::set_preview_bounds(
+                &world.session,
+                world.session.current_id(),
+                preview_id,
+                bounds,
+                true
+            )),
             "VALIDATION_ERROR",
             "{bounds:?}"
         );
@@ -294,16 +321,19 @@ fn bounds_are_validated_and_the_surface_stays_hidden_until_ready() {
     assert!(surface.bounds_calls().is_empty(), "a refused size never reaches the surface");
 
     // Before preview:pdf-ready it stays hidden, whatever `visible` says.
-    preview::set_preview_bounds(&world.session, preview_id, ok, true).unwrap();
+    preview::set_preview_bounds(&world.session, world.session.current_id(), preview_id, ok, true)
+        .unwrap();
     assert!(!surface.ever_shown(), "shown before the document was served");
 
     serve_and_hook(&world, &surface);
     assert_eq!(ready_events(&world).len(), 1);
-    preview::set_preview_bounds(&world.session, preview_id, ok, true).unwrap();
+    preview::set_preview_bounds(&world.session, world.session.current_id(), preview_id, ok, true)
+        .unwrap();
     let (rect, visible) = *surface.bounds_calls().last().unwrap();
     assert!(visible, "shown once ready");
     assert_eq!((rect.x, rect.y, rect.width, rect.height), (10.0, 20.0, 300.0, 400.0));
-    preview::set_preview_bounds(&world.session, preview_id, ok, false).unwrap();
+    preview::set_preview_bounds(&world.session, world.session.current_id(), preview_id, ok, false)
+        .unwrap();
     assert!(!surface.bounds_calls().last().unwrap().1, "hidden again while something covers it");
 }
 
@@ -469,7 +499,9 @@ fn when_pdf_preview_is_off_pdfs_fail_but_tiff_and_text_still_preview() {
         let state = world.preview.availability.get();
         let listed: Vec<(String, bool)> = world
             .session
-            .read(|conn| document_ops::list_documents(conn, RecordRef::Firearm(world.firearm)))
+            .read(world.session.current_id(), |conn| {
+                document_ops::list_documents(conn, RecordRef::Firearm(world.firearm))
+            })
             .unwrap()
             .into_iter()
             .map(|d| {
@@ -595,8 +627,11 @@ fn deleting_the_document_shown_closes_its_preview_first() {
     let delete = |id: i64| {
         // What the `delete_document` command does: close the preview of the
         // document, then delete it.
-        preview::close_preview_of(&world.session, id).unwrap();
-        world.session.write(|conn| document_ops::delete_document(conn, id, true)).unwrap();
+        preview::close_preview_of(&world.session, world.session.current_id(), id).unwrap();
+        world
+            .session
+            .write(world.session.current_id(), |conn| document_ops::delete_document(conn, id, true))
+            .unwrap();
     };
 
     delete(other);
@@ -610,6 +645,7 @@ fn deleting_the_document_shown_closes_its_preview_first() {
     assert_eq!(
         code_of(preview::set_preview_bounds(
             &world.session,
+            world.session.current_id(),
             preview_id,
             SurfaceBounds { x: 0.0, y: 0.0, width: 10.0, height: 10.0 },
             true

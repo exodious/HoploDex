@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::{
@@ -18,7 +17,7 @@ use crate::models::firearm::FirearmStatus;
 use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
 use crate::services::insurance_status::InsuranceWarning;
 use crate::services::mounts::{self, MountGraph};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// Input for `reverse_accessory_disposition`. An accessory has no nickname
 /// and no identity, so there is nothing to re-check or rename (FR-006).
@@ -329,6 +328,7 @@ pub mod ops {
         input: &DisposeInput,
     ) -> Result<Accessory, CommandError> {
         load_accessory(conn, id)?;
+        input.check_recipient()?;
         crate::commands::mounts::ops::dispose_with_mounted(conn, RecordRef::Accessory(id), input)?;
         load_accessory(conn, id)
     }
@@ -694,7 +694,7 @@ pub mod ops {
 #[tauri::command]
 pub async fn create_accessory(
     input: AccessoryInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Accessory, CommandError> {
     session.write(|conn| ops::create_accessory(conn, &input, None))
 }
@@ -703,7 +703,7 @@ pub async fn create_accessory(
 pub async fn update_accessory(
     id: i64,
     input: AccessoryInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Accessory, CommandError> {
     session.write(|conn| ops::update_accessory(conn, id, &input))
 }
@@ -711,7 +711,7 @@ pub async fn update_accessory(
 #[tauri::command]
 pub async fn get_accessory(
     id: i64,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<AccessoryDetail, CommandError> {
     session.read(|conn| ops::get_accessory(conn, id))
 }
@@ -719,7 +719,7 @@ pub async fn get_accessory(
 #[tauri::command]
 pub async fn list_accessories(
     input: ListAccessoriesInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ListAccessoriesOutput, CommandError> {
     session.read(|conn| ops::list_accessories(conn, &input))
 }
@@ -728,7 +728,7 @@ pub async fn list_accessories(
 pub async fn dispose_accessory(
     id: i64,
     input: DisposeInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Accessory, CommandError> {
     session.write(|conn| ops::dispose_accessory(conn, id, &input))
 }
@@ -737,7 +737,7 @@ pub async fn dispose_accessory(
 pub async fn reverse_accessory_disposition(
     id: i64,
     input: ReverseAccessoryDispositionInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Accessory, CommandError> {
     session.write(|conn| ops::reverse_accessory_disposition(conn, id, &input))
 }
@@ -746,7 +746,7 @@ pub async fn reverse_accessory_disposition(
 pub async fn delete_accessory(
     id: i64,
     confirmed: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<DeleteResult, CommandError> {
     session.write(|conn| ops::delete_accessory(conn, id, confirmed))
 }

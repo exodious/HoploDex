@@ -91,6 +91,8 @@ sheet of every file is recognised by its header row:
 - **Either table may be imported alone.** With no accessory table, no
   accessory is imported or changed. With no firearm table, no firearm is.
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/spreadsheet-format.md): the sheets are read first, within limits (at most 16 sheets and 100,000 rows a table), and a file over a limit stops the import before any table is recognised._
+
 ## Firearm table: new columns
 
 | Column | Position | Export | Import |

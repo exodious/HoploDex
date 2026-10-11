@@ -43,15 +43,36 @@ function isCommandError(value: unknown): value is CommandError {
   );
 }
 
+/** The request header that names the session a scoped command belongs to
+ * (specs/008 contracts/tauri-commands.md "Every request names its session"). */
+const SESSION_HEADER = "HoploDex-Session";
+
+/** Options of {@link invoke}. */
+export interface InvokeCallOptions {
+  /** The session id to send as `HoploDex-Session`. Only `SessionScope.invoke`
+   * passes it (specs/008 research.md §3). */
+  session?: number;
+}
+
 /**
  * The only path the frontend uses to reach the Tauri backend (database,
  * filesystem, keyring) — per contracts/tauri-commands.md. Wraps
  * `@tauri-apps/api`'s `invoke` to normalize backend failures into a typed
  * {@link CommandFailure} instead of an untyped rejection.
  */
-export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function invoke<T>(
+  command: string,
+  args?: Record<string, unknown>,
+  options?: InvokeCallOptions,
+): Promise<T> {
   try {
-    return await track(() => tauriInvoke<T>(command, args));
+    return await track(() =>
+      options?.session === undefined
+        ? tauriInvoke<T>(command, args)
+        : tauriInvoke<T>(command, args, {
+            headers: { [SESSION_HEADER]: String(options.session) },
+          }),
+    );
   } catch (error) {
     if (isCommandError(error)) {
       throw new CommandFailure(error);

@@ -34,8 +34,8 @@
 //!
 //! On Windows (research.md §11, amended 2026-10-07) HoploDex owns the helper's
 //! job object and starts the helper into it with `CreateProcessW`
-//! (`services::preview::helper_job::spawn`). The helper refuses to serve
-//! outside such a job, so the self-check is run through `helper_job::spawn`,
+//! (`services::helper::job::spawn`). The helper refuses to serve
+//! outside such a job, so the self-check is run through `helper::job::spawn`,
 //! `HelperHandle::command` is what a helper outside a job is started with,
 //! and a parent that is terminated takes the helper with it.
 
@@ -49,7 +49,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 #[cfg(windows)]
-use hoplodex_lib::services::preview::helper_job;
+use hoplodex_lib::services::helper::job;
+#[cfg(windows)]
+use hoplodex_lib::services::preview::helper::{ARGUMENT, MEMORY_LIMIT};
 use hoplodex_lib::services::preview::{HelperHandle, HelperLimits};
 #[cfg(debug_assertions)]
 use serde_json::Value;
@@ -76,7 +78,7 @@ struct Report {
 }
 
 /// Runs the helper's self-check the way the app starts the helper: on
-/// Windows into a job object made for it (`helper_job::spawn`), which the
+/// Windows into a job object made for it (`helper::job::spawn`), which the
 /// helper insists on; elsewhere through `HelperHandle::command`. Whether it
 /// exited 0, and what it printed.
 #[cfg(debug_assertions)]
@@ -86,7 +88,8 @@ fn run_self_check(args: &[&str]) -> (bool, String) {
         use std::io::Read;
 
         let args: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
-        let (mut child, stdin, mut stdout) = helper_job::spawn(&exe(), &args).unwrap();
+        let (mut child, stdin, mut stdout) =
+            job::spawn(&exe(), ARGUMENT, MEMORY_LIMIT, &args).unwrap();
         let mut text = String::new();
         stdout.read_to_string(&mut text).unwrap();
         let code = child.wait().unwrap();

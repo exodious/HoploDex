@@ -11,6 +11,7 @@ const MADE_AT = "2026-09-20T09:00:00Z";
 
 function renderNotes(notes: Partial<DatabaseStatus["notes"]>) {
   const status: DatabaseStatus = {
+    sessionId: 1,
     path: "/home/sam/Documents/HoploDex/Main collection.hoplodex",
     name: "Main collection",
     passphraseSaved: false,

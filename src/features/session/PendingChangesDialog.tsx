@@ -35,21 +35,68 @@ function canResume(pending: PendingSummary): boolean {
   );
 }
 
+/** Where changes a form this build doesn't know came from (contracts/ui.md
+ * §1): the version that kept them when one is recorded and differs from this
+ * build's, the same version number when only the build differs, or neither
+ * known. */
+function keptBy(pending: PendingSummary): string {
+  const { savedByVersion, appVersion } = pending;
+  if (savedByVersion === null) {
+    return "They were kept by another version of HoploDex. Open the database with that version to resume them, or discard them here.";
+  }
+  if (savedByVersion === appVersion) {
+    return `They were kept by a different build of HoploDex ${appVersion}. Open the database with that build to resume them, or discard them here.`;
+  }
+  return `They were kept by HoploDex ${savedByVersion}. Open the database with that version to resume them, or discard them here.`;
+}
+
 export interface PendingChangesDialogProps {
   pending: PendingSummary;
-  /** Resolves once the form has its changes back. */
+  /** The changes were resumed and their form is opening beneath the dialog,
+   * which stays up until it has (specs/008 contracts/ui.md §1 "Resuming"). */
+  opening?: boolean;
+  /** The form couldn't be opened: the changes are still kept, and Resume
+   * editing is offered again. */
+  failed?: boolean;
+  /** Resolves once the backend has handed the changes back; the form then
+   * opens, and the dialog goes when it reports so. */
   onResume: () => Promise<void>;
   onDiscard: () => Promise<void>;
+  /** A normal close of the database; the changes stay kept for the next
+   * open. */
+  onClose: () => Promise<void>;
 }
 
 /** Unsaved changes kept at a lock, offered before the collection can be
  * used (FR-039, contracts/ui-databases.md §13). It can't be dismissed: the
- * changes are resumed or discarded, and discarding asks first. */
-export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingChangesDialogProps) {
+ * changes are resumed or discarded, and discarding asks first, or the
+ * database is closed with the changes kept (specs/008 contracts/ui.md §1). */
+export function PendingChangesDialog({
+  pending,
+  opening = false,
+  failed = false,
+  onResume,
+  onDiscard,
+  onClose,
+}: PendingChangesDialogProps) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
   const resumable = canResume(pending);
+  const resuming = busy || opening;
+
+  async function close() {
+    setClosing(true);
+    setProblem(null);
+    try {
+      await onClose();
+    } catch {
+      setProblem("The database couldn't be closed. Try again.");
+    } finally {
+      setClosing(false);
+    }
+  }
 
   async function resume() {
     setBusy(true);
@@ -58,6 +105,7 @@ export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingCh
       await onResume();
     } catch {
       setProblem("The changes couldn't be opened. Try again, or discard them.");
+    } finally {
       setBusy(false);
     }
   }
@@ -71,12 +119,22 @@ export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingCh
         title={`Unsaved changes to ${pending.label}`}
         footer={
           <>
-            <Button variant="danger" disabled={busy} onClick={() => setConfirming(true)}>
+            <Button variant="danger" disabled={resuming} onClick={() => setConfirming(true)}>
               Discard changes
             </Button>
+            {/* Available while Opening… too, and the default when there is no
+              Resume editing to be (Discard never is). */}
+            <Button
+              variant="secondary"
+              autoFocus={!resumable}
+              pending={closing}
+              onClick={() => void close()}
+            >
+              Close the database
+            </Button>
             {resumable && (
-              <Button variant="primary" autoFocus pending={busy} onClick={() => void resume()}>
-                Resume editing
+              <Button variant="primary" autoFocus pending={resuming} onClick={() => void resume()}>
+                {resuming ? "Opening…" : "Resume editing"}
               </Button>
             )}
           </>
@@ -88,10 +146,14 @@ export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingCh
           {!pending.resumable && (
             <> {pending.label} no longer exists, so these changes can only be discarded.</>
           )}
-          {pending.resumable && !resumable && (
-            <> They were kept by another version of HoploDex, so they can only be discarded.</>
-          )}
+          {pending.resumable && !resumable && <> {keptBy(pending)}</>}
         </p>
+        {failed && !opening && (
+          <p className="hd-field__error" role="alert">
+            The form for {pending.label} couldn&apos;t be opened. Your changes are still kept. Try
+            again, close the database, or discard them.
+          </p>
+        )}
         {problem && (
           <p className="hd-field__error" role="alert">
             {problem}

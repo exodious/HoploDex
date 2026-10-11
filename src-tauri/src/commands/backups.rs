@@ -5,6 +5,7 @@
 //! is in [`ops`], which the tests call directly. Each passphrase becomes a
 //! [`Passphrase`] at once and is wiped when the command returns (FR-007).
 
+use tauri::ipc::Request;
 use tauri::{AppHandle, State};
 
 use crate::app_dirs;
@@ -14,6 +15,7 @@ use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus, Passph
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
+use crate::session::scoped::{ScopedSession, Target};
 
 pub mod ops {
     use std::collections::{BTreeMap, HashMap};
@@ -33,6 +35,7 @@ pub mod ops {
     use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
         BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind, PassphraseChanged,
+        PendingState,
     };
     use crate::services::backups::{self, BackupFailure, BackupJob, CopyError};
     use crate::services::disk_space;
@@ -44,7 +47,8 @@ pub mod ops {
     use crate::session::fingerprint::FingerprintCheck;
     use crate::session::lifecycle;
     use crate::session::operations::OperationGuard;
-    use crate::session::{OpenDatabase, Session, SessionEvents, database_name};
+    use crate::session::scoped::Target;
+    use crate::session::{OpenDatabase, Session, SessionEvents, SessionId, database_name};
 
     /// Where a database's backups are and what is there (FR-028): the open
     /// database's, or, for one that doesn't open, the folder and id this
@@ -52,13 +56,13 @@ pub mod ops {
     pub fn list_backups(
         session: &Session,
         machine: &MachineSettings,
-        database_path: Option<&str>,
+        target: Target<'_>,
     ) -> Result<BackupList, CommandError> {
-        let (folder, database_id) = match database_path {
-            None => session.inspect(|open| {
+        let (folder, database_id) = match target {
+            Target::Open(id) => session.inspect(id, |open| {
                 Ok((backup_settings(&open.conn, &open.path)?.folder, open.database_id.clone()))
             })?,
-            Some(path) => cached_backups_of(machine, Path::new(path))?,
+            Target::At(path) => cached_backups_of(machine, Path::new(path))?,
         };
         let backups = backups::list(&folder, &database_id).unwrap_or_else(|err| {
             log::warn!("could not list the backups in {}: {err}", folder.display());
@@ -126,8 +130,9 @@ pub mod ops {
     /// closed as a take-over.
     fn hold_still_ours(
         session: &Session,
+        id: SessionId,
     ) -> Result<MutexGuard<'_, Option<OpenDatabase>>, CommandError> {
-        let mut slot = session.hold()?;
+        let mut slot = session.hold(id)?;
         let open = slot.as_mut().ok_or_else(CommandError::database_closed)?;
         if open.storage_lost {
             return Err(CommandError::database_unavailable(&open.path));
@@ -150,18 +155,18 @@ pub mod ops {
     /// Replaces a database with one of its backups (FR-028, research.md §8),
     /// opened with that backup's passphrase afterwards. With `database_path`
     /// it restores a database that doesn't open, with nothing open; without
-    /// it, the open database.
+    /// it, the open database, which must be the session the request named.
     pub fn restore_backup(
         session: &Session,
         machine: &MachineSettings,
         backup_path: &str,
         backup_passphrase: &Passphrase,
-        database_path: Option<&str>,
+        target: Target<'_>,
     ) -> Result<DatabaseStatus, CommandError> {
         let backup = Path::new(backup_path);
-        match database_path {
-            None => restore_open(session, machine, backup, backup_passphrase),
-            Some(path) => {
+        match target {
+            Target::Open(id) => restore_open(session, id, machine, backup, backup_passphrase),
+            Target::At(path) => {
                 restore_damaged(session, machine, backup, backup_passphrase, Path::new(path))
             }
         }
@@ -290,13 +295,14 @@ pub mod ops {
 
     fn restore_open(
         session: &Session,
+        id: SessionId,
         machine: &MachineSettings,
         backup: &Path,
         passphrase: &Passphrase,
     ) -> Result<DatabaseStatus, CommandError> {
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
-        let mut slot = hold_still_ours(session)?;
+        let mut slot = hold_still_ours(session, id)?;
         let open = slot.as_mut().expect("held open");
         let settings = backup_settings(&open.conn, &open.path)?;
         let path = open.path.clone();
@@ -363,6 +369,7 @@ pub mod ops {
             return Err(stopped());
         }
         let database_id = open.database_id.clone();
+        let ended_session = open.session_id;
         // Its file is about to be replaced, so nothing more is written to it.
         drop(slot.take());
         session.clear_opened_documents();
@@ -373,7 +380,11 @@ pub mod ops {
             session.set_last_closed(&path);
             events.emit(
                 "session:closed",
-                json!({ "reason": CloseReason::Closed, "databasePath": path.to_string_lossy() }),
+                json!({
+                    "reason": CloseReason::Closed,
+                    "databasePath": path.to_string_lossy(),
+                    "sessionId": ended_session,
+                }),
             );
             return Err(err);
         }
@@ -468,7 +479,8 @@ pub mod ops {
         let expected_id = authorize_damaged_restore(machine, backup, path)?;
         replaceable_target(path)?;
         if session.is_open() {
-            lifecycle::close_normal(session, machine, CloseReason::Switched).ok();
+            lifecycle::close_normal(session, session.current_id(), machine, CloseReason::Switched)
+                .ok();
         }
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
@@ -588,6 +600,7 @@ pub mod ops {
     /// page-1 probe that checks `current` (research.md §1a).
     pub fn change_passphrase(
         session: &Session,
+        id: SessionId,
         machine: &MachineSettings,
         scratch_dir: &Path,
         current: &Passphrase,
@@ -604,10 +617,11 @@ pub mod ops {
                 HashMap::from([("newPassphrase".to_owned(), problem.to_owned())]),
             ));
         }
-        let mut slot = hold_still_ours(session)?;
+        let mut slot = hold_still_ours(session, id)?;
         let open = slot.as_mut().expect("held open");
-        // The copy would leave pending changes behind (FR-039).
-        if open.pending_unresolved {
+        // The copy would carry the row (FR-039), and a form still opening is
+        // not the moment to re-key the file.
+        if open.pending != PendingState::None {
             return Err(CommandError::pending_changes_unresolved());
         }
 
@@ -679,6 +693,9 @@ pub mod ops {
             .and_then(|conn| lifecycle::prepare(machine, conn, &path));
         let database_id = match reopened {
             Ok(mut reopened) => {
+                // The same open, re-keyed: it keeps its session id (008
+                // research.md §1), so what the frontend holds stays valid.
+                reopened.session_id = id;
                 reopened.notes = notes;
                 reopened.staged_draft = staged_draft;
                 let database_id = reopened.database_id.clone();
@@ -694,7 +711,11 @@ pub mod ops {
                 session.set_last_closed(&path);
                 events.emit(
                     "session:closed",
-                    json!({ "reason": CloseReason::Closed, "databasePath": path.to_string_lossy() }),
+                    json!({
+                        "reason": CloseReason::Closed,
+                        "databasePath": path.to_string_lossy(),
+                        "sessionId": id,
+                    }),
                 );
                 return Err(replaced.err().unwrap_or(err));
             }
@@ -862,6 +883,7 @@ pub mod ops {
     /// Deleting backups is not a change to the collection.
     pub fn delete_all_backups(
         session: &Session,
+        id: SessionId,
         confirmed: bool,
     ) -> Result<BackupsDeleted, CommandError> {
         if !confirmed {
@@ -869,7 +891,7 @@ pub mod ops {
                 "Confirm deleting all backups of this database.",
             ));
         }
-        let (folder, database_id) = session.inspect(|open| {
+        let (folder, database_id) = session.inspect(id, |open| {
             Ok((backup_settings(&open.conn, &open.path)?.folder, open.database_id.clone()))
         })?;
         delete_backups_in(session, &folder, &database_id)
@@ -930,10 +952,12 @@ pub mod ops {
 #[tauri::command]
 pub async fn list_backups(
     database_path: Option<String>,
+    request: Request<'_>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<BackupList, CommandError> {
-    ops::list_backups(&session, &machine, database_path.as_deref())
+    let target = Target::from_request(database_path.as_deref(), request.headers())?;
+    ops::list_backups(&session, &machine, target)
 }
 
 #[tauri::command]
@@ -941,25 +965,22 @@ pub async fn restore_backup(
     backup_path: String,
     backup_passphrase: String,
     database_path: Option<String>,
+    request: Request<'_>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<DatabaseStatus, CommandError> {
     let backup_passphrase = Passphrase::from_input(backup_passphrase);
-    ops::restore_backup(
-        &session,
-        &machine,
-        &backup_path,
-        &backup_passphrase,
-        database_path.as_deref(),
-    )
+    // The open database is restored only in the session the request names.
+    let target = Target::from_request(database_path.as_deref(), request.headers())?;
+    ops::restore_backup(&session, &machine, &backup_path, &backup_passphrase, target)
 }
 
 #[tauri::command]
 pub async fn delete_all_backups(
     confirmed: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<BackupsDeleted, CommandError> {
-    ops::delete_all_backups(&session, confirmed)
+    ops::delete_all_backups(&session.session, session.id, confirmed)
 }
 
 #[tauri::command]
@@ -967,7 +988,7 @@ pub async fn change_passphrase(
     current_passphrase: String,
     new_passphrase: String,
     app: AppHandle,
-    session: State<'_, Session>,
+    session: ScopedSession,
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseChanged, CommandError> {
     let current_passphrase = Passphrase::from_input(current_passphrase);
@@ -977,7 +998,8 @@ pub async fn change_passphrase(
         CommandError::new("INTERNAL_ERROR", "The current passphrase couldn't be checked.")
     })?;
     ops::change_passphrase(
-        &session,
+        &session.session,
+        session.id,
         &machine,
         &scratch.join(PROBE_DIR),
         &current_passphrase,

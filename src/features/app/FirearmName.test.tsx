@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { BrowseList } from "../browse/BrowseList";
 import { BrowseTiles } from "../browse/BrowseTiles";
 import type { FirearmSummary, VisibleGroup } from "../browse/types";
 import { firearmName } from "./collectionStore";
 import { FirearmName } from "./FirearmName";
+import { render } from "../../test/sessionScope";
 
 describe("firearmName (FR-031)", () => {
   it("is make and model alone when there is no nickname", () => {

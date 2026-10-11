@@ -215,6 +215,15 @@ CREATE INDEX idx_firearms_active_identity
     ON firearms (make COLLATE NOCASE, model COLLATE NOCASE, serial_number COLLATE NOCASE)
     WHERE status = 'active' AND serial_number IS NOT NULL;
 
+-- specs/008-hardening-batch research.md §19: the import's duplicate match
+-- (`import_matching::find_match`, active and disposed records) and the
+-- identity check (`find_identity_clash`) compare make, model and serial
+-- number trimmed and lower-cased, which no index above can serve (they are
+-- on the raw columns), so every row of a large import scanned every firearm.
+-- Both queries write the same three expressions, so this index serves them.
+CREATE INDEX idx_firearms_identity_key
+    ON firearms (lower(trim(make)), lower(trim(model)), lower(trim(serial_number)));
+
 -- specs/002-firearm-identification FR-007/FR-008 (data-model.md's "Indexes
 -- and triggers"; amends 001's unique index above): the exact backstop for
 -- the identity rule, since a unique index can no longer express the year
@@ -552,6 +561,11 @@ CREATE TABLE app_state (
     backup_made_at TEXT,
     -- The database name, for the "backup opened directly" note; set only in backup copies.
     backup_of_name TEXT,
+    -- FR-015 (specs/008-hardening-batch research.md §16): the HoploDex
+    -- version that last saved the database; NULL when none is recorded.
+    -- Written by `db::record_saved_version` only, and it is not a change to
+    -- back up.
+    last_saved_version TEXT,
     CHECK (
         (open_machine_id IS NULL) = (open_machine_name IS NULL)
         AND (open_machine_id IS NULL) = (open_since IS NULL)

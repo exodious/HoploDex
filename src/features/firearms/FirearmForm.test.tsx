@@ -1,23 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  act,
-  fireEvent,
-  render as renderBase,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
 import { ACTION_TYPES, FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
-import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
+import { getDirtyForm } from "../session/usePendingDraft";
 import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { DerivedCaliber, Firearm } from "./types";
 import type { RecordLabel } from "../mounts/types";
+import { render as renderBase, setResumedDraft } from "../../test/sessionScope";
 
 // specs/005-regulated-item-types: the form reads the firearm types from the
 // collection store, so every render gets the fixture's five seeded types
@@ -40,8 +34,8 @@ function render(ui: ReactElement) {
 const settleEntry = vi.fn();
 const suggestEntries = vi.fn();
 vi.mock("./firearmsService", () => ({
-  settleEntry: (field: string, text: string) => settleEntry(field, text),
-  suggestEntries: (field: string, text: string, make?: string | null) =>
+  settleEntry: (_scope: unknown, field: string, text: string) => settleEntry(field, text),
+  suggestEntries: (_scope: unknown, field: string, text: string, make?: string | null) =>
     suggestEntries(field, text, make),
 }));
 
@@ -49,7 +43,7 @@ vi.mock("./firearmsService", () => ({
 // candidates through the mounts service.
 const listMountCandidates = vi.fn();
 vi.mock("../mounts/mountsService", () => ({
-  listMountCandidates: (input: unknown) => listMountCandidates(input),
+  listMountCandidates: (_scope: unknown, input: unknown) => listMountCandidates(input),
 }));
 
 const DERIVED: Record<string, DerivedCaliber> = {
@@ -211,6 +205,113 @@ describe("FirearmForm amount cap (#67)", () => {
       estimatedValue: 99_999_999,
       acquisitionPrice: 99_999_999,
     });
+  });
+});
+
+// specs/008-hardening-batch research.md §10, contracts/ui.md §3: the free-text
+// maximums, shown at once and never cut off. The labels are the backend's.
+describe("FirearmForm free-text maximums", () => {
+  const SHORT = [
+    "Nickname",
+    "Serial number",
+    "Finish",
+    "Acquired from",
+    "Country of manufacture",
+    "Importer",
+    "Original maker",
+    "Original model",
+    "Original serial number",
+  ];
+
+  /** The form with the origin (set to Imported) and physical groups open, so
+   * every free-text field is on the page. */
+  async function renderWithEveryField(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+    const user = userEvent.setup();
+    const result = render(<FirearmForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+    await user.click(originGroupButton());
+    await user.click(screen.getByRole("radio", { name: /^Imported/ }));
+    await user.click(physicalGroupButton());
+    return { user, onSubmit, ...result };
+  }
+
+  it.each([
+    ...SHORT.map((label) => [label, 200] as const),
+    ["Notes", 4000] as const,
+    ["Accessories", 4000] as const,
+  ])("shows %s's maximum of %i at once and refuses to save", async (label, max) => {
+    const { user, onSubmit } = await renderWithEveryField();
+    const message = `${label} can be at most ${max.toLocaleString("en-US")} characters.`;
+    const field = screen.getByLabelText(label);
+
+    fireEvent.change(field, { target: { value: "x".repeat(max) } });
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+
+    // Pasted text is never cut off, and the error shows before leaving the field.
+    const long = "x".repeat(max + 1);
+    fireEvent.change(field, { target: { value: long } });
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(field).toHaveValue(long);
+    expect(field).toHaveAccessibleDescription(expect.stringContaining(message));
+
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: "x".repeat(max) } });
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows the maximum of the disposition recipient on a disposed record", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const disposed = {
+      id: 1,
+      make: "Colt",
+      model: "Python",
+      serialNumber: "X1",
+      noSerialAttested: false,
+      caliber: ".357",
+      firearmTypeId: 1,
+      status: "disposed",
+      dispositionType: "sold",
+      dispositionRecipient: "Jane",
+      dispositionDate: "2025-06-01",
+      dispositionPrice: 100,
+    } as Firearm;
+    render(<FirearmForm initialValues={disposed} onSubmit={onSubmit} />);
+    const message = "Transferred to can be at most 200 characters.";
+    const field = screen.getByLabelText(/^Transferred to/);
+
+    fireEvent.change(field, { target: { value: "x".repeat(201) } });
+    expect(screen.getByText(message)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: "x".repeat(200) } });
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it("counts characters after trimming, shows a count under notes and accessories from 3,600, and sets no maxLength", async () => {
+    const { container } = await renderWithEveryField();
+
+    fireEvent.change(screen.getByLabelText("Nickname"), {
+      target: { value: `  ${"\u{1F52B}".repeat(200)}  ` },
+    });
+    expect(screen.queryByText(/can be at most/)).not.toBeInTheDocument();
+
+    for (const label of ["Notes", "Accessories"]) {
+      const field = screen.getByLabelText(label);
+      fireEvent.change(field, { target: { value: "x".repeat(3599) } });
+      expect(screen.queryByText(/of 4,000/)).not.toBeInTheDocument();
+      fireEvent.change(field, { target: { value: "x".repeat(3600) } });
+      expect(screen.getByText("3,600 of 4,000")).toBeInTheDocument();
+      fireEvent.change(field, { target: { value: "" } });
+    }
+
+    expect(container.querySelectorAll("[maxlength]")).toHaveLength(0);
   });
 });
 

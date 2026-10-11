@@ -138,7 +138,13 @@ impl Setup {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
     }
 
     fn chooser(&self) -> ChooserState {
@@ -170,7 +176,7 @@ fn opening_installs_the_database_and_puts_it_first_in_the_recent_list() {
     assert_eq!(recent[0].path, setup.db_path("First"));
     let database_id: String = setup
         .session
-        .read(|conn| {
+        .read(setup.session.current_id(), |conn| {
             conn.query_row("SELECT database_id FROM app_state", [], |r| r.get(0))
                 .map_err(CommandError::from_db)
         })
@@ -206,7 +212,7 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
     setup.create("Mine");
     let marker_set: bool = setup
         .session
-        .read(|conn| {
+        .read(setup.session.current_id(), |conn| {
             conn.query_row("SELECT open_machine_id IS NOT NULL FROM app_state", [], |r| r.get(0))
                 .map_err(CommandError::from_db)
         })
@@ -216,8 +222,15 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
     fs::create_dir_all(copy.parent().unwrap()).unwrap();
     fs::write(&copy, b"decrypted").unwrap();
 
-    let outcome =
-        lifecycle::close_normal(&setup.session, &setup.machine, CloseReason::Closed).unwrap();
+    let ending = setup.session.current_id().get();
+
+    let outcome = lifecycle::close_normal(
+        &setup.session,
+        setup.session.current_id(),
+        &setup.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::NotDue);
     assert!(!setup.session.is_open());
@@ -226,13 +239,14 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
     assert_eq!(
         setup.events.recorded(),
         vec![
-            ("session:closing".to_owned(), json!({ "reason": "closed" })),
+            ("session:closing".to_owned(), json!({ "reason": "closed", "sessionId": ending })),
             (
                 "session:closed".to_owned(),
                 json!({
                     "reason": "closed",
                     "databasePath": path.to_string_lossy(),
-                    "outcome": { "backup": "notDue" }
+                    "outcome": { "backup": "notDue" },
+                    "sessionId": ending
                 })
             ),
         ]
@@ -248,7 +262,12 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
 fn closing_with_nothing_open_is_refused() {
     let setup = Setup::new();
 
-    let result = lifecycle::close_normal(&setup.session, &setup.machine, CloseReason::Closed);
+    let result = lifecycle::close_normal(
+        &setup.session,
+        setup.session.current_id(),
+        &setup.machine,
+        CloseReason::Closed,
+    );
 
     assert_eq!(result.unwrap_err().code, "DATABASE_CLOSED");
     assert!(setup.events.recorded().is_empty());
@@ -310,24 +329,28 @@ fn opening_a_second_database_closes_the_first_as_a_switch() {
     setup.close();
     setup.create("Second");
     setup.events.take();
+    let ending = setup.session.current_id().get();
 
     setup.open("First").unwrap();
 
+    assert_ne!(setup.session.current_id().get(), ending, "the switch is a new session");
     assert_eq!(
         setup.events.recorded(),
         vec![
-            ("session:closing".to_owned(), json!({ "reason": "switched" })),
+            ("session:closing".to_owned(), json!({ "reason": "switched", "sessionId": ending })),
             (
                 "session:closed".to_owned(),
                 json!({
                     "reason": "switched",
                     "databasePath": setup.path_text("Second"),
-                    "outcome": { "backup": "notDue" }
+                    "outcome": { "backup": "notDue" },
+                    "sessionId": ending
                 })
             ),
         ]
     );
-    let open_path = setup.session.inspect(|open| Ok(open.path.clone())).unwrap();
+    let open_path =
+        setup.session.inspect(setup.session.current_id(), |open| Ok(open.path.clone())).unwrap();
     assert_eq!(open_path, setup.db_path("First"));
     // "Second" was closed normally: another computer opens it without a
     // warning.
@@ -340,13 +363,23 @@ fn close_database_accepts_only_closed_and_switched() {
     let setup = Setup::new();
     setup.create("Mine");
 
-    let refused =
-        ops::close_database(&setup.session, &setup.machine, CloseReason::Idle).unwrap_err();
+    let refused = ops::close_database(
+        &setup.session,
+        setup.session.current_id(),
+        &setup.machine,
+        CloseReason::Idle,
+    )
+    .unwrap_err();
     assert_eq!(refused.code, "VALIDATION_ERROR");
     assert!(setup.session.is_open());
 
-    let outcome =
-        ops::close_database(&setup.session, &setup.machine, CloseReason::Switched).unwrap();
+    let outcome = ops::close_database(
+        &setup.session,
+        setup.session.current_id(),
+        &setup.machine,
+        CloseReason::Switched,
+    )
+    .unwrap();
     assert_eq!(outcome.backup, BackupOutcome::NotDue);
     assert!(!setup.session.is_open());
     let (event, payload) = setup.events.recorded().pop().unwrap();

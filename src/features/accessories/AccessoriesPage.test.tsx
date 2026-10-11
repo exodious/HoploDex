@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -16,6 +16,7 @@ import type {
   AccessorySummary,
   ListAccessoriesInput,
 } from "./types";
+import { render } from "../../test/sessionScope";
 
 // specs/006-accessory-links User Story 1, contracts/ui-accessories.md §2.
 // This is the plain list and tiles, then the Mounted on column and tile line
@@ -24,7 +25,7 @@ import type {
 const listAccessories = vi.fn();
 
 vi.mock("./accessoriesService", () => ({
-  listAccessories: (input: ListAccessoriesInput) => listAccessories(input),
+  listAccessories: (_scope: unknown, input: ListAccessoriesInput) => listAccessories(input),
 }));
 // The thumbnail talks to Tauri; it isn't under test. A record with no photo
 // shows its kind's drawing, as the real one does; one with a photo shows an

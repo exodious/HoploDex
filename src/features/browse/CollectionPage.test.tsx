@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
@@ -10,10 +10,13 @@ import {
 } from "../../test/collectionFixtures";
 import { CollectionPage } from "./CollectionPage";
 import type { BrowseState } from "./types";
+import { render } from "../../test/sessionScope";
 
 const listFirearms = vi.fn();
 
-vi.mock("./browseService", () => ({ listFirearms: (input: unknown) => listFirearms(input) }));
+vi.mock("./browseService", () => ({
+  listFirearms: (_scope: unknown, input: unknown) => listFirearms(input),
+}));
 vi.mock("./FirearmThumbnail", () => ({ FirearmThumbnail: () => null }));
 
 const summary = {

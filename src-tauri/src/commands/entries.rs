@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::models::accessory_kind::{AccessoryKind, AccessoryKindsOutput};
@@ -18,7 +17,7 @@ use crate::services::cartridges::{DerivedCaliber, derive_caliber};
 use crate::services::entry_text::EntryField;
 pub use crate::services::suggestions::Suggestion;
 use crate::services::suggestions::{self, ChangedBy, FieldVocabulary};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// Input for `suggest_entries`: what is typed so far in one of the four
 /// fields.
@@ -214,7 +213,7 @@ pub mod ops {
 #[tauri::command]
 pub async fn suggest_entries(
     input: SuggestEntriesInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<SuggestEntriesOutput, CommandError> {
     session.read(|conn| ops::suggest_entries(conn, &input))
 }
@@ -222,35 +221,33 @@ pub async fn suggest_entries(
 #[tauri::command]
 pub async fn settle_entry(
     input: SettleEntryInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<SettleEntryOutput, CommandError> {
     session.read(|conn| ops::settle_entry(conn, &input))
 }
 
 #[tauri::command]
-pub async fn list_action_types(
-    session: State<'_, Session>,
-) -> Result<ActionTypesOutput, CommandError> {
+pub async fn list_action_types(session: ScopedSession) -> Result<ActionTypesOutput, CommandError> {
     session.read(ops::list_action_types)
 }
 
 #[tauri::command]
 pub async fn list_firearm_types(
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<FirearmTypesOutput, CommandError> {
     session.read(ops::list_firearm_types)
 }
 
 #[tauri::command]
 pub async fn list_registration_classes(
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<RegistrationClassesOutput, CommandError> {
     session.read(ops::list_registration_classes)
 }
 
 #[tauri::command]
 pub async fn list_accessory_kinds(
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<AccessoryKindsOutput, CommandError> {
     session.read(ops::list_accessory_kinds)
 }

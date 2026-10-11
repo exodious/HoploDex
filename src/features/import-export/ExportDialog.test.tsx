@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
@@ -7,6 +8,8 @@ import { ExportDialog } from "./ExportDialog";
 import * as importExportService from "./importExportService";
 import type { ExportScope } from "./types";
 
+/** The scope a mocked service receives: the test render's. */
+const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
@@ -28,7 +31,7 @@ function scope(overrides: Partial<ExportScope> = {}): ExportScope {
  * (specs/006-accessory-links contracts/ui-accessories.md §11), not from the
  * collection's list or `list_firearms`. */
 function mockScope(forAll: ExportScope, forFiltered: ExportScope = forAll) {
-  vi.mocked(importExportService.getExportScope).mockImplementation(async (input) =>
+  vi.mocked(importExportService.getExportScope).mockImplementation(async (_scope, input) =>
     input.scope === "filtered" ? forFiltered : forAll,
   );
 }
@@ -159,6 +162,7 @@ describe("ExportDialog with accessories (US5)", () => {
 
     expect(await screen.findByText(/3 firearms and 2 accessories/)).toBeInTheDocument();
     expect(importExportService.getExportScope).toHaveBeenCalledWith(
+      SCOPE,
       expect.objectContaining({ scope: "all" }),
     );
   });
@@ -176,7 +180,7 @@ describe("ExportDialog with accessories (US5)", () => {
     expect(
       await screen.findByRole("radio", { name: /Current results.*5 firearms and 4 accessories/ }),
     ).toBeInTheDocument();
-    expect(importExportService.getExportScope).toHaveBeenCalledWith({
+    expect(importExportService.getExportScope).toHaveBeenCalledWith(SCOPE, {
       scope: "filtered",
       filter: expect.objectContaining({ query: "glock" }),
     });

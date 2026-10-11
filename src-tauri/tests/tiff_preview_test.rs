@@ -45,7 +45,8 @@ fn code_of<T: std::fmt::Debug>(result: Result<T, hoplodex_lib::commands::Command
 }
 
 fn render(world: &Fixture, id: u64, page: u32, width: u32) -> Result<Vec<u8>, String> {
-    preview::render_preview_page(&world.session, id, page, width).map_err(|e| e.code)
+    preview::render_preview_page(&world.session, world.session.current_id(), id, page, width)
+        .map_err(|e| e.code)
 }
 
 fn pages_of(info: &Value) -> Vec<(f64, f64)> {
@@ -221,7 +222,10 @@ fn an_unreadable_first_ifd_fails_the_open_as_damaged() {
         assert_eq!(code_of(world.open(id)), "PREVIEW_DAMAGED", "{name}");
 
         assert_eq!(world.helper_pid(), None, "no preview is left open");
-        assert!(world.session.read(|_| Ok(())).is_ok(), "the session is usable");
+        assert!(
+            world.session.read(world.session.current_id(), |_| Ok(())).is_ok(),
+            "the session is usable"
+        );
     }
 }
 
@@ -261,7 +265,11 @@ fn each_crafted_tiff_fails_cleanly_and_the_session_stays_usable() {
         }
         assert!(started.elapsed() < Duration::from_secs(40), "{} took too long", crafted.name);
         assert_eq!(world.helper_pid(), None, "{}", crafted.name);
-        assert!(world.session.read(|_| Ok(())).is_ok(), "{}: the session is usable", crafted.name);
+        assert!(
+            world.session.read(world.session.current_id(), |_| Ok(())).is_ok(),
+            "{}: the session is usable",
+            crafted.name
+        );
         assert_eq!(
             world.open_ok(good)["kind"],
             "tiff",
@@ -298,17 +306,19 @@ fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
     let opener = {
         let (session, preview_env) = (world.session.clone(), &world.preview.env);
         std::thread::scope(|scope| {
-            let opening = scope.spawn(|| preview::open_preview(&session, preview_env, large_id));
+            let opening = scope.spawn(|| {
+                preview::open_preview(&session, session.current_id(), preview_env, large_id)
+            });
             let pid = wait_for_helper_child(Duration::from_secs(10));
             if pid.is_none() && cfg!(not(target_os = "linux")) {
                 std::thread::sleep(Duration::from_millis(20));
             }
 
             let started = Instant::now();
-            preview::close_preview(&world.session, next).unwrap();
+            preview::close_preview(&world.session, world.session.current_id(), next).unwrap();
             let closed_in = started.elapsed();
             let usable_at = Instant::now();
-            world.session.read(|_| Ok(())).unwrap();
+            world.session.read(world.session.current_id(), |_| Ok(())).unwrap();
 
             assert!(closed_in < Duration::from_millis(100), "close_preview took {closed_in:?}");
             assert!(usable_at.elapsed() < Duration::from_millis(100), "the session was held up");

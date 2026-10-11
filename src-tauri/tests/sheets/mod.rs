@@ -16,7 +16,9 @@ use std::path::{Path, PathBuf};
 use calamine::{Reader, Xlsx, open_workbook};
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::import_export::{ImportFile, ImportResult, ImportSessionStore, ops};
-use hoplodex_lib::services::spreadsheet::{ACCESSORY_COLUMNS, FIREARM_COLUMNS, SpreadsheetFormat};
+use hoplodex_lib::services::spreadsheet::{
+    ACCESSORY_COLUMNS, FIREARM_COLUMNS, ReadTable, SpreadsheetFormat,
+};
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -176,15 +178,22 @@ pub fn import_file(path: &Path) -> ImportFile {
     ImportFile { file_path: path.to_path_buf(), format }
 }
 
+/// The tables of one file, read in the import helper.
+pub fn read_import(path: &Path) -> Vec<ReadTable> {
+    crate::support::read_files(&[import_file(path)])
+}
+
 /// `import_collection` on one or two files (contracts/tauri-commands.md:
-/// `files: { filePath, format }[]`).
+/// `files: { filePath, format }[]`), read in the import helper first, as the
+/// app does.
 pub fn import(
     conn: &Connection,
     store: &ImportSessionStore,
     paths: &[&Path],
 ) -> Result<ImportResult, CommandError> {
     let files: Vec<ImportFile> = paths.iter().map(|p| import_file(p)).collect();
-    ops::import_collection(conn, &files, store, &mut |_, _| {})
+    let tables = crate::support::try_read_files(&files)?;
+    ops::import_collection(conn, tables, store, &mut |_, _| {})
 }
 
 /// Writes `table` as `name` in `dir` and returns its path.

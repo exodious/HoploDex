@@ -96,6 +96,8 @@ A `Dialog` with the large form layout, as `FirearmForm`'s add and edit:
 | 7 | **Acquired**: source (`TextField`), date (`DateField`), price (`MoneyField`) | As the firearm form's Acquisition group |
 | 8 | **Notes** (`TextArea`) | |
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/ui.md): the free-text fields have maximums: 100 characters for make, model, cartridge and caliber (unchanged), 200 for the serial number and acquisition source, 4,000 for notes (with a counter from 3,600), shown on the field as it is typed._
+
 - **Titles**: "Add accessory" and "Edit {name}". The buttons are **Save**
   and **Cancel**.
 - **Opened from a record page's "Mount → New accessory…"** (§5), the title

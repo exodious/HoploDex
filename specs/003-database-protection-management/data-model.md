@@ -58,6 +58,8 @@ close, backup and restore.
 `CHECK ((open_machine_id IS NULL) = (open_machine_name IS NULL) AND (open_machine_id IS NULL) = (open_since IS NULL))`:
 the marker is set or cleared as a whole.
 
+_Amended by [spec 008](../008-hardening-batch/data-model.md): a `last_saved_version` column records the HoploDex version that last saved the database (008 FR-015)._
+
 ### `pending_changes` (housekeeping; never in a backup)
 
 _Amended by [spec 006](../006-accessory-links/data-model.md#entity-pending-changes-extended): `kind` also allows `'accessory'`, with the same modes as `'firearm'`._
@@ -74,6 +76,8 @@ At most one row (FR-039: one form open for editing at a time).
 | `form_version` | INTEGER NOT NULL | the frontend form's draft version |
 | `values_json` | TEXT NOT NULL | `CHECK (length(values_json) <= 1048576)`; opaque to the backend |
 | `saved_at` | TEXT NOT NULL | UTC ISO-8601 |
+
+_Amended by [spec 008](../008-hardening-batch/data-model.md): the row now outlives Resume. In memory the session's `pending_unresolved` flag is a `PendingState` (`None`, `Unresolved`, `Resuming`), and only the form opening with the draft (`opened`) or a discard deletes the row (008 FR-003, FR-017)._
 
 ### Change-tracking triggers
 

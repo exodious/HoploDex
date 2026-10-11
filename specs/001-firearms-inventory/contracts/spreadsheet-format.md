@@ -101,6 +101,8 @@ _Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo
 
 _Amended by [spec 006](../../006-accessory-links/contracts/spreadsheet-format.md): a row is matched by its `record_id` ahead of make, model and serial number, and `mounted_on` is resolved against the rows and records on file ("Record ID", "Mounted on"); a disposed row's price may be blank ("Disposition price")._
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/spreadsheet-format.md): a file is read within limits (size, parts, sheets, rows, columns, cells, text) and refused whole with `IMPORT_LIMIT_EXCEEDED` when it passes one; a cell over a free-text field's maximum is a row error._
+
 - Each row is validated independently; a failing row is recorded in
   `rowErrors` with a 1-based row number and human-readable reason, and
   does **not** block other rows from importing (FR-020).

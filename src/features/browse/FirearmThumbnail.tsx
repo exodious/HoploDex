@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { bytesToDataUrl } from "../../lib/bytes";
 import * as mediaService from "../media/mediaService";
+import { useSessionScope } from "../session/sessionScope";
 import { TypeDrawing } from "./TypeDrawing";
 
 export interface FirearmThumbnailProps {
@@ -9,20 +10,20 @@ export interface FirearmThumbnailProps {
   className?: string;
 }
 
-// Thumbnails never change after upload — a simple in-memory cache avoids
-// re-fetching the same bytes on every browse re-render (no need for a
-// fuller data-fetching library at this scale).
-const photoThumbnailCache = new Map<number, string>();
-
 /** Renders a firearm's thumbnail: its designated photo if it has one, or
  * its type's generic drawing otherwise (FR-009, US4 Scenario 3). Photos
  * load only once the frame scrolls near the viewport, so a long
- * collection doesn't issue one IPC call per row up front. */
+ * collection doesn't issue one IPC call per row up front. Thumbnails never
+ * change after upload, so the session scope keeps the ones loaded
+ * (`scope.thumbnails`) to avoid re-fetching the same bytes on every browse
+ * re-render; they go with the session, and an image that arrives after it
+ * ended is neither cached nor shown (specs/008 research.md §4). */
 export function FirearmThumbnail({
   thumbnailPhotoId,
   genericThumbnailKey,
   className,
 }: FirearmThumbnailProps) {
+  const scope = useSessionScope();
   const frameRef = useRef<HTMLDivElement>(null);
   const [nearViewport, setNearViewport] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export function FirearmThumbnail({
       setSrc(null);
       return;
     }
-    const cached = photoThumbnailCache.get(thumbnailPhotoId);
+    const cached = scope.thumbnails.get(thumbnailPhotoId);
     if (cached) {
       setSrc(cached);
       return;
@@ -64,10 +65,10 @@ export function FirearmThumbnail({
 
     let cancelled = false;
     mediaService
-      .getPhotoThumbnail(thumbnailPhotoId)
+      .getPhotoThumbnail(scope, thumbnailPhotoId)
       .then((bytes) => {
         const url = bytesToDataUrl(bytes, "image/jpeg");
-        photoThumbnailCache.set(thumbnailPhotoId, url);
+        scope.thumbnails.set(thumbnailPhotoId, url);
         if (!cancelled) setSrc(url);
       })
       .catch(() => {
@@ -76,7 +77,7 @@ export function FirearmThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [thumbnailPhotoId, nearViewport]);
+  }, [scope, thumbnailPhotoId, nearViewport]);
 
   const showDrawing = thumbnailPhotoId == null || failed;
   return (

@@ -13,7 +13,7 @@
 //! - `import_export::ops::export_records(conn, scope, filter) -> ExportRecords`
 //!   (`scope` is `"all"` or `"filtered"`) and
 //!   `export_collection(conn, dest, base, format, &ExportRecords, progress)`;
-//! - `import_export::ops::import_collection(conn, &[ImportFile], store,
+//! - `import_export::ops::import_collection(conn, Vec<ReadTable>, store,
 //!   progress)`, `ImportFile { file_path, format }`, through
 //!   `sheets::import`;
 //! - `ImportResult`, `RowError`, `ImportConflict`, `SnappedValue` and

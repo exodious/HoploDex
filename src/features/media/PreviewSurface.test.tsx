@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { render } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Button, ConfirmDialog, Menu, MenuItem, ToastProvider, useToast } from "../../components";

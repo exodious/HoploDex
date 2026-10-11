@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { MountChooser } from "./MountChooser";
 import type { RecordLabel, RecordRef } from "./types";
+import { render } from "../../test/sessionScope";
 
 // specs/006-accessory-links contracts/ui-accessories.md §4 (FR-010, FR-012):
 // `MountChooser` is a `Combobox` field labelled "Mounted on" that searches
@@ -15,7 +16,7 @@ import type { RecordLabel, RecordRef } from "./types";
 const listMountCandidates = vi.fn();
 
 vi.mock("./mountsService", () => ({
-  listMountCandidates: (input: unknown) => listMountCandidates(input),
+  listMountCandidates: (_scope: unknown, input: unknown) => listMountCandidates(input),
 }));
 
 const deerRifle: RecordLabel = {

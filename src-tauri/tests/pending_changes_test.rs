@@ -67,7 +67,7 @@ impl World {
     }
 
     fn add_firearm(&self, serial: &str) -> Result<i64, CommandError> {
-        self.session.write(|conn| {
+        self.session.write(self.session.current_id(), |conn| {
             firearms::create_firearm(conn, &support::firearm("Glock", "19", serial), false, None)
                 .map(|created| created.id)
         })
@@ -76,7 +76,7 @@ impl World {
     /// Rows in `pending_changes`, looked at through the open connection.
     fn pending_rows(&self) -> i64 {
         self.session
-            .inspect(|open| {
+            .inspect(self.session.current_id(), |open| {
                 open.conn
                     .query_row("SELECT count(*) FROM pending_changes", [], |row| row.get(0))
                     .map_err(CommandError::from_db)
@@ -132,13 +132,27 @@ fn staging_keeps_the_draft_in_memory_only() {
     world.create();
     let id = world.add_firearm("A1").unwrap();
 
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
 
     assert_eq!(world.pending_rows(), 0, "nothing is written until a lock");
-    let staged = world.session.inspect(|open| Ok(open.staged_draft.clone())).unwrap();
+    let staged = world
+        .session
+        .inspect(world.session.current_id(), |open| Ok(open.staged_draft.clone()))
+        .unwrap();
     assert_eq!(staged, Some(edit_draft(id)));
-    databases::stage_pending_changes(&world.session, None).unwrap();
-    assert_eq!(world.session.inspect(|open| Ok(open.staged_draft.clone())).unwrap(), None);
+    databases::stage_pending_changes(&world.session, world.session.current_id(), None).unwrap();
+    assert_eq!(
+        world
+            .session
+            .inspect(world.session.current_id(), |open| Ok(open.staged_draft.clone()))
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -148,7 +162,9 @@ fn a_draft_over_one_mebibyte_is_refused() {
     let mut draft = draft_for(DraftKind::Firearm, DraftMode::Add, None);
     draft.values = json!({ "notes": "x".repeat(1 << 20) });
 
-    let refused = databases::stage_pending_changes(&world.session, Some(draft)).unwrap_err();
+    let refused =
+        databases::stage_pending_changes(&world.session, world.session.current_id(), Some(draft))
+            .unwrap_err();
 
     assert_eq!(validation_field(refused), "values");
 }
@@ -161,22 +177,35 @@ fn a_draft_whose_kind_and_mode_dont_go_together_is_refused() {
         (DraftKind::Policy, DraftMode::Coverage, Some(1)),
         (DraftKind::Policy, DraftMode::Dispose, Some(1)),
     ] {
-        let refused =
-            databases::stage_pending_changes(&world.session, Some(draft_for(kind, mode, target)))
-                .unwrap_err();
+        let refused = databases::stage_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            Some(draft_for(kind, mode, target)),
+        )
+        .unwrap_err();
         assert_eq!(validation_field(refused), "mode");
     }
     let no_target = draft_for(DraftKind::Firearm, DraftMode::Edit, None);
     assert_eq!(
         validation_field(
-            databases::stage_pending_changes(&world.session, Some(no_target)).unwrap_err()
+            databases::stage_pending_changes(
+                &world.session,
+                world.session.current_id(),
+                Some(no_target)
+            )
+            .unwrap_err()
         ),
         "targetId"
     );
     let added_with_target = draft_for(DraftKind::Firearm, DraftMode::Add, Some(3));
     assert_eq!(
         validation_field(
-            databases::stage_pending_changes(&world.session, Some(added_with_target)).unwrap_err()
+            databases::stage_pending_changes(
+                &world.session,
+                world.session.current_id(),
+                Some(added_with_target)
+            )
+            .unwrap_err()
         ),
         "targetId"
     );
@@ -192,14 +221,19 @@ fn a_lock_keeps_the_draft_and_leaves_the_backup_record_alone() {
     // Backups off, so the changes stay waiting and the record shows it.
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute("UPDATE collection_settings SET backups_enabled = 0", [])
                 .map_err(CommandError::from_db)
         })
         .unwrap();
 
-    let outcome =
-        databases::lock_database(&world.session, &world.machine, Some(edit_draft(id))).unwrap();
+    let outcome = databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(edit_draft(id)),
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::Off);
     assert!(!world.session.is_open());
@@ -214,7 +248,12 @@ fn the_idle_lock_keeps_the_staged_draft() {
     let world = World::new();
     world.create();
     let id = world.add_firearm("A1").unwrap();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
 
     lifecycle::lock_with_staged(&world.session, &world.machine, CloseReason::Idle).unwrap();
 
@@ -227,7 +266,12 @@ fn a_sleep_keeps_the_draft_and_clears_the_marker_in_the_same_write() {
         let world = World::new();
         world.create();
         let id = world.add_firearm("A1").unwrap();
-        databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+        databases::stage_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            Some(edit_draft(id)),
+        )
+        .unwrap();
 
         lifecycle::close_immediate(&world.session, &world.machine, reason);
 
@@ -258,7 +302,13 @@ fn a_sleep_with_nothing_staged_still_clears_the_marker() {
 fn locked_while_editing(world: &World) -> i64 {
     world.create();
     let id = world.add_firearm("A1").unwrap();
-    databases::lock_database(&world.session, &world.machine, Some(edit_draft(id))).unwrap();
+    databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     id
 }
 
@@ -328,7 +378,7 @@ fn a_policy_draft_is_resumable_while_the_policy_exists() {
     world.create();
     let policy = world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             insurance::create_policy(
                 conn,
                 &support::policy("Home", "2026-01-01", "2026-12-31", None),
@@ -339,7 +389,13 @@ fn a_policy_draft_is_resumable_while_the_policy_exists() {
         label: "Home (edit)".into(),
         ..draft_for(DraftKind::Policy, DraftMode::Edit, Some(policy.id))
     };
-    databases::lock_database(&world.session, &world.machine, Some(draft)).unwrap();
+    databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(draft),
+    )
+    .unwrap();
 
     world.open();
 
@@ -359,27 +415,46 @@ fn collection_commands_wait_until_the_pending_changes_are_resolved() {
 
     let refused = world.add_firearm("B2").unwrap_err();
     assert_eq!(refused.code, "PENDING_CHANGES_UNRESOLVED");
-    let refused =
-        world.session.read(|conn| firearms::list_firearms(conn, &Default::default())).unwrap_err();
+    let refused = world
+        .session
+        .read(world.session.current_id(), |conn| firearms::list_firearms(conn, &Default::default()))
+        .unwrap_err();
     assert_eq!(refused.code, "PENDING_CHANGES_UNRESOLVED");
     // The session's own commands still answer.
     databases::database_status(&world.session, &world.machine).unwrap();
 
-    databases::resolve_pending_changes(&world.session, PendingAction::Discard).unwrap();
+    databases::resolve_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        PendingAction::Discard,
+    )
+    .unwrap();
 
     world.add_firearm("B2").unwrap();
 }
 
 #[test]
-fn resuming_returns_the_exact_draft_and_removes_it() {
+fn resuming_returns_the_exact_draft_and_opening_the_form_removes_it() {
     let world = World::new();
     let id = locked_while_editing(&world);
     world.open();
 
-    let resolved =
-        databases::resolve_pending_changes(&world.session, PendingAction::Resume).unwrap();
+    let resolved = databases::resolve_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        PendingAction::Resume,
+    )
+    .unwrap();
 
     assert_eq!(resolved.draft, Some(edit_draft(id)));
+    // The row stays until the form has opened (008 FR-003; pending_resume_test).
+    assert_eq!(world.pending_rows(), 1);
+    databases::resolve_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        PendingAction::Opened,
+    )
+    .unwrap();
     assert_eq!(world.pending_rows(), 0);
     assert!(
         databases::database_status(&world.session, &world.machine)
@@ -395,8 +470,12 @@ fn discarding_removes_them() {
     locked_while_editing(&world);
     world.open();
 
-    let resolved =
-        databases::resolve_pending_changes(&world.session, PendingAction::Discard).unwrap();
+    let resolved = databases::resolve_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        PendingAction::Discard,
+    )
+    .unwrap();
 
     assert_eq!(resolved.draft, None);
     assert_eq!(world.pending_rows(), 0);
@@ -408,8 +487,13 @@ fn a_backup_made_at_a_lock_carries_no_pending_changes() {
     world.create();
     let id = world.add_firearm("A1").unwrap();
 
-    let outcome =
-        databases::lock_database(&world.session, &world.machine, Some(edit_draft(id))).unwrap();
+    let outcome = databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(edit_draft(id)),
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::Made);
     assert_eq!(world.closed_file().0, 1, "the database keeps them");
@@ -439,7 +523,7 @@ fn pending_changes_that_cant_be_written_still_lock_and_are_reported_lost() {
     lifecycle::create(&world.session, &world.machine, &path, &passphrase()).unwrap();
     let id = world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             firearms::create_firearm(conn, &support::firearm("Glock", "19", "A1"), false, None)
                 .map(|created| created.id)
         })
@@ -447,7 +531,12 @@ fn pending_changes_that_cant_be_written_still_lock_and_are_reported_lost() {
 
     // The drive or share holding it can't be reached any more.
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o000)).unwrap();
-    let locked = databases::lock_database(&world.session, &world.machine, Some(edit_draft(id)));
+    let locked = databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(edit_draft(id)),
+    );
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
 
     locked.unwrap();
@@ -469,7 +558,12 @@ fn a_take_over_found_while_finishing_on_waking_loses_the_draft_and_says_so() {
     let world = World::new();
     world.create();
     let id = world.add_firearm("A1").unwrap();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     // The computer slept after the first step of the lock.
     assert!(lifecycle::begin_immediate(&world.session, CloseReason::Sleep));
     // Meanwhile another computer took the file over.
@@ -510,7 +604,7 @@ impl World {
             "model": "VX-5HD 3-15x44",
             "status": "active",
         });
-        self.session.write(|conn| {
+        self.session.write(self.session.current_id(), |conn| {
             accessories::create_accessory(
                 conn,
                 &serde_json::from_value(input.clone()).unwrap(),
@@ -542,10 +636,17 @@ fn an_accessory_draft_is_accepted_in_every_mode_a_firearm_has() {
 
     for mode in ACCESSORY_MODES {
         let draft = accessory_draft(mode, target_for(mode, id));
-        databases::stage_pending_changes(&world.session, Some(draft.clone()))
-            .unwrap_or_else(|err| panic!("{mode:?}: {err:?}"));
+        databases::stage_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            Some(draft.clone()),
+        )
+        .unwrap_or_else(|err| panic!("{mode:?}: {err:?}"));
         assert_eq!(
-            world.session.inspect(|open| Ok(open.staged_draft.clone())).unwrap(),
+            world
+                .session
+                .inspect(world.session.current_id(), |open| Ok(open.staged_draft.clone()))
+                .unwrap(),
             Some(draft),
             "{mode:?}"
         );
@@ -560,13 +661,21 @@ fn an_accessory_drafts_target_follows_the_same_rules_as_a_firearms() {
 
     for mode in [DraftMode::Edit, DraftMode::Dispose, DraftMode::Restore, DraftMode::Coverage] {
         let no_target = accessory_draft(mode, None);
-        let refused =
-            databases::stage_pending_changes(&world.session, Some(no_target)).unwrap_err();
+        let refused = databases::stage_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            Some(no_target),
+        )
+        .unwrap_err();
         assert_eq!(validation_field(refused), "targetId", "{mode:?} needs a target");
     }
     let added_with_target = accessory_draft(DraftMode::Add, Some(id));
-    let refused =
-        databases::stage_pending_changes(&world.session, Some(added_with_target)).unwrap_err();
+    let refused = databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(added_with_target),
+    )
+    .unwrap_err();
     assert_eq!(validation_field(refused), "targetId", "an added accessory has no target yet");
 }
 
@@ -578,6 +687,7 @@ fn a_policy_draft_in_coverage_mode_is_still_refused() {
 
     let refused = databases::stage_pending_changes(
         &world.session,
+        world.session.current_id(),
         Some(draft_for(DraftKind::Policy, DraftMode::Coverage, Some(1))),
     )
     .unwrap_err();
@@ -592,7 +702,13 @@ fn an_accessory_draft_in_each_mode_is_kept_by_a_lock_and_resumed_with_its_label(
         world.create();
         let id = world.add_accessory().unwrap();
         let draft = accessory_draft(mode, target_for(mode, id));
-        databases::lock_database(&world.session, &world.machine, Some(draft.clone())).unwrap();
+        databases::lock_database(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            Some(draft.clone()),
+        )
+        .unwrap();
         assert_eq!(world.closed_file().0, 1, "{mode:?} is kept in the database");
 
         let status = databases::open_database(
@@ -611,9 +727,20 @@ fn an_accessory_draft_in_each_mode_is_kept_by_a_lock_and_resumed_with_its_label(
         assert_eq!(pending.label, draft.label, "named by the accessory's label");
         assert!(pending.resumable, "{mode:?}");
 
-        let resolved =
-            databases::resolve_pending_changes(&world.session, PendingAction::Resume).unwrap();
+        let resolved = databases::resolve_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            PendingAction::Resume,
+        )
+        .unwrap();
         assert_eq!(resolved.draft, Some(draft), "{mode:?}: the exact draft comes back");
+        assert_eq!(world.pending_rows(), 1, "{mode:?}: kept until the form has opened");
+        databases::resolve_pending_changes(
+            &world.session,
+            world.session.current_id(),
+            PendingAction::Opened,
+        )
+        .unwrap();
         assert_eq!(world.pending_rows(), 0, "{mode:?}");
     }
 }
@@ -625,6 +752,7 @@ fn an_accessory_draft_is_kept_by_a_sleep_as_well() {
     let id = world.add_accessory().unwrap();
     databases::stage_pending_changes(
         &world.session,
+        world.session.current_id(),
         Some(accessory_draft(DraftMode::Edit, Some(id))),
     )
     .unwrap();
@@ -643,6 +771,7 @@ fn a_resumed_edit_whose_accessory_was_deleted_elsewhere_can_only_be_discarded() 
     let id = world.add_accessory().unwrap();
     databases::lock_database(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         Some(accessory_draft(DraftMode::Edit, Some(id))),
     )
@@ -692,6 +821,7 @@ fn an_accessory_draft_is_not_resumable_just_because_a_firearm_has_its_target_id(
     let firearm = world.add_firearm("A1").unwrap();
     databases::lock_database(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         Some(accessory_draft(DraftMode::Edit, Some(firearm))),
     )
@@ -714,6 +844,7 @@ fn collection_commands_wait_for_an_accessory_draft_too() {
     let id = world.add_accessory().unwrap();
     databases::lock_database(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         Some(accessory_draft(DraftMode::Edit, Some(id))),
     )
@@ -723,6 +854,11 @@ fn collection_commands_wait_for_an_accessory_draft_too() {
     let refused = world.add_accessory().unwrap_err();
     assert_eq!(refused.code, "PENDING_CHANGES_UNRESOLVED");
 
-    databases::resolve_pending_changes(&world.session, PendingAction::Discard).unwrap();
+    databases::resolve_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        PendingAction::Discard,
+    )
+    .unwrap();
     world.add_accessory().unwrap();
 }

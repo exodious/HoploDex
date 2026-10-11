@@ -96,8 +96,10 @@ export async function clickEl(selector: string) {
 }
 
 /** Clicks the button whose visible text is exactly `text`, inside the
- * innermost open dialog when there is one. */
-export async function clickButton(text: string) {
+ * innermost open dialog when there is one, and waits for the app to settle
+ * unless `settles` is false (a click that starts a long command, whose
+ * request stays in flight, so the app is busy until it ends). */
+export async function clickButton(text: string, { settles = true }: { settles?: boolean } = {}) {
   await browser.waitUntil(
     () =>
       browser.execute(
@@ -114,7 +116,7 @@ export async function clickButton(text: string) {
       ),
     { timeout: 5000, timeoutMsg: `no enabled button "${text}"` },
   );
-  await settle();
+  if (settles) await settle();
 }
 
 /** Opens the firearm form's disclosure group with this title if it is
@@ -775,6 +777,17 @@ export async function submitPassphrase(passphrase: string) {
   await settle();
 }
 
+/** Answers the chooser's "Take over" question for the selected database,
+ * which another computer has open: asks to take it over, types the passphrase
+ * again (the confirmation, FR-032) and confirms. */
+export async function confirmTakeOver(name: string, passphrase: string) {
+  await clickEl("button=Take over…");
+  await $('[role="alertdialog"]').waitForExist();
+  await fill(`Passphrase for “${name}”`, passphrase);
+  await clickButton("Take over");
+  await $('[role="alertdialog"]').waitForExist({ reverse: true });
+}
+
 /** Opens the chooser's selected database with `passphrase` and waits for
  * its collection. */
 export async function unlock(passphrase: string) {
@@ -837,16 +850,30 @@ export async function selectChooserRow(name: string) {
 }
 
 /** Runs a backend command from the page, as the frontend would, for a
- * step whose own UI WebDriver can't reach (the OS's folder dialog). */
+ * step whose own UI WebDriver can't reach (the OS's folder dialog). It names
+ * the open database's session in the `HoploDex-Session` header, as the
+ * frontend's scope does (spec 008 FR-004), which every command outside
+ * `UNSCOPED_COMMANDS` requires; the id comes from `get_database_status`. */
 export async function invokeCommand(cmd: string, args: Record<string, unknown>) {
   return browser.execute(
-    (name: string, data: Record<string, unknown>) => {
+    async (name: string, data: Record<string, unknown>) => {
       const internals = (
         window as unknown as {
-          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+          __TAURI_INTERNALS__: {
+            invoke: (cmd: string, args: unknown, options?: unknown) => Promise<unknown>;
+          };
         }
       ).__TAURI_INTERNALS__;
-      return internals.invoke(name, data);
+      const status = (await internals.invoke("get_database_status", {})) as {
+        sessionId?: number | null;
+      };
+      return internals.invoke(
+        name,
+        data,
+        status.sessionId == null
+          ? undefined
+          : { headers: { "HoploDex-Session": String(status.sessionId) } },
+      );
     },
     cmd,
     args,

@@ -12,6 +12,7 @@ Needs libX11 and libXtst (both in the dev container) and python3 only.
 
     x11-input.py move X Y        # pointer to screen coordinates
     x11-input.py click           # left button, pressed and released
+    x11-input.py button N        # button N (8 back, 9 forward), pressed and released
     x11-input.py key Tab         # X keysym names; + for a chord
     x11-input.py key Shift_L+Tab
 """
@@ -46,6 +47,12 @@ def main(args: list[str]) -> None:
         x11.XFlush(display)
         time.sleep(0.05)
         xtst.XTestFakeButtonEvent(display, 1, False, 0)
+    elif command == "button" and len(args) == 2:
+        button = int(args[1])
+        xtst.XTestFakeButtonEvent(display, button, True, 0)
+        x11.XFlush(display)
+        time.sleep(0.05)
+        xtst.XTestFakeButtonEvent(display, button, False, 0)
     elif command == "key" and len(args) == 2:
         codes = [x11.XKeysymToKeycode(display, x11.XStringToKeysym(name.encode())) for name in args[1].split("+")]
         if 0 in codes:

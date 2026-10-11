@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::commands::CommandError;
 use crate::models::record::RecordRef;
 use crate::models::rules::{
-    DispositionFields, check_amounts, check_coverage_pair, check_dates_and_disposition,
-    checked_date, is_blank,
+    DispositionFields, MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, check_amounts,
+    check_coverage_pair, check_dates_and_disposition, check_optional_text_length, checked_date,
+    is_blank,
 };
 use crate::services::entry_text::{EntryField, check_entry_text};
 
@@ -407,6 +408,41 @@ pub fn validate_firearm_input(
         if let Err(message) = check_entry_text(field, value) {
             errors.insert(field.ipc_name().into(), message);
         }
+    }
+
+    // specs/008-hardening-batch research.md §10: the free-text maximums.
+    // Unlike the entry fields, an existing value over its maximum isn't
+    // exempt: it can't be saved until it is shortened.
+    for (field, label, value, max) in [
+        ("nickname", "Nickname", &input.nickname, MAX_SHORT_TEXT_CHARS),
+        ("serialNumber", "Serial number", &input.serial_number, MAX_SHORT_TEXT_CHARS),
+        ("finish", "Finish", &input.finish, MAX_SHORT_TEXT_CHARS),
+        ("acquisitionSource", "Acquired from", &input.acquisition_source, MAX_SHORT_TEXT_CHARS),
+        (
+            "dispositionRecipient",
+            "Transferred to",
+            &input.disposition_recipient,
+            MAX_SHORT_TEXT_CHARS,
+        ),
+        (
+            "countryOfManufacture",
+            "Country of manufacture",
+            &input.country_of_manufacture,
+            MAX_SHORT_TEXT_CHARS,
+        ),
+        ("importerName", "Importer", &input.importer_name, MAX_SHORT_TEXT_CHARS),
+        ("originalMake", "Original maker", &input.original_make, MAX_SHORT_TEXT_CHARS),
+        ("originalModel", "Original model", &input.original_model, MAX_SHORT_TEXT_CHARS),
+        (
+            "originalSerialNumber",
+            "Original serial number",
+            &input.original_serial_number,
+            MAX_SHORT_TEXT_CHARS,
+        ),
+        ("notes", "Notes", &input.notes, MAX_LONG_TEXT_CHARS),
+        ("accessories", "Accessories", &input.accessories, MAX_LONG_TEXT_CHARS),
+    ] {
+        check_optional_text_length(field, label, value, max, &mut errors);
     }
 
     check_amounts(

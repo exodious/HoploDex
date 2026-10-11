@@ -1,5 +1,6 @@
 import { Combobox } from "../../components";
 import type { ComboboxOption, ComboboxProps } from "../../components";
+import { useSessionScope } from "../session/sessionScope";
 import { suggestEntries } from "./firearmsService";
 import type { EntryFieldName, Suggestion } from "./types";
 
@@ -39,8 +40,14 @@ export function EntryField({
   onLeave,
   ...props
 }: EntryFieldProps) {
+  const scope = useSessionScope();
   async function loadOptions(text: string): Promise<ComboboxOption[]> {
-    const suggestions = await suggestEntries(field, text, field === "model" ? make : undefined);
+    const suggestions = await suggestEntries(
+      scope,
+      field,
+      text,
+      field === "model" ? make : undefined,
+    );
     return suggestions.map((suggestion) => ({
       value: suggestion.value,
       marker: suggestionMarker(suggestion) || undefined,

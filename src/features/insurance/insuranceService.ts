@@ -1,4 +1,4 @@
-import { invoke } from "../../services/tauriClient";
+import type { SessionScope } from "../session/sessionScope";
 import type { Firearm } from "../firearms/types";
 import type {
   AssignCoverageInput,
@@ -10,31 +10,39 @@ import type {
   ValueSummary,
 } from "./types";
 
-export function listInsurancePolicies(): Promise<InsurancePolicy[]> {
-  return invoke<InsurancePolicy[]>("list_insurance_policies");
+export function listInsurancePolicies(scope: SessionScope): Promise<InsurancePolicy[]> {
+  return scope.invoke<InsurancePolicy[]>("list_insurance_policies");
 }
 
-export function createInsurancePolicy(input: InsurancePolicyInput): Promise<InsurancePolicy> {
-  return invoke<InsurancePolicy>("create_insurance_policy", { input });
+export function createInsurancePolicy(
+  scope: SessionScope,
+  input: InsurancePolicyInput,
+): Promise<InsurancePolicy> {
+  return scope.invoke<InsurancePolicy>("create_insurance_policy", { input });
 }
 
 export function updateInsurancePolicy(
+  scope: SessionScope,
   id: number,
   input: InsurancePolicyInput,
 ): Promise<InsurancePolicy> {
-  return invoke<InsurancePolicy>("update_insurance_policy", { id, input });
+  return scope.invoke<InsurancePolicy>("update_insurance_policy", { id, input });
 }
 
-export function getPolicyDeletionImpact(id: number): Promise<PolicyDeletionImpact> {
-  return invoke<PolicyDeletionImpact>("get_policy_deletion_impact", { id });
+export function getPolicyDeletionImpact(
+  scope: SessionScope,
+  id: number,
+): Promise<PolicyDeletionImpact> {
+  return scope.invoke<PolicyDeletionImpact>("get_policy_deletion_impact", { id });
 }
 
 export function deleteInsurancePolicy(
+  scope: SessionScope,
   id: number,
   confirmed: boolean,
   scheduledFirearms?: ScheduledFirearmsAction,
 ): Promise<DeletePolicyResult> {
-  return invoke<DeletePolicyResult>("delete_insurance_policy", {
+  return scope.invoke<DeletePolicyResult>("delete_insurance_policy", {
     id,
     confirmed,
     scheduledFirearms,
@@ -42,12 +50,13 @@ export function deleteInsurancePolicy(
 }
 
 export function assignFirearmCoverage(
+  scope: SessionScope,
   firearmId: number,
   input: AssignCoverageInput,
 ): Promise<Firearm> {
-  return invoke<Firearm>("assign_firearm_coverage", { firearmId, input });
+  return scope.invoke<Firearm>("assign_firearm_coverage", { firearmId, input });
 }
 
-export function getValueSummary(): Promise<ValueSummary> {
-  return invoke<ValueSummary>("get_value_summary");
+export function getValueSummary(scope: SessionScope): Promise<ValueSummary> {
+  return scope.invoke<ValueSummary>("get_value_summary");
 }

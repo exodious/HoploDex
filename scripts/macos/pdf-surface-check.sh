@@ -53,7 +53,7 @@ cargo build --example pdf_surface_check --features e2e || exit 1
 
 S=$(mktemp -d "${TMPDIR:-/tmp}/surface-XXXX")
 mkdir -p "$S"/{config,cache,documents,home,input}
-swiftc -O -o "$S/input/input" "$ROOT/src-tauri/examples/pdf_surface_input.swift" || exit 1
+swiftc -O -o "$S/input/input" "$ROOT/src-tauri/examples/real_input.swift" || exit 1
 SUFFIX=
 [ "${EXTRA[*]:-}" = --hud-on ] && SUFFIX=-hud-on
 LOG=$OUT/$MODE$SUFFIX-macos.log

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
 import type { RecordLabel } from "../mounts/types";
 import { BrowseTiles } from "./BrowseTiles";
 import type { FirearmSummary, VisibleGroup } from "./types";
+import { render } from "../../test/sessionScope";
 
 // The thumbnail talks to Tauri; it isn't under test. A firearm with no photo
 // shows its type's drawing, as the real one does.

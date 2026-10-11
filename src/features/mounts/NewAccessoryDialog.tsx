@@ -3,6 +3,7 @@ import { AccessoryForm } from "../accessories/AccessoryForm";
 import * as accessoriesService from "../accessories/accessoriesService";
 import type { AccessoryInput } from "../accessories/types";
 import { useAccessoryKinds, useCollection } from "../app/collectionStore";
+import { useSessionScope } from "../session/sessionScope";
 import { accessoryNameText } from "./recordNames";
 import type { RecordLabel } from "./types";
 
@@ -20,12 +21,13 @@ export interface NewAccessoryDialogProps {
 }
 
 export function NewAccessoryDialog({ open, onOpenChange, record }: NewAccessoryDialogProps) {
+  const scope = useSessionScope();
   const { refresh } = useCollection();
   const { kinds } = useAccessoryKinds();
   const notify = useToast();
 
   async function handleCreate(input: AccessoryInput) {
-    const created = await accessoriesService.createAccessory(input);
+    const created = await accessoriesService.createAccessory(scope, input);
     onOpenChange(false);
     await refresh();
     const kindName = kinds.find((kind) => kind.id === created.accessoryKindId)?.name;

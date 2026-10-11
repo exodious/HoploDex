@@ -144,10 +144,14 @@ export async function shot(name: string, options: { fullPage?: boolean } = {}) {
 }
 
 /** Switches the colour mode through the top bar's toggle, which the
- * collection and the chooser both have. */
+ * collection and the chooser both have. With neither on the page (the pending
+ * changes dialog over nothing, when the changes can't be resumed here) it sets
+ * `data-theme` as `applyTheme` does, so that shot is taken in both modes too. */
 export async function chooseTheme(label: "Light" | "Dark") {
   await browser.execute((title: string) => {
-    document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`)?.click();
+    const toggle = document.querySelector<HTMLElement>(`.hd-topbar label[title="${title}"]`);
+    if (toggle) toggle.click();
+    else document.documentElement.setAttribute("data-theme", title.toLowerCase());
   }, label);
   await settleForShot();
 }

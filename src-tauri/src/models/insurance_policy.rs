@@ -4,7 +4,10 @@ use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
-use crate::models::rules::checked_amount;
+use crate::models::rules::{
+    MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, check_optional_text_length, check_text_length,
+    checked_amount,
+};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +86,24 @@ pub fn validate_insurance_policy_input(input: &InsurancePolicyInput) -> Result<(
     }
     if input.insurance_company.trim().is_empty() {
         errors.insert("insuranceCompany".into(), "Insurance company is required.".into());
+    }
+    // specs/008-hardening-batch research.md §10: the free-text maximums.
+    for (field, label, value, max) in [
+        ("name", "Policy name", &input.name, MAX_SHORT_TEXT_CHARS),
+        ("policyNumber", "Policy number", &input.policy_number, MAX_SHORT_TEXT_CHARS),
+        ("insuranceCompany", "Insurance company", &input.insurance_company, MAX_SHORT_TEXT_CHARS),
+    ] {
+        if let Err(message) = check_text_length(label, value, max) {
+            errors.entry(field.into()).or_insert(message);
+        }
+    }
+    for (field, label, value, max) in [
+        ("companyContact", "Company contact", &input.company_contact, MAX_SHORT_TEXT_CHARS),
+        ("agentName", "Agent name", &input.agent_name, MAX_SHORT_TEXT_CHARS),
+        ("agentContact", "Agent contact", &input.agent_contact, MAX_SHORT_TEXT_CHARS),
+        ("notes", "Notes", &input.notes, MAX_LONG_TEXT_CHARS),
+    ] {
+        check_optional_text_length(field, label, value, max, &mut errors);
     }
     checked_amount(
         "blanketCoverageLimit",

@@ -34,6 +34,20 @@ pub fn find_by_record_id(conn: &Connection, uid: &str) -> Result<Option<RecordRe
     .map_err(CommandError::from_db)
 }
 
+/// The duplicate-match query. Its three `lower(trim(...))` terms are those of
+/// `idx_firearms_identity_key`, so a large import doesn't scan every firearm
+/// for every row (research.md §19).
+pub const FIND_MATCH_SQL: &str = "SELECT id FROM firearms
+     WHERE lower(trim(make)) = lower(trim(:make))
+       AND lower(trim(model)) = lower(trim(:model))
+       AND lower(trim(serial_number)) = lower(trim(:serial_number))
+       AND NOT (
+           :year IS NOT NULL AND year_of_manufacture IS NOT NULL
+           AND year_of_manufacture <> :year
+       )
+     ORDER BY (status = 'active') DESC, id
+     LIMIT 1";
+
 /// Returns the id of an existing firearm matching `(make, model,
 /// serial_number)` ignoring letter case and surrounding whitespace (the same
 /// comparison as FR-032), or `None` if there is no match, `no_serial_attested`
@@ -54,16 +68,7 @@ pub fn find_match(
         return Ok(None);
     }
     conn.query_row(
-        "SELECT id FROM firearms
-         WHERE lower(trim(make)) = lower(trim(:make))
-           AND lower(trim(model)) = lower(trim(:model))
-           AND lower(trim(serial_number)) = lower(trim(:serial_number))
-           AND NOT (
-               :year IS NOT NULL AND year_of_manufacture IS NOT NULL
-               AND year_of_manufacture <> :year
-           )
-         ORDER BY (status = 'active') DESC, id
-         LIMIT 1",
+        FIND_MATCH_SQL,
         named_params! {
             ":make": make,
             ":model": model,

@@ -18,7 +18,8 @@ use crate::services::document_types::{self, DocumentType, classify};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::availability::PdfAvailabilityState;
 use crate::services::secure_delete::{secure_delete_dir, secure_delete_file};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
+use crate::session::{Session, SessionId};
 
 /// Why the OS could not open a copy.
 #[derive(Debug)]
@@ -182,6 +183,7 @@ pub mod ops {
     /// into the open that asked (research.md §18).
     pub fn open_document(
         session: &Session,
+        session_id: SessionId,
         machine: &MachineSettings,
         consent: &dyn Consent,
         opener: &dyn Opener,
@@ -189,7 +191,7 @@ pub mod ops {
         id: i64,
     ) -> Result<OpenedDocument, CommandError> {
         // 1. The document, and the open it was read from.
-        let (document, stamp) = session.read_stamped(|conn| get_document(conn, id))?;
+        let (document, stamp) = session.read_stamped(session_id, |conn| get_document(conn, id))?;
         // 2. Refused by the attach rules before any dialog (FR-017).
         let document_type = classify(&document.original_filename, &document.file_bytes)?;
         // 2a. No program for the type: say so before asking or writing anything
@@ -201,7 +203,7 @@ pub mod ops {
         let setting = machine.document_opening();
         let mut said_yes = false;
         if needs_consent(setting, stamp.external_open_confirmed) {
-            crate::commands::preview::ops::hide_pdf_surface(session);
+            crate::commands::preview::ops::hide_pdf_surface(session, session_id);
             let request = ConsentRequest::Document {
                 name: document.original_filename.clone(),
                 kind: document_type.label.to_owned(),
@@ -218,7 +220,7 @@ pub mod ops {
             said_yes = true;
         }
         // 4. The copy, under the lock, into the open that asked.
-        let path = session.with_generation(stamp.generation, |open| {
+        let path = session.inspect_mut(session_id, |open| {
             if said_yes {
                 open.external_open_confirmed = true;
             }
@@ -309,17 +311,20 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
 /// the native confirmation. There is no flag the web view could set to
 /// confirm: the answer is the user's, in a dialog Rust shows.
 #[tauri::command]
-pub async fn open_document(id: i64, app: AppHandle) -> Result<OpenedDocument, CommandError> {
+pub async fn open_document(
+    id: i64,
+    app: AppHandle,
+    session: ScopedSession,
+) -> Result<OpenedDocument, CommandError> {
     let dir = app_dirs::cache_dir(&app)
         .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?
         .join(OPENED_DOCUMENTS_DIR);
     // The dialog blocks until it is answered, so not on an async thread.
     tauri::async_runtime::spawn_blocking(move || {
-        let session = app.state::<Session>();
         let machine = app.state::<MachineSettings>();
         let consent = app.state::<Arc<dyn Consent>>();
         let opener = app.state::<Arc<dyn Opener>>();
-        ops::open_document(&session, &machine, &**consent, &**opener, &dir, id)
+        ops::open_document(&session.session, session.id, &machine, &**consent, &**opener, &dir, id)
     })
     .await
     .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}")))?
@@ -797,7 +802,7 @@ fn mark_untrusted(copy: &Path) -> std::io::Result<()> {
 #[tauri::command]
 pub async fn list_documents(
     owner: RecordRef,
-    session: State<'_, Session>,
+    session: ScopedSession,
     pdf: State<'_, PdfAvailabilityState>,
 ) -> Result<Vec<DocumentSummary>, CommandError> {
     let pdf = pdf.get();
@@ -820,7 +825,7 @@ pub async fn add_document(
     owner: RecordRef,
     file_bytes: Vec<u8>,
     original_filename: String,
-    session: State<'_, Session>,
+    session: ScopedSession,
     pdf: State<'_, PdfAvailabilityState>,
 ) -> Result<DocumentSummary, CommandError> {
     let pdf = pdf.get();
@@ -836,7 +841,7 @@ pub async fn add_document(
 pub async fn add_document_from_path(
     owner: RecordRef,
     path: String,
-    session: State<'_, Session>,
+    session: ScopedSession,
     pdf: State<'_, PdfAvailabilityState>,
 ) -> Result<DocumentSummary, CommandError> {
     let pdf = pdf.get();
@@ -850,13 +855,13 @@ pub async fn add_document_from_path(
 pub async fn delete_document(
     id: i64,
     confirmed: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<DeleteResult, CommandError> {
     // The preview of the document goes first: its bytes, helper and surface
     // must not outlive the document (contracts/tauri-commands.md
     // `delete_document`). Nothing is closed for a refused deletion.
     if confirmed {
-        crate::commands::preview::ops::close_preview_of(&session, id)?;
+        crate::commands::preview::ops::close_preview_of(&session.session, session.id, id)?;
     }
     session.write(|conn| ops::delete_document(conn, id, confirmed))
 }

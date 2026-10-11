@@ -3,12 +3,14 @@ import type { FormEvent } from "react";
 import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
+import { MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
 import { MountedChoices } from "../mounts/MountedChoices";
 import { mountedStatements } from "../mounts/mountedStatements";
 import { recordKey } from "../mounts/recordKey";
 import { recordNameWithType } from "../mounts/recordNames";
 import type { MountDetail, MountedEntry } from "../mounts/types";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { useRecordSubject } from "./recordSubject";
@@ -107,6 +109,7 @@ function DisposeForm({
   onDispose: (input: DisposeInput) => Promise<void>;
   onCancel: () => void;
 }) {
+  const scope = useSessionScope();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
     kind: subject.kind,
@@ -117,7 +120,7 @@ function DisposeForm({
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [today] = useState(todayIso);
   const [resumed] = useState(() =>
-    resumedValues<DisposeValues>(target, {
+    resumedValues<DisposeValues>(scope, target, {
       dispositionType: "",
       recipient: "",
       date: today,
@@ -144,12 +147,18 @@ function DisposeForm({
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // The backend's own refusal of the recipient (`fieldErrors.recipient`),
+  // shown on its field until it is edited.
+  const [recipientRefusal, setRecipientRefusal] = useState<string | null>(null);
 
   const parsedDate = parseDateInput(date);
   const parsedPrice = parseDollars(price);
+  // specs/008-hardening-batch research.md §10: over its maximum, the
+  // recipient shows the message at once, since text is usually pasted in.
+  const recipientTooLong = textLengthError("Transferred to", recipient, MAX_SHORT_TEXT_CHARS);
   const errors = {
     dispositionType: dispositionType ? undefined : "Choose what happened to it.",
-    recipient: recipient.trim() ? undefined : "Enter who received it.",
+    recipient: recipientTooLong ?? (recipient.trim() ? undefined : "Enter who received it."),
     date: !parsedDate.ok
       ? parsedDate.error
       : !parsedDate.iso
@@ -230,6 +239,7 @@ function DisposeForm({
 
     setSubmitting(true);
     setServerError(null);
+    setRecipientRefusal(null);
     try {
       await onDispose({
         dispositionType: dispositionType as DispositionType,
@@ -247,6 +257,11 @@ function DisposeForm({
       // page reload the list.
       const stale = e instanceof CommandFailure ? e.fieldErrors?.withMounted : undefined;
       if (stale) void onMountChanged?.();
+      const refusedRecipient = e instanceof CommandFailure ? e.fieldErrors?.recipient : undefined;
+      if (refusedRecipient) {
+        setRecipientRefusal(refusedRecipient);
+        return false;
+      }
       setServerError(
         stale ??
           (e instanceof CommandFailure
@@ -280,9 +295,12 @@ function DisposeForm({
           label="Transferred to"
           required
           value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
+          onChange={(e) => {
+            setRecipient(e.target.value);
+            setRecipientRefusal(null);
+          }}
           hint={dispositionType ? RECIPIENT_HINTS[dispositionType] : undefined}
-          error={shown(errors.recipient)}
+          error={recipientTooLong ?? shown(errors.recipient) ?? recipientRefusal ?? undefined}
         />
         <div className="hd-form-grid hd-form-grid--3 hd-form-grid--short">
           <DateField

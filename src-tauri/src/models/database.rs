@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
 use crate::services::passphrase::{Passphrase, new_passphrase_problem};
+use crate::session::SessionId;
 
 /// A database file's extension, for databases and backups alike (research.md
 /// §19).
@@ -84,11 +85,29 @@ text_enum!(BackupLocationKind {
     Custom => "custom",
 });
 
-// What the pending-changes prompt chose (FR-039).
+// What `resolve_pending_changes` is told (FR-039; 008 FR-003, research.md
+// §6): the prompt's two choices, and the two reports of whether the resumed
+// form opened.
 text_enum!(PendingAction {
     Resume => "resume",
+    Opened => "opened",
+    NotOpened => "notOpened",
     Discard => "discard",
 });
+
+/// Where a session's pending changes stand (008 data-model.md "PendingState",
+/// research.md §6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingState {
+    /// The database holds none.
+    None,
+    /// A row exists and collection commands are refused until the user
+    /// resumes or discards it.
+    Unresolved,
+    /// The user chose Resume: the row stays, and collection commands are
+    /// served so the record can load and its form open.
+    Resuming,
+}
 
 // What to do with the backups at the old location when it changes (FR-026,
 // research.md §22).
@@ -268,6 +287,13 @@ pub struct PendingSummary {
     pub saved_at: String,
     /// False when the target no longer exists or the form version is unknown.
     pub resumable: bool,
+    /// The HoploDex version that last saved the database
+    /// (`app_state.last_saved_version`), `None` when none is recorded
+    /// (008 FR-015, FR-016).
+    pub saved_by_version: Option<String>,
+    /// This build's version, so the frontend words the message without
+    /// guessing which is newer.
+    pub app_version: String,
 }
 
 /// A form's unsaved input, mirrored from the frontend (research.md §16).
@@ -307,6 +333,9 @@ pub struct DatabaseNotes {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseStatus {
+    /// This open's session id (008 research.md §1): what every scoped
+    /// command's `HoploDex-Session` header must carry. Never 0.
+    pub session_id: SessionId,
     pub path: String,
     pub name: String,
     /// FR-017, on this computer.
@@ -392,13 +421,16 @@ pub struct LockSettingsInput {
     pub on_screen_lock: bool,
 }
 
-/// `resolve_pending_changes`'s answer: the draft to resume, or none after a
-/// discard.
+/// `resolve_pending_changes`'s answer: the draft after `resume`, the
+/// summary for the dialog after `notOpened`, and nothing after `opened` or
+/// `discard`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingResolved {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub draft: Option<Draft>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending: Option<PendingSummary>,
 }
 
 /// `update_backup_settings`'s input (FR-024, FR-026).

@@ -2,6 +2,7 @@ import { Component, useEffect, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { Button, Icon, placeFocus } from "../../components";
 import { BrandMark } from "../app/BrandMark";
+import type { SessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
 import "../app/AppShell.css";
 import "../databases/databases.css";
@@ -9,6 +10,10 @@ import "../databases/databases.css";
 interface FaultBoundaryProps {
   /** Shown in place of `children` once one of them has failed to render. */
   fallback: ReactNode;
+  /** The scope of the open database the boundary guards, for the collection's
+   * boundary. If pending changes are being resumed when a render fails, the
+   * form can't open, so the scope is told (specs/008 research.md §6). */
+  scope?: SessionScope;
   children: ReactNode;
 }
 
@@ -26,6 +31,8 @@ export class FaultBoundary extends Component<FaultBoundaryProps, { failed: boole
     // Only this computer's own console: nothing is reported anywhere
     // (constitution V).
     console.error("HoploDex could not show this screen", error, info.componentStack);
+    const { scope } = this.props;
+    if (scope?.resumed) void scope.resumeFailed("A screen failed to render.");
   }
 
   render() {

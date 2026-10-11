@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { Button, DateField, MoneyField, Select, TextArea, TextField } from "../../components";
 import { futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { dollarsToInput, parseDollars } from "../../lib/money";
+import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
 import { useAccessoryKinds } from "../app/collectionStore";
 import { caliberHint, caliberReducer } from "../firearms/caliberDerivation";
@@ -16,6 +17,7 @@ import "../firearms/forms.css";
 import { MountChooser } from "../mounts/MountChooser";
 import { accessoryNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import type { Accessory, AccessoryInput } from "./types";
@@ -115,6 +117,25 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/** specs/008-hardening-batch research.md §10: the free-text fields with a
+ * maximum, by their label (the backend's, so the two messages match). */
+const TEXT_LIMITS: readonly (readonly [Field, string, number])[] = [
+  ["serialNumber", "Serial number", MAX_SHORT_TEXT_CHARS],
+  ["acquisitionSource", "Acquired from", MAX_SHORT_TEXT_CHARS],
+  ["notes", "Notes", MAX_LONG_TEXT_CHARS],
+];
+
+/** The fields over their maximum. They show their message at once, not on
+ * leaving the field, since text is usually pasted in. */
+function lengthErrors(form: FormState): Partial<Record<Field, string>> {
+  const errors: Partial<Record<Field, string>> = {};
+  for (const [field, label, max] of TEXT_LIMITS) {
+    const problem = textLengthError(label, String(form[field]), max);
+    if (problem) errors[field] = problem;
+  }
+  return errors;
+}
+
 /** Client-side mirror of the backend's validation, so the user gets
  * immediate feedback instead of a round-trip error. */
 function validate(form: FormState): Partial<Record<Field, string>> {
@@ -132,6 +153,7 @@ function validate(form: FormState): Partial<Record<Field, string>> {
     const problem = entryTextError(label, form[field]);
     if (problem) errors[field] = problem;
   }
+  Object.assign(errors, lengthErrors(form));
   for (const field of ["estimatedValue", "acquisitionPrice"] as const) {
     const parsed = parseDollars(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
@@ -165,8 +187,10 @@ const FIELD_ORDER: Field[] = [
   "serialNumber",
   "mountedOn",
   "estimatedValue",
+  "acquisitionSource",
   "acquisitionDate",
   "acquisitionPrice",
+  "notes",
 ];
 
 function isEntryField(name: string | undefined): name is AccessoryEntryField {
@@ -183,6 +207,7 @@ export function AccessoryForm({
   onSubmit,
   onCancel,
 }: AccessoryFormProps) {
+  const scope = useSessionScope();
   const kinds = useAccessoryKinds();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
@@ -192,7 +217,7 @@ export function AccessoryForm({
   };
   // Pending changes the user resumed start as unsaved input (specs/003 FR-039).
   const [form, setForm] = useState<FormState>(() =>
-    resumedValues(target, toFormState(initialValues, presetMountedOn)),
+    resumedValues(scope, target, toFormState(initialValues, presetMountedOn)),
   );
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues, presetMountedOn));
@@ -221,10 +246,12 @@ export function AccessoryForm({
   const formRef = useRef<HTMLFormElement>(null);
 
   const clientErrors = validate(form);
+  const overLength = lengthErrors(form);
   const errorFor = (field: Field): string | undefined =>
-    touched[field] || submitted
+    overLength[field] ??
+    (touched[field] || submitted
       ? (clientErrors[field] ?? serverError?.fieldErrors?.[field])
-      : undefined;
+      : undefined);
   // Blurring an empty field doesn't flag it; "required" errors wait for a
   // submit attempt, so tabbing through the form isn't a wall of red.
   const touch = (field: Field) => () => {
@@ -291,7 +318,7 @@ export function AccessoryForm({
     const run = (async () => {
       let settled;
       try {
-        settled = await settleEntry(field, text);
+        settled = await settleEntry(scope, field, text);
       } catch {
         // Only guidance: saving still checks the field. Leaving it again
         // tries once more.
@@ -614,11 +641,12 @@ export function AccessoryForm({
             Acquisition
           </h3>
           <div className="hd-form-grid hd-form-grid--4">
-            <div className="hd-form-span-2">
+            <div className="hd-form-span-2" data-field="acquisitionSource">
               <TextField
                 label="Acquired from"
                 value={form.acquisitionSource}
                 onChange={(e) => update("acquisitionSource", e.target.value)}
+                error={errorFor("acquisitionSource")}
                 placeholder="Seller, shop, or person"
               />
             </div>
@@ -648,13 +676,17 @@ export function AccessoryForm({
           <h3 className="hd-form-section__title" id="af-condition">
             Condition and notes
           </h3>
-          <TextArea
-            label="Notes"
-            value={form.notes}
-            onChange={(e) => update("notes", e.target.value)}
-            hint="Condition, markings, settings — anything worth recording. All of it is searchable."
-            rows={4}
-          />
+          <div data-field="notes">
+            <TextArea
+              label="Notes"
+              value={form.notes}
+              onChange={(e) => update("notes", e.target.value)}
+              error={errorFor("notes")}
+              limit={MAX_LONG_TEXT_CHARS}
+              hint="Condition, markings, settings — anything worth recording. All of it is searchable."
+              rows={4}
+            />
+          </div>
         </section>
       </div>
 

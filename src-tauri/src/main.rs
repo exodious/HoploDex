@@ -23,6 +23,7 @@ use hoplodex_lib::services::consent::Consent;
 use hoplodex_lib::services::consent::DialogConsent;
 #[cfg(feature = "e2e")]
 use hoplodex_lib::services::consent::E2eConsent;
+use hoplodex_lib::services::import_reader::reader as import_helper;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::main_navigation;
@@ -31,6 +32,7 @@ use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
 use hoplodex_lib::session::{Session, lifecycle};
+use hoplodex_lib::window_controls;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -137,7 +139,7 @@ fn tick_idle_clock(app: AppHandle) {
 }
 
 fn main() {
-    // The render helper and the sandbox probe are this executable started
+    // The render helper, the import helper and the sandbox probe are this executable started
     // again (research.md §9, §11): before any Tauri, keyring, session or
     // logging setup, so they have none of them, and they never return here.
     let args: Vec<String> =
@@ -148,6 +150,9 @@ fn main() {
     }
     if args.first().map(String::as_str) == Some(render_helper::ARGUMENT) {
         render_helper::run(&args);
+    }
+    if args.first().map(String::as_str) == Some(import_helper::ARGUMENT) {
+        import_helper::run(&args);
     }
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the
@@ -263,6 +268,13 @@ fn main() {
                 .build()?;
             #[cfg(windows)]
             main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
+            // The native half of the browser controls (FR-010 to FR-012,
+            // research.md §13): in release and E2E builds only, and a
+            // failure leaves the web view's own menu rather than keeping
+            // the app from starting.
+            if let Err(err) = window_controls::apply(&_main, false) {
+                log::error!("the native browser controls could not be installed: {err}");
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -352,6 +364,7 @@ fn main() {
             hoplodex_lib::commands::import_export::get_export_scope,
             hoplodex_lib::commands::import_export::export_collection,
             hoplodex_lib::commands::import_export::import_collection,
+            hoplodex_lib::commands::import_export::cancel_import,
             hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
         .build(tauri::generate_context!())

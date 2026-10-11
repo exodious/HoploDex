@@ -91,3 +91,11 @@ export async function realKey(keys: string) {
   send("key", keys);
   await browser.pause(150);
 }
+
+/** Presses and releases a mouse button by its X number, with the pointer
+ * where it is: 8 is the back button and 9 the forward button. */
+export async function realMouseButton(button: number) {
+  if (!offset) await calibrate();
+  send("button", String(button));
+  await browser.pause(150);
+}

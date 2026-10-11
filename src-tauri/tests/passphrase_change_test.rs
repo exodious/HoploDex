@@ -71,7 +71,7 @@ impl World {
 
     fn add_firearm(&self, serial: &str) {
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 let firearm = firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", serial),
@@ -94,6 +94,7 @@ impl World {
     fn change(&self, current: &str, new: &str) -> Result<PassphraseChanged, CommandError> {
         backups_ops::change_passphrase(
             &self.session,
+            self.session.current_id(),
             &self.machine,
             self.scratch.path(),
             &Passphrase::from_input(current.to_owned()),
@@ -111,7 +112,13 @@ impl World {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
     }
 
     /// Every file beside the database whose name marks it as temporary.
@@ -126,11 +133,11 @@ impl World {
     }
 
     fn collection(&self) -> Vec<String> {
-        self.session.read(|conn| Ok(collection(conn))).unwrap()
+        self.session.read(self.session.current_id(), |conn| Ok(collection(conn))).unwrap()
     }
 
     fn row_counts(&self) -> BTreeMap<String, i64> {
-        self.session.read(|conn| Ok(row_counts(conn))).unwrap()
+        self.session.read(self.session.current_id(), |conn| Ok(row_counts(conn))).unwrap()
     }
 }
 
@@ -212,7 +219,7 @@ fn every_table_and_every_blob_is_the_same_afterwards() {
     assert!(rows.iter().any(|row| row.starts_with("document_attachments: ")), "documents too");
     let found = world
         .session
-        .read(|conn| {
+        .read(world.session.current_id(), |conn| {
             conn.query_row(
                 "SELECT count(*) FROM firearms_fts WHERE firearms_fts MATCH 'Python'",
                 [],
@@ -246,14 +253,17 @@ fn the_change_counts_as_a_change_so_the_next_close_backs_it_up() {
     world.close();
     world.open_with(support::TEST_PASSPHRASE).unwrap();
     let folder = world.dir.path().join("HoploDex backups");
-    let id = world.session.inspect(|open| Ok(open.database_id.clone())).unwrap();
+    let id = world
+        .session
+        .inspect(world.session.current_id(), |open| Ok(open.database_id.clone()))
+        .unwrap();
     assert_eq!(backups::list(&folder, &id).unwrap().len(), 1);
 
     world.change_to_new().unwrap();
 
     let waiting: bool = world
         .session
-        .read(|conn| {
+        .read(world.session.current_id(), |conn| {
             conn.query_row("SELECT changes_waiting FROM app_state", [], |row| row.get(0))
                 .map_err(CommandError::from_db)
         })
@@ -275,7 +285,7 @@ fn the_session_stays_open_and_takes_writes_afterwards() {
     world.add_firearm("C3");
     let firearms: i64 = world
         .session
-        .read(|conn| {
+        .read(world.session.current_id(), |conn| {
             conn.query_row("SELECT count(*) FROM firearms", [], |row| row.get(0))
                 .map_err(CommandError::from_db)
         })
@@ -395,7 +405,7 @@ fn unresolved_pending_changes_are_resolved_first() {
     let world = World::new();
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute(
                 "INSERT INTO pending_changes (id, kind, mode, target_id, label, form_version,
                                               values_json, saved_at)
@@ -421,7 +431,7 @@ fn unresolved_pending_changes_are_resolved_first() {
 fn make_large(world: &World) {
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute(
                 "INSERT INTO document_attachments
                      (firearm_id, file_bytes, original_filename, mime_type, created_at)

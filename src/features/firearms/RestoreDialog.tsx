@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChoiceCards, ConfirmDialog, TextField } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
+import { MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { useRecordSubject } from "./recordSubject";
@@ -63,6 +65,7 @@ function RestoreDialogBody({
   ...record
 }: Omit<RestoreDialogProps, "open">) {
   const subject = useRecordSubject(record as RecordSubjectProps);
+  const scope = useSessionScope();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
     kind: subject.kind,
@@ -71,7 +74,7 @@ function RestoreDialogBody({
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [resumed] = useState(() =>
-    resumedValues<RestoreValues>(target, {
+    resumedValues<RestoreValues>(scope, target, {
       history: "",
       renaming: false,
       nickname: subject.nickname ?? "",
@@ -88,11 +91,24 @@ function RestoreDialogBody({
   // warning has been shown, the same button resends confirmed.
   const [confirmedWarnings, setConfirmedWarnings] = useState(false);
 
-  const nicknameError = failure?.fieldErrors?.nickname;
+  const nicknameRef = useRef<HTMLInputElement>(null);
+
+  // specs/008-hardening-batch research.md §10: over its maximum, the new
+  // nickname shows the message at once, since text is usually pasted in.
+  const nicknameTooLong = renaming
+    ? textLengthError("New nickname", nickname, MAX_SHORT_TEXT_CHARS)
+    : undefined;
+  const nicknameError = nicknameTooLong ?? failure?.fieldErrors?.nickname;
   const otherError = failure && !nicknameError ? failure.message : undefined;
 
   async function confirm() {
     if (!history) return;
+    if (nicknameTooLong) {
+      // Refused here with the message already under the field, which gets
+      // the focus; the dialog stays open.
+      nicknameRef.current?.focus();
+      throw new Error(nicknameTooLong);
+    }
     setFailure(null);
     const renamed = renaming && nickname.trim() !== "";
     try {
@@ -167,6 +183,7 @@ function RestoreDialogBody({
         />
         {renaming && (
           <TextField
+            ref={nicknameRef}
             label="New nickname"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}

@@ -20,7 +20,7 @@ use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
-use hoplodex_lib::commands::import_export::{ImportSessionStore, ops as import_export};
+use hoplodex_lib::commands::import_export::{ImportFile, ImportSessionStore, ops as import_export};
 use hoplodex_lib::commands::preview::ops as preview;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
@@ -33,6 +33,7 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use preview_support::{SurfaceLog, TestPreview, wait_until_gone};
 use serde_json::{Value, json};
@@ -103,7 +104,7 @@ impl World {
     fn change(&self) -> i64 {
         let serial = db::random_hex(4).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Glock", "19", &serial),
@@ -119,7 +120,7 @@ impl World {
     fn grow(&self, bytes: usize) {
         let filler = db::random_hex(bytes / 2).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 conn.execute_batch("CREATE TABLE IF NOT EXISTS filler (content TEXT)").unwrap();
                 conn.execute("INSERT INTO filler (content) VALUES (?1)", [filler]).unwrap();
                 Ok(())
@@ -129,7 +130,7 @@ impl World {
 
     fn firearm_count(&self) -> i64 {
         self.session
-            .read(|conn| {
+            .read(self.session.current_id(), |conn| {
                 conn.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0))
                     .map_err(CommandError::from_db)
             })
@@ -137,7 +138,9 @@ impl World {
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     /// A decrypted document copy, as `open_document` leaves one.
@@ -152,6 +155,7 @@ impl World {
     fn set_lock(&self, idle_enabled: bool, idle_minutes: i64, on_screen_lock: bool) {
         databases::update_lock_settings(
             &self.session,
+            self.session.current_id(),
             &LockSettingsInput { idle_enabled, idle_minutes, on_screen_lock },
         )
         .unwrap();
@@ -172,6 +176,12 @@ impl World {
 
     fn closed_reasons(&self) -> Vec<Value> {
         self.events.payloads("session:closed").into_iter().map(|p| p["reason"].clone()).collect()
+    }
+
+    /// The `sessionId` of each `event` payload recorded, in order (008
+    /// FR-004: the session that is ending).
+    fn session_ids_of(&self, event: &str) -> Vec<Value> {
+        self.events.payloads(event).into_iter().map(|p| p["sessionId"].clone()).collect()
     }
 
     fn notices(&self) -> Vec<Value> {
@@ -259,9 +269,16 @@ fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
     world.create();
     let id = world.change();
     let copy = world.opened_document();
+    let ending = json!(world.session.current_id().get());
+    assert_ne!(ending, json!(0));
 
-    let outcome =
-        databases::lock_database(&world.session, &world.machine, Some(edit_draft(id))).unwrap();
+    let outcome = databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(edit_draft(id)),
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::Made, "a due backup is made");
     assert!(!world.session.is_open());
@@ -271,6 +288,8 @@ fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
     assert!(!changes_waiting);
     assert!(!marked, "the open marker is cleared");
     assert_eq!(world.closed_reasons(), vec![json!("lockedByUser")]);
+    assert_eq!(world.session_ids_of("session:closing"), vec![ending.clone()]);
+    assert_eq!(world.session_ids_of("session:closed"), vec![ending]);
     assert!(world.notices().contains(&json!({
         "kind": "closed",
         "reason": "lockedByUser",
@@ -286,6 +305,7 @@ impl World {
     fn firearm_count_after_discard(&self) -> i64 {
         databases::resolve_pending_changes(
             &self.session,
+            self.session.current_id(),
             hoplodex_lib::models::database::PendingAction::Discard,
         )
         .unwrap();
@@ -297,7 +317,9 @@ impl World {
 fn lock_now_with_nothing_open_is_refused() {
     let world = World::new();
 
-    let refused = databases::lock_database(&world.session, &world.machine, None).unwrap_err();
+    let refused =
+        databases::lock_database(&world.session, world.session.current_id(), &world.machine, None)
+            .unwrap_err();
 
     assert_eq!(refused.code, "DATABASE_CLOSED");
 }
@@ -416,7 +438,13 @@ fn the_idle_lock_keeps_its_settings_in_the_database() {
     let world = World::new();
     world.create();
     world.set_lock(true, 2, true);
-    lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
 
     world.open();
 
@@ -443,7 +471,9 @@ fn lock_settings_allow_one_to_two_hundred_and_forty_minutes() {
     }
     let world = World::new();
     world.create();
-    let refused = databases::update_lock_settings(&world.session, &input(0)).unwrap_err();
+    let refused =
+        databases::update_lock_settings(&world.session, world.session.current_id(), &input(0))
+            .unwrap_err();
     assert_eq!(refused.code, "VALIDATION_ERROR");
 }
 
@@ -472,12 +502,19 @@ fn a_sleep_makes_no_backup_and_leaves_the_changes_waiting() {
     let world = World::new();
     world.create();
     let id = world.change();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     let copy = world.opened_document();
+    let ending = json!(world.session.current_id().get());
 
     lifecycle::will_sleep(&world.session, &world.machine);
 
     assert!(!world.session.is_open());
+    assert_eq!(world.session_ids_of("session:closed"), vec![ending]);
     assert!(world.events.payloads("backup:progress").is_empty());
     assert!(!world.backup_folder().exists(), "no backup is started");
     assert!(!copy.exists());
@@ -518,10 +555,10 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
 
     let operation = world.session.operations().begin(OperationKind::Import, None).unwrap();
     let mut sleeper = None;
-    let imported = world.session.write(|conn| {
+    let imported = world.session.write(world.session.current_id(), |conn| {
         import_export::import_collection_stoppable(
             conn,
-            &support::import_files(&file, SpreadsheetFormat::Csv),
+            support::read_import(&file, SpreadsheetFormat::Csv),
             &store,
             &mut |processed, _| {
                 if processed == 2 && sleeper.is_none() {
@@ -548,6 +585,129 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
     assert_eq!(world.firearm_count(), 2, "the rows imported before the stop are kept");
 }
 
+/// An import reading a large valid file when `go` closes the collection from
+/// this thread (008 T051; research.md §11): the close goes ahead without
+/// waiting for the reading, and the reading ends within a second with
+/// `DATABASE_CLOSED`, never `OPERATION_STOPPED` (which only `cancel_import`
+/// gives), with nothing imported and the helper gone.
+fn a_close_during_the_reading_of(way: &str, go: impl FnOnce(&World)) {
+    // One at a time: "the helper is gone" looks at every import helper this
+    // process has started.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let world = World::new();
+    world.create();
+    // The lock at screen lock and the idle lock on, so each applies.
+    world.set_lock(true, 10, true);
+    let file = world.dir.path().join("large.csv");
+    support::hostile_spreadsheets::large_valid_csv(&file, 100_000);
+    let files = [ImportFile { file_path: file, format: SpreadsheetFormat::Csv }];
+    let session_id = world.session.current_id();
+    let reading = AtomicBool::new(false);
+
+    let (outcome, went_ahead_in, ended_in) = thread::scope(|scope| {
+        let reader = scope.spawn(|| {
+            let operation = world.session.operations().begin(OperationKind::Import, None).unwrap();
+            operation.set_reading(true);
+            let started = Instant::now();
+            let outcome = import_export::read_import_files(
+                Path::new(env!("CARGO_BIN_EXE_hoplodex")),
+                &files,
+                &operation,
+                &|| world.session.current_id() == session_id,
+                &mut |_, done, total| {
+                    if done * 100 >= total * 5 {
+                        reading.store(true, Ordering::SeqCst);
+                    }
+                },
+            );
+            let ended = Instant::now();
+            drop(operation);
+            (outcome, started, ended)
+        });
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !reading.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "{way}: the reading never got going");
+            assert!(!reader.is_finished(), "{way}: the reading ended before the close");
+            thread::sleep(Duration::from_millis(1));
+        }
+        let closing = Instant::now();
+        go(&world);
+        let went_ahead_in = closing.elapsed();
+        let (outcome, _, ended) = reader.join().unwrap();
+        (outcome, went_ahead_in, ended.duration_since(closing))
+    });
+
+    let error = outcome.expect_err("the reading was ended");
+    assert_eq!(error.code, "DATABASE_CLOSED", "{way}: {error:?}");
+    assert!(ended_in < Duration::from_secs(1), "{way}: the reading took {ended_in:?} to end");
+    println!("{way}: the close took {went_ahead_in:?}, the reading ended after {ended_in:?}");
+    assert!(!world.session.is_open(), "{way}");
+    assert!(
+        preview_support::wait_for(Duration::from_secs(3), || {
+            preview_support::helper_children_of("--import-helper").is_empty()
+        }),
+        "{way}: the import helper is gone"
+    );
+    world.open();
+    assert_eq!(world.firearm_count(), 0, "{way}: nothing was imported");
+}
+
+#[test]
+fn a_screen_lock_during_the_reading_goes_ahead_and_the_import_ends_closed() {
+    a_close_during_the_reading_of("screen lock", |w| {
+        lifecycle::screen_locked(&w.session, &w.machine)
+    });
+}
+
+#[test]
+fn a_sleep_during_the_reading_goes_ahead_and_the_import_ends_closed() {
+    a_close_during_the_reading_of("sleep", |w| lifecycle::will_sleep(&w.session, &w.machine));
+}
+
+#[test]
+fn a_quit_during_the_reading_goes_ahead_and_the_import_ends_closed() {
+    a_close_during_the_reading_of("quit", |w| {
+        lifecycle::close_normal(&w.session, w.session.current_id(), &w.machine, CloseReason::Quit)
+            .unwrap();
+    });
+}
+
+#[test]
+fn cancel_import_stops_only_an_import_that_is_reading() {
+    let world = World::new();
+    world.create();
+    let operations = world.session.operations();
+
+    // Nothing running: nothing happens.
+    import_export::cancel_import(operations);
+
+    // An import saving its rows is not stopped by it (only a sleep stops that).
+    let saving = operations.begin(OperationKind::Import, None).unwrap();
+    import_export::cancel_import(operations);
+    assert!(!saving.is_cancelled() && !saving.is_stopped_by_user());
+    drop(saving);
+
+    // Another kind of operation is never stopped by it.
+    let export = operations.begin(OperationKind::Export, None).unwrap();
+    export.set_reading(true);
+    import_export::cancel_import(operations);
+    assert!(!export.is_cancelled());
+    drop(export);
+
+    // An import reading its files is, and the stop is the user's.
+    let reading = operations.begin(OperationKind::Import, None).unwrap();
+    reading.set_reading(true);
+    import_export::cancel_import(operations);
+    assert!(reading.is_cancelled() && reading.is_stopped_by_user());
+    drop(reading);
+
+    // A sleep's stop is not the user's.
+    let sleeping = operations.begin(OperationKind::Import, None).unwrap();
+    operations.stop_running();
+    assert!(sleeping.is_cancelled() && !sleeping.is_stopped_by_user());
+}
+
 #[test]
 fn a_sleep_abandons_an_export_and_removes_what_it_wrote() {
     let world = World::new();
@@ -557,7 +717,7 @@ fn a_sleep_abandons_an_export_and_removes_what_it_wrote() {
 
     let operation = world.session.operations().begin(OperationKind::Export, None).unwrap();
     let mut sleeper = None;
-    let exported = world.session.read(|conn| {
+    let exported = world.session.read(world.session.current_id(), |conn| {
         import_export::export_collection_stoppable(
             conn,
             destination.path(),
@@ -592,6 +752,7 @@ fn a_sleep_interrupts_a_passphrase_change_and_the_old_passphrase_still_opens() {
 
     let changed = backups_ops::change_passphrase(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         &world.config.path().join("probes"),
         &passphrase(),
@@ -619,7 +780,13 @@ fn a_sleep_abandons_a_restore_and_leaves_the_database_as_it_was() {
     let world = Arc::new(World::new());
     world.create();
     world.change();
-    lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
     world.open();
     world.change();
     let count = world.firearm_count();
@@ -631,7 +798,7 @@ fn a_sleep_abandons_a_restore_and_leaves_the_database_as_it_was() {
         &world.machine,
         &backup.path,
         &passphrase(),
-        None,
+        Target::Open(world.session.current_id()),
     );
     join(&sleeper);
     world.events.on_event(|_, _| {});
@@ -649,7 +816,13 @@ fn a_sleep_stops_deleting_the_backups_between_files() {
     world.create();
     for _ in 0..3 {
         world.change();
-        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
         world.open();
         world.clock.advance(chrono::Duration::days(1));
     }
@@ -657,7 +830,7 @@ fn a_sleep_stops_deleting_the_backups_between_files() {
     assert_eq!(backups::list(&world.backup_folder(), &id).unwrap().len(), 3);
     let sleeper = world.sleep_at("backups_delete:progress", |payload| payload["processed"] == 1);
 
-    let deleted = backups_ops::delete_all_backups(&world.session, true);
+    let deleted = backups_ops::delete_all_backups(&world.session, world.session.current_id(), true);
     join(&sleeper);
     world.events.on_event(|_, _| {});
 
@@ -688,7 +861,13 @@ fn with_three_backups(world: &World, large: bool) -> Vec<(BackupInfo, Vec<u8>)> 
     }
     for _ in 0..3 {
         world.change();
-        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
         world.open();
         world.clock.advance(chrono::Duration::days(1));
     }
@@ -712,6 +891,7 @@ fn change_location(
 ) -> Result<BackupSettingsSaved, CommandError> {
     databases::update_backup_settings(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         &BackupSettingsInput {
             enabled: true,
@@ -835,6 +1015,7 @@ fn sleep_during_the_backup_of(close: impl FnOnce(&World)) {
     world.set_lock(false, 10, true);
     world.change();
     world.grow(3 << 20);
+    let ending = json!(world.session.current_id().get());
     let sleeper = world.sleep_at("backup:progress", |payload| {
         let (processed, total) =
             (payload["processed"].as_u64().unwrap(), payload["total"].as_u64().unwrap());
@@ -854,6 +1035,11 @@ fn sleep_during_the_backup_of(close: impl FnOnce(&World)) {
     assert!(changes_waiting, "its changes stay waiting");
     assert!(!marked, "the close finishes as a lock at sleep");
     assert_eq!(world.closed_reasons(), vec![json!("sleep")], "announced once, as a sleep");
+    assert_eq!(
+        world.session_ids_of("session:closed"),
+        vec![ending],
+        "it names the session the normal close was ending"
+    );
     assert!(world.notices().contains(&stopped_notice(&world, "backup", json!({}))));
 }
 
@@ -865,7 +1051,12 @@ fn a_sleep_during_the_screen_lock_backup_finishes_the_close_at_once() {
 #[test]
 fn a_sleep_during_a_user_closes_backup_finishes_the_close_at_once() {
     sleep_during_the_backup_of(|world| {
-        let outcome = lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed);
+        let outcome = lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        );
         assert_eq!(outcome.unwrap().backup, BackupOutcome::Skipped);
     });
 }
@@ -877,12 +1068,20 @@ fn a_sleep_lock_cut_short_after_its_first_step_is_finished_on_waking() {
     let world = World::new();
     world.create();
     let id = world.change();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     let copy = world.opened_document();
 
     assert!(lifecycle::begin_immediate(&world.session, CloseReason::Sleep));
     // No command reaches the database from the first step on.
-    assert_eq!(world.session.read(|_| Ok(())).unwrap_err().code, "DATABASE_CLOSED");
+    assert_eq!(
+        world.session.read(world.session.current_id(), |_| Ok(())).unwrap_err().code,
+        "DATABASE_CLOSED"
+    );
     assert_eq!(
         databases::database_status(&world.session, &world.machine).unwrap_err().code,
         "DATABASE_CLOSED"
@@ -981,7 +1180,12 @@ fn a_shutdown_keeps_the_draft_deletes_document_copies_and_makes_no_backup() {
     let world = World::new();
     world.create();
     let id = world.change();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     let copy = world.opened_document();
 
     lifecycle::will_shut_down(&world.session, &world.machine);
@@ -1036,7 +1240,8 @@ impl World {
             Shown::Tiff => ("scan.tif", document_fixture("one-page.tif")),
         };
         let document = preview_support::add_document(&self.session, firearm, name, &bytes);
-        preview::open_preview(&self.session, &preview_env.env, document).unwrap();
+        preview::open_preview(&self.session, self.session.current_id(), &preview_env.env, document)
+            .unwrap();
         let shown = OpenPreview {
             kind,
             surface: preview_env.surfaces.built().pop(),
@@ -1059,7 +1264,8 @@ fn ways_the_collection_goes() -> Vec<Way> {
         (
             "lock now",
             Box::new(|w| {
-                databases::lock_database(&w.session, &w.machine, None).unwrap();
+                databases::lock_database(&w.session, w.session.current_id(), &w.machine, None)
+                    .unwrap();
             }),
         ),
         (
@@ -1084,7 +1290,13 @@ fn ways_the_collection_goes() -> Vec<Way> {
         (
             "close",
             Box::new(|w| {
-                databases::close_database(&w.session, &w.machine, CloseReason::Closed).unwrap();
+                databases::close_database(
+                    &w.session,
+                    w.session.current_id(),
+                    &w.machine,
+                    CloseReason::Closed,
+                )
+                .unwrap();
             }),
         ),
         (

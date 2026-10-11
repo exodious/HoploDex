@@ -3,7 +3,7 @@
 // them are in contracts/ui-accessories.md. The collection is refreshed by the
 // caller after a mount (`useCollection().refresh()`), as for every mutation.
 
-import { invoke } from "../../services/tauriClient";
+import type { SessionScope } from "../session/sessionScope";
 import type { RecordLabel, RecordRef } from "./types";
 
 export type MountCandidate = { label: RecordLabel; mountedOn: RecordLabel | null };
@@ -23,12 +23,17 @@ export type MountRecordOutput = { item: RecordLabel; host: RecordLabel | null };
 
 /** Moves `item` onto `host`, or unmounts it with `null` (FR-012). A rejected
  * host fails with `fieldErrors.host`. */
-export function mountRecord(item: RecordRef, host: RecordRef | null): Promise<MountRecordOutput> {
-  return invoke<MountRecordOutput>("mount_record", { input: { item, host } });
+export function mountRecord(
+  scope: SessionScope,
+  item: RecordRef,
+  host: RecordRef | null,
+): Promise<MountRecordOutput> {
+  return scope.invoke<MountRecordOutput>("mount_record", { input: { item, host } });
 }
 
 export function listMountCandidates(
+  scope: SessionScope,
   input: ListMountCandidatesInput,
 ): Promise<{ candidates: MountCandidate[] }> {
-  return invoke<{ candidates: MountCandidate[] }>("list_mount_candidates", { input });
+  return scope.invoke<{ candidates: MountCandidate[] }>("list_mount_candidates", { input });
 }

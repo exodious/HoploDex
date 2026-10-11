@@ -525,6 +525,8 @@ changes**: a destructive `ConfirmDialog`. When `resumable` is false, the body
 adds "<label> no longer exists, so these changes can only be discarded." and
 only **Discard changes** is offered.
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/ui.md): the dialog also names the version that kept the changes, offers **Close the database** in every case, shows an Opening… state while Resume works, and returns if the form can't open (008 contracts/ui.md §1)._
+
 A draft's values come from the database, perhaps from another computer, so
 the form takes only the fields it has, and only those of the same kind (a
 string for a string); every other field starts as it would without the

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Combobox, Icon } from "../../components";
 import type { ComboboxOption } from "../../components";
+import { useSessionScope } from "../session/sessionScope";
 import { listMountCandidates } from "./mountsService";
 import type { MountCandidate } from "./mountsService";
 import { recordNameText } from "./recordNames";
@@ -59,6 +60,7 @@ export function MountChooser({
   error,
   id,
 }: MountChooserProps) {
+  const scope = useSessionScope();
   // The text typed since the field was last settled; `null` shows `value`.
   const [typed, setTyped] = useState<string | null>(null);
   const typedNow = useRef<string | null>(null);
@@ -73,7 +75,7 @@ export function MountChooser({
   async function loadOptions(searched: string): Promise<ComboboxOption[]> {
     // The field showing the chosen name is not a search for it.
     const query = typedNow.current === null ? "" : searched.trim();
-    const { candidates: found } = await listMountCandidates({ role, record, query });
+    const { candidates: found } = await listMountCandidates(scope, { role, record, query });
     const rows: ComboboxOption[] = found.map((entry: MountCandidate) => {
       const { label: candidate, mountedOn } = entry;
       const key = candidateKey(candidate);

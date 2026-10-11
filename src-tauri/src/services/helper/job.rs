@@ -1,10 +1,10 @@
-//! Windows: how HoploDex starts the render helper (research.md §11, amended
-//! 2026-10-07).
+//! Windows: how HoploDex starts a confined helper (007's research.md §11,
+//! amended 2026-10-07; 008's research.md §8).
 //!
 //! HoploDex, not the helper, owns the helper's job object: one job per
-//! helper, with `KILL_ON_JOB_CLOSE`, `ACTIVE_PROCESS = 1` and a 2 GiB memory
-//! limit. The only handle to it lives in the [`JobChild`], and it is not
-//! inheritable, so when HoploDex exits in any way (an exit, a crash,
+//! helper, with `KILL_ON_JOB_CLOSE`, `ACTIVE_PROCESS = 1` and a memory
+//! limit the caller names (2 GiB for the TIFF helper). The only handle to it
+//! lives in the [`JobChild`], and it is not inheritable, so when HoploDex exits in any way (an exit, a crash,
 //! `TerminateProcess`) the kernel closes it and kills the helper at once.
 //!
 //! The helper is put in the job by `CreateProcessW` itself, through a
@@ -41,11 +41,6 @@ use windows_sys::Win32::System::Threading::{
     STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
     WaitForSingleObject,
 };
-
-use super::helper::ARGUMENT;
-
-/// The job's memory limit: 2 GiB, as Linux's `RLIMIT_DATA` (research.md §11).
-pub const MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
 /// The helper's exit code when it is ended with [`JobChild::kill`].
 const KILLED: u32 = 1;
@@ -100,14 +95,20 @@ impl JobChild {
     }
 }
 
-/// Starts `exe --render-helper <args>` into a new job object of its own, with
-/// a pipe for its stdin and one for its stdout. `args` are for tests (the
-/// self-check); the app passes none. The pipe ends are plain `File`s, which
+/// Starts `exe <mode> <args>` (`mode` being the helper's argument, such as
+/// `--render-helper`) into a new job object of its own with `memory_limit`
+/// bytes (as Linux's `RLIMIT_DATA`), and a pipe for its stdin and one for its
+/// stdout. `args` are for tests (the self-check); the app passes none. The pipe ends are plain `File`s, which
 /// read and write synchronously: `ChildStdin` and `ChildStdout` wait on
 /// overlapped I/O, which a `CreatePipe` handle does not do (a read would
 /// never return).
-pub fn spawn(exe: &Path, args: &[&OsStr]) -> io::Result<(JobChild, File, File)> {
-    let job = job()?;
+pub fn spawn(
+    exe: &Path,
+    mode: &str,
+    memory_limit: usize,
+    args: &[&OsStr],
+) -> io::Result<(JobChild, File, File)> {
+    let job = job(memory_limit)?;
 
     // The helper's ends are inheritable, ours are not.
     let (stdin_read, stdin_write) = pipe(false)?;
@@ -117,7 +118,7 @@ pub fn spawn(exe: &Path, args: &[&OsStr]) -> io::Result<(JobChild, File, File)> 
 
     let mut command_line = Vec::new();
     for (i, arg) in std::iter::once(exe.as_os_str())
-        .chain([OsStr::new(ARGUMENT)])
+        .chain([OsStr::new(mode)])
         .chain(args.iter().copied())
         .enumerate()
     {
@@ -196,7 +197,7 @@ pub fn spawn(exe: &Path, args: &[&OsStr]) -> io::Result<(JobChild, File, File)> 
 }
 
 /// A job object holding the limits, and no inheritable handle to itself.
-fn job() -> io::Result<OwnedHandle> {
+fn job(memory_limit: usize) -> io::Result<OwnedHandle> {
     // SAFETY: plain system calls; the structure is zeroed and `size_of` is
     // its own size.
     unsafe {
@@ -210,7 +211,7 @@ fn job() -> io::Result<OwnedHandle> {
             | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
             | JOB_OBJECT_LIMIT_JOB_MEMORY;
         limits.BasicLimitInformation.ActiveProcessLimit = 1;
-        limits.JobMemoryLimit = MEMORY_LIMIT;
+        limits.JobMemoryLimit = memory_limit;
         if SetInformationJobObject(
             job.as_raw_handle(),
             JobObjectExtendedLimitInformation,

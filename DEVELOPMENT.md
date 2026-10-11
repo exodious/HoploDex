@@ -513,6 +513,28 @@ CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.to
 for the tests with unwinding and for the binary with the profile's
 `panic = "abort"`, and the two then fail to link.
 
+The import has a release-only test of its own, `import_largest_test.rs`
+(specs/008-hardening-batch research.md §9, SC-003). It writes the largest
+export the app can make, 10,000 firearms and 10,000 accessories with every
+text field at its maximum, as one workbook and as two CSV files, then reads
+each through `import_reader::read_files` and imports it into a fresh database.
+Nothing may be refused and every row must import; it prints the reading time,
+the import time and the process's peak memory. It takes minutes and a few
+hundred MB of disk, it does not exist in a debug build, and it is `#[ignore]`d,
+so the default run skips it. **Run it before a pull request that touches the
+import's reading or matching (`services/import_reader/`,
+`commands/import_export.rs`), note the three figures in the pull request, and
+run it before every release:**
+
+```bash
+CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.toml \
+  --release --test import_largest_test -- --ignored --nocapture
+```
+
+`HOPLODEX_LARGEST_ROWS=500` (any count) sets the number of firearms and of
+accessories, for a quick check of the test itself; its timings then mean
+nothing.
+
 This command stays on `cargo test` on purpose: nextest runs each test in its
 own process, so it would repeat the 10,000-record seeding that
 `performance_test.rs` does once per process under `cargo test`. If you do run
@@ -671,6 +693,45 @@ Each takes `shows` to run the 3-page PDF and take a screenshot instead. Logs and
 screenshots go to `e2e/screenshots-out/pdf-surface/`. Exit codes: 0 passed, 1 no
 window, 2 no load, 3 usage, 4 a check failed.
 
+### Window controls check
+
+The main window's browser controls (specs/008-hardening-batch/research.md §12
+to §15) are two layers: the page's handlers (`src/features/app/browserControls.ts`)
+and each OS's own filter on the web view's menu and keys
+(`src-tauri/src/window_controls/`). Both are installed only in release and E2E
+builds (`not(debug_assertions)`; `npm run tauri dev` keeps Inspect Element and
+reload). The native layer differs on each OS, so one script per OS builds
+`src-tauri/examples/window_controls_check.rs` with `--profile e2e` and drives
+it with real input (`src-tauri/examples/real_input.{py,swift,ps1}`, which the
+PDF surface check uses too). The example opens a main window with the app's own
+`window_controls::apply` and a test page that has none of the page's handlers,
+so it judges the native layer alone. It right-clicks a blank area, a row, a
+button, an image, a text field and a selection and logs every item each native
+menu offered (the filter's own log, `apply(.., log_items: true)`), presses every
+key FR-012 names and the mouse's back and forward buttons with text typed in a
+field, and on macOS presses ⌃⌘D on a selection. It fails (exit 4) if a menu
+offered an item outside FR-011's list or appeared where none belongs, a Look Up
+panel opened, or the page reloaded or navigated or lost the typed text. Run it
+on every OS before a pull request that touches `window_controls/` or the
+browser controls, and whenever the web view engine is updated:
+
+- **Linux:** `scripts/dev-container.sh scripts/window-controls-check.sh`, under
+  Xvfb with XTest input and throwaway `HOME` and `XDG_*` folders.
+- **macOS:** `scripts/macos/window-controls-check.sh`, from a Mac with the tart
+  VM set up, as the PDF surface check runs. AppKit's AutoFill is not in the log
+  (it is added outside the menu's items) and is allowed (spec.md
+  Clarifications 2026-10-11).
+- **Windows:** `powershell -ExecutionPolicy Bypass -File
+  scripts\windows\window-controls-check.ps1`, in the signed-in desktop session,
+  at 100% scaling.
+
+Logs and screenshots go to `e2e/screenshots-out/window-controls/`. Exit codes:
+0 passed, 1 no window, 3 usage (or a build with debug assertions), 4 a check
+failed. Two unit tests in `window_controls` say which builds install the filters: the
+E2E build does (`cargo test --profile e2e --features e2e --manifest-path
+src-tauri/Cargo.toml window_controls`) and a plain debug build does not (the
+default `cargo test`).
+
 ### WebKit's sandbox on a Linux host
 
 On Linux the app turns on WebKit's web-process sandbox (bubblewrap) for the
@@ -737,6 +798,17 @@ of anything else's way. A check that needs it goes in a test of its own,
 which leaves the database as it found it, and the other tests don't depend
 on it. us8's restore-dialog regressions are an example. The screenshot walk
 uses no real input, so it runs everywhere.
+
+The PDF surface and window controls checks do not use that helper. They are
+Rust examples run outside WebDriver, and each OS gives them its own input
+script in `src-tauri/examples/`: `real_input.py` (Linux; it wraps
+`e2e/scripts/x11-input.py` and adds the right button, the wheel and the mouse's
+back and forward buttons), `real_input.swift` (macOS, compiled by the check's
+script; the terminal needs Accessibility access) and `real_input.ps1`
+(Windows). They were `pdf_surface_input.*` before specs/008-hardening-batch
+renamed them, because a second check uses them. Each file's header lists its
+commands (`click`, `rclick`, `move`, `key`, `xbutton` and more); a check passes
+the one for its OS to the example with `--input`.
 
 To track down a bug of this kind, write a throwaway spec that opens the
 screen with real input and logs what you need from the page with
@@ -1022,7 +1094,31 @@ collection instead of an empty one:
 scripts/human-testing.sh                # seed on first use, then launch `tauri dev`
 scripts/human-testing.sh --reset        # throw the data away and reseed
 scripts/human-testing.sh --extra 200    # also generate 200 plain firearms
+scripts/human-testing.sh --release      # launch the E2E-profile build, not `tauri dev`
+scripts/human-testing.sh --reset --pending-from 1.2.0   # reseed, with pending changes another version kept
 ```
+
+`--release` is for trying what a development build doesn't have: the browser
+controls (no reload, no Inspect Element, a trimmed right-click menu; specs/008
+research.md §12-§15) are installed only in release and E2E builds. It runs
+`npm run build` and `cargo build --profile e2e --features custom-protocol,e2e`,
+as `npm run test:e2e` does, and launches that binary with the
+`HOPLODEX_E2E_*` variables pointing into the same `.human-testing/` sandbox
+(plus `XDG_*` or `HOME`, as above). Because it is an E2E build, saved
+passphrases are kept in `.human-testing/keyring.json` rather than the OS
+keyring, the confirmation before a document opens in another app is answered
+"open" without asking, and the E2E suite's WebDriver server listens on
+127.0.0.1:4445 (`TAURI_WEBDRIVER_PORT`) while it runs, unauthenticated, so close
+the app when you are done.
+
+`--pending-from <version>` is passed to the seed, so it acts only when the seed
+runs (with `--reset`, or on first use). The Shared collection's pending changes
+are then recorded as kept by that version of HoploDex, in a form this build
+can't resume (a draft form version it doesn't know, and `last_saved_version`
+set to the version you gave). Open "Shared collection" to see the dialog that
+names that version and offers only **Close the database** and **Discard
+changes** (specs/008-hardening-batch quickstart.md, US4). Without it, the
+pending changes are this build's and resume.
 
 The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own
 command layer, so it covers photos, documents, dispositions and every
@@ -1036,10 +1132,12 @@ data lives in `.human-testing/` (git-ignored): two databases in `HoploDex/`,
 "Main collection" (the full collection) and "Shared collection" (left open
 by "Workshop PC", with pending changes), both opened with the passphrase the
 script prints; two backups of "Main collection" in `Backups/`, its custom
-backup folder; the `machine.json` listing both databases; and three
-spreadsheets in
-`import-samples/` (clean, conflicting and invalid rows) to try File > Import
-with. The app is pointed at it, so your real collections are never opened:
+backup folder; the `machine.json` listing both databases; and a set of
+spreadsheets in `import-samples/` to try File > Import with: clean,
+conflicting and invalid rows, sheets exported before a column existed, mounts,
+accessories and registrations, and one the import refuses as a whole,
+`import-refused-too-many-sheets.xlsx` (20 sheets, where an import takes at
+most 16), to see the refusal in the dialog's banner. The app is pointed at it, so your real collections are never opened:
 on Linux through `XDG_*_HOME` and a `user-dirs.dirs` whose documents folder
 is the sandbox; on macOS through a `HOME` of its own, `.human-testing/home/`,
 whose `Library/Application Support` is `config/` and whose `Documents` is the

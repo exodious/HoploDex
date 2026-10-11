@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "../../components";
 import { CollectionContext } from "../app/collectionStore";
@@ -8,6 +8,7 @@ import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
 import { MountedSection } from "./MountedSection";
 import type { MountedEntry, RecordLabel, RecordRef } from "./types";
+import { render } from "../../test/sessionScope";
 
 // specs/006-accessory-links contracts/ui-accessories.md §5 (FR-012, FR-013,
 // US2-3a, US2-10): the Mounted section. Its props, as these tests assume
@@ -21,8 +22,9 @@ const mountRecord = vi.fn();
 const listMountCandidates = vi.fn();
 
 vi.mock("./mountsService", () => ({
-  mountRecord: (item: RecordRef, host: RecordRef | null) => mountRecord(item, host),
-  listMountCandidates: (input: unknown) => listMountCandidates(input),
+  mountRecord: (_scope: unknown, item: RecordRef, host: RecordRef | null) =>
+    mountRecord(item, host),
+  listMountCandidates: (_scope: unknown, input: unknown) => listMountCandidates(input),
 }));
 
 function label(

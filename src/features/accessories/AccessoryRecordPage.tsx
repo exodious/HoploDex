@@ -25,7 +25,7 @@ import { MountedSection } from "../mounts/MountedSection";
 import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
 import { accessoryNameText } from "../mounts/recordNames";
 import type { RecordLabel } from "../mounts/types";
-import { peekResumedDraft } from "../session/usePendingDraft";
+import { useSessionScope } from "../session/sessionScope";
 import { AccessoryForm } from "./AccessoryForm";
 import * as accessoriesService from "./accessoriesService";
 import type { Accessory, AccessoryDetail, AccessoryInput } from "./types";
@@ -47,6 +47,7 @@ function failureMessage(e: unknown, fallback: string): string {
  * layout, with photos, documents, value, notes, disposition history and
  * coverage, and (User Story 2) its "Mounted on" chain and Mounted section. */
 export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
+  const scope = useSessionScope();
   const {
     accessoriesById,
     policiesById,
@@ -66,7 +67,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   useEffect(() => {
     let cancelled = false;
     accessoriesService
-      .getAccessory(id)
+      .getAccessory(scope, id)
       .then((loaded) => !cancelled && setAccessory(loaded))
       .catch(
         (e) => !cancelled && setLoadError(failureMessage(e, "This accessory couldn't be loaded.")),
@@ -74,17 +75,26 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [id, revision]);
+  }, [scope, id, revision]);
 
   // Pending changes the user resumed for this accessory reopen their form
   // (FR-039), which takes them as its unsaved input.
   const loadedId = accessory?.id;
   useEffect(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (loadedId === undefined || resumed?.kind !== "accessory" || resumed.targetId !== loadedId)
       return;
     if (resumed.mode !== "add") setDialog(resumed.mode);
-  }, [loadedId]);
+  }, [scope, loadedId]);
+
+  // A record that can't be loaded can't open the form those changes belong
+  // to: tell the scope, so the pending changes dialog comes back
+  // (specs/008 research.md §6). A draft for another record isn't this page's.
+  useEffect(() => {
+    const resumed = scope.resumed?.draft;
+    if (!loadError || resumed?.kind !== "accessory" || resumed.targetId !== id) return;
+    void scope.resumeFailed(loadError);
+  }, [scope, id, loadError]);
 
   if (loadError) {
     return (
@@ -148,12 +158,12 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   }
 
   async function handleUpdate(input: AccessoryInput) {
-    const updated = await accessoriesService.updateAccessory(id, input);
+    const updated = await accessoriesService.updateAccessory(scope, id, input);
     await afterChange(updated, `Saved changes to ${name}.`);
   }
 
   async function handleDispose(input: DisposeInput) {
-    const updated = await accessoriesService.disposeAccessory(id, input);
+    const updated = await accessoriesService.disposeAccessory(scope, id, input);
     await afterChange(
       updated,
       `Marked ${name} as ${dispositionLabel(updated.dispositionType).toLowerCase()}.`,
@@ -161,7 +171,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   }
 
   async function handleRestore(input: ReverseDispositionInput) {
-    const restored = await accessoriesService.reverseAccessoryDisposition(id, {
+    const restored = await accessoriesService.reverseAccessoryDisposition(scope, id, {
       history: input.history,
     });
     await afterChange(restored, `Restored ${name} to the collection.`);
@@ -169,6 +179,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
 
   async function handleCoverage(input: AssignCoverageInput) {
     const updated = await accessoriesService.assignAccessoryCoverage(
+      scope,
       id,
       input.policyId,
       input.scheduledCoverageAmount ?? null,
@@ -178,7 +189,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
 
   async function handleDelete() {
     try {
-      await accessoriesService.deleteAccessory(id, true);
+      await accessoriesService.deleteAccessory(scope, id, true);
       await refresh();
       notify(`Deleted ${name}.`);
       back?.go();
@@ -188,7 +199,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   }
 
   async function handleMediaChanged() {
-    setAccessory(await accessoriesService.getAccessory(id));
+    setAccessory(await accessoriesService.getAccessory(scope, id));
     await refresh();
   }
 

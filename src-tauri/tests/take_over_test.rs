@@ -119,7 +119,7 @@ impl World {
 
     fn add_firearm(&self, serial: &str) -> Result<(), CommandError> {
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", serial),
@@ -131,7 +131,7 @@ impl World {
     }
 
     fn count_firearms(&self) -> Result<i64, CommandError> {
-        self.session.read(|conn| {
+        self.session.read(self.session.current_id(), |conn| {
             conn.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0))
                 .map_err(CommandError::from_db)
         })
@@ -169,7 +169,7 @@ fn taking_over_opens_and_marks_the_database_as_open_here() {
 
     let marker = world
         .session
-        .read(|conn| {
+        .read(world.session.current_id(), |conn| {
             conn.query_row("SELECT open_machine_id, open_machine_name FROM app_state", [], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })
@@ -189,7 +189,7 @@ fn our_own_writes_never_look_like_a_take_over() {
     }
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute("UPDATE collection_settings SET idle_lock_minutes = 30", [])
                 .map_err(CommandError::from_db)
         })
@@ -208,6 +208,7 @@ fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
     let world = World::new();
     world.create();
     world.add_firearm("A1").unwrap();
+    let ending = world.session.current_id().get();
     let ours = world.replace_from_another_computer();
     let ours_before = fs::read(&ours).unwrap();
     let theirs_before = fs::read(world.path()).unwrap();
@@ -217,7 +218,7 @@ fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
     assert!(world.events.recorded().is_empty());
 
     let ran = Cell::new(false);
-    let refused = world.session.write(|_| {
+    let refused = world.session.write(world.session.current_id(), |_| {
         ran.set(true);
         Ok(())
     });
@@ -234,7 +235,11 @@ fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
             ),
             (
                 "session:closed".to_owned(),
-                json!({ "reason": "takenOver", "databasePath": world.path_text() })
+                json!({
+                    "reason": "takenOver",
+                    "databasePath": world.path_text(),
+                    "sessionId": ending
+                })
             ),
         ]
     );
@@ -255,8 +260,13 @@ fn a_close_after_a_take_over_writes_nothing() {
     let ours_before = fs::read(&ours).unwrap();
     let theirs_before = fs::read(world.path()).unwrap();
 
-    let outcome =
-        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    let outcome = lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::NotAttempted);
     assert!(!world.session.is_open());
@@ -287,7 +297,7 @@ fn storage_that_goes_away_is_not_a_take_over() {
     fs::rename(world.path(), &away).unwrap();
 
     let ran = Cell::new(false);
-    let refused = world.session.write(|_| {
+    let refused = world.session.write(world.session.current_id(), |_| {
         ran.set(true);
         Ok(())
     });
@@ -303,8 +313,13 @@ fn storage_that_goes_away_is_not_a_take_over() {
     assert_unavailable(world.add_firearm("A3"), &world.path());
 
     let before = fs::read(world.path()).unwrap();
-    let outcome =
-        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    let outcome = lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::Failed);
     assert_eq!(outcome.failure_reason, Some(BackupFailureReason::DatabaseUnreachable));
@@ -337,7 +352,7 @@ fn a_folder_that_cant_be_read_any_more_is_unreachable() {
     lifecycle::create(&world.session, &world.machine, &path, &passphrase()).unwrap();
 
     fs::set_permissions(&share, fs::Permissions::from_mode(0o000)).unwrap();
-    let refused = world.session.write(|_| Ok(()));
+    let refused = world.session.write(world.session.current_id(), |_| Ok(()));
     fs::set_permissions(&share, fs::Permissions::from_mode(0o700)).unwrap();
 
     assert_unavailable(refused, &path);
@@ -350,7 +365,7 @@ fn an_io_error_from_sqlite_during_a_write_counts_as_lost_storage() {
     let world = World::new();
     world.create();
 
-    let failed = world.session.write(|_| -> Result<(), CommandError> {
+    let failed = world.session.write(world.session.current_id(), |_| -> Result<(), CommandError> {
         Err(CommandError::from_db(rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_IOERR),
             None,

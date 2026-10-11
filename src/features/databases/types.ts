@@ -89,6 +89,12 @@ export interface PendingSummary {
   savedAt: string;
   /** False when the target no longer exists or `formVersion` is unknown. */
   resumable: boolean;
+  /** The HoploDex version that last saved the database; null when none is
+   * recorded (specs/008 FR-015). */
+  savedByVersion: string | null;
+  /** This build's version, so the dialog words the message without guessing
+   * which is newer. */
+  appVersion: string;
 }
 
 export interface Draft {
@@ -102,6 +108,9 @@ export interface Draft {
 }
 
 export interface DatabaseStatus {
+  /** This open's session id (specs/008 research.md §1): never 0, and every
+   * scoped command names it (research.md §2, §3). */
+  sessionId: number;
   path: string;
   name: string;
   /** FR-017, on this computer. */

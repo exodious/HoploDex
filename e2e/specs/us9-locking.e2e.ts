@@ -1,3 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
+import { killApp, relaunchApp } from "../support/app";
+import { sandboxPath, seedCollection } from "../support/sandbox";
 import {
   $,
   E2E_PASSPHRASE,
@@ -5,12 +9,14 @@ import {
   browser,
   chooseMenuItem,
   clickButton,
+  confirmTakeOver,
   createDatabase,
   expect,
   fieldValue,
   fill,
   openFirearm,
   scratchDocuments,
+  selectChooserRow,
   selectOption,
   selectedChooserRow,
   submitPassphrase,
@@ -164,5 +170,93 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
     });
 
     expect(await chooserSays("HoploDex locked “Locked” after 1 minute without use.")).toBe(true);
+  });
+});
+
+// specs/008-hardening-batch User Story 4: changes a form this build doesn't
+// know can't be resumed, but the database can be closed with them kept
+// (contracts/ui.md §1). Each test seeds the human-testing collection afresh,
+// whose "Shared collection" holds pending changes for the Beretta 92FS edit
+// and is marked open on another computer.
+const SHARED = "Shared collection";
+const BERETTA_LABEL = "Beretta 92FS — edit";
+
+/** Replaces the sandbox's databases with a new seed, the pending changes of
+ * "Shared collection" kept by `pendingFrom` when given (else by this build),
+ * and starts the app on them. The app is stopped and the earlier seed's folder
+ * removed first, since the seed won't write into one that exists. */
+async function reseed(pendingFrom?: string) {
+  await killApp();
+  fs.rmSync(path.join(sandboxPath()!, "seed"), { recursive: true, force: true });
+  seedCollection({ pendingFrom });
+  await relaunchApp();
+}
+
+/** Opens "Shared collection", taking it over from the other computer when
+ * asked, and waits for the pending changes question. */
+async function openSharedToPending(): Promise<string> {
+  await waitForChooser();
+  if ((await selectedChooserRow()) !== SHARED) await selectChooserRow(SHARED);
+  await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+  const takeOver = await $("button=Take over…");
+  if (await takeOver.waitForExist({ timeout: 2000 }).catch(() => false)) {
+    await confirmTakeOver(SHARED, process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+  }
+  return dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
+}
+
+/** The labels of the buttons in the open dialog's footer, in order. */
+async function footerButtons(): Promise<string[]> {
+  return browser.execute(() =>
+    [...document.querySelectorAll('[role="dialog"] .hd-dialog__footer button')].map(
+      (button) => button.textContent?.trim() ?? "",
+    ),
+  );
+}
+
+describe("User Story 4 (008) - Pending changes from another version", () => {
+  it("pending changes from another version: close, then reopen", async () => {
+    await reseed("1.2.0");
+
+    const text = await openSharedToPending();
+    expect(text).toContain("They were kept by HoploDex 1.2.0.");
+    expect(await footerButtons()).toEqual(["Discard changes", "Close the database"]);
+
+    await clickButton("Close the database");
+    await waitForChooser();
+    expect(await selectedChooserRow()).toBe(SHARED);
+    expect(await $('nav[aria-label="Sections"]').isExisting()).toBe(false);
+
+    // The changes were kept: the next open asks about them again.
+    await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+    const again = await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
+    expect(again).toContain("They were kept by HoploDex 1.2.0.");
+    expect(await footerButtons()).toEqual(["Discard changes", "Close the database"]);
+  });
+
+  it("close from the dialog, reopen and resume", async () => {
+    await reseed();
+
+    await openSharedToPending();
+    expect(await footerButtons()).toEqual([
+      "Discard changes",
+      "Close the database",
+      "Resume editing",
+    ]);
+
+    await clickButton("Close the database");
+    await waitForChooser();
+    expect(await selectedChooserRow()).toBe(SHARED);
+
+    await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+    await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
+    await clickButton("Resume editing");
+
+    await dialogTitled("Edit Beretta 92FS");
+    expect(await fieldValue("Make")).toBe("Beretta");
+    expect(await fieldValue("Model")).toBe("92FS");
+    expect(await fieldValue("Serial number")).toBe("BER92-0417");
+    expect(await fieldValue("Caliber")).toBe("9mm");
+    expect(await fieldValue("Notes")).toBe("Swapped the grips for the walnut set; half typed");
   });
 });

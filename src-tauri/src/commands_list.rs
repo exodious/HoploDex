@@ -80,5 +80,34 @@ pub const COMMANDS: &[&str] = &[
     "get_export_scope",
     "export_collection",
     "import_collection",
+    "cancel_import",
     "resolve_import_conflicts",
+];
+
+// The commands that don't name the open session in a `HoploDex-Session` header
+// (008 research.md §2, contracts/tauri-commands.md "Every request names its
+// session"): the chooser's, the status that tells the frontend the id, the
+// ones that act on the running operation or on this computer, and the ones
+// that take a database path and need the header only when they work on the
+// open database (`restore_backup`, `list_backups`, `forget_saved_passphrase`).
+// Every other command takes `session: ScopedSession`;
+// `tests/session_scope_test.rs` checks the two lists against the code.
+#[allow(dead_code)]
+pub const UNSCOPED_COMMANDS: &[&str] = &[
+    "get_chooser_state",
+    "create_database",
+    "open_database",
+    "remove_recent_database",
+    "locate_database",
+    "get_database_status",
+    "quit_application",
+    "note_activity",
+    "set_idle_paused",
+    "skip_backup",
+    "cancel_import",
+    "get_document_opening",
+    "set_document_opening",
+    "restore_backup",
+    "list_backups",
+    "forget_saved_passphrase",
 ];

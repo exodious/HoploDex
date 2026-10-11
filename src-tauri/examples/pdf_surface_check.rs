@@ -47,8 +47,8 @@
 //
 // Real input: `--input ARG` (repeated) is the command that posts it, given
 // `click X Y`, `rclick X Y`, `scroll X Y N` (negative: up) and `key ...`
-// after it with screen coordinates: examples/pdf_surface_input.py (Linux, with
-// python3), pdf_surface_input.swift (macOS, compiled) or pdf_surface_input.ps1
+// after it with screen coordinates: examples/real_input.py (Linux, with
+// python3), real_input.swift (macOS, compiled) or real_input.ps1
 // (Windows). Without it the input steps are skipped and said to be.
 //
 // Exit codes:

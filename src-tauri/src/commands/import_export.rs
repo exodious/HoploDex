@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
+use tauri::Emitter;
 
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
@@ -19,16 +19,18 @@ use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
 use crate::services::attachments::safe_basename;
 use crate::services::cartridges::{CaliberSource, derive_caliber};
 use crate::services::entry_text::{EntryField, check_entry_text};
+use crate::services::import_reader::read_files;
 use crate::services::mounts::{self, MountGraph};
 use crate::services::record_id;
 use crate::services::spreadsheet::{
     AccessoryExportRow, FirearmExportRow, RawAccessoryRow, RawImportRow, ReadTable,
     SpreadsheetFormat, TableKind, TableRows, dollars_to_string, parse_scaled_decimal,
-    parse_whole_dollars, read_spreadsheet, scaled_to_string, write_accessory_csv,
-    write_firearm_csv, write_workbook,
+    parse_whole_dollars, scaled_to_string, write_accessory_csv, write_firearm_csv, write_workbook,
 };
 use crate::services::suggestions::{FieldVocabulary, SheetSpellings, snap_for_import};
-use crate::session::Session;
+use crate::session::operations::{OperationGuard, Operations};
+use crate::session::scoped::ScopedSession;
+use crate::session::{Session, SessionId};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1966,13 +1968,9 @@ pub mod ops {
         }
     }
 
-    /// FR-022: reads and recognises every file and sheet before anything is
-    /// saved, and stops with `VALIDATION_ERROR` naming the file (and the
-    /// sheet) when a sheet is no table, two sheets hold the same table, or
-    /// more than two files are given.
-    fn read_files(
-        files: &[ImportFile],
-    ) -> Result<(Vec<RawImportRow>, Vec<RawAccessoryRow>), CommandError> {
+    /// FR-022: the files of an import, checked before any is read: at least
+    /// one, and at most two (a firearm table and an accessory table).
+    pub fn check_files(files: &[ImportFile]) -> Result<(), CommandError> {
         if files.is_empty() {
             return Err(CommandError::new("VALIDATION_ERROR", "Choose a file to import."));
         }
@@ -1982,10 +1980,16 @@ pub mod ops {
                 "Pick one firearm table and at most one accessory table: at most two files.",
             ));
         }
-        let mut tables: Vec<ReadTable> = Vec::new();
-        for file in files {
-            tables.extend(read_spreadsheet(&file.file_path, file.format)?);
-        }
+        Ok(())
+    }
+
+    /// FR-022: the tables read from the files (`import_reader::read_files`),
+    /// as the firearm rows and the accessory rows; stops with
+    /// `VALIDATION_ERROR` naming the file (and the sheet) when two sheets
+    /// hold the same table.
+    fn collect_tables(
+        tables: Vec<ReadTable>,
+    ) -> Result<(Vec<RawImportRow>, Vec<RawAccessoryRow>), CommandError> {
         let mut firearms: Option<(String, Vec<RawImportRow>)> = None;
         let mut accessories: Option<(String, Vec<RawAccessoryRow>)> = None;
         let same_table = |first: &str, second: &str, noun: &str| {
@@ -2039,15 +2043,16 @@ pub mod ops {
     /// holding its conflicts with that open and no other (issue #64).
     pub fn import_in_session(
         session: &Session,
-        files: &[ImportFile],
+        id: SessionId,
+        tables: Vec<ReadTable>,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
-        session.write_open(|open| {
+        session.write_open(id, |open| {
             import_collection_stoppable(
                 &open.conn,
-                files,
+                tables,
                 &open.imports,
                 on_progress,
                 is_cancelled,
@@ -2056,16 +2061,48 @@ pub mod ops {
         })
     }
 
+    /// Phase one of `import_collection`: reads the files without the
+    /// session's lock (`import_reader::read_files`). The user's stop
+    /// (`cancel_import`) is `OPERATION_STOPPED`; the session ending, or a
+    /// sleep or quit beginning its close, is `DATABASE_CLOSED` (research.md
+    /// §11).
+    pub fn read_import_files(
+        helper_exe: &Path,
+        files: &[ImportFile],
+        operation: &OperationGuard<'_>,
+        session_is_current: &dyn Fn() -> bool,
+        progress: &mut dyn FnMut(&str, u64, u64),
+    ) -> Result<Vec<ReadTable>, CommandError> {
+        read_files(
+            helper_exe,
+            files,
+            &|| operation.is_stopped_by_user(),
+            // A stop that isn't the user's has begun a close, whose session
+            // is not yet gone.
+            &|| {
+                session_is_current()
+                    && (!operation.is_cancelled() || operation.is_stopped_by_user())
+            },
+            progress,
+        )
+    }
+
+    /// `cancel_import`: the running import stops if it is still reading.
+    pub fn cancel_import(operations: &Operations) {
+        operations.stop_reading_import();
+    }
+
     /// [`resolve_import_conflicts`] against the session's open database, which
     /// finds only the imports made in this open: `NOT_FOUND` for one made in
     /// another database, or before this one was last opened or unlocked.
     pub fn resolve_in_session(
         session: &Session,
+        id: SessionId,
         session_id: &str,
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
-        session.write_open(|open| {
+        session.write_open(id, |open| {
             resolve_import_conflicts(
                 &open.conn,
                 &open.imports,
@@ -2083,15 +2120,17 @@ pub mod ops {
     /// `store`) rather than being silently applied.
     pub fn import_collection(
         conn: &Connection,
-        files: &[ImportFile],
+        tables: Vec<ReadTable>,
         store: &ImportSessionStore,
         on_progress: &mut dyn FnMut(usize, usize),
     ) -> Result<ImportResult, CommandError> {
         let never = || false;
-        import_collection_stoppable(conn, files, store, on_progress, &never, &|_| {})
+        import_collection_stoppable(conn, tables, store, on_progress, &never, &|_| {})
     }
 
-    /// [`import_collection`], checking `is_cancelled` between rows and
+    /// [`import_collection`] on the tables the files hold, already read
+    /// (`import_reader::read_files`, outside the session's lock), checking
+    /// `is_cancelled` between rows and
     /// reporting each imported row to `record_imported`. Each row is saved
     /// on its own, so a stop keeps every row imported before it, and fails
     /// with `OPERATION_STOPPED` and their number (FR-037). The firearm
@@ -2099,13 +2138,13 @@ pub mod ops {
     /// (research.md §17, §18).
     pub fn import_collection_stoppable(
         conn: &Connection,
-        files: &[ImportFile],
+        tables: Vec<ReadTable>,
         store: &ImportSessionStore,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
-        let (firearm_rows, accessory_rows) = read_files(files)?;
+        let (firearm_rows, accessory_rows) = collect_tables(tables)?;
         let snapping = Snapping::new(conn, &firearm_rows, &accessory_rows)?;
         let total = firearm_rows.len() + accessory_rows.len();
         let session_id = format!("import-{}", chrono::Utc::now().timestamp_micros());
@@ -2375,7 +2414,7 @@ pub struct GetExportScopeInput {
 #[tauri::command]
 pub async fn get_export_scope(
     input: GetExportScopeInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ExportScope, CommandError> {
     session.read(|conn| ops::get_export_scope(conn, &input.scope, input.filter.as_ref()))
 }
@@ -2384,10 +2423,13 @@ pub async fn get_export_scope(
 pub async fn export_collection(
     input: ExportCollectionInput,
     app: tauri::AppHandle,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ExportResult, CommandError> {
+    if !session.is_current() {
+        return Err(CommandError::database_closed());
+    }
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-    let operation = session.operations().begin(OperationKind::Export, None)?;
+    let operation = session.session.operations().begin(OperationKind::Export, None)?;
     session.read(|conn| {
         let format = parse_format(&input.format)?;
         let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
@@ -2423,14 +2465,38 @@ pub struct ImportCollectionInput {
     pub files: Vec<ImportFileInput>,
 }
 
+/// What `import_collection:progress` reports (contracts/tauri-commands.md):
+/// the bytes of the files read, then the rows saved.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+enum ImportPhase {
+    Reading,
+    Importing,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct ImportProgressPayload {
+    phase: ImportPhase,
+    /// The base name of the file being read (`"reading"`); empty while rows
+    /// are saved.
+    file: String,
+    processed: u64,
+    total: u64,
+}
+
 #[tauri::command]
 pub async fn import_collection(
     input: ImportCollectionInput,
     app: tauri::AppHandle,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ImportResult, CommandError> {
+    if !session.is_current() {
+        return Err(CommandError::database_closed());
+    }
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-    let operation = session.operations().begin(OperationKind::Import, None)?;
+    let operation = session.session.operations().begin(OperationKind::Import, None)?;
+    // The reading is the phase `cancel_import` may stop.
+    operation.set_reading(true);
     let files = input
         .files
         .iter()
@@ -2441,15 +2507,72 @@ pub async fn import_collection(
             })
         })
         .collect::<Result<Vec<_>, CommandError>>()?;
-    ops::import_in_session(
-        &session,
+    ops::check_files(&files)?;
+    let helper_exe = std::env::current_exe().map_err(|err| {
+        log::error!("could not find the import reader's program: {err}");
+        CommandError::new("INTERNAL_ERROR", "The import reader could not be started.")
+    })?;
+    // Phase one: the files are read in the import helper without the
+    // session's lock, so a lock goes ahead at once and ends the reading
+    // (research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
+    // sleep's or the session's ending is `DATABASE_CLOSED`.
+    let mut last_percent = None;
+    let mut last_file = String::new();
+    let tables = ops::read_import_files(
+        &helper_exe,
         &files,
+        &operation,
+        &|| session.is_current(),
+        &mut |file, processed, total| {
+            // At most once per percent: a big file reports far oftener. The
+            // first report of each file always goes, so the dialog names it.
+            let percent = (processed * 100).checked_div(total);
+            if processed < total && percent == last_percent && file == last_file {
+                return;
+            }
+            last_percent = percent;
+            if file != last_file {
+                last_file = file.to_owned();
+            }
+            let _ = app.emit(
+                "import_collection:progress",
+                ImportProgressPayload {
+                    phase: ImportPhase::Reading,
+                    file: file.to_owned(),
+                    processed,
+                    total,
+                },
+            );
+        },
+    )?;
+    operation.set_reading(false);
+    // Phase two: the rows are saved under the session's lock, as before.
+    ops::import_in_session(
+        &session.session,
+        session.id,
+        tables,
         &mut |processed, total| {
-            let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
+            let _ = app.emit(
+                "import_collection:progress",
+                ImportProgressPayload {
+                    phase: ImportPhase::Importing,
+                    file: String::new(),
+                    processed: processed as u64,
+                    total: total as u64,
+                },
+            );
         },
         &|| operation.is_cancelled(),
         &|imported| operation.record_done(imported),
     )
+}
+
+/// Stops the running import if it is still reading its files (research.md
+/// §11); does nothing otherwise.
+#[tauri::command]
+pub async fn cancel_import(session: tauri::State<'_, Session>) -> Result<(), CommandError> {
+    ops::cancel_import(session.operations());
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2463,10 +2586,11 @@ pub struct ResolveImportConflictsInput {
 #[tauri::command]
 pub async fn resolve_import_conflicts(
     input: ResolveImportConflictsInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ResolveResult, CommandError> {
     ops::resolve_in_session(
-        &session,
+        &session.session,
+        session.id,
         &input.import_session_id,
         &input.resolutions,
         input.apply_to_remaining.as_deref(),

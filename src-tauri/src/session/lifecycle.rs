@@ -23,7 +23,7 @@ use crate::services::passphrase::Passphrase;
 use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
-use crate::session::{ImmediateClose, OpenDatabase, Session, SessionInner, pending};
+use crate::session::{ImmediateClose, OpenDatabase, Session, SessionId, SessionInner, pending};
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most
@@ -49,7 +49,7 @@ pub fn create(
     if session.is_open() {
         // A switch, as in `open`: the other database is closed normally
         // (its preview ends, its backup is made) rather than replaced.
-        close_normal(session, machine, CloseReason::Switched).ok();
+        close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
     session.install(prepare(machine, conn, path)?);
     Ok(())
@@ -72,7 +72,7 @@ pub fn open(
     if session.is_open() {
         // The frontend closes first itself, to ask about unsaved changes;
         // this covers anything else. It can only fail when nothing is open.
-        close_normal(session, machine, CloseReason::Switched).ok();
+        close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
     file_swap::finish_interrupted(path);
     let conn = db::open_database(path, passphrase, &machine.identity(), take_over)?;
@@ -142,8 +142,11 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
 /// make a backup if one is due, clear the open marker (in the same
 /// transaction as the backup record), close the connection (which clears
 /// the key from memory), and delete this session's decrypted document
-/// copies. Refused with `DATABASE_CLOSED` when nothing is open. A lock
-/// (FR-033) is this close, after its unsaved input is kept (see [`lock`]).
+/// copies. Refused with `DATABASE_CLOSED`, with nothing closed, when
+/// nothing is open or when the open database is not the session `id`: a
+/// late close can't end the session opened after it (008 research.md §2).
+/// A lock (FR-033) is this close, after its unsaved input is kept (see
+/// [`lock`]).
 ///
 /// The file is checked first, as before any write (research.md §6). If
 /// another computer has taken it over, this is a take-over close. If it
@@ -156,20 +159,28 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
 /// waiting, and this thread finishes the close as [`close_immediate`] would.
 pub fn close_normal(
     session: &Session,
+    id: SessionId,
     machine: &MachineSettings,
     reason: CloseReason,
 ) -> Result<CloseOutcome, CommandError> {
+    // Without the mutex, so a close that is certainly late changes nothing
+    // of `closing`; `take` compares again under the mutex.
+    if session.current_id() != id {
+        return Err(CommandError::database_closed());
+    }
     {
         let mut closing = session.closing();
         if closing.immediate.is_some() {
             return Err(CommandError::database_closed());
         }
         closing.normal = session.open_path();
+        closing.normal_id = id;
     }
-    let Some(mut open) = session.take() else {
+    let Some(mut open) = session.take(id) else {
         finish_closing(session);
         return Err(CommandError::database_closed());
     };
+    let session_id = open.session_id;
     // Unsaved input was kept by a lock, or dealt with by the user.
     open.staged_draft = None;
     // The preview is off the screen and out of memory before the close is
@@ -193,7 +204,7 @@ pub fn close_normal(
             idle_minutes: (reason == CloseReason::Idle).then_some(open.lock_settings.idle_minutes),
         });
     }
-    events.emit("session:closing", json!({ "reason": reason }));
+    events.emit("session:closing", json!({ "reason": reason, "sessionId": session_id }));
 
     let outcome = if check == FingerprintCheck::Unreachable {
         backup_failed(session, &open, BackupFailureReason::DatabaseUnreachable)
@@ -239,7 +250,12 @@ pub fn close_normal(
     if !finish_closing(session) {
         events.emit(
             "session:closed",
-            json!({ "reason": reason, "databasePath": path.to_string_lossy(), "outcome": outcome }),
+            json!({
+                "reason": reason,
+                "databasePath": path.to_string_lossy(),
+                "outcome": outcome,
+                "sessionId": session_id,
+            }),
         );
     }
     Ok(outcome)
@@ -264,6 +280,7 @@ fn finish_closing(session: &Session) -> bool {
     {
         let mut closing = session.closing();
         closing.normal = None;
+        closing.normal_id = SessionId::NONE;
         closing.immediate = None;
     }
     session.closing_changed();
@@ -275,23 +292,30 @@ fn finish_closing(session: &Session) -> bool {
 /// database, then the normal close runs with `reason`, making a backup if
 /// one is due. No confirmation is asked. If the draft can't be kept, the
 /// lock still goes ahead and the chooser says the changes were lost.
+///
+/// Only the session `id` is locked, and only it gets the draft: a late lock
+/// (the session ended, or another is open) is `DATABASE_CLOSED` with
+/// nothing written and nothing closed (008 research.md §2).
 pub fn lock(
     session: &Session,
+    id: SessionId,
     machine: &MachineSettings,
     reason: CloseReason,
     draft: Option<Draft>,
 ) -> Result<CloseOutcome, CommandError> {
     if let Some(draft) = draft {
         let saved_at = backups::utc_text(&session.clock().now());
-        let kept = session.write_housekeeping(|conn| {
+        let kept = session.write_housekeeping(id, |conn| {
             pending::write_pending(conn, Some(&draft), false, &saved_at)
         });
         match kept {
             Ok(()) => {}
-            // Closed already, as a take-over or by another close.
-            Err(err) if err.code == "DATABASE_TAKEN_OVER" || err.code == "DATABASE_CLOSED" => {
+            // Taken over by another computer: closed already.
+            Err(err) if err.code == "DATABASE_TAKEN_OVER" => {
                 return Ok(CloseOutcome::backup(BackupOutcome::NotAttempted));
             }
+            // Not the open session (any more): not this lock's to make.
+            Err(err) if err.code == "DATABASE_CLOSED" => return Err(err),
             Err(err) => {
                 log::error!("could not keep the unsaved changes at a lock: {}", err.message);
                 if let Some(path) = session.open_path() {
@@ -302,7 +326,7 @@ pub fn lock(
             }
         }
     }
-    close_normal(session, machine, reason)
+    close_normal(session, id, machine, reason)
 }
 
 /// Locks with the draft the frontend last staged: the idle lock and the
@@ -313,8 +337,10 @@ pub fn lock_with_staged(
     machine: &MachineSettings,
     reason: CloseReason,
 ) -> Result<CloseOutcome, CommandError> {
-    let draft = session.inspect_mut(|open| Ok(open.staged_draft.take()))?;
-    lock(session, machine, reason, draft)
+    // Whatever is open: the backend starts this lock on its own.
+    let id = session.current_id();
+    let draft = session.inspect_mut(id, |open| Ok(open.staged_draft.take()))?;
+    lock(session, id, machine, reason, draft)
 }
 
 /// The immediate close, at sleep or shutdown (FR-037, FR-039; data-model.md
@@ -346,7 +372,7 @@ pub fn close_immediate(session: &Session, machine: &MachineSettings, reason: Clo
 /// reaches the database. Returns whether there was anything to close.
 pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
     let stopped = session.operations().stop();
-    let (path, lock_announced) = {
+    let (path, session_id, lock_announced) = {
         let mut closing = session.closing();
         if closing.immediate.is_some() {
             return true;
@@ -356,12 +382,14 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
         let Some(path) = closing.normal.clone().or_else(|| session.open_path()) else {
             return false;
         };
+        let session_id =
+            if closing.normal.is_some() { closing.normal_id } else { session.current_id() };
         closing.immediate = Some(ImmediateClose {
             path: path.clone(),
             stopped: stopped.clone(),
             completing: false,
         });
-        (path, lock_announced)
+        (path, session_id, lock_announced)
     };
     session.set_last_closed(&path);
     // Before `session:closed`, which is when the frontend drops the
@@ -376,7 +404,11 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
             idle_minutes: None,
         });
     }
-    let mut closed = json!({ "reason": reason, "databasePath": path.to_string_lossy() });
+    let mut closed = json!({
+        "reason": reason,
+        "databasePath": path.to_string_lossy(),
+        "sessionId": session_id,
+    });
     if let Some(stopped) = &stopped {
         closed["stoppedOperation"] = json!(stopped.kind());
     }
@@ -644,8 +676,14 @@ pub(crate) fn close_taken_over(session: &SessionInner, mut open: OpenDatabase) {
     let path = open.path.to_string_lossy().into_owned();
     let events = session.events();
     events.notice(ChooserNotice::TakenOver { database_path: path.clone() });
-    events
-        .emit("session:closed", json!({ "reason": CloseReason::TakenOver, "databasePath": path }));
+    events.emit(
+        "session:closed",
+        json!({
+            "reason": CloseReason::TakenOver,
+            "databasePath": path,
+            "sessionId": open.session_id,
+        }),
+    );
     session.set_last_closed(&open.path);
     session.forget_open();
     drop(open);

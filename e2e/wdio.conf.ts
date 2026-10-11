@@ -93,13 +93,15 @@ export const config: WebdriverIO.Config = {
       pdfOff: specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts")),
       idleMinuteSeconds: specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts")) ? 3 : undefined,
     });
-    // The screenshot walk and 007's preview spec (which opens the seed's
-    // Glock and its documents) want the realistic collection.
+    // The screenshot walk, 007's preview spec (which opens the seed's Glock and
+    // its documents) and 008's session isolation spec (which switches between
+    // the seed's two databases) want the realistic collection.
     if (
       specs.some(
         (spec) =>
           spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
-          spec.endsWith("/e2e/specs/us13-document-preview.e2e.ts"),
+          spec.endsWith("/e2e/specs/us13-document-preview.e2e.ts") ||
+          spec.endsWith("/e2e/specs/us14-session-isolation.e2e.ts"),
       )
     ) {
       seedCollection();

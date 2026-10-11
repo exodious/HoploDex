@@ -215,7 +215,7 @@ fn import(db: &TestDb, rows: &[String]) -> hoplodex_lib::commands::import_export
     std::fs::write(&path, csv_file(rows)).unwrap();
     import_export_ops::import_collection(
         &db.conn,
-        &support::import_files(&path, SpreadsheetFormat::Csv),
+        support::read_import(&path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )
@@ -253,7 +253,7 @@ fn the_nickname_round_trips_through_export_and_import() {
     let target = TestDb::new();
     let result = import_export_ops::import_collection(
         &target.conn,
-        &support::import_files(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
+        support::read_import(&exported.spreadsheet_path, SpreadsheetFormat::Csv),
         &ImportSessionStore::new(),
         &mut |_, _| {},
     )

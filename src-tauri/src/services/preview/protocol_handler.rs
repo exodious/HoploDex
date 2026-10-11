@@ -24,7 +24,7 @@ use tauri::http::{Method, Request, Response};
 use crate::commands::CommandError;
 use crate::services::preview::PreviewContent;
 use crate::services::preview::surface;
-use crate::session::Session;
+use crate::session::{Session, SessionId};
 
 /// The scheme's name, as registered in `main.rs`.
 pub const SCHEME: &str = "hdpreview";
@@ -105,7 +105,10 @@ fn announce_ready(session: &Session, became: Became) {
 }
 
 fn serve(session: &Session, path: &str) -> Response<Vec<u8>> {
-    let found = session.inspect_mut(|open| -> Result<_, CommandError> {
+    // The document is found by its token in whatever session is open: the
+    // token belongs to that open's preview and to no other.
+    let found = session.inspect_mut(session.current_id(), |open| -> Result<_, CommandError> {
+        let session_id = open.session_id;
         let Some(preview) = open.preview.as_mut() else { return Ok(None) };
         let id = preview.id;
         let PreviewContent::Pdf { token, bytes, served, hooked, hook_timeout, .. } =
@@ -121,12 +124,12 @@ fn serve(session: &Session, path: &str) -> Response<Vec<u8>> {
         *served = true;
         let became = (!was_ready && is_ready(*served, *hooked)).then_some(id);
         let timer = first_serve.then_some((id, *hook_timeout));
-        Ok(Some((bytes.to_vec(), became, timer)))
+        Ok(Some((bytes.to_vec(), became, timer.map(|(id, timeout)| (session_id, id, timeout)))))
     });
     // A closed session or a replaced preview is a 404 like any other.
     let Ok(Some((body, became, timer))) = found else { return not_found() };
-    if let Some((preview_id, timeout)) = timer {
-        watch_for_the_hook(session, preview_id, timeout);
+    if let Some((session_id, preview_id, timeout)) = timer {
+        watch_for_the_hook(session, session_id, preview_id, timeout);
     }
     announce_ready(session, became);
     Response::builder()
@@ -141,14 +144,19 @@ fn serve(session: &Session, path: &str) -> Response<Vec<u8>> {
 /// served, or the surface is closed rather than shown with a PDF's scripting
 /// on (research.md §8). Started at the first serve, so a slow surface start
 /// doesn't spend the time.
-fn watch_for_the_hook(session: &Session, preview_id: u64, timeout: Duration) {
+fn watch_for_the_hook(
+    session: &Session,
+    session_id: SessionId,
+    preview_id: u64,
+    timeout: Duration,
+) {
     if !cfg!(target_os = "linux") {
         return;
     }
     let session = session.clone();
     let spawned = std::thread::Builder::new().name("preview-hook-timer".into()).spawn(move || {
         std::thread::sleep(timeout);
-        crate::commands::preview::ops::hook_timed_out(&session, preview_id);
+        crate::commands::preview::ops::hook_timed_out(&session, session_id, preview_id);
     });
     if let Err(err) = spawned {
         log::error!("could not start the PDF hook timer: {err}");
@@ -156,7 +164,7 @@ fn watch_for_the_hook(session: &Session, preview_id: u64, timeout: Duration) {
 }
 
 fn hooked(session: &Session, secret: &str) -> Response<Vec<u8>> {
-    let found = session.inspect_mut(|open| -> Result<_, CommandError> {
+    let found = session.inspect_mut(session.current_id(), |open| -> Result<_, CommandError> {
         let Some(preview) = open.preview.as_mut() else { return Ok(None) };
         let id = preview.id;
         let PreviewContent::Pdf { secret: surface_secret, served, hooked, .. } =

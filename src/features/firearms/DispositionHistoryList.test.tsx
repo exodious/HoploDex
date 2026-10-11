@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { DispositionHistoryList } from "./DispositionHistoryList";
+import { render } from "../../test/sessionScope";
 
 describe("DispositionHistoryList (FR-033)", () => {
   it("renders nothing when no dispositions were retained", () => {

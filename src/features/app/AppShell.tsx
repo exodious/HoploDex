@@ -23,8 +23,8 @@ import { BrandMark } from "./BrandMark";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
-import { peekResumedDraft } from "../session/usePendingDraft";
 import type { Draft } from "../databases/types";
+import { useSessionScope } from "../session/sessionScope";
 import type { BackTarget, Navigation, Route, ShellDialog } from "./navigation";
 import "./AppShell.css";
 
@@ -77,6 +77,7 @@ function resumedRoute(resumed: Draft | null): Route {
 }
 
 export function AppShell() {
+  const scope = useSessionScope();
   const {
     firearmsById,
     accessoriesById,
@@ -87,15 +88,16 @@ export function AppShell() {
     refresh,
   } = useCollection();
   const notify = useToast();
-  // Resumed pending changes open where their form is (FR-039).
-  const [route, setRoute] = useState<Route>(() => resumedRoute(peekResumedDraft()));
+  // Resumed pending changes open where their form is (FR-039), in the session
+  // that resumed them (specs/008 research.md §6).
+  const [route, setRoute] = useState<Route>(() => resumedRoute(scope.resumed?.draft ?? null));
   const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
   const [accessoryBrowse, setAccessoryBrowse] = useState<AccessoryBrowseState>(
     initialAccessoryBrowseState,
   );
   const [dialog, setDialog] = useState<ShellDialog | null>(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (resumed?.mode !== "add") return null;
     if (resumed.kind === "firearm") return "addFirearm";
     return resumed.kind === "accessory" ? "addAccessory" : null;
@@ -243,7 +245,7 @@ export function AppShell() {
   ).length;
 
   async function handleCreate(input: FirearmInput, confirmedWarnings?: boolean) {
-    const created = await firearmsService.createFirearm(input, confirmedWarnings);
+    const created = await firearmsService.createFirearm(scope, input, confirmedWarnings);
     setDialog(null);
     await refresh();
     notify(`Added ${firearmName(created)} to the collection.`);
@@ -251,7 +253,7 @@ export function AppShell() {
   }
 
   async function handleCreateAccessory(input: AccessoryInput) {
-    const created = await accessoriesService.createAccessory(input);
+    const created = await accessoriesService.createAccessory(scope, input);
     setDialog(null);
     await refresh();
     const kindName = accessoryKinds.kinds.find((k) => k.id === created.accessoryKindId)?.name;

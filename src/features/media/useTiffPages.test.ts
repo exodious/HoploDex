@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { SessionScopeWrapper } from "../../test/sessionScope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageSize } from "./types";
 import { useTiffPages } from "./useTiffPages";
@@ -83,7 +84,10 @@ function mount(pages: PageSize[], overrides: Partial<Props> = {}) {
     initialZoom: 100,
     ...overrides,
   };
-  const hook = renderHook((props: Props) => useTiffPages(props), { initialProps: initial });
+  const hook = renderHook((props: Props) => useTiffPages(props), {
+    initialProps: initial,
+    wrapper: SessionScopeWrapper,
+  });
   /** Scrolls the area, the way a scroll event would give the hook a new scrollTop. */
   const scrollTo = (scrollTop: number) => hook.rerender({ ...initial, scrollTop });
   return { ...hook, scrollTo };

@@ -70,7 +70,9 @@ const FILTER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Gives the main web view a request filter on Windows (see the module
 /// comment): every document request, a navigation's included, is checked
 /// with `navigation_allowed` before it goes out, and one to anywhere else is
-/// answered with a 403 by the web view. Other requests are left to the CSP.
+/// answered with a 403 by the web view. Other requests are left to the CSP,
+/// and to the handlers of the other filters (the handler checks the request's
+/// context, because it is also run for theirs).
 /// An error means the filter isn't in place, and the app shouldn't start.
 #[cfg(windows)]
 pub fn refuse_foreign_documents<R: tauri::Runtime>(
@@ -80,7 +82,9 @@ pub fn refuse_foreign_documents<R: tauri::Runtime>(
     use ::windows::core::{HSTRING, PWSTR, Result as ComResult};
     use std::sync::mpsc;
     use webview2_com::{
-        Microsoft::Web::WebView2::Win32::COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+        Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+        },
         WebResourceRequestedEventHandler, take_pwstr,
     };
 
@@ -100,6 +104,17 @@ pub fn refuse_foreign_documents<R: tauri::Runtime>(
             webview.add_WebResourceRequested(
                 &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
                     let Some(args) = args else { return Ok(()) };
+                    // WebView2 runs every handler for a request that matches
+                    // any filter, so this one also sees what wry's own filters
+                    // cover: the IPC custom protocol (`http://ipc.localhost`),
+                    // for every context. Answering its CORS preflight with a
+                    // 403 breaks that protocol, and Tauri falls back to
+                    // `postMessage` (research.md §2). Leave all but documents.
+                    let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+                    args.ResourceContext(&mut context)?;
+                    if context != COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
+                        return Ok(());
+                    }
                     let mut uri = PWSTR::null();
                     args.Request()?.Uri(&mut uri)?;
                     let uri = take_pwstr(uri);
