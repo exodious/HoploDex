@@ -609,7 +609,7 @@ fn a_helper_over_its_jobs_memory_limit_dies_and_only_it_does() {
                 &[import_file(&path)],
                 &|| false,
                 &|| true,
-                &mut |done, _| {
+                &mut |_, done, _| {
                     if done > 0 {
                         reading.store(true, Ordering::SeqCst);
                     }

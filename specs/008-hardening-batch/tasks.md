@@ -204,7 +204,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T082 [US3] Add `--release` to `scripts/human-testing.sh`: launch the E2E-profile build in the sandbox instead of `tauri dev`, so a person can try the browser controls (quickstart.md Setup S1); update DEVELOPMENT.md's human-testing section
 - [X] T083 [US3] On Linux, run `scripts/dev-container.sh scripts/window-controls-check.sh`, T075's unit test under `--profile e2e`, and `npm run build` then `e2e/specs/us15-browser-controls.e2e.ts`; confirm the menus offer only FR-011's items and the mouse's buttons 8 and 9 don't navigate (research.md §14); record the logged items in research.md §13 and fix every failure
 - [X] T084 [US3] On macOS, in the macOS 26 VM, run `scripts/macos/window-controls-check.sh` and `us15-browser-controls.e2e.ts`; record the logged items in research.md §13 and fix every failure _(2026-10-11: passes in the VM except Look Up, which a synthesized ⌃⌘D doesn't open even with no hook or in Safari, so the check can't see it (research.md §13); the look-ups are judged on real hardware by M1 steps 8–9, T110.)_
-- [ ] T085 [US3] On Windows, on the Windows test machine, run `scripts\windows\window-controls-check.ps1` and `us15-browser-controls.e2e.ts`; confirm the exact WebView2 item names (research.md §13) and that XButton1 and XButton2 don't navigate (§14); record them and fix every failure
+- [X] T085 [US3] On Windows, on the Windows test machine, run `scripts\windows\window-controls-check.ps1` and `us15-browser-controls.e2e.ts`; confirm the exact WebView2 item names (research.md §13) and that XButton1 and XButton2 don't navigate (§14); record them and fix every failure
 
 **Checkpoint**: User Story 3 is fully functional and testable on its own.
 

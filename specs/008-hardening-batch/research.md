@@ -823,17 +823,64 @@ someone looks at it.
     typed text intact and the keyboard still in the field, and opened no
     window. WebKitGTK binds none of them (§14); the page has one history
     entry, so Back has nowhere to go whether or not it acts on 8 and 9.
+    _Amended 2026-10-11 (T085): that run's page had one history entry, so it
+    could not show a button or key going back. The check's page now has two
+    (Windows' result below), and the Linux run needs repeating with it._
 - **Windows (WebView2)**: `ICoreWebView2_11::add_ContextMenuRequested` on
   the main web view, as the surface does. It keeps items by `Name`:
   - `cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`, `emoji`;
   - the spelling items. WebView2 offers suggestions with the kind
     `COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND` and the name
-    `spellCheck`. The exact names are confirmed by the window controls
-    check (§18), which logs every item offered.
+    `spellcheck` (lower case; confirmed by the window controls check, §18,
+    which logs every item offered, T085). The filter compares names exactly,
+    so the lower-case spelling is the one it keeps.
 
   It removes `back`, `forward`, `reload`, `saveAs`, `print`, `share`,
   `webCapture`, `inspectElement`, `copyLinkToHighlight`, `openLinkInNewWindow`
   and every other name. An empty menu sets `Handled` with no menu.
+
+  _Windows items logged (T085, 2026-10-11, Windows Server 2025, WebView2
+  runtime 154.0.4258.62, by `scripts\windows\window-controls-check.ps1`:
+  real right clicks on a test page with the filter alone, no page
+  handlers; two runs, the same items)_:
+  - blank area, row and button: `moreTools` (a submenu), `print`, `saveAs`,
+    `reload`, `forward`, `back`, all removed, so no menu;
+  - image: `moreTools`, `copyImageLocation`, `copyImage`, `saveImageAs`, all
+    removed, so no menu;
+  - text field holding text: `selectAll`, `paste`, `copy`, `cut`, `redo`,
+    `undo` and `emoji` kept; `moreTools` and `other` (the "Writing
+    direction" submenu), `pasteAndMatchStyle` ("Paste as plain text") and
+    `other` ("Import passwords") removed;
+  - selected text in a paragraph: `copy` kept; `moreTools`, `print` and
+    `copyLinkToHighlight` removed;
+  - the names research.md expected are the names WebView2 gives: no
+    renaming was needed. Two different items are both named `other`
+    (a submenu and a command), so the filter, which keeps by name, removes
+    both;
+  - misspelled word ("recieve", typed into an editable field with
+    `spellcheck="true"`, right-clicked after two seconds): `paste`, `copy`
+    and `cut` kept, and three items named `spellcheck`, kind 0 (command),
+    with an empty label, kept (the suggestions); `moreTools`,
+    `pasteAndMatchStyle` and `other` ("Import passwords") removed. The
+    first run of the check named them `spellCheck` in the filter and so
+    removed all three: WebView2's name is `spellcheck`. A word that was
+    only in a field's initial value ("brwon") is not checked, so it offers
+    none;
+  - kinds seen: 0 command, 4 submenu. Separators are left out of the log and
+    tidied after the removals (none leading, trailing or doubled);
+  - F5, Shift+F5, Ctrl+F5, Ctrl+R, Ctrl+Shift+R, Alt+←, Alt+→, the Browser
+    Back, Forward and Refresh keys (virtual keys A6 to A8), Ctrl+P, S, U, F,
+    G, F3, F7, F12 and Ctrl+Shift+I, J, C, and the mouse's XButton1 (back)
+    and XButton2 (forward) left the page loaded once, with the typed text
+    intact and the keyboard still in the field. The test page has two
+    history entries (`pushState`), so that Back and Forward have somewhere to
+    go: the keys, Alt+←/→ and Browser Back/Forward included, left it at its
+    entry. **The mouse's XButton1 and XButton2 did not**: with the filter
+    alone they moved the page through its history (back from entry 2 to 1,
+    forward from 1 to 2, no reload). The window controls check notes that and
+    then installs the page's own guard (§12: `mousedown`, `mouseup` and
+    `auxclick` with button 3 or 4 prevented), after which neither button
+    moved it (§14).
 - **macOS (WKWebView)**: Tauri's web view is wry's `WryWebView`, a
   `WKWebView` subclass. HoploDex adds `willOpenMenu:withEvent:` to that class
   at startup (objc2, `class_addMethod`, calling `super` first), a public
@@ -1015,6 +1062,9 @@ someone looks at it.
     left the page loaded once, with the typed text intact and the keyboard
     still in the field, and opened no window. WKWebView binds none of them
     (§14);
+    _Amended 2026-10-11 (T085): that run's page had one history entry, so it
+    could not show a button or key going back. The check's page now has two
+    (Windows' result above), and the macOS run needs repeating with it;_
   - **⌃⌘D on a selected paragraph: no window opened, and `quickLookWithEvent:`
     never reached the no-op, so this part of the check proves nothing yet.**
     With `--unfiltered` (the same page with no `window_controls::apply`) no
@@ -1060,9 +1110,12 @@ measures cover what a page can't cancel.
     working. The surface already does this.
   - `ICoreWebView2Settings6::put_IsSwipeNavigationEnabled(false)`: no
     history swipe on a touchpad.
-  - The mouse's XButton1 and XButton2 are cancelled in the page (§12). The
-    window controls check confirms that WebView2 doesn't navigate on them
-    anyway.
+  - The mouse's XButton1 and XButton2 are cancelled in the page (§12).
+    _Amended 2026-10-11 (T085): the window controls check found that
+    WebView2 does navigate on them when the page doesn't cancel them (a
+    page with two history entries went back and forward), and that the
+    page's cancel stops it. So on Windows the page layer is the protection,
+    not a second one; the check runs both ways._
 - **Linux**: WebKitGTK binds none of the reload keys itself (an
   application such as Epiphany does), and GTK3 has no swipe navigation.
   Whether it acts on mouse buttons 8 and 9 is confirmed by the check. The
@@ -1071,6 +1124,10 @@ measures cover what a page can't cancel.
 - **macOS**: WKWebView binds no reload key unless a menu item does, and
   HoploDex's menu has none. `allowsBackForwardNavigationGestures` stays
   `NO` (WKWebView's default). The page's handlers cover ⌘R, ⌘[ and ⌘].
+- _Amended 2026-10-11 (T085): Windows moves through history on the mouse's
+  side buttons unless the page cancels them (above). The Linux and macOS
+  results were recorded on a one-entry page; they are repeated with the
+  check's two-entry page before they are relied on._
 - **Every OS**: the main window has one history entry (the app is a single
   page with no routing), so Back has nowhere to go. It is blocked anyway, as
   #40 asks.

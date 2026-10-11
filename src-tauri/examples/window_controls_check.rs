@@ -31,7 +31,13 @@
 //      "removed");
 //   2. types in the text field, then presses every FR-012 key and the mouse's
 //      back and forward buttons, and after each types a letter and deletes it:
-//      the letter must reach the field (nothing took the keyboard);
+//      the letter must reach the field (nothing took the keyboard). The page
+//      has two history entries (`pushState`), so a key or button that goes
+//      back or forward is seen; the mouse's buttons are pressed twice, with
+//      the filter alone (a move is only noted: WebView2 does move) and then
+//      with the page's guard, which must stop them (research.md §14);
+//   2b. right-clicks a misspelled word typed into a field (the spelling
+//      items belong in the menu; a computer with no dictionary offers none);
 //   3. on macOS, selects the paragraph and presses control-command-D, and
 //      counts the app's windows before and after (a Look Up panel is one).
 // It fails (exit 4, one "CHECK FAIL" line each) if:
@@ -43,6 +49,8 @@
 //   - the page loaded again (a reload or navigation: the load counter in
 //     `sessionStorage`), a window was asked for, a key took the keyboard from
 //     the field, or the typed text was lost;
+//   - a key moved the page through its history, or a mouse button did with
+//     the page's guard on;
 //   - a Look Up panel opened (macOS).
 //
 // Exit codes:
@@ -88,12 +96,14 @@ const PAGE: &str = r#"<!doctype html><meta charset="utf-8"><title>window control
   #field { left: 20px; top: 260px; width: 400px; height: 40px; font-size: 16px; }
   #para { left: 20px; top: 330px; width: 400px; height: 40px; margin: 0;
     line-height: 40px; }
+  #spell { left: 20px; top: 400px; width: 400px; height: 40px; font-size: 16px; }
 </style>
 <div id="row" class="t">Glock 19 Gen5 (a table row)</div>
 <button id="btn" class="t">A button</button>
 <img id="img" class="t" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23c33'/%3E%3C/svg%3E">
 <input id="field" class="t" value="the quick brwon fox" spellcheck="true">
 <p id="para" class="t">Select this sentence and right-click it</p>
+<input id="spell" class="t" value="" spellcheck="true">
 <script>
   const id = Math.random().toString(36).slice(2);
   // A reload or a navigation loads the page again: the counter survives it
@@ -101,7 +111,27 @@ const PAGE: &str = r#"<!doctype html><meta charset="utf-8"><title>window control
   const loads = Number(sessionStorage.getItem('loads') || 0) + 1;
   sessionStorage.setItem('loads', String(loads));
   fetch('/loaded?id=' + id + '&n=' + loads);
-  setInterval(() => fetch('/tick?id=' + id + '&v=' + encodeURIComponent(field.value)), 400);
+  // History to go back and forward through (the mouse's side buttons must not),
+  // on the page that was loaded: a pushState entry is a navigation without a
+  // load, so the load counter can't see it; the state and `popstate` can.
+  if (history.state === null) {
+    history.replaceState({ n: 1 }, '');
+    history.pushState({ n: 2 }, '', '#two');
+  }
+  addEventListener('popstate', () => fetch('/pop?id=' + id));
+  setInterval(() => fetch('/tick?id=' + id + '&v=' + encodeURIComponent(field.value) +
+    '&h=' + (history.state ? history.state.n : 0)), 400);
+  // The page's own guard, as src/features/app/browserControls.ts installs it:
+  // the mouse's back and forward buttons are prevented in the capture phase.
+  function guard() {
+    for (const type of ['mousedown', 'mouseup', 'auxclick']) {
+      window.addEventListener(type, (e) => {
+        if (e.button === 3 || e.button === 4) e.preventDefault();
+      }, true);
+    }
+  }
+  // Types into the spelling field as an edit, so the word is checked.
+  function typeSpell(text) { spell.focus(); document.execCommand('insertText', false, text); }
   function selectPara() { field.blur(); getSelection().selectAllChildren(para); }
 </script>"#;
 
@@ -115,6 +145,9 @@ const FIELD: (f64, f64) = (210.0, 280.0);
 /// Right of the field's text, so a click there puts the caret at its end.
 const FIELD_END: (f64, f64) = (400.0, 280.0);
 const PARA: (f64, f64) = (200.0, 350.0);
+/// The misspelled word typed into the spelling field: its middle, a few
+/// characters in from the field's left edge.
+const SPELL_WORD: (f64, f64) = (48.0, 420.0);
 
 // ---------------------------------------------------------------------------
 // What the native filters log
@@ -213,7 +246,7 @@ fn in_fr011_list(line: &str) -> bool {
     } else {
         // Windows names each item (`name=<name>` in the line, T079).
         const NAMES: &[&str] =
-            &["cut", "copy", "paste", "selectAll", "undo", "redo", "emoji", "spellCheck"];
+            &["cut", "copy", "paste", "selectAll", "undo", "redo", "emoji", "spellcheck"];
         line.split_whitespace()
             .filter_map(|word| word.strip_prefix("name="))
             .any(|name| NAMES.contains(&name.trim_matches('"')))
@@ -232,6 +265,10 @@ struct Shared {
     tick: Mutex<Option<(String, String)>>,
     ticks: AtomicUsize,
     new_windows: AtomicUsize,
+    /// The page's history entry (`history.state.n`) as of its latest tick.
+    history: Mutex<String>,
+    /// How many times the page moved through its history (`popstate`).
+    pops: AtomicUsize,
 }
 
 fn percent_decode(s: &str) -> String {
@@ -276,6 +313,11 @@ fn serve(shared: &Shared, req: &http::Request<Vec<u8>>) -> http::Response<Vec<u8
             shared.ticks.fetch_add(1, Ordering::SeqCst);
             *shared.tick.lock().unwrap() =
                 Some((query_param(query, "id"), query_param(query, "v")));
+            *shared.history.lock().unwrap() = query_param(query, "h");
+            empty()
+        }
+        "/pop" => {
+            shared.pops.fetch_add(1, Ordering::SeqCst);
             empty()
         }
         _ => http::Response::builder()
@@ -609,6 +651,12 @@ impl Check {
         self.eval("selectPara()");
         thread::sleep(Duration::from_millis(300));
         self.menu("selection", PARA, true);
+        // A misspelled word in an editable field with spell checking on: the
+        // spelling items (suggestions, ignore, learn) belong in the menu. A
+        // computer without a dictionary offers none, which is noted.
+        self.eval("typeSpell('recieve ')");
+        thread::sleep(Duration::from_millis(2500));
+        self.menu("misspelled word", SPELL_WORD, true);
 
         // 2. Typed input, then every key and the mouse's side buttons.
         self.input.mouse("click", FIELD_END, &[]);
@@ -629,18 +677,23 @@ impl Check {
             thread::sleep(Duration::from_millis(700));
             eprintln!("CHECK pressed {}", case.name);
             self.assert_stable(case.name);
+            // Back through the page's history is a navigation without a load.
+            let at = self.shared.history.lock().unwrap().clone();
+            if at != "2" {
+                self.fail(format!(
+                    "{} moved the page through its history (entry {at:?})",
+                    case.name
+                ));
+                self.go_to(2);
+            }
             self.canary(case.name);
         }
-        for (name, direction) in [("mouse back", "back"), ("mouse forward", "forward")] {
-            self.input.mouse("xbutton", FIELD, &[direction]);
-            thread::sleep(Duration::from_millis(700));
-            eprintln!("CHECK pressed {name}");
-            self.assert_stable(name);
-            self.canary(name);
-            // The button click moved focus? Back to the field.
-            self.input.mouse("click", FIELD_END, &[]);
-            thread::sleep(Duration::from_millis(300));
-        }
+        // The mouse's side buttons, first on the page as it is (the native
+        // layer alone), then with the page's own guard (browserControls.ts:
+        // mousedown, mouseup and auxclick with button 3 or 4 prevented).
+        self.side_buttons(false);
+        self.eval("guard()");
+        self.side_buttons(true);
 
         // 3. macOS: control-command-D on the selection (Look Up).
         #[cfg(target_os = "macos")]
@@ -665,6 +718,58 @@ impl Check {
         if self.field() != typed {
             self.fail(format!("the typed text was lost: {:?} for {typed:?}", self.field()));
         }
+    }
+
+    /// Moves the page to history entry `n` by script and waits for it.
+    fn go_to(&mut self, n: u32) {
+        // `history.go(0)` reloads the page: only move when not there.
+        self.eval(&format!("if (history.state.n !== {n}) history.go({n} - history.state.n)"));
+        let want = n.to_string();
+        if !wait_until(Duration::from_secs(3), || *self.shared.history.lock().unwrap() == want) {
+            let at = self.shared.history.lock().unwrap().clone();
+            self.fail(format!("the page is at history entry {at:?}, not {n}"));
+        }
+    }
+
+    /// Presses the mouse's back button at history entry 2 and its forward
+    /// button at entry 1 (the page has two entries, and a forward entry
+    /// needs a back first, by script). With `strict` neither may move the
+    /// page through its history; without it, a move is noted, not failed:
+    /// that is what the native layer alone does, and the page's guard is the
+    /// measure for it (research.md §14).
+    fn side_buttons(&mut self, strict: bool) {
+        let shared = self.shared.clone();
+        let phase = if strict { "with the page's guard" } else { "natively" };
+        for (name, direction, entry) in [("mouse back", "back", 2), ("mouse forward", "forward", 1)]
+        {
+            self.go_to(2);
+            if entry == 1 {
+                self.go_to(1);
+            }
+            let pops = shared.pops.load(Ordering::SeqCst);
+            self.input.mouse("xbutton", FIELD, &[direction]);
+            thread::sleep(Duration::from_millis(700));
+            eprintln!("CHECK pressed {name} ({phase})");
+            self.assert_stable(name);
+            let at = shared.history.lock().unwrap().clone();
+            if at != entry.to_string() || shared.pops.load(Ordering::SeqCst) != pops {
+                let what = format!(
+                    "{name} moved the page through its history {phase} (entry {at:?}, was {entry})"
+                );
+                if strict {
+                    self.fail(what);
+                } else {
+                    eprintln!("CHECK note: {what}");
+                }
+            } else {
+                eprintln!("CHECK {name} left the page's history entry alone {phase}");
+            }
+            self.canary(name);
+            // The button click moved focus? Back to the field.
+            self.input.mouse("click", FIELD_END, &[]);
+            thread::sleep(Duration::from_millis(300));
+        }
+        self.go_to(2);
     }
 
     #[cfg(target_os = "macos")]
