@@ -6,5 +6,19 @@
     "security-guidance@anthropic-plugin-directory": true,
     "claude-security@anthropic-plugin-directory": true,
     "code-review@anthropic-plugin-directory": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-security-review.sh\"",
+            "statusMessage": "Checking the PR carries a security review"
+          }
+        ]
+      }
+    ]
   }
 }

@@ -166,6 +166,14 @@ export async function launchApp(timeout = 30000) {
   }
 }
 
+/** The process id of this worker's app, so a capture of the screen finds this
+ * worker's window and not another worker's (#88). */
+export function appPid(): number {
+  const child = state.app;
+  if (!running(child) || child.pid === undefined) throw new Error("the app isn't running");
+  return child.pid;
+}
+
 /** Waits for the app's process to end, failing after `timeout` ms. */
 export async function waitForAppToQuit(timeout = 15000) {
   const child = state.app;

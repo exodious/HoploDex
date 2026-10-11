@@ -1,5 +1,6 @@
 import os from "node:os";
 import { browser } from "@wdio/globals";
+import { SevereServiceError } from "webdriverio";
 import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
 import { assignWorkerPort, killApp, launchApp } from "./support/app";
 import { buildApp } from "./support/build";
@@ -68,14 +69,12 @@ export const config: WebdriverIO.Config = {
   path: "/",
 
   // One build before any worker starts, so workers neither build nor wait on
-  // cargo's lock. A failed build ends the run (WebdriverIO only logs other
-  // errors from this hook).
+  // cargo's lock. A failed build ends the run with no spec run and a non-zero
+  // exit: WebdriverIO stops for an instance of webdriverio's
+  // SevereServiceError and only logs anything else this hook throws, even an
+  // Error named so (#92).
   onPrepare: () => {
-    if (!buildApp()) {
-      const error = new Error("building the app for E2E failed");
-      error.name = "SevereServiceError";
-      throw error;
-    }
+    if (!buildApp()) throw new SevereServiceError("building the app for E2E failed");
   },
 
   beforeSession: async (config, _capabilities, specs, cid) => {

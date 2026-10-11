@@ -1,19 +1,26 @@
 <#
 .SYNOPSIS
-Saves the E2E app's window, as the user sees it, on Windows (#27).
+Saves the E2E app's window, as the user sees it, on Windows (#27, #88).
 
 .DESCRIPTION
 The Windows counterpart of the X display's `import -window root` that
 e2e/specs/us13-document-preview.e2e.ts and e2e/support/screenshots.ts use on
 Linux. A WebDriver screenshot holds only the main web view, so it leaves out
-007's PDF surface, a child web view over the viewer's page area; this copies
-what is on the screen, which has it. It takes the window's client area (what
-the main web view fills), so a point in the page, as getBoundingClientRect()
-gives it, is the same point in the picture, whatever the window's frame and
-position.
+007's PDF surface, a child web view over the viewer's page area; this asks the
+window to paint itself (PrintWindow with PW_RENDERFULLCONTENT, which includes
+the child web views), so it has the surface. It takes the window's client
+area (what the main web view fills), so a point in the page, as
+getBoundingClientRect() gives it, is the same point in the picture, whatever
+the window's frame and position.
 
-Run it in the signed-in desktop session, at 100% scaling, with the app's window
-on top and not covered. Exits 1 when the app has no window.
+It captures the window of one process, the E2E worker's own app (-ProcessId),
+and not the screen, so the parallel workers' other windows, on top or beside
+it, don't matter and nothing is brought to the front. Run it in the signed-in
+desktop session, at 100% scaling. The window must not be minimized. Exits 1
+when the process has no window.
+
+.PARAMETER ProcessId
+The app's process id (`appPid()` in e2e/support/app.ts).
 
 .PARAMETER Out
 The file to write.
@@ -25,6 +32,7 @@ read themselves.
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory)][int]$ProcessId,
     [Parameter(Mandatory)][string]$Out,
     [ValidateSet('png', 'ppm')][string]$Format = 'png'
 )
@@ -42,23 +50,26 @@ using System.Runtime.InteropServices;
 
 public static class WindowShot {
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
-    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
-    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
-    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+    const uint PW_CLIENTONLY = 1, PW_RENDERFULLCONTENT = 2;
 
     public static void Save(IntPtr hwnd, string file, bool ppm) {
         SetProcessDPIAware();
-        SetForegroundWindow(hwnd);
         RECT client;
         if (!GetClientRect(hwnd, out client)) throw new Exception("GetClientRect failed");
-        POINT origin = new POINT();
-        if (!ClientToScreen(hwnd, ref origin)) throw new Exception("ClientToScreen failed");
         int w = client.Right - client.Left, h = client.Bottom - client.Top;
         using (Bitmap bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))
         {
-            using (Graphics g = Graphics.FromImage(bmp)) g.CopyFromScreen(origin.X, origin.Y, 0, 0, bmp.Size);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                IntPtr hdc = g.GetHdc();
+                bool ok;
+                try { ok = PrintWindow(hwnd, hdc, PW_CLIENTONLY | PW_RENDERFULLCONTENT); }
+                finally { g.ReleaseHdc(hdc); }
+                if (!ok) throw new Exception("PrintWindow failed");
+            }
             if (!ppm) { bmp.Save(file, ImageFormat.Png); return; }
             BitmapData data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
             try {
@@ -82,10 +93,17 @@ public static class WindowShot {
 }
 '@
 
-$window = Get-Process -Name hoplodex -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
-if (-not $window) {
-    [Console]::Error.WriteLine('window-shot: the app has no window')
+# MainWindowHandle is zero until the process has shown a window, and is cached.
+$handle = [IntPtr]::Zero
+for ($try = 0; $try -lt 50 -and $handle -eq [IntPtr]::Zero; $try++) {
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) { break }
+    $process.Refresh()
+    $handle = $process.MainWindowHandle
+    if ($handle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100 }
+}
+if ($handle -eq [IntPtr]::Zero) {
+    [Console]::Error.WriteLine("window-shot: process $ProcessId has no window")
     exit 1
 }
-[WindowShot]::Save($window.MainWindowHandle, $Out, $Format -eq 'ppm')
+[WindowShot]::Save($handle, $Out, $Format -eq 'ppm')

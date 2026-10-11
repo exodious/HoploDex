@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
-import { relaunchApp } from "../support/app";
+import { appPid, relaunchApp } from "../support/app";
 import { writeLargePdf } from "../support/largePdf";
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
+import { macWindowShot } from "../support/screenshots";
 import {
   $,
   $$,
@@ -429,44 +430,23 @@ function decodePng(png: Buffer): { width: number; height: number; pixels: Buffer
   return { width, height, pixels };
 }
 
-/** The screen as the user sees it, which includes the PDF surface (a
+/** The window as the user sees it, which includes the PDF surface (a
  * WebDriver screenshot holds only the main web view): the whole X screen on
- * Linux, where the window sits at 0,0; on Windows the window's client area
- * (e2e/scripts/window-shot.ps1), so a point in the page is the same point in
- * the picture on both; on macOS the whole screen, with the page's origin
- * found in it. */
+ * Linux, where the worker's window is the only one and sits at 0,0; on Windows
+ * the client area of this worker's window (e2e/scripts/window-shot.ps1); on
+ * macOS this worker's window cropped to the page (`macWindowShot`). So a point
+ * in the page is the same point in the picture on all three, and the other
+ * workers' windows can't show in it (#88). */
 async function windowScreenshot(): Promise<Screen> {
   if (process.platform === "darwin") {
-    // The window has a title bar above the page, and WebDriver's rectangle
-    // doesn't say where the page starts, so a green square in the page's top
-    // left corner (clear of the surface) is found in the capture and gives
-    // the page's origin.
-    const size = 40;
-    await browser.execute((px) => {
-      const marker = document.createElement("div");
-      marker.id = "e2e-origin-marker";
-      marker.style.cssText = `position:fixed;left:0;top:0;width:${px}px;height:${px}px;background:#00ff00;z-index:2147483647`;
-      document.body.appendChild(marker);
-    }, size);
-    await browser.pause(300);
+    // This worker's window alone, cropped to the page (macWindowShot): the
+    // page's origin is the picture's.
     const file = path.join(os.tmpdir(), `hoplodex-e2e-screen-${process.pid}.png`);
     try {
-      execFileSync("screencapture", ["-x", "-t", "png", file]);
-      const screen = decodePng(fs.readFileSync(file));
-      let originX = Infinity;
-      let originY = Infinity;
-      for (let i = 0; i + 2 < screen.pixels.length; i += 3) {
-        if (screen.pixels[i] < 60 && screen.pixels[i + 1] > 200 && screen.pixels[i + 2] < 60) {
-          const at = i / 3;
-          originX = Math.min(originX, at % screen.width);
-          originY = Math.min(originY, Math.floor(at / screen.width));
-        }
-      }
-      if (!Number.isFinite(originX)) throw new Error("the origin marker is not on the screen");
-      return { ...screen, originX, originY };
+      await macWindowShot(file);
+      return { ...decodePng(fs.readFileSync(file)), originX: 0, originY: 0 };
     } finally {
       fs.rmSync(file, { force: true });
-      await browser.execute(() => document.getElementById("e2e-origin-marker")?.remove());
     }
   }
   let ppm: Buffer;
@@ -481,6 +461,8 @@ async function windowScreenshot(): Promise<Screen> {
           "Bypass",
           "-File",
           path.join(path.dirname(fileURLToPath(import.meta.url)), "../scripts/window-shot.ps1"),
+          "-ProcessId",
+          String(appPid()),
           "-Out",
           file,
           "-Format",

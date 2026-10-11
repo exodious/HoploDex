@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { browser } from "@wdio/globals";
+import { appPid } from "./app";
 import { settle } from "./ui";
 
 /**
@@ -152,16 +153,18 @@ export async function chooseTheme(label: "Light" | "Dark") {
 }
 
 /**
- * Saves the app's window as `<name>.png` from the screen (the X display on
- * Linux, the desktop through `window-shot.ps1` on Windows, `screencapture` on
- * macOS), the way the user sees it. A WebDriver screenshot holds only the main
- * web view, so it leaves out 007's PDF surface, a child of the window that the
- * viewer's dialog leaves open over the PDF's place; this one has it. On Linux
- * the window is the only one on the display and is at its corner, so the
- * picture is the display's top-left SCREENSHOT_WINDOW corner; on Windows it is
- * the window's client area; on macOS it is the page's rectangle, below the
- * title bar. A no-op when screenshots are off. Wait for the surface to be
- * there first (the `preview:pdf-ready` event).
+ * Saves the app's window as `<name>.png` the way the user sees it (the X
+ * display on Linux, `window-shot.ps1` on Windows, `macWindowShot` on macOS).
+ * A WebDriver screenshot holds only the main web view, so it leaves out 007's
+ * PDF surface, a child of the window that the viewer's dialog leaves open over
+ * the PDF's place; this one has it. On Linux the window is the only one on the
+ * worker's display and is at its corner, so the picture is the display's
+ * top-left SCREENSHOT_WINDOW corner; on Windows it is the client area of this
+ * worker's window (by `appPid()`), which paints itself into the picture; on
+ * macOS it is this worker's window, by its CGWindowID, cropped to the page
+ * below the title bar. Neither takes the screen, so another worker's window
+ * on top can't show in it (#88). A no-op when screenshots are off. Wait for
+ * the surface to be there first (the `preview:pdf-ready` event).
  */
 export async function shotDisplay(name: string) {
   if (!outDir) return;
@@ -171,7 +174,7 @@ export async function shotDisplay(name: string) {
     process.platform !== "darwin"
   ) {
     throw new Error(
-      "shotDisplay needs the X display (Linux), the Windows desktop or screencapture (macOS)",
+      "shotDisplay needs the X display (Linux), window-shot.ps1 (Windows) or screencapture (macOS)",
     );
   }
   fs.mkdirSync(outDir, { recursive: true });
@@ -197,6 +200,8 @@ export async function shotDisplay(name: string) {
         "Bypass",
         "-File",
         fileURLToPath(new URL("../scripts/window-shot.ps1", import.meta.url)),
+        "-ProcessId",
+        String(appPid()),
         "-Out",
         file,
       ],
@@ -204,26 +209,63 @@ export async function shotDisplay(name: string) {
       { stdio: "pipe", windowsHide: true },
     );
   } else if (process.platform === "darwin") {
-    // WebDriver's rectangle is the window's frame, title bar included; the
-    // page fills the rest, below it (one pixel to a point on this display).
-    const frame = await browser.getWindowRect();
-    const view = await browser.execute(() => ({
-      width: window.innerWidth,
-      height: window.innerHeight,
-    }));
-    const left = frame.x + Math.round((frame.width - view.width) / 2);
-    const top = frame.y + (frame.height - view.height);
-    execFileSync("screencapture", [
-      "-x",
-      "-t",
-      "png",
-      "-R",
-      `${left},${top},${view.width},${view.height}`,
-      file,
-    ]);
+    await macWindowShot(file);
   } else {
     const { width, height } = SCREENSHOT_WINDOW;
     execFileSync("import", ["-window", "root", "-crop", `${width}x${height}+0+0`, "+repage", file]);
   }
   await browser.execute(() => document.getElementById("hd-screenshot-freeze")?.remove());
+}
+
+/**
+ * macOS: saves the page area of this worker's app window as the PNG `file`,
+ * one pixel to a point (#88). `screencapture -l` captures one window's own
+ * contents by its CGWindowID, the PDF surface (a child web view) included, so
+ * another worker's window on top of this one can't show in it, as it would in
+ * a capture of a screen rectangle. The id comes from e2e/scripts/window-id.js,
+ * by the app's process id. The window has a title bar above the page, and
+ * WebDriver's rectangle doesn't say where the page starts, so the page is the
+ * window less what the web view's size leaves over, cropped
+ * (e2e/scripts/png-crop.js), and scaled down on a Retina display (two pixels
+ * to a point) with `sips`. A window that is wholly covered can come out
+ * stale, since WebKit stops painting it; a partly covered one is whole.
+ */
+export async function macWindowShot(file: string) {
+  const script = fileURLToPath(new URL("../scripts/window-id.js", import.meta.url));
+  const win = JSON.parse(
+    execFileSync("osascript", ["-l", "JavaScript", script, String(appPid())], {
+      encoding: "utf8",
+    }),
+  ) as { id: number; width: number; height: number };
+  const view = await browser.execute(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const raw = `${file}.window.png`;
+  try {
+    // -o: no shadow, so the picture is the window and nothing around it.
+    execFileSync("screencapture", ["-x", "-o", "-t", "png", "-l", String(win.id), raw]);
+    const png = fs.readFileSync(raw);
+    const scale = png.readUInt32BE(16) / win.width; // the IHDR's width
+    const px = (points: number) => Math.round(points * scale);
+    // The title bar is above the page; any frame at the sides is shared out.
+    const top = px(win.height - view.height);
+    const left = px((win.width - view.width) / 2);
+    execFileSync("osascript", [
+      "-l",
+      "JavaScript",
+      fileURLToPath(new URL("../scripts/png-crop.js", import.meta.url)),
+      raw,
+      file,
+      String(left),
+      String(top),
+      String(px(view.width)),
+      String(px(view.height)),
+    ]);
+    if (scale !== 1) {
+      execFileSync("sips", ["-z", String(view.height), String(view.width), file]);
+    }
+  } finally {
+    fs.rmSync(raw, { force: true });
+  }
 }
