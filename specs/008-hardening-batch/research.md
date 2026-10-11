@@ -1610,6 +1610,13 @@ No new crate and no new npm package.
 
 Nothing is bundled or fetched.
 
+_Amended 2026-10-11 (implementation): `csv-core` (MIT or Unlicense) became a
+direct dependency, at the version already in `Cargo.lock` as `csv`'s, so the
+helper's CSV parser can bound a record by the field; `windows-sys` gained
+the `Win32_System_ProcessStatus` feature for `import_reader_test`'s memory
+reading; the reader's crates are optimized in debug builds
+(`[profile.dev.package.*]`). Still nothing new in `package.json`._
+
 ## §22 Residual risks
 
 - **macOS's menu hook** may not see items AppKit adds after it (Writing
@@ -1629,6 +1636,15 @@ Nothing is bundled or fetched.
   confirms them; one that can't be stopped goes to the owner (§13).
 - **The parent's memory bound** rests on `MAX_CELLS` and the total-text
   limit together (§9); a change to either needs the arithmetic redone.
+- _Amended 2026-10-11 (implementation): macOS's hook can't remove AppKit's
+  **AutoFill** item; the owner kept it (it brings the user's own data in),
+  and the hook cancels a menu its filter emptied (§13). Writing Tools never
+  appeared in the VM. A synthesized ⌃⌘D opens no Look Up in WebKit in the
+  VM even without the hook, so the look-ups are verified only by manual
+  check M1 on real hardware. On Linux and Windows the mouse's side buttons
+  move history natively and only the page's guard stops them (§14). The
+  Linux filter's rule for `Custom` spelling items is unverified without a
+  dictionary._
 - **Notifications raised by the session layer** (none today) would not be
   covered by the keyed `ToastProvider`. The Vitest guard of §4 catches a new
   one.
