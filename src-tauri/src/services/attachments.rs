@@ -6,7 +6,10 @@
 
 use std::path::Path;
 
+use rusqlite::{Connection, named_params};
+
 use crate::commands::CommandError;
+use crate::models::record::RecordRef;
 
 pub struct AttachmentFile {
     pub bytes: Vec<u8>,
@@ -29,6 +32,31 @@ pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError>
         CommandError::not_found(format!("{filename} couldn't be read."))
     })?;
     Ok(AttachmentFile { bytes, filename })
+}
+
+/// Refuses one more row in `table` (`photos` or `document_attachments`) for
+/// `owner` once it has `limit` of them, as `ATTACHMENT_LIMIT_REACHED` naming
+/// `what` (001 FR-007 and FR-010, amended 2026-10-11). A photo is checked
+/// before it is decoded, so a full record costs no thumbnail.
+pub fn require_room(
+    conn: &Connection,
+    owner: RecordRef,
+    table: &str,
+    what: &str,
+    limit: u32,
+) -> Result<(), CommandError> {
+    let count: u32 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM {table} WHERE {} = :id", owner.owner_column()),
+            named_params! { ":id": owner.id() },
+            |row| row.get(0),
+        )
+        .map_err(CommandError::from_db)?;
+    if count >= limit {
+        Err(CommandError::attachment_limit_reached(owner, what, limit))
+    } else {
+        Ok(())
+    }
 }
 
 /// The longest name kept, in characters (extension included).

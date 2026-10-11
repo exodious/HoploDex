@@ -51,3 +51,5 @@ The accessory table's columns of the same names take the same maximums.
 270 photos writes that cell over Excel's 32,767-character limit. That is an
 existing limitation of the workbook export, recorded as a follow-up issue,
 not changed here.
+
+_Amended 2026-10-11: a record now has at most 50 photos ([001 FR-007](../../001-firearms-inventory/spec.md)), so the cell holds at most about 6,500 characters and the workbook export no longer fails on it (issue #95)._

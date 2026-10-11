@@ -1116,3 +1116,35 @@ fn an_export_that_is_stopped_removes_only_what_it_made() {
     assert_eq!(names_in(dest.path()), vec!["base.csv", "base_photos"]);
     assert!(earlier.spreadsheet_path.is_file() && earlier.photos_folder_path.is_dir());
 }
+
+/// Issue #95: a workbook cell holds at most 32,767 characters, and a record
+/// with hundreds of photos once wrote `photo_filenames` past it, failing the
+/// whole export. With at most 50 photos a record (001 FR-007, amended
+/// 2026-10-11), even 50 names at the longest kept (120 characters) fit.
+#[test]
+fn a_workbook_export_holds_50_photos_with_the_longest_names() {
+    let db = TestDb::new();
+    let owner = new_firearm(&db, &firearm_with_photo("Glock"));
+    for n in 0..50 {
+        let name = format!("{n:02}{}.png", "x".repeat(114));
+        assert_eq!(name.chars().count(), 120);
+        hoplodex_lib::commands::photos::ops::add_photo(
+            &db.conn,
+            owner,
+            &sample_png_bytes(),
+            &name,
+            "image/png",
+        )
+        .unwrap();
+    }
+    let dest = TempDir::new().unwrap();
+
+    let result = export_all(&db, &dest, "book", SpreadsheetFormat::Xlsx);
+
+    let sheets = sheets::read_workbook(&result.spreadsheet_path);
+    let firearms = &sheets[0].1;
+    let column = firearms[0].iter().position(|h| h == "photo_filenames").unwrap();
+    let cell = &firearms[1][column];
+    assert_eq!(cell.split(';').count(), 50);
+    assert!(cell.chars().count() <= 32_767);
+}

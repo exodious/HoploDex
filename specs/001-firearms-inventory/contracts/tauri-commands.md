@@ -303,12 +303,16 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#li
 
 ### `add_photo`
 
+_Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 photos ([spec FR-007](../spec.md)). The message names the owner's kind ("This firearm has 50 photos, the most it can have."), `details` is `{ limit: 50 }`, and nothing is stored. It is checked after the mime type and the owner, before the photo is decoded._
+
 - **Input**: `firearmId: number`, `fileBytes: Uint8Array`, `originalFilename: string`, `mimeType: string`.
 - **Output**: `Photo` (with generated `thumbnailBytes`). First photo added
   to a firearm automatically becomes `thumbnail_photo_id` (FR-008).
 - **Errors**: `VALIDATION_ERROR` (unsupported mime type), `NOT_FOUND`.
 
 ### `add_photo_from_path` / `add_document_from_path`
+
+_Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED`, as `add_photo` and `add_document`._
 
 - **Input**: `firearmId: number`, `path: string`.
 - **Output**: as `add_photo` / `add_document`. The backend reads the
@@ -354,6 +358,8 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#li
 ### `add_document` / `delete_document`
 
 _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#add_document): `add_document` accepts only document types, recognised by name and content, and stores the content's own type; deleting also removes the name from the search index._
+
+_Amended 2026-10-11: `add_document` fails with `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 documents ([spec FR-010](../spec.md)), as `add_photo` does for photos ("This firearm has 50 documents, the most it can have."). It is checked after the type and the owner._
 
 - Analogous to photo commands, without thumbnail generation. The stored
   `file_bytes` never cross the IPC boundary; `open_document` is the only

@@ -187,6 +187,8 @@ row per firearm; see contracts/spreadsheet-format.md).
 
 _Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-document-attachment-disposition-history-owner-extended): the owner is a firearm or an accessory (`firearm_id` or `accessory_id`)._
 
+_Amended 2026-10-11: an owner has at most 50 photos (`MAX_PHOTOS_PER_RECORD`, [spec FR-007](spec.md)), checked by `add_photo` before the row is inserted._
+
 | Field | Type | Notes |
 |---|---|---|
 | `id` | INTEGER PK | |
@@ -207,6 +209,8 @@ Acceptance Scenario 1–2).
 _Amended by [spec 007](../007-document-preview/data-model.md#entity-documentattachment-stored-as-before-rules-amended): only document types are stored, recognised by content, and `original_filename` is also indexed by `document_names_fts`._
 
 _Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-document-attachment-disposition-history-owner-extended): the owner is a firearm or an accessory (`firearm_id` or `accessory_id`)._
+
+_Amended 2026-10-11: an owner has at most 50 documents (`MAX_DOCUMENTS_PER_RECORD`, [spec FR-010](spec.md)), checked by `add_document` before the row is inserted._
 
 | Field | Type | Notes |
 |---|---|---|

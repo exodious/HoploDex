@@ -7,6 +7,7 @@ mod support;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
+use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::models::document_attachment::{DocumentAttachment, DocumentSummary, PreviewKind};
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
@@ -620,4 +621,73 @@ fn a_row_of_another_type_stays_listed_and_can_be_deleted() {
 
     assert!(document_ops::delete_document(&db.conn, old.id, true).unwrap().deleted);
     assert_eq!(document_count(&db), 0);
+}
+
+// --- At most 50 documents a record (FR-010, amended 2026-10-11) ---------------
+
+/// Gives `owner` its 50 documents.
+fn fill_with_documents(db: &TestDb, owner: RecordRef) {
+    for n in 0..50 {
+        document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, &format!("{n}.pdf")).unwrap();
+    }
+}
+
+#[test]
+fn a_firearm_with_50_documents_refuses_another_and_stores_nothing() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    fill_with_documents(&db, owner);
+
+    let err = document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "51.pdf")
+        .expect_err("a 51st document is refused");
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+    assert_eq!(err.message, "This firearm has 50 documents, the most it can have.");
+    assert_eq!(err.details.as_deref(), Some(&json!({ "limit": 50 })));
+    assert_eq!(count(&db, "document_attachments"), 50);
+
+    // A dropped file is refused the same way.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dropped.pdf");
+    std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
+    let err = document_ops::add_document_from_path(&db.conn, owner, &path).unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+    assert_eq!(count(&db, "document_attachments"), 50);
+
+    // Deleting one makes room for one more.
+    let first = document_ops::list_documents(&db.conn, owner).unwrap()[0].id;
+    document_ops::delete_document(&db.conn, first, true).unwrap();
+    document_ops::add_document(&db.conn, owner, SAMPLE_PDF_BYTES, "again.pdf").unwrap();
+    assert_eq!(count(&db, "document_attachments"), 50);
+}
+
+#[test]
+fn the_document_limit_is_each_records_own_and_apart_from_photos() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let accessory = create_accessory(&db, "A-1");
+    fill_with_documents(&db, RecordRef::Accessory(accessory));
+
+    let err = document_ops::add_document(
+        &db.conn,
+        RecordRef::Accessory(accessory),
+        SAMPLE_PDF_BYTES,
+        "51.pdf",
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+    assert_eq!(err.message, "This accessory has 50 documents, the most it can have.");
+
+    // Another record still takes documents, and a full record still takes
+    // photos: the two limits are counted apart.
+    document_ops::add_document(&db.conn, RecordRef::Firearm(firearm.id), SAMPLE_PDF_BYTES, "a.pdf")
+        .unwrap();
+    photo_ops::add_photo(
+        &db.conn,
+        RecordRef::Accessory(accessory),
+        &support::sample_png_bytes(),
+        "a.png",
+        "image/png",
+    )
+    .unwrap();
 }

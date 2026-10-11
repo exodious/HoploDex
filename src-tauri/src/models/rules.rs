@@ -29,6 +29,16 @@ pub const MAX_SHORT_TEXT_CHARS: usize = 200;
 /// `src/lib/textLimits.ts`.
 pub const MAX_LONG_TEXT_CHARS: usize = 4_000;
 
+/// The most photos one firearm or accessory may have (001 FR-007, amended
+/// 2026-10-11; issue #95). Mirrored as `MAX_PHOTOS_PER_RECORD` in
+/// `src/features/media/attachmentLimits.ts`.
+pub const MAX_PHOTOS_PER_RECORD: u32 = 50;
+
+/// The most documents one firearm or accessory may have (001 FR-010,
+/// amended 2026-10-11). Mirrored as `MAX_DOCUMENTS_PER_RECORD` in
+/// `src/features/media/attachmentLimits.ts`.
+pub const MAX_DOCUMENTS_PER_RECORD: u32 = 50;
+
 /// `1,234,567`: a number as the app's messages write it.
 pub(crate) fn thousands(n: u64) -> String {
     let digits = n.to_string();

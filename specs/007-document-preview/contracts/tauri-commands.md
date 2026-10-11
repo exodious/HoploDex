@@ -107,6 +107,8 @@ type DocumentOpening = "preview" | "external";
 
   Nothing is stored on any error.
 
+  _Amended 2026-10-11: also `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 documents, checked after the type and the owner ([001 contract](../../001-firearms-inventory/contracts/tauri-commands.md#add_document--delete_document))._
+
 ### `add_document_from_path`
 
 - **Input and output**: unchanged.

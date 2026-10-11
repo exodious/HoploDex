@@ -12,7 +12,8 @@ use crate::models::database::IdlePauseReason;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
 use crate::models::document_opening::DocumentOpening;
 use crate::models::record::RecordRef;
-use crate::services::attachments::{read_attachment_file, safe_basename};
+use crate::models::rules::MAX_DOCUMENTS_PER_RECORD;
+use crate::services::attachments::{read_attachment_file, require_room, safe_basename};
 use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest, needs_consent};
 use crate::services::document_types::{self, DocumentType, classify};
 use crate::services::machine_settings::MachineSettings;
@@ -120,6 +121,8 @@ pub mod ops {
                 owner.noun()
             )));
         }
+        // At most `MAX_DOCUMENTS_PER_RECORD` (FR-010, amended 2026-10-11).
+        require_room(conn, owner, "document_attachments", "documents", MAX_DOCUMENTS_PER_RECORD)?;
         let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(
             "INSERT INTO document_attachments (

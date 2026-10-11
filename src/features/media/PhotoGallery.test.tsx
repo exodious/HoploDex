@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components";
+import { CommandFailure } from "../../services/tauriClient";
 import type { FileDropEvent } from "../../services/tauriClient";
 import { SessionScopeContext, createSessionScope } from "../session/sessionScope";
 import type { SessionScope } from "../session/sessionScope";
@@ -137,5 +138,103 @@ describe("PhotoGallery: a late load (US1-2)", () => {
 
     expect(screen.queryByRole("button", { name: "View Left behind.jpg" })).not.toBeInTheDocument();
     expect(screen.queryByText("Left behind.jpg")).not.toBeInTheDocument();
+  });
+});
+
+describe("PhotoGallery: at most 50 photos (001 FR-007, amended 2026-10-11)", () => {
+  const FULL_NOTE = "This firearm has 50 photos, the most it can have. Delete one to add another.";
+  const many = (n: number) => Array.from({ length: n }, (_, i) => photo(i + 1, `${i + 1}.jpg`));
+
+  it("disables Add photos and shows the note in place of the drop strip once the firearm has 50", async () => {
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_photos") return many(50);
+      throw new Error(`unexpected command ${command}`);
+    });
+    renderGallery(createSessionScope(1));
+
+    expect(await screen.findByRole("note")).toHaveTextContent(FULL_NOTE);
+    const add = screen.getByRole("button", { name: "Add photos" });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAttribute("title", FULL_NOTE);
+    expect(screen.queryByText(/Drop more photos here/)).not.toBeInTheDocument();
+  });
+
+  it("keeps Add photos and the drop strip below 50", async () => {
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_photos") return many(49);
+      throw new Error(`unexpected command ${command}`);
+    });
+    renderGallery(createSessionScope(1));
+
+    expect(await screen.findByText(/Drop more photos here/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add photos" })).toBeEnabled();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("adds up to the limit, then sends no more and counts the rest as not added", async () => {
+    let photos = many(48);
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_photos") return photos;
+      if (command === "add_photo_from_path") {
+        if (photos.length >= 50) {
+          throw new CommandFailure({
+            code: "ATTACHMENT_LIMIT_REACHED",
+            message: "This firearm has 50 photos, the most it can have.",
+          });
+        }
+        const added = photo(photos.length + 1, "new.jpg");
+        photos = [...photos, added];
+        return added;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    renderGallery(createSessionScope(1));
+    await waitFor(() => expect(calls("list_photos")).toHaveLength(1));
+
+    act(() => backend.drop(["/p/a.jpg", "/p/b.jpg", "/p/c.jpg", "/p/d.jpg"]));
+
+    expect(await screen.findByText("Added 2 photos.")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "2 photos weren't added. This firearm has 50 photos, the most it can have.",
+      ),
+    ).toBeInTheDocument();
+    expect(calls("add_photo_from_path")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Add photos" })).toBeDisabled();
+  });
+
+  it("names a single photo dropped on a full accessory", async () => {
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_photos") return many(50);
+      if (command === "add_photo_from_path") {
+        throw new CommandFailure({
+          code: "ATTACHMENT_LIMIT_REACHED",
+          message: "This accessory has 50 photos, the most it can have.",
+        });
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    render(
+      <ToastProvider>
+        <SessionScopeContext.Provider value={createSessionScope(1)}>
+          <PhotoGallery
+            owner={{ kind: "accessory", id: 3 }}
+            thumbnailPhotoId={null}
+            onChanged={vi.fn()}
+          />
+        </SessionScopeContext.Provider>
+      </ToastProvider>,
+    );
+    expect(await screen.findByRole("note")).toHaveTextContent(
+      "This accessory has 50 photos, the most it can have. Delete one to add another.",
+    );
+
+    act(() => backend.drop(["/p/Scope.jpg"]));
+
+    expect(
+      await screen.findByText(
+        "Scope.jpg wasn't added. This accessory has 50 photos, the most it can have.",
+      ),
+    ).toBeInTheDocument();
   });
 });

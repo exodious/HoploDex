@@ -181,6 +181,7 @@ A collector exports their full collection (including photographs) to a standard 
 - **FR-006**: System MUST allow the user to edit and delete any firearm record, with confirmation required before deletion.
 - **FR-007**: System MUST allow the user to attach one or more photographs to a firearm record.
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020)._
+  _Amended 2026-10-11: a firearm or an accessory has at most 50 photographs. One more is refused (`ATTACHMENT_LIMIT_REACHED`) and nothing is stored; a batch adds those up to the limit and says how many were not added. At the limit the record's Add photos control is disabled and its drop strip says why (issue #95)._
 - **FR-008**: System MUST designate a thumbnail image for each firearm record: the first photo added by default, or a photo the user explicitly selects instead.
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020)._
 - **FR-009**: System MUST display a generic, type-specific thumbnail image for any firearm record that has no photographs.
@@ -189,6 +190,7 @@ A collector exports their full collection (including photographs) to a standard 
 - **FR-010**: System MUST allow the user to attach arbitrary documents (e.g., PDF files) to a firearm record and reopen them from the record (see FR-035 for the handling of temporary decrypted copies).
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020)._
   _Amended by [spec 007](../007-document-preview/spec.md): only document types can be attached as documents (FR-016); opening a document previews it in the application by default, and opening it in another program takes a confirmation (FR-001, FR-008, FR-013)._
+  _Amended 2026-10-11: a firearm or an accessory has at most 50 documents, counted apart from its photographs (FR-007). One more is refused (`ATTACHMENT_LIMIT_REACHED`) and nothing is stored; a batch attaches those up to the limit and says how many were not attached. At the limit the record's Attach control is disabled and its drop strip says why._
 - **FR-011**: System MUST allow the user to browse the collection in both a list layout and a tiled (thumbnail-based) layout.
   _Amended by [spec 006](../006-accessory-links/spec.md): applies to accessories too (006 FR-007a, FR-016, FR-020). The Accessories page has the same layouts (006 FR-016)._
 - **FR-012**: System MUST allow the user to group the collection by any structured (non-free-form) field, including at minimum type, caliber, and make.

@@ -11,6 +11,7 @@ import * as mediaService from "./mediaService";
 import type { PhotoSummary } from "./types";
 import { fileName, isPhotoPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
+import { MAX_PHOTOS_PER_RECORD, fullNote, isLimitReached, limitRefusal } from "./attachmentLimits";
 import "./media.css";
 
 export interface PhotoGalleryProps {
@@ -65,19 +66,27 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
 
   /** Adds each photo in turn, carrying on past one that fails so a bad file
    * doesn't cost the rest of a batch. A batch stops at the scope's end (FR-002,
-   * research.md §5): what was added stays added, and nothing more is sent. */
+   * research.md §5): what was added stays added, and nothing more is sent. It
+   * also stops once the record is full (FR-007, amended 2026-10-11): the photos
+   * up to the limit stay, and the rest are named as not added. */
   async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
     if (pending.length === 0) return;
     setAdding(pending.length);
     let added = 0;
     let failure: string | null = null;
-    for (const { name, add } of pending) {
+    let full: string | null = null;
+    for (const [index, { name, add }] of pending.entries()) {
       if (scope.ended) break;
       try {
         await add();
         added += 1;
       } catch (e) {
         if (scope.ended) break;
+        if (isLimitReached(e)) {
+          const left = pending.slice(index).map((p) => p.name);
+          full = limitRefusal(left, "photos", "added", e);
+          break;
+        }
         failure ??= failureMessage(e, `${name} couldn't be added.`);
       }
     }
@@ -88,6 +97,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
       await onChanged();
       notify(`Added ${plural(added, "photo", "photos")}.`);
     }
+    if (full) notify(full, "error");
     if (failure) notify(failure, "error");
   }
 
@@ -148,6 +158,8 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
 
   const dragging = useFileDrop(isPhotoPath, (paths) => void addPaths(paths));
   const pick = () => inputRef.current?.click();
+  const full = photos != null && photos.length >= MAX_PHOTOS_PER_RECORD;
+  const note = fullNote(owner, MAX_PHOTOS_PER_RECORD, "photos");
 
   return (
     <section className="hd-panel hd-dropzone-host" aria-labelledby="photos-title">
@@ -158,7 +170,14 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
             <span className="hd-panel__count hd-num">{photos.length}</span>
           )}
         </h2>
-        <Button size="sm" icon="plus" pending={adding > 0} onClick={pick}>
+        <Button
+          size="sm"
+          icon="plus"
+          pending={adding > 0}
+          disabled={full}
+          title={full ? note : undefined}
+          onClick={pick}
+        >
           {adding > 0 ? `Adding ${adding}…` : "Add photos"}
         </Button>
         <input
@@ -209,7 +228,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
         </ul>
       )}
 
-      {photos && photos.length > 0 && (
+      {photos && photos.length > 0 && !full && (
         <button type="button" className="hd-dropzone hd-dropzone--compact" onClick={pick}>
           <span>
             Drop more photos here, or <span className="hd-link">choose files</span>
@@ -217,9 +236,15 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
         </button>
       )}
 
+      {full && (
+        <p className="hd-dropzone hd-dropzone--compact hd-dropzone--full" role="note">
+          {note}
+        </p>
+      )}
+
       {dragging && (
         <div className="hd-dropzone-overlay" aria-hidden>
-          Drop to add photos
+          {full ? note : "Drop to add photos"}
         </div>
       )}
 
