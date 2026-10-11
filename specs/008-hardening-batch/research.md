@@ -890,6 +890,11 @@ someone looks at it.
     then installs the page's own guard (§12: `mousedown`, `mouseup` and
     `auxclick` with button 3 or 4 prevented), after which neither button
     moved it (§14).
+
+    _Windows rerun (T108, 2026-10-11, the same machine and runtime,
+    `scripts\windows\window-controls-check.ps1`, exit 0)_: the same items
+    and the same results, the side buttons included, natively and with the
+    page's guard.
 - **macOS (WKWebView)**: Tauri's web view is wry's `WryWebView`, a
   `WKWebView` subclass. HoploDex adds `willOpenMenu:withEvent:` to that class
   at startup (objc2, `class_addMethod`, calling `super` first), a public
@@ -1360,6 +1365,48 @@ All in the VM, from the checkout copied in at 19fbbdc plus the fix below.
   Nothing in the default build compiles that file (the whole file is behind
   the feature), so the Linux gates didn't see it either; DEVELOPMENT.md and
   `tart-vm.sh test` do run that command, and Linux's T106 should run it too.
+
+### Full gates: Windows (T108, 2026-10-11)
+
+The Windows test machine (Windows Server 2025, 4 logical CPUs, 8 GB, a VM),
+in the signed-in desktop session, at the branch's tip after the Linux gates
+(T106; its window controls result is under §13 above). Run one at a time.
+For the E2E specs, the screenshot walk and the two real-input checks `TEMP`
+and `TMP` pointed at a fresh empty folder (the system temp folder here holds
+gigabytes of old harness output, which us13's disk scan reads and which made
+it fail before); nothing in the system temp folder was deleted, and the
+folder was emptied between spec files.
+- **Green first time**: `cargo test` (1,312 passed, 24 ignored, the
+  release-only ones; `amount_cap_test` did not flake), `cargo clippy
+  --all-targets -- -D warnings`, `cargo fmt --check`, `npm run lint`,
+  `npm run format:check`, `npm run audit` (npm, cargo-deny advisories and
+  licenses, no WebDriver in a shipped build; the network was reachable),
+  `npm run build`, `scripts\windows\window-controls-check.ps1` (exit 0) and
+  `scripts\windows\pdf-surface-check.ps1` (exit 0, check ok).
+- **E2E**, each spec file by itself with `HOPLODEX_E2E_WORKERS=1`: us1 to
+  us15, us7-databases-no-keyring, ui-review, webdriver-plugin and
+  zz-session-header-probe, all passed, then again after the fix below.
+- **The screenshot walk** (`npm run screenshots`) made every shot from 01 to
+  78 in light and dark, and passed three runs in a row after the fix below.
+  Looking at 73 to 78 found two things, both fixed:
+  - 73 (the pending changes dialog kept by another version) was the same
+    picture in light and dark. With that dialog up the collection isn't
+    mounted, so the top bar's colour toggle that `chooseTheme` clicks isn't
+    there. `chooseTheme` (`e2e/support/screenshots.ts`) now sets `data-theme`
+    itself when the toggle is missing.
+  - After the failed resume of 74, the collection beneath the dialog could
+    show no records (Collection 0, no insurance count) and 77 and 78 (Add
+    firearm, later in the walk) offered no types or actions ("The list of
+    types couldn't be loaded"); whether it did varied from run to run. A
+    failed resume puts the changes back to waiting (`notOpened`) while the
+    collection beneath has just mounted, so a first read could be refused
+    with `PENDING_CHANGES_UNRESOLVED`, and the lists then stay failed for
+    that mount. "Discard changes" kept that mount (the attempt stays so that
+    a resumed form's collection is the one it opened in). `resolvePending`
+    (`src/features/session/SessionProvider.tsx`) now mounts the collection
+    afresh when changes are discarded after a failed resume, and
+    `SessionProvider.test.tsx` has the regression test. A retry
+    ("Resume editing" again) already remounted.
 
 ## §19 Performance
 
