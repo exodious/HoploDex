@@ -140,8 +140,6 @@ fn decide(items: &[Item], keep: impl Fn(&Item) -> bool) -> Vec<bool> {
 /// (T080), in release and E2E builds only (research.md §15), on the main
 /// thread, which `with_webview` runs it on. Runs once per process: the class
 /// is shared by every wry web view, so a second call changes nothing.
-// Nothing calls it until T080 wires `window_controls::apply` into `setup()`.
-#[allow(dead_code)]
 pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::Result<()> {
     window.with_webview(move |platform| {
         LOG_ITEMS.store(log_items, Ordering::Relaxed);

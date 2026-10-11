@@ -1,25 +1,32 @@
-// For scripts/macos/pdf-surface-check.sh: real mouse input and window bounds
-// on macOS, as pdf_surface_input.py gives the Linux runs. The terminal (or
+// For scripts/macos/pdf-surface-check.sh and scripts/macos/window-controls-check.sh:
+// real mouse and keyboard input and window bounds
+// on macOS, as real_input.py gives the Linux runs. The terminal (or
 // sshd) running it needs Accessibility access to post events.
 //
-//   pdf_surface_input bounds PID      the PID's largest window: x y width height
-//   pdf_surface_input move X Y        move the pointer (screen points)
-//   pdf_surface_input click X Y       left click
-//   pdf_surface_input rclick X Y      right click
-//   pdf_surface_input text PID        every text the PID's accessibility tree
+//   real_input bounds PID      the PID's largest window: x y width height
+//   real_input move X Y        move the pointer (screen points)
+//   real_input click X Y       left click
+//   real_input rclick X Y      right click
+//   real_input text PID        every text the PID's accessibility tree
 //                                   exposes (what VoiceOver could read), with
 //                                   each element's role and position
-//   pdf_surface_input press PID TITLE press the PID's element titled TITLE
+//   real_input press PID TITLE press the PID's element titled TITLE
 //                                   (a context menu item, a button)
-//   pdf_surface_input clickt X Y      left click, and print when (Unix ms,
+//   real_input clickt X Y      left click, and print when (Unix ms,
 //                                   just before the button goes up)
-//   pdf_surface_input find PID ROLE TITLE
+//   real_input find PID ROLE TITLE
 //                                   the centre of the PID's first ROLE
 //                                   element whose title is TITLE: x y
-//   pdf_surface_input key CODE [cmd]  press a key (a virtual key code), with
-//                                   Command held if `cmd` is given
-//   pdf_surface_input scroll X Y N    wheel N notches at X Y (negative: down)
-//   pdf_surface_input menu PID        the PID's menu bar items, as paths,
+//   real_input key CODE [MODS] press a key (a virtual key code), with the
+//                                   modifiers MODS held: cmd, shift, alt
+//                                   (Option) and ctrl, joined with +
+//                                   (cmd+shift)
+//   real_input xbutton X Y back|forward
+//                                   the mouse's back or forward button
+//                                   (buttons 3 and 4)
+//   real_input windows PID     how many windows of the PID are on screen
+//   real_input scroll X Y N    wheel N notches at X Y (negative: down)
+//   real_input menu PID        the PID's menu bar items, as paths,
 //                                   with any disabled ones marked
 import ApplicationServices
 import CoreGraphics
@@ -78,6 +85,23 @@ case "clickt":
     post(.mouseMoved, x, y); post(.leftMouseDown, x, y)
     print(Int64(Date().timeIntervalSince1970 * 1000))
     post(.leftMouseUp, x, y)
+case "xbutton":
+    let (x, y) = (Double(args[2])!, Double(args[3])!)
+    // Mouse buttons 3 and 4 (a CGMouseButton has no name for them): the events
+    // are "other" mouse events with the button number set.
+    let number: Int64 = args[4] == "back" ? 3 : 4
+    post(.mouseMoved, x, y)
+    for type in [CGEventType.otherMouseDown, .otherMouseUp] {
+        let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: CGPoint(x: x, y: y),
+                            mouseButton: .center)!
+        event.setIntegerValueField(.mouseEventButtonNumber, value: number)
+        event.post(tap: .cghidEventTap)
+        usleep(80_000)
+    }
+case "windows":
+    let pid = Int32(args[2])!
+    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as! [[String: Any]]
+    print(windows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }.count)
 case "find":
     var found = false
     walk(AXUIElementCreateApplication(Int32(args[2])!)) { element, role, _ in
@@ -97,7 +121,17 @@ case "key":
         // Always set: an event with the flags unset takes the modifiers of the
         // key event posted before it, so Escape after Command+O reached nothing
         // (Command+Escape belongs to the system).
-        event.flags = args.count > 3 && args[3] == "cmd" ? .maskCommand : []
+        var flags: CGEventFlags = []
+        for modifier in (args.count > 3 ? args[3] : "").split(separator: "+") {
+            switch modifier {
+            case "cmd": flags.insert(.maskCommand)
+            case "shift": flags.insert(.maskShift)
+            case "alt": flags.insert(.maskAlternate)
+            case "ctrl": flags.insert(.maskControl)
+            default: FileHandle.standardError.write("unknown modifier \(modifier)\n".data(using: .utf8)!); exit(2)
+            }
+        }
+        event.flags = flags
         event.post(tap: .cghidEventTap)
         usleep(50_000)
     }
@@ -143,6 +177,6 @@ case "press":
     }
     print(pressed ? "pressed" : "not found")
 default:
-    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [cmd] | menu PID\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID\n".data(using: .utf8)!)
     exit(2)
 }

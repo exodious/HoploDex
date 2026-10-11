@@ -46,7 +46,7 @@ SKIP_ARGS=(--skip "$ROOT/src-tauri/target" --skip "$ROOT/node_modules" --skip "$
 
 LOG=$OUT/$MODE-linux.log
 if [ "$MODE" = check ]; then
-  FLAGS=(--input python3 --input "$ROOT/src-tauri/examples/pdf_surface_input.py"
+  FLAGS=(--input python3 --input "$ROOT/src-tauri/examples/real_input.py"
     --dns-log "$S/dns.log" "${SCAN_ARGS[@]}" "${SKIP_ARGS[@]}")
 else
   FLAGS=()

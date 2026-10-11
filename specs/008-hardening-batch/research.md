@@ -798,6 +798,31 @@ someone looks at it.
   Plain Text and the Input Methods submenu, which aren't on FR-011's list
   (the input method is still chosen from the desktop's own controls). A menu left empty isn't shown
   (return `true`).
+
+  _Linux items logged (T083, 2026-10-11, the dev container's WebKitGTK, by
+  `scripts/window-controls-check.sh`: real XTest right clicks on a test page
+  with the filter alone, no page handlers)_:
+  - blank area, row and button: Back, Forward, Stop and Reload, all removed,
+    so no menu;
+  - image: Open Image in New Window, Download Image, Copy Image and Copy
+    Image Address, all removed, so no menu;
+  - text field holding text: Cut, Copy, Paste, Delete, Select All and Insert
+    Emoji kept; Insert Unicode Control Character (`Unicode`) removed. The
+    container has no spelling dictionary, so no spelling item was offered
+    and none of the `SpellingGuess`, `NoGuessesFound`, `IgnoreSpelling`,
+    `LearnSpelling`, `IgnoreGrammar` or spelling `Custom` rules was exercised
+    here. A `Custom` item's `GAction` is named `action-N`, so the filter's
+    "name says spelling or grammar" rule for `Custom` cannot match what
+    WebKitGTK names these; a host with a dictionary is where to see which
+    spelling items arrive as `Custom`;
+  - selected text in a paragraph: Copy kept; one `Custom` item removed;
+  - F5, Shift+F5, Ctrl+F5, Ctrl+R, Ctrl+Shift+R, Alt+←, Alt+→, the Back,
+    Forward and Refresh keys (`XF86Back`, `XF86Forward`, `XF86Reload`),
+    Ctrl+P, S, U, F, G, F3, F7, F12 and Ctrl+Shift+I, J, C, and the mouse's
+    buttons 8 and 9 (back and forward) left the page loaded once, with the
+    typed text intact and the keyboard still in the field, and opened no
+    window. WebKitGTK binds none of them (§14); the page has one history
+    entry, so Back has nowhere to go whether or not it acts on 8 and 9.
 - **Windows (WebView2)**: `ICoreWebView2_11::add_ContextMenuRequested` on
   the main web view, as the surface does. It keeps items by `Name`:
   - `cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`, `emoji`;

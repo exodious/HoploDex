@@ -80,8 +80,6 @@ fn tidy_separators(menu: &webkit2gtk::ContextMenu) {
 /// Called on the `main` web view from `setup()` by `window_controls::apply`
 /// (T080), in release and E2E builds only (research.md §15), on the main
 /// thread, which `with_webview` runs it on.
-// Nothing calls it until T080 wires `window_controls::apply` into `setup()`.
-#[allow(dead_code)]
 pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::Result<()> {
     window.with_webview(move |platform| {
         platform.inner().connect_context_menu(move |_, menu, _, _| {

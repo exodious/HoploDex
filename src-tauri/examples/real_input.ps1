@@ -1,21 +1,27 @@
-# For scripts/windows/pdf-surface-check.ps1: real mouse input, screenshots
-# and window bounds on Windows, as pdf_surface_input.swift gives the macOS
-# runs and pdf_surface_input.py the Linux ones. Run it in the signed-in desktop
+# For scripts/windows/pdf-surface-check.ps1 and
+# scripts/windows/window-controls-check.ps1: real mouse input, screenshots
+# and window bounds on Windows, as real_input.swift gives the macOS
+# runs and real_input.py the Linux ones. Run it in the signed-in desktop
 # session (an SSH session has no desktop to post input to).
 #
-#   pdf_surface_input.ps1 bounds PID       the PID's largest visible window:
+#   real_input.ps1 bounds PID       the PID's largest visible window:
 #                                        x y width height (physical pixels)
-#   pdf_surface_input.ps1 move X Y         move the pointer
-#   pdf_surface_input.ps1 click X Y        left click
-#   pdf_surface_input.ps1 rclick X Y       right click
-#   pdf_surface_input.ps1 scroll X Y N     wheel N notches at X Y (negative: down)
-#   pdf_surface_input.ps1 key KEYS         send keys (SendKeys syntax, e.g. ^s)
-#   pdf_surface_input.ps1 shot FILE        screenshot of the whole screen (PNG)
-#   pdf_surface_input.ps1 text PID         every name and value the PID's UI
+#   real_input.ps1 move X Y         move the pointer
+#   real_input.ps1 click X Y        left click
+#   real_input.ps1 rclick X Y       right click
+#   real_input.ps1 scroll X Y N     wheel N notches at X Y (negative: down)
+#   real_input.ps1 key KEYS         send keys (SendKeys syntax, e.g. ^s)
+#   real_input.ps1 vkey HEX         press a virtual key by its code (A6 is
+#                                        Browser Back, A7 Forward, A8 Refresh),
+#                                        which SendKeys has no name for
+#   real_input.ps1 xbutton X Y back|forward
+#                                        the mouse's back or forward button
+#   real_input.ps1 shot FILE        screenshot of the whole screen (PNG)
+#   real_input.ps1 text PID         every name and value the PID's UI
 #                                        Automation tree exposes (what a screen
 #                                        reader could read), with each
 #                                        element's control type and position
-#   pdf_surface_input.ps1 press PID NAME   invoke the PID's element named NAME
+#   real_input.ps1 press PID NAME   invoke the PID's element named NAME
 #                                        (a button, a menu item)
 param(
     [Parameter(Mandatory)][string]$Command,
@@ -34,6 +40,7 @@ public static class SurfaceInput {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint f, int x, int y, uint d, UIntPtr e);
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p, IntPtr l);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -64,6 +71,19 @@ public static class SurfaceInput {
         Move(x, y);
         mouse_event(right ? 0x0008u : 0x0002u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(60);
         mouse_event(right ? 0x0010u : 0x0004u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(80);
+    }
+
+    // XBUTTON1 is back, XBUTTON2 forward (MOUSEEVENTF_XDOWN 0x80, XUP 0x100).
+    public static void XButton(int x, int y, bool back) {
+        Move(x, y);
+        uint which = back ? 1u : 2u;
+        mouse_event(0x0080u, 0, 0, which, UIntPtr.Zero); Thread.Sleep(60);
+        mouse_event(0x0100u, 0, 0, which, UIntPtr.Zero); Thread.Sleep(80);
+    }
+
+    public static void VKey(byte vk) {
+        keybd_event(vk, 0, 0, UIntPtr.Zero); Thread.Sleep(50);
+        keybd_event(vk, 0, 2, UIntPtr.Zero); Thread.Sleep(80);
     }
 
     public static void Scroll(int x, int y, int notches) {
@@ -121,6 +141,8 @@ switch ($Command) {
         Add-Type -AssemblyName System.Windows.Forms
         [System.Windows.Forms.SendKeys]::SendWait($Rest[0])
     }
+    'vkey' { [SurfaceInput]::VKey([Convert]::ToByte($Rest[0], 16)) }
+    'xbutton' { [SurfaceInput]::XButton([int]$Rest[0], [int]$Rest[1], $Rest[2] -eq 'back') }
     'scroll' { [SurfaceInput]::Scroll([int]$Rest[0], [int]$Rest[1], [int]$Rest[2]) }
     'shot' { [SurfaceInput]::Shot($Rest[0]) }
     'text' {
@@ -150,7 +172,7 @@ switch ($Command) {
         if ($script:pressed) { 'pressed' } else { 'not found' }
     }
     default {
-        [Console]::Error.WriteLine('usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | key KEYS | shot FILE | text PID | press PID NAME')
+        [Console]::Error.WriteLine('usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | key KEYS | vkey HEX | xbutton X Y back|forward | shot FILE | text PID | press PID NAME')
         exit 2
     }
 }

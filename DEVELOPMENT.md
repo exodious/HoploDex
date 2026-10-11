@@ -671,6 +671,44 @@ Each takes `shows` to run the 3-page PDF and take a screenshot instead. Logs and
 screenshots go to `e2e/screenshots-out/pdf-surface/`. Exit codes: 0 passed, 1 no
 window, 2 no load, 3 usage, 4 a check failed.
 
+### Window controls check
+
+The main window's browser controls (specs/008-hardening-batch/research.md §12
+to §15) are two layers: the page's handlers (`src/features/app/browserControls.ts`)
+and each OS's own filter on the web view's menu and keys
+(`src-tauri/src/window_controls/`). Both are installed only in release and E2E
+builds (`not(debug_assertions)`; `npm run tauri dev` keeps Inspect Element and
+reload). The native layer differs on each OS, so one script per OS builds
+`src-tauri/examples/window_controls_check.rs` with `--profile e2e` and drives
+it with real input (`src-tauri/examples/real_input.{py,swift,ps1}`, which the
+PDF surface check uses too). The example opens a main window with the app's own
+`window_controls::apply` and a test page that has none of the page's handlers,
+so it judges the native layer alone. It right-clicks a blank area, a row, a
+button, an image, a text field and a selection and logs every item each native
+menu offered (the filter's own log, `apply(.., log_items: true)`), presses every
+key FR-012 names and the mouse's back and forward buttons with text typed in a
+field, and on macOS presses ⌃⌘D on a selection. It fails (exit 4) if a menu
+offered an item outside FR-011's list or appeared where none belongs, a Look Up
+panel opened, or the page reloaded or navigated or lost the typed text. Run it
+on every OS before a pull request that touches `window_controls/` or the
+browser controls, and whenever the web view engine is updated:
+
+- **Linux:** `scripts/dev-container.sh scripts/window-controls-check.sh`, under
+  Xvfb with XTest input and throwaway `HOME` and `XDG_*` folders.
+- **macOS:** `scripts/macos/window-controls-check.sh`, from a Mac with the tart
+  VM set up, as the PDF surface check runs. AppKit's AutoFill is not in the log
+  (it is added outside the menu's items) and is allowed (spec.md
+  Clarifications 2026-10-11).
+- **Windows:** `powershell -ExecutionPolicy Bypass -File
+  scripts\windows\window-controls-check.ps1`, in the signed-in desktop session,
+  at 100% scaling.
+
+Logs and screenshots go to `e2e/screenshots-out/window-controls/`. Exit codes:
+0 passed, 1 no window, 3 usage (or a build with debug assertions), 4 a check
+failed. A unit test, `window_controls::tests::filters_compiled_for_release_and_e2e_only`,
+runs under the E2E profile: `cargo test --profile e2e --manifest-path
+src-tauri/Cargo.toml window_controls`.
+
 ### WebKit's sandbox on a Linux host
 
 On Linux the app turns on WebKit's web-process sandbox (bubblewrap) for the
@@ -1022,7 +1060,21 @@ collection instead of an empty one:
 scripts/human-testing.sh                # seed on first use, then launch `tauri dev`
 scripts/human-testing.sh --reset        # throw the data away and reseed
 scripts/human-testing.sh --extra 200    # also generate 200 plain firearms
+scripts/human-testing.sh --release      # launch the E2E-profile build, not `tauri dev`
 ```
+
+`--release` is for trying what a development build doesn't have: the browser
+controls (no reload, no Inspect Element, a trimmed right-click menu; specs/008
+research.md §12-§15) are installed only in release and E2E builds. It runs
+`npm run build` and `cargo build --profile e2e --features custom-protocol,e2e`,
+as `npm run test:e2e` does, and launches that binary with the
+`HOPLODEX_E2E_*` variables pointing into the same `.human-testing/` sandbox
+(plus `XDG_*` or `HOME`, as above). Because it is an E2E build, saved
+passphrases are kept in `.human-testing/keyring.json` rather than the OS
+keyring, the confirmation before a document opens in another app is answered
+"open" without asking, and the E2E suite's WebDriver server listens on
+127.0.0.1:4445 (`TAURI_WEBDRIVER_PORT`) while it runs, unauthenticated, so close
+the app when you are done.
 
 The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own
 command layer, so it covers photos, documents, dispositions and every

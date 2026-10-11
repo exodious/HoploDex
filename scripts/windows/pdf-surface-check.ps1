@@ -42,7 +42,7 @@ $env:HOPLODEX_E2E_DOCUMENTS = "$S\documents"
 
 $flags = @()
 if ($Mode -eq 'check') {
-    $input_ = "$Root\src-tauri\examples\pdf_surface_input.ps1"
+    $input_ = "$Root\src-tauri\examples\real_input.ps1"
     # Where the document could be copied to: the user's AppData (the temp
     # folder and WebView2's folders are in it) and the run's scratch folder.
     $flags = @('--input', 'powershell', '--input', '-NoProfile', '--input', '-ExecutionPolicy',

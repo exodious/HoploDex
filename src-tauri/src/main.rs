@@ -32,6 +32,7 @@ use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
 use hoplodex_lib::session::{Session, lifecycle};
+use hoplodex_lib::window_controls;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -267,6 +268,13 @@ fn main() {
                 .build()?;
             #[cfg(windows)]
             main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
+            // The native half of the browser controls (FR-010 to FR-012,
+            // research.md §13): in release and E2E builds only, and a
+            // failure leaves the web view's own menu rather than keeping
+            // the app from starting.
+            if let Err(err) = window_controls::apply(&_main, false) {
+                log::error!("the native browser controls could not be installed: {err}");
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
