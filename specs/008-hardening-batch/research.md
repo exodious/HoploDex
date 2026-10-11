@@ -138,8 +138,8 @@ the open one?" without waiting on a close (§11).
 
 **Verified on Linux (T006, 2026-10-11)**: the dev container, WebKitGTK, with
 `ScopedSession` on `list_firearms` only. The probe spec
-`e2e/specs/zz-session-header-probe.e2e.ts` calls `list_firearms` from the
-page through `__TAURI_INTERNALS__.invoke` (its header comment says how to
+`e2e/specs/zz-session-header-probe.e2e.ts` (deleted at T132) called
+`list_firearms` from the page through `__TAURI_INTERNALS__.invoke` (its header comment said how to
 force the fallback by hand) and passed all 8 checks on both IPC paths:
 - **`ipc://` custom protocol**: with `HoploDex-Session: <current id>` the
   call is served; with no header, and with another session's id, it fails
@@ -1468,6 +1468,14 @@ unchanged.
   The test process's own peak is 615 MB (workbook) and 619 MB (CSV); that is
   mostly the 20,000-record collection the test built before it began, not the
   reading (the rise is the figure SC-002 limits).
+- **Largest export, with `idx_firearms_identity_key`** (T123, 2026-10-11, same
+  machine and test; `find_match` and `find_identity_clash` no longer scan
+  every firearm, `find_nickname_clash` uses the nickname index, and
+  `query_plan_test` holds all three to an index): the import takes **148.2 s**
+  as a workbook (528.9 s before) and **148.6 s** as two CSV files (529.1 s
+  before); reading, 1.1 s and 0.59 s, and the parent's rise (36 MB and 1 MB)
+  are unchanged. What the remaining time goes to was not profiled; committing
+  in batches is the follow-up issue.
 - **Slowest refusal in the hostile corpus** (`import_reader_test`, 40 tests
   pass; the 5 s budget has no debug allowance in a release build,
   `SLOW_IN_DEBUG` applies under `debug_assertions` only): `cells-16-sheets`,

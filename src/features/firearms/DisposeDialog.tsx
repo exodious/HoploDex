@@ -147,6 +147,9 @@ function DisposeForm({
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // The backend's own refusal of the recipient (`fieldErrors.recipient`),
+  // shown on its field until it is edited.
+  const [recipientRefusal, setRecipientRefusal] = useState<string | null>(null);
 
   const parsedDate = parseDateInput(date);
   const parsedPrice = parseDollars(price);
@@ -236,6 +239,7 @@ function DisposeForm({
 
     setSubmitting(true);
     setServerError(null);
+    setRecipientRefusal(null);
     try {
       await onDispose({
         dispositionType: dispositionType as DispositionType,
@@ -253,6 +257,11 @@ function DisposeForm({
       // page reload the list.
       const stale = e instanceof CommandFailure ? e.fieldErrors?.withMounted : undefined;
       if (stale) void onMountChanged?.();
+      const refusedRecipient = e instanceof CommandFailure ? e.fieldErrors?.recipient : undefined;
+      if (refusedRecipient) {
+        setRecipientRefusal(refusedRecipient);
+        return false;
+      }
       setServerError(
         stale ??
           (e instanceof CommandFailure
@@ -286,9 +295,12 @@ function DisposeForm({
           label="Transferred to"
           required
           value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
+          onChange={(e) => {
+            setRecipient(e.target.value);
+            setRecipientRefusal(null);
+          }}
           hint={dispositionType ? RECIPIENT_HINTS[dispositionType] : undefined}
-          error={recipientTooLong ?? shown(errors.recipient)}
+          error={recipientTooLong ?? shown(errors.recipient) ?? recipientRefusal ?? undefined}
         />
         <div className="hd-form-grid hd-form-grid--3 hd-form-grid--short">
           <DateField

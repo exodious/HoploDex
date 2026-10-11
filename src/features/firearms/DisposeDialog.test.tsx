@@ -657,4 +657,29 @@ describe("DisposeDialog recipient maximum", () => {
     await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
     expect(onDispose).toHaveBeenCalledTimes(1);
   });
+
+  it("shows the backend's refusal of the recipient, keyed `recipient`, on its field", async () => {
+    const user = userEvent.setup();
+    const onDispose = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: MESSAGE,
+        fieldErrors: { recipient: MESSAGE },
+      }),
+    );
+    render(<DisposeDialog open onOpenChange={vi.fn()} firearm={firearm} onDispose={onDispose} />);
+    await user.click(screen.getByRole("radio", { name: "Sold" }));
+    await user.type(screen.getByLabelText("Price received"), "10");
+    const recipient = screen.getByLabelText("Transferred to");
+    await user.type(recipient, "Jane Doe");
+    await user.click(screen.getByRole("button", { name: "Mark as disposed" }));
+
+    expect(await screen.findByText(MESSAGE)).toBeInTheDocument();
+    expect(recipient).toHaveAccessibleDescription(expect.stringContaining(MESSAGE));
+    // On the field, not in the dialog's banner.
+    expect(screen.getByRole("dialog").querySelector(".hd-banner")).toBeNull();
+
+    await user.type(recipient, "!");
+    expect(screen.queryByText(MESSAGE)).not.toBeInTheDocument();
+  });
 });

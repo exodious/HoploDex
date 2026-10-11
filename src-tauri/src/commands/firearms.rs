@@ -33,13 +33,14 @@ impl DisposeInput {
     /// The recipient's maximum (specs/008-hardening-batch research.md §10),
     /// checked before anything is changed. The message is the error's own,
     /// because the dialog shows a command's message when it has no field to
-    /// put it on; it is also on `dispositionRecipient`, as saving the record
-    /// reports it.
+    /// put it on; it is also on `recipient`, the dispose input's own name for
+    /// the field (contracts/tauri-commands.md; saving the record names it
+    /// `dispositionRecipient`).
     pub fn check_recipient(&self) -> Result<(), CommandError> {
         check_text_length("Transferred to", &self.recipient, MAX_SHORT_TEXT_CHARS).map_err(
             |message| {
                 CommandError::validation(message.clone(), Default::default())
-                    .on_field("dispositionRecipient", message)
+                    .on_field("recipient", message)
             },
         )
     }
@@ -268,6 +269,16 @@ pub mod ops {
         }
     }
 
+    /// The nickname clash query: the active firearm (other than the record
+    /// being edited) whose nickname equals `:nickname` trimmed, ignoring
+    /// case. It compares the column under `COLLATE NOCASE`, as
+    /// `idx_firearms_active_nickname` is built, so that index serves it
+    /// (research.md §19). A stored nickname is already trimmed (`trimmed()`
+    /// on every save and import), so only the argument needs trimming.
+    pub const NICKNAME_CLASH_SQL: &str = "SELECT make, model, nickname, serial_number FROM firearms
+         WHERE status = 'active' AND id IS NOT :exclude
+           AND nickname = trim(:nickname) COLLATE NOCASE";
+
     /// The active firearm (other than `exclude_id`, the record being edited,
     /// which never clashes with itself) whose nickname matches, ignoring case
     /// and surrounding whitespace.
@@ -277,15 +288,25 @@ pub mod ops {
         nickname: &str,
     ) -> Result<Option<Clash>, CommandError> {
         conn.query_row(
-            "SELECT make, model, nickname, serial_number FROM firearms
-             WHERE status = 'active' AND id IS NOT :exclude
-               AND lower(trim(nickname)) = lower(trim(:nickname))",
+            NICKNAME_CLASH_SQL,
             named_params! { ":exclude": exclude_id, ":nickname": nickname },
             Clash::from_row,
         )
         .optional()
         .map_err(CommandError::from_db)
     }
+
+    /// The identity clash query. Its three `lower(trim(...))` terms are
+    /// those of `idx_firearms_identity_key` (research.md §19).
+    pub const IDENTITY_CLASH_SQL: &str = "SELECT id FROM firearms
+         WHERE status = 'active' AND id IS NOT :exclude
+           AND lower(trim(make)) = lower(trim(:make))
+           AND lower(trim(model)) = lower(trim(:model))
+           AND lower(trim(serial_number)) = lower(trim(:serial))
+           AND NOT (
+               :year IS NOT NULL AND year_of_manufacture IS NOT NULL
+               AND year_of_manufacture <> :year
+           )";
 
     /// The active firearm (other than `exclude_id`) with the same make,
     /// model and serial number, ignoring case and surrounding whitespace —
@@ -301,15 +322,7 @@ pub mod ops {
         year_of_manufacture: Option<i64>,
     ) -> Result<Option<i64>, CommandError> {
         conn.query_row(
-            "SELECT id FROM firearms
-             WHERE status = 'active' AND id IS NOT :exclude
-               AND lower(trim(make)) = lower(trim(:make))
-               AND lower(trim(model)) = lower(trim(:model))
-               AND lower(trim(serial_number)) = lower(trim(:serial))
-               AND NOT (
-                   :year IS NOT NULL AND year_of_manufacture IS NOT NULL
-                   AND year_of_manufacture <> :year
-               )",
+            IDENTITY_CLASH_SQL,
             named_params! {
                 ":exclude": exclude_id,
                 ":make": make,

@@ -213,6 +213,29 @@ pub fn large_valid_csv(path: &Path, data_rows: usize) -> PathBuf {
     path.to_owned()
 }
 
+/// A valid export-shaped workbook of `data_rows` rows of all 42 columns with
+/// 16-character cells, written by `rust_xlsxwriter` as the app's export does:
+/// big enough that reading it reports progress more than once.
+pub fn large_valid_workbook(path: &Path, data_rows: u32) -> PathBuf {
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Firearms").expect("sheet name");
+    for (col, header) in FIREARM_COLUMNS.iter().enumerate() {
+        sheet.write_string(0, col as u16, *header).expect("header");
+    }
+    for row in 0..data_rows {
+        for (col, header) in FIREARM_COLUMNS.iter().enumerate() {
+            let value = match *header {
+                "firearm_type" => "rifle".to_owned(),
+                _ => format!("r{row:07}c{col:06}x"),
+            };
+            sheet.write_string(row + 1, col as u16, value).expect("cell");
+        }
+    }
+    workbook.save(path).expect("save the large workbook");
+    path.to_owned()
+}
+
 // ---------------------------------------------------------------------------
 // Workbooks
 

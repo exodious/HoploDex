@@ -42,7 +42,8 @@ use hoplodex_lib::services::spreadsheet::{ReadTable, SpreadsheetFormat, TableRow
 use serde_json::{Value, json};
 use support::TestDb;
 use support::hostile_spreadsheets::{
-    self as hostile, Expect, large_valid_csv, valid_export_csv, valid_export_workbook,
+    self as hostile, Expect, large_valid_csv, large_valid_workbook, valid_export_csv,
+    valid_export_workbook,
 };
 use tempfile::TempDir;
 
@@ -342,6 +343,44 @@ fn progress_counts_the_bytes_of_the_files_up_to_their_total() {
     assert!(seen.iter().all(|(_, of)| *of == total), "{seen:?}");
     assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "never goes back: {seen:?}");
     assert_eq!(seen.last(), Some(&(total, total)));
+}
+
+/// A workbook reports how far its reading has got while it arrives, while the
+/// archive is checked and while the sheets are parsed (research.md §11), not
+/// only at its end.
+#[test]
+fn a_workbook_reports_progress_between_nothing_and_everything() {
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    let path = large_valid_workbook(&dir.path().join("large.xlsx"), 4_000);
+    let total = std::fs::metadata(&path).unwrap().len();
+
+    let mut seen: Vec<u64> = Vec::new();
+    read_files(
+        Path::new(HELPER),
+        &[import_file(&path)],
+        &|| false,
+        &|| true,
+        &mut |_, done, of| {
+            assert_eq!(of, total);
+            seen.push(done);
+        },
+    )
+    .unwrap();
+
+    assert!(seen.windows(2).all(|w| w[0] <= w[1]), "never goes back: {seen:?}");
+    assert_eq!(seen.last(), Some(&total));
+    let between: Vec<u64> = seen.iter().copied().filter(|d| *d > 0 && *d < total).collect();
+    assert!(
+        between.len() >= 10,
+        "values between nothing and everything while it is read: {seen:?}"
+    );
+    // Not one jump from the arrival to the end: the sheets' parsing is
+    // reported in steps of its own, past the half-way mark.
+    assert!(
+        between.iter().filter(|d| **d > total / 2).count() >= 3,
+        "the parsing is reported as it goes: {seen:?}"
+    );
 }
 
 fn seeded_collection() -> TestDb {

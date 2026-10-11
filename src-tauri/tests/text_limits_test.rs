@@ -206,7 +206,7 @@ fn the_recipient_of_either_dispose_dialog_has_a_maximum() {
     let err =
         firearm_ops::dispose_firearm(&db.conn, gun.id, &dispose(text_of(SHORT + 1))).unwrap_err();
     assert_eq!(err.code, "VALIDATION_ERROR");
-    assert_eq!(field_error(&err, "dispositionRecipient"), Some(too_long("Transferred to", SHORT)));
+    assert_eq!(field_error(&err, "recipient"), Some(too_long("Transferred to", SHORT)));
     assert_eq!(err.message, too_long("Transferred to", SHORT));
     assert_eq!(
         firearm_ops::get_firearm(&db.conn, gun.id).unwrap().status,
@@ -227,7 +227,7 @@ fn the_recipient_of_either_dispose_dialog_has_a_maximum() {
     .unwrap();
     let err = accessory_ops::dispose_accessory(&db.conn, part.id, &dispose(text_of(SHORT + 1)))
         .unwrap_err();
-    assert_eq!(field_error(&err, "dispositionRecipient"), Some(too_long("Transferred to", SHORT)));
+    assert_eq!(field_error(&err, "recipient"), Some(too_long("Transferred to", SHORT)));
     assert_eq!(err.message, too_long("Transferred to", SHORT));
     accessory_ops::dispose_accessory(&db.conn, part.id, &dispose(text_of(SHORT))).unwrap();
 }

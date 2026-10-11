@@ -727,9 +727,10 @@ browser controls, and whenever the web view engine is updated:
 
 Logs and screenshots go to `e2e/screenshots-out/window-controls/`. Exit codes:
 0 passed, 1 no window, 3 usage (or a build with debug assertions), 4 a check
-failed. A unit test, `window_controls::tests::filters_compiled_for_release_and_e2e_only`,
-runs under the E2E profile: `cargo test --profile e2e --manifest-path
-src-tauri/Cargo.toml window_controls`.
+failed. Two unit tests in `window_controls` say which builds install the filters: the
+E2E build does (`cargo test --profile e2e --features e2e --manifest-path
+src-tauri/Cargo.toml window_controls`) and a plain debug build does not (the
+default `cargo test`).
 
 ### WebKit's sandbox on a Linux host
 

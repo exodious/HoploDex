@@ -128,8 +128,16 @@ pub fn read_files(
     let mut before = 0;
     for (file, size) in files.iter().zip(sizes) {
         let name = file_name(&file.file_path);
-        let mut offset_progress =
-            |done: u64, _of: u64| progress(&name, before + done.min(size), total);
+        // The helper's `done` of `of` is the share of this file read (a CSV's
+        // bytes; a workbook's stages, research.md §11), scaled to its size.
+        let mut offset_progress = |done: u64, of: u64| {
+            let share = if of == 0 {
+                size
+            } else {
+                (u128::from(size) * u128::from(done.min(of)) / u128::from(of)) as u64
+            };
+            progress(&name, before + share, total);
+        };
         tables.extend(read_one(
             helper_exe,
             file,

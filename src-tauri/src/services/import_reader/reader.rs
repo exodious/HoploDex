@@ -22,6 +22,10 @@
 //! 3. more than [`MAX_SHEETS`] sheets are refused;
 //! 4. each sheet is read cell by cell with `worksheet_cells_reader`, which
 //!    builds no dense grid, under the row, column, cell and text limits.
+//!
+//! Progress follows the same stages (research.md §11): the bytes arriving, the
+//! parts inflated in step 2, and the parts `calamine` reads in step 4, the last
+//! two in unpacked bytes against the sizes the archive declares.
 
 use std::cell::Cell;
 use std::io::{self, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
@@ -234,6 +238,13 @@ impl<'a, W: Write> Sink<'a, W> {
         self.report()
     }
 
+    /// Where a workbook's reading has got to: `done` of `of` through the stage
+    /// that starts at `start` and takes `weight` of the [`WORKBOOK_UNITS`].
+    fn stage(&mut self, start: u64, weight: u64, done: u64, of: u64) -> Result<(), Stop> {
+        self.progress.set(stage_value(start, weight, done, of));
+        self.report()
+    }
+
     /// A `Progress` frame when the file has been read further than the last
     /// one said. The declared size is only for the bar: it is clamped.
     fn report(&mut self) -> Result<(), Stop> {
@@ -337,21 +348,55 @@ fn read_csv<R: Read, W: Write>(
 // ---------------------------------------------------------------------------
 // Workbooks
 
-/// A reader that stops, with an error of its own, once the parts read through
-/// it have unpacked to more than [`MAX_UNPACKED_BYTES`] in all.
-struct Counted<'a, R> {
-    inner: R,
-    total: &'a mut u64,
+/// What a workbook's reading is measured in. The bar follows three stages,
+/// each by the parts' unpacked bytes against the sizes the archive declares
+/// (research.md §11): the file arriving (by its own bytes, the only size known
+/// before the archive can be read), the archive check, and the sheets being
+/// parsed. The declared sizes are only for the bar, never trusted, so each is
+/// clamped.
+const WORKBOOK_UNITS: u64 = 1000;
+const ARRIVE_AT: u64 = 0;
+const ARRIVE_WEIGHT: u64 = 100;
+const CHECK_AT: u64 = ARRIVE_AT + ARRIVE_WEIGHT;
+const CHECK_WEIGHT: u64 = 200;
+const PARSE_AT: u64 = CHECK_AT + CHECK_WEIGHT;
+const PARSE_WEIGHT: u64 = WORKBOOK_UNITS - PARSE_AT;
+
+/// `done` of `of` through the stage that starts at `start` and takes `weight`.
+/// Past `of` is the stage's end; an `of` of nothing (the archive declares no
+/// size) is too.
+fn stage_value(start: u64, weight: u64, done: u64, of: u64) -> u64 {
+    if of == 0 {
+        return start + weight;
+    }
+    start + (u128::from(weight) * u128::from(done.min(of)) / u128::from(of)) as u64
 }
 
-impl<R: Read> Read for Counted<'_, R> {
+/// A reader that stops, with an error of its own, once the parts read through
+/// it have unpacked to more than [`MAX_UNPACKED_BYTES`] in all, and says how
+/// far the archive check has got.
+struct Counted<'a, 'b, R, W> {
+    inner: R,
+    total: &'a mut u64,
+    /// The declared unpacked size of all the parts, for the bar.
+    declared: u64,
+    sink: &'a mut Sink<'b, W>,
+}
+
+impl<R: Read, W: Write> Read for Counted<'_, '_, R, W> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         *self.total += n as u64;
         if *self.total > MAX_UNPACKED_BYTES {
             return Err(io::Error::other("unpacked size"));
         }
-        Ok(n)
+        match self.sink.stage(CHECK_AT, CHECK_WEIGHT, *self.total, self.declared) {
+            Ok(()) => Ok(n),
+            // The parent's pipe failed: this error is what the parent sees,
+            // as the archive failing, and the answer then fails the same way.
+            Err(Stop::Io(err)) => Err(err),
+            Err(_) => Err(io::Error::other("progress")),
+        }
     }
 }
 
@@ -360,17 +405,74 @@ fn over_unpacked_limit(total: u64) -> bool {
     total > MAX_UNPACKED_BYTES
 }
 
-/// `calamine`'s reader of the workbook, noting how far into the file it has
-/// got.
+/// A part of the archive as `check_archive` found it: where its stored bytes
+/// are, and how big it is stored and unpacked.
+#[derive(Clone, Copy)]
+struct Part {
+    start: u64,
+    stored: u64,
+    unpacked: u64,
+}
+
+/// `calamine`'s reader of the workbook, noting how much of each part it has
+/// read. A part counts for its unpacked size in proportion to the stored bytes
+/// read, so the central directory (which `calamine` reads first, at the end of
+/// the file) and the order the parts are read in don't move the bar.
 struct Tracked<'a> {
     inner: Cursor<&'a [u8]>,
-    furthest: Rc<Cell<u64>>,
+    /// The parts that hold bytes, in the order the file holds them.
+    parts: Vec<Part>,
+    /// Stored bytes read so far of each part.
+    read: Vec<u64>,
+    /// Unpacked bytes of the parts read so far, and of all of them.
+    done: u64,
+    declared: u64,
+    progress: Rc<Cell<u64>>,
+}
+
+impl<'a> Tracked<'a> {
+    fn new(bytes: &'a [u8], mut parts: Vec<Part>, progress: Rc<Cell<u64>>) -> Self {
+        parts.sort_by_key(|part| part.start);
+        let declared = parts.iter().map(|part| part.unpacked).fold(0u64, u64::saturating_add);
+        Self {
+            inner: Cursor::new(bytes),
+            read: vec![0; parts.len()],
+            parts,
+            done: 0,
+            declared,
+            progress,
+        }
+    }
+
+    /// The bytes from `from` to `to` have been read.
+    fn note(&mut self, from: u64, to: u64) {
+        let first =
+            self.parts.partition_point(|part| part.start.saturating_add(part.stored) <= from);
+        for index in first..self.parts.len() {
+            let part = self.parts[index];
+            if part.start >= to {
+                break;
+            }
+            let now = (to - part.start).min(part.stored);
+            let before = self.read[index];
+            if now > before {
+                self.read[index] = now;
+                let unpacked = |stored: u64| {
+                    (u128::from(part.unpacked) * u128::from(stored) / u128::from(part.stored))
+                        as u64
+                };
+                self.done = self.done.saturating_add(unpacked(now) - unpacked(before));
+            }
+        }
+        self.progress.set(stage_value(PARSE_AT, PARSE_WEIGHT, self.done, self.declared));
+    }
 }
 
 impl Read for Tracked<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let from = self.inner.position();
         let n = self.inner.read(buf)?;
-        self.furthest.set(self.furthest.get().max(self.inner.position()));
+        self.note(from, self.inner.position());
         Ok(n)
     }
 }
@@ -446,11 +548,28 @@ fn is_shared_strings(name: &str) -> bool {
 }
 
 /// The archive's checks that need no `calamine`: the number of parts, the
-/// true size of all of them, and the shared strings.
-fn check_archive(bytes: &[u8]) -> Result<(), Stop> {
+/// true size of all of them, and the shared strings. Returns where the parts
+/// are, for the bar.
+fn check_archive<W: Write>(bytes: &[u8], sink: &mut Sink<'_, W>) -> Result<Vec<Part>, Stop> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| Stop::Unreadable)?;
     if archive.len() > MAX_ZIP_ENTRIES {
         return Err(refused(ImportLimit::ZipEntries));
+    }
+    // What the parts declare, for the bar (the headers only; nothing is
+    // inflated yet).
+    let mut parts = Vec::new();
+    let mut declared = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index_raw(index).map_err(|_| Stop::Unreadable)?;
+        if entry.is_dir() {
+            continue;
+        }
+        declared = declared.saturating_add(entry.size());
+        if let Some(start) = entry.data_start()
+            && entry.compressed_size() > 0
+        {
+            parts.push(Part { start, stored: entry.compressed_size(), unpacked: entry.size() });
+        }
     }
     let mut unpacked = 0u64;
     let mut block = vec![0u8; 1 << 16];
@@ -460,7 +579,7 @@ fn check_archive(bytes: &[u8]) -> Result<(), Stop> {
             continue;
         }
         let shared = is_shared_strings(entry.name());
-        let mut counted = Counted { inner: entry, total: &mut unpacked };
+        let mut counted = Counted { inner: entry, total: &mut unpacked, declared, sink };
         let result = if shared {
             scan_shared_strings(&mut counted)
         } else {
@@ -474,8 +593,9 @@ fn check_archive(bytes: &[u8]) -> Result<(), Stop> {
             }
             other => other?,
         }
+        sink.stage(CHECK_AT, CHECK_WEIGHT, unpacked, declared)?;
     }
-    Ok(())
+    Ok(parts)
 }
 
 /// Reads a part to its end and keeps none of it.
@@ -494,21 +614,23 @@ fn read_xlsx<R: Read, W: Write>(
     sink: &mut Sink<'_, W>,
     declared: u64,
 ) -> Result<(), Stop> {
+    // The bar counts the stages of a workbook's reading, not the file's bytes.
+    sink.total = WORKBOOK_UNITS;
     // The file as received. Room for what it declares, up to the limit, is
     // asked for once, so the buffer is not copied as it grows.
     let mut bytes: Vec<u8> = Vec::new();
     bytes.try_reserve_exact(declared.min(MAX_FILE_BYTES) as usize).map_err(|_| Stop::Unreadable)?;
     while let Some(chunk) = incoming.next()? {
         bytes.extend_from_slice(&chunk);
+        sink.stage(ARRIVE_AT, ARRIVE_WEIGHT, incoming.received, declared)?;
     }
 
-    check_archive(&bytes)?;
+    let parts = check_archive(&bytes, sink)?;
 
-    // From here the bar follows how far into the file the sheets have been
-    // read.
-    let furthest = Rc::new(Cell::new(0));
-    sink.progress = Rc::clone(&furthest);
-    let source = Tracked { inner: Cursor::new(&bytes[..]), furthest };
+    // From here the bar follows how much of the parts the sheets have read.
+    let progress = Rc::new(Cell::new(PARSE_AT));
+    sink.progress = Rc::clone(&progress);
+    let source = Tracked::new(&bytes[..], parts, progress);
     let mut book: Xlsx<_> = Xlsx::new(source).map_err(|_| Stop::Unreadable)?;
     let names = book.sheet_names();
     if names.len() > MAX_SHEETS {

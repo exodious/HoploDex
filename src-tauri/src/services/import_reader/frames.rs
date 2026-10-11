@@ -46,7 +46,9 @@ pub enum ToHelper {
 /// Helper to parent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FromHelper {
-    /// Bytes read so far and the declared total, for the bar.
+    /// How far the reading has got, for the bar: `done` of `total`, the bytes
+    /// of a CSV, the stages of a workbook (reader.rs). Only the ratio means
+    /// anything.
     Progress { done: u64, total: u64 },
     /// The sheet the following `Rows` belong to (an XLSX sheet; a CSV is one
     /// unnamed sheet and sends none).
