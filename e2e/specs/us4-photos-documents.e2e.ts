@@ -293,4 +293,56 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  // #73, research.md §2 (Windows, T008): on Windows the main web view's request
+  // filter (refuse_foreign_documents) is run by WebView2 for every request that
+  // matches any filter, including wry's own for the IPC custom protocol, and it
+  // answered that protocol's CORS preflight with a header-less 403. Every call
+  // then failed over the custom protocol and Tauri fell back to `postMessage`
+  // for the page's life. The filter must refuse only foreign documents (the
+  // test above), and leave the IPC protocol alone: a call goes over it, is
+  // answered, and Tauri doesn't log the fallback.
+  it("leaves the IPC custom protocol working beside the document filter (#73)", async () => {
+    const seen: { ipcRequests: string[]; rejected: string[]; warnings: string[] } =
+      await browser.execute(async () => {
+        const ipcUrl = /^(ipc:\/\/|https?:\/\/ipc\.localhost)/;
+        const result = {
+          ipcRequests: [] as string[],
+          rejected: [] as string[],
+          warnings: [] as string[],
+        };
+        const realFetch = window.fetch;
+        const realWarn = console.warn;
+        window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input instanceof Request ? input.url : input);
+          const call = realFetch.call(window, input, init);
+          if (ipcUrl.test(url)) {
+            result.ipcRequests.push(url);
+            call.catch((error: unknown) => result.rejected.push(`${url}: ${String(error)}`));
+          }
+          return call;
+        };
+        console.warn = (...args: unknown[]) => {
+          result.warnings.push(args.map(String).join(" "));
+          realWarn.apply(console, args);
+        };
+        try {
+          type Invoke = (cmd: string, args: unknown) => Promise<unknown>;
+          const invoke = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+            .__TAURI_INTERNALS__.invoke;
+          // The command's own answer doesn't matter, only that it was given.
+          await invoke("get_database_status", {}).catch(() => {});
+        } finally {
+          window.fetch = realFetch;
+          console.warn = realWarn;
+        }
+        return result;
+      });
+
+    // The call went over the custom protocol (so it hadn't already fallen
+    // back), and its request, preflight included, was not refused.
+    expect(seen.ipcRequests.length).toBeGreaterThan(0);
+    expect(seen.rejected).toEqual([]);
+    expect(seen.warnings.filter((w) => w.includes("IPC custom protocol failed"))).toEqual([]);
+  });
 });

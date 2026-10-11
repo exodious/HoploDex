@@ -180,32 +180,29 @@ passed (their per-test counts weren't logged). No failure, no rerun needed.
 Server 2025, WebView2 154, E2E build, one worker). The full E2E suite passed
 spec file by spec file (every file green; `us10`, `us11` and `us12` skip
 their real-input tests by decision, #27), and the header reaches
-`ScopedSession` over **`postMessage` only**. **The custom protocol could not
-be exercised on this machine**, and the unmodified probe reports 6 passing, 2
-failing for that reason (both failures are the probe's own counter, not the
-header):
-- **What the page sees**: on this machine's WebView2 every `fetch` from the
-  page to `http://ipc.localhost` is rejected, so Tauri's `ipc-protocol.js`
-  sets `customProtocolIpcFailed` during the first calls at page load (five
-  start-up calls, `get_database_status`, three `plugin:event|listen` and
-  `plugin:window|set_title`, are the only ones that ever reach
-  `ipc.localhost`, all at ~115 ms, before any spec code runs) and every later
-  call goes through `postMessage`. A hand-built request with Tauri's own
+`ScopedSession` over **`postMessage`**. The first run could not exercise the
+custom protocol, and the unmodified probe reported 6 passing, 2 failing for
+that reason (both failures were the probe's own counter, not the header). The
+cause was found afterwards and fixed (see "The cause" below), and the probe
+now passes 8/8 on both paths.
+- **What the page saw**: every `fetch` from the page to `http://ipc.localhost`
+  was rejected, so Tauri's `ipc-protocol.js` set `customProtocolIpcFailed`
+  during the first calls at page load (five start-up calls,
+  `get_database_status`, three `plugin:event|listen` and
+  `plugin:window|set_title`, were the only ones that ever reached
+  `ipc.localhost`, all at ~115 ms, before any spec code ran) and every later
+  call went through `postMessage`. A hand-built request with Tauri's own
   headers (`Tauri-Invoke-Key` read from a `postMessage`, `Tauri-Callback`,
-  `Tauri-Error`), with and without `HoploDex-Session`, also throws `Failed to
-  fetch`, as does a plain POST, a GET and `ipc://localhost/...`; only a
-  `no-cors` POST gets through (opaque). `http://tauri.localhost/...` fetches
-  fine. So this is not caused by the new header; the app never used the
-  custom protocol here. I did not find why (the CSP's `connect-src` allows
-  `http://ipc.localhost`, and `Access-Control-Allow-Origin: *` is on every
-  response in `tauri/src/ipc/protocol.rs`). It is worth a look as its own
-  question: on this machine the "custom protocol" half of FR-004's reasoning is
-  unverified, and the app has run on `postMessage` throughout.
-- **The probe's results**: the 3 "custom protocol" tests and the 3 fallback
-  tests passed, but all six ran over `postMessage`. The two failures are
-  "has left the custom protocol" and "never touched the custom protocol again",
-  which expect the one rejected `fetch` that trips the fallback; they saw 0,
-  because the fallback was already in place.
+  `Tauri-Error`), with and without `HoploDex-Session`, also threw `Failed to
+  fetch`, as did a plain POST, a GET and `ipc://localhost/...`; only a
+  `no-cors` POST got through (opaque). `http://tauri.localhost/...` fetched
+  fine. So it was not caused by the new header, and the app had used the
+  custom protocol on no run of this machine.
+- **The probe's first results**: the 3 "custom protocol" tests and the 3
+  fallback tests passed, but all six ran over `postMessage`. The two failures
+  were "has left the custom protocol" and "never touched the custom protocol
+  again", which expect the one rejected `fetch` that trips the fallback; they
+  saw 0, because the fallback was already in place.
 - **How `postMessage` was confirmed**: `window.ipc` is frozen on WebView2, so
   the probe's `fetch` filter is the only hook it has; a throwaway spec
   (deleted) instead wrapped `window.chrome.webview.postMessage`, which
@@ -215,6 +212,33 @@ header):
   `{"HoploDex-Session": "1"}`, no headers and `{"HoploDex-Session": "1001"}`;
   results: served, `DATABASE_CLOSED`, `DATABASE_CLOSED`. The `postMessage`
   path therefore carries the header on Windows too.
+- **The cause**: `refuse_foreign_documents` (`services/main_navigation.rs`,
+  #73) adds a `*` `WebResourceRequested` filter for the `DOCUMENT` context.
+  WebView2 runs every handler for a request that matches any filter, so the
+  handler also saw the `ipc.localhost` requests that wry's own filter
+  covers (all contexts). It never read the request's resource context, and
+  answered Tauri's CORS preflight (`OPTIONS`) with its header-less
+  `403 Blocked`. In the DevTools protocol that shows as `net::ERR_FAILED
+  corsError=PreflightMissingAllowOriginHeader`, and the page's `fetch`
+  rejected. A minimal Tauri 2.11.5 app (a window and one command, same
+  WebView2) used the custom protocol without trouble until this filter was
+  copied into it, which separated HoploDex from the machine. `main` has the
+  same bug, since #73's filter.
+- **The fix**: the handler reads `args.ResourceContext()` and returns without
+  touching the response unless it is `COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT`.
+  The foreign-document refusal is unchanged (us4's "refuses a navigation of
+  the window to another page (#73)" still passes).
+- **After the fix (2026-10-11)**: `zz-session-header-probe` passes 8/8, with
+  "has left the custom protocol" and "never touched the custom protocol again"
+  among them: on the `ipc://` custom protocol (`http://ipc.localhost` here) the
+  header is served, and the call without it and the one with another session's
+  id fail with `DATABASE_CLOSED`, and the three fallback cases give the same
+  results as before. The regression test is us4's "leaves the IPC custom
+  protocol working beside the document filter (#73)": it wraps `fetch`, makes
+  a call, and expects a request to the IPC protocol that isn't rejected and no
+  "IPC custom protocol failed" warning. It fails without the fix (no IPC
+  request seen, because the page had already fallen back to `postMessage`) and
+  passes with it.
 
 ## §3 The frontend's session scope
 

@@ -61,7 +61,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T005 In `src/services/tauriClient.ts`, give `invoke(command, args, options?: { session?: number })` that turns `session` into `InvokeOptions.headers` `{ "HoploDex-Session": String(session) }`; nothing else may set the header. Extend `src/services/tauriClient.test.ts` for a call with and without it. Temporarily send the open status's `sessionId` from `browseService.ts`'s `listFirearms` so the E2E suite exercises the header
 - [X] T006 On Linux, in the dev container, run `npm run build` and the full E2E suite one spec file at a time with T004/T005 in place, plus a throwaway probe spec that calls `list_firearms` through `browser.execute` with the header (served) and without it (`DATABASE_CLOSED`) over both Tauri IPC paths (the `ipc://` custom protocol, and the `postMessage` fallback forced as research.md §2 describes); record which paths were exercised and the result in research.md §2, then delete the probe spec (kept until T007 and T008 have run it: `e2e/specs/zz-session-header-probe.e2e.ts`)
 - [X] T007 On macOS, in the macOS 26 VM, run the same probe and the E2E suite as T006; record the result in research.md §2
-- [ ] T008 On Windows, on the Windows test machine, run the same probe and the E2E suite as T006; record the result in research.md §2. If the header fails to reach the command on any OS, stop and report to the owner before T009 (plan.md "First tasks")
+- [X] T008 On Windows, on the Windows test machine, run the same probe and the E2E suite as T006; record the result in research.md §2. If the header fails to reach the command on any OS, stop and report to the owner before T009 (plan.md "First tasks")
 
 ### The backend check (FR-004, research.md §2)
 
