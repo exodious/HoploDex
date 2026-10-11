@@ -412,8 +412,13 @@ test fails; `setup-system.ps1 -AutoLogon` turns it on.
 A WebDriver screenshot leaves out the PDF surface (a child web view), so where
 Linux takes the X display with `import -window root`, us13's pixel checks and
 the walk's viewer shots (`shotDisplay`) run `e2e/scripts/window-shot.ps1` on
-Windows. It saves the app window's client area, so a point in the page is the
-same point in the picture, and the window must be on top and uncovered.
+Windows. It saves the client area of this worker's app window (by its process,
+`appPid()`), so a point in the page is the same point in the picture. It asks
+the window to paint itself (PrintWindow) rather than copying the screen, so
+the parallel workers' windows over it don't matter (#88); the window mustn't
+be minimized. macOS does the same with `screencapture -l` on the worker's
+window (`macWindowShot` in `e2e/support/screenshots.ts`), which still needs
+Screen Recording.
 
 ## Install dependencies
 

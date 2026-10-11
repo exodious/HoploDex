@@ -430,12 +430,13 @@ function decodePng(png: Buffer): { width: number; height: number; pixels: Buffer
   return { width, height, pixels };
 }
 
-/** The screen as the user sees it, which includes the PDF surface (a
+/** The window as the user sees it, which includes the PDF surface (a
  * WebDriver screenshot holds only the main web view): the whole X screen on
- * Linux, where the window sits at 0,0; on Windows the window's client area
- * (e2e/scripts/window-shot.ps1), so a point in the page is the same point in
- * the picture on both; on macOS the whole screen, with the page's origin
- * found in it. */
+ * Linux, where the worker's window is the only one and sits at 0,0; on Windows
+ * the client area of this worker's window (e2e/scripts/window-shot.ps1); on
+ * macOS this worker's window cropped to the page (`macWindowShot`). So a point
+ * in the page is the same point in the picture on all three, and the other
+ * workers' windows can't show in it (#88). */
 async function windowScreenshot(): Promise<Screen> {
   if (process.platform === "darwin") {
     // This worker's window alone, cropped to the page (macWindowShot): the

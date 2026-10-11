@@ -153,16 +153,18 @@ export async function chooseTheme(label: "Light" | "Dark") {
 }
 
 /**
- * Saves the app's window as `<name>.png` from the screen (the X display on
- * Linux, the desktop through `window-shot.ps1` on Windows, `screencapture` on
- * macOS), the way the user sees it. A WebDriver screenshot holds only the main
- * web view, so it leaves out 007's PDF surface, a child of the window that the
- * viewer's dialog leaves open over the PDF's place; this one has it. On Linux
- * the window is the only one on the display and is at its corner, so the
- * picture is the display's top-left SCREENSHOT_WINDOW corner; on Windows it is
- * the window's client area; on macOS it is the page's rectangle, below the
- * title bar. A no-op when screenshots are off. Wait for the surface to be
- * there first (the `preview:pdf-ready` event).
+ * Saves the app's window as `<name>.png` the way the user sees it (the X
+ * display on Linux, `window-shot.ps1` on Windows, `macWindowShot` on macOS).
+ * A WebDriver screenshot holds only the main web view, so it leaves out 007's
+ * PDF surface, a child of the window that the viewer's dialog leaves open over
+ * the PDF's place; this one has it. On Linux the window is the only one on the
+ * worker's display and is at its corner, so the picture is the display's
+ * top-left SCREENSHOT_WINDOW corner; on Windows it is the client area of this
+ * worker's window (by `appPid()`), which paints itself into the picture; on
+ * macOS it is this worker's window, by its CGWindowID, cropped to the page
+ * below the title bar. Neither takes the screen, so another worker's window
+ * on top can't show in it (#88). A no-op when screenshots are off. Wait for
+ * the surface to be there first (the `preview:pdf-ready` event).
  */
 export async function shotDisplay(name: string) {
   if (!outDir) return;
@@ -172,7 +174,7 @@ export async function shotDisplay(name: string) {
     process.platform !== "darwin"
   ) {
     throw new Error(
-      "shotDisplay needs the X display (Linux), the Windows desktop or screencapture (macOS)",
+      "shotDisplay needs the X display (Linux), window-shot.ps1 (Windows) or screencapture (macOS)",
     );
   }
   fs.mkdirSync(outDir, { recursive: true });
@@ -223,8 +225,10 @@ export async function shotDisplay(name: string) {
  * a capture of a screen rectangle. The id comes from e2e/scripts/window-id.js,
  * by the app's process id. The window has a title bar above the page, and
  * WebDriver's rectangle doesn't say where the page starts, so the page is the
- * window less what the web view's size leaves over, cropped (e2e/scripts/png-crop.js), and
- * scaled down on a Retina display (two pixels to a point) with `sips`.
+ * window less what the web view's size leaves over, cropped
+ * (e2e/scripts/png-crop.js), and scaled down on a Retina display (two pixels
+ * to a point) with `sips`. A window that is wholly covered can come out
+ * stale, since WebKit stops painting it; a partly covered one is whole.
  */
 export async function macWindowShot(file: string) {
   const script = fileURLToPath(new URL("../scripts/window-id.js", import.meta.url));
