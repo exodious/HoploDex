@@ -14,9 +14,8 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(gh pr create*)",
-            "command": "printf '%s\\n' '{\"systemMessage\":\"Reminder: run /security-review on this branch before opening the PR.\",\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Reminder: run /security-review on this branch before opening the PR.\",\"additionalContext\":\"The user wants a reminder to run the security-review skill (/security-review) on the branch before any PR is opened. If it has not been run for this branch, say so and offer to run it.\"}}'",
-            "statusMessage": "Security review reminder"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-security-review.sh\"",
+            "statusMessage": "Checking the PR carries a security review"
           }
         ]
       }
