@@ -216,6 +216,8 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
     fs::create_dir_all(copy.parent().unwrap()).unwrap();
     fs::write(&copy, b"decrypted").unwrap();
 
+    let ending = setup.session.current_id().get();
+
     let outcome =
         lifecycle::close_normal(&setup.session, &setup.machine, CloseReason::Closed).unwrap();
 
@@ -226,13 +228,14 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
     assert_eq!(
         setup.events.recorded(),
         vec![
-            ("session:closing".to_owned(), json!({ "reason": "closed" })),
+            ("session:closing".to_owned(), json!({ "reason": "closed", "sessionId": ending })),
             (
                 "session:closed".to_owned(),
                 json!({
                     "reason": "closed",
                     "databasePath": path.to_string_lossy(),
-                    "outcome": { "backup": "notDue" }
+                    "outcome": { "backup": "notDue" },
+                    "sessionId": ending
                 })
             ),
         ]
@@ -310,19 +313,22 @@ fn opening_a_second_database_closes_the_first_as_a_switch() {
     setup.close();
     setup.create("Second");
     setup.events.take();
+    let ending = setup.session.current_id().get();
 
     setup.open("First").unwrap();
 
+    assert_ne!(setup.session.current_id().get(), ending, "the switch is a new session");
     assert_eq!(
         setup.events.recorded(),
         vec![
-            ("session:closing".to_owned(), json!({ "reason": "switched" })),
+            ("session:closing".to_owned(), json!({ "reason": "switched", "sessionId": ending })),
             (
                 "session:closed".to_owned(),
                 json!({
                     "reason": "switched",
                     "databasePath": setup.path_text("Second"),
-                    "outcome": { "backup": "notDue" }
+                    "outcome": { "backup": "notDue" },
+                    "sessionId": ending
                 })
             ),
         ]

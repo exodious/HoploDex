@@ -9,6 +9,8 @@ import * as databasesService from "../databases/databasesService";
 import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
 import * as sessionService from "./sessionService";
 import { PendingChangesDialog } from "./PendingChangesDialog";
+import { createSessionScope, SessionScopeContext } from "./sessionScope";
+import type { SessionScope } from "./sessionScope";
 import { SessionContext } from "./sessionStore";
 import type { SessionState } from "./sessionStore";
 import { UnsavedChangesPrompt } from "./UnsavedChangesPrompt";
@@ -22,7 +24,7 @@ type Phase =
   | { kind: "chooser"; selectedPath: string | null }
   /** `opens` counts every open, so reopening the same file still mounts a
    * fresh collection tree. */
-  | { kind: "open"; status: DatabaseStatus; opens: number }
+  | { kind: "open"; status: DatabaseStatus; opens: number; scope: SessionScope }
   /** A normal close is running (a backup may be under way). */
   | { kind: "closing"; name: string; opens: number };
 
@@ -51,16 +53,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const openPath = useRef<string | null>(null);
   openPath.current = phase.kind === "open" ? phase.status.path : null;
 
+  // The latest open's scope, ended or not: a closing event is matched against
+  // its id even after it ended. Every end is synchronous and made here, in
+  // an event handler, never inside a state updater, so nothing of the next
+  // session can render or send before the old scope is dead (research.md §3).
+  const scopeRef = useRef<SessionScope | null>(null);
+
   const toChooser = useCallback((selectedPath: string | null) => {
+    scopeRef.current?.end();
     setQuestion(null);
     setPhase({ kind: "chooser", selectedPath });
   }, []);
 
   const opened = useCallback((status: DatabaseStatus) => {
+    scopeRef.current?.end();
+    const scope = createSessionScope(status.sessionId);
+    scopeRef.current = scope;
     setPhase((current) => ({
       kind: "open",
       status,
       opens: current.kind === "open" || current.kind === "closing" ? current.opens + 1 : 1,
+      scope,
     }));
   }, []);
 
@@ -77,23 +90,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [opened, toChooser]);
 
   // A normal close replaces the collection with the closing screen, which
-  // shows the backup the close may make (FR-027).
+  // shows the backup the close may make (FR-027). The scope ends first, and
+  // only for its own session: a late event of an older one, or one with no
+  // session id, changes nothing.
   useEffect(
     () =>
-      sessionService.onSessionClosing(() =>
+      sessionService.onSessionClosing((closing) => {
+        const scope = scopeRef.current;
+        if (!scope || closing.sessionId !== scope.id) return;
+        scope.end();
         setPhase((current) =>
-          current.kind === "open"
+          current.kind === "open" && current.scope === scope
             ? { kind: "closing", name: current.status.name, opens: current.opens }
             : current,
-        ),
-      ),
+        );
+      }),
     [],
   );
 
   // However the database closed (a close here, a take-over noticed by the
   // backend), everything from it goes, and the chooser selects it.
   useEffect(
-    () => sessionService.onSessionClosed((closed) => toChooser(closed.databasePath)),
+    () =>
+      sessionService.onSessionClosed((closed) => {
+        if (closed.sessionId !== scopeRef.current?.id) return;
+        toChooser(closed.databasePath);
+      }),
     [toChooser],
   );
 
@@ -111,7 +133,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
    * `session:closed` then take the collection away. */
   const lockDatabase = useCallback(async () => {
     try {
-      await sessionService.lockDatabase(currentDraft());
+      const locking = sessionService.lockDatabase(currentDraft());
+      // The request is on its way with this session's id: nothing more goes
+      // out under it (research.md §3).
+      scopeRef.current?.end();
+      await locking;
     } catch (error) {
       // Closed already, by another lock or a take-over.
       if (!(error instanceof CommandFailure && error.code === "DATABASE_CLOSED")) throw error;
@@ -269,7 +295,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
               <CollectionFault name={phase.status.name} onClose={() => closeDatabase("closed")} />
             }
           >
-            {children}
+            <SessionScopeContext.Provider value={phase.scope}>
+              {children}
+            </SessionScopeContext.Provider>
           </FaultBoundary>
         )}
         {phase.kind === "closing" && <ClosingScreen name={phase.name} />}

@@ -42,7 +42,7 @@ const status: DatabaseStatus = {
 };
 
 let sendProgress: (progress: BackupProgress) => void = () => {};
-let sendClosing: (closing: { reason: CloseReason }) => void = () => {};
+let sendClosing: (closing: { sessionId: number; reason: CloseReason }) => void = () => {};
 
 beforeEach(() => {
   vi.mocked(sessionService.onBackupProgress)
@@ -81,7 +81,7 @@ describe("ClosingScreen (contracts/ui-databases.md §5, SC-005)", () => {
     );
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
 
-    act(() => sendClosing({ reason: "closed" }));
+    act(() => sendClosing({ sessionId: 1, reason: "closed" }));
 
     expect(screen.getByRole("heading", { name: "Closing “Main collection”…" })).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();

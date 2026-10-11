@@ -11,8 +11,10 @@ import type { InsurancePolicy } from "../insurance/types";
 import { DocumentPreview } from "../media/DocumentPreview";
 import type { DocumentSummary } from "../media/types";
 import { SessionProvider } from "./SessionProvider";
+import { useSessionScope } from "./sessionScope";
+import type { SessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
-import type { SessionClosed } from "./sessionService";
+import type { SessionClosed, SessionClosing } from "./sessionService";
 import { useSession } from "./sessionStore";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
@@ -404,7 +406,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
   it("drops the collection when the backend closes the database, and selects it", async () => {
     await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
 
-    act(() => sessionClosed({ reason: "takenOver", databasePath: SHARED }));
+    act(() => sessionClosed({ sessionId: 1, reason: "takenOver", databasePath: SHARED }));
 
     expect(await screen.findByLabelText("Passphrase for “Shared collection”")).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
@@ -510,7 +512,7 @@ describe("SessionProvider (007: the document viewer, SC-006)", () => {
       });
       watch.observe(document.body, { childList: true, subtree: true });
 
-      act(() => sessionClosed({ reason, databasePath: PATH }));
+      act(() => sessionClosed({ sessionId: 1, reason, databasePath: PATH }));
 
       expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
       await Promise.resolve();
@@ -522,4 +524,185 @@ describe("SessionProvider (007: the document viewer, SC-006)", () => {
       expect(viewerBackend.invoke).toHaveBeenCalledWith("close_preview", { previewId: 31 });
     },
   );
+});
+
+// --- 008: the session scope (FR-002, research.md §3) -------------------------
+
+describe("SessionProvider (008: the session scope)", () => {
+  let sessionClosed: (closed: SessionClosed) => void;
+  let sessionClosing: (closing: SessionClosing) => void;
+  /** Every scope the collection's tree rendered with, and whether the one
+   * before it had ended by then. */
+  let scopes: SessionScope[];
+  let previousEndedAtRender: boolean[];
+
+  function ScopeProbe() {
+    const scope = useSessionScope();
+    if (scopes[scopes.length - 1] !== scope) {
+      previousEndedAtRender.push(scopes.length === 0 || scopes[scopes.length - 1].ended);
+      scopes.push(scope);
+    }
+    return null;
+  }
+
+  function RestoreButton() {
+    const session = useSession();
+    return (
+      <button type="button" onClick={() => void session.restoreBackup("/backup", "pass")}>
+        Restore it
+      </button>
+    );
+  }
+
+  const withId = (sessionId: number): DatabaseStatus => ({ ...status(false), sessionId });
+  const current = () => scopes[scopes.length - 1];
+
+  beforeEach(() => {
+    scopes = [];
+    previousEndedAtRender = [];
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(withId(1));
+    vi.mocked(sessionService.lockDatabase)
+      .mockReset()
+      .mockResolvedValue({ backup: "notAttempted" });
+    vi.mocked(sessionService.closeDatabase)
+      .mockReset()
+      .mockResolvedValue({ backup: "notAttempted" });
+    vi.mocked(sessionService.onSessionClosing)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosing = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onSessionClosed)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosed = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onQuitRequested)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    vi.mocked(databasesService.restoreBackup).mockReset();
+  });
+
+  async function renderOpen() {
+    render(
+      <SessionProvider>
+        <ScopeProbe />
+        <RestoreButton />
+        <CloseButtons />
+        <p>Collection shell</p>
+      </SessionProvider>,
+    );
+    await screen.findByText("Collection shell");
+  }
+
+  it("gives the collection one live scope per open, named by the status's session id", async () => {
+    await renderOpen();
+
+    expect(scopes).toHaveLength(1);
+    expect(current().id).toBe(1);
+    expect(current().ended).toBe(false);
+  });
+
+  it("ends the scope on session:closing of its own session", async () => {
+    await renderOpen();
+
+    act(() => sessionClosing({ sessionId: 1, reason: "closed" }));
+
+    expect(current().ended).toBe(true);
+    expect(
+      await screen.findByRole("heading", { name: "Closing “Main collection”…" }),
+    ).toBeInTheDocument();
+  });
+
+  it("ends the scope on session:closed of its own session", async () => {
+    await renderOpen();
+
+    act(() => sessionClosed({ sessionId: 1, reason: "takenOver", databasePath: PATH }));
+
+    expect(current().ended).toBe(true);
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+  });
+
+  it("ends the scope as soon as Lock now has sent lock_database", async () => {
+    const user = userEvent.setup();
+    let finishLock: (outcome: { backup: "notAttempted" }) => void = () => {};
+    vi.mocked(sessionService.lockDatabase).mockReturnValue(
+      new Promise((resolve) => {
+        finishLock = resolve;
+      }),
+    );
+    await renderOpen();
+    expect(current().ended).toBe(false);
+
+    await user.keyboard("{Control>}l{/Control}");
+
+    expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1);
+    expect(current().ended).toBe(true);
+    finishLock({ backup: "notAttempted" });
+  });
+
+  it("ends the scope when a lock finds the database closed already", async () => {
+    const user = userEvent.setup();
+    vi.mocked(sessionService.lockDatabase).mockRejectedValue(closed);
+    await renderOpen();
+
+    await user.keyboard("{Control>}l{/Control}");
+
+    await waitFor(() => expect(current().ended).toBe(true));
+  });
+
+  it("ends the previous scope before a new open's collection renders", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.restoreBackup).mockResolvedValue(withId(2));
+    await renderOpen();
+    const first = current();
+
+    await user.click(screen.getByRole("button", { name: "Restore it" }));
+
+    await waitFor(() => expect(scopes).toHaveLength(2));
+    expect(first.ended).toBe(true);
+    expect(current().id).toBe(2);
+    expect(current().ended).toBe(false);
+    // When the second scope first rendered, the first was already dead.
+    expect(previousEndedAtRender).toEqual([true, true]);
+  });
+
+  it("ends the scope when the user closes to the chooser", async () => {
+    const user = userEvent.setup();
+    await renderOpen();
+
+    await user.click(screen.getByRole("button", { name: "Close it" }));
+
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(current().ended).toBe(true);
+  });
+
+  it("leaves the new scope alone when an old session's events arrive late", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.restoreBackup).mockResolvedValue(withId(2));
+    await renderOpen();
+    await user.click(screen.getByRole("button", { name: "Restore it" }));
+    await waitFor(() => expect(scopes).toHaveLength(2));
+
+    act(() => sessionClosing({ sessionId: 1, reason: "closed" }));
+    act(() => sessionClosed({ sessionId: 1, reason: "lockedByUser", databasePath: PATH }));
+
+    expect(current().id).toBe(2);
+    expect(current().ended).toBe(false);
+    expect(screen.getByText("Collection shell")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+  });
+
+  it("ignores an event that names no session", async () => {
+    await renderOpen();
+
+    act(() => sessionClosing({ reason: "closed" } as SessionClosing));
+    act(() => sessionClosed({ reason: "idle", databasePath: PATH } as SessionClosed));
+
+    expect(current().ended).toBe(false);
+    expect(screen.getByText("Collection shell")).toBeInTheDocument();
+  });
 });

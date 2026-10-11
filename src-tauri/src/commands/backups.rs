@@ -363,6 +363,7 @@ pub mod ops {
             return Err(stopped());
         }
         let database_id = open.database_id.clone();
+        let ended_session = open.session_id;
         // Its file is about to be replaced, so nothing more is written to it.
         drop(slot.take());
         session.clear_opened_documents();
@@ -373,7 +374,11 @@ pub mod ops {
             session.set_last_closed(&path);
             events.emit(
                 "session:closed",
-                json!({ "reason": CloseReason::Closed, "databasePath": path.to_string_lossy() }),
+                json!({
+                    "reason": CloseReason::Closed,
+                    "databasePath": path.to_string_lossy(),
+                    "sessionId": ended_session,
+                }),
             );
             return Err(err);
         }
@@ -666,6 +671,7 @@ pub mod ops {
             remove_copy(&new_copy);
             return Err(change_stopped());
         }
+        let ended_session = open.session_id;
         let notes = std::mem::take(&mut open.notes);
         let staged_draft = open.staged_draft.take();
         drop(slot.take());
@@ -694,7 +700,11 @@ pub mod ops {
                 session.set_last_closed(&path);
                 events.emit(
                     "session:closed",
-                    json!({ "reason": CloseReason::Closed, "databasePath": path.to_string_lossy() }),
+                    json!({
+                        "reason": CloseReason::Closed,
+                        "databasePath": path.to_string_lossy(),
+                        "sessionId": ended_session,
+                    }),
                 );
                 return Err(replaced.err().unwrap_or(err));
             }

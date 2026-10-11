@@ -67,6 +67,9 @@ export function setIdlePaused(paused: boolean): Promise<void> {
 
 /** `session:closed`'s payload. */
 export interface SessionClosed {
+  /** The session that closed: the frontend ends only that session's scope
+   * (specs/008 research.md §3). */
+  sessionId: number;
   reason: CloseReason;
   databasePath: string;
   outcome?: CloseOutcome;
@@ -74,10 +77,16 @@ export interface SessionClosed {
   stoppedOperation?: OperationKind;
 }
 
+/** `session:closing`'s payload. */
+export interface SessionClosing {
+  sessionId: number;
+  reason: CloseReason;
+}
+
 /** A normal close has started: show the closing screen, as a backup may
  * follow. */
-export function onSessionClosing(handler: (closing: { reason: CloseReason }) => void): () => void {
-  return listen<{ reason: CloseReason }>("session:closing", handler);
+export function onSessionClosing(handler: (closing: SessionClosing) => void): () => void {
+  return listen<SessionClosing>("session:closing", handler);
 }
 
 /** The backup a close is making, in bytes. */

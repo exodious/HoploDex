@@ -208,6 +208,7 @@ fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
     let world = World::new();
     world.create();
     world.add_firearm("A1").unwrap();
+    let ending = world.session.current_id().get();
     let ours = world.replace_from_another_computer();
     let ours_before = fs::read(&ours).unwrap();
     let theirs_before = fs::read(world.path()).unwrap();
@@ -234,7 +235,11 @@ fn a_file_replaced_by_another_computer_refuses_the_next_write_and_closes() {
             ),
             (
                 "session:closed".to_owned(),
-                json!({ "reason": "takenOver", "databasePath": world.path_text() })
+                json!({
+                    "reason": "takenOver",
+                    "databasePath": world.path_text(),
+                    "sessionId": ending
+                })
             ),
         ]
     );

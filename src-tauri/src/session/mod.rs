@@ -99,7 +99,7 @@ static SESSION_IDS: AtomicU64 = AtomicU64::new(0);
 /// data-model.md "SessionId"). Every open, unlock and restore gets a new
 /// one from a counter that only goes up within a run, so an id is never
 /// handed out twice. `0` is never issued and means "none".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct SessionId(u64);
 
@@ -260,6 +260,9 @@ pub(crate) struct Closing {
     /// A normal close of the database at this path has taken it out of the
     /// session and is finishing on its own thread (its backup).
     pub(crate) normal: Option<PathBuf>,
+    /// The id of the session that normal close is ending, for the events
+    /// an immediate close announces meanwhile (`SessionId::NONE` with none).
+    pub(crate) normal_id: SessionId,
     /// An immediate close has begun (FR-037's step 1) and not finished.
     pub(crate) immediate: Option<ImmediateClose>,
 }

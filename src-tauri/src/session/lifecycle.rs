@@ -23,7 +23,7 @@ use crate::services::passphrase::Passphrase;
 use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
-use crate::session::{ImmediateClose, OpenDatabase, Session, SessionInner, pending};
+use crate::session::{ImmediateClose, OpenDatabase, Session, SessionId, SessionInner, pending};
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most
@@ -165,11 +165,13 @@ pub fn close_normal(
             return Err(CommandError::database_closed());
         }
         closing.normal = session.open_path();
+        closing.normal_id = session.current_id();
     }
     let Some(mut open) = session.take() else {
         finish_closing(session);
         return Err(CommandError::database_closed());
     };
+    let session_id = open.session_id;
     // Unsaved input was kept by a lock, or dealt with by the user.
     open.staged_draft = None;
     // The preview is off the screen and out of memory before the close is
@@ -193,7 +195,7 @@ pub fn close_normal(
             idle_minutes: (reason == CloseReason::Idle).then_some(open.lock_settings.idle_minutes),
         });
     }
-    events.emit("session:closing", json!({ "reason": reason }));
+    events.emit("session:closing", json!({ "reason": reason, "sessionId": session_id }));
 
     let outcome = if check == FingerprintCheck::Unreachable {
         backup_failed(session, &open, BackupFailureReason::DatabaseUnreachable)
@@ -239,7 +241,12 @@ pub fn close_normal(
     if !finish_closing(session) {
         events.emit(
             "session:closed",
-            json!({ "reason": reason, "databasePath": path.to_string_lossy(), "outcome": outcome }),
+            json!({
+                "reason": reason,
+                "databasePath": path.to_string_lossy(),
+                "outcome": outcome,
+                "sessionId": session_id,
+            }),
         );
     }
     Ok(outcome)
@@ -264,6 +271,7 @@ fn finish_closing(session: &Session) -> bool {
     {
         let mut closing = session.closing();
         closing.normal = None;
+        closing.normal_id = SessionId::NONE;
         closing.immediate = None;
     }
     session.closing_changed();
@@ -346,7 +354,7 @@ pub fn close_immediate(session: &Session, machine: &MachineSettings, reason: Clo
 /// reaches the database. Returns whether there was anything to close.
 pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
     let stopped = session.operations().stop();
-    let (path, lock_announced) = {
+    let (path, session_id, lock_announced) = {
         let mut closing = session.closing();
         if closing.immediate.is_some() {
             return true;
@@ -356,12 +364,14 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
         let Some(path) = closing.normal.clone().or_else(|| session.open_path()) else {
             return false;
         };
+        let session_id =
+            if closing.normal.is_some() { closing.normal_id } else { session.current_id() };
         closing.immediate = Some(ImmediateClose {
             path: path.clone(),
             stopped: stopped.clone(),
             completing: false,
         });
-        (path, lock_announced)
+        (path, session_id, lock_announced)
     };
     session.set_last_closed(&path);
     // Before `session:closed`, which is when the frontend drops the
@@ -376,7 +386,11 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
             idle_minutes: None,
         });
     }
-    let mut closed = json!({ "reason": reason, "databasePath": path.to_string_lossy() });
+    let mut closed = json!({
+        "reason": reason,
+        "databasePath": path.to_string_lossy(),
+        "sessionId": session_id,
+    });
     if let Some(stopped) = &stopped {
         closed["stoppedOperation"] = json!(stopped.kind());
     }
@@ -644,8 +658,14 @@ pub(crate) fn close_taken_over(session: &SessionInner, mut open: OpenDatabase) {
     let path = open.path.to_string_lossy().into_owned();
     let events = session.events();
     events.notice(ChooserNotice::TakenOver { database_path: path.clone() });
-    events
-        .emit("session:closed", json!({ "reason": CloseReason::TakenOver, "databasePath": path }));
+    events.emit(
+        "session:closed",
+        json!({
+            "reason": CloseReason::TakenOver,
+            "databasePath": path,
+            "sessionId": open.session_id,
+        }),
+    );
     session.set_last_closed(&open.path);
     session.forget_open();
     drop(open);

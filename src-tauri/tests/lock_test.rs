@@ -174,6 +174,12 @@ impl World {
         self.events.payloads("session:closed").into_iter().map(|p| p["reason"].clone()).collect()
     }
 
+    /// The `sessionId` of each `event` payload recorded, in order (008
+    /// FR-004: the session that is ending).
+    fn session_ids_of(&self, event: &str) -> Vec<Value> {
+        self.events.payloads(event).into_iter().map(|p| p["sessionId"].clone()).collect()
+    }
+
     fn notices(&self) -> Vec<Value> {
         self.events.payloads("notice")
     }
@@ -259,6 +265,8 @@ fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
     world.create();
     let id = world.change();
     let copy = world.opened_document();
+    let ending = json!(world.session.current_id().get());
+    assert_ne!(ending, json!(0));
 
     let outcome =
         databases::lock_database(&world.session, &world.machine, Some(edit_draft(id))).unwrap();
@@ -271,6 +279,8 @@ fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
     assert!(!changes_waiting);
     assert!(!marked, "the open marker is cleared");
     assert_eq!(world.closed_reasons(), vec![json!("lockedByUser")]);
+    assert_eq!(world.session_ids_of("session:closing"), vec![ending.clone()]);
+    assert_eq!(world.session_ids_of("session:closed"), vec![ending]);
     assert!(world.notices().contains(&json!({
         "kind": "closed",
         "reason": "lockedByUser",
@@ -474,10 +484,12 @@ fn a_sleep_makes_no_backup_and_leaves_the_changes_waiting() {
     let id = world.change();
     databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
     let copy = world.opened_document();
+    let ending = json!(world.session.current_id().get());
 
     lifecycle::will_sleep(&world.session, &world.machine);
 
     assert!(!world.session.is_open());
+    assert_eq!(world.session_ids_of("session:closed"), vec![ending]);
     assert!(world.events.payloads("backup:progress").is_empty());
     assert!(!world.backup_folder().exists(), "no backup is started");
     assert!(!copy.exists());
@@ -835,6 +847,7 @@ fn sleep_during_the_backup_of(close: impl FnOnce(&World)) {
     world.set_lock(false, 10, true);
     world.change();
     world.grow(3 << 20);
+    let ending = json!(world.session.current_id().get());
     let sleeper = world.sleep_at("backup:progress", |payload| {
         let (processed, total) =
             (payload["processed"].as_u64().unwrap(), payload["total"].as_u64().unwrap());
@@ -854,6 +867,11 @@ fn sleep_during_the_backup_of(close: impl FnOnce(&World)) {
     assert!(changes_waiting, "its changes stay waiting");
     assert!(!marked, "the close finishes as a lock at sleep");
     assert_eq!(world.closed_reasons(), vec![json!("sleep")], "announced once, as a sleep");
+    assert_eq!(
+        world.session_ids_of("session:closed"),
+        vec![ending],
+        "it names the session the normal close was ending"
+    );
     assert!(world.notices().contains(&stopped_notice(&world, "backup", json!({}))));
 }
 
