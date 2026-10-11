@@ -328,6 +328,20 @@ now passes 8/8 on both paths.
   lazily loaded estimator. None holds collection data. `research.md` lists
   them so the review can check the list is complete. A grep of `src/` for
   module-level `let` and `new Map/Set` found exactly these (2026-10-11).
+  _Re-checked at T043 (2026-10-11), after the moves above, with
+  `grep -rnE '^(let|const) [a-zA-Z_]+ *(: *[^=]+)?= *(new (Map|Set)|\[\]|\{\}|null)' src`
+  and `grep -rn '^let ' src`, tests excluded: the list is complete. What is
+  left is `documentOpening.ts`'s `current` and `listeners`, `lib/busy.ts`'s
+  `busy`, `placeFocus.ts`'s `keyboardLast`, `StrengthHint.tsx`'s `estimator`
+  and `browserControls.ts`'s constant `TEXT_INPUT_TYPES`, none of which
+  holds collection data; and `usePendingDraft.ts`'s `registered` (the
+  mounted forms, removed as each unmounts), `waiting`, `timer` and `staged`
+  (the draft being staged, and what the backend holds). Those four are a
+  collection's unsaved input, so they are not left to a form's unmount: a
+  registration's scope clean-up resets `waiting`, `timer` and `staged` when
+  its session ends, and a flush refuses a draft whose scope has ended. The
+  photo thumbnail cache and the resumed draft, which the first grep found,
+  are in the scope now (`scope.thumbnails`, `scope.resumed`)._
 
 **Rationale**: FR-001 and FR-002 ask that everything kept outside what is on
 screen dies with its session. Putting each such thing in the scope, or in the

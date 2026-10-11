@@ -6,12 +6,12 @@ import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import type { Accessory } from "../accessories/types";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
-import { currentDraft, getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
+import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
 import { DisposeDialog, FORM_VERSION } from "./DisposeDialog";
 import { CommandFailure } from "../../services/tauriClient";
 import type { MountDetail, RecordLabel } from "../mounts/types";
 import type { DisposeInput, Firearm } from "./types";
-import { render } from "../../test/sessionScope";
+import { render, setResumedDraft } from "../../test/sessionScope";
 
 const firearm = {
   id: 1,

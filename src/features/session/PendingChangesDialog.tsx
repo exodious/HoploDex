@@ -37,7 +37,14 @@ function canResume(pending: PendingSummary): boolean {
 
 export interface PendingChangesDialogProps {
   pending: PendingSummary;
-  /** Resolves once the form has its changes back. */
+  /** The changes were resumed and their form is opening beneath the dialog,
+   * which stays up until it has (specs/008 contracts/ui.md §1 "Resuming"). */
+  opening?: boolean;
+  /** The form couldn't be opened: the changes are still kept, and Resume
+   * editing is offered again. */
+  failed?: boolean;
+  /** Resolves once the backend has handed the changes back; the form then
+   * opens, and the dialog goes when it reports so. */
   onResume: () => Promise<void>;
   onDiscard: () => Promise<void>;
 }
@@ -45,11 +52,18 @@ export interface PendingChangesDialogProps {
 /** Unsaved changes kept at a lock, offered before the collection can be
  * used (FR-039, contracts/ui-databases.md §13). It can't be dismissed: the
  * changes are resumed or discarded, and discarding asks first. */
-export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingChangesDialogProps) {
+export function PendingChangesDialog({
+  pending,
+  opening = false,
+  failed = false,
+  onResume,
+  onDiscard,
+}: PendingChangesDialogProps) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const resumable = canResume(pending);
+  const resuming = busy || opening;
 
   async function resume() {
     setBusy(true);
@@ -58,6 +72,7 @@ export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingCh
       await onResume();
     } catch {
       setProblem("The changes couldn't be opened. Try again, or discard them.");
+    } finally {
       setBusy(false);
     }
   }
@@ -71,12 +86,12 @@ export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingCh
         title={`Unsaved changes to ${pending.label}`}
         footer={
           <>
-            <Button variant="danger" disabled={busy} onClick={() => setConfirming(true)}>
+            <Button variant="danger" disabled={resuming} onClick={() => setConfirming(true)}>
               Discard changes
             </Button>
             {resumable && (
-              <Button variant="primary" autoFocus pending={busy} onClick={() => void resume()}>
-                Resume editing
+              <Button variant="primary" autoFocus pending={resuming} onClick={() => void resume()}>
+                {resuming ? "Opening…" : "Resume editing"}
               </Button>
             )}
           </>
@@ -92,6 +107,12 @@ export function PendingChangesDialog({ pending, onResume, onDiscard }: PendingCh
             <> They were kept by another version of HoploDex, so they can only be discarded.</>
           )}
         </p>
+        {failed && !opening && (
+          <p className="hd-field__error" role="alert">
+            The form for {pending.label} couldn&apos;t be opened. Your changes are still kept. Try
+            again, close the database, or discard them.
+          </p>
+        )}
         {problem && (
           <p className="hd-field__error" role="alert">
             {problem}

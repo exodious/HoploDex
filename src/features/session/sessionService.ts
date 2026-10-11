@@ -8,6 +8,7 @@ import type {
   Draft,
   NoteKind,
   OperationKind,
+  PendingSummary,
 } from "../databases/types";
 
 // Typed wrappers for the open session's own commands and events (specs/003
@@ -54,13 +55,20 @@ export function stagePendingChanges(scope: SessionScope, draft: Draft | null): P
   return scope.invoke<void>("stage_pending_changes", { draft });
 }
 
-/** Resumes or discards the open database's pending changes (FR-039). */
+/** Answers the open database's pending changes (FR-039, specs/008 research.md
+ * §6): `resume` gives back the draft and serves the collection while its form
+ * opens; `opened` says it did; `notOpened` says it couldn't, and gives back
+ * the summary for the dialog; `discard` removes them. */
 export function resolvePendingChanges(
   scope: SessionScope,
-  action: "resume" | "discard",
-): Promise<{ draft?: Draft }> {
-  return scope.invoke<{ draft?: Draft }>("resolve_pending_changes", { action });
+  action: PendingAction,
+): Promise<{ draft?: Draft; pending?: PendingSummary }> {
+  return scope.invoke<{ draft?: Draft; pending?: PendingSummary }>("resolve_pending_changes", {
+    action,
+  });
 }
+
+export type PendingAction = "resume" | "opened" | "notOpened" | "discard";
 
 /** Input to the window: the idle time starts again (FR-035). */
 export function noteActivity(): Promise<void> {

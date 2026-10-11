@@ -23,7 +23,6 @@ import { BrandMark } from "./BrandMark";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
-import { peekResumedDraft } from "../session/usePendingDraft";
 import type { Draft } from "../databases/types";
 import { useSessionScope } from "../session/sessionScope";
 import type { BackTarget, Navigation, Route, ShellDialog } from "./navigation";
@@ -89,15 +88,16 @@ export function AppShell() {
     refresh,
   } = useCollection();
   const notify = useToast();
-  // Resumed pending changes open where their form is (FR-039).
-  const [route, setRoute] = useState<Route>(() => resumedRoute(peekResumedDraft()));
+  // Resumed pending changes open where their form is (FR-039), in the session
+  // that resumed them (specs/008 research.md §6).
+  const [route, setRoute] = useState<Route>(() => resumedRoute(scope.resumed?.draft ?? null));
   const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
   const [accessoryBrowse, setAccessoryBrowse] = useState<AccessoryBrowseState>(
     initialAccessoryBrowseState,
   );
   const [dialog, setDialog] = useState<ShellDialog | null>(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (resumed?.mode !== "add") return null;
     if (resumed.kind === "firearm") return "addFirearm";
     return resumed.kind === "accessory" ? "addAccessory" : null;

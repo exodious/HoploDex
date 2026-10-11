@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import { formatDate } from "../../lib/dates";
+import { CommandFailure } from "../../services/tauriClient";
+import { SessionScopeContext, createSessionScope } from "../session/sessionScope";
+import type { SessionScope } from "../session/sessionScope";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
@@ -681,5 +684,94 @@ describe("AccessoryRecordPage delete confirmation with mounted records (US3)", (
 
     expect(dialog).not.toHaveTextContent(/stay in the collection/);
     expect(within(dialog).queryByRole("list")).not.toBeInTheDocument();
+  });
+});
+
+// specs/008-hardening-batch tasks.md T032 (US1-4), research.md §6: when a
+// resumed draft for this accessory is waiting for its form and the accessory
+// can't be loaded, the page tells the scope (`scope.resumeFailed`), so the
+// pending changes dialog comes back. It tells it for nothing else.
+
+describe("AccessoryRecordPage: a resumed draft whose form can't open (US1-4)", () => {
+  const draft = (targetId: number | null) => ({
+    formVersion: 1,
+    kind: "accessory" as const,
+    mode: "edit" as const,
+    targetId,
+    label: "Leupold VX-5HD (edit)",
+    values: {},
+  });
+
+  /** A scope with `resumed` set (or not), and its two reports spied on. */
+  function scopeResuming(resumedDraft: ReturnType<typeof draft> | null) {
+    const scope = createSessionScope(1);
+    scope.resumed = resumedDraft ? { draft: resumedDraft, state: "opening" } : null;
+    scope.resumeFailed = vi.fn().mockResolvedValue(undefined);
+    scope.resumeOpened = vi.fn().mockResolvedValue(undefined);
+    return scope;
+  }
+
+  function renderIn(scope: SessionScope) {
+    const navigation: Navigation = {
+      route: { page: "accessory", id: 3, from: "accessories" },
+      navigate: () => {},
+      open: () => {},
+      back: { label: "Accessories", go: goBack },
+      openDialog: () => {},
+    };
+    render(
+      <SessionScopeContext.Provider value={scope}>
+        <CollectionContext.Provider value={collection}>
+          <NavigationContext.Provider value={navigation}>
+            <AccessoryRecordPage id={3} />
+          </NavigationContext.Provider>
+        </CollectionContext.Provider>
+      </SessionScopeContext.Provider>,
+    );
+  }
+
+  const notFound = () => new CommandFailure({ code: "NOT_FOUND", message: "No such accessory." });
+
+  it("reports notOpened when the accessory fails to load while its draft is opening", async () => {
+    getAccessory.mockRejectedValue(notFound());
+    const scope = scopeResuming(draft(3));
+
+    renderIn(scope);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No such accessory.");
+    await waitFor(() => expect(scope.resumeFailed).toHaveBeenCalledTimes(1));
+  });
+
+  it("reports nothing when the accessory fails to load and no draft is resuming", async () => {
+    getAccessory.mockRejectedValue(notFound());
+    const scope = scopeResuming(null);
+
+    renderIn(scope);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No such accessory.");
+    await act(async () => {});
+    expect(scope.resumeFailed).not.toHaveBeenCalled();
+  });
+
+  it("reports nothing when the draft being resumed is for another record", async () => {
+    getAccessory.mockRejectedValue(notFound());
+    const scope = scopeResuming(draft(99));
+
+    renderIn(scope);
+
+    await screen.findByRole("alert");
+    await act(async () => {});
+    expect(scope.resumeFailed).not.toHaveBeenCalled();
+  });
+
+  it("reports nothing when the accessory loads", async () => {
+    getAccessory.mockResolvedValue(optic);
+    const scope = scopeResuming(draft(3));
+
+    renderIn(scope);
+
+    await screen.findByRole("heading", { level: 1, name: NAME });
+    await act(async () => {});
+    expect(scope.resumeFailed).not.toHaveBeenCalled();
   });
 });

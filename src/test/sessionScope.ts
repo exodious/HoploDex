@@ -2,6 +2,7 @@ import { render as testingLibraryRender } from "@testing-library/react";
 import type { RenderOptions, RenderResult } from "@testing-library/react";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
+import type { Draft } from "../features/databases/types";
 import { createSessionScope, SessionScopeContext } from "../features/session/sessionScope";
 import type { SessionScope } from "../features/session/sessionScope";
 
@@ -41,4 +42,18 @@ export function render(
         Inner ? createElement(Inner, null, children) : children,
       ),
   });
+}
+
+/** Puts `draft` in `scope` as the pending changes the user chose to resume,
+ * for a form to open with (specs/008 research.md §6), or takes it out with
+ * `null`. The backend isn't told when the form opens. */
+export function setResumedDraft(draft: Draft | null, scope: SessionScope = DEFAULT_SCOPE): void {
+  scope.resumed = draft ? { draft, state: "opening" } : null;
+  scope.resumeOpened = () => Promise.resolve();
+  scope.resumeFailed = () => Promise.resolve(null);
+}
+
+/** The draft still waiting in `scope` for its form. */
+export function peekResumedDraft(scope: SessionScope = DEFAULT_SCOPE): Draft | null {
+  return scope.resumed?.draft ?? null;
 }

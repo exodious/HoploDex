@@ -5,29 +5,31 @@ import { useSessionScope } from "../session/sessionScope";
 import * as insuranceService from "./insuranceService";
 import { InsurancePolicyForm } from "./InsurancePolicyForm";
 import { PolicyDeleteDialog } from "./PolicyDeleteDialog";
-import { peekResumedDraft } from "../session/usePendingDraft";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 
 /** What the add/edit and delete dialogs need from a page: which policy each
  * is open for, and the callbacks that open them. */
 export function usePolicyEditors(onDeleted?: () => void) {
   const scope = useSessionScope();
-  const { refresh, policiesById } = useCollection();
+  const { refresh, policiesById, loaded } = useCollection();
   const notify = useToast();
   const [editing, setEditing] = useState<InsurancePolicy | "new" | null>(null);
   const [deleting, setDeleting] = useState<InsurancePolicy | null>(null);
 
   // Pending changes the user resumed for a policy reopen its form (FR-039),
-  // which takes them as its unsaved input.
+  // which takes them as its unsaved input. A policy the loaded collection
+  // doesn't have can't open its form: tell the scope, so the pending changes
+  // dialog comes back (specs/008 research.md §6).
   useEffect(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (resumed?.kind !== "policy") return;
     if (resumed.targetId == null) setEditing("new");
     else {
       const policy = policiesById.get(resumed.targetId);
       if (policy) setEditing(policy);
+      else if (loaded) void scope.resumeFailed("The policy wasn't found.");
     }
-  }, [policiesById]);
+  }, [scope, policiesById, loaded]);
 
   async function handleSave(input: InsurancePolicyInput) {
     if (editing === "new") {

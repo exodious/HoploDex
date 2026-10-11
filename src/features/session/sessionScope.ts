@@ -1,5 +1,7 @@
 import { createContext, useContext } from "react";
 import { CommandFailure, invoke as clientInvoke } from "../../services/tauriClient";
+import type { Draft, PendingSummary } from "../databases/types";
+import * as sessionService from "./sessionService";
 
 /**
  * What one open of a database owns on the frontend (specs/008-hardening-batch
@@ -32,6 +34,30 @@ export interface SessionScope {
    * once. Returns a function that removes it.
    */
   onEnd(cleanUp: () => void): () => void;
+  /** Photo id → data URL of the thumbnails loaded in this session. Emptied
+   * by {@link end}, so no image outlives its session (research.md §4). */
+  readonly thumbnails: Map<number, string>;
+  /**
+   * The pending changes the user chose to resume, until their form opens
+   * (FR-003, research.md §6). Set by `SessionProvider` when `resume` is
+   * answered; a form matches it only through this scope. {@link end} drops
+   * it.
+   */
+  resumed: { draft: Draft; state: "opening" } | null;
+  /**
+   * The form opened with the resumed changes: tells the backend
+   * (`resolve_pending_changes("opened")`), which keeps the draft as the
+   * session's staged draft. Replaceable: `SessionProvider` wraps it to close
+   * the dialog.
+   */
+  resumeOpened(): Promise<void>;
+  /**
+   * The form for the resumed changes can't be opened, for `reason`:
+   * `resolve_pending_changes("notOpened")`, which blocks the collection again
+   * and gives back the summary for the dialog. Drops {@link resumed}.
+   * Replaceable like {@link resumeOpened}.
+   */
+  resumeFailed(reason: string): Promise<PendingSummary | null>;
 }
 
 function sessionEnded(): CommandFailure {
@@ -55,14 +81,28 @@ export function createSessionScope(id: number): SessionScope {
   let ended = false;
   const cleanUps = new Set<() => void>();
 
-  return {
+  const scope: SessionScope = {
     id,
+    thumbnails: new Map(),
+    resumed: null,
+    async resumeOpened() {
+      await sessionService.resolvePendingChanges(scope, "opened");
+    },
+    async resumeFailed(reason) {
+      // Only this computer's own console (constitution V).
+      console.warn("The resumed form couldn't be opened:", reason);
+      scope.resumed = null;
+      const { pending } = await sessionService.resolvePendingChanges(scope, "notOpened");
+      return pending ?? null;
+    },
     get ended() {
       return ended;
     },
     end() {
       if (ended) return;
       ended = true;
+      scope.thumbnails.clear();
+      scope.resumed = null;
       const pending = [...cleanUps];
       cleanUps.clear();
       pending.forEach(runCleanUp);
@@ -91,6 +131,7 @@ export function createSessionScope(id: number): SessionScope {
       };
     },
   };
+  return scope;
 }
 
 export const SessionScopeContext = createContext<SessionScope | null>(null);

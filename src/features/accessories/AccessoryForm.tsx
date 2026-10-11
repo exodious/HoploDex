@@ -217,7 +217,7 @@ export function AccessoryForm({
   };
   // Pending changes the user resumed start as unsaved input (specs/003 FR-039).
   const [form, setForm] = useState<FormState>(() =>
-    resumedValues(target, toFormState(initialValues, presetMountedOn)),
+    resumedValues(scope, target, toFormState(initialValues, presetMountedOn)),
   );
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues, presetMountedOn));

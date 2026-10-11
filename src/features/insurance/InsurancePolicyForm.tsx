@@ -5,6 +5,7 @@ import { parseDateInput } from "../../lib/dates";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import type { InsurancePolicy, InsurancePolicyInput } from "./types";
@@ -119,6 +120,7 @@ export function InsurancePolicyForm({
   onSubmit,
   onCancel,
 }: InsurancePolicyFormProps) {
+  const scope = useSessionScope();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
     kind: "policy",
@@ -127,7 +129,7 @@ export function InsurancePolicyForm({
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [form, setForm] = useState<FormState>(() =>
-    resumedValues(target, toFormState(initialValues)),
+    resumedValues(scope, target, toFormState(initialValues)),
   );
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues));

@@ -10,7 +10,6 @@ import { firearmName, useCollection } from "../app/collectionStore";
 import { FirearmName } from "../app/FirearmName";
 import { useNavigation } from "../app/navigation";
 import { RunningHead } from "../app/RunningHead";
-import { peekResumedDraft } from "../session/usePendingDraft";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { CoverageDialog } from "../insurance/CoverageDialog";
 import { coverageStatus, expiryLabel } from "../insurance/coverage";
@@ -99,11 +98,20 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   // (FR-039), which takes them as its unsaved input.
   const loadedId = firearm?.id;
   useEffect(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (loadedId === undefined || resumed?.kind !== "firearm" || resumed.targetId !== loadedId)
       return;
     if (resumed.mode !== "add") setDialog(resumed.mode);
-  }, [loadedId]);
+  }, [scope, loadedId]);
+
+  // A record that can't be loaded can't open the form those changes belong
+  // to: tell the scope, so the pending changes dialog comes back
+  // (specs/008 research.md §6). A draft for another record isn't this page's.
+  useEffect(() => {
+    const resumed = scope.resumed?.draft;
+    if (!loadError || resumed?.kind !== "firearm" || resumed.targetId !== id) return;
+    void scope.resumeFailed(loadError);
+  }, [scope, id, loadError]);
 
   if (loadError) {
     return (

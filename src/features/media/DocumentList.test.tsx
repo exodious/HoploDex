@@ -7,6 +7,8 @@ import { formatDate } from "../../lib/dates";
 import type { FileDropEvent } from "../../services/tauriClient";
 import { DocumentList } from "./DocumentList";
 import { chooseDocumentOpening, loadDocumentOpening, useDocumentOpening } from "./documentOpening";
+import { SessionScopeContext, createSessionScope } from "../session/sessionScope";
+import type { SessionScope } from "../session/sessionScope";
 import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 
 // specs/007-document-preview/contracts/ui-document-preview.md §1 and §2,
@@ -1006,5 +1008,76 @@ describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6
       await chooseDocumentOpening("preview");
     });
     expect(screen.getByLabelText("opening")).toHaveTextContent("preview");
+  });
+});
+
+// specs/008-hardening-batch tasks.md T029 (US1-2, US1-5), research.md §5: the
+// list's batch checks `scope.ended` before each file, and a load that
+// resolves after the scope ended never reaches the list. The scope is real,
+// so every request has to go through it; the rest of the file is pinned at
+// the IPC boundary as above.
+
+/** Renders the list inside `scope`, and waits for its first load. */
+function renderInScope(scope: SessionScope) {
+  render(
+    <ToastProvider>
+      <SessionScopeContext.Provider value={scope}>
+        <DocumentList owner={{ kind: "firearm", id: 1 }} />
+      </SessionScopeContext.Provider>
+    </ToastProvider>,
+  );
+}
+
+const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 30))));
+
+describe("DocumentList: the scope's end (US1-2, US1-5)", () => {
+  it("stops a batch at the scope's end: of three dropped documents, exactly one add is sent", async () => {
+    const scope = createSessionScope(1);
+    const base = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) => {
+      const answer = await base(command, args);
+      // The session ends as the first add's answer arrives.
+      if (command === "add_document_from_path") scope.end();
+      return answer;
+    });
+    renderInScope(scope);
+    await screen.findByRole("button", { name: "Purchase receipt.pdf" });
+    await waitFor(() => expect(calls("list_document_types")).toHaveLength(1));
+
+    act(() => backend.drop(["/d/one.pdf", "/d/two.pdf", "/d/three.pdf"]));
+    await waitFor(() => expect(calls("add_document_from_path")).toHaveLength(1));
+    await settle();
+
+    expect(calls("add_document_from_path")).toEqual([
+      { owner: { kind: "firearm", id: 1 }, path: "/d/one.pdf" },
+    ]);
+  });
+
+  it("names the scope's session on its load", async () => {
+    const scope = createSessionScope(77);
+    renderInScope(scope);
+    await screen.findByRole("button", { name: "Purchase receipt.pdf" });
+
+    expect(calls("list_documents")).toHaveLength(1);
+    const [, , options] = backend.invoke.mock.calls.find(([name]) => name === "list_documents")!;
+    expect(options).toEqual({ session: 77 });
+  });
+
+  it("drops a list that resolves after the scope ended", async () => {
+    const scope = createSessionScope(1);
+    const late = deferred<DocumentSummary[]>();
+    const base = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) =>
+      command === "list_documents" ? late.promise : base(command, args),
+    );
+    renderInScope(scope);
+    await waitFor(() => expect(calls("list_documents")).toHaveLength(1));
+
+    scope.end();
+    await act(async () => late.resolve([receipt()]));
+    await settle();
+
+    expect(screen.queryByRole("button", { name: "Purchase receipt.pdf" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Purchase receipt.pdf")).not.toBeInTheDocument();
   });
 });

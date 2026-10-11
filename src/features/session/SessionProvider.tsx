@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { LockContext } from "../../components";
+import { LockContext, ToastProvider } from "../../components";
 import { CommandFailure, setWindowTitle } from "../../services/tauriClient";
 import { ClosingScreen } from "./ClosingScreen";
 import { CollectionFault, FaultBoundary } from "./FaultScreen";
 import { DatabaseChooser } from "../databases/DatabaseChooser";
 import * as databasesService from "../databases/databasesService";
-import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases/types";
+import type {
+  CreateDatabaseInput,
+  DatabaseStatus,
+  NoteKind,
+  PendingSummary,
+} from "../databases/types";
 import * as sessionService from "./sessionService";
 import { PendingChangesDialog } from "./PendingChangesDialog";
 import { createSessionScope, SessionScopeContext } from "./sessionScope";
@@ -15,7 +20,7 @@ import { SessionContext } from "./sessionStore";
 import type { SessionState } from "./sessionStore";
 import { UnsavedChangesPrompt } from "./UnsavedChangesPrompt";
 import { useIdleActivity } from "./useIdleActivity";
-import { currentDraft, getDirtyForm, setResumedDraft } from "./usePendingDraft";
+import { currentDraft, getDirtyForm } from "./usePendingDraft";
 
 type Phase =
   | { kind: "starting" }
@@ -27,6 +32,17 @@ type Phase =
   | { kind: "open"; status: DatabaseStatus; opens: number; scope: SessionScope }
   /** A normal close is running (a backup may be under way). */
   | { kind: "closing"; name: string; opens: number };
+
+/** Where resuming the open's pending changes is (specs/008 research.md §6):
+ * `opening` from the moment Resume editing is answered until their form
+ * reports it opened, `failed` when it reports it can't. `attempt` counts the
+ * resumes, so a retry mounts the collection afresh and its pages load again. */
+interface Resume {
+  state: "idle" | "opening" | "failed";
+  attempt: number;
+}
+
+const NOT_RESUMING: Resume = { state: "idle", attempt: 0 };
 
 /** The save / discard / cancel question, and what happens once it is
  * answered with anything but cancel. */
@@ -50,6 +66,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [question, setQuestion] = useState<Question | null>(null);
   const [settingsRequested, setSettingsRequested] = useState(false);
+  const [resume, setResume] = useState<Resume>(NOT_RESUMING);
   const openPath = useRef<string | null>(null);
   openPath.current = phase.kind === "open" ? phase.status.path : null;
 
@@ -59,23 +76,79 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // session can render or send before the old scope is dead (research.md §3).
   const scopeRef = useRef<SessionScope | null>(null);
 
+  /** Takes the pending changes the open reported out of the status, which
+   * lets the dialog go. */
+  const clearPending = useCallback((scope: SessionScope) => {
+    // The attempt stays: the collection beneath the dialog is the one the
+    // form opened in.
+    setResume((current) => ({ ...current, state: "idle" }));
+    setPhase((current) =>
+      current.kind === "open" && current.scope === scope
+        ? { ...current, status: { ...current.status, pendingChanges: null } }
+        : current,
+    );
+  }, []);
+
+  /** The dialog goes when the resumed form reports it opened, and comes back
+   * with its error when it reports it can't (contracts/ui.md §1). */
+  const watchResume = useCallback(
+    (scope: SessionScope) => {
+      const reportOpened = scope.resumeOpened;
+      const reportFailed = scope.resumeFailed;
+      scope.resumeOpened = async () => {
+        try {
+          await reportOpened();
+        } finally {
+          // Even if the backend couldn't be told, the form is open.
+          if (!scope.ended) clearPending(scope);
+        }
+      };
+      scope.resumeFailed = async (reason) => {
+        let summary: PendingSummary | null = null;
+        try {
+          summary = await reportFailed(reason);
+        } finally {
+          if (!scope.ended) {
+            setResume((current) => ({ ...current, state: "failed" }));
+            if (summary) {
+              const kept = summary;
+              setPhase((current) =>
+                current.kind === "open" && current.scope === scope
+                  ? { ...current, status: { ...current.status, pendingChanges: kept } }
+                  : current,
+              );
+            }
+          }
+        }
+        return summary;
+      };
+    },
+    [clearPending],
+  );
+
   const toChooser = useCallback((selectedPath: string | null) => {
     scopeRef.current?.end();
     setQuestion(null);
+    setResume(NOT_RESUMING);
     setPhase({ kind: "chooser", selectedPath });
   }, []);
 
-  const opened = useCallback((status: DatabaseStatus) => {
-    scopeRef.current?.end();
-    const scope = createSessionScope(status.sessionId);
-    scopeRef.current = scope;
-    setPhase((current) => ({
-      kind: "open",
-      status,
-      opens: current.kind === "open" || current.kind === "closing" ? current.opens + 1 : 1,
-      scope,
-    }));
-  }, []);
+  const opened = useCallback(
+    (status: DatabaseStatus) => {
+      scopeRef.current?.end();
+      const scope = createSessionScope(status.sessionId);
+      scopeRef.current = scope;
+      watchResume(scope);
+      setResume(NOT_RESUMING);
+      setPhase((current) => ({
+        kind: "open",
+        status,
+        opens: current.kind === "open" || current.kind === "closing" ? current.opens + 1 : 1,
+        scope,
+      }));
+    },
+    [watchResume],
+  );
 
   // A reloaded window finds its database still open in the backend.
   useEffect(() => {
@@ -171,19 +244,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [isOpen, lockDatabase]);
 
   /** Resumes or discards the pending changes the open reported. On resume,
-   * the form they belong to opens with them once the collection shows. */
-  const resolvePending = useCallback(async (action: "resume" | "discard") => {
-    const { draft } = await sessionService.resolvePendingChanges(
-      openScope(scopeRef.current),
-      action,
-    );
-    setResumedDraft(action === "resume" ? (draft ?? null) : null);
-    setPhase((current) =>
-      current.kind === "open"
-        ? { ...current, status: { ...current.status, pendingChanges: null } }
-        : current,
-    );
-  }, []);
+   * the collection mounts beneath the dialog, which stays up until the form
+   * they belong to has opened with them (FR-003, research.md §6). */
+  const resolvePending = useCallback(
+    async (action: "resume" | "discard") => {
+      const scope = openScope(scopeRef.current);
+      const { draft } = await sessionService.resolvePendingChanges(scope, action);
+      if (action === "discard" || !draft) {
+        clearPending(scope);
+        return;
+      }
+      scope.resumed = { draft, state: "opening" };
+      setResume((current) => ({ state: "opening", attempt: current.attempt + 1 }));
+    },
+    [clearPending],
+  );
 
   const closeDatabase = useCallback(
     (reason: "closed" | "switched") =>
@@ -294,23 +369,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         {phase.kind === "open" && phase.status.pendingChanges && (
           <PendingChangesDialog
             pending={phase.status.pendingChanges}
+            opening={resume.state === "opening"}
+            failed={resume.state === "failed"}
             onResume={() => resolvePending("resume")}
             onDiscard={() => resolvePending("discard")}
           />
         )}
-        {phase.kind === "open" && !phase.status.pendingChanges && (
-          // A screen that fails to render leaves the session, and with it the
-          // way to close the database and to quit, in place.
-          <FaultBoundary
-            key={`${phase.status.path}#${phase.opens}`}
-            fallback={
-              <CollectionFault name={phase.status.name} onClose={() => closeDatabase("closed")} />
-            }
-          >
-            <SessionScopeContext.Provider value={phase.scope}>
-              {children}
-            </SessionScopeContext.Provider>
-          </FaultBoundary>
+        {phase.kind === "open" && (!phase.status.pendingChanges || resume.state !== "idle") && (
+          // While the dialog is up (the changes are opening or failed to),
+          // the collection mounts beneath it, out of reach.
+          <Inert active={phase.status.pendingChanges != null}>
+            {/* Every toast of the session goes with the tree keyed by the open,
+              and a late `notify` of its closures reaches no provider
+              (research.md §4). */}
+            <ToastProvider key={`${phase.status.path}#${phase.opens}.${resume.attempt}`}>
+              {/* A screen that fails to render leaves the session, and with it
+                the way to close the database and to quit, in place. */}
+              <FaultBoundary
+                scope={phase.scope}
+                fallback={
+                  <CollectionFault
+                    name={phase.status.name}
+                    onClose={() => closeDatabase("closed")}
+                  />
+                }
+              >
+                <SessionScopeContext.Provider value={phase.scope}>
+                  {children}
+                </SessionScopeContext.Provider>
+              </FaultBoundary>
+            </ToastProvider>
+          </Inert>
         )}
         {phase.kind === "closing" && <ClosingScreen name={phase.name} />}
         <UnsavedChangesPrompt
@@ -326,6 +415,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         />
       </LockContext.Provider>
     </SessionContext.Provider>
+  );
+}
+
+/** Keeps `children` out of reach while `active`: no focus, no clicks, nothing
+ * for assistive technology. The wrapper takes no part in the layout. */
+function Inert({ active, children }: { active: boolean; children: ReactNode }) {
+  const element = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (element.current) (element.current as HTMLElement & { inert: boolean }).inert = active;
+  }, [active]);
+  return (
+    <div ref={element} style={{ display: "contents" }}>
+      {children}
+    </div>
   );
 }
 

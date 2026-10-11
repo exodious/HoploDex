@@ -26,7 +26,6 @@ import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
 import { accessoryNameText } from "../mounts/recordNames";
 import type { RecordLabel } from "../mounts/types";
 import { useSessionScope } from "../session/sessionScope";
-import { peekResumedDraft } from "../session/usePendingDraft";
 import { AccessoryForm } from "./AccessoryForm";
 import * as accessoriesService from "./accessoriesService";
 import type { Accessory, AccessoryDetail, AccessoryInput } from "./types";
@@ -82,11 +81,20 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   // (FR-039), which takes them as its unsaved input.
   const loadedId = accessory?.id;
   useEffect(() => {
-    const resumed = peekResumedDraft();
+    const resumed = scope.resumed?.draft;
     if (loadedId === undefined || resumed?.kind !== "accessory" || resumed.targetId !== loadedId)
       return;
     if (resumed.mode !== "add") setDialog(resumed.mode);
-  }, [loadedId]);
+  }, [scope, loadedId]);
+
+  // A record that can't be loaded can't open the form those changes belong
+  // to: tell the scope, so the pending changes dialog comes back
+  // (specs/008 research.md §6). A draft for another record isn't this page's.
+  useEffect(() => {
+    const resumed = scope.resumed?.draft;
+    if (!loadError || resumed?.kind !== "accessory" || resumed.targetId !== id) return;
+    void scope.resumeFailed(loadError);
+  }, [scope, id, loadError]);
 
   if (loadError) {
     return (

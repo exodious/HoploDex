@@ -705,7 +705,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [form, setForm] = useState<FormState>(() =>
-    resumedValues(target, toFormState(initialValues)),
+    resumedValues(scope, target, toFormState(initialValues)),
   );
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues));

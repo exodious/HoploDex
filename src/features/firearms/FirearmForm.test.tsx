@@ -6,12 +6,12 @@ import userEvent from "@testing-library/user-event";
 import { ACTION_TYPES, FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
-import { getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
+import { getDirtyForm } from "../session/usePendingDraft";
 import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { DerivedCaliber, Firearm } from "./types";
 import type { RecordLabel } from "../mounts/types";
-import { render as renderBase } from "../../test/sessionScope";
+import { render as renderBase, setResumedDraft } from "../../test/sessionScope";
 
 // specs/005-regulated-item-types: the form reads the firearm types from the
 // collection store, so every render gets the fixture's five seeded types

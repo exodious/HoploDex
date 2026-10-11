@@ -6,12 +6,12 @@ import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { CommandFailure } from "../../services/tauriClient";
-import { currentDraft, getDirtyForm, setResumedDraft } from "../session/usePendingDraft";
+import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
 import type { DerivedCaliber } from "../firearms/types";
 import { AccessoryForm, FORM_VERSION } from "./AccessoryForm";
 import type { Accessory, AccessoryDetail, AccessoryKind } from "./types";
 import type { RecordLabel } from "../mounts/types";
-import { render as renderBase } from "../../test/sessionScope";
+import { render as renderBase, setResumedDraft } from "../../test/sessionScope";
 
 // specs/006-accessory-links User Story 1 (contracts/ui-accessories.md §3,
 // FR-001 to FR-005, FR-027). The form is a bare form like `FirearmForm`: the

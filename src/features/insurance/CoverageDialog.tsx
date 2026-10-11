@@ -5,6 +5,7 @@ import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { useRecordSubject } from "../firearms/recordSubject";
@@ -65,6 +66,7 @@ function CoverageForm({
     subject.insurancePolicyId != null ? String(subject.insurancePolicyId) : NOT_SCHEDULED,
   );
   const [initialAmount] = useState(() => dollarsToInput(subject.scheduledCoverageAmount));
+  const scope = useSessionScope();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
     kind: subject.kind,
@@ -73,7 +75,10 @@ function CoverageForm({
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [resumed] = useState(() =>
-    resumedValues<CoverageValues>(target, { policyId: initialPolicyId, amount: initialAmount }),
+    resumedValues<CoverageValues>(scope, target, {
+      policyId: initialPolicyId,
+      amount: initialAmount,
+    }),
   );
   useResumedDraftTaken(target);
   const [policyId, setPolicyId] = useState(resumed.policyId);

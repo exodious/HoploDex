@@ -74,6 +74,8 @@ export function DocumentList({ owner }: DocumentListProps) {
       then?.(list);
       return list;
     } catch (e) {
+      // A load that fails because the session ended says nothing: its page is gone.
+      if (scope.ended) return [];
       notify(failureMessage(e, "Documents couldn't be loaded."), "error");
       setDocuments([]);
       return [];
@@ -114,17 +116,20 @@ export function DocumentList({ owner }: DocumentListProps) {
   }
 
   /** Attaches each document in turn, carrying on past one that fails so a
-   * bad file doesn't cost the rest of a batch. */
+   * bad file doesn't cost the rest of a batch. A batch stops at the scope's end
+   * (FR-002, research.md §5): what was attached stays, and nothing more is sent. */
   async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
     if (pending.length === 0) return;
     setAdding(pending.length);
     let added = 0;
     let failure: string | null = null;
     for (const { name, add } of pending) {
+      if (scope.ended) break;
       try {
         await add();
         added += 1;
       } catch (e) {
+        if (scope.ended) break;
         // The backend's message says a photo isn't a document type; here it can say where it goes.
         failure ??=
           e instanceof CommandFailure && e.code === "DOCUMENT_TYPE_NOT_ALLOWED" && isPhotoPath(name)
@@ -133,6 +138,7 @@ export function DocumentList({ owner }: DocumentListProps) {
       }
     }
     setAdding(0);
+    if (scope.ended) return;
     await load();
     if (added > 0) notify(`Attached ${added} ${added === 1 ? "document" : "documents"}.`);
     if (failure) notify(failure, "error");

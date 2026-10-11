@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { formatDateTime } from "../../lib/dates";
 import * as databasesService from "../databases/databasesService";
@@ -11,8 +12,9 @@ import { FORM_VERSION as RESTORE_FORM_VERSION } from "../firearms/RestoreDialog"
 import { FORM_VERSION, InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
 import type { InsurancePolicy } from "../insurance/types";
 import { SessionProvider } from "./SessionProvider";
+import { useSessionScope } from "./sessionScope";
+import type { SessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
-import { peekResumedDraft, setResumedDraft } from "./usePendingDraft";
 
 /** What the session scope of the open (session id 1) looks like to a mocked service. */
 const SCOPE = expect.objectContaining({ id: 1 });
@@ -99,11 +101,16 @@ function status(pendingChanges: PendingSummary | null): DatabaseStatus {
   };
 }
 
-/** Stands in for the page the resumed form belongs to. */
+/** The scope of the open, as the collection's tree sees it. */
+let openScope: SessionScope | null;
+
+/** Stands in for the page the resumed form belongs to: it opens the form when
+ * there are resumed changes to open it with. */
 function PolicyPageStandIn() {
-  return peekResumedDraft() ? (
-    <InsurancePolicyForm initialValues={policy} onSubmit={vi.fn()} />
-  ) : null;
+  const scope = useSessionScope();
+  openScope = scope;
+  const [resumed] = useState(() => scope.resumed);
+  return resumed ? <InsurancePolicyForm initialValues={policy} onSubmit={vi.fn()} /> : null;
 }
 
 function renderOpen(pendingChanges: PendingSummary | null) {
@@ -124,8 +131,8 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     vi.mocked(sessionService.getDatabaseStatus).mockReset();
     vi.mocked(sessionService.resolvePendingChanges).mockReset().mockResolvedValue({ draft });
     vi.mocked(databasesService.getChooserState).mockReset();
+    openScope = null;
   });
-  afterEach(() => setResumedDraft(null));
 
   it("asks before the collection can be used, saying what was kept", async () => {
     renderOpen(pending);
@@ -149,7 +156,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
   });
 
-  it("resumes: the form opens with the kept changes as unsaved input", async () => {
+  it("resumes: the form opens with the kept changes as unsaved input, then the dialog goes", async () => {
     const user = userEvent.setup();
     renderOpen(pending);
 
@@ -157,8 +164,12 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
 
     expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith(SCOPE, "resume");
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(sessionService.resolvePendingChanges).toHaveBeenLastCalledWith(SCOPE, "opened"),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByLabelText(/Notes/)).toHaveValue("Kept at the lock");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(openScope?.resumed).toBeNull();
   });
 
   it("asks before discarding, then discards", async () => {
@@ -259,8 +270,8 @@ describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
   beforeEach(() => {
     vi.mocked(sessionService.getDatabaseStatus).mockReset();
     vi.mocked(sessionService.resolvePendingChanges).mockReset();
+    openScope = null;
   });
-  afterEach(() => setResumedDraft(null));
 
   it.each(modes)("resumes an accessory %s draft", async (mode, formVersion, targetId) => {
     const user = userEvent.setup();
@@ -270,6 +281,7 @@ describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
     render(
       <SessionProvider>
         <p>Collection shell</p>
+        <PolicyPageStandIn />
       </SessionProvider>,
     );
 
@@ -280,7 +292,10 @@ describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
 
     expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith(SCOPE, "resume");
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
-    expect(peekResumedDraft()).toEqual(kept);
+    // No page of this test opens the form, so the dialog stays with the
+    // changes waiting in the scope.
+    expect(openScope?.resumed).toEqual({ draft: kept, state: "opening" });
+    expect(within(dialog).getByRole("button", { name: "Opening…" })).toBeDisabled();
   });
 
   it.each(modes)(

@@ -10,6 +10,7 @@ import { mountedStatements } from "../mounts/mountedStatements";
 import { recordKey } from "../mounts/recordKey";
 import { recordNameWithType } from "../mounts/recordNames";
 import type { MountDetail, MountedEntry } from "../mounts/types";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { useRecordSubject } from "./recordSubject";
@@ -108,6 +109,7 @@ function DisposeForm({
   onDispose: (input: DisposeInput) => Promise<void>;
   onCancel: () => void;
 }) {
+  const scope = useSessionScope();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
     kind: subject.kind,
@@ -118,7 +120,7 @@ function DisposeForm({
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [today] = useState(todayIso);
   const [resumed] = useState(() =>
-    resumedValues<DisposeValues>(target, {
+    resumedValues<DisposeValues>(scope, target, {
       dispositionType: "",
       recipient: "",
       date: today,

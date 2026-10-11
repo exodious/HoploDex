@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { CommandFailure } from "../../services/tauriClient";
+import { SessionScopeContext, createSessionScope } from "../session/sessionScope";
+import type { SessionScope } from "../session/sessionScope";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
@@ -884,5 +887,90 @@ describe("FirearmRecordPage delete confirmation with mounted records (US3)", () 
 
     expect(dialog).not.toHaveTextContent(/stay in the collection/);
     expect(within(dialog).queryByRole("list")).not.toBeInTheDocument();
+  });
+});
+
+// specs/008-hardening-batch tasks.md T032 (US1-4), research.md §6: when a
+// resumed draft for this firearm is waiting for its form and the firearm
+// can't be loaded, the page tells the scope (`scope.resumeFailed`), so the
+// pending changes dialog comes back. It tells it for nothing else.
+
+describe("FirearmRecordPage: a resumed draft whose form can't open (US1-4)", () => {
+  const draft = (targetId: number | null) => ({
+    formVersion: 4,
+    kind: "firearm" as const,
+    mode: "edit" as const,
+    targetId,
+    label: "Colt Python (edit)",
+    values: {},
+  });
+
+  /** A scope with `resumed` set (or not), and its two reports spied on. */
+  function scopeResuming(resumedDraft: ReturnType<typeof draft> | null) {
+    const scope = createSessionScope(1);
+    scope.resumed = resumedDraft ? { draft: resumedDraft, state: "opening" } : null;
+    scope.resumeFailed = vi.fn().mockResolvedValue(undefined);
+    scope.resumeOpened = vi.fn().mockResolvedValue(undefined);
+    return scope;
+  }
+
+  function renderIn(scope: SessionScope) {
+    render(
+      <SessionScopeContext.Provider value={scope}>
+        <CollectionContext.Provider value={collection}>
+          <FirearmRecordPage id={1} />
+        </CollectionContext.Provider>
+      </SessionScopeContext.Provider>,
+    );
+  }
+
+  const notFound = () => new CommandFailure({ code: "NOT_FOUND", message: "No such firearm." });
+
+  beforeEach(() => {
+    getFirearm.mockReset();
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("reports notOpened when the firearm fails to load while its draft is opening", async () => {
+    getFirearm.mockRejectedValue(notFound());
+    const scope = scopeResuming(draft(1));
+
+    renderIn(scope);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No such firearm.");
+    await waitFor(() => expect(scope.resumeFailed).toHaveBeenCalledTimes(1));
+  });
+
+  it("reports nothing when the firearm fails to load and no draft is resuming", async () => {
+    getFirearm.mockRejectedValue(notFound());
+    const scope = scopeResuming(null);
+
+    renderIn(scope);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No such firearm.");
+    await act(async () => {});
+    expect(scope.resumeFailed).not.toHaveBeenCalled();
+  });
+
+  it("reports nothing when the draft being resumed is for another record", async () => {
+    getFirearm.mockRejectedValue(notFound());
+    const scope = scopeResuming(draft(99));
+
+    renderIn(scope);
+
+    await screen.findByRole("alert");
+    await act(async () => {});
+    expect(scope.resumeFailed).not.toHaveBeenCalled();
+  });
+
+  it("reports nothing when the firearm loads", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    const scope = scopeResuming(draft(1));
+
+    renderIn(scope);
+
+    await screen.findByRole("heading", { level: 1 });
+    await act(async () => {});
+    expect(scope.resumeFailed).not.toHaveBeenCalled();
   });
 });

@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { ToastProvider, useToast } from "../../components";
+import type { Notify } from "../../components/toastContext";
 import { CommandFailure } from "../../services/tauriClient";
 import { DatabaseNotes } from "../databases/DatabaseNotes";
 import * as databasesService from "../databases/databasesService";
-import type { ChooserState, DatabaseStatus } from "../databases/types";
-import { InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
+import type { ChooserState, DatabaseStatus, Draft, PendingSummary } from "../databases/types";
+import { FORM_VERSION, InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
 import type { InsurancePolicy } from "../insurance/types";
 import { DocumentPreview } from "../media/DocumentPreview";
 import type { DocumentSummary } from "../media/types";
@@ -30,6 +33,15 @@ vi.mock("../../services/tauriClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../services/tauriClient")>()),
   invoke: viewerBackend.invoke,
 }));
+
+// Counts every call of `useToast`, and otherwise leaves it as it is: the guard
+// of specs/008-hardening-batch research.md §4 reads the count.
+const toastConsumers = vi.hoisted(() => ({ spy: vi.fn() }));
+vi.mock("../../components/toastContext", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../components/toastContext")>();
+  toastConsumers.spy.mockImplementation(original.useToast);
+  return { ...original, useToast: toastConsumers.spy };
+});
 
 const setTitle = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ setTitle }) }));
@@ -713,5 +725,392 @@ describe("SessionProvider (008: the session scope)", () => {
 
     expect(current().ended).toBe(false);
     expect(screen.getByText("Collection shell")).toBeInTheDocument();
+  });
+});
+
+// --- 008: toasts go with the session (US1-6, FR-005, research.md §4) ----------
+
+describe("SessionProvider (008: notifications go with the session)", () => {
+  let sessionClosed: (closed: SessionClosed) => void;
+  let sessionClosing: (closing: SessionClosing) => void;
+  /** The `notify` the collection's tree got, kept past the tree's end as the
+   * closure of work begun in that session would. */
+  let notify: Notify;
+
+  function ToastProbe() {
+    notify = useToast();
+    return <p>Collection shell</p>;
+  }
+
+  const idleNotice = "HoploDex locked “Main collection” after 10 minutes without use.";
+
+  beforeEach(() => {
+    vi.mocked(sessionService.getDatabaseStatus)
+      .mockReset()
+      .mockResolvedValue({ ...status(false), sessionId: 1 });
+    vi.mocked(sessionService.onSessionClosing)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosing = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onSessionClosed)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosed = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onQuitRequested)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(databasesService.getChooserState)
+      .mockReset()
+      .mockResolvedValue({
+        ...chooser,
+        notices: [{ kind: "closed", reason: "idle", databasePath: PATH, idleMinutes: 10 }],
+      });
+  });
+
+  async function renderOpen() {
+    // As App.tsx has it today: a provider above the session. The session's
+    // own, inside the tree keyed by the open, is the one that must count.
+    render(
+      <ToastProvider>
+        <SessionProvider>
+          <ToastProbe />
+        </SessionProvider>
+      </ToastProvider>,
+    );
+    await screen.findByText("Collection shell");
+  }
+
+  it("removes every toast of the session when it ends, and keeps the chooser's notice", async () => {
+    await renderOpen();
+    act(() => notify("Added 1 photo."));
+    expect(screen.getByText("Added 1 photo.")).toBeInTheDocument();
+
+    act(() => sessionClosed({ sessionId: 1, reason: "idle", databasePath: PATH }));
+
+    expect(await screen.findByText(idleNotice)).toBeInTheDocument();
+    expect(screen.queryByText("Added 1 photo.")).not.toBeInTheDocument();
+  });
+
+  it("shows nothing for a notify from the ended session, late", async () => {
+    await renderOpen();
+    const fromTheEndedSession = notify;
+    act(() => sessionClosed({ sessionId: 1, reason: "idle", databasePath: PATH }));
+    expect(await screen.findByText(idleNotice)).toBeInTheDocument();
+
+    act(() => fromTheEndedSession("Attached 2 documents."));
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
+
+    expect(screen.queryByText("Attached 2 documents.")).not.toBeInTheDocument();
+    expect(screen.getByText(idleNotice)).toBeInTheDocument();
+  });
+
+  it("removes the toasts as the closing screen replaces the collection", async () => {
+    await renderOpen();
+    act(() => notify("Photo deleted."));
+    expect(screen.getByText("Photo deleted.")).toBeInTheDocument();
+
+    act(() => sessionClosing({ sessionId: 1, reason: "closed" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Closing “Main collection”…" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Photo deleted.")).not.toBeInTheDocument();
+    act(() => notify("Too late."));
+    expect(screen.queryByText("Too late.")).not.toBeInTheDocument();
+  });
+
+  it("renders no useToast consumer outside the tree keyed by the open (research.md §4)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(sessionService.getDatabaseStatus).mockRejectedValue(closed);
+    render(
+      <SessionProvider>
+        <ToastProbe />
+      </SessionProvider>,
+    );
+
+    // The chooser, with a dialog of its own open.
+    toastConsumers.spy.mockClear();
+    await screen.findByLabelText("Passphrase for “Main collection”");
+    await user.click(screen.getByRole("button", { name: "Create a new database…" }));
+    await screen.findByRole("dialog");
+    expect(toastConsumers.spy).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+
+    // The pending changes dialog, before the collection can show.
+    vi.mocked(databasesService.openDatabase).mockResolvedValue({
+      ...status(false),
+      sessionId: 2,
+      pendingChanges: {
+        formVersion: FORM_VERSION,
+        kind: "policy",
+        mode: "edit",
+        targetId: 7,
+        label: "Collector Floater (edit)",
+        savedAt: "2026-09-25T12:30:05Z",
+        resumable: true,
+      },
+    });
+    await user.type(
+      screen.getByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+    await screen.findByRole("dialog", { name: "Unsaved changes to Collector Floater (edit)" });
+    expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
+    expect(toastConsumers.spy).not.toHaveBeenCalled();
+  });
+
+  it("renders no useToast consumer on the closing screen", async () => {
+    await renderOpen();
+    // The collection's tree consumes toasts, so the spy does count.
+    expect(toastConsumers.spy).toHaveBeenCalled();
+    toastConsumers.spy.mockClear();
+
+    act(() => sessionClosing({ sessionId: 1, reason: "closed" }));
+    await screen.findByRole("heading", { name: "Closing “Main collection”…" });
+
+    expect(toastConsumers.spy).not.toHaveBeenCalled();
+  });
+});
+
+// --- 008: resuming pending changes until their form opens (US1-3, US1-4) -----
+
+describe("SessionProvider (008: resuming pending changes)", () => {
+  let sessionClosed: (closed: SessionClosed) => void;
+  /** Whether the form has opened yet in the collection's tree, for a test to
+   * choose; and how it opens. */
+  let formAllowed: boolean;
+  let openForm: () => void;
+  let failWith: string | null;
+
+  const pending: PendingSummary = {
+    formVersion: FORM_VERSION,
+    kind: "policy",
+    mode: "edit",
+    targetId: 7,
+    label: "Collector Floater (edit)",
+    savedAt: "2026-09-25T12:30:05Z",
+    resumable: true,
+  };
+  const draft: Draft = {
+    formVersion: FORM_VERSION,
+    kind: "policy",
+    mode: "edit",
+    targetId: 7,
+    label: "Collector Floater (edit)",
+    values: {
+      name: "Collector Floater",
+      policyNumber: "CF-100",
+      insuranceCompany: "Acme Mutual",
+      companyContact: "",
+      agentName: "",
+      agentContact: "",
+      notes: "Kept at the lock",
+      blanketCoverageLimit: "",
+      effectiveStartDate: "2026-01-01",
+      effectiveEndDate: "2027-01-01",
+    },
+  };
+  const dialogName = "Unsaved changes to Collector Floater (edit)";
+  const withPending = (sessionId: number): DatabaseStatus => ({
+    ...status(false),
+    sessionId,
+    pendingChanges: pending,
+  });
+
+  /** What `resolve_pending_changes` answers each action with. */
+  function answer(action: string) {
+    switch (action) {
+      case "resume":
+        return { draft };
+      case "notOpened":
+        return { pending };
+      default:
+        return {};
+    }
+  }
+
+  /** Every action sent to `resolve_pending_changes`, in order, whether the
+   * scope or the session service sends it. */
+  function actionsSent(): string[] {
+    const viaService = vi
+      .mocked(sessionService.resolvePendingChanges)
+      .mock.calls.map((call) => call[call.length - 1] as string);
+    const viaInvoke = viewerBackend.invoke.mock.calls
+      .filter(([command]) => command === "resolve_pending_changes")
+      .map(([, args]) => (args as { action: string }).action);
+    return [...viaService, ...viaInvoke];
+  }
+
+  /** Stands in for the page whose form the resumed changes belong to. It
+   * opens the form when the test says so, or reports that it can't. */
+  function ResumePage() {
+    const scope = useSessionScope();
+    const [shown, setShown] = useState(formAllowed);
+    openForm = () => setShown(true);
+    useEffect(() => {
+      if (failWith && scope.resumed) void scope.resumeFailed(failWith);
+    }, [scope]);
+    return (
+      <>
+        <button type="button">Collection button</button>
+        {shown && <InsurancePolicyForm initialValues={policy} onSubmit={vi.fn()} />}
+      </>
+    );
+  }
+
+  beforeEach(() => {
+    formAllowed = false;
+    failWith = null;
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(withPending(1));
+    vi.mocked(sessionService.resolvePendingChanges)
+      .mockReset()
+      .mockImplementation(async (...args: unknown[]) => answer(args[args.length - 1] as string));
+    viewerBackend.invoke.mockReset().mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "resolve_pending_changes") return answer((args as { action: string }).action);
+      return undefined;
+    });
+    vi.mocked(sessionService.lockDatabase)
+      .mockReset()
+      .mockResolvedValue({ backup: "notAttempted" });
+    vi.mocked(sessionService.onSessionClosing)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(sessionService.onSessionClosed)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosed = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onQuitRequested)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    vi.mocked(databasesService.openDatabase).mockReset();
+  });
+
+  function renderPending() {
+    render(
+      <SessionProvider>
+        <ResumePage />
+      </SessionProvider>,
+    );
+  }
+  const dialog = () => screen.findByRole("dialog", { name: dialogName });
+
+  it("shows Opening… on Resume editing until the form opens, then closes the dialog on opened", async () => {
+    const user = userEvent.setup();
+    renderPending();
+    await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));
+
+    // The collection mounts beneath the dialog, which stays up.
+    const opening = await within(screen.getByRole("dialog", { name: dialogName })).findByRole(
+      "button",
+      { name: "Opening…" },
+    );
+    expect(opening).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Collection button", hidden: true }),
+    ).toBeInTheDocument();
+    expect(actionsSent()).toEqual(["resume"]);
+
+    act(() => openForm());
+
+    await waitFor(() => expect(actionsSent()).toEqual(["resume", "opened"]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/Notes/)).toHaveValue("Kept at the lock");
+    expect(screen.getByRole("button", { name: "Collection button" })).toBeInTheDocument();
+  });
+
+  it("brings the dialog back with its error when the record fails to load (US1-4)", async () => {
+    const user = userEvent.setup();
+    failWith = "The policy wasn't found.";
+    renderPending();
+    await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "The form for Collector Floater (edit) couldn't be opened. Your changes are still kept. Try again, close the database, or discard them.",
+    );
+    expect(alert).toHaveClass("hd-field__error");
+    expect(actionsSent()).toEqual(["resume", "notOpened"]);
+    const back = screen.getByRole("dialog", { name: dialogName });
+    expect(within(back).getByRole("button", { name: "Resume editing" })).toBeEnabled();
+    expect(within(back).queryByRole("button", { name: "Opening…" })).not.toBeInTheDocument();
+    expect(within(back).getByRole("button", { name: "Discard changes" })).toBeInTheDocument();
+    // The collection can't be used meanwhile: it stays beneath, out of reach.
+    expect(screen.queryByRole("button", { name: "Collection button" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collection button", hidden: true }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers Close the database with the other two in that dialog (US4, T095)", async () => {
+    const user = userEvent.setup();
+    failWith = "The policy wasn't found.";
+    renderPending();
+    await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));
+    await screen.findByRole("alert");
+
+    const back = screen.getByRole("dialog", { name: dialogName });
+    expect(
+      within(back)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Discard changes", "Close the database", "Resume editing"]);
+  });
+
+  it("offers Resume editing again after a failure, and sends resume again", async () => {
+    const user = userEvent.setup();
+    failWith = "The policy wasn't found.";
+    renderPending();
+    await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));
+    await screen.findByRole("alert");
+
+    failWith = null;
+    formAllowed = true;
+    await user.click(
+      within(screen.getByRole("dialog", { name: dialogName })).getByRole("button", {
+        name: "Resume editing",
+      }),
+    );
+
+    // A retry mounts the collection afresh, so its pages load again: the page
+    // now opens the form as it mounts.
+    await waitFor(() => expect(actionsSent()).toEqual(["resume", "notOpened", "resume", "opened"]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("keeps the changes for the next open when the database locks while opening (US1-3)", async () => {
+    const user = userEvent.setup();
+    renderPending();
+    await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));
+    await screen.findByRole("button", { name: "Opening…" });
+
+    // Lock now: the form never opened.
+    await user.keyboard("{Control>}l{/Control}");
+    expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1);
+    act(() => sessionClosed({ sessionId: 1, reason: "lockedByUser", databasePath: PATH }));
+
+    // Database B opens, and its form for the same record is not filled.
+    formAllowed = true;
+    vi.mocked(databasesService.openDatabase).mockResolvedValue({
+      ...status(false),
+      sessionId: 2,
+      path: SHARED,
+      name: "Shared collection",
+    });
+    await user.type(
+      await screen.findByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+
+    expect(await screen.findByLabelText(/Notes/)).toHaveValue("");
+    // Nothing said the form opened, and nothing was discarded or sent back:
+    // the backend keeps the row for the next open of A.
+    expect(actionsSent()).toEqual(["resume"]);
   });
 });

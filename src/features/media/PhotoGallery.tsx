@@ -51,6 +51,8 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
     try {
       setPhotos(await mediaService.listPhotos(scope, owner));
     } catch (e) {
+      // A load that fails because the session ended says nothing: its page is gone.
+      if (scope.ended) return;
       notify(failureMessage(e, "Photos couldn't be loaded."), "error");
       setPhotos([]);
     }
@@ -62,21 +64,25 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
   }, [owner.kind, owner.id]);
 
   /** Adds each photo in turn, carrying on past one that fails so a bad file
-   * doesn't cost the rest of a batch. */
+   * doesn't cost the rest of a batch. A batch stops at the scope's end (FR-002,
+   * research.md §5): what was added stays added, and nothing more is sent. */
   async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
     if (pending.length === 0) return;
     setAdding(pending.length);
     let added = 0;
     let failure: string | null = null;
     for (const { name, add } of pending) {
+      if (scope.ended) break;
       try {
         await add();
         added += 1;
       } catch (e) {
+        if (scope.ended) break;
         failure ??= failureMessage(e, `${name} couldn't be added.`);
       }
     }
     setAdding(0);
+    if (scope.ended) return;
     await load();
     if (added > 0) {
       await onChanged();

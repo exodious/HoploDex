@@ -7,7 +7,6 @@ import type { FirearmDetail } from "../firearms/types";
 import type { InsurancePolicy } from "../insurance/types";
 import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
-import { peekResumedDraft, setResumedDraft } from "../session/usePendingDraft";
 import type { Draft } from "../databases/types";
 import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { FORM_VERSION as DISPOSE_FORM_VERSION } from "../firearms/DisposeDialog";
@@ -15,7 +14,7 @@ import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
 import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
-import { render } from "../../test/sessionScope";
+import { peekResumedDraft, render, setResumedDraft } from "../../test/sessionScope";
 
 const getFirearm = vi.fn();
 const listFirearms = vi.fn();

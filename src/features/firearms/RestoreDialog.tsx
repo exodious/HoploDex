@@ -3,6 +3,7 @@ import { ChoiceCards, ConfirmDialog, TextField } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { useRecordSubject } from "./recordSubject";
@@ -63,6 +64,7 @@ function RestoreDialogBody({
   ...record
 }: Omit<RestoreDialogProps, "open">) {
   const subject = useRecordSubject(record as RecordSubjectProps);
+  const scope = useSessionScope();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
     kind: subject.kind,
@@ -71,7 +73,7 @@ function RestoreDialogBody({
   };
   // Pending changes the user resumed start as unsaved input (FR-039).
   const [resumed] = useState(() =>
-    resumedValues<RestoreValues>(target, {
+    resumedValues<RestoreValues>(scope, target, {
       history: "",
       renaming: false,
       nickname: subject.nickname ?? "",
