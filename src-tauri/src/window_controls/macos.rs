@@ -1,7 +1,7 @@
 //! macOS: the native browser controls (research.md §13, §14, §15).
 //!
 //! Tauri's web view on macOS is wry's `WryWebView`, a `WKWebView` subclass.
-//! [`install`] adds three methods to that class, once, after the main window's
+//! [`apply`] adds three methods to that class, once, after the main window's
 //! web view exists (the class is registered when the first one is made):
 //!
 //! - `willOpenMenu:withEvent:`, the public `NSView` hook AppKit calls with
@@ -22,9 +22,13 @@
 //! Spelling and Grammar menu (with Show Spelling and Grammar and Check
 //! Spelling While Typing), the spelling guesses, Ignore and Learn Spelling,
 //! and AppKit's Emoji & Symbols. AppKit also adds AutoFill to every context
-//! menu after the hook, in a way no public API reaches (research.md §13);
-//! the page's `webkitmouseforcewillbegin` handling (§12) covers the force
-//! click's Look Up.
+//! menu after the hook, in a way no public API removes. The owner chose to
+//! keep it in the editing and copying menus (spec.md Clarifications
+//! 2026-10-11), and where the filter leaves no item the hook has the menu
+//! cancelled (`cancelTrackingWithoutAnimation`, once it is up), so a blank
+//! area, a button or an image opens none (research.md §13). The page's
+//! `webkitmouseforcewillbegin` handling (§12) covers the force click's Look
+//! Up.
 //!
 //! The class is shared by every wry web view, so the PDF surface's child web
 //! view, made after the main one, gets the same menu. The surface cancels
@@ -32,7 +36,10 @@
 
 use std::{
     ffi::{CStr, c_char, c_void},
-    sync::Once,
+    sync::{
+        Once,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use objc2::{
@@ -42,7 +49,8 @@ use objc2::{
     runtime::{AnyClass, AnyObject, Imp, Sel},
     sel,
 };
-use objc2_foundation::NSString;
+use objc2_foundation::{NSArray, NSString};
+use tauri::{Runtime, WebviewWindow};
 
 /// `WKMenuItemIdentifier…` names (the `identifier` WebKit gives each item)
 /// that are kept (research.md §13).
@@ -121,14 +129,36 @@ fn decide(items: &[Item], keep: impl Fn(&Item) -> bool) -> Vec<bool> {
     kept
 }
 
-/// Adds the two methods to the class of `web_view`, a pointer to a `WryWebView`
-/// (`tauri::webview::PlatformWebview::inner`). Runs once; returns an error
-/// when the object isn't a wry web view or AppKit refused a method, in
-/// which case no menu filtering is in place and the caller says so.
+/// Installs the menu filter on the main web view's class. `log_items` logs
+/// every menu item offered and whether it was kept, for the window controls
+/// check (research.md §18). Where the filter leaves no item, the menu is
+/// cancelled once it is up, so no menu opens (the owner's decision, spec.md
+/// Clarifications 2026-10-11: AppKit adds AutoFill after the hook, and a
+/// menu of AutoFill alone isn't offered).
 ///
-/// `#[allow(dead_code)]`: `window_controls::apply` calls it (T080).
+/// Called on the `main` web view from `setup()` by `window_controls::apply`
+/// (T080), in release and E2E builds only (research.md §15), on the main
+/// thread, which `with_webview` runs it on. Runs once per process: the class
+/// is shared by every wry web view, so a second call changes nothing.
+// Nothing calls it until T080 wires `window_controls::apply` into `setup()`.
 #[allow(dead_code)]
-pub fn install(web_view: *mut c_void) -> Result<(), String> {
+pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::Result<()> {
+    window.with_webview(move |platform| {
+        LOG_ITEMS.store(log_items, Ordering::Relaxed);
+        if let Err(err) = install(platform.inner()) {
+            log::error!(target: "window_controls", "the macOS menu filter isn't in place: {err}");
+        }
+    })
+}
+
+/// Whether the hook logs each item (`apply`'s `log_items`).
+static LOG_ITEMS: AtomicBool = AtomicBool::new(false);
+
+/// Adds the methods to the class of `web_view`, a pointer to a `WryWebView`
+/// (`PlatformWebview::inner`). Runs once; returns an error when the object
+/// isn't a wry web view or AppKit refused a method, in which case no menu
+/// filtering is in place.
+fn install(web_view: *mut c_void) -> Result<(), String> {
     static ONCE: Once = Once::new();
     let mut result = Ok(());
     ONCE.call_once(|| result = add_methods(web_view));
@@ -263,6 +293,33 @@ unsafe extern "C-unwind" fn will_open_menu(
     // SAFETY: NSMenu's public property: no context-menu plug-in items.
     let () = unsafe { msg_send![menu, setAllowsContextMenuPlugIns: false] };
     filter_menu(menu);
+    // SAFETY: NSMenu's public accessor.
+    let left: isize = unsafe { msg_send![menu, numberOfItems] };
+    if left == 0 {
+        cancel_when_open(menu);
+    }
+}
+
+/// Cancels `menu` once it is open: AppKit adds AutoFill after the hook, so a
+/// menu the filter emptied would show that alone. `cancelTrackingWithoutAnimation`
+/// does nothing before tracking starts, so it is scheduled on the run loop in
+/// the tracking modes, where it runs once the menu is up.
+fn cancel_when_open(menu: &AnyObject) {
+    let modes = ["NSEventTrackingRunLoopMode", "NSRunLoopCommonModes", "kCFRunLoopDefaultMode"]
+        .map(NSString::from_str);
+    let modes = NSArray::from_retained_slice(&modes);
+    let nothing: Option<&AnyObject> = None;
+    // SAFETY: NSObject's `performSelector:withObject:afterDelay:inModes:`
+    // with a selector NSMenu implements, which takes no argument.
+    let () = unsafe {
+        msg_send![
+            menu,
+            performSelector: sel!(cancelTrackingWithoutAnimation),
+            withObject: nothing,
+            afterDelay: 0.0f64,
+            inModes: &*modes
+        ]
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -323,24 +380,28 @@ fn filter_level(menu: &AnyObject, level: usize) {
         if level == 0 { keep_top_level(item) } else { keep_spelling_item(item) }
     };
     let verdicts = decide(&items, keep);
+    let log_items = LOG_ITEMS.load(Ordering::Relaxed);
     for ((object, item), kept) in entries.iter().zip(&verdicts) {
         let submenu = submenu_of(object);
-        log::info!(
-            target: "window_controls",
-            "menu item (level {level}): title={:?} identifier={:?} action={:?} tag={} separator={} submenu={} -> {}",
-            title_of(object),
-            item.identifier,
-            item.action,
-            item.tag,
-            item.separator,
-            submenu.is_some(),
-            if *kept { "kept" } else { "removed" },
-        );
+        if log_items {
+            log::info!(
+                target: "window_controls",
+                "menu item (level {level}): title={:?} identifier={:?} action={:?} tag={} \
+                 separator={} submenu={} -> {}",
+                title_of(object),
+                item.identifier,
+                item.action,
+                item.tag,
+                item.separator,
+                submenu.is_some(),
+                if *kept { "kept" } else { "removed" },
+            );
+        }
         if let Some(submenu) = &submenu {
             if *kept && item.identifier.as_deref() == Some(SPELLING_MENU) {
                 filter_level(submenu, level + 1);
-            } else {
-                // Log what is inside an item that is going, for the record.
+            } else if log_items {
+                // What is inside an item that is going, for the record.
                 for (sub_object, sub_item) in items_of(submenu) {
                     log::info!(
                         target: "window_controls",

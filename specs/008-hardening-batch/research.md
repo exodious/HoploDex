@@ -811,6 +811,28 @@ someone looks at it.
   AutoFill; the hook cancels a menu its filter emptied (`cancelTracking`),
   so a blank area opens none._
 
+  **The cancel (T073, macOS 26.6.2 VM)**: when the filter leaves a menu
+  with no item, the hook schedules `cancelTrackingWithoutAnimation` on the
+  menu (`performSelector:withObject:afterDelay:inModes:` with delay 0 in
+  the event-tracking, common and default run loop modes), which runs once
+  AppKit has put the menu up. The call does nothing before tracking begins,
+  hence the scheduling. Public API only. Checked with a throwaway window and
+  real right clicks (the page didn't cancel `contextmenu`; the menu is
+  detected as a window of the app at layer 101 a second after the click):
+  - a blank area: no menu, 4 of 4 runs;
+  - a button (text not selectable): no menu, 4 of 4 (the filter left
+    nothing of Reload and Inspect Element);
+  - an image: no menu, 4 of 4;
+  - a text field with a selected misspelled word: the trimmed menu with
+    AutoFill, 4 of 4 (guesses, Ignore Spelling, Learn Spelling, Cut, Copy,
+    Paste, Spelling and Grammar, AutoFill);
+  - selected text in a paragraph outside any field (a word double-clicked,
+    then right-clicked): Copy and AutoFill, the cancel not firing, 4 of 4;
+  - a right click that selects a word of ordinary text (the button's label
+    when it could be selected): Copy and AutoFill.
+  A menu may show for a frame before the cancel; a screenshot a second later
+  can't tell, so a person should look at T084's check.
+
   **Findings (T073)**, from `src-tauri/src/window_controls/macos.rs` run in
   a throwaway window (a text field holding "the quick brwon fox" with
   "brwon" selected, a paragraph, a blank area; real right clicks posted with
@@ -856,8 +878,8 @@ someone looks at it.
   - **After the hook** (field): the guesses, Ignore Spelling, Learn
     Spelling, Cut, Copy, Paste, Spelling and Grammar (Show Spelling and
     Grammar, Check Spelling While Typing), AutoFill. Selected text outside a
-    field: Copy, AutoFill. Blank area: AutoFill only (the page cancels
-    `contextmenu` there, §12).
+    field: Copy, AutoFill. Blank area: AutoFill only, until the
+    cancel above (and the page cancels `contextmenu` there too, §12).
   - **Each excluded item**: Look Up, Translate, Search With Google, Share,
     Speech, Font, Substitutions, Transformations, Writing Direction
     (Paragraph Direction and Selection Direction), Inspect Element and
