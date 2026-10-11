@@ -293,8 +293,10 @@ describe("User Story 5 - Export and Import Records", () => {
 
   // 008 US2 (spec.md FR-006 to FR-008; contracts/ui.md §2).
   it("refuses a workbook over the import's limits and names it (008 US2, a refused file)", async () => {
-    // Stands in for `import-samples`' over-limit workbook (T069 adds that,
-    // with 20 sheets): seventeen sheets, one more than an import takes.
+    // Stands in for `import-samples/import-refused-too-many-sheets.xlsx`
+    // (20 sheets; examples/human_seed.rs): this spec starts at a first run
+    // with no seed, so it makes its own, with seventeen sheets, one more
+    // than an import takes.
     const workbook = path.join(workDir, "too-many-sheets.xlsx");
     writeSheetsWorkbook(workbook, 17);
 

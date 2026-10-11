@@ -615,7 +615,7 @@ fn a_close_during_the_reading_of(way: &str, go: impl FnOnce(&World)) {
                 &files,
                 &operation,
                 &|| world.session.current_id() == session_id,
-                &mut |done, total| {
+                &mut |_, done, total| {
                     if done * 100 >= total * 5 {
                         reading.store(true, Ordering::SeqCst);
                     }

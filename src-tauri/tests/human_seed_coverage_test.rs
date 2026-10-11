@@ -475,3 +475,29 @@ fn the_seeded_pending_changes_name_the_version_that_kept_them() {
         );
     }
 }
+
+/// 008 FR-006: `import-refused-too-many-sheets.xlsx` is over the import's
+/// sheet limit, so a person trying File > Import sees the refusal, and the
+/// reader names the file and the limit.
+#[test]
+fn the_over_limit_sample_is_refused_for_its_sheets() {
+    use hoplodex_lib::commands::import_export::ImportFile;
+    use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+
+    let dir = TempDir::new().unwrap();
+    let samples = human_seed::write_import_samples(dir.path());
+
+    let error = support::try_read_files(&[ImportFile {
+        file_path: samples.join("import-refused-too-many-sheets.xlsx"),
+        format: SpreadsheetFormat::Xlsx,
+    }])
+    .unwrap_err();
+
+    assert_eq!(error.code, "IMPORT_LIMIT_EXCEEDED");
+    assert!(
+        error.message.contains("import-refused-too-many-sheets.xlsx")
+            && error.message.contains("more than 16 sheets"),
+        "{}",
+        error.message
+    );
+}

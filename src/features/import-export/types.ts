@@ -57,6 +57,8 @@ export interface ImportCollectionInput {
  * while they are `reading`, then the rows saved while `importing`. */
 export interface ImportProgress {
   phase: "reading" | "importing";
+  /** The base name of the file being read; empty while `importing`. */
+  file: string;
   processed: number;
   total: number;
 }

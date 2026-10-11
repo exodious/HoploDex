@@ -96,7 +96,9 @@ enum Event {
 ///   current is `OPERATION_STOPPED`; one made after it ended, or by the
 ///   session ending (a lock, a sleep, a quit), is `DATABASE_CLOSED`
 ///   (research.md §11).
-/// - `progress` is given the bytes of the files parsed so far and their total.
+/// - `progress` is given the base name of the file being read, then the bytes
+///   of the files parsed so far and their total (the dialog's "Reading
+///   <file>…", contracts/ui.md §2).
 ///
 /// A file over a limit is `IMPORT_LIMIT_EXCEEDED`; one that can't be read is
 /// `VALIDATION_ERROR` "<file>: could not read the file."; either refuses the
@@ -106,7 +108,7 @@ pub fn read_files(
     files: &[ImportFile],
     cancel: &dyn Fn() -> bool,
     is_current: &dyn Fn() -> bool,
-    progress: &mut dyn FnMut(u64, u64),
+    progress: &mut dyn FnMut(&str, u64, u64),
 ) -> Result<Vec<ReadTable>, CommandError> {
     // The size of each file, from its metadata, before any child starts.
     let mut sizes = Vec::with_capacity(files.len());
@@ -125,7 +127,9 @@ pub fn read_files(
     let mut tables = Vec::new();
     let mut before = 0;
     for (file, size) in files.iter().zip(sizes) {
-        let mut offset_progress = |done: u64, _of: u64| progress(before + done.min(size), total);
+        let name = file_name(&file.file_path);
+        let mut offset_progress =
+            |done: u64, _of: u64| progress(&name, before + done.min(size), total);
         tables.extend(read_one(
             helper_exe,
             file,
@@ -136,7 +140,7 @@ pub fn read_files(
             &mut offset_progress,
         )?);
         before += size;
-        progress(before, total);
+        progress(&name, before, total);
     }
     Ok(tables)
 }

@@ -136,15 +136,17 @@ function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
 }
 
-/** What the reading bar says (contracts/ui.md §2): the file being read, or
- * both files, with the share of their bytes read so far. */
+/** What the reading bar says (contracts/ui.md §2): the file being read, with
+ * the share of the files' bytes read so far. The backend names the file in
+ * each event; until the first one, it is the first file chosen (they are
+ * read in order). */
 function readingCaption(files: string[], progress: ImportProgress | null): string {
-  const names = files.map(baseName).join(" and ");
+  const name = progress?.file || (files[0] ? baseName(files[0]) : "");
   const percent =
     progress && progress.total > 0
       ? ` ${Math.min(100, Math.floor((progress.processed / progress.total) * 100))}%`
       : "";
-  return `Reading ${names}…${percent}`;
+  return `Reading ${name}…${percent}`;
 }
 
 /** The message of the banner after "Stop reading" (contracts/ui.md §2). */

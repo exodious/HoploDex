@@ -780,10 +780,15 @@ describe("ImportDialog reading the files (008 US2)", () => {
   }
 
   /** The backend's progress event. */
-  function progress(phase: "reading" | "importing", processed: number, total: number) {
+  function progress(
+    phase: "reading" | "importing",
+    processed: number,
+    total: number,
+    file = phase === "reading" ? "inventory.xlsx" : "",
+  ) {
     const handler = events.handlers.get("import_collection:progress");
     expect(handler, "the dialog listens for progress").toBeDefined();
-    act(() => handler?.({ payload: { phase, processed, total } }));
+    act(() => handler?.({ payload: { phase, file, processed, total } }));
   }
 
   /** Starts an import of `FILE` whose outcome the test settles. */
@@ -821,7 +826,7 @@ describe("ImportDialog reading the files (008 US2)", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
-  it("names both files when two are read together", async () => {
+  it("names the file being read as it changes, when two are read together", async () => {
     const user = userEvent.setup();
     vi.mocked(importExportService.importCollection).mockReturnValue(new Promise(() => {}));
     vi.mocked(openDialog).mockResolvedValueOnce(["/data/firearms.csv", "C:\\data\\parts.csv"]);
@@ -829,7 +834,14 @@ describe("ImportDialog reading the files (008 US2)", () => {
     await user.click(screen.getByRole("button", { name: "Choose…" }));
     await user.click(screen.getByRole("button", { name: "Import" }));
 
-    expect(await screen.findByText("Reading firearms.csv and parts.csv…")).toBeInTheDocument();
+    // Until the backend names one, the first file chosen: they are read in order.
+    expect(await screen.findByText("Reading firearms.csv…")).toBeInTheDocument();
+
+    progress("reading", 4_000, 10_000, "firearms.csv");
+    expect(await screen.findByText("Reading firearms.csv… 40%")).toBeInTheDocument();
+
+    progress("reading", 6_000, 10_000, "parts.csv");
+    expect(await screen.findByText("Reading parts.csv… 60%")).toBeInTheDocument();
   });
 
   it("calls cancel_import when Stop reading is pressed", async () => {

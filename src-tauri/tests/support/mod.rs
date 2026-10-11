@@ -379,7 +379,7 @@ pub fn try_read_files(
         files,
         &|| false,
         &|| true,
-        &mut |_, _| {},
+        &mut |_, _, _| {},
     )
 }
 

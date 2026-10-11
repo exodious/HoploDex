@@ -171,7 +171,7 @@ impl PeakMemory {
 // ----------------------------------------------------------------- reading
 
 fn read(files: &[ImportFile]) -> Result<Vec<ReadTable>, CommandError> {
-    read_files(Path::new(HELPER), files, &|| false, &|| true, &mut |_, _| {})
+    read_files(Path::new(HELPER), files, &|| false, &|| true, &mut |_, _, _| {})
 }
 
 fn no_helper_runs() -> bool {
@@ -320,14 +320,24 @@ fn progress_counts_the_bytes_of_the_files_up_to_their_total() {
         std::fs::metadata(&first).unwrap().len() + std::fs::metadata(&second).unwrap().len();
 
     let mut seen: Vec<(u64, u64)> = Vec::new();
+    let mut names: Vec<String> = Vec::new();
     read_files(
         Path::new(HELPER),
         &[import_file(&first), import_file(&second)],
         &|| false,
         &|| true,
-        &mut |done, of| seen.push((done, of)),
+        &mut |file, done, of| {
+            seen.push((done, of));
+            if names.last().map(String::as_str) != Some(file) {
+                names.push(file.to_owned());
+            }
+        },
     )
     .unwrap();
+
+    // Each report names the file being read (contracts/ui.md §2): a.csv
+    // first, then b.xlsx.
+    assert_eq!(names, ["a.csv", "b.xlsx"]);
 
     assert!(seen.iter().all(|(_, of)| *of == total), "{seen:?}");
     assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "never goes back: {seen:?}");
@@ -439,7 +449,7 @@ fn ended_after(
         &[import_file(&path)],
         &|| cancelled.load(Ordering::SeqCst),
         &|| current.load(Ordering::SeqCst),
-        &mut |done, total| {
+        &mut |_, done, total| {
             if done * 100 >= total * percent {
                 let mut at = triggered.lock().unwrap();
                 if at.is_none() {
@@ -504,12 +514,17 @@ fn an_import_already_stopped_starts_no_helper() {
     let path = valid_export_csv(&dir.path().join("valid.csv"));
 
     let stopped =
-        read_files(Path::new(HELPER), &[import_file(&path)], &|| true, &|| true, &mut |_, _| {})
+        read_files(Path::new(HELPER), &[import_file(&path)], &|| true, &|| true, &mut |_, _, _| {})
             .unwrap_err();
     assert_eq!(stopped.code, "OPERATION_STOPPED");
-    let closed =
-        read_files(Path::new(HELPER), &[import_file(&path)], &|| true, &|| false, &mut |_, _| {})
-            .unwrap_err();
+    let closed = read_files(
+        Path::new(HELPER),
+        &[import_file(&path)],
+        &|| true,
+        &|| false,
+        &mut |_, _, _| {},
+    )
+    .unwrap_err();
     assert_eq!(closed.code, "DATABASE_CLOSED");
 }
 
@@ -529,7 +544,7 @@ fn a_helper_that_dies_or_says_nonsense_makes_the_file_unreadable() {
             &[import_file(&path)],
             &|| false,
             &|| true,
-            &mut |_, _| {},
+            &mut |_, _, _| {},
         )
         .unwrap_err();
         assert_eq!(error.code, "VALIDATION_ERROR", "{program}: {error:?}");

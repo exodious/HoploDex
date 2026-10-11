@@ -2071,7 +2071,7 @@ pub mod ops {
         files: &[ImportFile],
         operation: &OperationGuard<'_>,
         session_is_current: &dyn Fn() -> bool,
-        progress: &mut dyn FnMut(u64, u64),
+        progress: &mut dyn FnMut(&str, u64, u64),
     ) -> Result<Vec<ReadTable>, CommandError> {
         read_files(
             helper_exe,
@@ -2477,6 +2477,9 @@ enum ImportPhase {
 #[derive(Debug, Clone, serde::Serialize)]
 struct ImportProgressPayload {
     phase: ImportPhase,
+    /// The base name of the file being read (`"reading"`); empty while rows
+    /// are saved.
+    file: String,
     processed: u64,
     total: u64,
 }
@@ -2514,21 +2517,31 @@ pub async fn import_collection(
     // (research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
     // sleep's or the session's ending is `DATABASE_CLOSED`.
     let mut last_percent = None;
+    let mut last_file = String::new();
     let tables = ops::read_import_files(
         &helper_exe,
         &files,
         &operation,
         &|| session.is_current(),
-        &mut |processed, total| {
-            // At most once per percent: a big file reports far oftener.
+        &mut |file, processed, total| {
+            // At most once per percent: a big file reports far oftener. The
+            // first report of each file always goes, so the dialog names it.
             let percent = (processed * 100).checked_div(total);
-            if processed < total && percent == last_percent {
+            if processed < total && percent == last_percent && file == last_file {
                 return;
             }
             last_percent = percent;
+            if file != last_file {
+                last_file = file.to_owned();
+            }
             let _ = app.emit(
                 "import_collection:progress",
-                ImportProgressPayload { phase: ImportPhase::Reading, processed, total },
+                ImportProgressPayload {
+                    phase: ImportPhase::Reading,
+                    file: file.to_owned(),
+                    processed,
+                    total,
+                },
             );
         },
     )?;
@@ -2543,6 +2556,7 @@ pub async fn import_collection(
                 "import_collection:progress",
                 ImportProgressPayload {
                     phase: ImportPhase::Importing,
+                    file: String::new(),
                     processed: processed as u64,
                     total: total as u64,
                 },

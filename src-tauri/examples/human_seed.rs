@@ -2370,6 +2370,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     );
 
     write_accessory_import_samples(dir, &row);
+    write_over_limit_import_sample(dir);
 
     // Issue #56: a row matching the seeded "Stripped lower" by make, model
     // and serial number marks it sold, so choosing "Replace existing" asks
@@ -2410,6 +2411,22 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     );
 
     dir.to_path_buf()
+}
+
+/// specs/008-hardening-batch FR-006: a workbook the import refuses as a whole,
+/// to see the refusal in the dialog's banner. `import-refused-too-many-sheets.xlsx`
+/// has 20 sheets, each with `x` in A1, where an import takes at most 16
+/// (`import_reader::limits::MAX_SHEETS`); nothing in it is read as a record.
+fn write_over_limit_import_sample(dir: &Path) {
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    for number in 1..=20 {
+        let sheet = workbook.add_worksheet();
+        sheet.set_name(format!("Over the limit {number}")).expect("name a sheet");
+        sheet.write_string(0, 0, "x").expect("write a cell");
+    }
+    workbook
+        .save(dir.join("import-refused-too-many-sheets.xlsx"))
+        .expect("save the over-limit sample workbook");
 }
 
 /// Builds a sample row from named cells.

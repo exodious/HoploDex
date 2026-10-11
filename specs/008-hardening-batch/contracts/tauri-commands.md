@@ -147,7 +147,7 @@ Registered in `generate_handler!`, `COMMANDS` and
 |---|---|---|
 | `session:closing` | `{ reason: CloseReason; sessionId: number }` | `sessionId` added: the frontend ends only that session's scope. |
 | `session:closed` | `{ reason; databasePath; outcome?; stoppedOperation?; sessionId: number }` | `sessionId` added, as above. |
-| `import_collection:progress` | `{ phase: "reading" \| "importing"; processed: number; total: number }` | `phase` added. In `reading`, bytes across the files. In `importing`, rows (as before). |
+| `import_collection:progress` | `{ phase: "reading" \| "importing"; file: string; processed: number; total: number }` | `phase` and `file` added. In `reading`, `file` is the base name of the file being read (the dialog's "Reading <file>…") and `processed`/`total` are bytes across the files. In `importing`, `file` is empty and the counts are rows (as before). |
 
 ## Process modes (amended)
 
