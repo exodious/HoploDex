@@ -251,6 +251,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const scope = openScope(scopeRef.current);
       const { draft } = await sessionService.resolvePendingChanges(scope, action);
       if (action === "discard" || !draft) {
+        // After a failed resume the collection beneath the dialog was mounted
+        // while the backend still refused its reads (the failure puts the
+        // changes back to waiting, and its pages' first reads can lose that
+        // race), so it can be showing nothing and no lists. Mount it afresh.
+        setResume((current) =>
+          current.state === "failed" ? { ...current, attempt: current.attempt + 1 } : current,
+        );
         clearPending(scope);
         return;
       }

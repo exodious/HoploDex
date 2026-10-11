@@ -887,6 +887,8 @@ describe("SessionProvider (008: resuming pending changes)", () => {
   let formAllowed: boolean;
   let openForm: () => void;
   let failWith: string | null;
+  /** How many times the collection's tree has mounted. */
+  let mounts: number;
 
   const pending: PendingSummary = {
     formVersion: FORM_VERSION,
@@ -956,6 +958,9 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     const [shown, setShown] = useState(formAllowed);
     openForm = () => setShown(true);
     useEffect(() => {
+      mounts += 1;
+    }, []);
+    useEffect(() => {
       if (failWith && scope.resumed) void scope.resumeFailed(failWith);
     }, [scope]);
     return (
@@ -969,6 +974,7 @@ describe("SessionProvider (008: resuming pending changes)", () => {
   beforeEach(() => {
     formAllowed = false;
     failWith = null;
+    mounts = 0;
     vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(withPending(1));
     vi.mocked(sessionService.resolvePendingChanges)
       .mockReset()
@@ -1086,6 +1092,36 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     // now opens the form as it mounts.
     await waitFor(() => expect(actionsSent()).toEqual(["resume", "notOpened", "resume", "opened"]));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("mounts the collection afresh when the changes are discarded after a failed resume", async () => {
+    // The failed resume's collection was mounted while the backend refused
+    // its reads (the changes go back to waiting as it mounts), so it may hold
+    // nothing and no lists: found by the screenshot walk on Windows, where the
+    // Add firearm form offered no types after "Discard changes".
+    const user = userEvent.setup();
+    failWith = "The policy wasn't found.";
+    renderPending();
+    await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));
+    await screen.findByRole("alert");
+    expect(mounts).toBe(1);
+
+    failWith = null;
+    await user.click(
+      within(screen.getByRole("dialog", { name: dialogName })).getByRole("button", {
+        name: "Discard changes",
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Discard changes",
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(actionsSent()).toEqual(["resume", "notOpened", "discard"]);
+    expect(mounts).toBe(2);
+    expect(screen.getByRole("button", { name: "Collection button" })).toBeInTheDocument();
   });
 
   it("keeps the changes for the next open when the database locks while opening (US1-3)", async () => {
