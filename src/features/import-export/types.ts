@@ -53,6 +53,14 @@ export interface ImportCollectionInput {
   files: ImportFile[];
 }
 
+/** The payload of `import_collection:progress`: the bytes of the files read
+ * while they are `reading`, then the rows saved while `importing`. */
+export interface ImportProgress {
+  phase: "reading" | "importing";
+  processed: number;
+  total: number;
+}
+
 /** Which table a report entry's row is in; `row` counts within it. */
 export type ImportTable = "firearms" | "accessories";
 

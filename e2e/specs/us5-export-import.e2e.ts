@@ -5,6 +5,7 @@ import { $, addFirearm, back, browser, clickButton, expect, fill } from "../supp
 import { choose, fillFirearmForm, listedNames, openFirearm, search } from "../support/ui";
 import { openPhysicalGroup, selectOption } from "../support/ui";
 import { createDatabase } from "../support/ui";
+import { writeSheetsWorkbook } from "../support/spreadsheets";
 
 /**
  * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
@@ -287,6 +288,64 @@ describe("User Story 5 - Export and Import Records", () => {
       expect(shown).toContain(text);
     }
     await back();
+    await search("");
+  });
+
+  // 008 US2 (spec.md FR-006 to FR-008; contracts/ui.md §2).
+  it("refuses a workbook over the import's limits and names it (008 US2, a refused file)", async () => {
+    // Stands in for `import-samples`' over-limit workbook (T069 adds that,
+    // with 20 sheets): seventeen sheets, one more than an import takes.
+    const workbook = path.join(workDir, "too-many-sheets.xlsx");
+    writeSheetsWorkbook(workbook, 17);
+
+    await clickButton("Import");
+    await fill("Spreadsheet file", workbook);
+    await clickButton("Import");
+
+    const banner = await $('[role="alert"]');
+    await banner.waitForExist({ timeout: 15000, timeoutMsg: "the refusal never appeared" });
+    const text = await banner.getText();
+    expect(text).toContain("too-many-sheets.xlsx");
+    expect(text).toContain("more than 16 sheets. HoploDex imports at most 16 sheets per workbook.");
+    // The dialog stays on the file step, ready for another file.
+    await expect($("button=Import")).toExist();
+    await clickButton("Cancel");
+  });
+
+  it("stops reading a large file when asked, and imports nothing (008 US2, Stop reading)", async () => {
+    // 100,000 rows with a long note each: about 180 MB, under the 256 MB file
+    // limit, and slow enough to read that the button can be pressed.
+    const large = path.join(workDir, "large.csv");
+    const note = "n".repeat(1800);
+    const fd = fs.openSync(large, "w");
+    fs.writeSync(fd, `${HEADER}\n`);
+    const batch = 1000;
+    for (let start = 0; start < 100_000; start += batch) {
+      let chunk = "";
+      for (let i = start; i < start + batch; i += 1) {
+        chunk += `${firearmRow("StopE2E", `M${i}`, `STOP-${i}`, { notes: note })}\n`;
+      }
+      fs.writeSync(fd, chunk);
+    }
+    fs.closeSync(fd);
+
+    await clickButton("Import");
+    await fill("Spreadsheet file", large);
+    await clickButton("Import");
+    // The bar names the file and shows how much is read.
+    await browser.waitUntil(
+      async () => /Reading large\.csv… [1-9]\d*%/.test(await $(".hd-progress__label").getText()),
+      { timeout: 15000, timeoutMsg: "the reading never showed a percentage" },
+    );
+
+    await clickButton("Stop reading");
+    const banner = await $('[role="alert"]');
+    await banner.waitForExist({ timeout: 1000, timeoutMsg: "the reading didn't stop within 1 s" });
+    expect(await banner.getText()).toContain("The import was cancelled. Nothing was imported.");
+    await clickButton("Cancel");
+
+    await search("StopE2E");
+    expect(await listedNames()).toEqual([]);
     await search("");
   });
 });

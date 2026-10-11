@@ -28,6 +28,7 @@ use crate::services::spreadsheet::{
     parse_whole_dollars, scaled_to_string, write_accessory_csv, write_firearm_csv, write_workbook,
 };
 use crate::services::suggestions::{FieldVocabulary, SheetSpellings, snap_for_import};
+use crate::session::operations::{OperationGuard, Operations};
 use crate::session::scoped::ScopedSession;
 use crate::session::{Session, SessionId};
 
@@ -2060,6 +2061,37 @@ pub mod ops {
         })
     }
 
+    /// Phase one of `import_collection`: reads the files without the
+    /// session's lock (`import_reader::read_files`). The user's stop
+    /// (`cancel_import`) is `OPERATION_STOPPED`; the session ending, or a
+    /// sleep or quit beginning its close, is `DATABASE_CLOSED` (research.md
+    /// §11).
+    pub fn read_import_files(
+        helper_exe: &Path,
+        files: &[ImportFile],
+        operation: &OperationGuard<'_>,
+        session_is_current: &dyn Fn() -> bool,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> Result<Vec<ReadTable>, CommandError> {
+        read_files(
+            helper_exe,
+            files,
+            &|| operation.is_stopped_by_user(),
+            // A stop that isn't the user's has begun a close, whose session
+            // is not yet gone.
+            &|| {
+                session_is_current()
+                    && (!operation.is_cancelled() || operation.is_stopped_by_user())
+            },
+            progress,
+        )
+    }
+
+    /// `cancel_import`: the running import stops if it is still reading.
+    pub fn cancel_import(operations: &Operations) {
+        operations.stop_reading_import();
+    }
+
     /// [`resolve_import_conflicts`] against the session's open database, which
     /// finds only the imports made in this open: `NOT_FOUND` for one made in
     /// another database, or before this one was last opened or unlocked.
@@ -2433,6 +2465,22 @@ pub struct ImportCollectionInput {
     pub files: Vec<ImportFileInput>,
 }
 
+/// What `import_collection:progress` reports (contracts/tauri-commands.md):
+/// the bytes of the files read, then the rows saved.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+enum ImportPhase {
+    Reading,
+    Importing,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct ImportProgressPayload {
+    phase: ImportPhase,
+    processed: u64,
+    total: u64,
+}
+
 #[tauri::command]
 pub async fn import_collection(
     input: ImportCollectionInput,
@@ -2444,6 +2492,8 @@ pub async fn import_collection(
     }
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
     let operation = session.session.operations().begin(OperationKind::Import, None)?;
+    // The reading is the phase `cancel_import` may stop.
+    operation.set_reading(true);
     let files = input
         .files
         .iter()
@@ -2459,28 +2509,56 @@ pub async fn import_collection(
         log::error!("could not find the import reader's program: {err}");
         CommandError::new("INTERNAL_ERROR", "The import reader could not be started.")
     })?;
-    // The files are read in the import helper without the session's lock, so
-    // a lock goes ahead at once and ends the reading (research.md §11).
-    // T064 gives this its own phase, progress and the user's cancel
-    // (`cancel_import`); until then the reading reports no progress and
-    // `is_cancelled` also covers a sleep's stop.
-    let tables = read_files(
+    // Phase one: the files are read in the import helper without the
+    // session's lock, so a lock goes ahead at once and ends the reading
+    // (research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
+    // sleep's or the session's ending is `DATABASE_CLOSED`.
+    let mut last_percent = None;
+    let tables = ops::read_import_files(
         &helper_exe,
         &files,
-        &|| operation.is_cancelled(),
+        &operation,
         &|| session.is_current(),
-        &mut |_, _| {},
+        &mut |processed, total| {
+            // At most once per percent: a big file reports far oftener.
+            let percent = (processed * 100).checked_div(total);
+            if processed < total && percent == last_percent {
+                return;
+            }
+            last_percent = percent;
+            let _ = app.emit(
+                "import_collection:progress",
+                ImportProgressPayload { phase: ImportPhase::Reading, processed, total },
+            );
+        },
     )?;
+    operation.set_reading(false);
+    // Phase two: the rows are saved under the session's lock, as before.
     ops::import_in_session(
         &session.session,
         session.id,
         tables,
         &mut |processed, total| {
-            let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
+            let _ = app.emit(
+                "import_collection:progress",
+                ImportProgressPayload {
+                    phase: ImportPhase::Importing,
+                    processed: processed as u64,
+                    total: total as u64,
+                },
+            );
         },
         &|| operation.is_cancelled(),
         &|imported| operation.record_done(imported),
     )
+}
+
+/// Stops the running import if it is still reading its files (research.md
+/// §11); does nothing otherwise.
+#[tauri::command]
+pub async fn cancel_import(session: tauri::State<'_, Session>) -> Result<(), CommandError> {
+    ops::cancel_import(session.operations());
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]

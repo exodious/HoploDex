@@ -20,7 +20,7 @@ use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
-use hoplodex_lib::commands::import_export::{ImportSessionStore, ops as import_export};
+use hoplodex_lib::commands::import_export::{ImportFile, ImportSessionStore, ops as import_export};
 use hoplodex_lib::commands::preview::ops as preview;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
@@ -583,6 +583,129 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
     )));
     world.open();
     assert_eq!(world.firearm_count(), 2, "the rows imported before the stop are kept");
+}
+
+/// An import reading a large valid file when `go` closes the collection from
+/// this thread (008 T051; research.md §11): the close goes ahead without
+/// waiting for the reading, and the reading ends within a second with
+/// `DATABASE_CLOSED`, never `OPERATION_STOPPED` (which only `cancel_import`
+/// gives), with nothing imported and the helper gone.
+fn a_close_during_the_reading_of(way: &str, go: impl FnOnce(&World)) {
+    // One at a time: "the helper is gone" looks at every import helper this
+    // process has started.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let world = World::new();
+    world.create();
+    // The lock at screen lock and the idle lock on, so each applies.
+    world.set_lock(true, 10, true);
+    let file = world.dir.path().join("large.csv");
+    support::hostile_spreadsheets::large_valid_csv(&file, 100_000);
+    let files = [ImportFile { file_path: file, format: SpreadsheetFormat::Csv }];
+    let session_id = world.session.current_id();
+    let reading = AtomicBool::new(false);
+
+    let (outcome, went_ahead_in, ended_in) = thread::scope(|scope| {
+        let reader = scope.spawn(|| {
+            let operation = world.session.operations().begin(OperationKind::Import, None).unwrap();
+            operation.set_reading(true);
+            let started = Instant::now();
+            let outcome = import_export::read_import_files(
+                Path::new(env!("CARGO_BIN_EXE_hoplodex")),
+                &files,
+                &operation,
+                &|| world.session.current_id() == session_id,
+                &mut |done, total| {
+                    if done * 100 >= total * 5 {
+                        reading.store(true, Ordering::SeqCst);
+                    }
+                },
+            );
+            let ended = Instant::now();
+            drop(operation);
+            (outcome, started, ended)
+        });
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !reading.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "{way}: the reading never got going");
+            assert!(!reader.is_finished(), "{way}: the reading ended before the close");
+            thread::sleep(Duration::from_millis(1));
+        }
+        let closing = Instant::now();
+        go(&world);
+        let went_ahead_in = closing.elapsed();
+        let (outcome, _, ended) = reader.join().unwrap();
+        (outcome, went_ahead_in, ended.duration_since(closing))
+    });
+
+    let error = outcome.expect_err("the reading was ended");
+    assert_eq!(error.code, "DATABASE_CLOSED", "{way}: {error:?}");
+    assert!(ended_in < Duration::from_secs(1), "{way}: the reading took {ended_in:?} to end");
+    println!("{way}: the close took {went_ahead_in:?}, the reading ended after {ended_in:?}");
+    assert!(!world.session.is_open(), "{way}");
+    assert!(
+        preview_support::wait_for(Duration::from_secs(3), || {
+            preview_support::helper_children_of("--import-helper").is_empty()
+        }),
+        "{way}: the import helper is gone"
+    );
+    world.open();
+    assert_eq!(world.firearm_count(), 0, "{way}: nothing was imported");
+}
+
+#[test]
+fn a_screen_lock_during_the_reading_goes_ahead_and_the_import_ends_closed() {
+    a_close_during_the_reading_of("screen lock", |w| {
+        lifecycle::screen_locked(&w.session, &w.machine)
+    });
+}
+
+#[test]
+fn a_sleep_during_the_reading_goes_ahead_and_the_import_ends_closed() {
+    a_close_during_the_reading_of("sleep", |w| lifecycle::will_sleep(&w.session, &w.machine));
+}
+
+#[test]
+fn a_quit_during_the_reading_goes_ahead_and_the_import_ends_closed() {
+    a_close_during_the_reading_of("quit", |w| {
+        lifecycle::close_normal(&w.session, w.session.current_id(), &w.machine, CloseReason::Quit)
+            .unwrap();
+    });
+}
+
+#[test]
+fn cancel_import_stops_only_an_import_that_is_reading() {
+    let world = World::new();
+    world.create();
+    let operations = world.session.operations();
+
+    // Nothing running: nothing happens.
+    import_export::cancel_import(operations);
+
+    // An import saving its rows is not stopped by it (only a sleep stops that).
+    let saving = operations.begin(OperationKind::Import, None).unwrap();
+    import_export::cancel_import(operations);
+    assert!(!saving.is_cancelled() && !saving.is_stopped_by_user());
+    drop(saving);
+
+    // Another kind of operation is never stopped by it.
+    let export = operations.begin(OperationKind::Export, None).unwrap();
+    export.set_reading(true);
+    import_export::cancel_import(operations);
+    assert!(!export.is_cancelled());
+    drop(export);
+
+    // An import reading its files is, and the stop is the user's.
+    let reading = operations.begin(OperationKind::Import, None).unwrap();
+    reading.set_reading(true);
+    import_export::cancel_import(operations);
+    assert!(reading.is_cancelled() && reading.is_stopped_by_user());
+    drop(reading);
+
+    // A sleep's stop is not the user's.
+    let sleeping = operations.begin(OperationKind::Import, None).unwrap();
+    operations.stop_running();
+    assert!(sleeping.is_cancelled() && !sleeping.is_stopped_by_user());
 }
 
 #[test]

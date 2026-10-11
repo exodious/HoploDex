@@ -17,6 +17,11 @@ use crate::models::database::OperationKind;
 struct Running {
     kind: OperationKind,
     cancel: AtomicBool,
+    /// An import is still reading its files, which the user may stop
+    /// (`cancel_import`, research.md §11).
+    reading: AtomicBool,
+    /// `cancel` was set by the user, not by the session ending or a sleep.
+    user_stop: AtomicBool,
     interrupt: Option<InterruptHandle>,
     /// How far it got: rows imported, backups deleted; for a move of
     /// backups, how many are not yet moved.
@@ -83,6 +88,19 @@ impl OperationGuard<'_> {
         self.running.cancel.load(Ordering::SeqCst)
     }
 
+    /// Whether the operation was asked to stop by the user
+    /// (`cancel_import`), as opposed to a lock, a sleep or a quit ending the
+    /// session (research.md §11).
+    pub fn is_stopped_by_user(&self) -> bool {
+        self.running.user_stop.load(Ordering::SeqCst)
+    }
+
+    /// Says whether an import is reading its files (the phase the user may
+    /// stop); false once it begins saving rows.
+    pub fn set_reading(&self, reading: bool) {
+        self.running.reading.store(reading, Ordering::SeqCst);
+    }
+
     /// Records how far it has got (rows imported, backups deleted), for the
     /// notice when a sleep stops it.
     pub fn record_done(&self, done: u64) {
@@ -127,6 +145,8 @@ impl Operations {
         let registered = Arc::new(Running {
             kind,
             cancel: AtomicBool::new(false),
+            reading: AtomicBool::new(false),
+            user_stop: AtomicBool::new(false),
             interrupt,
             done: AtomicU64::new(0),
             folder: Mutex::new(None),
@@ -165,6 +185,20 @@ impl Operations {
             interrupt.interrupt();
         }
         Some(StoppedOperation(Arc::clone(running)))
+    }
+
+    /// `cancel_import`: stops the running operation if it is an import still
+    /// reading its files, marking the stop as the user's. Does nothing
+    /// otherwise. Returns whether it stopped one.
+    pub fn stop_reading_import(&self) -> bool {
+        let running = self.lock();
+        let Some(running) = running.as_ref() else { return false };
+        if running.kind != OperationKind::Import || !running.reading.load(Ordering::SeqCst) {
+            return false;
+        }
+        running.user_stop.store(true, Ordering::SeqCst);
+        running.cancel.store(true, Ordering::SeqCst);
+        true
     }
 
     /// Waits up to `timeout` for `stopped` to end. Returns whether it has.

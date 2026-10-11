@@ -83,6 +83,7 @@
     "allow-get-export-scope",
     "allow-export-collection",
     "allow-import-collection",
+    "allow-cancel-import",
     "allow-resolve-import-conflicts"
   ]
 }

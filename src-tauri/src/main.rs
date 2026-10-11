@@ -356,6 +356,7 @@ fn main() {
             hoplodex_lib::commands::import_export::get_export_scope,
             hoplodex_lib::commands::import_export::export_collection,
             hoplodex_lib::commands::import_export::import_collection,
+            hoplodex_lib::commands::import_export::cancel_import,
             hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
         .build(tauri::generate_context!())

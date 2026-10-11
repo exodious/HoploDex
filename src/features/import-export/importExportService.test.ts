@@ -53,6 +53,12 @@ describe("importExportService", () => {
     ]);
   });
 
+  it("sends cancel_import without a session: it acts on the running import", async () => {
+    await importExportService.cancelImport();
+
+    expect(backend.invoke.mock.calls).toEqual([["cancel_import"]]);
+  });
+
   it("refuses once the scope has ended, without sending", async () => {
     const ended = createSessionScope(18);
     ended.end();

@@ -80,6 +80,7 @@ pub const COMMANDS: &[&str] = &[
     "get_export_scope",
     "export_collection",
     "import_collection",
+    "cancel_import",
     "resolve_import_conflicts",
 ];
 
@@ -103,6 +104,7 @@ pub const UNSCOPED_COMMANDS: &[&str] = &[
     "note_activity",
     "set_idle_paused",
     "skip_backup",
+    "cancel_import",
     "get_document_opening",
     "set_document_opening",
     "restore_backup",

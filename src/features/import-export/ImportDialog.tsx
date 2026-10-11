@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionScope } from "../session/sessionScope";
@@ -14,7 +14,7 @@ import {
   TextField,
   useToast,
 } from "../../components";
-import { CommandFailure } from "../../services/tauriClient";
+import { CommandFailure, listen } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { MountedChoices } from "../mounts/MountedChoices";
 import { mountedStatements } from "../mounts/mountedStatements";
@@ -32,6 +32,7 @@ import * as importExportService from "./importExportService";
 import type {
   ConflictAction,
   ImportConflict,
+  ImportProgress,
   ImportResult,
   ImportTable,
   RowError,
@@ -130,6 +131,25 @@ function formatForPath(filePath: string): SpreadsheetFormat {
   return filePath.toLowerCase().endsWith(".xlsx") ? "xlsx" : "csv";
 }
 
+/** The last part of a path, whichever separator it uses. */
+function baseName(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() || filePath;
+}
+
+/** What the reading bar says (contracts/ui.md §2): the file being read, or
+ * both files, with the share of their bytes read so far. */
+function readingCaption(files: string[], progress: ImportProgress | null): string {
+  const names = files.map(baseName).join(" and ");
+  const percent =
+    progress && progress.total > 0
+      ? ` ${Math.min(100, Math.floor((progress.processed / progress.total) * 100))}%`
+      : "";
+  return `Reading ${names}…${percent}`;
+}
+
+/** The message of the banner after "Stop reading" (contracts/ui.md §2). */
+const IMPORT_CANCELLED = "The import was cancelled. Nothing was imported.";
+
 function count(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -175,6 +195,9 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [typedPath, setTypedPath] = useState("");
   const [fileError, setFileError] = useState<string | undefined>();
   const [importing, setImporting] = useState(false);
+  // While importing: the files are being read (the user may stop that), then
+  // the rows are saved (they may not). `progress` is the last event heard.
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<Record<string, ConflictAction>>({});
@@ -186,6 +209,11 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [disposeWith, setDisposeWith] = useState<Record<string, Record<string, string>>>({});
   const [resolvedCount, setResolvedCount] = useState<number | null>(null);
   const [unresolved, setUnresolved] = useState<RowError[]>([]);
+
+  useEffect(() => {
+    if (!importing) return;
+    return listen<ImportProgress>("import_collection:progress", setProgress);
+  }, [importing]);
 
   const chosenFiles = [...files, ...(typedPath.trim() ? [typedPath.trim()] : [])];
   const full = chosenFiles.length >= MAX_IMPORT_FILES;
@@ -221,6 +249,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       return;
     }
     setError(null);
+    setProgress(null);
     setImporting(true);
     try {
       const imported = await importExportService.importCollection(sessionScope, {
@@ -229,11 +258,27 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       setResult(imported);
       await refresh();
     } catch (e) {
-      setError(e instanceof CommandFailure ? e.message : "The import didn't finish.");
+      setError(
+        e instanceof CommandFailure
+          ? e.code === "OPERATION_STOPPED"
+            ? IMPORT_CANCELLED
+            : e.message
+          : "The import didn't finish.",
+      );
     } finally {
       setImporting(false);
     }
   }
+
+  async function stopReading() {
+    try {
+      await importExportService.cancelImport();
+    } catch {
+      // The import ends, or fails, on its own; there is nothing to add.
+    }
+  }
+
+  const reading = importing && progress?.phase !== "importing";
 
   async function applyChoices(conflicts: ImportConflict[]) {
     if (!result) return;
@@ -329,13 +374,16 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
           )}
-          {importing && (
-            <ProgressBar
-              eventName="import_collection:progress"
-              label="Import progress"
-              unit="rows"
-            />
-          )}
+          {importing &&
+            (reading ? (
+              <ProgressBar
+                label="Reading progress"
+                value={progress}
+                caption={readingCaption(chosenFiles, progress)}
+              />
+            ) : (
+              <ProgressBar label="Import progress" value={progress} unit="rows" />
+            ))}
           {error && (
             <p className="hd-banner hd-banner--error" role="alert">
               {error}
@@ -343,9 +391,15 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <footer className="hd-dialog__footer">
-          <Button variant="secondary" onClick={onClose} disabled={importing}>
-            Cancel
-          </Button>
+          {reading ? (
+            <Button variant="secondary" onClick={stopReading}>
+              Stop reading
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={onClose} disabled={importing}>
+              Cancel
+            </Button>
+          )}
           <Button type="submit" variant="primary" icon="download" pending={importing}>
             {importing ? "Importing…" : "Import"}
           </Button>

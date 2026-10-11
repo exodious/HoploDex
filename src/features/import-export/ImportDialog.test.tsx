@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -13,7 +13,15 @@ import type { ImportResult } from "./types";
 
 /** The scope a mocked service receives: the test render's. */
 const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
-vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
+const events = vi.hoisted(() => ({
+  handlers: new Map<string, (event: { payload: unknown }) => void>(),
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (name: string, handler: (event: { payload: unknown }) => void) => {
+    events.handlers.set(name, handler);
+    return Promise.resolve(() => events.handlers.delete(name));
+  },
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
 
@@ -755,5 +763,139 @@ describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-01
 
     const confirm = await screen.findByRole("alertdialog");
     expect(within(confirm).queryByRole("group")).not.toBeInTheDocument();
+  });
+});
+
+// specs/008-hardening-batch contracts/ui.md §2 (FR-006, FR-008): the dialog
+// while the files are read, the button that stops it, and a refused file.
+describe("ImportDialog reading the files (008 US2)", () => {
+  const FILE = "/data/inventory.xlsx";
+
+  function renderDialog() {
+    render(
+      <CollectionContext.Provider value={collection}>
+        <ImportDialog open onOpenChange={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+  }
+
+  /** The backend's progress event. */
+  function progress(phase: "reading" | "importing", processed: number, total: number) {
+    const handler = events.handlers.get("import_collection:progress");
+    expect(handler, "the dialog listens for progress").toBeDefined();
+    act(() => handler?.({ payload: { phase, processed, total } }));
+  }
+
+  /** Starts an import of `FILE` whose outcome the test settles. */
+  async function startImport() {
+    const user = userEvent.setup();
+    let settle!: { resolve: (r: ImportResult) => void; reject: (e: unknown) => void };
+    vi.mocked(importExportService.importCollection).mockReturnValue(
+      new Promise<ImportResult>((resolve, reject) => {
+        settle = { resolve, reject };
+      }),
+    );
+    vi.mocked(openDialog).mockResolvedValueOnce([FILE]);
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: "Choose…" }));
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByRole("progressbar");
+    return { user, settle };
+  }
+
+  beforeEach(() => {
+    events.handlers.clear();
+    vi.mocked(openDialog).mockReset();
+    vi.mocked(importExportService.importCollection).mockReset();
+    vi.mocked(importExportService.cancelImport).mockReset().mockResolvedValue(null);
+  });
+
+  it("names the file being read, with a percentage, and offers Stop reading", async () => {
+    await startImport();
+
+    progress("reading", 2_000, 8_000);
+
+    expect(await screen.findByText("Reading inventory.xlsx… 25%")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "2000");
+    expect(screen.getByRole("button", { name: "Stop reading" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
+  it("names both files when two are read together", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockReturnValue(new Promise(() => {}));
+    vi.mocked(openDialog).mockResolvedValueOnce(["/data/firearms.csv", "C:\\data\\parts.csv"]);
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: "Choose…" }));
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(await screen.findByText("Reading firearms.csv and parts.csv…")).toBeInTheDocument();
+  });
+
+  it("calls cancel_import when Stop reading is pressed", async () => {
+    const { user } = await startImport();
+    progress("reading", 100, 8_000);
+
+    await user.click(screen.getByRole("button", { name: "Stop reading" }));
+
+    expect(importExportService.cancelImport).toHaveBeenCalledTimes(1);
+    expect(importExportService.cancelImport).toHaveBeenCalledWith();
+  });
+
+  it("says the import was cancelled when it stops, and keeps the files chosen", async () => {
+    const { user, settle } = await startImport();
+    progress("reading", 100, 8_000);
+    await user.click(screen.getByRole("button", { name: "Stop reading" }));
+
+    settle.reject(
+      new CommandFailure({
+        code: "OPERATION_STOPPED",
+        message: "The operation was stopped before it finished.",
+        details: { operation: "import", importedCount: 0 },
+      }),
+    );
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent("The import was cancelled. Nothing was imported.");
+    expect(banner).toHaveClass("hd-banner--error");
+    expect(screen.getByRole("list", { name: "Files to import" })).toHaveTextContent(FILE);
+    expect(screen.getByRole("button", { name: "Import" })).toBeEnabled();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("shows Cancel, disabled, once rows are being saved", async () => {
+    await startImport();
+
+    progress("reading", 8_000, 8_000);
+    progress("importing", 3, 10);
+
+    const cancel = await screen.findByRole("button", { name: "Cancel" });
+    expect(cancel).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Stop reading" })).not.toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Import progress" })).toHaveAttribute(
+      "aria-valuenow",
+      "3",
+    );
+    expect(screen.queryByText(/Reading/)).not.toBeInTheDocument();
+  });
+
+  it("shows a refused file's message in the alert banner, with the files still listed", async () => {
+    const { settle } = await startImport();
+    const message =
+      "inventory.xlsx: more than 16 sheets. HoploDex imports at most 16 sheets per workbook.";
+
+    settle.reject(
+      new CommandFailure({
+        code: "IMPORT_LIMIT_EXCEEDED",
+        message,
+        details: { file: "inventory.xlsx", limit: "sheets" },
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("list", { name: "Files to import" })).toHaveTextContent(FILE);
+    expect(screen.getByRole("button", { name: "Import" })).toBeEnabled();
+    await waitFor(() => expect(screen.queryByRole("progressbar")).not.toBeInTheDocument());
   });
 });

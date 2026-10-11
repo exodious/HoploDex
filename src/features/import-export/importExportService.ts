@@ -1,3 +1,4 @@
+import { invoke } from "../../services/tauriClient";
 import type { SessionScope } from "../session/sessionScope";
 import type {
   ExportCollectionInput,
@@ -29,6 +30,14 @@ export function importCollection(
   input: ImportCollectionInput,
 ): Promise<ImportResult> {
   return scope.invoke<ImportResult>("import_collection", { input });
+}
+
+/** Stops the running import if it is still reading its files; the pending
+ * `importCollection` then fails with `OPERATION_STOPPED`. Unscoped: it acts on
+ * the running operation, and does nothing once rows are being saved
+ * (contracts/tauri-commands.md `cancel_import`). */
+export function cancelImport(): Promise<null> {
+  return invoke<null>("cancel_import");
 }
 
 export function resolveImportConflicts(
