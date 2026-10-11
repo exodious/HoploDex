@@ -552,6 +552,11 @@ CREATE TABLE app_state (
     backup_made_at TEXT,
     -- The database name, for the "backup opened directly" note; set only in backup copies.
     backup_of_name TEXT,
+    -- FR-015 (specs/008-hardening-batch research.md §16): the HoploDex
+    -- version that last saved the database; NULL when none is recorded.
+    -- Written by `db::record_saved_version` only, and it is not a change to
+    -- back up.
+    last_saved_version TEXT,
     CHECK (
         (open_machine_id IS NULL) = (open_machine_name IS NULL)
         AND (open_machine_id IS NULL) = (open_since IS NULL)

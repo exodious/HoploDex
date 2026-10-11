@@ -150,7 +150,22 @@ fn initialize(
          VALUES (1, ?1, ?2, ?3, ?4, ?2, 0)",
         rusqlite::params![random_hex(16)?, now_utc(), machine.id, machine.display_name],
     )?;
+    // A new database was written by this version (FR-015).
+    record_saved_version(&conn)?;
     Ok(conn)
+}
+
+/// Records this build's [`APP_VERSION`](crate::APP_VERSION) as the version
+/// that last saved the database (`app_state.last_saved_version`, FR-015,
+/// specs/008-hardening-batch research.md §16). It changes no row when that
+/// is already the recorded value, so a caller can count rows changed. Not a
+/// change to back up: `app_state` has no change-tracking triggers.
+pub fn record_saved_version(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE app_state SET last_saved_version = ?1 WHERE last_saved_version IS NOT ?1",
+        [crate::APP_VERSION],
+    )
+    .map(|_| ())
 }
 
 /// Opens the database at `path` with `passphrase` on `machine`, in
