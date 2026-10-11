@@ -552,6 +552,94 @@ fn a_helper_that_dies_or_says_nonsense_makes_the_file_unreadable() {
     }
 }
 
+/// The job object's memory limit on Windows (research.md §8: the job's
+/// `JobMemoryLimit` is `RLIMIT_DATA` there): a helper that holds more than its
+/// job allows dies, without an answer, and nothing else does. The helper is
+/// lied to, as a crafted file would: it is told the workbook is empty, then
+/// sent 100 MiB of it, which it keeps. The control is the same traffic into the
+/// app's own 512 MiB job, which the helper survives and answers `Unreadable`
+/// (the bytes aren't an archive). A real read in another job, in flight while
+/// the first helper dies, is the bystander.
+#[cfg(windows)]
+#[test]
+fn a_helper_over_its_jobs_memory_limit_dies_and_only_it_does() {
+    use hoplodex_lib::services::helper::job;
+    use hoplodex_lib::services::import_reader::frames::{
+        Format, FromHelper, ToHelper, read_from_helper, write_chunk, write_to_helper,
+    };
+    use hoplodex_lib::services::import_reader::limits::HELPER_MEMORY_BYTES;
+
+    const SMALL_JOB: usize = 64 * 1024 * 1024;
+    const SENT: usize = 100;
+
+    /// Sends the lying workbook; what the helper answered (`None` when its
+    /// output ended with no frame) and its exit code.
+    fn lie_to_a_helper(memory_limit: usize) -> (Option<FromHelper>, u32, usize) {
+        let (mut child, mut stdin, mut stdout) =
+            job::spawn(Path::new(HELPER), IMPORT_HELPER, memory_limit, &[]).unwrap();
+        let begin = ToHelper::Begin {
+            format: Format::Xlsx,
+            file_size: 0,
+            file_name: "liar.xlsx".to_owned(),
+        };
+        let mut accepted = 0;
+        if write_to_helper(&mut stdin, &begin).is_ok() {
+            let megabyte = vec![0u8; 1024 * 1024];
+            while accepted < SENT && write_chunk(&mut stdin, &megabyte).is_ok() {
+                accepted += 1;
+            }
+            let _ = write_to_helper(&mut stdin, &ToHelper::End);
+        }
+        let mut answer = None;
+        while let Ok(Some(frame)) = read_from_helper(&mut stdout) {
+            answer = Some(frame);
+        }
+        let code = child.wait().unwrap();
+        (answer, code, accepted)
+    }
+
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    let path = large_valid_csv(&dir.path().join("bystander.csv"), 100_000);
+    let reading = AtomicBool::new(false);
+    thread::scope(|scope| {
+        let bystander = scope.spawn(|| {
+            read_files(
+                Path::new(HELPER),
+                &[import_file(&path)],
+                &|| false,
+                &|| true,
+                &mut |done, _| {
+                    if done > 0 {
+                        reading.store(true, Ordering::SeqCst);
+                    }
+                },
+            )
+        });
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !reading.load(Ordering::SeqCst) && !bystander.is_finished() {
+            assert!(Instant::now() < deadline, "the bystander never got going");
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        let (answer, code, accepted) = lie_to_a_helper(SMALL_JOB);
+        println!("64 MiB job: answer {answer:?}, exit code {code:#x}, {accepted} MiB accepted");
+        assert!(answer.is_none(), "a helper over its job's limit answered: {answer:?}");
+        assert_ne!(code, 0, "a helper over its job's limit ended cleanly");
+        assert!(accepted < SENT, "the helper took all {SENT} MiB inside a 64 MiB job");
+
+        let (answer, code, accepted) = lie_to_a_helper(HELPER_MEMORY_BYTES);
+        println!("512 MiB job: answer {answer:?}, exit code {code:#x}, {accepted} MiB accepted");
+        assert_eq!(answer, Some(FromHelper::Unreadable));
+        assert_eq!(code, 0);
+        assert_eq!(accepted, SENT);
+
+        let tables = bystander.join().unwrap().expect("a read in another job carries on");
+        assert_eq!(tables.len(), 1);
+    });
+    assert!(no_helper_runs());
+}
+
 #[test]
 fn a_file_that_is_not_there_is_unreadable_and_names_the_file() {
     let _serial = serial();
