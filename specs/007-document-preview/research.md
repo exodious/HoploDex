@@ -686,6 +686,8 @@ artifacts.
 
 ## 11. TIFF: decoded in a helper process
 
+_Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (confinement, the Windows job object, framing, spawn and kill) moved to `services/helper/`, with the memory cap a parameter, and the import reader (`--import-helper`, 008 research.md §8) shares it. The TIFF mode and its requests stay in `services/preview/`._
+
 - **Decision**: Decode TIFF with the `tiff` crate (MIT, pure Rust), plus
   the `fax` crate (MIT) for CCITT Group 3 and 4, the usual compression of
   black-and-white scans, in a **render helper**: the HoploDex executable

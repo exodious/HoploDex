@@ -409,6 +409,8 @@ _Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo
 
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): the input is one or two files; `ImportResult` and its row reports gain `table`, conflicts gain `existingRecord`, and mount warnings arrive in `warnings`._
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): the file is read in a confined helper outside the session's lock, within limits, and one that passes a limit is refused as a whole with `IMPORT_LIMIT_EXCEEDED` before any row is saved. `cancel_import` stops the reading (`OPERATION_STOPPED`), and `import_collection:progress` gains `phase`._
+
 - **Input**: `{ filePath: string, format: "csv" | "xlsx" }`.
 - **Output (progress events, then)**: `{ sessionId: string, importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], conflicts: ImportConflict[] }`.
   Each `ImportConflict`

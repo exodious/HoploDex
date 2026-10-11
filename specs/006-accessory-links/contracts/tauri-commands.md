@@ -379,6 +379,8 @@ counting through `list_firearms`.
 input: { files: { filePath: string; format: "csv" | "xlsx" }[] }   // 1 or 2 files; was { filePath, format }
 ```
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): each file is read in a confined helper outside the session's lock, within limits, and one that passes a limit is refused as a whole with `IMPORT_LIMIT_EXCEEDED` before any row is saved. `cancel_import` stops the reading (`OPERATION_STOPPED`), and `import_collection:progress` gains `phase`._
+
 - **Before any row is saved**, the import stops with `VALIDATION_ERROR` and
   a message naming the file (and the sheet) when:
   - two tables of the same kind are given;

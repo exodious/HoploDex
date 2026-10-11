@@ -110,6 +110,8 @@ three `*_marks_backup_due_*` triggers.
 
 ## Entity: Accessory (new)
 
+_Amended by [spec 008](../008-hardening-batch/data-model.md): no length CHECK is added, but the commands and import refuse text over a maximum: 100 characters for make, model, cartridge and caliber, 200 for the serial number, acquisition source and disposition recipient, 4,000 for notes (008 research.md §10)._
+
 ```sql
 CREATE TABLE accessories (
     id INTEGER PRIMARY KEY,

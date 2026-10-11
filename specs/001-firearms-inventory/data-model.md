@@ -36,6 +36,8 @@ lookup and the type-to-action mapping for these types (`0003_seed_firearm_types.
 
 _Amended by [spec 006](../006-accessory-links/data-model.md#entity-firearm-extended): `FirearmSummary` and `Firearm` gain `mountedOn`; a `uid` column carries the record identifier; mounts are stored in the added `mounts` table._
 
+_Amended by [spec 008](../008-hardening-batch/data-model.md): free-text fields have maximums: 100 characters for make, model, cartridge and caliber (unchanged), 200 for the other short text, 4,000 for notes and accessories (008 research.md §10; the list is in 008's data-model.md "Validation: free-text field maximums")._
+
 Primary record; corresponds directly to the spec's **Firearm** entity.
 
 _Amended by [spec 002](../002-firearm-identification/data-model.md): seven
@@ -226,7 +228,7 @@ _Amended by [spec 006](../006-accessory-links/data-model.md#entity-photo-documen
 | `company_contact` | TEXT, nullable | phone/email/address, free text |
 | `agent_name` | TEXT, nullable | |
 | `agent_contact` | TEXT, nullable | |
-| `notes` | TEXT, nullable | FR-027: optional free-form notes; blank input stored as null (as `company_contact`); no length cap; not indexed by FTS5 (search covers firearms only, FR-013) and not exported |
+| `notes` | TEXT, nullable | FR-027: optional free-form notes; blank input stored as null (as `company_contact`); no length cap; not indexed by FTS5 (search covers firearms only, FR-013) and not exported. _Amended by [spec 008](../008-hardening-batch/data-model.md): at most 4,000 characters, and the policy's name, number, company, contact and agent fields at most 200._ |
 | `blanket_coverage_limit` | INTEGER (whole dollars, ≥ 0), nullable | FR-027, FR-036: set ⇒ this is a blanket policy, and the limit is shared by all unscheduled firearms while the policy is in force; null ⇒ schedule-only policy. _Amended 2026-10-09 (#67): at most $99,999,999 on entry; see Amounts above._ |
 | `effective_start_date` | TEXT (ISO 8601 date), not null | |
 | `effective_end_date` | TEXT (ISO 8601 date), not null | drives 30-day and expired warnings (FR-028) |

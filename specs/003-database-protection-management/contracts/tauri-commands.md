@@ -47,6 +47,8 @@ may fail the same way, with `details.deletedCount`, and
 or `details.leftBehindCount` and `details.folder`. The session is
 already closed by then, so the chooser shows the notice.
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): every command not in 008's unscoped list is sent with a `HoploDex-Session` header naming the open session, and fails with `DATABASE_CLOSED` when it names another session or none; `import_collection` may also fail with `IMPORT_LIMIT_EXCEEDED`._
+
 ---
 
 ## Error codes added by this feature
@@ -174,6 +176,8 @@ type ExistingBackupsOutcome =
                     reason: "nameTaken" | "locationUnavailable" | "insufficientSpace" | "io" } | null };
 ```
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `DatabaseStatus` gains `sessionId`, and `PendingSummary` gains `savedByVersion` and `appVersion` (FR-015, FR-016)._
+
 ---
 
 ## Commands: choosing, creating and opening (User Stories 1, 2, 5)
@@ -219,6 +223,8 @@ type ExistingBackupsOutcome =
 - **Output**: `{ draft: Draft | null }`. `draft` is present for `resume` and absent for `discard`.
 - Removes the `pending_changes` row either way (FR-039). Collection commands are accepted from then on.
 
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): four actions (`resume`, `opened`, `notOpened`, `discard`). `resume` keeps the row, and only `opened` or `discard` deletes it._
+
 ### `stage_pending_changes`
 - **Input**: `{ draft: Draft | null }` → **Output**: `null`
 - Keeps the draft in backend memory only (research §16). `null` clears it. Validated: `VALIDATION_ERROR` with `fieldErrors.values` over 1 MiB, `fieldErrors.mode` for a kind and mode that don't go together (`coverage`, `dispose` and `restore` are firearm-only), `fieldErrors.targetId` when a target is missing (or given for an add), `fieldErrors.label` over 200 characters.
@@ -238,6 +244,8 @@ type ExistingBackupsOutcome =
 ### `close_database`
 - **Input**: `{ reason: "closed" | "switched" }` → **Output**: `CloseOutcome`
 - The normal close (FR-010, FR-022, FR-025, FR-032). Emits `session:closing`, then, if a backup runs, `backup:progress`, then `session:closed`. Within the application a database is closed by locking it (`lock_database`); this command remains for the "couldn't be shown" panel (contracts/ui-databases.md §13, research §17).
+
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): served while pending changes are unresolved or resuming, leaving them as they were; the pending changes dialog offers it too (FR-017)._
 
 ### `lock_database`
 - **Input**: `{ draft: Draft | null }` → **Output**: `CloseOutcome`
@@ -335,6 +343,8 @@ sleep stops it (FR-037).
 | `import_collection:progress`, `export_collection:progress` | unchanged from 001 | |
 | `system:clear-passphrase-fields` | `{}` | The screen locked or the computer is going to sleep. Every passphrase field resets (FR-007), whatever the state |
 | `app:quit-requested` | `{}` | The window's close button or an application quit. The frontend asks about unsaved changes, then calls `quit_application` |
+
+_Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `session:closing` and `session:closed` carry `sessionId`, and `import_collection:progress` carries `phase`._
 
 ---
 

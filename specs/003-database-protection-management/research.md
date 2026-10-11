@@ -811,6 +811,8 @@ prompt, then navigates to the target and opens the form with the draft as
 its initial, unsaved state. `resolve_pending_changes` removes the row either
 way.
 
+_Amended by [spec 008](../008-hardening-batch/research.md): resume no longer removes the row. It stays until the form has opened with the draft, and `resolve_pending_changes` has four actions (008 research.md §6, §16)._
+
 **Alternatives considered**: persisting drafts to disk on every keystroke
 (rejected: it writes housekeeping continually, and puts unsaved input into
 files every few seconds); `localStorage` (rejected: plaintext on disk,
