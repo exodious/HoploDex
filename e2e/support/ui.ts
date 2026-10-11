@@ -837,16 +837,30 @@ export async function selectChooserRow(name: string) {
 }
 
 /** Runs a backend command from the page, as the frontend would, for a
- * step whose own UI WebDriver can't reach (the OS's folder dialog). */
+ * step whose own UI WebDriver can't reach (the OS's folder dialog). It names
+ * the open database's session in the `HoploDex-Session` header, as the
+ * frontend's scope does (spec 008 FR-004), which every command outside
+ * `UNSCOPED_COMMANDS` requires; the id comes from `get_database_status`. */
 export async function invokeCommand(cmd: string, args: Record<string, unknown>) {
   return browser.execute(
-    (name: string, data: Record<string, unknown>) => {
+    async (name: string, data: Record<string, unknown>) => {
       const internals = (
         window as unknown as {
-          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+          __TAURI_INTERNALS__: {
+            invoke: (cmd: string, args: unknown, options?: unknown) => Promise<unknown>;
+          };
         }
       ).__TAURI_INTERNALS__;
-      return internals.invoke(name, data);
+      const status = (await internals.invoke("get_database_status", {})) as {
+        sessionId?: number | null;
+      };
+      return internals.invoke(
+        name,
+        data,
+        status.sessionId == null
+          ? undefined
+          : { headers: { "HoploDex-Session": String(status.sessionId) } },
+      );
     },
     cmd,
     args,

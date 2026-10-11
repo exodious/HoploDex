@@ -84,7 +84,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T022 [P] Do the same as T019 for `src/features/media/mediaService.ts` (photos, documents and the preview commands) and its callers and tests in `src/features/media/`
 - [X] T023 [P] Do the same as T019 for `src/features/import-export/importExportService.ts` and its callers and tests in `src/features/import-export/`
 - [X] T024 Do the same as T019 for the scoped commands in `src/features/session/sessionService.ts` and `src/features/databases/databasesService.ts` (`lock_database`, `close_database`, `stage_pending_changes`, `resolve_pending_changes`, `dismiss_note`, the settings, saved-passphrase, backup and passphrase-change commands, and `restore_backup` of the open database); the unscoped ones (T012's list) keep calling `tauriClient.invoke` with no scope. Update their callers in `src/features/session/` and `src/features/databases/` and their tests. `npm test` and `npm run lint` pass
-- [ ] T025 On Linux, run `npm run build` and the full E2E suite one spec file at a time in the dev container (`us1`–`us13`, `us7-databases-no-keyring`, `ui-review`, `webdriver-plugin`) and fix every failure, so the scoped commands work end to end
+- [X] T025 On Linux, run `npm run build` and the full E2E suite one spec file at a time in the dev container (`us1`–`us13`, `us7-databases-no-keyring`, `ui-review`, `webdriver-plugin`) and fix every failure, so the scoped commands work end to end
 
 **Checkpoint**: every collection request names its session and the backend refuses an ended one; the suite passes. User story work can begin.
 

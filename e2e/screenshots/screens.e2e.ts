@@ -18,6 +18,7 @@ import {
 } from "../support/ui";
 import {
   chooseMenuItem,
+  invokeCommand,
   requestQuit,
   selectChooserRow,
   submitPassphrase,
@@ -914,14 +915,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await $('[role="progressbar"]').waitForExist();
       await shot(`18-closing-backup-${suffix}`);
       // Then a real close, and back to the collection for the next walk.
-      await browser.execute(() => {
-        const internals = (
-          window as unknown as {
-            __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
-          }
-        ).__TAURI_INTERNALS__;
-        void internals.invoke("close_database", { reason: "closed" });
-      });
+      void invokeCommand("close_database", { reason: "closed" });
       await waitForChooser();
       await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     });
