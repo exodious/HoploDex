@@ -136,6 +136,29 @@ the open one?" without waiting on a close (§11).
 - *A thread-local or task-local id set by the handler*: async commands run
   on other threads, and an implicit id is easy to lose.
 
+**Verified on Linux (T006, 2026-10-11)**: the dev container, WebKitGTK, with
+`ScopedSession` on `list_firearms` only. The probe spec
+`e2e/specs/zz-session-header-probe.e2e.ts` calls `list_firearms` from the
+page through `__TAURI_INTERNALS__.invoke` (its header comment says how to
+force the fallback by hand) and passed all 8 checks on both IPC paths:
+- **`ipc://` custom protocol**: with `HoploDex-Session: <current id>` the
+  call is served; with no header, and with another session's id, it fails
+  with `DATABASE_CLOSED`.
+- **`postMessage` fallback**: forced by replacing `window.fetch` with one that
+  rejects every request to the IPC protocol. Tauri's `ipc-protocol.js` then
+  logs "IPC custom protocol failed, Tauri will now use the postMessage
+  interface instead", sets `customProtocolIpcFailed` and re-sends through
+  `window.ipc.postMessage` for the rest of the page's life. The probe counted
+  exactly one rejected `fetch` (the one that tripped the fallback) and saw the
+  warning, so every later call went through `postMessage`. The same three
+  cases give the same three results: served with the header, `DATABASE_CLOSED`
+  without it and with another id. The header survives
+  `options.headers` -> `InvokeMessage::headers()`.
+
+Not yet run on macOS (T007) or Windows (T008), where the custom protocol is
+`ipc://localhost` and `http://ipc.localhost`; the probe's `fetch` filter
+covers both. The probe stays in `e2e/specs/` until those are recorded.
+
 ## §3 The frontend's session scope
 
 **Decision**:

@@ -254,7 +254,26 @@ async function invokeFailure(
 }
 
 async function glockId(): Promise<number> {
-  const listed = (await invokeCommand("list_firearms", { input: { query: GLOCK_SERIAL } })) as {
+  // list_firearms names its session in the HoploDex-Session header (spec 008
+  // FR-004), as the frontend's scope sends it; the id comes from the status.
+  const listed = (await browser.execute(
+    async (query: string) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: {
+            invoke: (cmd: string, args: unknown, options?: unknown) => Promise<unknown>;
+          };
+        }
+      ).__TAURI_INTERNALS__;
+      const status = (await internals.invoke("get_database_status", {})) as { sessionId: number };
+      return internals.invoke(
+        "list_firearms",
+        { input: { query } },
+        { headers: { "HoploDex-Session": String(status.sessionId) } },
+      );
+    },
+    GLOCK_SERIAL,
+  )) as {
     groups: { firearms: { id: number }[] }[];
   };
   return listed.groups[0].firearms[0].id;
