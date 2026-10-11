@@ -750,6 +750,10 @@ someone looks at it.
   hook works but leaves **AutoFill**, which nothing public removes, so this
   is the owner's decision now. Findings below._
 
+  _Amended 2026-10-11 (owner's decision, spec.md Clarifications): keep
+  AutoFill; the hook cancels a menu its filter emptied (`cancelTracking`),
+  so a blank area opens none._
+
   **Findings (T073)**, from `src-tauri/src/window_controls/macos.rs` run in
   a throwaway window (a text field holding "the quick brwon fox" with
   "brwon" selected, a paragraph, a blank area; real right clicks posted with
