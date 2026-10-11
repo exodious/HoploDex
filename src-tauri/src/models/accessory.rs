@@ -10,7 +10,8 @@ use crate::commands::CommandError;
 use crate::models::firearm::{DispositionType, FirearmStatus};
 use crate::models::record::RecordRef;
 use crate::models::rules::{
-    DispositionFields, check_amounts, check_coverage_pair, check_dates_and_disposition,
+    DispositionFields, MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, check_amounts,
+    check_coverage_pair, check_dates_and_disposition, check_optional_text_length,
 };
 use crate::services::entry_text::{EntryField, check_entry_text, check_optional_entry_text};
 
@@ -213,6 +214,21 @@ pub fn validate_accessory_input(
         if let Err(message) = checked {
             errors.insert(field.ipc_name().into(), message);
         }
+    }
+
+    // specs/008-hardening-batch research.md §10: the free-text maximums.
+    for (field, label, value, max) in [
+        ("serialNumber", "Serial number", &input.serial_number, MAX_SHORT_TEXT_CHARS),
+        ("acquisitionSource", "Acquired from", &input.acquisition_source, MAX_SHORT_TEXT_CHARS),
+        (
+            "dispositionRecipient",
+            "Transferred to",
+            &input.disposition_recipient,
+            MAX_SHORT_TEXT_CHARS,
+        ),
+        ("notes", "Notes", &input.notes, MAX_LONG_TEXT_CHARS),
+    ] {
+        check_optional_text_length(field, label, value, max, &mut errors);
     }
 
     check_amounts(

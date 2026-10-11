@@ -16,6 +16,43 @@ pub(crate) fn is_blank(value: &Option<String>) -> bool {
     value.as_deref().map(str::trim).unwrap_or("").is_empty()
 }
 
+/// The most characters a short free-text field may hold: a nickname, a
+/// serial number, a finish, a source or recipient, a firearm's origin
+/// details, and a policy's names, number and contacts (specs/008-hardening-batch
+/// research.md §10). The entry fields keep their own 100
+/// (`services::entry_text::MAX_ENTRY_CHARS`). The frontend repeats it as
+/// `MAX_SHORT_TEXT_CHARS` in `src/lib/textLimits.ts`; the two must agree.
+pub const MAX_SHORT_TEXT_CHARS: usize = 200;
+
+/// The most characters a long free-text field may hold: notes, and a
+/// firearm's accessories text. Mirrored as `MAX_LONG_TEXT_CHARS` in
+/// `src/lib/textLimits.ts`.
+pub const MAX_LONG_TEXT_CHARS: usize = 4_000;
+
+/// Once trimmed, `value` is at most `max` characters (Unicode scalar values,
+/// as `check_entry_text` counts them, so a four-byte character is one).
+/// The error is the message to show under the field.
+pub(crate) fn check_text_length(label: &str, value: &str, max: usize) -> Result<(), String> {
+    if value.trim().chars().count() > max {
+        return Err(format!("{label} can be at most {max} characters."));
+    }
+    Ok(())
+}
+
+/// [`check_text_length`] for an optional field, recording a failure under
+/// the IPC name `field`.
+pub(crate) fn check_optional_text_length(
+    field: &str,
+    label: &str,
+    value: &Option<String>,
+    max: usize,
+    errors: &mut FieldErrors,
+) {
+    if let Err(message) = check_text_length(label, value.as_deref().unwrap_or(""), max) {
+        errors.insert(field.into(), message);
+    }
+}
+
 /// Parses an optional `YYYY-MM-DD` date that must not be later than
 /// `today` (FR-003/FR-004: today is allowed). A blank date is fine — both
 /// dates are optional — and yields `None`; a bad one records an error under

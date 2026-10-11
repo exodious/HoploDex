@@ -8,6 +8,7 @@ use crate::models::firearm::{
     DispositionType, Firearm, FirearmInput, FirearmStatus, Origin, validate_firearm_input,
 };
 use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
+use crate::models::rules::{MAX_SHORT_TEXT_CHARS, check_text_length};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
 use crate::session::scoped::ScopedSession;
@@ -31,6 +32,20 @@ pub struct DisposeInput {
 }
 
 impl DisposeInput {
+    /// The recipient's maximum (specs/008-hardening-batch research.md §10),
+    /// checked before anything is changed. The message is the error's own,
+    /// because the dialog shows a command's message when it has no field to
+    /// put it on; it is also on `dispositionRecipient`, as saving the record
+    /// reports it.
+    pub fn check_recipient(&self) -> Result<(), CommandError> {
+        check_text_length("Transferred to", &self.recipient, MAX_SHORT_TEXT_CHARS).map_err(
+            |message| {
+                CommandError::validation(message.clone(), Default::default())
+                    .on_field("dispositionRecipient", message)
+            },
+        )
+    }
+
     pub fn disposition(&self) -> Disposition<'_> {
         Disposition {
             disposition_type: self.disposition_type,
@@ -819,6 +834,7 @@ pub mod ops {
         input: &DisposeInput,
     ) -> Result<Firearm, CommandError> {
         get_firearm(conn, id)?;
+        input.check_recipient()?;
         crate::commands::mounts::ops::dispose_with_mounted(conn, RecordRef::Firearm(id), input)?;
         get_firearm(conn, id)
     }

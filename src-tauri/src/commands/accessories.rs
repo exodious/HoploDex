@@ -329,6 +329,7 @@ pub mod ops {
         input: &DisposeInput,
     ) -> Result<Accessory, CommandError> {
         load_accessory(conn, id)?;
+        input.check_recipient()?;
         crate::commands::mounts::ops::dispose_with_mounted(conn, RecordRef::Accessory(id), input)?;
         load_accessory(conn, id)
     }
