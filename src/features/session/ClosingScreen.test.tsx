@@ -14,6 +14,7 @@ vi.mock("./sessionService");
 const PATH = "/home/sam/Documents/HoploDex/Main collection.hoplodex";
 
 const status: DatabaseStatus = {
+  sessionId: 1,
   path: PATH,
   name: "Main collection",
   passphraseSaved: false,

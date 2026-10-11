@@ -10,6 +10,7 @@ pub mod idle;
 pub mod lifecycle;
 pub mod operations;
 pub mod pending;
+pub mod scoped;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,6 +18,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
 use rusqlite::{Connection, InterruptHandle};
+use serde::Serialize;
 
 use crate::commands::CommandError;
 use crate::commands::import_export::ImportSessionStore;
@@ -71,10 +73,11 @@ pub struct OpenDatabase {
     /// without waiting for it.
     pub preview_loading: Option<PreviewLoading>,
     /// Which open or unlock of a database this is, from a counter that only
-    /// goes up in this run. A command that asks the user something and acts
-    /// on the answer afterwards acts only if this is still the one that
-    /// asked ([`Session::with_generation`], research.md §18).
-    pub generation: u64,
+    /// goes up in this run (008 research.md §1). A command that asks the
+    /// user something and acts on the answer afterwards acts only if this
+    /// is still the one that asked ([`Session::with_generation`], 007
+    /// research.md §18).
+    pub session_id: SessionId,
     /// The user answered "Open in another app" in the native confirmation
     /// for a document during this open. It dies with this value, so a lock,
     /// close or switch forgets it, and is never written anywhere (FR-012,
@@ -89,15 +92,48 @@ pub struct OpenDatabase {
     pub imports: ImportSessionStore,
 }
 
-/// The last [`OpenDatabase::generation`] handed out.
-static GENERATIONS: AtomicU64 = AtomicU64::new(0);
+/// The last [`SessionId`] handed out.
+static SESSION_IDS: AtomicU64 = AtomicU64::new(0);
+
+/// Which open of a database a request belongs to (008 research.md §1,
+/// data-model.md "SessionId"). Every open, unlock and restore gets a new
+/// one from a counter that only goes up within a run, so an id is never
+/// handed out twice. `0` is never issued and means "none".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct SessionId(u64);
+
+impl SessionId {
+    /// No session: nothing is open.
+    pub const NONE: SessionId = SessionId(0);
+
+    /// The id a request named, or `None` for `0`, which is never issued.
+    pub fn from_request(raw: u64) -> Option<Self> {
+        (raw != 0).then_some(Self(raw))
+    }
+
+    /// The next id, which no earlier call returned.
+    fn next() -> Self {
+        Self(SESSION_IDS.fetch_add(1, Ordering::Relaxed) + 1)
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for SessionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// What a session knew about its open database when something was read from
 /// it: the part a later step needs to act on the same open (see
 /// [`Session::read_stamped`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenStamp {
-    pub generation: u64,
+    pub session_id: SessionId,
     pub external_open_confirmed: bool,
 }
 
@@ -143,7 +179,7 @@ impl OpenDatabase {
             preview: None,
             preview_seq: 0,
             preview_loading: None,
-            generation: GENERATIONS.fetch_add(1, Ordering::Relaxed) + 1,
+            session_id: SessionId::next(),
             external_open_confirmed: false,
             imports: ImportSessionStore::new(),
         })
@@ -190,6 +226,11 @@ impl std::ops::Deref for Session {
 /// What a [`Session`] holds.
 pub struct SessionInner {
     open: Mutex<Option<OpenDatabase>>,
+    /// The open database's [`SessionId`], or 0 (`SessionId::NONE`) with
+    /// nothing open: set by `install`, cleared by `take` and `forget_open`.
+    /// Read without the mutex, by work running outside it (008 research.md
+    /// §1, §11); the accessors still compare under the mutex.
+    current: AtomicU64,
     events: Arc<dyn SessionEvents>,
     /// Where `open_document` puts decrypted copies, deleted at every close
     /// (FR-022). `None` where nothing makes them.
@@ -244,6 +285,7 @@ impl Session {
     pub fn new(events: Arc<dyn SessionEvents>, opened_documents_dir: Option<PathBuf>) -> Self {
         Self(Arc::new(SessionInner {
             open: Mutex::new(None),
+            current: AtomicU64::new(0),
             events,
             opened_documents_dir,
             last_closed: Mutex::new(None),
@@ -280,6 +322,12 @@ impl SessionInner {
     /// thread (a skip, a sleep).
     pub fn operations_handle(&self) -> Arc<Operations> {
         Arc::clone(&self.operations)
+    }
+
+    /// The open database's session id, or `SessionId::NONE`, without
+    /// waiting on the session's mutex (a close may hold it for a while).
+    pub fn current_id(&self) -> SessionId {
+        SessionId(self.current.load(Ordering::SeqCst))
     }
 
     pub fn clock(&self) -> &dyn Clock {
@@ -353,6 +401,7 @@ impl SessionInner {
     /// restore, a passphrase change) put `open` back: its lock settings
     /// may have changed with it.
     pub(crate) fn reinstalled(&self, open: &OpenDatabase) {
+        self.current.store(open.session_id.get(), Ordering::SeqCst);
         self.idle.start(open.lock_settings.clone(), self.clock.now());
     }
 
@@ -390,7 +439,7 @@ impl SessionInner {
             return Err(CommandError::pending_changes_unresolved());
         }
         let stamp = OpenStamp {
-            generation: open.generation,
+            session_id: open.session_id,
             external_open_confirmed: open.external_open_confirmed,
         };
         let result = query(&open.conn);
@@ -398,7 +447,7 @@ impl SessionInner {
     }
 
     /// Runs `act` under the session's lock, only if the open database is
-    /// still the one with this `generation`, else `DATABASE_CLOSED` with
+    /// still the one with this `session_id`, else `DATABASE_CLOSED` with
     /// `act` not run (research.md §18). A close or lock takes the same lock
     /// before it clears the copies folder, so what `act` writes there is
     /// either cleared by it or never written.
@@ -409,12 +458,12 @@ impl SessionInner {
     /// outside the database), never for the collection.
     pub fn with_generation<T>(
         &self,
-        generation: u64,
+        session_id: SessionId,
         act: impl FnOnce(&mut OpenDatabase) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
         let mut guard = self.open_guard()?;
         match guard.as_mut() {
-            Some(open) if open.generation == generation => act(open),
+            Some(open) if open.session_id == session_id => act(open),
             _ => Err(CommandError::database_closed()),
         }
     }
@@ -530,13 +579,20 @@ impl SessionInner {
     pub fn install(&self, open: OpenDatabase) {
         self.idle.start(open.lock_settings.clone(), self.clock.now());
         *self.open_path.lock().expect("session mutex poisoned") = Some(open.path.clone());
-        *self.lock() = Some(open);
+        let mut slot = self.lock();
+        self.current.store(open.session_id.get(), Ordering::SeqCst);
+        *slot = Some(open);
     }
 
     /// Removes the open database from the session, for a close: from here
     /// on every command is refused with `DATABASE_CLOSED`.
     pub fn take(&self) -> Option<OpenDatabase> {
-        let taken = self.lock().take();
+        let taken = {
+            let mut slot = self.lock();
+            let taken = slot.take();
+            self.current.store(0, Ordering::SeqCst);
+            taken
+        };
         self.forget_open();
         taken
     }
@@ -553,6 +609,7 @@ impl SessionInner {
 
     /// Nothing is open any more: the idle clock stops.
     pub(crate) fn forget_open(&self) {
+        self.current.store(0, Ordering::SeqCst);
         self.idle.stop();
         *self.open_path.lock().expect("session mutex poisoned") = None;
     }

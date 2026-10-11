@@ -102,6 +102,9 @@ export interface Draft {
 }
 
 export interface DatabaseStatus {
+  /** This open's session id (specs/008 research.md §1): never 0, and every
+   * scoped command names it (research.md §2, §3). */
+  sessionId: number;
   path: string;
   name: string;
   /** FR-017, on this computer. */

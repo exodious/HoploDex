@@ -50,6 +50,7 @@ function status(
   },
 ): DatabaseStatus {
   return {
+    sessionId: 1,
     path: `${FOLDER}/Main collection.hoplodex`,
     name: "Main collection",
     passphraseSaved: false,

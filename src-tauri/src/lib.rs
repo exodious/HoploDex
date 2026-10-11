@@ -6,3 +6,4 @@ pub mod models;
 pub mod platform;
 pub mod services;
 pub mod session;
+pub mod window_controls;

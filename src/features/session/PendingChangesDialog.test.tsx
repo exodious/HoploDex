@@ -73,6 +73,7 @@ const draft: Draft = {
 
 function status(pendingChanges: PendingSummary | null): DatabaseStatus {
   return {
+    sessionId: 1,
     path: "/home/sam/Documents/HoploDex/Main collection.hoplodex",
     name: "Main collection",
     passphraseSaved: false,

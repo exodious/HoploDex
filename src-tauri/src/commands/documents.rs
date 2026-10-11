@@ -218,7 +218,7 @@ pub mod ops {
             said_yes = true;
         }
         // 4. The copy, under the lock, into the open that asked.
-        let path = session.with_generation(stamp.generation, |open| {
+        let path = session.with_generation(stamp.session_id, |open| {
             if said_yes {
                 open.external_open_confirmed = true;
             }

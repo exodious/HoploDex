@@ -54,6 +54,7 @@ const chooser: ChooserState = {
 
 function status(diskEncryption: boolean): DatabaseStatus {
   return {
+    sessionId: 1,
     path: PATH,
     name: "Main collection",
     passphraseSaved: false,

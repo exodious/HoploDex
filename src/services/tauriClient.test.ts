@@ -44,6 +44,29 @@ describe("invoke", () => {
   });
 });
 
+describe("invoke and the session header", () => {
+  it("sends the session id as the HoploDex-Session header", async () => {
+    vi.mocked(tauriInvoke).mockResolvedValue("ok");
+
+    await invoke("list_firearms", { input: {} }, { session: 7 });
+
+    expect(tauriInvoke).toHaveBeenCalledWith(
+      "list_firearms",
+      { input: {} },
+      { headers: { "HoploDex-Session": "7" } },
+    );
+  });
+
+  it("sends no options at all without a session", async () => {
+    vi.mocked(tauriInvoke).mockResolvedValue("ok");
+
+    await invoke("get_database_status");
+
+    expect(tauriInvoke).toHaveBeenCalledWith("get_database_status", undefined);
+    expect(vi.mocked(tauriInvoke).mock.calls[0]).toHaveLength(2);
+  });
+});
+
 describe("listen", () => {
   it("subscribes with a typed payload and returns a function that unsubscribes", async () => {
     const unlisten = vi.fn();

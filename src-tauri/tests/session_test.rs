@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::models::database::OperationKind;
 use hoplodex_lib::session::operations::Operations;
-use hoplodex_lib::session::{OpenDatabase, Session};
+use hoplodex_lib::session::scoped::ScopedSession;
+use hoplodex_lib::session::{OpenDatabase, Session, SessionId};
 use serde_json::json;
 use support::TestDb;
 
@@ -70,6 +71,57 @@ fn an_installed_database_serves_reads_and_writes_until_taken() {
     assert_eq!(taken.database_id.len(), 32);
     assert!(!session.is_open());
     assert_eq!(session.read(count_types).unwrap_err().code, "DATABASE_CLOSED");
+}
+
+#[test]
+fn every_open_has_a_new_session_id_and_current_id_follows_it() {
+    let session = Session::default();
+    assert_eq!(session.current_id(), SessionId::NONE);
+
+    let first = TestDb::new();
+    let (path, (conn, _dir)) = (first.path(), first.into_parts());
+    let open = OpenDatabase::new(conn, &path).unwrap();
+    let first_id = open.session_id;
+    assert_ne!(first_id, SessionId::NONE);
+    session.install(open);
+    assert_eq!(session.current_id(), first_id);
+    assert_eq!(session.inspect(|open| Ok(open.session_id)).unwrap(), first_id);
+
+    session.take().expect("the open database");
+    assert_eq!(session.current_id(), SessionId::NONE);
+
+    let second = TestDb::new();
+    let (path, (conn, _dir2)) = (second.path(), second.into_parts());
+    let open = OpenDatabase::new(conn, &path).unwrap();
+    assert_ne!(open.session_id, first_id, "an id is never handed out twice");
+    session.install(open);
+    assert_ne!(session.current_id(), first_id);
+}
+
+#[test]
+fn a_scoped_read_is_served_only_in_the_session_it_names() {
+    let db = TestDb::new();
+    let path = db.path();
+    let (conn, _dir) = db.into_parts();
+    let session = Session::default();
+    let open = OpenDatabase::new(conn, &path).unwrap();
+    let id = open.session_id;
+    session.install(open);
+
+    let named = |id| ScopedSession { session: session.clone(), id };
+    assert_eq!(named(id).read(count_types).unwrap(), 5);
+
+    let ran = Cell::new(false);
+    let other = SessionId::from_request(id.get() + 1).unwrap();
+    let refused = named(other).read(|_| {
+        ran.set(true);
+        Ok(())
+    });
+    assert_eq!(refused.unwrap_err().code, "DATABASE_CLOSED");
+    assert!(!ran.get());
+
+    session.take().expect("the open database");
+    assert_eq!(named(id).read(count_types).unwrap_err().code, "DATABASE_CLOSED");
 }
 
 #[test]

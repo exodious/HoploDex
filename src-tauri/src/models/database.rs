@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::CommandError;
 use crate::services::passphrase::{Passphrase, new_passphrase_problem};
+use crate::session::SessionId;
 
 /// A database file's extension, for databases and backups alike (research.md
 /// §19).
@@ -307,6 +308,9 @@ pub struct DatabaseNotes {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseStatus {
+    /// This open's session id (008 research.md §1): what every scoped
+    /// command's `HoploDex-Session` header must carry. Never 0.
+    pub session_id: SessionId,
     pub path: String,
     pub name: String,
     /// FR-017, on this computer.

@@ -12,6 +12,7 @@ vi.mock("../databases/databasesService");
 vi.mock("./sessionService");
 
 const status: DatabaseStatus = {
+  sessionId: 1,
   path: "/home/sam/Documents/HoploDex/Shared collection.hoplodex",
   name: "Shared collection",
   passphraseSaved: false,

@@ -26,7 +26,7 @@
 //!   CommandError>`, `OpenedDocument` serializing as `{ "opened": bool }`,
 //!   `opened_documents_dir` being the root that holds `<id>/<name>` (the one
 //!   the session clears at a close);
-//! - `session::OpenDatabase { generation: u64, external_open_confirmed: bool }`;
+//! - `session::OpenDatabase { session_id: SessionId, external_open_confirmed: bool }`;
 //! - the codes `NO_APP_FOR_DOCUMENT`, `DOCUMENT_TYPE_NOT_ALLOWED`,
 //!   `DOCUMENT_CONTENT_MISMATCH`, `DATABASE_CLOSED`, `INTERNAL_ERROR`,
 //!   `NOT_FOUND`.
@@ -310,8 +310,8 @@ impl World {
         self.session.inspect(|open| Ok(open.external_open_confirmed)).unwrap()
     }
 
-    fn generation(&self) -> u64 {
-        self.session.inspect(|open| Ok(open.generation)).unwrap()
+    fn generation(&self) -> hoplodex_lib::session::SessionId {
+        self.session.inspect(|open| Ok(open.session_id)).unwrap()
     }
 
     fn files(&self) -> Vec<PathBuf> {

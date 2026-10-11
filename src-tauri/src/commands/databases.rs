@@ -469,6 +469,7 @@ pub mod ops {
         let passphrase_saved =
             machine.recent().iter().any(|entry| entry.path == open.path && entry.passphrase_saved);
         Ok(DatabaseStatus {
+            session_id: open.session_id,
             path: open.path.to_string_lossy().into_owned(),
             name: open.name.clone(),
             passphrase_saved,

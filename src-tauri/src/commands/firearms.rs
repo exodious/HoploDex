@@ -10,6 +10,7 @@ use crate::models::firearm::{
 use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// Input for the `dispose_firearm` and `dispose_accessory` commands, per
 /// contracts/tauri-commands.md. Without `with_mounted`, equivalent to
@@ -1261,7 +1262,7 @@ pub async fn get_firearm(
 #[tauri::command]
 pub async fn list_firearms(
     input: ListFirearmsInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ListFirearmsOutput, CommandError> {
     session.read(|conn| ops::list_firearms(conn, &input))
 }
