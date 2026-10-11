@@ -634,7 +634,11 @@ fn a_helper_over_its_jobs_memory_limit_dies_and_only_it_does() {
         }
         let mut answer = None;
         while let Ok(Some(frame)) = read_from_helper(&mut stdout) {
-            answer = Some(frame);
+            // A progress frame is not an answer: the helper reports how far
+            // it has read while it reads, before the limit kills it.
+            if !matches!(frame, FromHelper::Progress { .. }) {
+                answer = Some(frame);
+            }
         }
         let code = child.wait().unwrap();
         (answer, code, accepted)

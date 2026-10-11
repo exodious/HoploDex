@@ -1551,6 +1551,17 @@ running, `TEMP`/`TMP` pointed at an empty folder.
   commits on this VM's disk); it has no
   budget (constitution IV sets none for an import's total time), but it is
   far slower than reading.
+  _Rerun 2026-10-11 (T133, after the convergence's matching-index and
+  nickname-query changes; the same machine, release, `TEMP`/`TMP` on an empty
+  folder; passed, 794 s in all, seeding 140 s)_:
+
+  | Input | Reading | Parent peak | Import |
+  |---|---|---|---|
+  | Workbook | 1.7 s | 203 MB (188 MB rise) | 321.2 s |
+  | Two CSVs | 0.75 s | 203 MB (186 MB rise) | 323.4 s |
+
+  The import is now about 2.9 times faster than the 925 s above (about
+  16 ms a row).
 - **The hostile corpus** (`import_reader_test`, release, 5 s per refusal, no
   debug allowance; 40 passed):
   - slowest refusal: 2.98 s (`cells-16-sheets`), against 5 s. The next are
