@@ -137,7 +137,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 
 - [X] T045 [US2] Move the TIFF-independent parts of 007's helper from `src-tauri/src/services/preview/` to `src-tauri/src/services/helper/`: `confine.rs` (Landlock and rlimits on Linux, `sandbox_init` and the kqueue parent watch on macOS, the job object on Windows), with the memory cap now a parameter of `confine()` (TIFF keeps 2 GiB); `helper_job.rs` → `job.rs`; the framing half of `helper_protocol.rs` → `frames.rs`; the generic half of `helper_handle.rs` (start, time limits, kill on drop) → `handle.rs`. `services/preview/` keeps `tiff.rs` and `helper.rs` (the TIFF mode's loop and its requests). Update `src-tauri/src/main.rs`, `src-tauri/tests/tiff_helper_test.rs`, `tiff_preview_test.rs` and `support/preview_support.rs` to the new paths, and rename the paths in place in `specs/007-document-preview/` (research.md, plan.md, tasks.md) as a mechanical rename (CLAUDE.md "Spec Kit workflow"). No behaviour change
 - [X] T046 [US2] On Linux, run `tiff_helper_test`, `tiff_preview_test` (including the confinement self-check) and `pdf_preview_test` in the dev container after T045; fix every failure
-- [ ] T047 [US2] On macOS, in the macOS 26 VM, run the same tests as T046 after T045; fix every failure
+- [X] T047 [US2] On macOS, in the macOS 26 VM, run the same tests as T046 after T045; fix every failure
 - [X] T048 [US2] On Windows, on the Windows test machine, run the same tests as T046 after T045; fix every failure
 
 ### Tests for User Story 2 (mandatory per constitution)
