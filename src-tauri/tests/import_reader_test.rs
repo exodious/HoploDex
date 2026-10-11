@@ -56,10 +56,13 @@ const MEMORY_BUDGET: u64 = 512 * 1024 * 1024;
 const REFUSAL_BUDGET: Duration = Duration::from_secs(5);
 /// The corpus cases whose refusal comes only after five million cells have
 /// been parsed (a workbook of sixteen sheets past the cell limit in its
-/// thirteenth). In a debug build `calamine` and `quick-xml` run unoptimized,
-/// because their generic code is compiled with this crate, and the case takes
-/// about 10 s (about 3.5 s optimized): the budget is 4x in a debug build.
+/// thirteenth). In a debug build the generic parsing code of `calamine` and
+/// `quick-xml` is compiled with this crate, unoptimized, and the case takes
+/// 10–17 s (Linux, Windows, the macOS VM; more on a loaded machine) against
+/// about 2–3 s in release. SC-003's 5 s is a release budget, measured there
+/// (research.md §19), so a debug build allows `DEBUG_FACTOR` times as long.
 const SLOW_IN_DEBUG: &[&str] = &["cells-16-sheets"];
+const DEBUG_FACTOR: u32 = 12;
 /// How long a stop, a lock or a sleep may take to end the reading (SC-004).
 const STOP_BUDGET: Duration = Duration::from_secs(1);
 
@@ -226,7 +229,7 @@ fn run_case(name: &str) {
         }
     }
     let budget = if cfg!(debug_assertions) && SLOW_IN_DEBUG.contains(&name) {
-        REFUSAL_BUDGET * 4
+        REFUSAL_BUDGET * DEBUG_FACTOR
     } else {
         REFUSAL_BUDGET
     };
