@@ -1081,3 +1081,90 @@ describe("DocumentList: the scope's end (US1-2, US1-5)", () => {
     expect(screen.queryByText("Purchase receipt.pdf")).not.toBeInTheDocument();
   });
 });
+
+describe("DocumentList: at most 50 documents (001 FR-010, amended 2026-10-11)", () => {
+  const FULL_NOTE =
+    "This firearm has 50 documents, the most it can have. Delete one to add another.";
+  const full = () => [
+    receipt(),
+    ...Array.from({ length: 49 }, (_, n) =>
+      doc(100 + n, `Page ${n}.pdf`, "application/pdf", "pdf"),
+    ),
+  ];
+
+  it("disables Attach and shows the note in place of the drop strip once the firearm has 50", async () => {
+    docs = full();
+    await renderList();
+
+    const attach = screen.getByRole("button", { name: "Attach" });
+    expect(attach).toBeDisabled();
+    expect(attach).toHaveAttribute("title", FULL_NOTE);
+    expect(screen.getByRole("note")).toHaveTextContent(FULL_NOTE);
+    expect(screen.queryByText(/Drop more files here/)).not.toBeInTheDocument();
+  });
+
+  it("keeps Attach and the drop strip below 50", async () => {
+    docs = full().slice(0, 49);
+    await renderList();
+
+    expect(screen.getByRole("button", { name: "Attach" })).toBeEnabled();
+    expect(screen.getByText(/Drop more files here/)).toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("names a document dropped on a full firearm as not attached, with the backend's message", async () => {
+    docs = full();
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_documents") return docs.map((d) => ({ ...d }));
+      if (command === "list_document_types") return types;
+      if (command === "add_document_from_path") {
+        throw new CommandFailure({
+          code: "ATTACHMENT_LIMIT_REACHED",
+          message: "This firearm has 50 documents, the most it can have.",
+          details: { limit: 50 },
+        });
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    await renderListWithTypes();
+
+    act(() => backend.drop(["/a/Late receipt.pdf"]));
+
+    const toast = await toastWith(
+      "Late receipt.pdf wasn't attached. This firearm has 50 documents, the most it can have.",
+    );
+    expect(toast).toHaveClass("hd-toast--error");
+  });
+
+  it("attaches up to the limit, then sends no more and counts the rest as not attached", async () => {
+    docs = full().slice(0, 48);
+    backend.invoke.mockImplementation(async (command: string, args = {}) => {
+      if (command === "list_documents") return docs.map((d) => ({ ...d }));
+      if (command === "list_document_types") return types;
+      if (command === "add_document_from_path") {
+        if (docs.length >= 50) {
+          throw new CommandFailure({
+            code: "ATTACHMENT_LIMIT_REACHED",
+            message: "This firearm has 50 documents, the most it can have.",
+          });
+        }
+        const added = doc(200 + docs.length, String(args.path), "application/pdf", "pdf");
+        docs = [...docs, added];
+        return added;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    await renderListWithTypes();
+
+    act(() => backend.drop(["/a/1.pdf", "/a/2.pdf", "/a/3.pdf", "/a/4.pdf", "/a/5.pdf"]));
+
+    expect(await toastWith("Attached 2 documents.")).toBeInTheDocument();
+    expect(
+      await toastWith(
+        "3 documents weren't attached. This firearm has 50 documents, the most it can have.",
+      ),
+    ).toHaveClass("hd-toast--error");
+    expect(calls("add_document_from_path")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Attach" })).toBeDisabled();
+  });
+});

@@ -15,6 +15,12 @@ import { documentKindLabel } from "./documentKind";
 import { useDocumentOpening } from "./documentOpening";
 import { documentAccept, fileName, isDocumentPath, isPhotoPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
+import {
+  MAX_DOCUMENTS_PER_RECORD,
+  fullNote,
+  isLimitReached,
+  limitRefusal,
+} from "./attachmentLimits";
 import "./media.css";
 
 export interface DocumentListProps {
@@ -117,19 +123,27 @@ export function DocumentList({ owner }: DocumentListProps) {
 
   /** Attaches each document in turn, carrying on past one that fails so a
    * bad file doesn't cost the rest of a batch. A batch stops at the scope's end
-   * (FR-002, research.md §5): what was attached stays, and nothing more is sent. */
+   * (FR-002, research.md §5): what was attached stays, and nothing more is sent.
+   * It also stops once the record is full (FR-010, amended 2026-10-11): the
+   * documents up to the limit stay, and the rest are named as not attached. */
   async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
     if (pending.length === 0) return;
     setAdding(pending.length);
     let added = 0;
     let failure: string | null = null;
-    for (const { name, add } of pending) {
+    let full: string | null = null;
+    for (const [index, { name, add }] of pending.entries()) {
       if (scope.ended) break;
       try {
         await add();
         added += 1;
       } catch (e) {
         if (scope.ended) break;
+        if (isLimitReached(e)) {
+          const left = pending.slice(index).map((p) => p.name);
+          full = limitRefusal(left, "documents", "attached", e);
+          break;
+        }
         // The backend's message says a photo isn't a document type; here it can say where it goes.
         failure ??=
           e instanceof CommandFailure && e.code === "DOCUMENT_TYPE_NOT_ALLOWED" && isPhotoPath(name)
@@ -141,6 +155,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     if (scope.ended) return;
     await load();
     if (added > 0) notify(`Attached ${added} ${added === 1 ? "document" : "documents"}.`);
+    if (full) notify(full, "error");
     if (failure) notify(failure, "error");
   }
 
@@ -231,6 +246,8 @@ export function DocumentList({ owner }: DocumentListProps) {
   );
   const accept = documentAccept(types);
   const pick = () => inputRef.current?.click();
+  const full = documents != null && documents.length >= MAX_DOCUMENTS_PER_RECORD;
+  const note = fullNote(owner, MAX_DOCUMENTS_PER_RECORD, "documents");
 
   return (
     <section className="hd-panel hd-dropzone-host" aria-labelledby="documents-title">
@@ -241,7 +258,14 @@ export function DocumentList({ owner }: DocumentListProps) {
             <span className="hd-panel__count hd-num">{documents.length}</span>
           )}
         </h2>
-        <Button size="sm" icon="plus" pending={adding > 0} onClick={pick}>
+        <Button
+          size="sm"
+          icon="plus"
+          pending={adding > 0}
+          disabled={full}
+          title={full ? note : undefined}
+          onClick={pick}
+        >
           {adding > 0 ? `Attaching ${adding}…` : "Attach"}
         </Button>
         <input
@@ -331,7 +355,7 @@ export function DocumentList({ owner }: DocumentListProps) {
         </ul>
       )}
 
-      {documents && documents.length > 0 && (
+      {documents && documents.length > 0 && !full && (
         <button type="button" className="hd-dropzone hd-dropzone--compact" onClick={pick}>
           <span>
             Drop more files here, or <span className="hd-link">choose files</span>
@@ -339,9 +363,15 @@ export function DocumentList({ owner }: DocumentListProps) {
         </button>
       )}
 
+      {full && (
+        <p className="hd-dropzone hd-dropzone--compact hd-dropzone--full" role="note">
+          {note}
+        </p>
+      )}
+
       {dragging && (
         <div className="hd-dropzone-overlay" aria-hidden>
-          Drop to attach
+          {full ? note : "Drop to attach"}
         </div>
       )}
 

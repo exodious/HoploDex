@@ -5,7 +5,10 @@ use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
 use crate::models::record::RecordRef;
-use crate::services::attachments::{mime_type_for, read_attachment_file, safe_basename};
+use crate::models::rules::MAX_PHOTOS_PER_RECORD;
+use crate::services::attachments::{
+    mime_type_for, read_attachment_file, require_room, safe_basename,
+};
 use crate::session::scoped::ScopedSession;
 
 /// What `set_thumbnail_photo` returns (contracts/tauri-commands.md "Photos
@@ -63,7 +66,8 @@ pub mod ops {
     }
 
     /// The first photo added to a record automatically becomes its
-    /// thumbnail (FR-008, US4 Acceptance Scenario 1; 006 FR-007a).
+    /// thumbnail (FR-008, US4 Acceptance Scenario 1; 006 FR-007a). A record
+    /// holds at most `MAX_PHOTOS_PER_RECORD` (FR-007, amended 2026-10-11).
     pub fn add_photo(
         conn: &Connection,
         owner: RecordRef,
@@ -72,8 +76,9 @@ pub mod ops {
         mime_type: &str,
     ) -> Result<Photo, CommandError> {
         validate_photo_mime_type(mime_type)?;
-        let thumbnail_bytes = generate_thumbnail(file_bytes)?;
         require_owner(conn, owner)?;
+        require_room(conn, owner, "photos", "photos", MAX_PHOTOS_PER_RECORD)?;
+        let thumbnail_bytes = generate_thumbnail(file_bytes)?;
         // The name comes over IPC. A name is only ever a name: no path in it
         // (issue #68; the export checks again, for rows made before this).
         let original_filename = safe_basename(original_filename, "photo");

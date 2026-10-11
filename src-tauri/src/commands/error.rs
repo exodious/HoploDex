@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 use crate::db::{DbError, OpenError};
 use crate::models::database::OperationKind;
+use crate::models::record::RecordRef;
 use crate::services::import_reader::limits::ImportLimit;
 
 /// The single error shape returned by every Tauri IPC command, per
@@ -200,6 +201,17 @@ impl CommandError {
             details["sheet"] = sheet.into();
         }
         Self::new("IMPORT_LIMIT_EXCEEDED", limit.message(file, sheet)).with_details(Some(details))
+    }
+
+    /// 001 FR-007 and FR-010 (amended 2026-10-11): `owner` already has
+    /// `limit` photos or documents (`what`, plural), the most a record may
+    /// have (`ATTACHMENT_LIMIT_REACHED`, contracts/tauri-commands.md).
+    pub fn attachment_limit_reached(owner: RecordRef, what: &str, limit: u32) -> Self {
+        Self::new(
+            "ATTACHMENT_LIMIT_REACHED",
+            format!("This {} has {limit} {what}, the most it can have.", owner.noun()),
+        )
+        .with_details(Some(json!({ "limit": limit })))
     }
 
     /// 008 FR-007: an import file couldn't be read: not a table, damaged,

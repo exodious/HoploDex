@@ -41,6 +41,17 @@
   font-size: var(--text-sm);
 }
 
+/* In place of the strip once the record has as many as it can (001 FR-007
+   and FR-010, amended 2026-10-11): a note, not a control. */
+.hd-dropzone--full,
+.hd-dropzone--full:hover {
+  margin: 0;
+  border-style: solid;
+  border-color: var(--rule);
+  background: transparent;
+  cursor: default;
+}
+
 .hd-dropzone-overlay {
   position: absolute;
   inset: -8px;

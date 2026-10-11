@@ -465,3 +465,96 @@ fn deleting_an_accessory_deletes_its_photos_and_only_its_photos() {
     assert_eq!(photo_ops::list_photos(&db.conn, RecordRef::Accessory(kept)).unwrap().len(), 1);
     assert_eq!(photo_ops::list_photos(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().len(), 1);
 }
+
+// --- At most 50 photos a record (FR-007, amended 2026-10-11; issue #95) ------
+
+/// Gives `owner` its 50 photos.
+fn fill_with_photos(db: &TestDb, owner: RecordRef) {
+    for n in 0..50 {
+        photo_ops::add_photo(
+            &db.conn,
+            owner,
+            &sample_png_bytes(),
+            &format!("{n}.png"),
+            "image/png",
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_firearm_with_50_photos_refuses_another_and_stores_nothing() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    fill_with_photos(&db, owner);
+
+    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "51.png", "image/png")
+        .expect_err("a 51st photo is refused");
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+    assert_eq!(err.message, "This firearm has 50 photos, the most it can have.");
+    assert_eq!(err.details.as_deref(), Some(&json!({ "limit": 50 })));
+    assert_eq!(count(&db, "photos"), 50);
+
+    // A dropped file is refused the same way.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("dropped.png");
+    std::fs::write(&path, sample_png_bytes()).unwrap();
+    let err = photo_ops::add_photo_from_path(&db.conn, owner, &path).unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+    assert_eq!(count(&db, "photos"), 50);
+}
+
+#[test]
+fn a_full_record_is_refused_before_the_photo_is_decoded() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    fill_with_photos(&db, owner);
+
+    // Bytes that wouldn't decode: the limit is what's reported, so no
+    // thumbnail is made for a photo that can't be kept.
+    let err =
+        photo_ops::add_photo(&db.conn, owner, b"not an image", "51.png", "image/png").unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+}
+
+#[test]
+fn deleting_a_photo_from_a_full_record_makes_room_for_one_more() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    fill_with_photos(&db, owner);
+
+    let first = photo_ops::list_photos(&db.conn, owner).unwrap()[0].id;
+    photo_ops::delete_photo(&db.conn, first, true).unwrap();
+    photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "again.png", "image/png").unwrap();
+    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "more.png", "image/png")
+        .unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+}
+
+#[test]
+fn the_photo_limit_is_each_records_own() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let accessory = create_accessory(&db, "A-1");
+    fill_with_photos(&db, RecordRef::Accessory(accessory));
+
+    let err = photo_ops::add_photo(
+        &db.conn,
+        RecordRef::Accessory(accessory),
+        &sample_png_bytes(),
+        "51.png",
+        "image/png",
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
+    assert_eq!(err.message, "This accessory has 50 photos, the most it can have.");
+
+    // Another record, firearm or accessory, still takes photos.
+    let other = create_accessory(&db, "A-2");
+    for owner in [RecordRef::Firearm(firearm.id), RecordRef::Accessory(other)] {
+        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png", "image/png").unwrap();
+    }
+}

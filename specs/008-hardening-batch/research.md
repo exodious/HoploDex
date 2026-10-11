@@ -629,6 +629,8 @@ characters, which the workbook export already can't write (an existing
 limitation, not this feature's). A follow-up issue records it (plan.md
 "Close-out").
 
+_Amended 2026-10-11: a record now has at most 50 photos ([001 FR-007](../001-firearms-inventory/spec.md)), so the cell stays far under the limit (issue #95)._
+
 ## §10 Field maximums (owner's decision, 2026-10-11)
 
 **Decision**: every free-text field gets a maximum length, counted in
