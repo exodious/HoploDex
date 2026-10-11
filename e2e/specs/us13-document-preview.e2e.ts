@@ -8,6 +8,7 @@ import zlib from "node:zlib";
 import { appPid, relaunchApp } from "../support/app";
 import { writeLargePdf } from "../support/largePdf";
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
+import { macWindowShot } from "../support/screenshots";
 import {
   $,
   $$,
@@ -437,36 +438,14 @@ function decodePng(png: Buffer): { width: number; height: number; pixels: Buffer
  * found in it. */
 async function windowScreenshot(): Promise<Screen> {
   if (process.platform === "darwin") {
-    // The window has a title bar above the page, and WebDriver's rectangle
-    // doesn't say where the page starts, so a green square in the page's top
-    // left corner (clear of the surface) is found in the capture and gives
-    // the page's origin.
-    const size = 40;
-    await browser.execute((px) => {
-      const marker = document.createElement("div");
-      marker.id = "e2e-origin-marker";
-      marker.style.cssText = `position:fixed;left:0;top:0;width:${px}px;height:${px}px;background:#00ff00;z-index:2147483647`;
-      document.body.appendChild(marker);
-    }, size);
-    await browser.pause(300);
+    // This worker's window alone, cropped to the page (macWindowShot): the
+    // page's origin is the picture's.
     const file = path.join(os.tmpdir(), `hoplodex-e2e-screen-${process.pid}.png`);
     try {
-      execFileSync("screencapture", ["-x", "-t", "png", file]);
-      const screen = decodePng(fs.readFileSync(file));
-      let originX = Infinity;
-      let originY = Infinity;
-      for (let i = 0; i + 2 < screen.pixels.length; i += 3) {
-        if (screen.pixels[i] < 60 && screen.pixels[i + 1] > 200 && screen.pixels[i + 2] < 60) {
-          const at = i / 3;
-          originX = Math.min(originX, at % screen.width);
-          originY = Math.min(originY, Math.floor(at / screen.width));
-        }
-      }
-      if (!Number.isFinite(originX)) throw new Error("the origin marker is not on the screen");
-      return { ...screen, originX, originY };
+      await macWindowShot(file);
+      return { ...decodePng(fs.readFileSync(file)), originX: 0, originY: 0 };
     } finally {
       fs.rmSync(file, { force: true });
-      await browser.execute(() => document.getElementById("e2e-origin-marker")?.remove());
     }
   }
   let ppm: Buffer;

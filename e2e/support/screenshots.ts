@@ -207,26 +207,61 @@ export async function shotDisplay(name: string) {
       { stdio: "pipe", windowsHide: true },
     );
   } else if (process.platform === "darwin") {
-    // WebDriver's rectangle is the window's frame, title bar included; the
-    // page fills the rest, below it (one pixel to a point on this display).
-    const frame = await browser.getWindowRect();
-    const view = await browser.execute(() => ({
-      width: window.innerWidth,
-      height: window.innerHeight,
-    }));
-    const left = frame.x + Math.round((frame.width - view.width) / 2);
-    const top = frame.y + (frame.height - view.height);
-    execFileSync("screencapture", [
-      "-x",
-      "-t",
-      "png",
-      "-R",
-      `${left},${top},${view.width},${view.height}`,
-      file,
-    ]);
+    await macWindowShot(file);
   } else {
     const { width, height } = SCREENSHOT_WINDOW;
     execFileSync("import", ["-window", "root", "-crop", `${width}x${height}+0+0`, "+repage", file]);
   }
   await browser.execute(() => document.getElementById("hd-screenshot-freeze")?.remove());
+}
+
+/**
+ * macOS: saves the page area of this worker's app window as the PNG `file`,
+ * one pixel to a point (#88). `screencapture -l` captures one window's own
+ * contents by its CGWindowID, the PDF surface (a child web view) included, so
+ * another worker's window on top of this one can't show in it, as it would in
+ * a capture of a screen rectangle. The id comes from e2e/scripts/window-id.js,
+ * by the app's process id. The window has a title bar above the page, and
+ * WebDriver's rectangle doesn't say where the page starts, so the page is the
+ * window less what the web view's size leaves over, cropped (e2e/scripts/png-crop.js), and
+ * scaled down on a Retina display (two pixels to a point) with `sips`.
+ */
+export async function macWindowShot(file: string) {
+  const script = fileURLToPath(new URL("../scripts/window-id.js", import.meta.url));
+  const win = JSON.parse(
+    execFileSync("osascript", ["-l", "JavaScript", script, String(appPid())], {
+      encoding: "utf8",
+    }),
+  ) as { id: number; width: number; height: number };
+  const view = await browser.execute(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const raw = `${file}.window.png`;
+  try {
+    // -o: no shadow, so the picture is the window and nothing around it.
+    execFileSync("screencapture", ["-x", "-o", "-t", "png", "-l", String(win.id), raw]);
+    const png = fs.readFileSync(raw);
+    const scale = png.readUInt32BE(16) / win.width; // the IHDR's width
+    const px = (points: number) => Math.round(points * scale);
+    // The title bar is above the page; any frame at the sides is shared out.
+    const top = px(win.height - view.height);
+    const left = px((win.width - view.width) / 2);
+    execFileSync("osascript", [
+      "-l",
+      "JavaScript",
+      fileURLToPath(new URL("../scripts/png-crop.js", import.meta.url)),
+      raw,
+      file,
+      String(left),
+      String(top),
+      String(px(view.width)),
+      String(px(view.height)),
+    ]);
+    if (scale !== 1) {
+      execFileSync("sips", ["-z", String(view.height), String(view.width), file]);
+    }
+  } finally {
+    fs.rmSync(raw, { force: true });
+  }
 }
