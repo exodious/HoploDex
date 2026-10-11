@@ -29,6 +29,7 @@ use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackup};
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
 use support::{ManualClock, TestEvents, passphrase, peek, test_session_at};
@@ -82,14 +83,20 @@ impl World {
     }
 
     fn close(&self) -> CloseOutcome {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap()
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap()
     }
 
     /// A change to the collection: a new firearm.
     fn change(&self) {
         let serial = db::random_hex(4).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", &serial),
@@ -104,7 +111,7 @@ impl World {
     fn grow(&self, bytes: usize) {
         let filler = db::random_hex(bytes / 2).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 conn.execute_batch("CREATE TABLE IF NOT EXISTS filler (content TEXT)").unwrap();
                 conn.execute("INSERT INTO filler (content) VALUES (?1)", [filler]).unwrap();
                 Ok(())
@@ -113,17 +120,19 @@ impl World {
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     /// Every firearm's `(id, uid)` in the open database, by id.
     fn firearm_uids(&self) -> Vec<(i64, String)> {
-        self.session.read(|conn| Ok(uids(conn))).unwrap()
+        self.session.read(self.session.current_id(), |conn| Ok(uids(conn))).unwrap()
     }
 
     fn firearm_count(&self) -> i64 {
         self.session
-            .read(|conn| {
+            .read(self.session.current_id(), |conn| {
                 conn.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0))
                     .map_err(CommandError::from_db)
             })
@@ -133,7 +142,7 @@ impl World {
     /// `(changes_waiting, last_backup_at)` of the open database.
     fn backup_record(&self) -> (bool, Option<String>) {
         self.session
-            .read(|conn| {
+            .read(self.session.current_id(), |conn| {
                 conn.query_row("SELECT changes_waiting, last_backup_at FROM app_state", [], |r| {
                     Ok((r.get(0)?, r.get(1)?))
                 })
@@ -148,6 +157,7 @@ impl World {
         let existing_backups = Some(ExistingBackupsChoice::Leave);
         databases::update_backup_settings(
             &self.session,
+            self.session.current_id(),
             &self.machine,
             &BackupSettingsInput { enabled, keep_count, location, existing_backups },
         )
@@ -236,7 +246,7 @@ fn deleting_all_backups_lifts_the_once_a_day_limit() {
     assert_eq!(world.close().backup, BackupOutcome::Made);
 
     world.open();
-    backups_ops::delete_all_backups(&world.session, true).unwrap();
+    backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
     world.change();
     world.clock.set("2026-09-25T18:00:00+02:00");
 
@@ -328,7 +338,7 @@ fn a_dropped_connection_leaves_the_changes_waiting_for_the_next_close() {
     world.create();
     world.change();
     // A crash: the connection goes without a close.
-    drop(world.session.take());
+    drop(world.session.take(world.session.current_id()));
 
     world.open();
     assert_eq!(world.backup_record(), (true, None), "US3-1b");
@@ -424,7 +434,7 @@ fn a_backup_opens_with_the_passphrase_without_the_marker_or_pending_changes() {
     world.change();
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute(
                 "INSERT INTO pending_changes (id, kind, mode, target_id, label, form_version,
                                               values_json, saved_at)
@@ -478,7 +488,8 @@ fn a_backup_opened_directly_becomes_its_own_database() {
     let note = status.notes.opened_backup.expect("the opened-backup note");
     assert_eq!(note.backup_of_name, "Mine");
     assert_eq!(note.made_at, "2026-09-25T12:30:05Z");
-    databases::dismiss_note(&world.session, NoteKind::OpenedBackup).unwrap();
+    databases::dismiss_note(&world.session, world.session.current_id(), NoteKind::OpenedBackup)
+        .unwrap();
     let status = databases::database_status(&world.session, &world.machine).unwrap();
     assert_eq!(status.notes.opened_backup, None, "shown once");
     world.close();
@@ -634,7 +645,7 @@ fn a_close_with_the_file_unreachable_makes_no_backup_and_writes_nothing() {
     world.change();
     let aside = world.dir.path().join("aside.hoplodex");
     fs::rename(world.path(), &aside).unwrap();
-    let refused = world.session.write(|_| Ok(()));
+    let refused = world.session.write(world.session.current_id(), |_| Ok(()));
     assert_eq!(refused.unwrap_err().code, "DATABASE_UNAVAILABLE");
     fs::rename(&aside, world.path()).unwrap();
     let before = fs::read(world.path()).unwrap();
@@ -687,7 +698,7 @@ fn a_backup_left_unfinished_is_swept_at_the_next_launch() {
         partial_path: partial.clone(),
         started_at: "2026-09-25T12:30:05Z".into(),
     });
-    drop(world.session.take());
+    drop(world.session.take(world.session.current_id()));
 
     backups::sweep_unfinished(&world.machine);
 
@@ -812,7 +823,8 @@ fn deleting_all_backups_needs_confirming() {
     let world = World::new();
     with_three_backups(&world);
 
-    let refused = backups_ops::delete_all_backups(&world.session, false);
+    let refused =
+        backups_ops::delete_all_backups(&world.session, world.session.current_id(), false);
 
     assert_eq!(refused.unwrap_err().code, "CONFIRMATION_REQUIRED");
     assert_eq!(world.backups_in(&world.default_folder(), &world.database_id()).len(), 3);
@@ -830,7 +842,8 @@ fn deleting_all_backups_deletes_every_one_and_nothing_else() {
     let record = world.backup_record();
     let before = fs::read(world.path()).unwrap();
 
-    let deleted = backups_ops::delete_all_backups(&world.session, true).unwrap();
+    let deleted =
+        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
 
     assert_eq!(deleted.deleted_count, 3);
     assert!(deleted.failed_paths.is_empty());
@@ -863,7 +876,8 @@ fn a_backup_that_cannot_be_deleted_is_reported_and_the_rest_still_go() {
     let stuck = Path::new(&listed[1].path);
     fs::set_permissions(stuck, fs::Permissions::from_mode(0o444)).unwrap();
 
-    let deleted = backups_ops::delete_all_backups(&world.session, true).unwrap();
+    let deleted =
+        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
 
     assert_eq!(deleted.deleted_count, 2);
     assert_eq!(deleted.failed_paths, vec![listed[1].path.clone()]);
@@ -883,7 +897,8 @@ fn deleting_all_backups_can_be_stopped_between_files() {
         }
     });
 
-    let stopped = backups_ops::delete_all_backups(&world.session, true).unwrap_err();
+    let stopped = backups_ops::delete_all_backups(&world.session, world.session.current_id(), true)
+        .unwrap_err();
 
     assert_eq!(stopped.code, "OPERATION_STOPPED");
     assert_eq!(
@@ -920,8 +935,14 @@ fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
     // The backup made before restoring is named for the minute, so it
     // needs a later one than the backup being restored.
     world.clock.advance(chrono::Duration::hours(1));
-    backups_ops::restore_backup(&world.session, &world.machine, &backup.path, &passphrase(), None)
-        .unwrap();
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
 
     assert_eq!(world.firearm_uids(), before, "restoring brings the same identifiers back");
 }
@@ -968,7 +989,7 @@ impl World {
             "status": "active",
         });
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 let id = accessories::create_accessory(
                     conn,
                     &serde_json::from_value(input.clone()).unwrap(),
@@ -988,7 +1009,11 @@ impl World {
     }
 
     fn accessory_state(&self) -> (Vec<StoredAccessory>, Vec<StoredPhoto>) {
-        self.session.read(|conn| Ok((stored_accessories(conn), stored_photos(conn)))).unwrap()
+        self.session
+            .read(self.session.current_id(), |conn| {
+                Ok((stored_accessories(conn), stored_photos(conn)))
+            })
+            .unwrap()
     }
 }
 
@@ -1022,14 +1047,22 @@ fn an_accessory_its_photo_and_its_identifier_survive_a_backup_and_a_restore_of_i
     world.add_accessory_with_photo("ACC-2");
     world
         .session
-        .write(|conn| accessories::delete_accessory(conn, accessory, true).map(|_| ()))
+        .write(world.session.current_id(), |conn| {
+            accessories::delete_accessory(conn, accessory, true).map(|_| ())
+        })
         .unwrap();
     assert_ne!(world.accessory_state(), before);
     // The backup made before restoring is named for the minute, so it
     // needs a later one than the backup being restored.
     world.clock.advance(chrono::Duration::hours(1));
-    backups_ops::restore_backup(&world.session, &world.machine, &backup.path, &passphrase(), None)
-        .unwrap();
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
 
     assert_eq!(
         world.accessory_state(),
@@ -1061,7 +1094,7 @@ impl World {
     /// A firearm; returns its id.
     fn add_firearm(&self, serial: &str) -> i64 {
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", serial),
@@ -1077,7 +1110,7 @@ impl World {
     fn mount(&self, item: RecordRef, host: Option<RecordRef>) {
         let input = json!({ "item": item, "host": host });
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 mounts::mount_record(conn, &serde_json::from_value(input.clone()).unwrap())
                     .map(|_| ())
             })
@@ -1085,7 +1118,7 @@ impl World {
     }
 
     fn mount_state(&self) -> Vec<StoredMount> {
-        self.session.read(|conn| Ok(stored_mounts(conn))).unwrap()
+        self.session.read(self.session.current_id(), |conn| Ok(stored_mounts(conn))).unwrap()
     }
 }
 
@@ -1121,8 +1154,14 @@ fn a_mount_of_an_accessory_on_a_firearm_and_of_a_firearm_on_an_accessory_survive
     // The backup made before restoring is named for the minute, so it
     // needs a later one than the backup being restored.
     world.clock.advance(chrono::Duration::hours(1));
-    backups_ops::restore_backup(&world.session, &world.machine, &backup.path, &passphrase(), None)
-        .unwrap();
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
 
     assert_eq!(world.mount_state(), before, "restoring brings both mounts back, and only them");
 }

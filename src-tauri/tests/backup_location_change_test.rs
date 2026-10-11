@@ -24,6 +24,7 @@ use hoplodex_lib::models::database::{
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackupMove};
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
 use support::{ManualClock, TestEvents, passphrase, test_session_at};
@@ -76,13 +77,20 @@ impl World {
     }
 
     fn close(&self) -> BackupOutcome {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap().backup
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap()
+        .backup
     }
 
     fn change(&self) {
         let serial = db::random_hex(4).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", &serial),
@@ -102,7 +110,9 @@ impl World {
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     fn update(
@@ -121,6 +131,7 @@ impl World {
     ) -> Result<BackupSettingsSaved, CommandError> {
         databases::update_backup_settings(
             &self.session,
+            self.session.current_id(),
             &self.machine,
             &BackupSettingsInput { enabled: true, keep_count, location, existing_backups },
         )
@@ -139,7 +150,13 @@ impl World {
 
     /// The backups `list_backups` offers for restore.
     fn listed(&self) -> Vec<BackupInfo> {
-        backups_ops::list_backups(&self.session, &self.machine, None).unwrap().backups
+        backups_ops::list_backups(
+            &self.session,
+            &self.machine,
+            Target::Open(self.session.current_id()),
+        )
+        .unwrap()
+        .backups
     }
 
     fn backups_in(&self, folder: &Path) -> Vec<BackupInfo> {
@@ -271,7 +288,8 @@ fn leaving_them_saves_and_they_are_no_longer_the_databases_backups() {
     assert_all_at(&world, &made, &world.default_folder());
 
     // Nor does deleting all backups.
-    let deleted = backups_ops::delete_all_backups(&world.session, true).unwrap();
+    let deleted =
+        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
     assert_eq!(deleted.deleted_count, 1);
     assert_all_at(&world, &made, &world.default_folder());
 

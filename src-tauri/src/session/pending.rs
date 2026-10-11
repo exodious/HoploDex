@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::commands::CommandError;
 use crate::models::database::{Draft, DraftKind, DraftMode, PendingAction, PendingSummary};
-use crate::session::Session;
+use crate::session::{Session, SessionId};
 
 /// The most a draft's `values` may take, serialized (data-model.md).
 pub const MAX_VALUES_BYTES: usize = 1 << 20;
@@ -51,11 +51,11 @@ pub fn validate_draft(draft: &Draft) -> Result<String, CommandError> {
 
 /// Keeps `draft` as the open form's unsaved input, in memory only; `None`
 /// clears it (`stage_pending_changes`). Nothing is written to the database.
-pub fn stage(session: &Session, draft: Option<Draft>) -> Result<(), CommandError> {
+pub fn stage(session: &Session, id: SessionId, draft: Option<Draft>) -> Result<(), CommandError> {
     if let Some(draft) = &draft {
         validate_draft(draft)?;
     }
-    session.inspect_mut(|open| {
+    session.inspect_mut(id, |open| {
         open.staged_draft = draft;
         Ok(())
     })
@@ -145,9 +145,13 @@ pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError
 /// Resumes or discards the database's pending changes (FR-039): either way
 /// they are removed, and the collection can be used again. `resume` returns
 /// the draft exactly as it was kept.
-pub fn resolve(session: &Session, action: PendingAction) -> Result<Option<Draft>, CommandError> {
+pub fn resolve(
+    session: &Session,
+    id: SessionId,
+    action: PendingAction,
+) -> Result<Option<Draft>, CommandError> {
     session
-        .write_housekeeping(|conn| {
+        .write_housekeeping(id, |conn| {
             let kept = conn
                 .query_row(
                     "SELECT form_version, kind, mode, target_id, label, values_json
@@ -183,7 +187,7 @@ pub fn resolve(session: &Session, action: PendingAction) -> Result<Option<Draft>
             Ok(draft)
         })
         .and_then(|draft| {
-            session.inspect_mut(|open| {
+            session.inspect_mut(id, |open| {
                 open.pending_unresolved = false;
                 Ok(())
             })?;

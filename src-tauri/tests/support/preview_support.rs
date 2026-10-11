@@ -210,8 +210,13 @@ impl Fixture {
 
     /// `open_preview`, with its answer as the JSON the viewer would get.
     pub fn open(&self, document_id: i64) -> Result<Value, hoplodex_lib::commands::CommandError> {
-        preview::open_preview(&self.session, &self.preview.env, document_id)
-            .map(|info| serde_json::to_value(info).unwrap())
+        preview::open_preview(
+            &self.session,
+            self.session.current_id(),
+            &self.preview.env,
+            document_id,
+        )
+        .map(|info| serde_json::to_value(info).unwrap())
     }
 
     pub fn open_ok(&self, document_id: i64) -> Value {
@@ -224,7 +229,7 @@ impl Fixture {
     }
 
     pub fn close(&self, preview_id: u64) {
-        preview::close_preview(&self.session, preview_id).unwrap();
+        preview::close_preview(&self.session, self.session.current_id(), preview_id).unwrap();
     }
 
     /// The PID of the open TIFF preview's helper.
@@ -237,7 +242,7 @@ impl Fixture {
 pub fn new_firearm(session: &Session) -> i64 {
     let serial = hoplodex_lib::db::random_hex(4).unwrap();
     session
-        .write(|conn| {
+        .write(session.current_id(), |conn| {
             firearms::create_firearm(conn, &support::firearm("Glock", "19", &serial), false, None)
                 .map(|created| created.id)
         })
@@ -247,7 +252,7 @@ pub fn new_firearm(session: &Session) -> i64 {
 /// Attaches a document to `firearm` through the real `add_document`.
 pub fn add_document(session: &Session, firearm: i64, name: &str, bytes: &[u8]) -> i64 {
     session
-        .write(|conn| {
+        .write(session.current_id(), |conn| {
             document_ops::add_document(conn, RecordRef::Firearm(firearm), bytes, name)
                 .map(|document| document.id)
         })
@@ -264,7 +269,7 @@ pub fn insert_raw_document(
     bytes: &[u8],
 ) -> i64 {
     session
-        .write(|conn| {
+        .write(session.current_id(), |conn| {
             conn.execute(
                 "INSERT INTO document_attachments
                     (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
@@ -282,7 +287,7 @@ pub fn insert_raw_document(
 /// and `HelperHandle::pid()`.
 pub fn tiff_pid(session: &Session) -> Option<u32> {
     session
-        .inspect(|open| {
+        .inspect(session.current_id(), |open| {
             Ok(match open.preview.as_ref().map(|p| &p.content) {
                 Some(PreviewContent::Tiff { helper, .. }) => Some(helper.pid()),
                 _ => None,

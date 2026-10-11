@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use tauri::ipc::Request;
 use tauri::{AppHandle, Manager, State};
 
 use crate::app_dirs;
@@ -24,6 +25,7 @@ use crate::services::consent::Consent;
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
+use crate::session::scoped::{ScopedSession, Target};
 use ops::Unlock;
 
 pub mod ops {
@@ -55,7 +57,8 @@ pub mod ops {
     use crate::services::machine_settings::{self, MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
     use crate::session::operations::Operations;
-    use crate::session::{OpenDatabase, Session};
+    use crate::session::scoped::Target;
+    use crate::session::{OpenDatabase, Session, SessionId};
     use crate::session::{lifecycle, pending};
 
     /// The name the create dialog suggests (research.md §19).
@@ -309,6 +312,7 @@ pub mod ops {
     /// frontend has already dealt with unsaved changes.
     pub fn close_database(
         session: &Session,
+        id: SessionId,
         machine: &MachineSettings,
         reason: CloseReason,
     ) -> Result<CloseOutcome, CommandError> {
@@ -318,7 +322,7 @@ pub mod ops {
                 [("reason".to_owned(), "Use closed or switched.".to_owned())].into(),
             ));
         }
-        lifecycle::close_normal(session, machine, reason)
+        lifecycle::close_normal(session, id, machine, reason)
     }
 
     /// Takes `path` off this computer's recent list, and forgets its saved
@@ -374,7 +378,7 @@ pub mod ops {
         machine.set_document_opening(value);
         if value == DocumentOpening::External {
             // `DATABASE_CLOSED` only means there is no earlier yes to clear.
-            let _ = session.inspect_mut(|open| {
+            let _ = session.inspect_mut(session.current_id(), |open| {
                 open.external_open_confirmed = false;
                 Ok(())
             });
@@ -388,6 +392,7 @@ pub mod ops {
     /// the FR-017 confirmation. `scratch_dir` takes the page-1 probe.
     pub fn save_passphrase(
         session: &Session,
+        id: SessionId,
         machine: &MachineSettings,
         scratch_dir: &Path,
         passphrase: &Passphrase,
@@ -395,7 +400,7 @@ pub mod ops {
         if !machine.keyring().is_available() {
             return Err(CommandError::keyring_unavailable());
         }
-        let (path, database_id) = session.inspect(|open| {
+        let (path, database_id) = session.inspect(id, |open| {
             match db::verify_passphrase(&open.conn, passphrase, scratch_dir) {
                 Ok(true) => Ok((open.path.clone(), open.database_id.clone())),
                 Ok(false) => Err(CommandError::passphrase_incorrect(None, None)
@@ -417,17 +422,16 @@ pub mod ops {
     pub fn forget_saved_passphrase(
         session: &Session,
         machine: &MachineSettings,
-        path: Option<&str>,
+        target: Target<'_>,
     ) -> Result<PassphraseSaved, CommandError> {
-        let (path, database_id) = match path {
-            Some(path) => {
+        let (path, database_id) = match target {
+            Target::At(path) => {
                 let path = PathBuf::from(path);
                 let id = machine.recent_entry(&path).and_then(|entry| entry.database_id);
                 (path, id)
             }
-            None => {
-                session.inspect(|open| Ok((open.path.clone(), Some(open.database_id.clone()))))?
-            }
+            Target::Open(id) => session
+                .inspect(id, |open| Ok((open.path.clone(), Some(open.database_id.clone()))))?,
         };
         if let Some(id) = database_id {
             machine.keyring().forget(&id)?;
@@ -455,7 +459,8 @@ pub mod ops {
         session: &Session,
         machine: &MachineSettings,
     ) -> Result<DatabaseStatus, CommandError> {
-        session.inspect(|open| status(open, machine))
+        // The frontend asks which session is open: whatever is.
+        session.inspect(session.current_id(), |open| status(open, machine))
     }
 
     pub(crate) fn status(
@@ -524,19 +529,23 @@ pub mod ops {
 
     /// Dismisses a note for good (`diskEncryption`, FR-008) or for this
     /// session. Dismissing is housekeeping, not a change to back up.
-    pub fn dismiss_note(session: &Session, note: NoteKind) -> Result<(), CommandError> {
+    pub fn dismiss_note(
+        session: &Session,
+        id: SessionId,
+        note: NoteKind,
+    ) -> Result<(), CommandError> {
         match note {
-            NoteKind::DiskEncryption => session.write_housekeeping(|conn| {
+            NoteKind::DiskEncryption => session.write_housekeeping(id, |conn| {
                 conn.execute("UPDATE app_state SET disk_encryption_note_dismissed = 1", [])
                     .map(|_| ())
                     .map_err(CommandError::from_db)
             }),
             // Session-only notes, shown until dismissed in this session.
-            NoteKind::OpenedBackup => session.inspect_mut(|open| {
+            NoteKind::OpenedBackup => session.inspect_mut(id, |open| {
                 open.notes.opened_backup = None;
                 Ok(())
             }),
-            NoteKind::Restored => session.inspect_mut(|open| {
+            NoteKind::Restored => session.inspect_mut(id, |open| {
                 open.notes.restored_with_passphrase_of = None;
                 open.notes.damaged_file_kept_at = None;
                 Ok(())
@@ -558,11 +567,12 @@ pub mod ops {
     /// every save.
     pub fn update_backup_settings(
         session: &Session,
+        id: SessionId,
         machine: &MachineSettings,
         input: &BackupSettingsInput,
     ) -> Result<BackupSettingsSaved, CommandError> {
         let location = validate_backup_settings_input(input)?;
-        let (database_path, database_id, old_location) = session.inspect(|open| {
+        let (database_path, database_id, old_location) = session.inspect(id, |open| {
             let old: String = open
                 .conn
                 .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
@@ -571,7 +581,8 @@ pub mod ops {
         })?;
         let old_folder = backups::resolve_folder(&database_path, &old_location);
         let new_folder = backups::resolve_folder(&database_path, &location);
-        let change = LocationChange { input, location: &location, database_path: &database_path };
+        let change =
+            LocationChange { id, input, location: &location, database_path: &database_path };
         let saved = |settings, existing_backups| BackupSettingsSaved { settings, existing_backups };
         if backups::same_path(&old_folder, &new_folder) {
             return Ok(saved(change.save(session, machine)?, None));
@@ -634,6 +645,7 @@ pub mod ops {
 
     /// The backup settings a save writes.
     struct LocationChange<'a> {
+        id: SessionId,
         input: &'a BackupSettingsInput,
         /// As `backup_location` stores it.
         location: &'a str,
@@ -648,7 +660,7 @@ pub mod ops {
             session: &Session,
             machine: &MachineSettings,
         ) -> Result<CollectionSettings, CommandError> {
-            session.write(|conn| {
+            session.write(self.id, |conn| {
                 conn.execute(
                     "UPDATE collection_settings
                      SET backups_enabled = ?1, backup_keep_count = ?2, backup_location = ?3",
@@ -661,7 +673,7 @@ pub mod ops {
                 self.database_path,
                 &backups::resolve_folder(self.database_path, self.location),
             );
-            session.inspect(|open| collection_settings(&open.conn, &open.path))
+            session.inspect(self.id, |open| collection_settings(&open.conn, &open.path))
         }
     }
 
@@ -740,10 +752,11 @@ pub mod ops {
     /// (FR-025). They take effect at once: the idle time starts again.
     pub fn update_lock_settings(
         session: &Session,
+        id: SessionId,
         input: &LockSettingsInput,
     ) -> Result<CollectionSettings, CommandError> {
         validate_lock_settings_input(input)?;
-        session.write(|conn| {
+        session.write(id, |conn| {
             conn.execute(
                 "UPDATE collection_settings
                  SET idle_lock_enabled = ?1, idle_lock_minutes = ?2, lock_on_screen_lock = ?3",
@@ -757,12 +770,12 @@ pub mod ops {
             idle_minutes: input.idle_minutes,
             on_screen_lock: input.on_screen_lock,
         };
-        session.inspect_mut(|open| {
+        session.inspect_mut(id, |open| {
             open.lock_settings = settings.clone();
             Ok(())
         })?;
         session.idle().start(settings, session.clock().now());
-        session.inspect(|open| collection_settings(&open.conn, &open.path))
+        session.inspect(id, |open| collection_settings(&open.conn, &open.path))
     }
 
     /// "Lock now" (FR-033, FR-035): `draft`, the form's unsaved input, is
@@ -770,27 +783,30 @@ pub mod ops {
     /// confirmation.
     pub fn lock_database(
         session: &Session,
+        id: SessionId,
         machine: &MachineSettings,
         draft: Option<Draft>,
     ) -> Result<CloseOutcome, CommandError> {
-        lifecycle::lock(session, machine, CloseReason::LockedByUser, draft)
+        lifecycle::lock(session, id, machine, CloseReason::LockedByUser, draft)
     }
 
     /// Mirrors the open form's unsaved input into memory, for a lock the
     /// backend starts on its own (research.md §16). `None` clears it.
     pub fn stage_pending_changes(
         session: &Session,
+        id: SessionId,
         draft: Option<Draft>,
     ) -> Result<(), CommandError> {
-        pending::stage(session, draft)
+        pending::stage(session, id, draft)
     }
 
     /// Resumes or discards the pending changes (FR-039).
     pub fn resolve_pending_changes(
         session: &Session,
+        id: SessionId,
         action: PendingAction,
     ) -> Result<PendingResolved, CommandError> {
-        Ok(PendingResolved { draft: pending::resolve(session, action)? })
+        Ok(PendingResolved { draft: pending::resolve(session, id, action)? })
     }
 
     /// Input to the application's windows restarts the idle time (FR-035).
@@ -871,10 +887,10 @@ pub async fn open_database(
 #[tauri::command]
 pub async fn close_database(
     reason: CloseReason,
-    session: State<'_, Session>,
+    session: ScopedSession,
     machine: State<'_, MachineSettings>,
 ) -> Result<CloseOutcome, CommandError> {
-    ops::close_database(&session, &machine, reason)
+    ops::close_database(&session.session, session.id, &machine, reason)
 }
 
 /// Closes the open database, if any, as a quit, then exits (research.md
@@ -887,7 +903,13 @@ pub async fn quit_application(
 ) -> Result<(), CommandError> {
     if session.is_open() {
         // It can only fail when nothing is open any more.
-        crate::session::lifecycle::close_normal(&session, &machine, CloseReason::Quit).ok();
+        crate::session::lifecycle::close_normal(
+            &session,
+            session.current_id(),
+            &machine,
+            CloseReason::Quit,
+        )
+        .ok();
     }
     // An exit with a code is ours, and `main` lets it through.
     app.exit(0);
@@ -918,7 +940,7 @@ pub(crate) const PROBE_DIR: &str = "passphrase-probes";
 pub async fn save_passphrase(
     passphrase: String,
     app: AppHandle,
-    session: State<'_, Session>,
+    session: ScopedSession,
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
     let passphrase = Passphrase::from_input(passphrase);
@@ -926,16 +948,27 @@ pub async fn save_passphrase(
         log::error!("no cache directory for the passphrase check: {err}");
         CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked.")
     })?;
-    ops::save_passphrase(&session, &machine, &scratch.join(PROBE_DIR), &passphrase)
+    ops::save_passphrase(
+        &session.session,
+        session.id,
+        &machine,
+        &scratch.join(PROBE_DIR),
+        &passphrase,
+    )
 }
 
+/// With a `path`, the passphrase saved for that database, which needs no
+/// session; without one, the open database's, which needs the request's
+/// (`UNSCOPED_COMMANDS`, contracts/tauri-commands.md).
 #[tauri::command]
 pub async fn forget_saved_passphrase(
     path: Option<String>,
+    request: Request<'_>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
-    ops::forget_saved_passphrase(&session, &machine, path.as_deref())
+    let target = Target::from_request(path.as_deref(), request.headers())?;
+    ops::forget_saved_passphrase(&session, &machine, target)
 }
 
 #[tauri::command]
@@ -947,8 +980,8 @@ pub async fn get_database_status(
 }
 
 #[tauri::command]
-pub async fn dismiss_note(note: NoteKind, session: State<'_, Session>) -> Result<(), CommandError> {
-    ops::dismiss_note(&session, note)
+pub async fn dismiss_note(note: NoteKind, session: ScopedSession) -> Result<(), CommandError> {
+    ops::dismiss_note(&session.session, session.id, note)
 }
 
 #[tauri::command]
@@ -957,11 +990,12 @@ pub async fn update_backup_settings(
     keep_count: i64,
     location: BackupLocationInput,
     existing_backups: Option<ExistingBackupsChoice>,
-    session: State<'_, Session>,
+    session: ScopedSession,
     machine: State<'_, MachineSettings>,
 ) -> Result<BackupSettingsSaved, CommandError> {
     ops::update_backup_settings(
-        &session,
+        &session.session,
+        session.id,
         &machine,
         &BackupSettingsInput { enabled, keep_count, location, existing_backups },
     )
@@ -978,10 +1012,11 @@ pub async fn update_lock_settings(
     idle_enabled: bool,
     idle_minutes: i64,
     on_screen_lock: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<CollectionSettings, CommandError> {
     ops::update_lock_settings(
-        &session,
+        &session.session,
+        session.id,
         &LockSettingsInput { idle_enabled, idle_minutes, on_screen_lock },
     )
 }
@@ -989,10 +1024,10 @@ pub async fn update_lock_settings(
 #[tauri::command]
 pub async fn lock_database(
     draft: Option<Draft>,
-    session: State<'_, Session>,
+    session: ScopedSession,
     machine: State<'_, MachineSettings>,
 ) -> Result<CloseOutcome, CommandError> {
-    ops::lock_database(&session, &machine, draft)
+    ops::lock_database(&session.session, session.id, &machine, draft)
 }
 
 #[tauri::command]
@@ -1021,17 +1056,17 @@ pub async fn set_document_opening(
 #[tauri::command]
 pub async fn stage_pending_changes(
     draft: Option<Draft>,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<(), CommandError> {
-    ops::stage_pending_changes(&session, draft)
+    ops::stage_pending_changes(&session.session, session.id, draft)
 }
 
 #[tauri::command]
 pub async fn resolve_pending_changes(
     action: PendingAction,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<PendingResolved, CommandError> {
-    ops::resolve_pending_changes(&session, action)
+    ops::resolve_pending_changes(&session.session, session.id, action)
 }
 
 #[tauri::command]

@@ -26,6 +26,7 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::Connection;
 use serde_json::json;
@@ -78,7 +79,13 @@ impl World {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
     }
 
     fn next_day(&self) {
@@ -88,7 +95,7 @@ impl World {
     /// Adds a firearm with a photo, a change with a blob in it.
     fn add_firearm(&self, serial: &str) {
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 let firearm = firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", serial),
@@ -108,7 +115,9 @@ impl World {
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     /// Creates "Mine" with one firearm, backs it up at close on the 25th,
@@ -137,7 +146,7 @@ impl World {
             &self.machine,
             backup,
             &Passphrase::from_input(with.to_owned()),
-            None,
+            Target::Open(self.session.current_id()),
         )
     }
 
@@ -171,6 +180,7 @@ impl World {
         let existing_backups = Some(ExistingBackupsChoice::Leave);
         databases::update_backup_settings(
             &self.session,
+            self.session.current_id(),
             &self.machine,
             &BackupSettingsInput { enabled, keep_count, location, existing_backups },
         )
@@ -206,7 +216,7 @@ fn collection(conn: &Connection) -> Vec<String> {
 }
 
 fn open_collection(world: &World) -> Vec<String> {
-    world.session.read(|conn| Ok(collection(conn))).unwrap()
+    world.session.read(world.session.current_id(), |conn| Ok(collection(conn))).unwrap()
 }
 
 // --- Restoring ---------------------------------------------------------------
@@ -264,7 +274,7 @@ fn the_restored_database_has_nothing_waiting_no_stamp_and_its_identity() {
     assert_eq!(world.database_id(), id);
     let state: (bool, Option<String>, Option<String>, Option<String>) = world
         .session
-        .read(|conn| {
+        .read(world.session.current_id(), |conn| {
             conn.query_row(
                 "SELECT changes_waiting, backup_made_at, backup_of_name, open_machine_id
                  FROM app_state",
@@ -289,7 +299,7 @@ fn backup_with_an_older_passphrase(world: &World) -> PathBuf {
     fs::write(&path, b"").unwrap();
     world
         .session
-        .read(|conn| {
+        .read(world.session.current_id(), |conn| {
             conn.execute(
                 "ATTACH DATABASE ?1 AS rekey KEY ?2",
                 [path.to_str().unwrap(), OLD_PASSPHRASE],
@@ -371,7 +381,7 @@ fn a_file_planted_at_the_copys_name_fails_the_restore_of_a_damaged_database() {
         &world.machine,
         &listed[0].path,
         &passphrase(),
-        Some(&world.path().to_string_lossy()),
+        Target::At(&world.path().to_string_lossy()),
     )
     .unwrap_err();
 
@@ -476,7 +486,7 @@ fn a_damaged_database_is_restored_and_kept_aside() {
     let found = backups_ops::list_backups(
         &world.session,
         &world.machine,
-        Some(&world.path().to_string_lossy()),
+        Target::At(&world.path().to_string_lossy()),
     )
     .unwrap();
     assert!(found.available);
@@ -487,7 +497,7 @@ fn a_damaged_database_is_restored_and_kept_aside() {
         &world.machine,
         &listed[0].path,
         &passphrase(),
-        Some(&world.path().to_string_lossy()),
+        Target::At(&world.path().to_string_lossy()),
     )
     .unwrap();
 
@@ -508,7 +518,7 @@ impl World {
             &self.machine,
             backup,
             &passphrase(),
-            Some(&target.to_string_lossy()),
+            Target::At(&target.to_string_lossy()),
         )
     }
 }
@@ -580,10 +590,13 @@ fn issue_62_a_located_database_is_restorable_once_it_has_opened_there() {
     )
     .unwrap();
     world.close();
-    let listed =
-        backups_ops::list_backups(&world.session, &world.machine, Some(&moved.to_string_lossy()))
-            .unwrap()
-            .backups;
+    let listed = backups_ops::list_backups(
+        &world.session,
+        &world.machine,
+        Target::At(&moved.to_string_lossy()),
+    )
+    .unwrap()
+    .backups;
     let expected = collection(&peek(Path::new(&listed[0].path)));
     let bytes = fs::read(&moved).unwrap();
     fs::write(&moved, &bytes[..2 * 4096]).unwrap();
@@ -827,7 +840,7 @@ fn restoring_a_damaged_database_checks_only_the_space_for_the_restored_copy() {
         &world.machine,
         &listed[0].path,
         &passphrase(),
-        Some(&world.path().to_string_lossy()),
+        Target::At(&world.path().to_string_lossy()),
     )
     .unwrap();
 

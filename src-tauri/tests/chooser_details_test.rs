@@ -52,7 +52,13 @@ impl World {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
     }
 
     fn listed(&self) -> RecentDatabase {

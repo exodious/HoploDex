@@ -812,7 +812,8 @@ fn opening_a_database_warms_the_pages_the_suggestions_read() {
     let (session, _events) = test_session(&config.path().join("opened-documents"));
     // Taking over the marker the tests' own computer left: not what is under test.
     lifecycle::open(&session, &machine, &path, &passphrase(), true).unwrap();
-    let warmed_bytes = session.read(|conn| Ok(page_cache_bytes(conn))).unwrap();
+    let warmed_bytes =
+        session.read(session.current_id(), |conn| Ok(page_cache_bytes(conn))).unwrap();
 
     eprintln!(
         "page cache after a bare open: {bare_bytes}, after opening the session: {warmed_bytes}"

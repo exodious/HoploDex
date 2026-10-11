@@ -1,13 +1,12 @@
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::Serialize;
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
 use crate::models::record::RecordRef;
 use crate::services::attachments::{mime_type_for, read_attachment_file, safe_basename};
-use crate::session::Session;
+use crate::session::scoped::ScopedSession;
 
 /// What `set_thumbnail_photo` returns (contracts/tauri-commands.md "Photos
 /// and documents (amended)"): the frontend already holds the record.
@@ -227,7 +226,7 @@ pub mod ops {
 #[tauri::command]
 pub async fn list_photos(
     owner: RecordRef,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Vec<PhotoSummary>, CommandError> {
     session.read(|conn| {
         Ok(ops::list_photos(conn, owner)?.into_iter().map(PhotoSummary::from).collect())
@@ -240,7 +239,7 @@ pub async fn add_photo(
     file_bytes: Vec<u8>,
     original_filename: String,
     mime_type: String,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<PhotoSummary, CommandError> {
     session.write(|conn| {
         ops::add_photo(conn, owner, &file_bytes, &original_filename, &mime_type).map(Into::into)
@@ -252,7 +251,7 @@ pub async fn add_photo(
 pub async fn add_photo_from_path(
     owner: RecordRef,
     path: String,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<PhotoSummary, CommandError> {
     session.write(|conn| {
         ops::add_photo_from_path(conn, owner, std::path::Path::new(&path)).map(Into::into)
@@ -265,7 +264,7 @@ pub async fn add_photo_from_path(
 #[tauri::command]
 pub async fn get_photo_thumbnail(
     photo_id: i64,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Vec<u8>, CommandError> {
     session.read(|conn| Ok(ops::get_photo(conn, photo_id)?.thumbnail_bytes))
 }
@@ -277,7 +276,7 @@ pub async fn get_photo_thumbnail(
 #[tauri::command]
 pub async fn get_photo_original(
     photo_id: i64,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<tauri::ipc::Response, CommandError> {
     session
         .read(|conn| Ok(tauri::ipc::Response::new(ops::get_photo(conn, photo_id)?.original_bytes)))
@@ -287,7 +286,7 @@ pub async fn get_photo_original(
 pub async fn set_thumbnail_photo(
     owner: RecordRef,
     photo_id: i64,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ThumbnailChoice, CommandError> {
     session.write(|conn| ops::set_thumbnail_photo(conn, owner, photo_id))
 }
@@ -296,7 +295,7 @@ pub async fn set_thumbnail_photo(
 pub async fn delete_photo(
     photo_id: i64,
     confirmed: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<DeleteResult, CommandError> {
     session.write(|conn| ops::delete_photo(conn, photo_id, confirmed))
 }

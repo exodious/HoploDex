@@ -60,6 +60,7 @@ use hoplodex_lib::services::preview::protocol_handler;
 use hoplodex_lib::services::preview::surface;
 use hoplodex_lib::services::preview::text as preview_text;
 use hoplodex_lib::services::valuation::get_value_summary;
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use preview_support::Fixture;
 use rusqlite::{Connection, params};
@@ -511,7 +512,10 @@ fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models
     ] {
         let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
         let started = Instant::now();
-        let output = opened.session.read(|conn| entry_ops::suggest_entries(conn, &input)).unwrap();
+        let output = opened
+            .session
+            .read(opened.session.current_id(), |conn| entry_ops::suggest_entries(conn, &input))
+            .unwrap();
         let elapsed = started.elapsed();
         eprintln!("SC-004: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
         assert!(!output.suggestions.is_empty());
@@ -667,7 +671,7 @@ impl LargeDatabase {
         lifecycle::create(&large.session, &large.machine, &large.path(), &passphrase()).unwrap();
         large
             .session
-            .write(|conn| {
+            .write(large.session.current_id(), |conn| {
                 seed_10k_firearms(conn);
                 Ok(())
             })
@@ -725,7 +729,7 @@ fn assert_progress_in_time(event: &str, waited: Duration) {
 fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_derivation() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
-    drop(large.session.take());
+    drop(large.session.take(large.session.current_id()));
 
     let started = Instant::now();
     large.open(TEST_PASSPHRASE);
@@ -748,7 +752,13 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
 
     // The seeding was a change, so this close makes a backup.
     let (outcome, waited) = large.first_event_after("backup:progress", || {
-        lifecycle::close_normal(&large.session, &large.machine, CloseReason::Closed).unwrap()
+        lifecycle::close_normal(
+            &large.session,
+            large.session.current_id(),
+            &large.machine,
+            CloseReason::Closed,
+        )
+        .unwrap()
     });
     assert_eq!(outcome.backup, BackupOutcome::Made);
     assert_progress_in_time("backup:progress", waited);
@@ -758,6 +768,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
     let (changed, waited) = large.first_event_after("passphrase_change:progress", || {
         backups_ops::change_passphrase(
             &large.session,
+            large.session.current_id(),
             &large.machine,
             scratch.path(),
             &passphrase(),
@@ -767,12 +778,23 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
     changed.unwrap();
     assert_progress_in_time("passphrase_change:progress", waited);
 
-    let backup = backups_ops::list_backups(&large.session, &large.machine, None).unwrap().backups
-        [0]
-    .path
-    .clone();
+    let backup = backups_ops::list_backups(
+        &large.session,
+        &large.machine,
+        Target::Open(large.session.current_id()),
+    )
+    .unwrap()
+    .backups[0]
+        .path
+        .clone();
     let (restored, waited) = large.first_event_after("restore:progress", || {
-        backups_ops::restore_backup(&large.session, &large.machine, &backup, &passphrase(), None)
+        backups_ops::restore_backup(
+            &large.session,
+            &large.machine,
+            &backup,
+            &passphrase(),
+            Target::Open(large.session.current_id()),
+        )
     });
     restored.unwrap();
     assert_progress_in_time("restore:progress", waited);
@@ -785,6 +807,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
     let (moved, waited) = large.first_event_after("backups_move:progress", || {
         databases_ops::update_backup_settings(
             &large.session,
+            large.session.current_id(),
             &large.machine,
             &BackupSettingsInput {
                 enabled: true,
@@ -811,7 +834,7 @@ fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budget
     // refresh after (research.md §6).
     let started = Instant::now();
     for _ in 0..WRITES {
-        large.session.write(|_| Ok(())).unwrap();
+        large.session.write(large.session.current_id(), |_| Ok(())).unwrap();
     }
     let per_write = started.elapsed() / WRITES;
     eprintln!("take-over check: {per_write:?} per save over {WRITES} saves");
@@ -1343,7 +1366,7 @@ fn document_scale() -> Fixture {
     let fixture_firearm = world.firearm;
     world.firearm = world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute("DELETE FROM firearms WHERE id = ?1", [fixture_firearm]).unwrap();
             let firearms = seed_10k_firearms(conn);
             seed_10k_accessories(conn);
@@ -1567,6 +1590,7 @@ fn open_preview_of_a_10_mb_tiff_shows_page_one_within_a_second_at_10k_plus_10k_r
     let (png, rendered) = timed("render_preview_page of its page 1 (1400 px wide)", || {
         hoplodex_lib::commands::preview::ops::render_preview_page(
             &world.session,
+            world.session.current_id(),
             preview_id,
             0,
             1400,
@@ -1656,7 +1680,7 @@ fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and
     let world = document_scale();
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             seed_30k_documents(conn);
             Ok(())
         })
@@ -1668,7 +1692,9 @@ fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and
     let firearms = |query: &str| {
         let input = ListFirearmsInput { query: Some(query.into()), ..Default::default() };
         within(&format!("list_firearms search {query:?} (a document name)"), BUDGET_MS, || {
-            session.read(|conn| firearm_ops::list_firearms(conn, &input)).unwrap()
+            session
+                .read(session.current_id(), |conn| firearm_ops::list_firearms(conn, &input))
+                .unwrap()
         })
         .groups
         .iter()
@@ -1678,7 +1704,9 @@ fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and
     let accessories = |query: &str| {
         let input = ListAccessoriesInput { query: Some(query.into()), ..Default::default() };
         within(&format!("list_accessories search {query:?} (a document name)"), BUDGET_MS, || {
-            session.read(|conn| accessory_ops::list_accessories(conn, &input)).unwrap()
+            session
+                .read(session.current_id(), |conn| accessory_ops::list_accessories(conn, &input))
+                .unwrap()
         })
         .groups
         .iter()
@@ -1716,13 +1744,13 @@ fn opening_a_database_of_10k_plus_10k_records_and_30k_documents_is_within_a_seco
     let large = LargeDatabase::new();
     large
         .session
-        .write(|conn| {
+        .write(large.session.current_id(), |conn| {
             seed_10k_accessories(conn);
             seed_30k_documents(conn);
             Ok(())
         })
         .unwrap();
-    drop(large.session.take());
+    drop(large.session.take(large.session.current_id()));
 
     let started = Instant::now();
     large.open(TEST_PASSPHRASE);
@@ -1748,7 +1776,10 @@ fn opening_a_database_of_10k_plus_10k_records_and_30k_documents_is_within_a_seco
     ] {
         let input = SuggestEntriesInput { field, text: text.into(), make: make.map(str::to_owned) };
         let started = Instant::now();
-        large.session.read(|conn| entry_ops::suggest_entries(conn, &input)).unwrap();
+        large
+            .session
+            .read(large.session.current_id(), |conn| entry_ops::suggest_entries(conn, &input))
+            .unwrap();
         let elapsed = started.elapsed();
         eprintln!(
             "SC-004: first suggest_entries({field:?}, {text:?}) after opening took {elapsed:?}"

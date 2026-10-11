@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
+use tauri::Emitter;
 
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
@@ -28,6 +28,7 @@ use crate::services::spreadsheet::{
     parse_whole_dollars, scaled_to_string, write_accessory_csv, write_firearm_csv, write_workbook,
 };
 use crate::services::suggestions::{FieldVocabulary, SheetSpellings, snap_for_import};
+use crate::session::scoped::ScopedSession;
 use crate::session::{Session, SessionId};
 
 #[derive(Debug, Clone, Serialize)]
@@ -2041,12 +2042,13 @@ pub mod ops {
     /// holding its conflicts with that open and no other (issue #64).
     pub fn import_in_session(
         session: &Session,
+        id: SessionId,
         tables: Vec<ReadTable>,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
-        session.write_open(|open| {
+        session.write_open(id, |open| {
             import_collection_stoppable(
                 &open.conn,
                 tables,
@@ -2063,11 +2065,12 @@ pub mod ops {
     /// another database, or before this one was last opened or unlocked.
     pub fn resolve_in_session(
         session: &Session,
+        id: SessionId,
         session_id: &str,
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
-        session.write_open(|open| {
+        session.write_open(id, |open| {
             resolve_import_conflicts(
                 &open.conn,
                 &open.imports,
@@ -2379,7 +2382,7 @@ pub struct GetExportScopeInput {
 #[tauri::command]
 pub async fn get_export_scope(
     input: GetExportScopeInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ExportScope, CommandError> {
     session.read(|conn| ops::get_export_scope(conn, &input.scope, input.filter.as_ref()))
 }
@@ -2388,10 +2391,13 @@ pub async fn get_export_scope(
 pub async fn export_collection(
     input: ExportCollectionInput,
     app: tauri::AppHandle,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ExportResult, CommandError> {
+    if !session.is_current() {
+        return Err(CommandError::database_closed());
+    }
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-    let operation = session.operations().begin(OperationKind::Export, None)?;
+    let operation = session.session.operations().begin(OperationKind::Export, None)?;
     session.read(|conn| {
         let format = parse_format(&input.format)?;
         let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
@@ -2431,14 +2437,13 @@ pub struct ImportCollectionInput {
 pub async fn import_collection(
     input: ImportCollectionInput,
     app: tauri::AppHandle,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ImportResult, CommandError> {
-    // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-    let operation = session.operations().begin(OperationKind::Import, None)?;
-    let began_in = session.current_id();
-    if began_in == SessionId::NONE {
+    if !session.is_current() {
         return Err(CommandError::database_closed());
     }
+    // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+    let operation = session.session.operations().begin(OperationKind::Import, None)?;
     let files = input
         .files
         .iter()
@@ -2463,11 +2468,12 @@ pub async fn import_collection(
         &helper_exe,
         &files,
         &|| operation.is_cancelled(),
-        &|| session.current_id() == began_in,
+        &|| session.is_current(),
         &mut |_, _| {},
     )?;
     ops::import_in_session(
-        &session,
+        &session.session,
+        session.id,
         tables,
         &mut |processed, total| {
             let _ = app.emit("import_collection:progress", ProgressPayload { processed, total });
@@ -2488,10 +2494,11 @@ pub struct ResolveImportConflictsInput {
 #[tauri::command]
 pub async fn resolve_import_conflicts(
     input: ResolveImportConflictsInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<ResolveResult, CommandError> {
     ops::resolve_in_session(
-        &session,
+        &session.session,
+        session.id,
         &input.import_session_id,
         &input.resolutions,
         input.apply_to_remaining.as_deref(),

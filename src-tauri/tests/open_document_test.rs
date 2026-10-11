@@ -285,6 +285,7 @@ impl World {
     ) -> Result<bool, CommandError> {
         document_ops::open_document(
             &self.session,
+            self.session.current_id(),
             &self.machine,
             consent,
             opener,
@@ -298,7 +299,8 @@ impl World {
     }
 
     fn lock(&self) {
-        databases::lock_database(&self.session, &self.machine, None).unwrap();
+        databases::lock_database(&self.session, self.session.current_id(), &self.machine, None)
+            .unwrap();
     }
 
     fn reopen(&self) {
@@ -307,11 +309,13 @@ impl World {
     }
 
     fn confirmed(&self) -> bool {
-        self.session.inspect(|open| Ok(open.external_open_confirmed)).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.external_open_confirmed))
+            .unwrap()
     }
 
     fn generation(&self) -> hoplodex_lib::session::SessionId {
-        self.session.inspect(|open| Ok(open.session_id)).unwrap()
+        self.session.inspect(self.session.current_id(), |open| Ok(open.session_id)).unwrap()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -495,7 +499,13 @@ fn the_copy_is_cleared_on_close_and_by_the_startup_sweep() {
     world.open(&consent, &opener, id).unwrap();
     assert_eq!(world.files().len(), 1);
 
-    lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
 
     assert!(world.files().is_empty(), "closing the database deletes the copy");
 
@@ -560,7 +570,7 @@ fn issue_65_a_lock_while_the_dialog_is_up_writes_no_copy_and_starts_nothing() {
         let machine = world.machine.clone();
         move |_| {
             assert_session_lock_free(&session, "the dialog");
-            databases::lock_database(&session, &machine, None).unwrap();
+            databases::lock_database(&session, session.current_id(), &machine, None).unwrap();
         }
     });
     let opener = FakeOpener::new();
@@ -584,7 +594,7 @@ fn issue_65_a_copy_is_written_only_into_the_session_that_asked() {
         let machine = world.machine.clone();
         let path = world.database();
         move |_| {
-            databases::lock_database(&session, &machine, None).unwrap();
+            databases::lock_database(&session, session.current_id(), &machine, None).unwrap();
             let typed = Passphrase::from_input(TEST_PASSPHRASE.to_owned());
             lifecycle::open(&session, &machine, &path, &typed, false).unwrap();
         }
@@ -616,7 +626,7 @@ fn issue_65_a_lock_racing_the_write_clears_the_copy_or_never_writes_it() {
             let machine = world.machine.clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_micros(round * 400));
-                databases::lock_database(&session, &machine, None).unwrap();
+                databases::lock_database(&session, session.current_id(), &machine, None).unwrap();
             })
         };
         match world.open(&consent, &opener, id) {
@@ -846,7 +856,10 @@ fn a_row_the_attach_rules_would_refuse_is_refused_before_the_dialog_and_can_be_d
     assert!(opener.calls().is_empty());
     assert!(!world.copies().exists());
     for id in [jpeg_row, html_row, template_row] {
-        world.session.write(|conn| document_ops::delete_document(conn, id, true)).unwrap();
+        world
+            .session
+            .write(world.session.current_id(), |conn| document_ops::delete_document(conn, id, true))
+            .unwrap();
     }
 }
 
@@ -868,6 +881,7 @@ fn the_idle_clock_is_paused_while_the_dialog_is_up_and_starts_again_after() {
     let world = World::new();
     databases::update_lock_settings(
         &world.session,
+        world.session.current_id(),
         &LockSettingsInput { idle_enabled: true, idle_minutes: 10, on_screen_lock: false },
     )
     .unwrap();
@@ -898,7 +912,8 @@ fn a_shown_pdf_surface_is_hidden_while_the_dialog_is_up() {
     let world = World::new();
     let id = add_document(&world.session, world.firearm, "receipt.pdf", &pdf_bytes());
     let info = serde_json::to_value(
-        preview::open_preview(&world.session, &world.preview.env, id).unwrap(),
+        preview::open_preview(&world.session, world.session.current_id(), &world.preview.env, id)
+            .unwrap(),
     )
     .unwrap();
     let preview_id = info["previewId"].as_u64().unwrap();
@@ -916,7 +931,14 @@ fn a_shown_pdf_surface_is_hidden_while_the_dialog_is_up() {
         assert_eq!(get(hooked.as_str()).status().as_u16(), 204);
     }
     let bounds = SurfaceBounds { x: 10.0, y: 10.0, width: 400.0, height: 300.0 };
-    preview::set_preview_bounds(&world.session, preview_id, bounds, true).unwrap();
+    preview::set_preview_bounds(
+        &world.session,
+        world.session.current_id(),
+        preview_id,
+        bounds,
+        true,
+    )
+    .unwrap();
     assert!(surface.bounds_calls().last().unwrap().1, "it is shown before the dialog");
     let consent = FakeConsent::cancel();
     let hidden_while_asking = Arc::new(AtomicBool::new(false));
@@ -1162,6 +1184,7 @@ fn the_idle_clock_is_paused_while_the_settings_dialog_is_up_and_starts_again_aft
     let world = World::new();
     databases::update_lock_settings(
         &world.session,
+        world.session.current_id(),
         &LockSettingsInput { idle_enabled: true, idle_minutes: 10, on_screen_lock: false },
     )
     .unwrap();
@@ -1247,8 +1270,13 @@ fn a_lock_a_close_or_a_switch_makes_the_next_external_open_ask_again() {
                 world.reopen();
             }
             "close" => {
-                lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed)
-                    .unwrap();
+                lifecycle::close_normal(
+                    &world.session,
+                    world.session.current_id(),
+                    &world.machine,
+                    CloseReason::Closed,
+                )
+                .unwrap();
                 world.reopen();
             }
             _ => {

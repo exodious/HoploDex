@@ -18,6 +18,7 @@ use hoplodex_lib::models::database::{CloseReason, DatabaseStatus};
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use support::{TEST_PASSPHRASE, TestEvents, passphrase, test_session};
 use tempfile::TempDir;
@@ -88,11 +89,19 @@ impl World {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     fn open(&self, name: &str, unlock: Unlock<'_>) -> Result<DatabaseStatus, CommandError> {
@@ -109,7 +118,14 @@ impl World {
 
     fn save(&self, text: &str) -> Result<(), CommandError> {
         let typed = Passphrase::from_input(text.to_owned());
-        ops::save_passphrase(&self.session, &self.machine, self.scratch.path(), &typed).map(|_| ())
+        ops::save_passphrase(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            self.scratch.path(),
+            &typed,
+        )
+        .map(|_| ())
     }
 
     fn saved_flag(&self, name: &str) -> bool {
@@ -118,7 +134,7 @@ impl World {
 
     fn add_firearm(&self, serial: &str) {
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", serial),
@@ -291,6 +307,7 @@ fn a_passphrase_change_updates_the_saved_one_and_a_restore_sets_the_backups() {
 
     let changed = backups_ops::change_passphrase(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         world.scratch.path(),
         &passphrase(),
@@ -302,11 +319,21 @@ fn a_passphrase_change_updates_the_saved_one_and_a_restore_sets_the_backups() {
     world.close();
     world.open("Main", Unlock::Saved).unwrap();
 
-    let listed = backups_ops::list_backups(&world.session, &world.machine, None).unwrap();
+    let listed = backups_ops::list_backups(
+        &world.session,
+        &world.machine,
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
     let backup = &listed.backups.last().expect("the first close made a backup").path;
-    let restored =
-        backups_ops::restore_backup(&world.session, &world.machine, backup, &passphrase(), None)
-            .unwrap();
+    let restored = backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        backup,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
     assert!(restored.passphrase_saved);
     assert_eq!(stored(&id).as_deref(), Some(TEST_PASSPHRASE), "the backup's passphrase");
     world.close();
@@ -320,6 +347,7 @@ fn a_change_without_a_saved_passphrase_saves_nothing() {
     let id = world.database_id();
     let changed = backups_ops::change_passphrase(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         world.scratch.path(),
         &passphrase(),
@@ -339,7 +367,12 @@ fn a_backup_opened_directly_does_not_inherit_the_saved_passphrase() {
     world.save(TEST_PASSPHRASE).unwrap();
     world.close();
     world.open("Main", Unlock::Saved).unwrap();
-    let listed = backups_ops::list_backups(&world.session, &world.machine, None).unwrap();
+    let listed = backups_ops::list_backups(
+        &world.session,
+        &world.machine,
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
     let backup = PathBuf::from(&listed.backups[0].path);
     world.close();
 
@@ -431,6 +464,7 @@ fn the_pre_feature_sqlcipher_key_entry_is_never_touched() {
     world.open("Main", Unlock::Saved).unwrap();
     backups_ops::change_passphrase(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         world.scratch.path(),
         &passphrase(),

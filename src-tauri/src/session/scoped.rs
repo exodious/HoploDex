@@ -10,7 +10,7 @@ use tauri::Runtime;
 use tauri::http::HeaderMap;
 use tauri::ipc::{CommandArg, CommandItem, InvokeError};
 
-use super::{Session, SessionId};
+use super::{OpenDatabase, OpenStamp, Session, SessionId};
 use crate::commands::CommandError;
 use rusqlite::Connection;
 
@@ -60,17 +60,89 @@ impl ScopedSession {
     }
 
     /// [`Session::read`], in the request's session.
-    ///
-    /// Temporary (008 T004): the id is compared here, without the mutex,
-    /// until the accessors take it and compare under the mutex (T010).
     pub fn read<T>(
         &self,
         query: impl FnOnce(&Connection) -> Result<T, CommandError>,
     ) -> Result<T, CommandError> {
-        if !self.is_current() {
-            return Err(CommandError::database_closed());
+        self.session.read(self.id, query)
+    }
+
+    /// [`Session::read_stamped`], in the request's session.
+    pub fn read_stamped<T>(
+        &self,
+        query: impl FnOnce(&Connection) -> Result<T, CommandError>,
+    ) -> Result<(T, OpenStamp), CommandError> {
+        self.session.read_stamped(self.id, query)
+    }
+
+    /// [`Session::write`], in the request's session.
+    pub fn write<T>(
+        &self,
+        change: impl FnOnce(&Connection) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        self.session.write(self.id, change)
+    }
+
+    /// [`Session::write_open`], in the request's session.
+    pub fn write_open<T>(
+        &self,
+        change: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        self.session.write_open(self.id, change)
+    }
+
+    /// [`Session::write_housekeeping`], in the request's session.
+    pub fn write_housekeeping<T>(
+        &self,
+        change: impl FnOnce(&Connection) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        self.session.write_housekeeping(self.id, change)
+    }
+
+    /// [`Session::inspect`], in the request's session.
+    pub fn inspect<T>(
+        &self,
+        look: impl FnOnce(&OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        self.session.inspect(self.id, look)
+    }
+
+    /// [`Session::inspect_mut`], in the request's session.
+    pub fn inspect_mut<T>(
+        &self,
+        change: impl FnOnce(&mut OpenDatabase) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        self.session.inspect_mut(self.id, change)
+    }
+
+    /// [`Session::hold`], in the request's session.
+    pub fn hold(&self) -> Result<std::sync::MutexGuard<'_, Option<OpenDatabase>>, CommandError> {
+        self.session.hold(self.id)
+    }
+}
+
+/// What a command that works on the open database or, with a path, on
+/// another one names (`restore_backup`, `list_backups` and
+/// `forget_saved_passphrase`: unscoped commands, 008 contracts/
+/// tauri-commands.md). Only the first needs the request's session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target<'a> {
+    /// The open database, in the session the request named.
+    Open(SessionId),
+    /// The database at this path, which isn't the open one.
+    At(&'a str),
+}
+
+impl<'a> Target<'a> {
+    /// `path` when the command was given one; otherwise the open database,
+    /// for which the request's `headers` must name a session
+    /// (`DATABASE_CLOSED` if they don't, though not that it is the open one:
+    /// the accessors compare that under the mutex).
+    pub fn from_request(path: Option<&'a str>, headers: &HeaderMap) -> Result<Self, CommandError> {
+        match path {
+            Some(path) => Ok(Self::At(path)),
+            None => session_id_from_headers(headers).map(Self::Open),
         }
-        self.session.read(query)
     }
 }
 

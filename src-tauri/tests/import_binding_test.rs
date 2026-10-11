@@ -36,7 +36,7 @@ fn open_with(db: TestDb) -> World {
 /// Makes `path` the session's open database the way a lock and an unlock
 /// or a switch do: the open one is taken out and dropped first.
 fn reopen(session: &Session, path: &std::path::Path) {
-    drop(session.take());
+    drop(session.take(session.current_id()));
     let conn = db::open_database(path, &passphrase(), &test_machine(), false).unwrap();
     session.install(OpenDatabase::new(conn, path).unwrap());
 }
@@ -44,16 +44,19 @@ fn reopen(session: &Session, path: &std::path::Path) {
 fn make(session: &Session, make: &str, model: &str, serial: &str, notes: &str) -> i64 {
     let mut input = firearm(make, model, serial);
     input.notes = Some(notes.into());
-    session.write(|conn| firearm_ops::create_firearm(conn, &input, false, None)).unwrap().id
+    session
+        .write(session.current_id(), |conn| firearm_ops::create_firearm(conn, &input, false, None))
+        .unwrap()
+        .id
 }
 
 fn notes_of(session: &Session, id: i64) -> Option<String> {
-    session.read(|conn| firearm_ops::get_firearm(conn, id)).unwrap().notes
+    session.read(session.current_id(), |conn| firearm_ops::get_firearm(conn, id)).unwrap().notes
 }
 
 fn count(session: &Session) -> i64 {
     session
-        .read(|conn| {
+        .read(session.current_id(), |conn| {
             conn.query_row("SELECT count(*) FROM firearms", [], |row| row.get::<_, i64>(0))
                 .map_err(hoplodex_lib::commands::CommandError::from_db)
         })
@@ -71,6 +74,7 @@ fn import_conflict(session: &Session, dir: &TempDir) -> ImportResult {
     .unwrap();
     let result = import_ops::import_in_session(
         session,
+        session.current_id(),
         sheets::read_import(&path),
         &mut |_, _| {},
         &|| false,
@@ -91,6 +95,7 @@ fn resolve(
 > {
     import_ops::resolve_in_session(
         session,
+        session.current_id(),
         &import.session_id,
         &[ConflictResolution {
             conflict_id: import.conflicts[0].conflict_id.clone(),
@@ -128,7 +133,7 @@ fn conflicts_from_database_a_cannot_be_applied_to_database_b() {
     let b = TestDb::new();
     let b_path = b.path();
     let (b_conn, _b_dir) = b.into_parts();
-    drop(a.session.take());
+    drop(a.session.take(a.session.current_id()));
     a.session.install(OpenDatabase::new(b_conn, &b_path).unwrap());
     let b_record = make(&a.session, "Colt", "Python", "P1", "b's own");
     assert_eq!(count(&a.session), 1);
@@ -148,11 +153,17 @@ fn conflicts_do_not_survive_a_lock_and_reopen_of_the_same_database() {
     let record = make(&a.session, "Glock", "19", "ABC123", "original");
     let scratch = TempDir::new().unwrap();
     let import = import_conflict(&a.session, &scratch);
-    assert_eq!(a.session.inspect(|open| Ok(open.imports.len())).unwrap(), 1);
+    assert_eq!(
+        a.session.inspect(a.session.current_id(), |open| Ok(open.imports.len())).unwrap(),
+        1
+    );
 
     reopen(&a.session, &a.path);
 
-    assert_eq!(a.session.inspect(|open| Ok(open.imports.len())).unwrap(), 0);
+    assert_eq!(
+        a.session.inspect(a.session.current_id(), |open| Ok(open.imports.len())).unwrap(),
+        0
+    );
     assert_eq!(resolve(&a.session, &import, "overwrite").unwrap_err().code, "NOT_FOUND");
     assert_eq!(notes_of(&a.session, record).as_deref(), Some("original"));
     assert_eq!(count(&a.session), 1);
@@ -167,7 +178,9 @@ fn a_replaced_record_is_not_touched(action: &str) {
     let scratch = TempDir::new().unwrap();
     let import = import_conflict(&a.session, &scratch);
 
-    a.session.write(|conn| firearm_ops::delete_firearm(conn, original, true)).unwrap();
+    a.session
+        .write(a.session.current_id(), |conn| firearm_ops::delete_firearm(conn, original, true))
+        .unwrap();
     let replacement = make(&a.session, "Colt", "Python", "P1", "the replacement");
     assert_eq!(replacement, original, "the new record reuses the numeric id");
 
@@ -202,7 +215,10 @@ fn only_the_newest_few_imports_are_held() {
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
 
-    assert_eq!(a.session.inspect(|open| Ok(open.imports.len())).unwrap(), MAX_HELD_IMPORTS);
+    assert_eq!(
+        a.session.inspect(a.session.current_id(), |open| Ok(open.imports.len())).unwrap(),
+        MAX_HELD_IMPORTS
+    );
     let oldest = resolve(&a.session, &imports[0], "skip").unwrap_err();
     assert_eq!(oldest.code, "NOT_FOUND");
     let newest = resolve(&a.session, imports.last().unwrap(), "skip").unwrap();

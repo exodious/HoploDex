@@ -49,7 +49,7 @@ pub fn create(
     if session.is_open() {
         // A switch, as in `open`: the other database is closed normally
         // (its preview ends, its backup is made) rather than replaced.
-        close_normal(session, machine, CloseReason::Switched).ok();
+        close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
     session.install(prepare(machine, conn, path)?);
     Ok(())
@@ -72,7 +72,7 @@ pub fn open(
     if session.is_open() {
         // The frontend closes first itself, to ask about unsaved changes;
         // this covers anything else. It can only fail when nothing is open.
-        close_normal(session, machine, CloseReason::Switched).ok();
+        close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
     file_swap::finish_interrupted(path);
     let conn = db::open_database(path, passphrase, &machine.identity(), take_over)?;
@@ -142,8 +142,11 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
 /// make a backup if one is due, clear the open marker (in the same
 /// transaction as the backup record), close the connection (which clears
 /// the key from memory), and delete this session's decrypted document
-/// copies. Refused with `DATABASE_CLOSED` when nothing is open. A lock
-/// (FR-033) is this close, after its unsaved input is kept (see [`lock`]).
+/// copies. Refused with `DATABASE_CLOSED`, with nothing closed, when
+/// nothing is open or when the open database is not the session `id`: a
+/// late close can't end the session opened after it (008 research.md §2).
+/// A lock (FR-033) is this close, after its unsaved input is kept (see
+/// [`lock`]).
 ///
 /// The file is checked first, as before any write (research.md §6). If
 /// another computer has taken it over, this is a take-over close. If it
@@ -156,18 +159,24 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
 /// waiting, and this thread finishes the close as [`close_immediate`] would.
 pub fn close_normal(
     session: &Session,
+    id: SessionId,
     machine: &MachineSettings,
     reason: CloseReason,
 ) -> Result<CloseOutcome, CommandError> {
+    // Without the mutex, so a close that is certainly late changes nothing
+    // of `closing`; `take` compares again under the mutex.
+    if session.current_id() != id {
+        return Err(CommandError::database_closed());
+    }
     {
         let mut closing = session.closing();
         if closing.immediate.is_some() {
             return Err(CommandError::database_closed());
         }
         closing.normal = session.open_path();
-        closing.normal_id = session.current_id();
+        closing.normal_id = id;
     }
-    let Some(mut open) = session.take() else {
+    let Some(mut open) = session.take(id) else {
         finish_closing(session);
         return Err(CommandError::database_closed());
     };
@@ -283,23 +292,30 @@ fn finish_closing(session: &Session) -> bool {
 /// database, then the normal close runs with `reason`, making a backup if
 /// one is due. No confirmation is asked. If the draft can't be kept, the
 /// lock still goes ahead and the chooser says the changes were lost.
+///
+/// Only the session `id` is locked, and only it gets the draft: a late lock
+/// (the session ended, or another is open) is `DATABASE_CLOSED` with
+/// nothing written and nothing closed (008 research.md §2).
 pub fn lock(
     session: &Session,
+    id: SessionId,
     machine: &MachineSettings,
     reason: CloseReason,
     draft: Option<Draft>,
 ) -> Result<CloseOutcome, CommandError> {
     if let Some(draft) = draft {
         let saved_at = backups::utc_text(&session.clock().now());
-        let kept = session.write_housekeeping(|conn| {
+        let kept = session.write_housekeeping(id, |conn| {
             pending::write_pending(conn, Some(&draft), false, &saved_at)
         });
         match kept {
             Ok(()) => {}
-            // Closed already, as a take-over or by another close.
-            Err(err) if err.code == "DATABASE_TAKEN_OVER" || err.code == "DATABASE_CLOSED" => {
+            // Taken over by another computer: closed already.
+            Err(err) if err.code == "DATABASE_TAKEN_OVER" => {
                 return Ok(CloseOutcome::backup(BackupOutcome::NotAttempted));
             }
+            // Not the open session (any more): not this lock's to make.
+            Err(err) if err.code == "DATABASE_CLOSED" => return Err(err),
             Err(err) => {
                 log::error!("could not keep the unsaved changes at a lock: {}", err.message);
                 if let Some(path) = session.open_path() {
@@ -310,7 +326,7 @@ pub fn lock(
             }
         }
     }
-    close_normal(session, machine, reason)
+    close_normal(session, id, machine, reason)
 }
 
 /// Locks with the draft the frontend last staged: the idle lock and the
@@ -321,8 +337,10 @@ pub fn lock_with_staged(
     machine: &MachineSettings,
     reason: CloseReason,
 ) -> Result<CloseOutcome, CommandError> {
-    let draft = session.inspect_mut(|open| Ok(open.staged_draft.take()))?;
-    lock(session, machine, reason, draft)
+    // Whatever is open: the backend starts this lock on its own.
+    let id = session.current_id();
+    let draft = session.inspect_mut(id, |open| Ok(open.staged_draft.take()))?;
+    lock(session, id, machine, reason, draft)
 }
 
 /// The immediate close, at sleep or shutdown (FR-037, FR-039; data-model.md

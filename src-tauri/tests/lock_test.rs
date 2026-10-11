@@ -33,6 +33,7 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use preview_support::{SurfaceLog, TestPreview, wait_until_gone};
 use serde_json::{Value, json};
@@ -103,7 +104,7 @@ impl World {
     fn change(&self) -> i64 {
         let serial = db::random_hex(4).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Glock", "19", &serial),
@@ -119,7 +120,7 @@ impl World {
     fn grow(&self, bytes: usize) {
         let filler = db::random_hex(bytes / 2).unwrap();
         self.session
-            .write(|conn| {
+            .write(self.session.current_id(), |conn| {
                 conn.execute_batch("CREATE TABLE IF NOT EXISTS filler (content TEXT)").unwrap();
                 conn.execute("INSERT INTO filler (content) VALUES (?1)", [filler]).unwrap();
                 Ok(())
@@ -129,7 +130,7 @@ impl World {
 
     fn firearm_count(&self) -> i64 {
         self.session
-            .read(|conn| {
+            .read(self.session.current_id(), |conn| {
                 conn.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0))
                     .map_err(CommandError::from_db)
             })
@@ -137,7 +138,9 @@ impl World {
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     /// A decrypted document copy, as `open_document` leaves one.
@@ -152,6 +155,7 @@ impl World {
     fn set_lock(&self, idle_enabled: bool, idle_minutes: i64, on_screen_lock: bool) {
         databases::update_lock_settings(
             &self.session,
+            self.session.current_id(),
             &LockSettingsInput { idle_enabled, idle_minutes, on_screen_lock },
         )
         .unwrap();
@@ -268,8 +272,13 @@ fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
     let ending = json!(world.session.current_id().get());
     assert_ne!(ending, json!(0));
 
-    let outcome =
-        databases::lock_database(&world.session, &world.machine, Some(edit_draft(id))).unwrap();
+    let outcome = databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(edit_draft(id)),
+    )
+    .unwrap();
 
     assert_eq!(outcome.backup, BackupOutcome::Made, "a due backup is made");
     assert!(!world.session.is_open());
@@ -296,6 +305,7 @@ impl World {
     fn firearm_count_after_discard(&self) -> i64 {
         databases::resolve_pending_changes(
             &self.session,
+            self.session.current_id(),
             hoplodex_lib::models::database::PendingAction::Discard,
         )
         .unwrap();
@@ -307,7 +317,9 @@ impl World {
 fn lock_now_with_nothing_open_is_refused() {
     let world = World::new();
 
-    let refused = databases::lock_database(&world.session, &world.machine, None).unwrap_err();
+    let refused =
+        databases::lock_database(&world.session, world.session.current_id(), &world.machine, None)
+            .unwrap_err();
 
     assert_eq!(refused.code, "DATABASE_CLOSED");
 }
@@ -426,7 +438,13 @@ fn the_idle_lock_keeps_its_settings_in_the_database() {
     let world = World::new();
     world.create();
     world.set_lock(true, 2, true);
-    lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
 
     world.open();
 
@@ -453,7 +471,9 @@ fn lock_settings_allow_one_to_two_hundred_and_forty_minutes() {
     }
     let world = World::new();
     world.create();
-    let refused = databases::update_lock_settings(&world.session, &input(0)).unwrap_err();
+    let refused =
+        databases::update_lock_settings(&world.session, world.session.current_id(), &input(0))
+            .unwrap_err();
     assert_eq!(refused.code, "VALIDATION_ERROR");
 }
 
@@ -482,7 +502,12 @@ fn a_sleep_makes_no_backup_and_leaves_the_changes_waiting() {
     let world = World::new();
     world.create();
     let id = world.change();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     let copy = world.opened_document();
     let ending = json!(world.session.current_id().get());
 
@@ -530,7 +555,7 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
 
     let operation = world.session.operations().begin(OperationKind::Import, None).unwrap();
     let mut sleeper = None;
-    let imported = world.session.write(|conn| {
+    let imported = world.session.write(world.session.current_id(), |conn| {
         import_export::import_collection_stoppable(
             conn,
             support::read_import(&file, SpreadsheetFormat::Csv),
@@ -569,7 +594,7 @@ fn a_sleep_abandons_an_export_and_removes_what_it_wrote() {
 
     let operation = world.session.operations().begin(OperationKind::Export, None).unwrap();
     let mut sleeper = None;
-    let exported = world.session.read(|conn| {
+    let exported = world.session.read(world.session.current_id(), |conn| {
         import_export::export_collection_stoppable(
             conn,
             destination.path(),
@@ -604,6 +629,7 @@ fn a_sleep_interrupts_a_passphrase_change_and_the_old_passphrase_still_opens() {
 
     let changed = backups_ops::change_passphrase(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         &world.config.path().join("probes"),
         &passphrase(),
@@ -631,7 +657,13 @@ fn a_sleep_abandons_a_restore_and_leaves_the_database_as_it_was() {
     let world = Arc::new(World::new());
     world.create();
     world.change();
-    lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
     world.open();
     world.change();
     let count = world.firearm_count();
@@ -643,7 +675,7 @@ fn a_sleep_abandons_a_restore_and_leaves_the_database_as_it_was() {
         &world.machine,
         &backup.path,
         &passphrase(),
-        None,
+        Target::Open(world.session.current_id()),
     );
     join(&sleeper);
     world.events.on_event(|_, _| {});
@@ -661,7 +693,13 @@ fn a_sleep_stops_deleting_the_backups_between_files() {
     world.create();
     for _ in 0..3 {
         world.change();
-        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
         world.open();
         world.clock.advance(chrono::Duration::days(1));
     }
@@ -669,7 +707,7 @@ fn a_sleep_stops_deleting_the_backups_between_files() {
     assert_eq!(backups::list(&world.backup_folder(), &id).unwrap().len(), 3);
     let sleeper = world.sleep_at("backups_delete:progress", |payload| payload["processed"] == 1);
 
-    let deleted = backups_ops::delete_all_backups(&world.session, true);
+    let deleted = backups_ops::delete_all_backups(&world.session, world.session.current_id(), true);
     join(&sleeper);
     world.events.on_event(|_, _| {});
 
@@ -700,7 +738,13 @@ fn with_three_backups(world: &World, large: bool) -> Vec<(BackupInfo, Vec<u8>)> 
     }
     for _ in 0..3 {
         world.change();
-        lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
         world.open();
         world.clock.advance(chrono::Duration::days(1));
     }
@@ -724,6 +768,7 @@ fn change_location(
 ) -> Result<BackupSettingsSaved, CommandError> {
     databases::update_backup_settings(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         &BackupSettingsInput {
             enabled: true,
@@ -883,7 +928,12 @@ fn a_sleep_during_the_screen_lock_backup_finishes_the_close_at_once() {
 #[test]
 fn a_sleep_during_a_user_closes_backup_finishes_the_close_at_once() {
     sleep_during_the_backup_of(|world| {
-        let outcome = lifecycle::close_normal(&world.session, &world.machine, CloseReason::Closed);
+        let outcome = lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        );
         assert_eq!(outcome.unwrap().backup, BackupOutcome::Skipped);
     });
 }
@@ -895,12 +945,20 @@ fn a_sleep_lock_cut_short_after_its_first_step_is_finished_on_waking() {
     let world = World::new();
     world.create();
     let id = world.change();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     let copy = world.opened_document();
 
     assert!(lifecycle::begin_immediate(&world.session, CloseReason::Sleep));
     // No command reaches the database from the first step on.
-    assert_eq!(world.session.read(|_| Ok(())).unwrap_err().code, "DATABASE_CLOSED");
+    assert_eq!(
+        world.session.read(world.session.current_id(), |_| Ok(())).unwrap_err().code,
+        "DATABASE_CLOSED"
+    );
     assert_eq!(
         databases::database_status(&world.session, &world.machine).unwrap_err().code,
         "DATABASE_CLOSED"
@@ -999,7 +1057,12 @@ fn a_shutdown_keeps_the_draft_deletes_document_copies_and_makes_no_backup() {
     let world = World::new();
     world.create();
     let id = world.change();
-    databases::stage_pending_changes(&world.session, Some(edit_draft(id))).unwrap();
+    databases::stage_pending_changes(
+        &world.session,
+        world.session.current_id(),
+        Some(edit_draft(id)),
+    )
+    .unwrap();
     let copy = world.opened_document();
 
     lifecycle::will_shut_down(&world.session, &world.machine);
@@ -1054,7 +1117,8 @@ impl World {
             Shown::Tiff => ("scan.tif", document_fixture("one-page.tif")),
         };
         let document = preview_support::add_document(&self.session, firearm, name, &bytes);
-        preview::open_preview(&self.session, &preview_env.env, document).unwrap();
+        preview::open_preview(&self.session, self.session.current_id(), &preview_env.env, document)
+            .unwrap();
         let shown = OpenPreview {
             kind,
             surface: preview_env.surfaces.built().pop(),
@@ -1077,7 +1141,8 @@ fn ways_the_collection_goes() -> Vec<Way> {
         (
             "lock now",
             Box::new(|w| {
-                databases::lock_database(&w.session, &w.machine, None).unwrap();
+                databases::lock_database(&w.session, w.session.current_id(), &w.machine, None)
+                    .unwrap();
             }),
         ),
         (
@@ -1102,7 +1167,13 @@ fn ways_the_collection_goes() -> Vec<Way> {
         (
             "close",
             Box::new(|w| {
-                databases::close_database(&w.session, &w.machine, CloseReason::Closed).unwrap();
+                databases::close_database(
+                    &w.session,
+                    w.session.current_id(),
+                    &w.machine,
+                    CloseReason::Closed,
+                )
+                .unwrap();
             }),
         ),
         (

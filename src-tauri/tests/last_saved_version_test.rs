@@ -30,6 +30,7 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::session::fingerprint::FileFingerprint;
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::json;
 use support::{ManualClock, passphrase, peek, test_session_at};
@@ -83,7 +84,13 @@ impl World {
     }
 
     fn close(&self) {
-        lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
     }
 
     /// Writes `version` as the recorded one, bypassing every rule, in the
@@ -92,7 +99,7 @@ impl World {
     /// take-over.
     fn seed(&self, version: &str) {
         self.session
-            .inspect_mut(|open| {
+            .inspect_mut(self.session.current_id(), |open| {
                 open.conn
                     .execute("UPDATE app_state SET last_saved_version = ?1", [version])
                     .map_err(CommandError::from_db)?;
@@ -104,7 +111,7 @@ impl World {
 
     fn seed_null(&self) {
         self.session
-            .inspect_mut(|open| {
+            .inspect_mut(self.session.current_id(), |open| {
                 open.conn
                     .execute("UPDATE app_state SET last_saved_version = NULL", [])
                     .map_err(CommandError::from_db)?;
@@ -117,7 +124,7 @@ impl World {
     /// The recorded version, in the open database.
     fn saved(&self) -> Option<String> {
         self.session
-            .inspect(|open| {
+            .inspect(self.session.current_id(), |open| {
                 open.conn
                     .query_row("SELECT last_saved_version FROM app_state", [], |row| row.get(0))
                     .map_err(CommandError::from_db)
@@ -128,7 +135,7 @@ impl World {
     /// `changes_waiting`, in the open database.
     fn changes_waiting(&self) -> bool {
         self.session
-            .inspect(|open| {
+            .inspect(self.session.current_id(), |open| {
                 open.conn
                     .query_row("SELECT changes_waiting FROM app_state", [], |row| row.get(0))
                     .map_err(CommandError::from_db)
@@ -137,18 +144,20 @@ impl World {
     }
 
     fn database_id(&self) -> String {
-        self.session.inspect(|open| Ok(open.database_id.clone())).unwrap()
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
     }
 
     fn add_firearm(&self, serial: &str) -> Result<i64, CommandError> {
-        self.session.write(|conn| {
+        self.session.write(self.session.current_id(), |conn| {
             firearms::create_firearm(conn, &support::firearm("Colt", "Python", serial), false, None)
                 .map(|created| created.id)
         })
     }
 
     fn stage(&self, draft: Option<Draft>) {
-        databases::stage_pending_changes(&self.session, draft).unwrap();
+        databases::stage_pending_changes(&self.session, self.session.current_id(), draft).unwrap();
     }
 }
 
@@ -219,7 +228,7 @@ fn recording_overwrites_an_older_version_and_changes_nothing_when_it_is_current(
 
     let (first, second) = world
         .session
-        .inspect(|open| {
+        .inspect(world.session.current_id(), |open| {
             let before = open.conn.total_changes();
             db::record_saved_version(&open.conn).unwrap();
             let first = open.conn.total_changes() - before;
@@ -242,7 +251,7 @@ fn recording_it_does_not_make_a_backup_due() {
 
     world
         .session
-        .inspect(|open| {
+        .inspect(world.session.current_id(), |open| {
             db::record_saved_version(&open.conn).unwrap();
             Ok(())
         })
@@ -258,7 +267,13 @@ fn recording_it_does_not_make_a_backup_due() {
 fn a_lock_that_keeps_a_draft_records_this_version() {
     let world = seeded();
 
-    databases::lock_database(&world.session, &world.machine, Some(a_draft())).unwrap();
+    databases::lock_database(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        Some(a_draft()),
+    )
+    .unwrap();
 
     assert_eq!(saved_in(&world.path()).as_deref(), Some(APP_VERSION));
 }
@@ -302,7 +317,7 @@ fn a_write_open_that_changed_rows_records_this_version() {
 
     world
         .session
-        .write_open(|open| {
+        .write_open(world.session.current_id(), |open| {
             firearms::create_firearm(
                 &open.conn,
                 &support::firearm("Colt", "Python", "B2"),
@@ -320,7 +335,8 @@ fn a_write_open_that_changed_rows_records_this_version() {
 fn a_housekeeping_write_that_changed_rows_records_this_version() {
     let world = seeded();
 
-    databases::dismiss_note(&world.session, NoteKind::DiskEncryption).unwrap();
+    databases::dismiss_note(&world.session, world.session.current_id(), NoteKind::DiskEncryption)
+        .unwrap();
 
     assert_eq!(world.saved().as_deref(), Some(APP_VERSION));
 }
@@ -371,8 +387,14 @@ fn a_restore_names_the_version_that_saved_the_backup_not_this_one() {
     // Saved by this version since the backup (once writes record it).
     world.add_firearm("B2").unwrap();
 
-    backups_ops::restore_backup(&world.session, &world.machine, &backup.path, &passphrase(), None)
-        .unwrap();
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
 
     assert_eq!(world.saved().as_deref(), Some(OLD));
 }
@@ -383,6 +405,7 @@ fn a_passphrase_change_leaves_the_version_alone() {
 
     backups_ops::change_passphrase(
         &world.session,
+        world.session.current_id(),
         &world.machine,
         world.scratch.path(),
         &passphrase(),
@@ -398,20 +421,20 @@ fn a_write_that_changed_nothing_leaves_the_version_alone() {
     let world = seeded();
 
     // Does nothing at all.
-    world.session.write(|_| Ok(())).unwrap();
-    world.session.write_open(|_| Ok(())).unwrap();
-    world.session.write_housekeeping(|_| Ok(())).unwrap();
+    world.session.write(world.session.current_id(), |_| Ok(())).unwrap();
+    world.session.write_open(world.session.current_id(), |_| Ok(())).unwrap();
+    world.session.write_housekeeping(world.session.current_id(), |_| Ok(())).unwrap();
     // Matches no row.
     world
         .session
-        .write(|conn| {
+        .write(world.session.current_id(), |conn| {
             conn.execute("UPDATE firearms SET notes = 'x' WHERE id = -1", [])
                 .map(|_| ())
                 .map_err(CommandError::from_db)
         })
         .unwrap();
     // Refused before it wrote anything.
-    let refused = world.session.write(|conn| {
+    let refused = world.session.write(world.session.current_id(), |conn| {
         firearms::create_firearm(conn, &support::firearm("", "Python", "C3"), false, None)
             .map(|_| ())
     });
@@ -424,7 +447,7 @@ fn a_write_that_changed_nothing_leaves_the_version_alone() {
 fn a_read_leaves_the_version_alone() {
     let world = seeded();
 
-    world.session.read(|_| Ok(())).unwrap();
+    world.session.read(world.session.current_id(), |_| Ok(())).unwrap();
 
     assert_eq!(world.saved().as_deref(), Some(OLD));
 }

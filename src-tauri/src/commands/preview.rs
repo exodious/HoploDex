@@ -28,7 +28,8 @@ use crate::services::preview::{
     surface::{AppSurface, Hooks},
     text, tripwire,
 };
-use crate::session::{OpenDatabase, Session};
+use crate::session::scoped::ScopedSession;
+use crate::session::{OpenDatabase, Session, SessionId};
 
 /// The longest PDF.js may take to report its hook on Linux before the
 /// surface is closed (research.md §8).
@@ -323,25 +324,27 @@ pub mod ops {
     /// take 20 s, and `close_preview` must be able to end it at once.
     pub fn open_preview(
         session: &Arc<Session>,
+        session_id: SessionId,
         env: &PreviewEnv,
         document_id: i64,
     ) -> Result<PreviewInfo, CommandError> {
-        let (id, ticket, bytes) = match session.inspect_mut(|open| begin(open, env, document_id))? {
-            Begun::Done(info) => {
-                if let PreviewInfo::Pdf { preview_id, .. } = &info {
-                    watch_for_the_serve(session, env, *preview_id);
+        let (id, ticket, bytes) =
+            match session.inspect_mut(session_id, |open| begin(open, env, document_id))? {
+                Begun::Done(info) => {
+                    if let PreviewInfo::Pdf { preview_id, .. } = &info {
+                        watch_for_the_serve(session, session_id, env, *preview_id);
+                    }
+                    return Ok(info);
                 }
-                return Ok(info);
-            }
-            Begun::Tiff { id, ticket, bytes } => (id, ticket, bytes),
-        };
+                Begun::Tiff { id, ticket, bytes } => (id, ticket, bytes),
+            };
 
         let still_ours = |open: &OpenDatabase| {
             open.preview_loading.as_ref().is_some_and(|loading| loading.ticket == ticket)
         };
         // Whatever goes wrong from here, the load stops being the open one.
         let give_up = |error: CommandError| {
-            let _ = session.inspect_mut(|open| {
+            let _ = session.inspect_mut(session_id, |open| {
                 if still_ours(open) {
                     open.preview_loading = None;
                 }
@@ -354,7 +357,7 @@ pub mod ops {
             give_up(failed("The TIFF viewer couldn't be started, so this document can't be shown."))
         })?;
         // From here `close_preview` can end the load by killing the helper.
-        let registered = session.inspect_mut(|open| {
+        let registered = session.inspect_mut(session_id, |open| {
             Ok(match open.preview_loading.as_mut().filter(|l| l.ticket == ticket) {
                 Some(loading) => {
                     loading.helper = Some(helper.share());
@@ -386,7 +389,7 @@ pub mod ops {
         drop(bytes);
 
         let mut helper = Some(helper);
-        let installed = session.inspect_mut(|open| {
+        let installed = session.inspect_mut(session_id, |open| {
             if !still_ours(open) {
                 return Ok(false);
             }
@@ -410,8 +413,12 @@ pub mod ops {
 
     /// Closes the preview `id`, ending a TIFF's load still under way. A stale
     /// id is ignored.
-    pub fn close_preview(session: &Session, id: u64) -> Result<(), CommandError> {
-        let ended = session.inspect_mut(|open| {
+    pub fn close_preview(
+        session: &Session,
+        session_id: SessionId,
+        id: u64,
+    ) -> Result<(), CommandError> {
+        let ended = session.inspect_mut(session_id, |open| {
             let loading_is_it = open.preview_loading.as_ref().is_some_and(|l| l.id == id);
             let shown_is_it = open.preview.as_ref().is_some_and(|p| p.id == id);
             if loading_is_it || shown_is_it {
@@ -427,8 +434,12 @@ pub mod ops {
 
     /// Closes the preview of document `document_id`, if it is the one shown
     /// (what `delete_document` does first).
-    pub fn close_preview_of(session: &Session, document_id: i64) -> Result<(), CommandError> {
-        let ended = session.inspect_mut(|open| {
+    pub fn close_preview_of(
+        session: &Session,
+        session_id: SessionId,
+        document_id: i64,
+    ) -> Result<(), CommandError> {
+        let ended = session.inspect_mut(session_id, |open| {
             let loading_is_it =
                 open.preview_loading.as_ref().is_some_and(|l| l.document_id == document_id);
             let shown_is_it = open.preview.as_ref().is_some_and(|p| p.document_id == document_id);
@@ -446,11 +457,12 @@ pub mod ops {
     /// whatever `visible` says.
     pub fn set_preview_bounds(
         session: &Session,
+        session_id: SessionId,
         id: u64,
         bounds: SurfaceBounds,
         visible: bool,
     ) -> Result<(), CommandError> {
-        session.inspect(|open| {
+        session.inspect(session_id, |open| {
             let preview = open.preview.as_ref().filter(|p| p.id == id).ok_or_else(closed)?;
             let PreviewContent::Pdf { surface, served, hooked, .. } = &preview.content else {
                 return Err(invalid("This preview isn't a PDF."));
@@ -472,8 +484,8 @@ pub mod ops {
     /// §16). The viewer stays open; the frontend shows the surface again
     /// with `set_preview_bounds`. Nothing happens with no PDF preview, or no
     /// open database.
-    pub fn hide_pdf_surface(session: &Session) {
-        let _ = session.inspect(|open| {
+    pub fn hide_pdf_surface(session: &Session, session_id: SessionId) {
+        let _ = session.inspect(session_id, |open| {
             if let Some(Preview { content: PreviewContent::Pdf { surface, .. }, .. }) =
                 open.preview.as_ref()
             {
@@ -484,8 +496,12 @@ pub mod ops {
     }
 
     /// Gives the PDF surface the keyboard focus.
-    pub fn focus_preview(session: &Session, id: u64) -> Result<(), CommandError> {
-        session.inspect(|open| {
+    pub fn focus_preview(
+        session: &Session,
+        session_id: SessionId,
+        id: u64,
+    ) -> Result<(), CommandError> {
+        session.inspect(session_id, |open| {
             let preview = open.preview.as_ref().filter(|p| p.id == id).ok_or_else(closed)?;
             let PreviewContent::Pdf { surface, .. } = &preview.content else {
                 return Err(invalid("This preview isn't a PDF."));
@@ -500,10 +516,11 @@ pub mod ops {
     /// is closed outside the session's lock.
     fn end_pdf(
         session: &Session,
+        session_id: SessionId,
         matches: impl FnOnce(&Preview) -> bool,
         reason: PdfEndReason,
     ) -> bool {
-        let ended = session.inspect_mut(|open| {
+        let ended = session.inspect_mut(session_id, |open| {
             let is_it = open
                 .preview
                 .as_ref()
@@ -521,15 +538,16 @@ pub mod ops {
     }
 
     /// The surface itself ended the preview (the macOS watch caught a copy,
-    /// a Windows interface was missing): closes the PDF shown and says why.
+    /// a Windows interface was missing): closes the PDF shown, in whatever
+    /// session is open (the surface belongs to its preview), and says why.
     pub fn surface_ended(session: &Session, reason: PdfEndReason) {
-        end_pdf(session, |_| true, reason);
+        end_pdf(session, session.current_id(), |_| true, reason);
     }
 
     /// Escape or F6 was pressed in the surface: the viewer is told (`event`
     /// is `preview:escape` or `preview:focus-chrome`).
     pub fn surface_key(session: &Session, event: &str) {
-        let shown = session.inspect(|open| {
+        let shown = session.inspect(session.current_id(), |open| {
             Ok(open
                 .preview
                 .as_ref()
@@ -551,7 +569,7 @@ pub mod ops {
         url: &str,
     ) -> Result<(), CommandError> {
         let Ok(url) = url.parse::<tauri::Url>() else { return Ok(()) };
-        let own = session.inspect(|open| {
+        let own = session.inspect(session.current_id(), |open| {
             Ok(open.preview.as_ref().is_some_and(|p| match &p.content {
                 PreviewContent::Pdf { token, .. } => protocol_handler::is_document_url(&url, token),
                 _ => false,
@@ -560,7 +578,7 @@ pub mod ops {
         if own {
             env.availability
                 .set(PdfAvailability::Unavailable { reason: UnavailableReason::NoViewer });
-            end_pdf(session, |_| true, PdfEndReason::NoViewer);
+            end_pdf(session, session.current_id(), |_| true, PdfEndReason::NoViewer);
         }
         Ok(())
     }
@@ -570,7 +588,12 @@ pub mod ops {
     /// recorded) of `open_preview`, or the preview fails as a missing hook
     /// does, so the viewer doesn't wait for a surface that never asks. The
     /// hook's own 5 s starts at the first serve (`hook_timed_out`).
-    fn watch_for_the_serve(session: &Arc<Session>, env: &PreviewEnv, preview_id: u64) {
+    fn watch_for_the_serve(
+        session: &Arc<Session>,
+        session_id: SessionId,
+        env: &PreviewEnv,
+        preview_id: u64,
+    ) {
         if !cfg!(target_os = "linux") {
             return;
         }
@@ -580,6 +603,7 @@ pub mod ops {
                 std::thread::sleep(timeout);
                 end_pdf(
                     &session,
+                    session_id,
                     |p| {
                         p.id == preview_id
                             && matches!(p.content, PreviewContent::Pdf { served: false, .. })
@@ -597,9 +621,10 @@ pub mod ops {
     /// starts that timer at the first serve, research.md §8), so the surface
     /// is closed rather than shown with a PDF's scripting on. A no-op if the
     /// preview has ended, been replaced or been hooked since.
-    pub fn hook_timed_out(session: &Session, preview_id: u64) {
+    pub fn hook_timed_out(session: &Session, session_id: SessionId, preview_id: u64) {
         end_pdf(
             session,
+            session_id,
             |p| {
                 p.id == preview_id && matches!(p.content, PreviewContent::Pdf { hooked: false, .. })
             },
@@ -611,11 +636,12 @@ pub mod ops {
     /// megapixels). The session's lock isn't held while the helper renders.
     pub fn render_preview_page(
         session: &Session,
+        session_id: SessionId,
         id: u64,
         page: u32,
         width_px: u32,
     ) -> Result<Vec<u8>, CommandError> {
-        let helper = session.inspect(|open| {
+        let helper = session.inspect(session_id, |open| {
             let preview = open.preview.as_ref().filter(|p| p.id == id).ok_or_else(closed)?;
             let PreviewContent::Tiff { helper, pages } = &preview.content else {
                 return Err(invalid("This preview isn't a TIFF."));
@@ -637,7 +663,7 @@ pub mod ops {
             Err(HelperError::Closed) => Err(closed()),
             Err(_) => {
                 // The helper kept dying: end the preview.
-                let _ = close_preview(session, id);
+                let _ = close_preview(session, session_id, id);
                 Err(failed("This TIFF couldn't be shown. It may be damaged or too large."))
             }
         }
@@ -649,23 +675,22 @@ pub mod ops {
 #[tauri::command]
 pub async fn open_preview(
     document_id: i64,
-    session: State<'_, Session>,
+    session: ScopedSession,
     env: State<'_, PreviewEnv>,
 ) -> Result<PreviewInfo, CommandError> {
-    let session = session.shared();
+    let (session, session_id) = (session.session.shared(), session.id);
     let env = env.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || ops::open_preview(&session, &env, document_id))
-        .await
-        .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        ops::open_preview(&session, session_id, &env, document_id)
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?
 }
 
 /// Closes the preview `previewId`; a stale id is ignored.
 #[tauri::command]
-pub async fn close_preview(
-    preview_id: u64,
-    session: State<'_, Session>,
-) -> Result<(), CommandError> {
-    ops::close_preview(&session, preview_id)
+pub async fn close_preview(preview_id: u64, session: ScopedSession) -> Result<(), CommandError> {
+    ops::close_preview(&session.session, session.id, preview_id)
 }
 
 /// Moves and sizes the PDF surface over the viewer's page area and shows or
@@ -675,18 +700,15 @@ pub async fn set_preview_bounds(
     preview_id: u64,
     bounds: SurfaceBounds,
     visible: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<(), CommandError> {
-    ops::set_preview_bounds(&session, preview_id, bounds, visible)
+    ops::set_preview_bounds(&session.session, session.id, preview_id, bounds, visible)
 }
 
 /// Gives the PDF surface the keyboard focus.
 #[tauri::command]
-pub async fn focus_preview(
-    preview_id: u64,
-    session: State<'_, Session>,
-) -> Result<(), CommandError> {
-    ops::focus_preview(&session, preview_id)
+pub async fn focus_preview(preview_id: u64, session: ScopedSession) -> Result<(), CommandError> {
+    ops::focus_preview(&session.session, session.id, preview_id)
 }
 
 /// One TIFF page as PNG bytes, received by the viewer as an `ArrayBuffer`.
@@ -695,11 +717,10 @@ pub async fn render_preview_page(
     preview_id: u64,
     page: u32,
     width_px: u32,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<tauri::ipc::Response, CommandError> {
-    let session = session.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        ops::render_preview_page(&session, preview_id, page, width_px)
+        ops::render_preview_page(&session.session, session.id, preview_id, page, width_px)
     })
     .await
     .map_err(|e| CommandError::new("INTERNAL_ERROR", e.to_string()))?

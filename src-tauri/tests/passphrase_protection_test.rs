@@ -279,7 +279,13 @@ mod through_commands {
         }
 
         fn close(&self) {
-            lifecycle::close_normal(&self.session, &self.machine, CloseReason::Closed).unwrap();
+            lifecycle::close_normal(
+                &self.session,
+                self.session.current_id(),
+                &self.machine,
+                CloseReason::Closed,
+            )
+            .unwrap();
         }
 
         fn path(&self, name: &str) -> std::path::PathBuf {
@@ -309,7 +315,7 @@ mod through_commands {
 
         world
             .session
-            .write(|conn| {
+            .write(world.session.current_id(), |conn| {
                 firearms::create_firearm(
                     conn,
                     &support::firearm("Colt", "Python", "V1"),
@@ -332,7 +338,7 @@ mod through_commands {
         assert_eq!(status.name, "Main");
         let makes: Vec<String> = world
             .session
-            .read(|conn| {
+            .read(world.session.current_id(), |conn| {
                 let mut stmt = conn.prepare("SELECT make FROM firearms").unwrap();
                 let rows = stmt.query_map([], |r| r.get(0)).unwrap();
                 Ok(rows.map(Result::unwrap).collect())
@@ -411,13 +417,14 @@ mod through_commands {
         let world = World::new();
         world.create("Main").unwrap();
 
-        ops::dismiss_note(&world.session, NoteKind::DiskEncryption).unwrap();
+        ops::dismiss_note(&world.session, world.session.current_id(), NoteKind::DiskEncryption)
+            .unwrap();
 
         let status = ops::database_status(&world.session, &world.machine).unwrap();
         assert!(!status.notes.disk_encryption);
         let (dismissed, waiting): (i64, i64) = world
             .session
-            .read(|conn| {
+            .read(world.session.current_id(), |conn| {
                 Ok(conn
                     .query_row(
                         "SELECT disk_encryption_note_dismissed, changes_waiting FROM app_state",

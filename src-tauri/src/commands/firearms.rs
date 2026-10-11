@@ -1,6 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 use crate::commands::CommandError;
 use crate::models::disposition_history::DispositionHistoryEntry;
@@ -10,7 +9,6 @@ use crate::models::firearm::{
 use crate::models::record::{MountDetail, RecordCounts, RecordLabel, RecordRef};
 use crate::models::rules::{MAX_SHORT_TEXT_CHARS, check_text_length};
 use crate::services::mounts::{self, MountGraph};
-use crate::session::Session;
 use crate::session::scoped::ScopedSession;
 
 /// Input for the `dispose_firearm` and `dispose_accessory` commands, per
@@ -1224,7 +1222,7 @@ pub mod ops {
 pub async fn create_firearm(
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session
         .write(|conn| ops::create_firearm(conn, &input, confirmed_warnings.unwrap_or(false), None))
@@ -1235,7 +1233,7 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::update_firearm(conn, id, &input, confirmed_warnings.unwrap_or(false)))
 }
@@ -1244,7 +1242,7 @@ pub async fn update_firearm(
 pub async fn dispose_firearm(
     id: i64,
     input: DisposeInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::dispose_firearm(conn, id, &input))
 }
@@ -1253,7 +1251,7 @@ pub async fn dispose_firearm(
 pub async fn reverse_disposition(
     id: i64,
     input: ReverseDispositionInput,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
     session.write(|conn| ops::reverse_disposition(conn, id, &input))
 }
@@ -1262,16 +1260,13 @@ pub async fn reverse_disposition(
 pub async fn delete_firearm(
     id: i64,
     confirmed: bool,
-    session: State<'_, Session>,
+    session: ScopedSession,
 ) -> Result<DeleteResult, CommandError> {
     session.write(|conn| ops::delete_firearm(conn, id, confirmed))
 }
 
 #[tauri::command]
-pub async fn get_firearm(
-    id: i64,
-    session: State<'_, Session>,
-) -> Result<FirearmDetail, CommandError> {
+pub async fn get_firearm(id: i64, session: ScopedSession) -> Result<FirearmDetail, CommandError> {
     session.read(|conn| ops::get_firearm_detail(conn, id))
 }
 

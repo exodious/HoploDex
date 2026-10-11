@@ -25,11 +25,11 @@ fn with_nothing_open_read_and_write_refuse_without_running_the_closure() {
     let session = Session::default();
     let ran = Cell::new(false);
 
-    let read = session.read(|_| {
+    let read = session.read(session.current_id(), |_| {
         ran.set(true);
         Ok(())
     });
-    let write = session.write(|_| {
+    let write = session.write(session.current_id(), |_| {
         ran.set(true);
         Ok(())
     });
@@ -50,27 +50,36 @@ fn an_installed_database_serves_reads_and_writes_until_taken() {
     session.install(OpenDatabase::new(conn, &path).unwrap());
 
     assert!(session.is_open());
-    assert_eq!(session.read(count_types).unwrap(), 5);
+    assert_eq!(session.read(session.current_id(), count_types).unwrap(), 5);
     session
-        .write(|conn| {
+        .write(session.current_id(), |conn| {
             conn.execute("UPDATE collection_settings SET idle_lock_minutes = 30", [])
                 .map_err(CommandError::from_db)
         })
         .unwrap();
     let minutes: i64 = session
-        .read(|conn| {
+        .read(session.current_id(), |conn| {
             conn.query_row("SELECT idle_lock_minutes FROM collection_settings", [], |r| r.get(0))
                 .map_err(CommandError::from_db)
         })
         .unwrap();
     assert_eq!(minutes, 30);
 
-    let taken = session.take().expect("the open database");
+    // Another session's id takes nothing.
+    let other = SessionId::from_request(session.current_id().get() + 1).unwrap();
+    assert!(session.take(other).is_none());
+    assert!(session.is_open());
+    let taken = session.take(session.current_id()).expect("the open database");
     assert_eq!(taken.path, path);
     assert_eq!(taken.name, "test");
     assert_eq!(taken.database_id.len(), 32);
     assert!(!session.is_open());
-    assert_eq!(session.read(count_types).unwrap_err().code, "DATABASE_CLOSED");
+    assert_eq!(
+        session.read(session.current_id(), count_types).unwrap_err().code,
+        "DATABASE_CLOSED"
+    );
+    // Nothing is open, so nothing is taken.
+    assert!(session.take(session.current_id()).is_none());
 }
 
 #[test]
@@ -85,9 +94,12 @@ fn every_open_has_a_new_session_id_and_current_id_follows_it() {
     assert_ne!(first_id, SessionId::NONE);
     session.install(open);
     assert_eq!(session.current_id(), first_id);
-    assert_eq!(session.inspect(|open| Ok(open.session_id)).unwrap(), first_id);
+    assert_eq!(
+        session.inspect(session.current_id(), |open| Ok(open.session_id)).unwrap(),
+        first_id
+    );
 
-    session.take().expect("the open database");
+    session.take(first_id).expect("the open database");
     assert_eq!(session.current_id(), SessionId::NONE);
 
     let second = TestDb::new();
@@ -120,7 +132,7 @@ fn a_scoped_read_is_served_only_in_the_session_it_names() {
     assert_eq!(refused.unwrap_err().code, "DATABASE_CLOSED");
     assert!(!ran.get());
 
-    session.take().expect("the open database");
+    session.take(id).expect("the open database");
     assert_eq!(named(id).read(count_types).unwrap_err().code, "DATABASE_CLOSED");
 }
 
