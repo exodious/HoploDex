@@ -132,11 +132,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
    * as it is now (FR-033, FR-035). The backend's `session:closing` and
    * `session:closed` then take the collection away. */
   const lockDatabase = useCallback(async () => {
+    const scope = scopeRef.current;
+    if (!scope) return;
     try {
-      const locking = sessionService.lockDatabase(currentDraft());
+      const locking = sessionService.lockDatabase(scope, currentDraft());
       // The request is on its way with this session's id: nothing more goes
       // out under it (research.md §3).
-      scopeRef.current?.end();
+      scope.end();
       await locking;
     } catch (error) {
       // Closed already, by another lock or a take-over.
@@ -171,7 +173,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   /** Resumes or discards the pending changes the open reported. On resume,
    * the form they belong to opens with them once the collection shows. */
   const resolvePending = useCallback(async (action: "resume" | "discard") => {
-    const { draft } = await sessionService.resolvePendingChanges(action);
+    const { draft } = await sessionService.resolvePendingChanges(
+      openScope(scopeRef.current),
+      action,
+    );
     setResumedDraft(action === "resume" ? (draft ?? null) : null);
     setPhase((current) =>
       current.kind === "open"
@@ -185,7 +190,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       unlessUnsaved(async () => {
         const path = openPath.current;
         try {
-          await sessionService.closeDatabase(reason);
+          await sessionService.closeDatabase(openScope(scopeRef.current), reason);
         } catch (error) {
           // Already closed, by a lock or a take-over: the chooser it is.
           if (!(error instanceof CommandFailure && error.code === "DATABASE_CLOSED")) throw error;
@@ -221,7 +226,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const restoreBackup = useCallback(
     async (backupPath: string, passphrase: string, databasePath?: string) => {
       // The restored database is new to the collection views: they remount.
-      opened(await databasesService.restoreBackup(backupPath, passphrase, databasePath));
+      opened(
+        await databasesService.restoreBackup(
+          scopeRef.current,
+          backupPath,
+          passphrase,
+          databasePath,
+        ),
+      );
     },
     [opened],
   );
@@ -235,7 +247,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismissNote = useCallback(async (note: NoteKind) => {
-    await sessionService.dismissNote(note);
+    await sessionService.dismissNote(openScope(scopeRef.current), note);
     setPhase((current) =>
       current.kind === "open"
         ? {
@@ -315,6 +327,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       </LockContext.Provider>
     </SessionContext.Provider>
   );
+}
+
+/** The open session's scope; a command sent with none open fails as any other
+ * would, with `DATABASE_CLOSED`. */
+function openScope(scope: SessionScope | null): SessionScope {
+  if (!scope) {
+    throw new CommandFailure({ code: "DATABASE_CLOSED", message: "The database was closed." });
+  }
+  return scope;
 }
 
 function withoutNote(notes: DatabaseStatus["notes"], note: NoteKind): DatabaseStatus["notes"] {

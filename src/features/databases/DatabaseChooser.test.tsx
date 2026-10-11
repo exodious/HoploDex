@@ -612,7 +612,7 @@ describe("DatabaseChooser (User Story 3)", () => {
     expect(
       await screen.findByRole("dialog", { name: "Restore “Main collection” from a backup" }),
     ).toBeInTheDocument();
-    expect(databasesService.listBackups).toHaveBeenCalledWith(main.path);
+    expect(databasesService.listBackups).toHaveBeenCalledWith(null, main.path);
   });
 
   it("offers no restore for a damaged database without backups", async () => {

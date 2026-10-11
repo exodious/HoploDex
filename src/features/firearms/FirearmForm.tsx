@@ -32,6 +32,7 @@ import {
   useRegistrationClasses,
 } from "../app/collectionStore";
 import { TypeDrawing } from "../browse/TypeDrawing";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import { IdentificationGuide } from "./IdentificationGuide";
@@ -694,6 +695,7 @@ const FIELD_ORDER: Field[] = [
  * disposition details can be corrected here. Renders its own dialog body
  * and footer (use inside `<Dialog bare>`). */
 export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: FirearmFormProps) {
+  const scope = useSessionScope();
   const disposed = initialValues?.status === "disposed";
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
@@ -876,7 +878,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     const run = (async () => {
       let settled;
       try {
-        settled = await settleEntry(field, text);
+        settled = await settleEntry(scope, field, text);
       } catch {
         // Only guidance: saving still checks the field. Leaving it again
         // tries once more.

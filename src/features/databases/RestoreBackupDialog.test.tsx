@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { formatBytes } from "../../lib/bytes";
 import { formatDateTime } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
+import { SessionScopeWrapper, TEST_SESSION_ID } from "../../test/sessionScope";
 import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
 import * as databasesService from "./databasesService";
@@ -13,6 +14,7 @@ import type { BackupInfo, BackupList, RestoreProgress } from "./types";
 
 vi.mock("./databasesService");
 
+const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 const FOLDER = "/home/sam/Documents/HoploDex/HoploDex backups";
 const DATABASE = "/home/sam/Documents/HoploDex/Main collection.hoplodex";
 const PASSPHRASE = "the passphrase it used to have";
@@ -47,11 +49,13 @@ function renderDialog(props: Partial<RestoreBackupDialogProps> = {}) {
     clearSettingsRequest: vi.fn(),
   };
   const onOpenChange = vi.fn();
-  render(
+  const dialog = (
     <SessionContext.Provider value={session}>
       <RestoreBackupDialog open onOpenChange={onOpenChange} name="Main collection" {...props} />
-    </SessionContext.Provider>,
+    </SessionContext.Provider>
   );
+  // A database that isn't open has no session to name (from the chooser).
+  render(props.databasePath ? dialog : <SessionScopeWrapper>{dialog}</SessionScopeWrapper>);
   return { session, onOpenChange };
 }
 
@@ -97,7 +101,7 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
     expect(radios[0]).toHaveAccessibleName(label(newer));
     expect(radios[1]).toHaveAccessibleName(label(older));
     expect(radios[0]).toBeChecked();
-    expect(databasesService.listBackups).toHaveBeenCalledWith(undefined);
+    expect(databasesService.listBackups).toHaveBeenCalledWith(SCOPE, undefined);
   });
 
   // Regression: it opened on "Looking for backups…" and grew once the list
@@ -187,7 +191,7 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
       `Enter the passphrase “Main collection” had on ${formatDateTime(newer.madeAt)}. After restoring, it opens with that passphrase.`,
     );
     expect(screen.queryByText(/is backed up first/)).not.toBeInTheDocument();
-    expect(databasesService.listBackups).toHaveBeenCalledWith(DATABASE);
+    expect(databasesService.listBackups).toHaveBeenCalledWith(null, DATABASE);
     await restore();
 
     expect(session.restoreBackup).toHaveBeenCalledWith(older.path, PASSPHRASE, DATABASE);

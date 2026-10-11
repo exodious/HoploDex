@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
 import type { AccessorySummary } from "../accessories/types";
@@ -11,6 +11,7 @@ import type { Navigation } from "../app/navigation";
 import * as insuranceService from "./insuranceService";
 import { InsurancePage } from "./InsurancePage";
 import type { InsurancePolicy, ValueSummary } from "./types";
+import { render } from "../../test/sessionScope";
 
 // specs/006-accessory-links User Story 1, FR-008, FR-009,
 // contracts/ui-accessories.md §10: active accessories count in the value

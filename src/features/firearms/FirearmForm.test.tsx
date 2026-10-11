@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  act,
-  fireEvent,
-  render as renderBase,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { todayIso } from "../../lib/dates";
 import userEvent from "@testing-library/user-event";
@@ -18,6 +11,7 @@ import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import { CommandFailure } from "../../services/tauriClient";
 import type { DerivedCaliber, Firearm } from "./types";
 import type { RecordLabel } from "../mounts/types";
+import { render as renderBase } from "../../test/sessionScope";
 
 // specs/005-regulated-item-types: the form reads the firearm types from the
 // collection store, so every render gets the fixture's five seeded types
@@ -40,8 +34,8 @@ function render(ui: ReactElement) {
 const settleEntry = vi.fn();
 const suggestEntries = vi.fn();
 vi.mock("./firearmsService", () => ({
-  settleEntry: (field: string, text: string) => settleEntry(field, text),
-  suggestEntries: (field: string, text: string, make?: string | null) =>
+  settleEntry: (_scope: unknown, field: string, text: string) => settleEntry(field, text),
+  suggestEntries: (_scope: unknown, field: string, text: string, make?: string | null) =>
     suggestEntries(field, text, make),
 }));
 
@@ -49,7 +43,7 @@ vi.mock("./firearmsService", () => ({
 // candidates through the mounts service.
 const listMountCandidates = vi.fn();
 vi.mock("../mounts/mountsService", () => ({
-  listMountCandidates: (input: unknown) => listMountCandidates(input),
+  listMountCandidates: (_scope: unknown, input: unknown) => listMountCandidates(input),
 }));
 
 const DERIVED: Record<string, DerivedCaliber> = {

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
 import { RecordName } from "./RecordName";
 import type { RecordLabel } from "./types";
+import { render } from "../../test/sessionScope";
 
 // specs/006-accessory-links FR-005, contracts/ui-accessories.md (rules): a
 // record of either kind is named by `RecordName`. A firearm is named as

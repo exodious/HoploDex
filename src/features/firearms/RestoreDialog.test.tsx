@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -9,6 +9,7 @@ import type { CollectionState } from "../app/collectionStore";
 import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
 import { RestoreDialog } from "./RestoreDialog";
 import type { Firearm } from "./types";
+import { render } from "../../test/sessionScope";
 
 const firearm = {
   id: 1,

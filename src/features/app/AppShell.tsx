@@ -25,6 +25,7 @@ import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import { peekResumedDraft } from "../session/usePendingDraft";
 import type { Draft } from "../databases/types";
+import { useSessionScope } from "../session/sessionScope";
 import type { BackTarget, Navigation, Route, ShellDialog } from "./navigation";
 import "./AppShell.css";
 
@@ -77,6 +78,7 @@ function resumedRoute(resumed: Draft | null): Route {
 }
 
 export function AppShell() {
+  const scope = useSessionScope();
   const {
     firearmsById,
     accessoriesById,
@@ -243,7 +245,7 @@ export function AppShell() {
   ).length;
 
   async function handleCreate(input: FirearmInput, confirmedWarnings?: boolean) {
-    const created = await firearmsService.createFirearm(input, confirmedWarnings);
+    const created = await firearmsService.createFirearm(scope, input, confirmedWarnings);
     setDialog(null);
     await refresh();
     notify(`Added ${firearmName(created)} to the collection.`);
@@ -251,7 +253,7 @@ export function AppShell() {
   }
 
   async function handleCreateAccessory(input: AccessoryInput) {
-    const created = await accessoriesService.createAccessory(input);
+    const created = await accessoriesService.createAccessory(scope, input);
     setDialog(null);
     await refresh();
     const kindName = accessoryKinds.kinds.find((k) => k.id === created.accessoryKindId)?.name;

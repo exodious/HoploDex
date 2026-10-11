@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSessionScope } from "../session/sessionScope";
 import { pauseIdleForFileInput } from "../session/useIdleActivity";
 import type { ChangeEvent } from "react";
 import { Button, ConfirmDialog, Dialog, Icon, useToast } from "../../components";
@@ -35,6 +36,7 @@ function plural(n: number, one: string, many: string) {
  * thumbnail automatically (FR-008); the viewer lets the user pick another,
  * see the full-resolution original, or delete it. */
 export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGalleryProps) {
+  const scope = useSessionScope();
   const notify = useToast();
   const [photos, setPhotos] = useState<PhotoSummary[] | null>(null);
   const [adding, setAdding] = useState(0);
@@ -47,7 +49,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
 
   async function load() {
     try {
-      setPhotos(await mediaService.listPhotos(owner));
+      setPhotos(await mediaService.listPhotos(scope, owner));
     } catch (e) {
       notify(failureMessage(e, "Photos couldn't be loaded."), "error");
       setPhotos([]);
@@ -96,7 +98,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
       accepted.map((file) => ({
         name: file.name,
         add: async () =>
-          mediaService.addPhoto(owner, await fileToByteArray(file), file.name, file.type),
+          mediaService.addPhoto(scope, owner, await fileToByteArray(file), file.name, file.type),
       })),
     );
   }
@@ -105,14 +107,14 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
     await addAll(
       paths.map((path) => ({
         name: fileName(path),
-        add: () => mediaService.addPhotoFromPath(owner, path),
+        add: () => mediaService.addPhotoFromPath(scope, owner, path),
       })),
     );
   }
 
   async function setThumbnail(photo: PhotoSummary) {
     try {
-      await mediaService.setThumbnailPhoto(owner, photo.id);
+      await mediaService.setThumbnailPhoto(scope, owner, photo.id);
       await onChanged();
       notify("Thumbnail updated.");
     } catch (e) {
@@ -122,7 +124,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
 
   async function deletePhoto(photo: PhotoSummary) {
     try {
-      await mediaService.deletePhoto(photo.id, true);
+      await mediaService.deletePhoto(scope, photo.id, true);
       setViewing(null);
       await load();
       await onChanged();
@@ -256,6 +258,7 @@ function PhotoViewer({
   onSetThumbnail: () => void;
   onDelete: () => void;
 }) {
+  const scope = useSessionScope();
   const photo = photos[index];
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const hasPrev = index > 0;
@@ -266,7 +269,7 @@ function PhotoViewer({
     let cancelled = false;
     setOriginalUrl(null);
     mediaService
-      .getPhotoOriginal(photo.id)
+      .getPhotoOriginal(scope, photo.id)
       .then((buffer) => {
         if (cancelled) return;
         url = URL.createObjectURL(new Blob([buffer], { type: photo.mimeType }));
@@ -279,7 +282,7 @@ function PhotoViewer({
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [photo.id, photo.mimeType]);
+  }, [scope, photo.id, photo.mimeType]);
 
   return (
     <Dialog

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import type { Accessory } from "../accessories/types";
@@ -11,6 +11,7 @@ import { DisposeDialog, FORM_VERSION } from "./DisposeDialog";
 import { CommandFailure } from "../../services/tauriClient";
 import type { MountDetail, RecordLabel } from "../mounts/types";
 import type { DisposeInput, Firearm } from "./types";
+import { render } from "../../test/sessionScope";
 
 const firearm = {
   id: 1,

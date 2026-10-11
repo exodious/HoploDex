@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
@@ -15,14 +15,15 @@ import {
   REGISTRATION_CLASSES,
   ACCESSORY_KINDS,
 } from "../../test/collectionFixtures";
+import { render } from "../../test/sessionScope";
 
 const getFirearm = vi.fn();
 
 vi.mock("./firearmsService", () => ({
-  getFirearm: (id: number) => getFirearm(id),
+  getFirearm: (_scope: unknown, id: number) => getFirearm(id),
   // The accessory form (Mount > New accessory…) suggests and settles entries.
   suggestEntries: async () => [],
-  settleEntry: async (_field: string, text: string) => ({
+  settleEntry: async (_scope: unknown, _field: string, text: string) => ({
     value: text.trim(),
     changedBy: null,
     derivedCaliber: null,

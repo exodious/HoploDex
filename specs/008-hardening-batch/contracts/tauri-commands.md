@@ -29,10 +29,14 @@ gain the session header below.
   - `restore_backup`, which requires the header only when it restores the
     open database (no `databasePath`). The header must name the open
     session; anything else is `DATABASE_CLOSED`.
+  - `list_backups`, the same way: the header only without `databasePath`.
+    _Amended 2026-10-11 (implementation): it was listed as scoped, but the
+    chooser lists a damaged database's backups with nothing open (003's
+    `list_backups`, `databasePath`)._
 - **Scoped**: everything else, including `close_database`,
   `lock_database`, `stage_pending_changes`, `resolve_pending_changes`,
   `dismiss_note`, `update_backup_settings`, `update_lock_settings`,
-  `save_passphrase`, `forget_saved_passphrase`, `list_backups`,
+  `save_passphrase`, `forget_saved_passphrase`,
   `delete_all_backups`, `change_passphrase`, and every collection, media,
   preview, mount, entry, insurance, import and export command.
 

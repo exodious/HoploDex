@@ -17,6 +17,7 @@ import "../firearms/forms.css";
 import { MountChooser } from "../mounts/MountChooser";
 import { accessoryNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
+import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
 import type { DraftTarget } from "../session/usePendingDraft";
 import type { Accessory, AccessoryInput } from "./types";
@@ -206,6 +207,7 @@ export function AccessoryForm({
   onSubmit,
   onCancel,
 }: AccessoryFormProps) {
+  const scope = useSessionScope();
   const kinds = useAccessoryKinds();
   const target: DraftTarget = {
     formVersion: FORM_VERSION,
@@ -316,7 +318,7 @@ export function AccessoryForm({
     const run = (async () => {
       let settled;
       try {
-        settled = await settleEntry(field, text);
+        settled = await settleEntry(scope, field, text);
       } catch {
         // Only guidance: saving still checks the field. Leaving it again
         // tries once more.

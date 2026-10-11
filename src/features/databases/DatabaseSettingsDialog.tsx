@@ -16,6 +16,7 @@ import {
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { chooseDocumentOpening, useDocumentOpening } from "../media/documentOpening";
 import type { DocumentOpening } from "../media/types";
 import * as databasesService from "./databasesService";
@@ -142,6 +143,7 @@ function SettingsForm({
   onRestore: () => void;
   onPassphraseSavedChange: () => void;
 }) {
+  const scope = useSessionScope();
   const saved = status.settings.backups;
   const defaultFolder = joinPath(folderOf(status.path), "HoploDex backups");
   const savedLocation = (): ShownLocation => ({
@@ -205,7 +207,7 @@ function SettingsForm({
    * happened to the old location's backups is said (contracts/ui-databases.md
    * §7 "Afterwards"). */
   async function finish(backupsSaved: BackupSettingsSaved, oldFolder?: string) {
-    const settings = await databasesService.updateLockSettings(lock);
+    const settings = await databasesService.updateLockSettings(scope, lock);
     const outcome = backupsSaved.existingBackups;
     if (outcome?.action === "move" && outcome.leftBehind) {
       // The location is saved, so the result stays here.
@@ -226,7 +228,9 @@ function SettingsForm({
     setLeftBehind(null);
     setSaving(true);
     try {
-      await finish(await databasesService.updateBackupSettings(backupInput(existingBackups)));
+      await finish(
+        await databasesService.updateBackupSettings(scope, backupInput(existingBackups)),
+      );
     } catch (e) {
       const details = e instanceof CommandFailure ? (e.details ?? {}) : {};
       if (e instanceof CommandFailure && e.code === "BACKUPS_AT_OLD_LOCATION")
@@ -360,7 +364,7 @@ function SettingsForm({
         question={question}
         newFolder={location.path}
         name={status.name}
-        send={(choice) => databasesService.updateBackupSettings(backupInput(choice))}
+        send={(choice) => databasesService.updateBackupSettings(scope, backupInput(choice))}
         onCancel={keepSavedLocation}
         onDone={(backupsSaved) => {
           const oldFolder = question?.folder;
@@ -509,6 +513,7 @@ function BackupActions({
   disabled: boolean;
   onRestore: () => void;
 }) {
+  const scope = useSessionScope();
   const [count, setCount] = useState<number | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [progress, setProgress] = useState<CountProgress | null>(null);
@@ -516,14 +521,14 @@ function BackupActions({
 
   useEffect(() => {
     let current = true;
-    databasesService.listBackups().then(
+    databasesService.listBackups(scope).then(
       (listed) => current && setCount(listed.backups.length),
       () => current && setCount(0),
     );
     return () => {
       current = false;
     };
-  }, []);
+  }, [scope]);
 
   useEffect(
     () => (confirming ? databasesService.onBackupsDeleteProgress(setProgress) : undefined),
@@ -532,7 +537,7 @@ function BackupActions({
 
   async function deleteAll() {
     try {
-      const deleted = await databasesService.deleteAllBackups(true);
+      const deleted = await databasesService.deleteAllBackups(scope, true);
       setCount(deleted.failedPaths.length);
       setResult(
         deleted.failedPaths.length === 0
@@ -600,6 +605,7 @@ function ThisComputer({
   disabled: boolean;
   onChange: () => void;
 }) {
+  const scope = useSessionScope();
   const field = useRef<PassphraseFieldHandle>(null);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -615,7 +621,7 @@ function ThisComputer({
       throw new Error("no passphrase");
     }
     try {
-      await databasesService.savePassphrase(passphrase);
+      await databasesService.savePassphrase(scope, passphrase);
     } catch (e) {
       if (e instanceof CommandFailure && e.code === "PASSPHRASE_INCORRECT")
         setError(e.fieldErrors?.passphrase ?? "That isn't this database's passphrase.");
@@ -631,7 +637,7 @@ function ThisComputer({
     setProblem(null);
     setForgetting(true);
     try {
-      await databasesService.forgetSavedPassphrase();
+      await databasesService.forgetSavedPassphrase(scope);
       onChange();
     } catch (e) {
       setProblem(

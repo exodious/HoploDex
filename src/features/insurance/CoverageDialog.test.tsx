@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import type { Accessory } from "../accessories/types";
@@ -9,6 +9,7 @@ import type { Firearm } from "../firearms/types";
 import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
 import { CoverageDialog } from "./CoverageDialog";
 import type { BlanketSummary, InsurancePolicy } from "./types";
+import { render } from "../../test/sessionScope";
 
 const policy = {
   id: 7,

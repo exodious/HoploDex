@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { render } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components";

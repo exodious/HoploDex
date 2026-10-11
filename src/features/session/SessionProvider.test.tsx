@@ -17,6 +17,8 @@ import * as sessionService from "./sessionService";
 import type { SessionClosed, SessionClosing } from "./sessionService";
 import { useSession } from "./sessionStore";
 
+/** What the session scope of the open (session id 1) looks like to a mocked service. */
+const SCOPE = expect.objectContaining({ id: 1 });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../databases/databasesService");
 vi.mock("./sessionService");
@@ -188,7 +190,7 @@ describe("SessionProvider (User Story 1)", () => {
 
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
 
-    expect(sessionService.dismissNote).toHaveBeenCalledWith("diskEncryption");
+    expect(sessionService.dismissNote).toHaveBeenCalledWith(SCOPE, "diskEncryption");
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Disk encryption" })).not.toBeInTheDocument(),
     );
@@ -297,7 +299,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
 
     await user.click(screen.getByRole("button", { name: "Close it" }));
 
-    expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed");
+    expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "closed");
     expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -342,7 +344,9 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
 
     await user.click(within(await prompt()).getByRole("button", { name: "Discard changes" }));
 
-    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("switched"));
+    await waitFor(() =>
+      expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "switched"),
+    );
     expect(onSubmit).not.toHaveBeenCalled();
     expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
   });
@@ -359,7 +363,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
     });
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
 
-    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed"));
+    await waitFor(() => expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "closed"));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ notes: "Renews in January." }));
     expect(onSubmit.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(sessionService.closeDatabase).mock.invocationCallOrder[0],
@@ -520,8 +524,13 @@ describe("SessionProvider (007: the document viewer, SC-006)", () => {
       expect(together).toBe(false);
       expect(document.querySelector('[role="dialog"]')).toBeNull();
       expect(screen.queryByText("Serial BXKT482 on the receipt")).not.toBeInTheDocument();
-      // Its cleanup ran with the rest of the collection's tree.
-      expect(viewerBackend.invoke).toHaveBeenCalledWith("close_preview", { previewId: 31 });
+      // Its cleanup ran with the rest of the collection's tree, after the scope ended: the
+      // close is refused on this side, and the backend closed the preview with the session.
+      expect(viewerBackend.invoke).not.toHaveBeenCalledWith(
+        "close_preview",
+        expect.anything(),
+        expect.anything(),
+      );
     },
   );
 });

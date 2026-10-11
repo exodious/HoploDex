@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
+import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { PASSPHRASE_CHECK_DELAY_MS } from "../../components";
 import { CLEAR_PASSPHRASE_FIELDS } from "../../components/PassphraseField";
@@ -11,6 +12,7 @@ import { ChangePassphraseDialog } from "./ChangePassphraseDialog";
 import * as databasesService from "./databasesService";
 import type { PassphraseChangeProgress } from "./types";
 
+const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 vi.mock("./databasesService");
 
 /** The backend's events, sent by the test. */
@@ -105,7 +107,7 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
 
     await fill(CURRENT, NEW);
 
-    expect(databasesService.changePassphrase).toHaveBeenCalledWith(CURRENT, NEW);
+    expect(databasesService.changePassphrase).toHaveBeenCalledWith(SCOPE, CURRENT, NEW);
     expect(databasesService.changePassphrase).toHaveBeenCalledTimes(1);
   });
 

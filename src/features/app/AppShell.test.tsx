@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AccessoryDetail, AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
@@ -15,6 +15,7 @@ import { AppShell } from "./AppShell";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
 import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
+import { render } from "../../test/sessionScope";
 
 const getFirearm = vi.fn();
 const listFirearms = vi.fn();
@@ -24,8 +25,8 @@ const listAccessories = vi.fn();
 // The accessory form's make, model, cartridge and caliber use the shared
 // entry commands (specs/006-accessory-links FR-003).
 vi.mock("../firearms/firearmsService", () => ({
-  getFirearm: (id: number) => getFirearm(id),
-  settleEntry: async (_field: string, text: string) => ({
+  getFirearm: (_scope: unknown, id: number) => getFirearm(id),
+  settleEntry: async (_scope: unknown, _field: string, text: string) => ({
     value: text.trim(),
     changedBy: null,
     derivedCaliber: null,
@@ -33,10 +34,12 @@ vi.mock("../firearms/firearmsService", () => ({
   suggestEntries: async () => [],
 }));
 vi.mock("../accessories/accessoriesService", () => ({
-  getAccessory: (id: number) => getAccessory(id),
-  listAccessories: (input: unknown) => listAccessories(input),
+  getAccessory: (_scope: unknown, id: number) => getAccessory(id),
+  listAccessories: (_scope: unknown, input: unknown) => listAccessories(input),
 }));
-vi.mock("../browse/browseService", () => ({ listFirearms: () => listFirearms() }));
+vi.mock("../browse/browseService", () => ({
+  listFirearms: () => listFirearms(),
+}));
 // The media panels and thumbnails talk to Tauri; they aren't under test.
 vi.mock("../media/PhotoGallery", () => ({ PhotoGallery: () => null }));
 // Stands in for a text field and a menu on the page itself, outside any

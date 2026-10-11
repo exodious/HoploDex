@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
@@ -7,6 +7,7 @@ import type { RecordLabel } from "../mounts/types";
 import { BrowseList } from "./BrowseList";
 import { GROUP_BY_OPTIONS } from "./types";
 import type { FirearmSummary, GroupBy, VisibleGroup } from "./types";
+import { render } from "../../test/sessionScope";
 
 // The thumbnail talks to Tauri; it isn't under test.
 vi.mock("./FirearmThumbnail", () => ({ FirearmThumbnail: () => null }));

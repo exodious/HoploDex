@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { CommandFailure } from "../../services/tauriClient";
@@ -10,6 +11,8 @@ import * as importExportService from "./importExportService";
 import type { RecordLabel } from "../mounts/types";
 import type { ImportResult } from "./types";
 
+/** The scope a mocked service receives: the test render's. */
+const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
@@ -386,7 +389,7 @@ describe("ImportDialog files and the two tables (US5)", () => {
 
     await user.click(screen.getByRole("button", { name: "Import" }));
 
-    expect(importExportService.importCollection).toHaveBeenCalledWith({
+    expect(importExportService.importCollection).toHaveBeenCalledWith(SCOPE, {
       files: [
         { filePath: FIREARMS, format: "csv" },
         { filePath: ACCESSORIES, format: "xlsx" },
@@ -611,6 +614,7 @@ describe("ImportDialog files and the two tables (US5)", () => {
     await user.click(within(group).getByRole("radio", { name: "Keep existing" }));
     await user.click(screen.getByRole("button", { name: "Apply decisions" }));
     expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith(
+      SCOPE,
       expect.objectContaining({
         importSessionId: "import-1",
         resolutions: [{ conflictId: "c9", action: "skip" }],
@@ -726,7 +730,7 @@ describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-01
     );
     await user.click(within(confirm).getByRole("button", { name: "Replace firearms" }));
 
-    expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith({
+    expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith(SCOPE, {
       importSessionId: "import-1",
       resolutions: [
         { conflictId: "c1", action: "overwrite", withMounted: [optic.record] },

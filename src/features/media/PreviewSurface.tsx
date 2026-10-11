@@ -3,6 +3,7 @@
 // specs/007-document-preview/contracts/ui-document-preview.md §2 ("Page
 // area"), research.md §3 and §15.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSessionScope } from "../session/sessionScope";
 import { onPdfReady, setPreviewBounds } from "./mediaService";
 
 /** Anything drawn above the viewer hides the surface, which is a separate
@@ -19,6 +20,7 @@ export interface PreviewSurfaceProps {
 }
 
 export function PreviewSurface({ previewId, name, hidden = false }: PreviewSurfaceProps) {
+  const scope = useSessionScope();
   const region = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const sent = useRef("");
@@ -33,10 +35,10 @@ export function PreviewSurface({ previewId, name, hidden = false }: PreviewSurfa
     const key = `${previewId}|${x}|${y}|${width}|${height}|${visible}`;
     if (key === sent.current) return;
     sent.current = key;
-    setPreviewBounds(previewId, { x, y, width, height }, visible).catch(() => {
+    setPreviewBounds(scope, previewId, { x, y, width, height }, visible).catch(() => {
       // PREVIEW_CLOSED: the viewer is going away, or the lock closed it.
     });
-  }, [previewId, hidden]);
+  }, [scope, previewId, hidden]);
 
   useEffect(() => {
     setReady(false);

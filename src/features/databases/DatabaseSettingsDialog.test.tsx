@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { ToastProvider } from "../../components";
@@ -18,6 +19,7 @@ import type {
   ExistingBackupsOutcome,
 } from "./types";
 
+const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
 // The "Documents" fieldset reads and writes this computer's setting through the
@@ -187,7 +189,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
       "They are deleted securely where this computer supports it. This can't be undone.",
     );
     await user.click(within(confirm).getByRole("button", { name: "Delete all backups" }));
-    expect(databasesService.deleteAllBackups).toHaveBeenCalledWith(true);
+    expect(databasesService.deleteAllBackups).toHaveBeenCalledWith(SCOPE, true);
     expect(await screen.findByText("3 backups were deleted.")).toBeInTheDocument();
   });
 
@@ -208,7 +210,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     expect(await screen.findByText("/media/usb/Backups")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(databasesService.updateBackupSettings).toHaveBeenCalledWith({
+    expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
       enabled: false,
       keepCount: 12,
       location: { kind: "custom", path: "/media/usb/Backups" },
@@ -293,7 +295,10 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(remember).not.toHaveClass("hd-button--danger");
     await user.click(remember);
 
-    expect(databasesService.savePassphrase).toHaveBeenCalledWith("correct horse battery staple");
+    expect(databasesService.savePassphrase).toHaveBeenCalledWith(
+      SCOPE,
+      "correct horse battery staple",
+    );
     await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
@@ -358,7 +363,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
       within(thisComputer()).getByRole("button", { name: "Forget saved passphrase" }),
     );
 
-    expect(databasesService.forgetSavedPassphrase).toHaveBeenCalledWith();
+    expect(databasesService.forgetSavedPassphrase).toHaveBeenCalledWith(SCOPE);
     await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
   });
 
@@ -467,7 +472,7 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(databasesService.updateLockSettings).toHaveBeenCalledWith({
+      expect(databasesService.updateLockSettings).toHaveBeenCalledWith(SCOPE, {
         idleEnabled: true,
         idleMinutes: 30,
         onScreenLock: true,
@@ -570,7 +575,7 @@ describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.
     await user.click(within(question).getByRole("button", { name: "Change location" }));
 
     await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
-    expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith({
+    expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith(SCOPE, {
       enabled: true,
       keepCount: 12,
       location: { kind: "custom", path: USB },
@@ -650,6 +655,7 @@ describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.
 
     await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
     expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith(
+      SCOPE,
       expect.objectContaining({ existingBackups: "leave" }),
     );
   });

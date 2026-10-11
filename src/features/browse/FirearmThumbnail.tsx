@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { bytesToDataUrl } from "../../lib/bytes";
 import * as mediaService from "../media/mediaService";
+import { useSessionScope } from "../session/sessionScope";
 import { TypeDrawing } from "./TypeDrawing";
 
 export interface FirearmThumbnailProps {
@@ -23,6 +24,7 @@ export function FirearmThumbnail({
   genericThumbnailKey,
   className,
 }: FirearmThumbnailProps) {
+  const scope = useSessionScope();
   const frameRef = useRef<HTMLDivElement>(null);
   const [nearViewport, setNearViewport] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export function FirearmThumbnail({
 
     let cancelled = false;
     mediaService
-      .getPhotoThumbnail(thumbnailPhotoId)
+      .getPhotoThumbnail(scope, thumbnailPhotoId)
       .then((bytes) => {
         const url = bytesToDataUrl(bytes, "image/jpeg");
         photoThumbnailCache.set(thumbnailPhotoId, url);
@@ -76,7 +78,7 @@ export function FirearmThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [thumbnailPhotoId, nearViewport]);
+  }, [scope, thumbnailPhotoId, nearViewport]);
 
   const showDrawing = thumbnailPhotoId == null || failed;
   return (

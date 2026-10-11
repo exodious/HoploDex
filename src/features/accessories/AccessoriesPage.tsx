@@ -14,6 +14,7 @@ import { SEARCH_DEBOUNCE_MS, useDebounced, useSearchShortcut } from "../browse/s
 import { hasAny } from "../mounts/recordCounts";
 import { RecordName } from "../mounts/RecordName";
 import { accessoryNameText, recordNameText } from "../mounts/recordNames";
+import { useSessionScope } from "../session/sessionScope";
 import * as accessoriesService from "./accessoriesService";
 import type { AccessoryGroup, AccessoryGroupBy, AccessorySummary } from "./types";
 import "../browse/collection.css";
@@ -78,6 +79,7 @@ function nameOf(accessory: AccessorySummary): string {
  * (specs/006-accessory-links US1 and US4, FR-016 to FR-018;
  * contracts/ui-accessories.md §2), laid out as the collection page. */
 export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps) {
+  const scope = useSessionScope();
   const { accessories, loaded, revision } = useCollection();
   const { open, openDialog } = useNavigation();
   const [groups, setGroups] = useState<AccessoryGroup[] | null>(null);
@@ -97,7 +99,7 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     let cancelled = false;
     setFetching(true);
     accessoriesService
-      .listAccessories({
+      .listAccessories(scope, {
         query: query || undefined,
         groupBy: browse.groupBy,
         includeDisposed: browse.includeDisposed,
@@ -118,7 +120,7 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     return () => {
       cancelled = true;
     };
-  }, [query, browse.groupBy, browse.includeDisposed, revision]);
+  }, [scope, query, browse.groupBy, browse.includeDisposed, revision]);
 
   useEffect(() => {
     setRenderLimit(RENDER_STEP);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Button,
@@ -12,6 +12,7 @@ import type { PassphraseFieldHandle } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { formatDateTime } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
+import { SessionScopeContext } from "../session/sessionScope";
 import { useSession } from "../session/sessionStore";
 import * as databasesService from "./databasesService";
 import type { BackupInfo, BackupList, RestoreProgress } from "./types";
@@ -54,6 +55,8 @@ export function RestoreBackupDialog({
   databasePath,
   onChangeLocation,
 }: RestoreBackupDialogProps) {
+  // None from the chooser, where the database restored isn't open (`databasePath`).
+  const scope = useContext(SessionScopeContext);
   const [running, setRunning] = useState(false);
   const [list, setList] = useState<BackupList | null>(null);
   const [waited, setWaited] = useState(false);
@@ -64,7 +67,7 @@ export function RestoreBackupDialog({
   // size on the next mouse move or key press.
   useEffect(() => {
     let current = true;
-    databasesService.listBackups(databasePath).then(
+    databasesService.listBackups(scope, databasePath).then(
       (listed) => current && setList(listed),
       () => current && setList({ folder: "", available: false, backups: [] }),
     );
@@ -73,7 +76,7 @@ export function RestoreBackupDialog({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [databasePath]);
+  }, [scope, databasePath]);
 
   return (
     <Dialog

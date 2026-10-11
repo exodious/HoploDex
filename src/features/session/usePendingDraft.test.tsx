@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { render } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import type { Draft } from "../databases/types";
 import { FORM_VERSION, InsurancePolicyForm } from "../insurance/InsurancePolicyForm";
@@ -64,7 +65,7 @@ function editDraft(changes: Record<string, string>): Draft {
   };
 }
 
-const staged = () => vi.mocked(sessionService.stagePendingChanges).mock.calls.map(([d]) => d);
+const staged = () => vi.mocked(sessionService.stagePendingChanges).mock.calls.map(([, d]) => d);
 
 describe("usePendingDraft: staging (research.md §16)", () => {
   beforeEach(() => {

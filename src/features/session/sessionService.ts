@@ -1,4 +1,5 @@
 import { invoke, listen } from "../../services/tauriClient";
+import type { SessionScope } from "./sessionScope";
 import type {
   BackupProgress,
   CloseOutcome,
@@ -17,14 +18,17 @@ export function getDatabaseStatus(): Promise<DatabaseStatus> {
   return invoke<DatabaseStatus>("get_database_status");
 }
 
-export function dismissNote(note: NoteKind): Promise<void> {
-  return invoke<void>("dismiss_note", { note });
+export function dismissNote(scope: SessionScope, note: NoteKind): Promise<void> {
+  return scope.invoke<void>("dismiss_note", { note });
 }
 
 /** The normal close, or a switch away (FR-010). Unsaved changes have been
  * dealt with first. */
-export function closeDatabase(reason: "closed" | "switched"): Promise<CloseOutcome> {
-  return invoke<CloseOutcome>("close_database", { reason });
+export function closeDatabase(
+  scope: SessionScope,
+  reason: "closed" | "switched",
+): Promise<CloseOutcome> {
+  return scope.invoke<CloseOutcome>("close_database", { reason });
 }
 
 /** Stops the backup the current close is making (FR-027). Its changes stay
@@ -40,19 +44,22 @@ export function quitApplication(): Promise<void> {
 
 /** "Lock now" (FR-033, FR-035): `draft`, the form's unsaved input, is kept
  * as pending changes, then the database closes as a lock. */
-export function lockDatabase(draft: Draft | null): Promise<CloseOutcome> {
-  return invoke<CloseOutcome>("lock_database", { draft });
+export function lockDatabase(scope: SessionScope, draft: Draft | null): Promise<CloseOutcome> {
+  return scope.invoke<CloseOutcome>("lock_database", { draft });
 }
 
 /** Mirrors the open form's unsaved input into the backend's memory, for a
  * lock it starts on its own (research.md §16); `null` when clean. */
-export function stagePendingChanges(draft: Draft | null): Promise<void> {
-  return invoke<void>("stage_pending_changes", { draft });
+export function stagePendingChanges(scope: SessionScope, draft: Draft | null): Promise<void> {
+  return scope.invoke<void>("stage_pending_changes", { draft });
 }
 
 /** Resumes or discards the open database's pending changes (FR-039). */
-export function resolvePendingChanges(action: "resume" | "discard"): Promise<{ draft?: Draft }> {
-  return invoke<{ draft?: Draft }>("resolve_pending_changes", { action });
+export function resolvePendingChanges(
+  scope: SessionScope,
+  action: "resume" | "discard",
+): Promise<{ draft?: Draft }> {
+  return scope.invoke<{ draft?: Draft }>("resolve_pending_changes", { action });
 }
 
 /** Input to the window: the idle time starts again (FR-035). */

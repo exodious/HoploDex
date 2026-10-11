@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSessionScope } from "../session/sessionScope";
 import { pauseIdleForFileInput } from "../session/useIdleActivity";
 import type { ChangeEvent } from "react";
 import { Button, ConfirmDialog, Icon, useToast } from "../../components";
@@ -45,6 +46,7 @@ function metaSuffix(doc: DocumentSummary): string {
  * open in the computer's default app for their type (US4, FR-010), and that the viewer
  * previews inside HoploDex (007). */
 export function DocumentList({ owner }: DocumentListProps) {
+  const scope = useSessionScope();
   const notify = useToast();
   // What the name does follows this computer's setting (FR-012); "Preview" and
   // "Open in another app…" stay on the row either way.
@@ -67,7 +69,7 @@ export function DocumentList({ owner }: DocumentListProps) {
    * the list is set, so a viewer's position follows it without a frame between. */
   async function load(then?: (list: DocumentSummary[]) => void): Promise<DocumentSummary[]> {
     try {
-      const list = await mediaService.listDocuments(owner);
+      const list = await mediaService.listDocuments(scope, owner);
       setDocuments(list);
       then?.(list);
       return list;
@@ -89,10 +91,10 @@ export function DocumentList({ owner }: DocumentListProps) {
   // is what a pre-007 row shows anyway.
   const typesLoad = useRef<Promise<DocumentType[]>>(Promise.resolve([]));
   useEffect(() => {
-    const loading = mediaService.listDocumentTypes().catch((): DocumentType[] => []);
+    const loading = mediaService.listDocumentTypes(scope).catch((): DocumentType[] => []);
     typesLoad.current = loading;
     void loading.then(setTypes);
-  }, []);
+  }, [scope]);
 
   // The viewer's message goes with the viewer.
   useEffect(() => {
@@ -140,7 +142,8 @@ export function DocumentList({ owner }: DocumentListProps) {
     await addAll(
       files.map((file) => ({
         name: file.name,
-        add: async () => mediaService.addDocument(owner, await fileToByteArray(file), file.name),
+        add: async () =>
+          mediaService.addDocument(scope, owner, await fileToByteArray(file), file.name),
       })),
     );
   }
@@ -149,7 +152,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     await addAll(
       paths.map((path) => ({
         name: fileName(path),
-        add: () => mediaService.addDocumentFromPath(owner, path),
+        add: () => mediaService.addDocumentFromPath(scope, owner, path),
       })),
     );
   }
@@ -173,7 +176,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     setOpening(doc.id);
     try {
       // `opened` is false when the user declined the native question: nothing is said.
-      const { opened } = await mediaService.openDocument(doc.id);
+      const { opened } = await mediaService.openDocument(scope, doc.id);
       if (opened) notify(`Opened ${doc.originalFilename} in another app.`);
     } catch (e) {
       notify(failureMessage(e, `${doc.originalFilename} couldn't be opened.`), "error");
@@ -188,7 +191,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     const fromViewer = viewing !== null;
     const shownNow = documents?.find((d) => d.id === viewing) ?? null;
     try {
-      await mediaService.deleteDocument(doc.id, true);
+      await mediaService.deleteDocument(scope, doc.id, true);
       const position = documents?.findIndex((d) => d.id === doc.id) ?? -1;
       const after = (list: DocumentSummary[]) => list[Math.min(position, list.length - 1)] ?? null;
       // From the viewer: on to the next document, or the one before it, or close.

@@ -18,6 +18,7 @@ import type {
 import * as insuranceService from "../insurance/insuranceService";
 import type { InsurancePolicy, ValueSummary } from "../insurance/types";
 import { loadDocumentOpening } from "../media/documentOpening";
+import { useSessionScope } from "../session/sessionScope";
 import {
   CollectionContext,
   NO_ACCESSORY_KINDS,
@@ -28,6 +29,7 @@ import {
 import type { CollectionState } from "./collectionStore";
 
 export function CollectionProvider({ children }: { children: ReactNode }) {
+  const scope = useSessionScope();
   const [firearms, setFirearms] = useState<FirearmSummary[]>([]);
   // The list is fixed at run time (FR-017), so it is fetched once, beside the
   // policies but not with every refresh.
@@ -50,10 +52,10 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const [listing, accessoryListing, valueSummary, policyList] = await Promise.all([
-        browseService.listFirearms({ includeDisposed: true }),
-        listAccessories({ includeDisposed: true }),
-        insuranceService.getValueSummary(),
-        insuranceService.listInsurancePolicies(),
+        browseService.listFirearms(scope, { includeDisposed: true }),
+        listAccessories(scope, { includeDisposed: true }),
+        insuranceService.getValueSummary(scope),
+        insuranceService.listInsurancePolicies(scope),
       ]);
       setFirearms(listing.groups.flatMap((group) => group.firearms));
       setAccessories(accessoryListing.groups.flatMap((group) => group.accessories));
@@ -70,7 +72,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       setLoaded(true);
       setRevision((r) => r + 1);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     void refresh();
@@ -78,7 +80,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let current = true;
-    listActionTypes().then(
+    listActionTypes(scope).then(
       (list) => current && setActionTypes(list),
       // Without it Action offers just "Unspecified" and the form says so;
       // the backend still checks every save.
@@ -87,11 +89,11 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     return () => {
       current = false;
     };
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     let current = true;
-    listFirearmTypes().then(
+    listFirearmTypes(scope).then(
       (list) => current && setFirearmTypes(list),
       // Without it Type offers nothing and the form says so; the backend
       // still checks every save.
@@ -100,11 +102,11 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     return () => {
       current = false;
     };
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     let current = true;
-    listAccessoryKinds().then(
+    listAccessoryKinds(scope).then(
       (list) => current && setAccessoryKinds(list),
       // Without it Kind offers nothing and the form says so; the backend
       // still checks every save.
@@ -113,11 +115,11 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     return () => {
       current = false;
     };
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     let current = true;
-    listRegistrationClasses().then(
+    listRegistrationClasses(scope).then(
       (list) => current && setRegistrationClasses(list),
       // Without it Registered as offers only Unspecified and the form says
       // so; the backend still checks every save.
@@ -126,7 +128,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
     return () => {
       current = false;
     };
-  }, []);
+  }, [scope]);
 
   // This computer's "Open documents" setting is read once the collection is open, for the
   // document lists to follow. Until it is read, or if it can't be, the default "preview" holds.

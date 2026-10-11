@@ -20,6 +20,7 @@ import {
 import type { IconName } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { documentKindLabel, kindInSentence } from "./documentKind";
 import {
   closePreview,
@@ -125,6 +126,7 @@ export function DocumentPreview({
   onPdfEnded,
   message,
 }: DocumentPreviewProps) {
+  const scope = useSessionScope();
   const doc = documents[index];
   const name = doc.originalFilename;
   const kind = documentKindLabel(doc, documentTypes);
@@ -155,19 +157,19 @@ export function DocumentPreview({
       unmounted.current = true;
       const id = openPreviewId.current;
       openPreviewId.current = null;
-      if (id !== null) closePreview(id).catch(() => {});
+      if (id !== null) closePreview(scope, id).catch(() => {});
     };
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     let cancelled = false;
     setView({ phase: "loading" });
     setOpenStatus(null);
-    openPreview(doc.id).then(
+    openPreview(scope, doc.id).then(
       (info) => {
         // Closed while it was preparing: the answer is closed as soon as it's known.
         if (unmounted.current) {
-          closePreview(info.previewId).catch(() => {});
+          closePreview(scope, info.previewId).catch(() => {});
           return;
         }
         if (cancelled) return;
@@ -182,7 +184,7 @@ export function DocumentPreview({
     return () => {
       cancelled = true;
     };
-  }, [doc.id]);
+  }, [scope, doc.id]);
 
   // After the effect above, which clears the status for a new document: a message that
   // arrives with the move (the list's "Deleted …") stays.
@@ -221,7 +223,7 @@ export function DocumentPreview({
         if (target?.closest('[role="alertdialog"]')) return;
         if (now.view.phase === "ready" && now.view.info.kind === "pdf") {
           event.preventDefault();
-          focusPreview(now.view.info.previewId).catch(() => {});
+          focusPreview(scope, now.view.info.previewId).catch(() => {});
         }
         return;
       }
@@ -232,7 +234,7 @@ export function DocumentPreview({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [scope]);
 
   async function openElsewhere() {
     const target = doc;
@@ -248,7 +250,7 @@ export function DocumentPreview({
       }
     };
     try {
-      const { opened } = await openDocument(target.id);
+      const { opened } = await openDocument(scope, target.id);
       // Declining the native question says nothing.
       if (opened) say(`Opened ${target.originalFilename} in another app.`, false);
     } catch (e) {

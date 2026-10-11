@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
@@ -7,6 +7,7 @@ import type { AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
 import { PolicyCard } from "./PolicyCard";
 import type { BlanketSummary, InsurancePolicy, PolicySummary } from "./types";
+import { render } from "../../test/sessionScope";
 
 const navigation = { open: vi.fn(), navigate: vi.fn() } as unknown as Navigation;
 

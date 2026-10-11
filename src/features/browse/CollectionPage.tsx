@@ -5,6 +5,7 @@ import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import { useNavigation } from "../app/navigation";
+import { useSessionScope } from "../session/sessionScope";
 import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
@@ -26,6 +27,7 @@ export interface CollectionPageProps {
 
 /** Browse, search, and group the collection (User Story 2). */
 export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) {
+  const scope = useSessionScope();
   const { firearms, summary, loaded, revision } = useCollection();
   const { open, openDialog } = useNavigation();
   const [groups, setGroups] = useState<FirearmGroup[] | null>(null);
@@ -45,7 +47,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     let cancelled = false;
     setFetching(true);
     browseService
-      .listFirearms({
+      .listFirearms(scope, {
         query: query || undefined,
         groupBy: browse.groupBy,
         includeDisposed: browse.includeDisposed,
@@ -66,7 +68,7 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     return () => {
       cancelled = true;
     };
-  }, [query, browse.groupBy, browse.includeDisposed, revision]);
+  }, [scope, query, browse.groupBy, browse.includeDisposed, revision]);
 
   useEffect(() => {
     setRenderLimit(RENDER_STEP);

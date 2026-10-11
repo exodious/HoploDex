@@ -14,6 +14,8 @@ import { SessionProvider } from "./SessionProvider";
 import * as sessionService from "./sessionService";
 import { peekResumedDraft, setResumedDraft } from "./usePendingDraft";
 
+/** What the session scope of the open (session id 1) looks like to a mocked service. */
+const SCOPE = expect.objectContaining({ id: 1 });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../databases/databasesService");
 vi.mock("./sessionService");
@@ -153,7 +155,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
 
     await user.click(within(await prompt()).getByRole("button", { name: "Resume editing" }));
 
-    expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith("resume");
+    expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith(SCOPE, "resume");
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
     expect(screen.getByLabelText(/Notes/)).toHaveValue("Kept at the lock");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -172,7 +174,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     await user.click(within(confirm).getByRole("button", { name: "Discard changes" }));
 
     await waitFor(() =>
-      expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith("discard"),
+      expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith(SCOPE, "discard"),
     );
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
     expect(screen.queryByLabelText(/Notes/)).not.toBeInTheDocument();
@@ -276,7 +278,7 @@ describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
     });
     await user.click(within(dialog).getByRole("button", { name: "Resume editing" }));
 
-    expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith("resume");
+    expect(sessionService.resolvePendingChanges).toHaveBeenCalledWith(SCOPE, "resume");
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
     expect(peekResumedDraft()).toEqual(kept);
   });

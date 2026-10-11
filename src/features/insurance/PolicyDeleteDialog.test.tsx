@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import * as insuranceService from "./insuranceService";
 import { PolicyDeleteDialog } from "./PolicyDeleteDialog";
 import type { InsurancePolicy, PolicyDeletionImpact } from "./types";
 import type { RecordLabel } from "../mounts/types";
+import { DEFAULT_SCOPE, render } from "../../test/sessionScope";
 
 vi.mock("./insuranceService");
 
@@ -87,7 +88,12 @@ describe("PolicyDeleteDialog (FR-034)", () => {
 
     await user.click(await deleteButton());
 
-    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(3, true, undefined);
+    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(
+      DEFAULT_SCOPE,
+      3,
+      true,
+      undefined,
+    );
     expect(onDeleted).toHaveBeenCalled();
   });
 
@@ -137,7 +143,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     await user.click(await screen.findByRole("option", { name: /Homeowner's rider/ }));
     await user.click(await deleteButton());
 
-    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(3, true, {
+    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(DEFAULT_SCOPE, 3, true, {
       action: "move",
       targetPolicyId: 4,
     });
@@ -167,7 +173,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     );
     await user.click(await deleteButton());
 
-    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(3, true, {
+    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(DEFAULT_SCOPE, 3, true, {
       action: "unschedule",
       confirmUnschedule: true,
     });
@@ -191,7 +197,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     await user.click(await deleteButton());
 
-    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(3, true, {
+    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledWith(DEFAULT_SCOPE, 3, true, {
       action: "unschedule",
     });
   });

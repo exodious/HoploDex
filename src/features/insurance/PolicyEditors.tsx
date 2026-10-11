@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Dialog, useToast } from "../../components";
 import { useCollection } from "../app/collectionStore";
+import { useSessionScope } from "../session/sessionScope";
 import * as insuranceService from "./insuranceService";
 import { InsurancePolicyForm } from "./InsurancePolicyForm";
 import { PolicyDeleteDialog } from "./PolicyDeleteDialog";
@@ -10,6 +11,7 @@ import type { InsurancePolicy, InsurancePolicyInput } from "./types";
 /** What the add/edit and delete dialogs need from a page: which policy each
  * is open for, and the callbacks that open them. */
 export function usePolicyEditors(onDeleted?: () => void) {
+  const scope = useSessionScope();
   const { refresh, policiesById } = useCollection();
   const notify = useToast();
   const [editing, setEditing] = useState<InsurancePolicy | "new" | null>(null);
@@ -29,10 +31,10 @@ export function usePolicyEditors(onDeleted?: () => void) {
 
   async function handleSave(input: InsurancePolicyInput) {
     if (editing === "new") {
-      const created = await insuranceService.createInsurancePolicy(input);
+      const created = await insuranceService.createInsurancePolicy(scope, input);
       notify(`Added ${created.name}.`);
     } else if (editing) {
-      const updated = await insuranceService.updateInsurancePolicy(editing.id, input);
+      const updated = await insuranceService.updateInsurancePolicy(scope, editing.id, input);
       notify(`Saved changes to ${updated.name}.`);
     }
     setEditing(null);

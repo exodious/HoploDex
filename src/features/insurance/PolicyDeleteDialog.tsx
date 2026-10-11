@@ -3,6 +3,7 @@ import { Checkbox, ChoiceCards, ConfirmDialog, Icon, Select } from "../../compon
 import { CommandFailure } from "../../services/tauriClient";
 import { capitalized, describeCounts, hasAny, kindNoun } from "../mounts/recordCounts";
 import { RecordName } from "../mounts/RecordName";
+import { useSessionScope } from "../session/sessionScope";
 import * as insuranceService from "./insuranceService";
 import type { InsurancePolicy, PolicyDeletionImpact, ScheduledFirearmsAction } from "./types";
 import "../firearms/forms.css";
@@ -39,6 +40,7 @@ function PolicyDeleteBody({
   policy,
   onDeleted,
 }: Omit<PolicyDeleteDialogProps, "open">) {
+  const scope = useSessionScope();
   const [impact, setImpact] = useState<PolicyDeletionImpact | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [choice, setChoice] = useState<Choice | "">("");
@@ -49,7 +51,7 @@ function PolicyDeleteBody({
   useEffect(() => {
     let cancelled = false;
     insuranceService
-      .getPolicyDeletionImpact(policy.id)
+      .getPolicyDeletionImpact(scope, policy.id)
       .then((loaded) => !cancelled && setImpact(loaded))
       .catch(
         (e) =>
@@ -61,7 +63,7 @@ function PolicyDeleteBody({
     return () => {
       cancelled = true;
     };
-  }, [policy.id]);
+  }, [scope, policy.id]);
 
   const scheduledCounts = impact?.scheduledCounts ?? { firearms: 0, accessories: 0 };
   const scheduled = scheduledCounts.firearms + scheduledCounts.accessories;
@@ -91,7 +93,7 @@ function PolicyDeleteBody({
   async function confirm() {
     setFailure(null);
     try {
-      await insuranceService.deleteInsurancePolicy(policy.id, true, resolution());
+      await insuranceService.deleteInsurancePolicy(scope, policy.id, true, resolution());
     } catch (e) {
       setFailure(e instanceof CommandFailure ? e.message : `${policy.name} couldn't be deleted.`);
       throw e; // keeps the dialog open

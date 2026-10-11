@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import {
@@ -10,6 +10,7 @@ import {
 import { NavigationContext } from "./navigation";
 import type { Navigation } from "./navigation";
 import { RunningHead } from "./RunningHead";
+import { render } from "../../test/sessionScope";
 
 const goBack = vi.fn();
 const navigation: Navigation = {

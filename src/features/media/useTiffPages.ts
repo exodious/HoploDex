@@ -4,6 +4,7 @@
 // area's measurements and never touches layout itself.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { renderPreviewPage } from "./mediaService";
 import type { PageSize } from "./types";
 
@@ -101,6 +102,7 @@ export function useTiffPages({
   initialZoom,
   onFailure,
 }: UseTiffPagesOptions): TiffPages {
+  const scope = useSessionScope();
   const [zoom, setZoomState] = useState<TiffZoom>(
     () => initialZoom ?? (pages.length > 1 ? "fitWidth" : "fitPage"),
   );
@@ -220,7 +222,7 @@ export function useTiffPages({
       if (inflight.current.get(page) === widthPx) continue;
       inflight.current.set(page, widthPx);
 
-      renderPreviewPage(previewId, page, widthPx).then(
+      renderPreviewPage(scope, previewId, page, widthPx).then(
         (bytes) => {
           if (generation.current !== mine) return;
           if (inflight.current.get(page) === widthPx) inflight.current.delete(page);
@@ -272,7 +274,7 @@ export function useTiffPages({
     }
     // `wanted` is keyed by its content: a new array with the same pages is not a change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewId, wantedKey, scale, settledScale, dpr, version, pages, publish]);
+  }, [scope, previewId, wantedKey, scale, settledScale, dpr, version, pages, publish]);
 
   const setZoom = useCallback((next: TiffZoom) => {
     setZoomState(typeof next === "number" ? clampPercent(next) : next);

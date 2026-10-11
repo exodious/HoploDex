@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { Button, ConfirmDialog, Dialog, Icon, Menu, MenuItem, useToast } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
+import { useSessionScope } from "../session/sessionScope";
 import { MountedList } from "./MountedList";
 import { MountChooser } from "./MountChooser";
 import { mountRecord } from "./mountsService";
@@ -31,6 +32,7 @@ function failureMessage(e: unknown, fallback: string): string {
 }
 
 export function MountedSection({ record, mounted, onNewAccessory }: MountedSectionProps) {
+  const scope = useSessionScope();
   const { refresh } = useCollection();
   const notify = useToast();
   const titleId = useId();
@@ -49,7 +51,7 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
   async function place(item: RecordLabel, onto: boolean): Promise<boolean> {
     const name = recordNameText(item);
     try {
-      await mountRecord(item.record, onto ? record.record : null);
+      await mountRecord(scope, item.record, onto ? record.record : null);
     } catch (e) {
       const message = failureMessage(
         e,

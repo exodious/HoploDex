@@ -7,6 +7,8 @@ import { SessionProvider } from "./SessionProvider";
 import { ApplicationFault, FaultBoundary } from "./FaultScreen";
 import * as sessionService from "./sessionService";
 
+/** What the session scope of the open (session id 1) looks like to a mocked service. */
+const SCOPE = expect.objectContaining({ id: 1 });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("../databases/databasesService");
 vi.mock("./sessionService");
@@ -92,7 +94,7 @@ describe("A screen that fails to render", () => {
     await waitFor(() => expect(sessionService.quitApplication).toHaveBeenCalledTimes(1));
 
     await user.click(close);
-    expect(sessionService.closeDatabase).toHaveBeenCalledWith("closed");
+    expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "closed");
   });
 
   it("quits from the window's close button when the session itself failed", async () => {

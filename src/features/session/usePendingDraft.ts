@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Draft } from "../databases/types";
+import type { SessionScope } from "./sessionScope";
+import { useSessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
 
 /**
@@ -39,6 +41,9 @@ export interface RegisteredForm extends DirtyForm {
 
 interface Registration {
   current: RegisteredForm;
+  /** The session the form belongs to: its drafts are staged through it
+   * (specs/008 research.md §4). */
+  scope: SessionScope;
 }
 
 /** Every mounted form, the most recently opened last. */
@@ -65,11 +70,20 @@ function flush(): void {
   if (!waiting) return;
   const { from, draft } = waiting;
   waiting = null;
+  // Its session ended meanwhile: the draft is no longer anyone's to stage.
+  if (from.scope.ended) return;
   const json = JSON.stringify(draft);
   if (json === staged.json) return;
   staged = { json, from: draft ? from : null };
   // Best-effort: nothing is open any more, or the next edit tries again.
-  void Promise.resolve(sessionService.stagePendingChanges(draft)).catch(() => {});
+  void Promise.resolve(sessionService.stagePendingChanges(from.scope, draft)).catch(() => {});
+}
+
+function resetStaging(): void {
+  clearTimeout(timer);
+  timer = undefined;
+  waiting = null;
+  staged = { json: "null", from: null };
 }
 
 function schedule(from: Registration, draft: Draft | null): void {
@@ -89,13 +103,19 @@ export function flushPendingDraft(): void {
  * edit, or at once when a field loses focus, and `null` once it is clean or
  * gone. */
 export function useDirtyForm(form: RegisteredForm): void {
-  const registration = useRef<Registration>({ current: form });
+  const scope = useSessionScope();
+  const registration = useRef<Registration>({ current: form, scope });
   registration.current.current = form;
 
   useEffect(() => {
     const entry = registration.current;
     registered.push(entry);
+    // The session ends: what the backend held for it goes with it, so the
+    // next session's first draft is never thought to be staged already
+    // (research.md §4).
+    const forgetStaged = entry.scope.onEnd(resetStaging);
     return () => {
+      forgetStaged();
       const index = registered.indexOf(entry);
       if (index >= 0) registered.splice(index, 1);
       // Saved, cancelled or unmounted: its draft is not unsaved input any

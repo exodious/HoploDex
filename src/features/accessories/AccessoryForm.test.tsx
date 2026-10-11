@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render as renderBase, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -11,6 +11,7 @@ import type { DerivedCaliber } from "../firearms/types";
 import { AccessoryForm, FORM_VERSION } from "./AccessoryForm";
 import type { Accessory, AccessoryDetail, AccessoryKind } from "./types";
 import type { RecordLabel } from "../mounts/types";
+import { render as renderBase } from "../../test/sessionScope";
 
 // specs/006-accessory-links User Story 1 (contracts/ui-accessories.md §3,
 // FR-001 to FR-005, FR-027). The form is a bare form like `FirearmForm`: the
@@ -43,8 +44,8 @@ function render(ui: ReactElement, kinds: AccessoryKind[] = ACCESSORY_KINDS) {
 const settleEntry = vi.fn();
 const suggestEntries = vi.fn();
 vi.mock("../firearms/firearmsService", () => ({
-  settleEntry: (field: string, text: string) => settleEntry(field, text),
-  suggestEntries: (field: string, text: string, make?: string | null) =>
+  settleEntry: (_scope: unknown, field: string, text: string) => settleEntry(field, text),
+  suggestEntries: (_scope: unknown, field: string, text: string, make?: string | null) =>
     suggestEntries(field, text, make),
 }));
 
@@ -52,7 +53,7 @@ vi.mock("../firearms/firearmsService", () => ({
 // candidates through the mounts service.
 const listMountCandidates = vi.fn();
 vi.mock("../mounts/mountsService", () => ({
-  listMountCandidates: (input: unknown) => listMountCandidates(input),
+  listMountCandidates: (_scope: unknown, input: unknown) => listMountCandidates(input),
 }));
 
 const DERIVED: Record<string, DerivedCaliber> = {

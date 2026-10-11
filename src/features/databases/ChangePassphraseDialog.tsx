@@ -14,6 +14,7 @@ import {
 import type { PassphraseFieldHandle } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
+import { useSessionScope } from "../session/sessionScope";
 import { useSession } from "../session/sessionStore";
 import * as databasesService from "./databasesService";
 import { DatabaseGuideLink } from "./DatabaseGuide";
@@ -63,6 +64,7 @@ function ChangePassphraseForm({
   onDone: () => void;
 }) {
   const session = useSession();
+  const scope = useSessionScope();
   const [errors, setErrors] = useState<Errors>({});
   const [refusal, setRefusal] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -136,7 +138,7 @@ function ChangePassphraseForm({
     setRunning(true);
     onRunningChange(true);
     try {
-      const result = await databasesService.changePassphrase(current, next);
+      const result = await databasesService.changePassphrase(scope, current, next);
       setChanged(result);
       void session.refreshStatus();
     } catch (error) {

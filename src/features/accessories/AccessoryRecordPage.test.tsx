@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
 import { formatDate } from "../../lib/dates";
@@ -11,6 +11,7 @@ import type { DispositionHistoryEntry } from "../firearms/types";
 import { AccessoryRecordPage } from "./AccessoryRecordPage";
 import type { AccessoryDetail } from "./types";
 import type { RecordLabel } from "../mounts/types";
+import { render } from "../../test/sessionScope";
 
 // specs/006-accessory-links User Story 1, contracts/ui-accessories.md §12:
 // the accessory's record page has the firearm record page's layout. The
@@ -21,13 +22,14 @@ const getAccessory = vi.fn();
 const deleteAccessory = vi.fn();
 
 vi.mock("./accessoriesService", () => ({
-  getAccessory: (id: number) => getAccessory(id),
-  deleteAccessory: (id: number, confirmed: boolean) => deleteAccessory(id, confirmed),
+  getAccessory: (_scope: unknown, id: number) => getAccessory(id),
+  deleteAccessory: (_scope: unknown, id: number, confirmed: boolean) =>
+    deleteAccessory(id, confirmed),
 }));
 // The edit form's make, model, cartridge and caliber use the shared entry
 // commands (FR-003).
 vi.mock("../firearms/firearmsService", () => ({
-  settleEntry: async (_field: string, text: string) => ({
+  settleEntry: async (_scope: unknown, _field: string, text: string) => ({
     value: text.trim(),
     changedBy: null,
     derivedCaliber: null,

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { render } from "@testing-library/react";
 import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
 import { TypeDrawing } from "./TypeDrawing";
 import { drawingBounds } from "../databases/plate/entries";
 import { DRAWINGS } from "./typeDrawings";
+import { render } from "../../test/sessionScope";
 
 // specs/005-regulated-item-types FR-001: every firearm type has its own
 // drawing, the suppressor's included.

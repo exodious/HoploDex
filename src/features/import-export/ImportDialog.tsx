@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { useSessionScope } from "../session/sessionScope";
 import { withIdlePaused } from "../session/useIdleActivity";
 import {
   Button,
@@ -165,6 +166,7 @@ const TOO_MANY_FILES =
   "An import takes at most two files, one of firearms and one of accessories. Nothing was added.";
 
 function ImportFlow({ onClose }: { onClose: () => void }) {
+  const sessionScope = useSessionScope();
   const { refresh } = useCollection();
   const notify = useToast();
   // The files picked (one, or the firearm and accessory files together), and
@@ -221,7 +223,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     setError(null);
     setImporting(true);
     try {
-      const imported = await importExportService.importCollection({
+      const imported = await importExportService.importCollection(sessionScope, {
         files: chosenFiles.map((filePath) => ({ filePath, format: formatForPath(filePath) })),
       });
       setResult(imported);
@@ -237,7 +239,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     if (!result) return;
     setResolving(true);
     try {
-      const resolved = await importExportService.resolveImportConflicts({
+      const resolved = await importExportService.resolveImportConflicts(sessionScope, {
         importSessionId: result.sessionId,
         resolutions: conflicts.map((c) => ({
           conflictId: c.conflictId,
