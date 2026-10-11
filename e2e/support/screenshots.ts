@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { browser } from "@wdio/globals";
+import { appPid } from "./app";
 import { settle } from "./ui";
 
 /**
@@ -197,6 +198,8 @@ export async function shotDisplay(name: string) {
         "Bypass",
         "-File",
         fileURLToPath(new URL("../scripts/window-shot.ps1", import.meta.url)),
+        "-ProcessId",
+        String(appPid()),
         "-Out",
         file,
       ],

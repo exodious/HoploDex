@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
-import { relaunchApp } from "../support/app";
+import { appPid, relaunchApp } from "../support/app";
 import { writeLargePdf } from "../support/largePdf";
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 import {
@@ -481,6 +481,8 @@ async function windowScreenshot(): Promise<Screen> {
           "Bypass",
           "-File",
           path.join(path.dirname(fileURLToPath(import.meta.url)), "../scripts/window-shot.ps1"),
+          "-ProcessId",
+          String(appPid()),
           "-Out",
           file,
           "-Format",
