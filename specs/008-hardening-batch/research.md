@@ -988,6 +988,50 @@ someone looks at it.
     is also the PDF surface's web view, which cancels `contextmenu` in its
     page, so nothing changes there.
 
+  _macOS items logged (T084, 2026-10-11, the macOS 26.6.2 VM, WebKit 605.1.15,
+  by `scripts/macos/window-controls-check.sh`: real `CGEvent` right clicks on
+  a test page with the filter alone, no page handlers; two runs, the same
+  result)_:
+  - blank area, row and button: Reload (and a separator) offered, removed, so
+    no menu;
+  - image: Open Image in New Window, Download Image, Copy Image, Copy Subject
+    and Look Up (`WKMenuItemIdentifierRevealImage`) all removed, so no menu.
+    Copy Subject and the image Look Up are new to the list and are caught by
+    the allowlist;
+  - text field with the word "fox" under the pointer: Look Up, Translate,
+    Search with Google, Substitutions, Transformations, Font, Speech,
+    Paragraph Direction, Selection Direction, Share…, and the Spelling and
+    Grammar items Check Document Now, Check Grammar With Spelling and Correct
+    Spelling Automatically removed; Cut, Copy, Paste, Spelling and Grammar
+    with Show Spelling and Grammar and Check Spelling While Typing kept. No
+    misspelling was under the pointer, so no guess, Ignore Spelling or Learn
+    Spelling item was offered (the keep rules for them were checked by T073);
+    no Emoji & Symbols and no Writing Tools item. AutoFill is not in the log,
+    as before, and is allowed (spec.md Clarifications 2026-10-11);
+  - selected sentence in a paragraph: Look Up, Translate, Search with Google,
+    Copy Link with Highlight, Share… and Speech removed; Copy kept;
+  - F5, Shift+F5, Ctrl+F5, ⌘R, ⌘⇧R, ⌘[, ⌘], ⌘P, ⌘S, ⌘U, ⌘F, F3, ⌘G, F7, F12,
+    ⌘⇧I, ⌘⇧J, ⌘⇧C, ⌘⌥I and the mouse's back and forward buttons (3 and 4)
+    left the page loaded once, with the typed text intact and the keyboard
+    still in the field, and opened no window. WKWebView binds none of them
+    (§14);
+  - **⌃⌘D on a selected paragraph: no window opened, and `quickLookWithEvent:`
+    never reached the no-op, so this part of the check proves nothing yet.**
+    With `--unfiltered` (the same page with no `window_controls::apply`) no
+    Look Up panel appeared either, whatever was tried: the paragraph selected
+    by script or a word double-clicked with real events (`dclick`, click
+    state 2), in the page or in its text field (T073's "brwon"), the key
+    posted with only its flags set or with ⌃ and ⌘ pressed as keys of their
+    own, and up to 3 s of waiting. A synthesized ⌃⌘D opens nothing in
+    **Safari** either (a double-clicked word, 2 runs, the second after the
+    Look Up first-run notice was accepted), while the same input opens Look Up in TextEdit (first
+    the "Look Up now shows personalized suggestions" notice, 1 window before,
+    3 after), so the input and the window count work and WebKit takes a
+    posted ⌃⌘D for nothing here. T073's popover (and its 4 of 4) isn't
+    reproduced. Until the check can see Look Up open without the hook, its
+    pass says nothing about ⌃⌘D, the no-op or the page's
+    `webkitmouseforcewillbegin`; a real keyboard (T110) is what judges them.
+
 **Rationale**:
 - A page can only cancel a menu outright. It can't remove Look Up or Reload
   from a text field's menu. So the trimming FR-011 asks for has to be done

@@ -5,7 +5,8 @@
 // test page, and driven with real input. It checks SC-005 on each OS.
 //
 //   cargo run --profile e2e --example window_controls_check --features e2e -- \
-//       --input CMD [--input ARG]... [--scratch DIR] [--out DIR] [--timeout SECONDS]
+//       --input CMD [--input ARG]... [--scratch DIR] [--out DIR] [--timeout SECONDS] \
+//       [--unfiltered]
 //
 // It must be built without debug assertions (`--profile e2e` or `--release`):
 // a development build installs none of the filters (FR-014), and the check
@@ -431,10 +432,17 @@ struct Options {
     input: Vec<String>,
 }
 
+/// `--unfiltered`: a control. The window is built without
+/// `window_controls::apply`, so the filter logs no menu and the menu checks
+/// fail. On macOS it also shows whether control-command-D opens a Look Up
+/// panel that the check counts when the hook is absent (it did not, in the macOS
+/// 26 VM: research.md §13).
+static UNFILTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn usage() -> ! {
     eprintln!(
         "usage: window_controls_check --input CMD [--input ARG]... [--scratch DIR] [--out DIR] \
-         [--timeout SECONDS]"
+         [--timeout SECONDS] [--unfiltered]"
     );
     std::process::exit(3)
 }
@@ -757,7 +765,12 @@ fn main() {
     let mut out = None::<PathBuf>;
     let mut timeout = Duration::from_secs(40);
     let mut input = Vec::new();
+    let mut unfiltered = false;
     while let Some(flag) = args.next() {
+        if flag == "--unfiltered" {
+            unfiltered = true;
+            continue;
+        }
         let value = args.next().unwrap_or_else(|| usage());
         match flag.as_str() {
             "--scratch" => scratch = Some(value.into()),
@@ -793,6 +806,7 @@ fn main() {
     });
     std::fs::create_dir_all(&out).unwrap();
 
+    UNFILTERED.store(unfiltered, Ordering::SeqCst);
     log::set_logger(&Capture).expect("no logger yet");
     log::set_max_level(log::LevelFilter::Info);
 
@@ -826,7 +840,9 @@ fn main() {
             let main = main.data_directory(main_dir.clone());
             let main = main.build()?;
             // The app's own call, as `setup()` makes it, but logging the items.
-            window_controls::apply(&main, true)?;
+            if !UNFILTERED.load(Ordering::SeqCst) {
+                window_controls::apply(&main, true)?;
+            }
             let options = options.lock().unwrap().take().expect("setup runs once");
             let (app, shared) = (app.handle().clone(), setup_shared.clone());
             thread::spawn(move || run(app, shared, options));
