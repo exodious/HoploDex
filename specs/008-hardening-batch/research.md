@@ -1074,6 +1074,21 @@ someone looks at it.
     _Amended 2026-10-11 (T085): that run's page had one history entry, so it
     could not show a button or key going back. The check's page now has two
     (Windows' result above), and the macOS run needs repeating with it;_
+
+    _macOS rerun with the two-entry page (T107, 2026-10-11, the macOS 26.6.2
+    VM, `scripts/macos/window-controls-check.sh`, exit 0 in 2 of 2 runs)_: the
+    menus and items were the same as above (blank area, row, button and image:
+    no menu; field and selection: the trimmed menus). None of the keys above
+    moved the page through its history or reloaded it, and the typed text
+    stayed. **The mouse's back and forward buttons (3 and 4) do navigate
+    natively on WKWebView** with no guard: back went from entry 2 to 1 and
+    forward from 1 to 2, in both runs. With the page's §12 guard on, both left
+    the history entry alone, in both runs. So on macOS, as on Linux and
+    Windows, the page layer is what stops the side buttons, and the check runs
+    both ways. ⌃⌘D: 1 window before and after, and `quickLookWithEvent:` did
+    not reach the no-op, as before: a synthesized ⌃⌘D can't produce Look Up in
+    the VM (6ddaac4), so that part still waits for M1 (T110) on a real
+    keyboard;
   - **⌃⌘D on a selected paragraph: no window opened, and `quickLookWithEvent:`
     never reached the no-op, so this part of the check proves nothing yet.**
     With `--unfiltered` (the same page with no `window_controls::apply`) no
@@ -1141,6 +1156,11 @@ measures cover what a page can't cancel.
   _Amended 2026-10-11 (T106): Linux is repeated with the two-entry page;
   it navigates on the side buttons too, and the guard stops it (above). macOS
   still needs repeating._
+  _Amended 2026-10-11 (T107): macOS is repeated with the two-entry page; it
+  navigates on the side buttons too (WKWebView, with no guard), and the guard
+  stops it (§13). So `allowsBackForwardNavigationGestures = NO` (the macOS
+  bullet above) covers the trackpad's swipe only; the page's handlers are what
+  stop a mouse's side buttons on every OS._
 - **Every OS**: the main window has one history entry (the app is a single
   page with no routing), so Back has nowhere to go. It is blocked anyway, as
   #40 asks.
@@ -1310,6 +1330,36 @@ quickstart.md. In outline:
   the menus and look-ups on a real Mac's trackpad (M1), workbooks saved by
   other programs (M2), and pending changes from another version by hand
   (M3). The check covers mice and keyboards.
+
+### Gate results: macOS 26.6.2, tart VM `hoplodex-macos` (T107, 2026-10-11)
+
+All in the VM, from the checkout copied in at 19fbbdc plus the fix below.
+
+- `npm run lint`, `npm run format:check`, `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` (also with
+  `--features mock-keyring`) clean; `npm run build` passes.
+- `npm test`: 92 files, 1,529 tests pass. `cargo nextest run`: 1,345 tests
+  pass, 24 skipped. `keyring_test` with `--features mock-keyring`: 13 pass.
+- `npm run audit`: npm, cargo advisories, licenses and the WebDriver check
+  all pass, with no ignore added.
+- `scripts/macos/window-controls-check.sh`: exit 0 in 2 of 2 runs (side
+  buttons and ⌃⌘D: §13). `scripts/macos/pdf-surface-check.sh`: exit 0;
+  with `--hud-on`: exit 0.
+- E2E, one spec file at a time, `us1` to `us15`, both `us7` files, `ui-review`,
+  `webdriver-plugin` and `zz-session-header-probe`: all 19 files pass, none
+  flaky. `us10`, `us11` and `us12` use real input only, so on macOS they
+  report all their tests (3, 2 and 4) as pending (DEVELOPMENT.md); that is by
+  design.
+- The screenshot walk (1920x4200 screen): 51 + 4 tests pass, shots 73 to 78
+  in light and dark taken. The images go to the git-ignored
+  `e2e/screenshots-out/`; nothing tracked changed.
+- **Fix**: `src-tauri/tests/keyring_test.rs` didn't compile with
+  `--features mock-keyring`: T009 to T014 gave `forget_saved_passphrase` a
+  `Target` and the test still passed `Option<&String>`. It passes
+  `Target::Open(world.session.current_id())` and `Target::At(path)` now.
+  Nothing in the default build compiles that file (the whole file is behind
+  the feature), so the Linux gates didn't see it either; DEVELOPMENT.md and
+  `tart-vm.sh test` do run that command, and Linux's T106 should run it too.
 
 ## §19 Performance
 

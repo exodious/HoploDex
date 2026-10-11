@@ -239,7 +239,12 @@ fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     let id = world.database_id();
     world.save(TEST_PASSPHRASE).unwrap();
 
-    let forgotten = ops::forget_saved_passphrase(&world.session, &world.machine, None).unwrap();
+    let forgotten = ops::forget_saved_passphrase(
+        &world.session,
+        &world.machine,
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
     assert!(!forgotten.passphrase_saved);
     assert_eq!(stored(&id), None);
     assert!(!world.saved_flag("Main"));
@@ -248,8 +253,12 @@ fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     // From the chooser, with nothing open.
     world.save(TEST_PASSPHRASE).unwrap();
     world.close();
-    ops::forget_saved_passphrase(&world.session, &world.machine, Some(&world.path_text("Main")))
-        .unwrap();
+    ops::forget_saved_passphrase(
+        &world.session,
+        &world.machine,
+        Target::At(&world.path_text("Main")),
+    )
+    .unwrap();
     assert_eq!(stored(&id), None);
     assert!(!world.saved_flag("Main"));
     assert!(saved_failed(&world.open("Main", Unlock::Saved).unwrap_err()));
@@ -471,7 +480,12 @@ fn the_pre_feature_sqlcipher_key_entry_is_never_touched() {
         &Passphrase::from_input(NEW_PASSPHRASE.to_owned()),
     )
     .unwrap();
-    ops::forget_saved_passphrase(&world.session, &world.machine, None).unwrap();
+    ops::forget_saved_passphrase(
+        &world.session,
+        &world.machine,
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
     world.close();
     world
         .open(
