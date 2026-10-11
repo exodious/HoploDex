@@ -176,9 +176,45 @@ and `us12` are the real-input specs that macOS skips by decision (#27): `us12`
 reported its 4 tests skipped, and `us10` and `us11` each ended as 1 spec file
 passed (their per-test counts weren't logged). No failure, no rerun needed.
 
-Not yet run on Windows (T008), where the custom protocol is
-`http://ipc.localhost`; the probe's `fetch` filter covers it. The probe stays
-in `e2e/specs/` until that is recorded.
+**Verified on Windows (T008, 2026-10-11)**: the Windows test machine (Windows
+Server 2025, WebView2 154, E2E build, one worker). The full E2E suite passed
+spec file by spec file (every file green; `us10`, `us11` and `us12` skip
+their real-input tests by decision, #27), and the header reaches
+`ScopedSession` over **`postMessage` only**. **The custom protocol could not
+be exercised on this machine**, and the unmodified probe reports 6 passing, 2
+failing for that reason (both failures are the probe's own counter, not the
+header):
+- **What the page sees**: on this machine's WebView2 every `fetch` from the
+  page to `http://ipc.localhost` is rejected, so Tauri's `ipc-protocol.js`
+  sets `customProtocolIpcFailed` during the first calls at page load (five
+  start-up calls, `get_database_status`, three `plugin:event|listen` and
+  `plugin:window|set_title`, are the only ones that ever reach
+  `ipc.localhost`, all at ~115 ms, before any spec code runs) and every later
+  call goes through `postMessage`. A hand-built request with Tauri's own
+  headers (`Tauri-Invoke-Key` read from a `postMessage`, `Tauri-Callback`,
+  `Tauri-Error`), with and without `HoploDex-Session`, also throws `Failed to
+  fetch`, as does a plain POST, a GET and `ipc://localhost/...`; only a
+  `no-cors` POST gets through (opaque). `http://tauri.localhost/...` fetches
+  fine. So this is not caused by the new header; the app never used the
+  custom protocol here. I did not find why (the CSP's `connect-src` allows
+  `http://ipc.localhost`, and `Access-Control-Allow-Origin: *` is on every
+  response in `tauri/src/ipc/protocol.rs`). It is worth a look as its own
+  question: on this machine the "custom protocol" half of FR-004's reasoning is
+  unverified, and the app has run on `postMessage` throughout.
+- **The probe's results**: the 3 "custom protocol" tests and the 3 fallback
+  tests passed, but all six ran over `postMessage`. The two failures are
+  "has left the custom protocol" and "never touched the custom protocol again",
+  which expect the one rejected `fetch` that trips the fallback; they saw 0,
+  because the fallback was already in place.
+- **How `postMessage` was confirmed**: `window.ipc` is frozen on WebView2, so
+  the probe's `fetch` filter is the only hook it has; a throwaway spec
+  (deleted) instead wrapped `window.chrome.webview.postMessage`, which
+  `window.ipc.postMessage` calls, and `window.fetch`. Over the same three
+  cases it saw 0 `fetch` calls and three `list_firearms` messages, each with
+  `options.customProtocolIpcBlocked: true`, carrying
+  `{"HoploDex-Session": "1"}`, no headers and `{"HoploDex-Session": "1001"}`;
+  results: served, `DATABASE_CLOSED`, `DATABASE_CLOSED`. The `postMessage`
+  path therefore carries the header on Windows too.
 
 ## §3 The frontend's session scope
 
