@@ -44,22 +44,30 @@ const firearm = {
 const MOD = process.platform === "darwin" ? "meta" : "ctrl";
 
 /** Dispatches a `contextmenu` at the middle of the first element matching
- * `selector` and says whether the page cancelled it. */
-function contextMenuCancelled(selector: string): Promise<boolean> {
-  return browser.execute((css: string) => {
-    const element = document.querySelector(css);
-    if (!element) throw new Error(`nothing matches ${css}`);
-    const r = element.getBoundingClientRect();
-    const event = new MouseEvent("contextmenu", {
-      bubbles: true,
-      cancelable: true,
-      button: 2,
-      clientX: r.left + r.width / 2,
-      clientY: r.top + r.height / 2,
-    });
-    element.dispatchEvent(event);
-    return event.defaultPrevented;
-  }, selector);
+ * `selector` (or, with `inSelection`, of the document's selected text, which
+ * is narrower than the element holding it) and says whether the page
+ * cancelled it. */
+function contextMenuCancelled(selector: string, inSelection = false): Promise<boolean> {
+  return browser.execute(
+    (css: string, selected: boolean) => {
+      const element = document.querySelector(css);
+      if (!element) throw new Error(`nothing matches ${css}`);
+      const r = selected
+        ? window.getSelection()!.getRangeAt(0).getClientRects()[0]
+        : element.getBoundingClientRect();
+      const event = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    },
+    selector,
+    inSelection,
+  );
 }
 
 /** The id of the field behind a visible label, in the open dialog. */
@@ -153,7 +161,7 @@ describe("User Story 3 (008) - The Window Behaves Like an Application, Not a Bro
       selection.removeAllRanges();
       selection.addRange(range);
     });
-    expect(await contextMenuCancelled('[role="dialog"] .hd-dialog__title')).toBe(false);
+    expect(await contextMenuCancelled('[role="dialog"] .hd-dialog__title', true)).toBe(false);
     await browser.execute(() => window.getSelection()?.removeAllRanges());
     expect(await contextMenuCancelled('[role="dialog"] .hd-dialog__title')).toBe(true);
   });
@@ -285,8 +293,24 @@ describe("User Story 3 (008) - The Window Behaves Like an Application, Not a Bro
     await realKey("End");
     await realKey("Control_L+v");
     expect(await valueOf(notes)).toBe("hellohello");
+    // Undo: the web view on Linux (WebKitGTK under Xvfb) does not undo in any
+    // text field, not even a bare textarea, so what this checks is that the
+    // controls leave the key alone (the page doesn't cancel it).
+    await browser.execute(() => {
+      const w = window as unknown as { __hdUndoCancelled?: boolean };
+      w.__hdUndoCancelled = undefined;
+      window.addEventListener("keydown", (e) => {
+        if (e.key.toLowerCase() === "z" && e.ctrlKey) w.__hdUndoCancelled = e.defaultPrevented;
+      });
+    });
     await realKey("Control_L+z");
-    expect(await valueOf(notes)).not.toBe("hellohello");
+    is(
+      await browser.execute(
+        () => (window as unknown as { __hdUndoCancelled?: boolean }).__hdUndoCancelled,
+      ),
+      false,
+      "Ctrl+Z was cancelled or never reached the page",
+    );
   });
 
   it("locks with Ctrl/⌘+L from the open form", async () => {

@@ -16,11 +16,23 @@ import { repoRoot, seedBinary } from "./build";
  * launched from here (support/app.ts), inherits.
  */
 
-let sandbox: string | undefined;
+/**
+ * The current sandbox's directory. It lives on `globalThis`, not in a module
+ * variable, for the reason support/app.ts gives: WebdriverIO loads
+ * `wdio.conf.ts` apart from the spec files, so this module is evaluated twice
+ * in a worker, and a spec that reseeds (us9) must see the sandbox the config's
+ * copy made.
+ */
+interface SandboxState {
+  dir: string | undefined;
+}
+const stateKey = Symbol.for("io.github.exodious.HoploDex.e2e.sandbox");
+const globals = globalThis as { [stateKey]?: SandboxState };
+const state: SandboxState = (globals[stateKey] ??= { dir: undefined });
 
 /** The current sandbox's directory, if there is one. */
 export function sandboxPath(): string | undefined {
-  return sandbox;
+  return state.dir;
 }
 
 /** Where the documents folder, and so the suggested location for a new
@@ -44,7 +56,7 @@ function writeUserDirs(configDir: string, documents: string) {
  */
 export function isolateAppData(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-"));
-  sandbox = root;
+  state.dir = root;
   const [data, cache, config, documents] = ["data", "cache", "config", "documents"].map((name) => {
     const dir = path.join(root, name);
     fs.mkdirSync(dir, { recursive: true });
@@ -154,8 +166,8 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
  * build can't resume (008 FR-016).
  */
 export function seedCollection(options: { pendingFrom?: string } = {}): string {
-  if (!sandbox) throw new Error("seedCollection() needs isolateAppData() first");
-  const dir = path.join(sandbox, "seed");
+  if (!state.dir) throw new Error("seedCollection() needs isolateAppData() first");
+  const dir = path.join(state.dir, "seed");
   const seedArgs = ["--dir", dir];
   if (options.pendingFrom) seedArgs.push("--pending-from", options.pendingFrom);
   if (runSeed(seedArgs, "inherit").status !== 0) {
@@ -174,11 +186,11 @@ export function seedCollection(options: { pendingFrom?: string } = {}): string {
  * and write cache files as they go, so removing the directory once can leave
  * some behind. */
 export async function removeSandbox() {
-  const root = sandbox;
+  const root = state.dir;
   if (!root) return;
   for (let attempt = 0; attempt < 5 && fs.existsSync(root); attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     fs.rmSync(root, { recursive: true, force: true });
   }
-  sandbox = undefined;
+  state.dir = undefined;
 }

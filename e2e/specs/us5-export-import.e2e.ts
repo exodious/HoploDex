@@ -310,7 +310,7 @@ describe("User Story 5 - Export and Import Records", () => {
     expect(text).toContain("too-many-sheets.xlsx");
     expect(text).toContain("more than 16 sheets. HoploDex imports at most 16 sheets per workbook.");
     // The dialog stays on the file step, ready for another file.
-    await expect($("button=Import")).toExist();
+    await expect($('[role="dialog"]').$("button=Import")).toExist();
     await clickButton("Cancel");
   });
 
@@ -333,14 +333,15 @@ describe("User Story 5 - Export and Import Records", () => {
 
     await clickButton("Import");
     await fill("Spreadsheet file", large);
-    await clickButton("Import");
+    // The reading is one request in flight, so the app stays busy until it ends.
+    await clickButton("Import", { settles: false });
     // The bar names the file and shows how much is read.
     await browser.waitUntil(
       async () => /Reading large\.csv… [1-9]\d*%/.test(await $(".hd-progress__label").getText()),
       { timeout: 15000, timeoutMsg: "the reading never showed a percentage" },
     );
 
-    await clickButton("Stop reading");
+    await clickButton("Stop reading", { settles: false });
     const banner = await $('[role="alert"]');
     await banner.waitForExist({ timeout: 1000, timeoutMsg: "the reading didn't stop within 1 s" });
     expect(await banner.getText()).toContain("The import was cancelled. Nothing was imported.");

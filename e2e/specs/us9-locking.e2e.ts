@@ -9,7 +9,7 @@ import {
   browser,
   chooseMenuItem,
   clickButton,
-  clickEl,
+  confirmTakeOver,
   createDatabase,
   expect,
   fieldValue,
@@ -200,10 +200,7 @@ async function openSharedToPending(): Promise<string> {
   await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
   const takeOver = await $("button=Take over…");
   if (await takeOver.waitForExist({ timeout: 2000 }).catch(() => false)) {
-    await clickEl("button=Take over…");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Take over");
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await confirmTakeOver(SHARED, process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
   }
   return dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
 }

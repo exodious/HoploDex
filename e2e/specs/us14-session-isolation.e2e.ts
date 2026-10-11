@@ -5,6 +5,7 @@ import {
   chooseMenuItem,
   clickButton,
   clickEl,
+  confirmTakeOver,
   expect,
   fill,
   invokeCommand,
@@ -54,20 +55,22 @@ async function chooseRow(name: string) {
   if (await select.isExisting()) await selectChooserRow(name);
 }
 
-/** Opens "Shared collection", which the seed marks open on another computer
- * and holds pending changes for: takes it over and discards them, which is
- * what leaves its collection to look at. */
+/** Opens "Shared collection". The first time, the seed has it marked open on
+ * another computer and holding pending changes: this takes it over and
+ * discards them, which is what leaves its collection to look at. After that
+ * it is an ordinary open. */
+let sharedFreed = false;
 async function openShared() {
   await chooseRow(SHARED);
   await submitPassphrase(passphrase());
-  await clickEl("button=Take over…");
-  await $('[role="alertdialog"]').waitForExist();
-  await clickButton("Take over");
-  await $('[role="alertdialog"]').waitForExist({ reverse: true });
-  await $("button=Discard changes").waitForExist({ timeout: 20000 });
-  await clickButton("Discard changes");
-  await $('[role="alertdialog"]').waitForExist();
-  await clickButton("Discard changes");
+  if (!sharedFreed) {
+    await confirmTakeOver(SHARED, passphrase());
+    await $("button=Discard changes").waitForExist({ timeout: 20000 });
+    await clickButton("Discard changes");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Discard changes");
+    sharedFreed = true;
+  }
   await waitForCollection();
 }
 

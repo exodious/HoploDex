@@ -96,8 +96,10 @@ export async function clickEl(selector: string) {
 }
 
 /** Clicks the button whose visible text is exactly `text`, inside the
- * innermost open dialog when there is one. */
-export async function clickButton(text: string) {
+ * innermost open dialog when there is one, and waits for the app to settle
+ * unless `settles` is false (a click that starts a long command, whose
+ * request stays in flight, so the app is busy until it ends). */
+export async function clickButton(text: string, { settles = true }: { settles?: boolean } = {}) {
   await browser.waitUntil(
     () =>
       browser.execute(
@@ -114,7 +116,7 @@ export async function clickButton(text: string) {
       ),
     { timeout: 5000, timeoutMsg: `no enabled button "${text}"` },
   );
-  await settle();
+  if (settles) await settle();
 }
 
 /** Opens the firearm form's disclosure group with this title if it is
@@ -773,6 +775,17 @@ export async function submitPassphrase(passphrase: string) {
   }, passphrase);
   if (!found) throw new Error("no database is selected in the chooser");
   await settle();
+}
+
+/** Answers the chooser's "Take over" question for the selected database,
+ * which another computer has open: asks to take it over, types the passphrase
+ * again (the confirmation, FR-032) and confirms. */
+export async function confirmTakeOver(name: string, passphrase: string) {
+  await clickEl("button=Take over…");
+  await $('[role="alertdialog"]').waitForExist();
+  await fill(`Passphrase for “${name}”`, passphrase);
+  await clickButton("Take over");
+  await $('[role="alertdialog"]').waitForExist({ reverse: true });
 }
 
 /** Opens the chooser's selected database with `passphrase` and waits for
