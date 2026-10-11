@@ -170,7 +170,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T069 [US2] In `src-tauri/examples/human_seed.rs`, add an over-limit sample to `import-samples` (a workbook with 20 sheets, each with `x` in A1, named so its purpose is clear), list it in the import samples' README if there is one, and make sure the seeded records stay within the field maximums; `human_seed_coverage_test.rs` and `seed_sandbox_test.rs` pass
 - [X] T070 [US2] On Linux, run `cargo test` (including `import_reader_test`, `lock_test`, `text_limits_test`), `npm test`, and `npm run build` then `e2e/specs/us5-export-import.e2e.ts`, `us1-record-firearm.e2e.ts`, `us3-value-insurance.e2e.ts` and `us12-accessories.e2e.ts` one at a time in the dev container; fix every failure
 - [X] T071 [US2] On macOS, in the macOS 26 VM, run `import_reader_test` and `lock_test` (the helper there has no enforced memory cap, research.md §8, so the limits must bound it) and `us5-export-import.e2e.ts`; fix every failure
-- [ ] T072 [US2] On Windows, on the Windows test machine, run `import_reader_test` and `lock_test` (the job object's memory limit) and `us5-export-import.e2e.ts`; fix every failure
+- [X] T072 [US2] On Windows, on the Windows test machine, run `import_reader_test` and `lock_test` (the job object's memory limit) and `us5-export-import.e2e.ts`; fix every failure
 
 **Checkpoint**: User Story 2 is fully functional and testable on its own.
 
@@ -248,7 +248,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 
 - [X] T098 On Linux, run `scripts/dev-container.sh bash -c 'cd src-tauri && cargo test --release -- --ignored import_largest'` and the release `performance_test` (as DEVELOPMENT.md runs it); record for the PR: the largest export's reading and import times and the parent's peak memory as a workbook and as two CSVs, the slowest refusal in the hostile corpus against 5 s, the largest memory rise against 512 MB, cancel and lock times against 1 s, and that search ≤ 500 ms and actions ≤ 1 s still hold with the session check; fix anything over budget
 - [X] T099 On macOS, in the macOS 26 VM, run the release `import_largest` and `performance_test` as T098 and record the same figures
-- [ ] T100 On Windows, on the Windows test machine, run the release `import_largest` and `performance_test` as T098 and record the same figures
+- [X] T100 On Windows, on the Windows test machine, run the release `import_largest` and `performance_test` as T098 and record the same figures
 
 ### Screens, docs and checks
 

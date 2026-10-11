@@ -1402,6 +1402,52 @@ are unchanged. The tests ran as `DEVELOPMENT.md` gives them
   $100,000,000 blanket limit that the Linux run (T098) had already fixed;
   the second run, on that fix, passed.
 
+### Measured: Windows, the Windows test machine, 2026-10-11 (T100)
+
+The Windows test machine
+(Windows Server 2025, an AMD Ryzen 7 7735HS, 4 logical CPUs, 8 GB, a VM),
+release builds with `CARGO_PROFILE_RELEASE_PANIC=unwind`, nothing else
+running, `TEMP`/`TMP` pointed at an empty folder.
+- **`import_largest`** (10,000 firearms and 10,000 accessories at the
+  field maximums; passed). The parent's peak is its resident memory, and the
+  "rise" is above where it began:
+
+  | Input | Size | Reading | Parent peak | Import |
+  |---|---|---|---|---|
+  | Workbook | 75 MB | 1.7 s | 202 MB (182 MB rise) | 924.5 s |
+  | Two CSVs | 107 MB + 52 MB | 0.74 s | 202 MB (180 MB rise) | 932.6 s |
+
+  The whole test took 2,010 s (seeding 143.7 s). Reading is nowhere near a
+  limit. The import of 20,000 rows takes about 15 minutes on this VM, about
+  46 ms a row (the cause was not investigated; it is probably the saves'
+  commits on this VM's disk); it has no
+  budget (constitution IV sets none for an import's total time), but it is
+  far slower than reading.
+- **The hostile corpus** (`import_reader_test`, release, 5 s per refusal, no
+  debug allowance; 40 passed):
+  - slowest refusal: 2.98 s (`cells-16-sheets`), against 5 s. The next are
+    0.43 s (`total-text`), 0.26 s (`rows-xlsx`) and 0.20 s; the rest take
+    under 0.2 s.
+  - largest memory rise: 258 MB (`total-text`), against 512 MB. The next are
+    123 MB (`rows-csv`), 120 MB and 117 MB.
+  - Stop (cancel) took 73 to 106 ms and a session that ends took 68 to 107 ms
+    to end the reading, at 1%, 25% and 60%, against 1 s.
+  - The job object's memory limit: a 64 MiB job kills the helper (exit code
+    0xc0000409) and only it; a 512 MiB job lets a valid read through.
+- **`performance_test`** (release, as DEVELOPMENT.md runs it, 24 passed):
+  searches at 10,000 firearms and 10,000 accessories take at most 313 ms
+  (a document name searched by a two-letter prefix, `"zq"`) against 500 ms,
+  and the other searches 35 to 80 ms. Actions (mount, dispose, create and
+  update with a mount) take at most 20 ms and a TIFF's open and first page
+  165 ms, against 1 s. Suggestions take at most 20 ms against 50 ms. The
+  take-over check costs 75 µs a save. Opening 10,000 firearms takes 400 ms.
+  Everything is inside its budget.
+- **A stale test fixed**: `get_value_summary_completes_within_budget_at_10k_records`
+  created its blanket policy with a $100,000,000 limit, one over the
+  $99,999,999 amount cap (`MAX_AMOUNT_DOLLARS`), so `create_policy` refused
+  it. The test now uses $99,999,999, the same fix the Linux run (T098)
+  made.
+
 ## §20 Security and data handling (for the pull request)
 
 - **#69**: the backend refuses every request of an ended session, reads
