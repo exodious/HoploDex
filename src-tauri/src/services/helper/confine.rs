@@ -1,9 +1,10 @@
-//! The render helper's confinement: Landlock on Linux, a job object (made by
+//! A confined helper's confinement (the TIFF render helper's and the import
+//! helper's, research.md §8): Landlock on Linux, a job object (made by
 //! HoploDex, checked here) and mitigations on Windows, the sandbox profile on
-//! macOS (research.md §11).
+//! macOS (007's research.md §11).
 //!
 //! [`confine`] is called by the helper before it reads a byte of any document
-//! (`helper::run`). Each branch also makes the helper die with HoploDex at
+//! (`preview::helper::run`). Each branch also makes the helper die with HoploDex at
 //! once, by whatever its OS offers: `PR_SET_PDEATHSIG` on Linux, a job object
 //! that HoploDex itself owns on Windows (the kernel ends the helper when
 //! HoploDex's handle to it closes, however HoploDex ends), and a `kqueue`
@@ -19,12 +20,15 @@ pub struct Confinement {
     pub landlock_enforced: bool,
 }
 
-/// Confines this process, which is the render helper. A measure that can
+/// Confines this process, which is a helper. `memory_limit` is the most it may
+/// allocate, in bytes: `RLIMIT_DATA` on Linux and the most the job object
+/// HoploDex made for it may have on Windows (`job::spawn` is given the same
+/// number); macOS has no enforced limit. A measure that can
 /// fail without making the helper unsafe to run is best effort (Landlock on
 /// an older kernel); one that can't (no new privileges, the core dump limit)
 /// is an error, and the helper exits without reading a document.
-pub fn confine() -> Result<Confinement, String> {
-    imp::confine()
+pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
+    imp::confine(memory_limit)
 }
 
 /// Logs once per run, from the app, what this computer's kernel lets the
@@ -44,9 +48,6 @@ mod imp {
 
     use super::Confinement;
 
-    /// RLIMIT_DATA: 2 GiB of heap and writable mappings.
-    const DATA_LIMIT: libc::rlim_t = 2 * 1024 * 1024 * 1024;
-
     pub fn log_support() {
         // SAFETY: the version query takes no pointer and no flags but its own.
         let abi = unsafe {
@@ -58,14 +59,14 @@ mod imp {
             )
         };
         match abi {
-            n if n >= 4 => log::info!("the TIFF helper is confined with Landlock ABI {n}"),
+            n if n >= 4 => log::info!("the helpers are confined with Landlock ABI {n}"),
             n if n >= 1 => log::warn!(
-                "the TIFF helper's file access is confined with Landlock ABI {n}, but its \
+                "the helpers' file access is confined with Landlock ABI {n}, but their \
                  network access is not: this kernel is older than 6.7"
             ),
             _ => log::warn!(
-                "this kernel has no Landlock, so the TIFF helper is kept from files and the \
-                 network by its pipes and limits only"
+                "this kernel has no Landlock, so the helpers are kept from files and the \
+                 network by their pipes and limits only"
             ),
         }
     }
@@ -74,7 +75,7 @@ mod imp {
         format!("{what}: {}", std::io::Error::last_os_error())
     }
 
-    pub fn confine() -> Result<Confinement, String> {
+    pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
         // SAFETY: plain system calls with integer arguments.
         unsafe {
             // Dies with HoploDex. The parent may already be gone (it was
@@ -96,7 +97,9 @@ mod imp {
             if libc::setrlimit(libc::RLIMIT_CORE, &core) != 0 {
                 return Err(last_error("RLIMIT_CORE"));
             }
-            let data = libc::rlimit { rlim_cur: DATA_LIMIT, rlim_max: DATA_LIMIT };
+            // RLIMIT_DATA: heap and writable mappings.
+            let limit = memory_limit as libc::rlim_t;
+            let data = libc::rlimit { rlim_cur: limit, rlim_max: limit };
             if libc::setrlimit(libc::RLIMIT_DATA, &data) != 0 {
                 return Err(last_error("RLIMIT_DATA"));
             }
@@ -171,7 +174,7 @@ mod imp {
 
     pub fn log_support() {
         log::info!(
-            "the TIFF helper is confined with sandbox_init's pure-computation profile and ends \
+            "the helpers are confined with sandbox_init's pure-computation profile and end \
              with HoploDex"
         );
     }
@@ -186,7 +189,7 @@ mod imp {
     /// then the profile, which nothing may follow that needs a file, a
     /// process or a service. Every step fails closed: the helper exits
     /// without reading a document.
-    pub fn confine() -> Result<Confinement, String> {
+    pub fn confine(_memory_limit: usize) -> Result<Confinement, String> {
         die_with_parent()?;
         let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
         // SAFETY: a plain system call with a pointer to a local.
@@ -310,7 +313,6 @@ mod imp {
         ProcessImageLoadPolicy, SetProcessMitigationPolicy,
     };
 
-    use super::super::helper_job::MEMORY_LIMIT;
     use super::Confinement;
 
     /// `NoRemoteImages` and `NoLowMandatoryLabelImages` of
@@ -323,8 +325,8 @@ mod imp {
 
     pub fn log_support() {
         log::info!(
-            "the TIFF helper is confined with a job object HoploDex owns (2 GiB, no other \
-             process, ended when HoploDex is) and process mitigation policies"
+            "the helpers are confined with a job object HoploDex owns (memory-limited, no \
+             other process, ended when HoploDex is) and process mitigation policies"
         );
     }
 
@@ -341,8 +343,8 @@ mod imp {
     /// without reading a document. The image-load policy is the one measure
     /// that can be missing from a Windows that is otherwise fine, so it is
     /// best effort, as Landlock is on an older kernel.
-    pub fn confine() -> Result<Confinement, String> {
-        in_the_parents_job()?;
+    pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
+        in_the_parents_job(memory_limit)?;
         errors();
         let _ = mitigate(ProcessImageLoadPolicy, NO_REMOTE_OR_LOW_LABEL_IMAGES);
         mitigate(ProcessDynamicCodePolicy, PROHIBIT_DYNAMIC_CODE)?;
@@ -351,15 +353,15 @@ mod imp {
     }
 
     /// Dies with HoploDex, and is bounded, because HoploDex put this process
-    /// in a job object of its own making (`helper_job::spawn`) before it ran
+    /// in a job object of its own making (`job::spawn`) before it ran
     /// any code. The helper can't make that job itself: one it made and
     /// owned would outlive a HoploDex that was killed. So it checks that it
     /// is in a job, and that the job has the limits of HoploDex's (kill on
-    /// close, one process, 2 GiB), and refuses to serve when it isn't: a
+    /// close, one process, no more than `memory_limit`), and refuses to serve when it isn't: a
     /// helper started any other way, by hand or by a bug, is not confined.
     /// Jobs nest, so a job the whole of HoploDex was started in (a test
     /// runner's) doesn't matter: the one asked about is this process's own.
-    fn in_the_parents_job() -> Result<(), String> {
+    fn in_the_parents_job(memory_limit: usize) -> Result<(), String> {
         // SAFETY: plain system calls with pointers to locals; the structure
         // is zeroed and `size_of` is its own size.
         unsafe {
@@ -389,7 +391,7 @@ mod imp {
             if basic.LimitFlags & wanted != wanted
                 || basic.ActiveProcessLimit != 1
                 || limits.JobMemoryLimit == 0
-                || limits.JobMemoryLimit > MEMORY_LIMIT
+                || limits.JobMemoryLimit > memory_limit
             {
                 return Err("the job object is not HoploDex's".into());
             }

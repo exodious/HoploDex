@@ -784,7 +784,7 @@ artifacts.
   `PROC_THREAD_ATTRIBUTE_JOB_LIST` attribute, so the helper is in the job
   before it runs any code. The same attribute list carries
   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (its three standard handles and
-  nothing else), and the environment is empty, as before (`helper_job.rs`).
+  nothing else), and the environment is empty, as before (`services/helper/job.rs`).
   Any end of HoploDex, including `TerminateProcess`, closes the handle and
   the kernel kills the helper at once (`tests/tiff_helper_test.rs` kills a
   parent and expects the helper gone within a second). The helper checks that

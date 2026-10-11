@@ -1,20 +1,14 @@
-//! The length-prefixed frames between the app and the render helper, shared
-//! by both ends (research.md §11).
+//! The TIFF mode's requests and responses between the app and the render
+//! helper, shared by both ends (007's research.md §11), in the frames of
+//! `services::helper::frames`.
 //!
-//! A frame is a big-endian `u32` length, then that many bytes: a one-byte tag
-//! and the payload. The parent sends one [`Request::Load`] and then any
-//! number of [`Request::Render`]; the helper answers each with one
-//! [`Response`]. A reader refuses a frame over [`MAX_FRAME`] before it
-//! allocates for it, and reads a large frame in pieces, so a hostile length
-//! costs nothing until the bytes arrive.
+//! The parent sends one [`Request::Load`] and then any number of
+//! [`Request::Render`]; the helper answers each with one [`Response`].
 
 use std::io::{self, Read, Write};
 
 use super::PageSize;
-
-/// The largest frame either end accepts: 768 MiB, above the largest document
-/// the parent loads or the largest page the helper renders.
-pub const MAX_FRAME: usize = 768 * 1024 * 1024;
+use crate::services::helper::frames::{invalid, read_frame, write_frame};
 
 const LOAD: u8 = 1;
 const RENDER: u8 = 2;
@@ -48,49 +42,6 @@ pub enum Response {
     },
     /// This page couldn't be rendered; the others may.
     PageFailed,
-}
-
-fn invalid(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.to_owned())
-}
-
-fn write_frame(w: &mut impl Write, tag: u8, payload: &[u8]) -> io::Result<()> {
-    let length = payload.len() + 1;
-    if length > MAX_FRAME {
-        return Err(invalid("frame too large"));
-    }
-    w.write_all(&(length as u32).to_be_bytes())?;
-    w.write_all(&[tag])?;
-    w.write_all(payload)?;
-    w.flush()
-}
-
-/// Reads one frame's tag and payload. `None` at a clean end of input
-/// (nothing at all before the end).
-fn read_frame(r: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
-    let mut prefix = [0u8; 4];
-    let mut filled = 0;
-    while filled < prefix.len() {
-        match r.read(&mut prefix[filled..]) {
-            Ok(0) if filled == 0 => return Ok(None),
-            Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
-            Ok(n) => filled += n,
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
-            Err(err) => return Err(err),
-        }
-    }
-    let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > MAX_FRAME {
-        return Err(invalid("frame length out of range"));
-    }
-    let mut body = Vec::new();
-    let read = r.take(length as u64).read_to_end(&mut body)?;
-    if read != length {
-        return Err(io::ErrorKind::UnexpectedEof.into());
-    }
-    let tag = body[0];
-    body.drain(..1);
-    Ok(Some((tag, body)))
 }
 
 /// Sends a `Load` without copying the document into a request first.
@@ -221,49 +172,6 @@ mod tests {
             read_request(&mut reader).unwrap(),
             Some(Request::Render { page: 1, width_px: 2 })
         );
-    }
-
-    #[test]
-    fn a_truncated_frame_is_an_error_and_not_a_clean_end() {
-        let mut wire = Vec::new();
-        write_request(&mut wire, &Request::Load(vec![1; 100])).unwrap();
-        for cut in [1, 3, 4, 5, 50, wire.len() - 1] {
-            let mut reader = &wire[..cut];
-            let err = read_request(&mut reader).unwrap_err();
-            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof, "cut at {cut}");
-        }
-    }
-
-    #[test]
-    fn an_oversized_or_empty_frame_is_refused_before_any_allocation() {
-        let mut huge = (MAX_FRAME as u32 + 1).to_be_bytes().to_vec();
-        huge.push(LOAD);
-        let err = read_request(&mut &huge[..]).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-
-        let err = read_response(&mut &u32::MAX.to_be_bytes()[..]).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-
-        let err = read_request(&mut &0u32.to_be_bytes()[..]).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn a_frame_too_large_to_send_is_refused() {
-        // Only the length is checked, so no 768 MiB buffer is needed to see
-        // that the writer enforces the limit: one byte over the limit.
-        struct Sink;
-        impl Write for Sink {
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                Ok(buf.len())
-            }
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-        let payload = vec![0u8; MAX_FRAME];
-        assert!(write_load(&mut Sink, &payload).is_err());
-        assert!(write_load(&mut Sink, &payload[..MAX_FRAME - 1]).is_ok());
     }
 
     #[test]
