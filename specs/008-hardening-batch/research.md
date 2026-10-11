@@ -746,6 +746,102 @@ someone looks at it.
     system's spelling and emoji items;
   - offer no menu on macOS.
 
+  _Amended 2026-10-11 (T073, macOS 26.6.2 VM, tart `hoplodex-macos`): the
+  hook works but leaves **AutoFill**, which nothing public removes, so this
+  is the owner's decision now. Findings below._
+
+  **Findings (T073)**, from `src-tauri/src/window_controls/macos.rs` run in
+  a throwaway window (a text field holding "the quick brwon fox" with
+  "brwon" selected, a paragraph, a blank area; real right clicks posted with
+  `CGEvent`, the menu read from the hook's log and a screenshot):
+  - **Where it attaches.** The web view's class is not `WryWebView` by name:
+    objc2 names it `wry::wkwebview::class::wry_web_view::WryWebView<version>`
+    and wry's observers make the instance a hidden `NSKVONotifying_…`
+    subclass of it, so `install` walks up from the instance to the class
+    that has `wry_web_view::WryWebView` in its name. `WryWebView` defines
+    neither `willOpenMenu:withEvent:` nor `quickLookWithEvent:`, so
+    `class_addMethod` adds both (WKWebView defines `quickLookWithEvent:`
+    itself, which the new method overrides, and the superclass's
+    `willOpenMenu:withEvent:` runs first). A third method,
+    `validRequestorForSendType:returnType:` returning nil, removes Services
+    (below).
+  - **The identifiers the plan relied on are only partly there.** WebKit
+    gives Copy, Paste, Look Up, Translate, Search With Google, Share, Speech,
+    Reload, Inspect Element, Copy Link With Highlight, Spelling and Grammar
+    and its Show Spelling and Grammar, Check Document Now, Check Grammar With
+    Spelling and Check Spelling While Typing items a `WKMenuItemIdentifier…`.
+    **Cut, the spelling guesses, Ignore Spelling, Learn Spelling and
+    Correct Spelling Automatically have none**: `identifier` returns
+    AppKit's default, the action's name `forwardContextMenuAction:`, so an
+    identifier allowlist removes Cut and the guesses. The hook keeps them by
+    `tag` (WebKit's `ContextMenuAction`: Cut 13, guess 15, Ignore 17, Learn
+    18) together with that action. These numbers are WebKit's internal
+    enum and can change in a WebKit update; an allowlist fails safe (the
+    item goes), and T084's macOS check would show it.
+  - **Items seen** (field with a selected misspelled word): the guesses
+    (brown, Bryon), Ignore Spelling, Learn Spelling, Look Up "brwon",
+    Translate "brwon", Search with Google, Cut, Copy, Paste, Spelling and
+    Grammar (Show Spelling and Grammar, Check Document Now, Check Spelling
+    While Typing, Check Grammar With Spelling, Correct Spelling
+    Automatically), Substitutions, Transformations, Font, Speech, Paragraph
+    Direction, Selection Direction, Share…, Inspect Element; then AppKit's
+    AutoFill and Services. On selected text outside a field: Look Up,
+    Translate, Search with Google, Copy, Copy Link with Highlight, Share…,
+    Speech, Inspect Element, then AutoFill and Services. On a blank area:
+    Reload, Inspect Element, then AutoFill. **No Emoji & Symbols and no
+    Writing Tools item was offered** in any of them (the VM has no Apple
+    Intelligence, so Writing Tools is untested), so the
+    `orderFrontCharacterPalette:` rule has nothing to match here.
+  - **After the hook** (field): the guesses, Ignore Spelling, Learn
+    Spelling, Cut, Copy, Paste, Spelling and Grammar (Show Spelling and
+    Grammar, Check Spelling While Typing), AutoFill. Selected text outside a
+    field: Copy, AutoFill. Blank area: AutoFill only (the page cancels
+    `contextmenu` there, §12).
+  - **Each excluded item**: Look Up, Translate, Search With Google, Share,
+    Speech, Font, Substitutions, Transformations, Writing Direction
+    (Paragraph Direction and Selection Direction), Inspect Element and
+    Reload were **removed**, by the allowlist in `willOpenMenu:withEvent:`.
+    **Services: removed**, but not by the hook: AppKit adds it after the
+    hook, and it isn't in the menu's `itemArray` while the menu is open.
+    A nil `validRequestorForSendType:returnType:` takes it away (checked
+    with and without that method). **Writing Tools: not offered in the VM**,
+    so not confirmed. **AutoFill: not removable.** AppKit appends it to
+    every context menu after `willOpenMenu:withEvent:`, outside the menu's
+    items: the menu's `itemArray` has no AutoFill item at the start of
+    tracking, a deferred pass in the tracking run loop mode saw none, and its
+    delegate is WebKit's `WKMenuDelegate`, which the hook leaves alone.
+    `allowsContextMenuPlugIns = NO` (set by the hook) doesn't remove it. The
+    only ways found are private AppKit methods
+    (`-[NSApplication _appendSystemAutoFillMenuItemsToMenu:]`,
+    `+[NSMenuItem _standardAutoFillMenuItem]`,
+    `-[NSTextInputContext prepareContextMenu:]`), not tried.
+  - **Look Up, stopped?**
+    - ⌃⌘D: **yes, by the hook.** Without the hook, ⌃⌘D shows the Look Up
+      popover over the selected word, and the page gets no `keydown` for it
+      (a posted ⌃⌘D never reached the page's capture listener in any run, so
+      the page's ⌃⌘D handling in §12 does nothing here). With the no-op
+      `quickLookWithEvent:` it shows nothing (4 of 4 runs), and without that
+      method but with the `validRequestor` one it shows the popover: the
+      method is ⌃⌘D's entry point. Preventing
+      `webkitmouseforcewillbegin` also stops it (2 of 2): WebKit raises that
+      event when ⌃⌘D starts, and the popover didn't open after the page
+      prevented it.
+    - The three-finger-tap Look Up: **not produced**; it reaches the same
+      `quickLookWithEvent:` (NSResponder's method for it, and ⌃⌘D's entry
+      here), which does nothing.
+    - **Force click: not produced.** The VM has no Force Touch hardware
+      and no `CGEvent` was found that WebKit takes for a pressure click. So
+      that a page's `preventDefault()` on `webkitmouseforcewillbegin` stops a
+      force click's Look Up is **not confirmed here**: what was confirmed is
+      that it stops ⌃⌘D's popover through the same event, and Apple documents
+      it for the force click. It needs a check by hand on a Mac with a
+      trackpad (T084 and the pull request's macOS check).
+  - **Not in the plan, small choices**: the hook turns off the menu's
+    plug-in items (`allowsContextMenuPlugIns`); it doesn't keep "No Guesses
+    Found" (Linux's filter does), whose tag wasn't seen; the same class
+    is also the PDF surface's web view, which cancels `contextmenu` in its
+    page, so nothing changes there.
+
 **Rationale**:
 - A page can only cancel a menu outright. It can't remove Look Up or Reload
   from a text field's menu. So the trimming FR-011 asks for has to be done
