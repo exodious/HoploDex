@@ -353,6 +353,9 @@ The final phase of tasks.md, done as part of opening the pull request:
 - **#73** (web view navigation): comment that reload and history keys,
   buttons and menu items are now blocked in the main window, but its
   navigation handling itself is unchanged, so #73 stays open.
+  _Amended 2026-10-11: #73 was already closed by #87 (2026-10-10), so the
+  comment notes what 008 adds beside #87's navigation fix, without
+  saying it stays open._
 - **#21** (release security review): comment that the review must cover:
   - `ScopedSession` and `UNSCOPED_COMMANDS`;
   - the frontend scope;
