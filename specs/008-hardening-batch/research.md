@@ -826,6 +826,15 @@ someone looks at it.
     _Amended 2026-10-11 (T085): that run's page had one history entry, so it
     could not show a button or key going back. The check's page now has two
     (Windows' result below), and the Linux run needs repeating with it._
+
+    _Linux rerun with the two-entry page (T106, 2026-10-11, the dev container,
+    `scripts/window-controls-check.sh`, exit 0)_: the menus and items were the
+    same as above. None of the keys above moved the page through its history
+    or reloaded it, and the typed text stayed. **The mouse's side buttons do
+    navigate natively on WebKitGTK** with no guard: back went from entry 2 to
+    1 and forward from 1 to 2. With the page's §12 guard on, both left the
+    history entry alone. So on Linux, as on Windows, the page layer is what
+    stops the side buttons; the check runs both ways.
 - **Windows (WebView2)**: `ICoreWebView2_11::add_ContextMenuRequested` on
   the main web view, as the surface does. It keeps items by `Name`:
   - `cut`, `copy`, `paste`, `selectAll`, `undo`, `redo`, `emoji`;
@@ -1118,9 +1127,10 @@ measures cover what a page can't cancel.
     not a second one; the check runs both ways._
 - **Linux**: WebKitGTK binds none of the reload keys itself (an
   application such as Epiphany does), and GTK3 has no swipe navigation.
-  Whether it acts on mouse buttons 8 and 9 is confirmed by the check. The
-  page's handlers (§12) are the measure, and the check confirms the window
-  doesn't reload.
+  It does act on mouse buttons 8 and 9: the check's two-entry page went back
+  and forward on them with no guard (T106), and stayed put with the page's
+  guard (§12). The page's handlers are the measure, and the check confirms
+  the window doesn't reload.
 - **macOS**: WKWebView binds no reload key unless a menu item does, and
   HoploDex's menu has none. `allowsBackForwardNavigationGestures` stays
   `NO` (WKWebView's default). The page's handlers cover ⌘R, ⌘[ and ⌘].
@@ -1128,6 +1138,9 @@ measures cover what a page can't cancel.
   side buttons unless the page cancels them (above). The Linux and macOS
   results were recorded on a one-entry page; they are repeated with the
   check's two-entry page before they are relied on._
+  _Amended 2026-10-11 (T106): Linux is repeated with the two-entry page;
+  it navigates on the side buttons too, and the guard stops it (above). macOS
+  still needs repeating._
 - **Every OS**: the main window has one history entry (the app is a single
   page with no routing), so Back has nowhere to go. It is blocked anyway, as
   #40 asks.

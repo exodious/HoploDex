@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import {
   $,
@@ -18,15 +19,18 @@ import {
 } from "../support/ui";
 import {
   chooseMenuItem,
+  confirmTakeOver,
   invokeCommand,
   requestQuit,
   selectChooserRow,
+  selectedChooserRow,
   submitPassphrase,
   settleChooserPlate,
   unlock,
   waitForChooser,
 } from "../support/ui";
-import { relaunchApp } from "../support/app";
+import { killApp, relaunchApp } from "../support/app";
+import { sandboxPath, seedCollection } from "../support/sandbox";
 import {
   SCREENSHOT_WINDOW,
   chooseTheme,
@@ -906,7 +910,17 @@ for (const theme of ["Light", "Dark"] as const) {
     it("closing with a backup", async () => {
       // The seeded collection was backed up today, so a real close makes no
       // backup: the closing screen is shown with the events a long one sends.
-      await emitFromBackend("session:closing", { reason: "closed" });
+      // The page ends only the session an event names (008 research.md §3).
+      const sessionId = await browser.execute(async () => {
+        const internals = (
+          window as unknown as {
+            __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+          }
+        ).__TAURI_INTERNALS__;
+        return ((await internals.invoke("get_database_status", {})) as { sessionId: number })
+          .sessionId;
+      });
+      await emitFromBackend("session:closing", { reason: "closed", sessionId });
       await emitFromBackend("backup:progress", {
         processed: 96_000_000,
         total: 212_000_000,
@@ -1016,6 +1030,225 @@ describe("Screenshots: replacing a record with a disposed row", () => {
     await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await closeDialog();
     await chooseTheme("Light");
+  });
+});
+
+// specs/008-hardening-batch contracts/ui.md §5. These need states the seeded
+// collection doesn't start in, so they come after the main walk and before the
+// last block, which relaunches the app on whichever seed is there.
+
+const SHARED = "Shared collection";
+const PENDING_TITLE = "Unsaved changes to Beretta 92FS — edit";
+
+/** Replaces the sandbox's databases with a new seed (the pending changes of
+ * "Shared collection" kept by `pendingFrom` when given, else by this build)
+ * and starts the app on them. The seed won't write into a folder that
+ * exists, so the app is stopped and the old one removed first. */
+async function reseed(pendingFrom?: string) {
+  await killApp();
+  fs.rmSync(path.join(sandboxPath()!, "seed"), { recursive: true, force: true });
+  seedCollection({ pendingFrom });
+  await relaunchApp();
+}
+
+/** Opens "Shared collection", taking it over from "Workshop PC" when asked,
+ * and waits for the pending changes dialog. */
+async function openSharedToPending() {
+  await waitForChooser();
+  if ((await selectedChooserRow()) !== SHARED) await selectChooserRow(SHARED);
+  await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+  const takeOver = await $("button=Take over…");
+  if (await takeOver.waitForExist({ timeout: 2000 }).catch(() => false)) {
+    await confirmTakeOver(SHARED, process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+  }
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (title: string) =>
+          [...document.querySelectorAll('[role="dialog"] .hd-dialog__title')].some(
+            (t) => t.textContent?.trim() === title,
+          ),
+        PENDING_TITLE,
+      ),
+    { timeout: 10000, timeoutMsg: `no dialog "${PENDING_TITLE}"` },
+  );
+  await settle();
+}
+
+describe("Screenshots: pending changes kept by another version", () => {
+  it("offers to close the database, with no Resume editing", async () => {
+    await reseed("1.2.0");
+    await openSharedToPending();
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`73-pending-other-version-${theme.toLowerCase()}`);
+    }
+    await chooseTheme("Light");
+  });
+});
+
+describe("Screenshots: pending changes whose form couldn't be opened", () => {
+  it("keeps the dialog and says so", async () => {
+    await reseed();
+    await openSharedToPending();
+    // The record loads when Resume editing is pressed; make that fail once the
+    // way a backend failure would, so the dialog comes back with its error.
+    // (The web view's `invoke` can't be replaced, but the request it sends is
+    // a `fetch`, which can: answer get_firearm with an error, as the IPC does.)
+    await browser.execute(() => {
+      const send = window.fetch;
+      window.fetch = (input, init) =>
+        String(input).endsWith("/get_firearm")
+          ? Promise.resolve(
+              new Response(JSON.stringify({ code: "INTERNAL_ERROR", message: "Failed." }), {
+                headers: { "Tauri-Response": "error", "Content-Type": "application/json" },
+              }),
+            )
+          : send.call(window, input, init);
+      (window as unknown as { __hdSendFetch: typeof send }).__hdSendFetch = send;
+    });
+    await clickButton("Resume editing");
+    await $('[role="dialog"] .hd-field__error[role="alert"]').waitForExist({
+      timeout: 10000,
+      timeoutMsg: "the resume never failed",
+    });
+    await $("button=Resume editing").waitForExist();
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`74-pending-resume-failed-${theme.toLowerCase()}`);
+    }
+    await chooseTheme("Light");
+    await browser.execute(() => {
+      const page = window as unknown as { __hdSendFetch?: typeof window.fetch };
+      if (page.__hdSendFetch) window.fetch = page.__hdSendFetch;
+    });
+    // Leave the pending changes: discard them, to reach the collection.
+    await clickButton("Discard changes");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Discard changes");
+    await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
+    await settle();
+  });
+});
+
+// FR-006 to FR-008: the import dialog while a large file is read, and after a
+// file is refused. The sandbox's open collection serves for both.
+describe("Screenshots: the import dialog's reading phase", () => {
+  it("reading a large file, with Stop reading", async () => {
+    // Reading a file of real size takes a few seconds, too short to shoot
+    // twice, and it keeps the app busy so that a shot would wait for it to
+    // end. So the page is told what the backend would say: the import
+    // request is held, the backend's progress events are sent, and Stop
+    // reading ends the held request the way `cancel_import` does
+    // (OPERATION_STOPPED). The request is a `fetch` the page can replace; its
+    // `invoke` can't be (us5-export-import.e2e.ts reads a real 180 MB file).
+    await goTo("Collection");
+    await chooseTheme("Light");
+    await openDialog("Import");
+    await fill("Spreadsheet file", "/home/user/Documents/large-inventory.csv");
+    await browser.execute(() => {
+      const send = window.fetch;
+      let release: ((response: Response) => void) | undefined;
+      const answer = (code: string, message: string, ok: boolean) =>
+        new Response(JSON.stringify(ok ? null : { code, message }), {
+          headers: {
+            "Tauri-Response": ok ? "ok" : "error",
+            "Content-Type": "application/json",
+          },
+        });
+      window.fetch = (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/import_collection")) {
+          return new Promise<Response>((resolve) => {
+            release = resolve;
+          });
+        }
+        if (url.endsWith("/cancel_import")) {
+          release?.(answer("OPERATION_STOPPED", "The import was cancelled.", false));
+          return Promise.resolve(answer("", "", true));
+        }
+        return send.call(window, input, init);
+      };
+      (window as unknown as { __hdSendFetch: typeof send }).__hdSendFetch = send;
+    });
+    await clickButton("Import", { settles: false });
+    await $("button=Stop reading").waitForExist();
+    // The held request counts as work: report the app idle for the shots.
+    await browser.execute(() => {
+      Object.defineProperty(window, "__hoplodexBusy", {
+        configurable: true,
+        get: () => 0,
+        set: () => undefined,
+      });
+    });
+    await emitFromBackend("import_collection:progress", {
+      phase: "reading",
+      file: "large-inventory.csv",
+      processed: 94_000_000,
+      total: 180_000_000,
+    });
+    await browser.waitUntil(
+      async () => (await $(".hd-progress__label").getText()).includes("large-inventory.csv… 52%"),
+      { timeoutMsg: "the reading's percentage never showed" },
+    );
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`75-import-reading-${theme.toLowerCase()}`);
+    }
+    await chooseTheme("Light");
+    await clickButton("Stop reading", { settles: false });
+    await $('[role="dialog"] [role="alert"]').waitForExist({ timeout: 5000 });
+    await browser.execute(() => {
+      delete (window as unknown as { __hoplodexBusy?: number }).__hoplodexBusy;
+      const page = window as unknown as { __hdSendFetch?: typeof window.fetch };
+      if (page.__hdSendFetch) window.fetch = page.__hdSendFetch;
+    });
+    await settle();
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
+  it("after a refused file", async () => {
+    const samples = path.join(
+      path.dirname(process.env.HOPLODEX_E2E_CONFIG_HOME!),
+      "import-samples",
+    );
+    await openDialog("Import");
+    await fill("Spreadsheet file", path.join(samples, "import-refused-too-many-sheets.xlsx"));
+    await clickButton("Import");
+    await $('[role="dialog"] [role="alert"]').waitForExist({
+      timeout: 15000,
+      timeoutMsg: "the refusal never appeared",
+    });
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`76-import-refused-${theme.toLowerCase()}`);
+    }
+    await chooseTheme("Light");
+    await closeDialog();
+  });
+});
+
+// research.md §10: a long text area counts from 90% of its maximum and shows
+// the error past it.
+describe("Screenshots: a note near and over its maximum", () => {
+  it("shows the counter, then the error", async () => {
+    await goTo("Collection");
+    await chooseTheme("Light");
+    await openDialog("Add firearm");
+    await fill("Notes", "n".repeat(3700));
+    await $('[id$="-count"]').waitForExist();
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`77-note-counter-${theme.toLowerCase()}`, { fullPage: true });
+    }
+    await fill("Notes", "n".repeat(4100));
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`78-note-over-maximum-${theme.toLowerCase()}`, { fullPage: true });
+    }
+    await chooseTheme("Light");
+    await closeDialog();
   });
 });
 
