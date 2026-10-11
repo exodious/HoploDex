@@ -901,9 +901,12 @@ someone looks at it.
   `NSView` hook AppKit calls before showing a context menu. The hook removes
   every item except:
   - items whose `identifier` is `WKMenuItemIdentifierCut`, `Copy`, `Paste`,
-    `SpellingMenu` (and its submenu's Show Spelling and Grammar and Check
-    Spelling While Typing), `SpellingGuess`, `IgnoreSpelling` or
-    `LearnSpelling`;
+    `SelectAll`, `SpellingMenu` (and its submenu's Show Spelling and Grammar
+    and Check Spelling While Typing), `SpellingGuess`, `IgnoreSpelling` or
+    `LearnSpelling`; _Amended 2026-10-11 (T129): `SelectAll` and, for a Select
+    All that arrives without WebKit's identifier, any item whose action is
+    `selectAll:`, both added because FR-011 lists select all "where the
+    system offers it" (see "Select All" below)_;
   - AppKit's Emoji & Symbols, identified by its action
     `orderFrontCharacterPalette:`.
 
@@ -1094,6 +1097,26 @@ someone looks at it.
     not reach the no-op, as before: a synthesized ⌃⌘D can't produce Look Up in
     the VM (6ddaac4), so that part still waits for M1 (T110) on a real
     keyboard;
+  - **Select All (T129, 2026-10-11, the macOS 26.6.2 VM, WebKit 605.1.15,
+    `scripts/macos/window-controls-check.sh`, exit 0 in 2 of 2 runs)**: the
+    first filter removed `WKMenuItemIdentifierSelectAll` (a test asserted it),
+    which FR-011 does not allow, since it lists select all where the system
+    offers it. The allowlist now keeps an item whose identifier is
+    `WKMenuItemIdentifierSelectAll` or whose action is `selectAll:` (AppKit's
+    own action name; a look-alike such as `selectAllChildren:` does not
+    match), and the check's own FR-011 list (`in_fr011_list`) accepts both.
+    **Select All was never offered**: in both runs the log has no Select All
+    item, by identifier, action or title, at any of the check's targets (blank
+    area, table row, button, image, a text field with a word under the
+    pointer, a text field with a misspelled word, selected text in a
+    paragraph). The text field's menu on macOS 26 holds Cut, Copy, Paste and
+    Spelling and Grammar (with the guesses, Ignore and Learn Spelling where a
+    word is misspelled), as above. The Select All seen on this VM was the
+    app menu bar's Edit menu (accessibility dump `selectAll:`), which is not a
+    context menu. So the keep rules for Select All are covered by unit tests
+    (`window_controls::macos::tests`), and **untested in practice**: nothing
+    in the VM produced a Select All item to keep. A macOS release that adds
+    one would show it in this check's log, as "kept" under either rule;
   - **⌃⌘D on a selected paragraph: no window opened, and `quickLookWithEvent:`
     never reached the no-op, so this part of the check proves nothing yet.**
     With `--unfiltered` (the same page with no `window_controls::apply`) no

@@ -58,11 +58,16 @@ const KEPT_IDENTIFIERS: &[&str] = &[
     "WKMenuItemIdentifierCut",
     "WKMenuItemIdentifierCopy",
     "WKMenuItemIdentifierPaste",
+    "WKMenuItemIdentifierSelectAll",
     "WKMenuItemIdentifierSpellingMenu",
     "WKMenuItemIdentifierSpellingGuess",
     "WKMenuItemIdentifierIgnoreSpelling",
     "WKMenuItemIdentifierLearnSpelling",
 ];
+
+/// The action of a Select All item that arrives without WebKit's identifier
+/// (FR-011 offers select all where the system does).
+const SELECT_ALL_ACTION: &str = "selectAll:";
 
 /// The Spelling and Grammar menu's two kept items.
 const KEPT_SPELLING_IDENTIFIERS: &[&str] =
@@ -98,6 +103,7 @@ struct Item {
 fn keep_top_level(item: &Item) -> bool {
     item.identifier.as_deref().is_some_and(|id| KEPT_IDENTIFIERS.contains(&id))
         || item.action.as_deref() == Some(EMOJI_ACTION)
+        || item.action.as_deref() == Some(SELECT_ALL_ACTION)
         || (item.action.as_deref() == Some(TAGGED_ACTION) && KEPT_TAGS.contains(&item.tag))
 }
 
@@ -447,6 +453,7 @@ mod tests {
             "WKMenuItemIdentifierCut",
             "WKMenuItemIdentifierCopy",
             "WKMenuItemIdentifierPaste",
+            "WKMenuItemIdentifierSelectAll",
             "WKMenuItemIdentifierSpellingMenu",
             "WKMenuItemIdentifierSpellingGuess",
             "WKMenuItemIdentifierIgnoreSpelling",
@@ -455,6 +462,14 @@ mod tests {
             assert!(keep_top_level(&item(kept)), "{kept}");
         }
         assert!(keep_top_level(&action("orderFrontCharacterPalette:")));
+        // Select All without WebKit's identifier (FR-011): by its action.
+        assert!(keep_top_level(&action("selectAll:")));
+        assert!(keep_top_level(&Item {
+            identifier: Some("selectAll:".into()),
+            action: Some("selectAll:".into()),
+            tag: 0,
+            separator: false
+        }));
         for removed in [
             "WKMenuItemIdentifierLookUp",
             "WKMenuItemIdentifierTranslate",
@@ -467,11 +482,13 @@ mod tests {
             "WKMenuItemIdentifierWritingDirectionMenu",
             "WKMenuItemIdentifierInspectElement",
             "WKMenuItemIdentifierReload",
-            "WKMenuItemIdentifierSelectAll",
         ] {
             assert!(!keep_top_level(&item(removed)), "{removed}");
         }
         assert!(!keep_top_level(&action("showWritingTools:")));
+        // Only Select All's own action matches, not a look-alike.
+        assert!(!keep_top_level(&action("selectAllChildren:")));
+        assert!(!keep_top_level(&action("selectParagraph:")));
         assert!(!keep_top_level(&Item {
             identifier: None,
             action: None,

@@ -226,6 +226,7 @@ fn in_fr011_list(line: &str) -> bool {
             "WKMenuItemIdentifierCut",
             "WKMenuItemIdentifierCopy",
             "WKMenuItemIdentifierPaste",
+            "WKMenuItemIdentifierSelectAll",
             "WKMenuItemIdentifierSpellingMenu",
             "WKMenuItemIdentifierSpellingGuess",
             "WKMenuItemIdentifierIgnoreSpelling",
@@ -237,6 +238,10 @@ fn in_fr011_list(line: &str) -> bool {
             return true;
         }
         if line.contains("orderFrontCharacterPalette:") {
+            return true;
+        }
+        // Select All, if it arrives without WebKit's identifier.
+        if line.contains("action=Some(\"selectAll:\")") {
             return true;
         }
         // Items WebKit gives no identifier: Cut, the guesses, Ignore and Learn
