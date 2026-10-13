@@ -94,7 +94,7 @@ unsafe extern "C" {
 /// for the life of the app on Linux, and a second surface under the same key
 /// would find the protocol "already registered" and never get it, so every
 /// PDF after the first would fail to load (found by
-/// `us13-document-preview.e2e.ts`). Each surface leaves one small entry in
+/// `us13-document-preview-preview.e2e.ts`). Each surface leaves one small entry in
 /// the store, and nothing on disk.
 pub(super) fn customize<R: Runtime>(
     builder: WebviewBuilder<R>,

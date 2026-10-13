@@ -133,7 +133,7 @@ impl<R: Runtime> AppSurfaces<R> {
 /// Escape and F6 pressed in the surface leave the keyboard focus with it, as
 /// a web view of its own (the page's own `focus()` can't move it): the main
 /// web view takes it back, so the keys that follow reach the viewer (found by
-/// `us13-document-preview.e2e.ts`, where → after F6 went to the PDF).
+/// `us13-document-preview-preview.e2e.ts`, where → after F6 went to the PDF).
 fn give_focus_back<R: Runtime>(app: &AppHandle<R>) {
     if let Some(main) = app.get_webview("main")
         && let Err(err) = main.set_focus()

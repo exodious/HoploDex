@@ -548,9 +548,11 @@ into it. That binary embeds whatever is in `dist/`, so **run `npm run build`
 first** (the same goes for `npm run screenshots`).
 
 Spec files run in parallel, each in a WebdriverIO worker of its own: up to
-`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 4. Each
-worker runs its own app (a few hundred MB for WebKitGTK), so more workers
-than that gain little and slow every step. `wdio.conf.ts` builds the app and
+`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 8. Each
+worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
+threads, which is why `scripts/dev-container.sh` raises the container's
+process limit. A run takes at least as long as its longest spec file, so keep
+each file to one user story or so. `wdio.conf.ts` builds the app and
 the human-testing seed once, in `onPrepare`, before any worker starts. For
 debugging, run one spec file at a time, so the log isn't interleaved:
 
@@ -902,8 +904,8 @@ before `npm run test:e2e -- --spec <file>` runs it:
    `waitForCollection()`, or `unlock(passphrase)` for a seeded collection,
    from `e2e/support/ui.ts`, instead of the typed-in paths and passphrase.
    A spec that needs the seeded collection must be named in `beforeSession`
-   in `wdio.conf.ts` (only the screenshot walk and `us13-document-preview`
-   are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
+   in `wdio.conf.ts` (only the screenshot walk, the `us13-document-preview-*`
+   files and `us14-session-isolation` are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
 2. Import `$`, `browser` and `expect` from `../support/ui`, like the other
    specs, not from `@wdio/globals`.
 3. Replace the recorded selectors where a helper exists (`clickButton`,

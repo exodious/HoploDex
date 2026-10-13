@@ -128,6 +128,10 @@ args=(
   # host apps that own the sockets. A no-op without SELinux.
   --security-opt label=disable
   --shm-size 1g
+  # Each E2E worker's app, web view processes, Xvfb and node worker run
+  # several hundred threads; 4 workers peak near podman's default of 2048,
+  # and more fail to spawn (EAGAIN).
+  --pids-limit 16384
   -v "$repo:/workspace"
   -v "$home_volume:/home/dev"
   -v "$node_modules_volume:/workspace/node_modules"
