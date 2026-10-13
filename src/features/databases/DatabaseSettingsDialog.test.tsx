@@ -401,12 +401,15 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
 
   it("does not submit with Enter while nothing differs", async () => {
     const user = userEvent.setup();
-    renderSettings();
+    const props = renderSettings();
 
     await user.click(screen.getByLabelText("Keep the latest"));
     await user.keyboard("{Enter}");
 
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+    // Nor does it count as a save: the dialog stays as it is.
+    expect(props.onSaved).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
   });
 
   it("saves nothing and keeps nothing when Cancel is chosen after a change", async () => {

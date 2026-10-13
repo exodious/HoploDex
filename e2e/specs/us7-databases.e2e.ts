@@ -175,7 +175,27 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
         };
       }, ACKNOWLEDGEMENT);
 
-    // Before any warning, then with a weak (but long enough) passphrase's.
+    // Where the acknowledgement and Create are, to tell whether the warning
+    // moves them: the dialog is tall enough here that they stay in view
+    // either way, so what shows the bug is that they are pushed down.
+    const tops = () =>
+      browser.execute((acknowledgement: string) => {
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+        const label = [...dialog.querySelectorAll("label")].find(
+          (l) => l.textContent?.trim() === acknowledgement,
+        );
+        const create = [...dialog.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Create database",
+        );
+        return {
+          checkbox: label?.getBoundingClientRect().top ?? -1,
+          create: create?.getBoundingClientRect().top ?? -1,
+        };
+      }, ACKNOWLEDGEMENT);
+
+    // Before any warning (and before anything is typed, when nothing is shown
+    // under the field), then with a weak (but long enough) passphrase's.
+    const empty = await tops();
     await fill("Passphrase", "p");
     await fill("Confirm passphrase", "p");
     const before = await inView();
@@ -194,6 +214,10 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
       scrolled: false,
       suggestion: expect.stringMatching(/\S/),
     });
+    // The warning took its place in the layout without moving anything.
+    const after = await tops();
+    expect(Math.abs(after.checkbox - empty.checkbox)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.create - empty.create)).toBeLessThanOrEqual(1);
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
   });
