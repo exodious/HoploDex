@@ -58,6 +58,7 @@ facts each text states are required.
 - **`ConfirmDialog`** gains an optional third action (`alternativeLabel`,
   `onAlternative`) for the save / discard / cancel question (§6). No screen
   builds its own three-button prompt.
+- _Amended 2026-10-13: `NumberField` (`src/components/`) is a whole number you can type or step with up and down buttons, ArrowUp and ArrowDown (clamped to `min`..`max`); it is the app's own control, not the browser's `type="number"` spinners, which differ in WebKitGTK, WebView2 and WKWebView. Every disabled field (label, hint, control, prefix and suffix, `Select` trigger, `Checkbox`) takes the one look from the `--disabled-ink`, `--disabled-rule` and `--disabled-ground` tokens in `tokens.css` (#35)._
 - **`Menu`** (new, `src/components/`, on `@radix-ui/react-dropdown-menu`):
   the database menu (§4). It gives the menu roles and arrow-key navigation
   (WCAG 2.1 AA) that a popover of buttons does not.
@@ -295,10 +296,14 @@ database file's full path ("The database file is <path>"), with three
 sections in this order, each a titled fieldset. Settings apply with **Save** in the
 footer, like every other form.
 
+_Amended 2026-10-13: **Save** stays disabled until something differs from what is saved, and **Cancel** throws every change away, including a choice about this computer's saved passphrase (#34). The "Documents" fieldset the dialog gained since is the exception: it saves at once, by design, with its own consent dialog (spec 007)._
+
 **Backups**
 - `Checkbox` **Make automatic backups**
+  _Amended 2026-10-13: while it is unticked, **Keep the latest**, **Change…** and **Use the default** are disabled (and look it). **Restore from a backup…** and **Delete all backups…** stay enabled: they work on backups that already exist (#35)._
 - **Keep the latest**: a number field (`hd-field--third`), with "backups"
   after it
+  _Amended 2026-10-13: it is a `NumberField` with up and down buttons ("Increase Keep the latest", "Decrease Keep the latest") and ArrowUp / ArrowDown, from 1 to 100; typing still works, and "Enter a whole number of backups." and the backend's range still apply (#35)._
 - **Location**: shows the resolved path and "(next to the database)" for
   the default, plus **Change…** (folder picker) and **Use the default**. An
   unavailable custom location shows "Not available on this computer" (FR-027).
@@ -389,6 +394,8 @@ through, so the lock settings wait too:
   can reopen the database after it locks."
 
 **This computer** (acts at once, not with **Save**)
+
+_Amended 2026-10-13: it waits for **Save** like the rest of the form (#34). The control is a `Checkbox` "Remember the passphrase on this computer", ticked while the passphrase is saved. Ticking it, or unticking it, only stages the choice, with the state line under it saying what **Save** will do ("When you click Save, you'll be asked for the passphrase to remember it." / "The saved passphrase will be forgotten when you click Save. The database will then ask for its passphrase each time it opens."), and **Cancel** discards it without touching the keyring. **Save** does the passphrase first, then the other settings: forgetting calls the keyring and, if that fails, saves nothing ("... Nothing was saved."); remembering shows the FR-017 confirmation (§8) with the "Passphrase" field then, not before, and cancelling it returns to the form with nothing saved and the choice still staged. The passphrase is read from that field when confirmed and is not kept after the call. When the passphrase step succeeds and the settings then fail, the dialog stays open, says "The passphrase is now remembered on this computer." (or "The saved passphrase was forgotten.") beside the settings' own error, and the checkbox shows the state as it now is. Where this computer has no keyring and nothing is saved, there is no checkbox, only the unavailable text. The text below is what the section said before._
 - Shows the current state: "The passphrase is remembered on this computer:
   the database opens without asking for it." with **Forget saved
   passphrase**, or "Not remembered: the database asks for its passphrase each
@@ -400,6 +407,8 @@ through, so the lock settings wait too:
 - Unavailable-keyring text as in §1.
 
 ## 8. Passphrase dialogs
+
+_Amended 2026-10-13: from the settings, the confirmation appears when **Save** is clicked with Remember chosen, not when it is chosen (§7, #34)._
 
 **Remember-passphrase confirmation** (FR-017, US5-1): a `ConfirmDialog`
 (not destructive styling, confirm label "Remember passphrase"), titled
@@ -428,6 +437,8 @@ opens with the old passphrase." `INSUFFICIENT_SPACE`: "Changing the
 passphrase needs <size> free on the database's drive; <available> is free."
 
 ## 9. Restore from a backup (FR-028, US3-5, US3-6)
+
+_Amended 2026-10-13: **Cancel** and closing the dialog return to the dialog it was opened from: the Database settings when **Restore from a backup…** was chosen there, the collection when it was chosen in the Database menu. A completed restore still ends in the collection (#33)._
 
 A `Dialog` (`size="lg"`) titled "Restore from a backup", or "Restore <name>
 from a backup" for a damaged database restored from the chooser (US3-6),
@@ -469,6 +480,8 @@ and the dialog has no close button and ignores Escape. Afterwards the
 database is open, and a notice says it now opens with the passphrase from <date> (US3-5).
 
 ## 10. Notes shown once in the collection
+
+_Amended 2026-10-13: the notes head the Collection, Accessories and Insurance pages, not only the collection page, and no record or policy page. A note dismissed on one is gone from all three, since a dismissal is kept in the database's status (#59)._
 
 Both are dismissible banners at the top of the collection page, in the
 existing notice style:

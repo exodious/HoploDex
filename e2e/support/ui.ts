@@ -696,7 +696,7 @@ export async function addFirearm(firearm: NewFirearm) {
 export const E2E_PASSPHRASE = "end to end test passphrase";
 
 /** The FR-004 acknowledgement in the create dialog. */
-const ACKNOWLEDGEMENT =
+export const ACKNOWLEDGEMENT =
   "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
 
 /** The sandbox's documents folder, where the harness points the app's

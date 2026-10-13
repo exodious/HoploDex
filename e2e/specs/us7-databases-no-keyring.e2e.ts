@@ -33,7 +33,11 @@ describe("User Story 5 (003) - without a keyring", () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await expect($("fieldset*=This computer")).toHaveText(expect.stringContaining(UNAVAILABLE));
-    expect(await $("button*=Remember the passphrase").isExisting()).toBe(false);
+    expect(await $("fieldset*=This computer").$('button[role="checkbox"]').isExisting()).toBe(
+      false,
+    );
+    // Nothing to remember, and nothing changed: nothing to save.
+    await expect($('[role="dialog"] button[type="submit"]')).toBeDisabled();
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
 

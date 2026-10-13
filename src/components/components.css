@@ -162,9 +162,25 @@
   border-color: var(--danger);
 }
 
+/* Disabled fields (--disabled-* tokens): label, hint, control, prefix and
+   suffix all fall back together, and the border turns dashed so the state
+   isn't carried by color alone. */
+.hd-field[data-disabled] .hd-field__label,
+.hd-field[data-disabled] .hd-field__hint {
+  color: var(--disabled-ink);
+}
+
 .hd-input--disabled {
-  background: color-mix(in srgb, var(--sheet-sunk) 55%, var(--sheet));
+  background: var(--disabled-ground);
+  border-color: var(--disabled-rule);
   border-style: dashed;
+}
+
+.hd-input--disabled .hd-input__prefix,
+.hd-input--disabled .hd-input__suffix,
+.hd-input--disabled .hd-input__control {
+  color: var(--disabled-ink);
+  -webkit-text-fill-color: var(--disabled-ink);
 }
 
 .hd-input__prefix {
@@ -211,6 +227,11 @@
   cursor: not-allowed;
 }
 
+.hd-input__action:disabled {
+  color: var(--disabled-ink);
+  cursor: not-allowed;
+}
+
 .hd-input__action {
   display: grid;
   place-items: center;
@@ -222,6 +243,60 @@
   background: transparent;
   color: var(--ink-2);
   cursor: pointer;
+}
+
+/* A number's stepper: up and down buttons in a column at the end of the input
+   (NumberField). The same on every web engine, unlike the native spinners. */
+.hd-stepper {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  flex: none;
+  width: 28px;
+  border-left: 1px solid var(--rule-strong);
+}
+
+.hd-stepper__button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.hd-stepper__button + .hd-stepper__button {
+  border-top: 1px solid var(--rule-strong);
+}
+
+.hd-stepper__button:first-child {
+  border-top-right-radius: calc(var(--radius-md) - 1px);
+}
+
+.hd-stepper__button:last-child {
+  border-bottom-right-radius: calc(var(--radius-md) - 1px);
+}
+
+.hd-stepper__button:hover:not(:disabled) {
+  background: var(--sheet-sunk);
+  color: var(--ink);
+}
+
+.hd-stepper__button:focus-visible {
+  outline-offset: -2px;
+}
+
+.hd-stepper__button:disabled {
+  color: var(--disabled-ink);
+  cursor: not-allowed;
+}
+
+.hd-input--disabled .hd-stepper,
+.hd-input--disabled .hd-stepper__button + .hd-stepper__button {
+  border-color: var(--disabled-rule);
 }
 
 /* Inside the field's border, so the ring doesn't spill past it. */
@@ -244,6 +319,15 @@
   font-size: var(--text-md);
   line-height: 1.5;
   resize: vertical;
+}
+
+.hd-textarea:disabled {
+  background: var(--disabled-ground);
+  border-color: var(--disabled-rule);
+  border-style: dashed;
+  color: var(--disabled-ink);
+  -webkit-text-fill-color: var(--disabled-ink);
+  cursor: not-allowed;
 }
 
 .hd-textarea:focus-visible {
@@ -283,6 +367,28 @@
   border-color: var(--ink);
 }
 
+.hd-checkbox__box:disabled {
+  background: var(--disabled-ground);
+  border-color: var(--disabled-rule);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.hd-checkbox__box:disabled[data-state="checked"] {
+  background: var(--disabled-ink);
+  border-color: var(--disabled-ink);
+  border-style: solid;
+}
+
+.hd-checkbox[data-disabled] .hd-checkbox__label {
+  color: var(--disabled-ink);
+  cursor: not-allowed;
+}
+
+.hd-checkbox[data-disabled] .hd-field__hint {
+  color: var(--disabled-ink);
+}
+
 .hd-checkbox__indicator {
   display: grid;
   color: var(--on-ink);
@@ -319,6 +425,19 @@
 
 .hd-select__trigger[data-placeholder] {
   color: var(--ink-3);
+}
+
+.hd-select__trigger:disabled {
+  background: var(--disabled-ground);
+  border-color: var(--disabled-rule);
+  border-style: dashed;
+  color: var(--disabled-ink);
+  -webkit-text-fill-color: var(--disabled-ink);
+  cursor: not-allowed;
+}
+
+.hd-select__trigger:disabled .hd-select__icon {
+  color: var(--disabled-ink);
 }
 
 .hd-select__trigger:focus-visible {
@@ -1074,10 +1193,33 @@
   gap: var(--space-1);
 }
 
+/* The meter, its label and the suggestion share one row that keeps its room
+   when empty (#41): the create dialog's checkbox and buttons must not move,
+   or scroll out of view, when a weak passphrase's warning appears. */
 .hd-strength__estimate {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  column-gap: var(--space-3);
+  min-height: calc(var(--text-sm) * 1.5);
+}
+
+.hd-strength__suggestion {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* Beside another field in a two-column grid (create database, change
+   passphrase) the hint takes the whole row below both, so the advice fits on
+   one line and the row stays short (#41). */
+.hd-form-grid > .hd-passphrase--strength {
+  display: contents;
+}
+
+.hd-form-grid > .hd-passphrase--strength > .hd-strength {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: calc(var(--space-2) - var(--space-4));
 }
 
 .hd-strength__meter {

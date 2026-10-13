@@ -126,6 +126,102 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     expect(blinks).toEqual([1, 1]);
   });
 
+  it("keeps the acknowledgement and Create in view when a weak passphrase's warning shows (#41)", async () => {
+    await clickButton("Create a new database…");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Name", "Weak");
+    await fill("Folder", folder);
+    const inView = () =>
+      browser.execute((acknowledgement: string) => {
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+        const label = [...dialog.querySelectorAll("label")].find(
+          (l) => l.textContent?.trim() === acknowledgement,
+        );
+        const checkbox = document.getElementById(label?.htmlFor ?? "");
+        const create = [...dialog.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Create database",
+        );
+        // Visible without scrolling: inside the window, the dialog, and every
+        // scrolling box between the element and the dialog.
+        const visible = (el: Element | null | undefined) => {
+          if (!el) return false;
+          const box = el.getBoundingClientRect();
+          const page = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+          const within = (outer: DOMRect) =>
+            box.top >= outer.top - 1 &&
+            box.bottom <= outer.bottom + 1 &&
+            box.left >= outer.left - 1 &&
+            box.right <= outer.right + 1;
+          if (!within(page) || !within(dialog.getBoundingClientRect())) return false;
+          for (let up = el.parentElement; up && up !== dialog; up = up.parentElement) {
+            const overflow = getComputedStyle(up).overflowY;
+            if (
+              (overflow === "auto" || overflow === "scroll") &&
+              !within(up.getBoundingClientRect())
+            )
+              return false;
+          }
+          return true;
+        };
+        const scrolled = [dialog, ...dialog.querySelectorAll<HTMLElement>("*")].some(
+          (el) => el.scrollTop > 0,
+        );
+        return {
+          checkbox: visible(checkbox),
+          create: visible(create),
+          scrolled,
+          suggestion:
+            dialog.querySelector('[data-testid="strength-suggestion"]')?.textContent?.trim() ?? "",
+        };
+      }, ACKNOWLEDGEMENT);
+
+    // Where the acknowledgement and Create are, to tell whether the warning
+    // moves them: the dialog is tall enough here that they stay in view
+    // either way, so what shows the bug is that they are pushed down.
+    const tops = () =>
+      browser.execute((acknowledgement: string) => {
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+        const label = [...dialog.querySelectorAll("label")].find(
+          (l) => l.textContent?.trim() === acknowledgement,
+        );
+        const create = [...dialog.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Create database",
+        );
+        return {
+          checkbox: label?.getBoundingClientRect().top ?? -1,
+          create: create?.getBoundingClientRect().top ?? -1,
+        };
+      }, ACKNOWLEDGEMENT);
+
+    // Before any warning (and before anything is typed, when nothing is shown
+    // under the field), then with a weak (but long enough) passphrase's.
+    const empty = await tops();
+    await fill("Passphrase", "p");
+    await fill("Confirm passphrase", "p");
+    const before = await inView();
+    expect(before.checkbox).toBe(true);
+    expect(before.create).toBe(true);
+
+    await fill("Passphrase", "passwordpassword");
+    await fill("Confirm passphrase", "passwordpassword");
+    await browser.waitUntil(async () => (await inView()).suggestion !== "", {
+      timeout: 10000,
+      timeoutMsg: "the weak passphrase's warning never showed",
+    });
+    expect(await inView()).toEqual({
+      checkbox: true,
+      create: true,
+      scrolled: false,
+      suggestion: expect.stringMatching(/\S/),
+    });
+    // The warning took its place in the layout without moving anything.
+    const after = await tops();
+    expect(Math.abs(after.checkbox - empty.checkbox)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.create - empty.create)).toBeLessThanOrEqual(1);
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
   it("creates a database only with a long enough passphrase and the acknowledgement (FR-003, FR-004)", async () => {
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
@@ -159,8 +255,19 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
       expect.stringContaining("BitLocker on Windows, FileVault on macOS, or LUKS on Linux"),
     );
 
+    // The same note tops the Accessories and Insurance pages (#59), and
+    // dismissing it on one hides it on all three.
+    await goTo("Accessories");
+    expect(await diskEncryptionNoteShown()).toBe(true);
+    await goTo("Insurance");
+    expect(await diskEncryptionNoteShown()).toBe(true);
+
     await clickEl('section[aria-label="Disk encryption"] button[aria-label="Dismiss"]');
     await $('section[aria-label="Disk encryption"]').waitForExist({ reverse: true });
+    await goTo("Accessories");
+    expect(await diskEncryptionNoteShown()).toBe(false);
+    await goTo("Collection");
+    expect(await diskEncryptionNoteShown()).toBe(false);
   });
 
   it("keeps a firearm that only the right passphrase shows again (FR-005, FR-006)", async () => {
@@ -360,19 +467,35 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     expect(await showsFirearm("HomeGun")).toBe(true);
   });
 
-  it("forgets it from the database settings, and the prompt returns (FR-018)", async () => {
+  it("only stages forgetting it in the database settings: Cancel leaves it saved (FR-018, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await expect($("fieldset*=This computer")).toHaveText(
       expect.stringContaining("The passphrase is remembered on this computer"),
     );
-    await clickButton("Forget saved passphrase");
+    // Nothing differs yet, so there is nothing to save.
+    await expect($('[role="dialog"] button[type="submit"]')).toBeDisabled();
+    await toggle("Remember the passphrase on this computer");
     await expect($("fieldset*=This computer")).toHaveText(
-      expect.stringContaining(
-        "Not remembered: the database asks for its passphrase each time it opens.",
-      ),
+      expect.stringContaining("The saved passphrase will be forgotten when you click Save."),
     );
+    await expect($('[role="dialog"] button[type="submit"]')).toBeEnabled();
     await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Home");
+    await expect($(".hd-db-row--selected .hd-db-row__saved")).toHaveText(SAVED_NOTE);
+    expect(await asksForPassphrase()).toBe(false);
+    await clickButton("Open");
+    await waitForCollection();
+  });
+
+  it("forgets it with Save, and the prompt returns (FR-018, #34)", async () => {
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    await toggle("Remember the passphrase on this computer");
+    await clickButton("Save");
     await $('[role="dialog"]').waitForExist({ reverse: true });
 
     await relaunch();
@@ -380,5 +503,31 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     expect(await asksForPassphrase()).toBe(true);
     expect(await $(".hd-db-row__saved").isExisting()).toBe(false);
     await unlock(home.passphrase);
+  });
+
+  it("remembers it again from the database settings, asking for the passphrase only at Save (FR-017, #34)", async () => {
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    await toggle("Remember the passphrase on this computer");
+    // Ticking asks for nothing: the passphrase is asked for at Save.
+    expect(await $('[role="alertdialog"]').isExisting()).toBe(false);
+    await clickButton("Save");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    // Cancelled: back in the form with nothing saved and the choice still staged.
+    await expect($('[role="dialog"]')).toExist();
+
+    await clickButton("Save");
+    await $('[role="alertdialog"]').waitForExist();
+    await fill("Passphrase", home.passphrase);
+    await clickButton("Remember passphrase");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Home");
+    expect(await asksForPassphrase()).toBe(false);
+    await clickButton("Open");
+    await waitForCollection();
   });
 });

@@ -78,8 +78,9 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
   // The field the edit form opens on, when reached from an "Add" link.
   const [editFocus, setEditFocus] = useState<FocusField>();
-  // The plate, which the pinned strip waits to scroll away.
-  const [plate, setPlate] = useState<HTMLElement | null>(null);
+  // The action bar, which the pinned strip waits to scroll away (#47): the
+  // strip takes over the actions the moment they leave the screen.
+  const [bar, setBar] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,12 +245,12 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
 
   return (
     <div className="hd-record">
-      <div className="hd-record__bar">
+      <div className="hd-record__bar" ref={setBar}>
         {back && <BackLink target={back} />}
         <div className="hd-record__actions">{actions("md")}</div>
       </div>
 
-      <article className="hd-plate" aria-labelledby="record-name" ref={setPlate}>
+      <article className="hd-plate" aria-labelledby="record-name">
         <div className="hd-plate__top">
           <PlateFigure thumbnailPhotoId={firearm.thumbnailPhotoId} typeKey={type.key} />
           <header className="hd-plate__heading">
@@ -523,7 +524,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       </div>
 
       <RunningHead
-        anchor={plate}
+        anchor={bar}
         headingId="record-name"
         title={name}
         stamp={firearm.serialNumber}

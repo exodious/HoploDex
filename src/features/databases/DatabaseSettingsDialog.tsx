@@ -7,11 +7,11 @@ import {
   Checkbox,
   ConfirmDialog,
   Dialog,
+  NumberField,
   PassphraseField,
   ProgressBar,
   SegmentedControl,
   Select,
-  TextField,
   useToast,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
@@ -42,6 +42,11 @@ import "./databases.css";
 /** The idle durations offered, in minutes (FR-034). */
 const IDLE_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 240];
 
+/** How many backups may be kept: 1 to the backend's `MAX_KEEP_COUNT`
+ * (src-tauri/src/models/database.rs), which stays the authority. */
+const MIN_KEEP_COUNT = 1;
+const MAX_KEEP_COUNT = 100;
+
 /** What backups are and aren't (FR-029), said wherever they are set up. */
 const BACKUP_STATEMENTS = [
   "Each backup is a complete copy of the collection.",
@@ -65,9 +70,10 @@ export interface DatabaseSettingsDialogProps {
 /** The open database's settings (contracts/ui-databases.md §7): its
  * backups, where they go and how many are kept (FR-024, FR-026), what they
  * are (FR-029), restoring from one, and deleting them all, and when it
- * locks (FR-034, FR-038), which apply with Save, like every other form;
- * and whether this computer remembers its passphrase (FR-017), which
- * changes at once. */
+ * locks (FR-034, FR-038), and whether this computer remembers its
+ * passphrase (FR-017), which all apply with Save, like every other form,
+ * and which Cancel discards. Save waits until something differs from what
+ * is saved (#34). */
 export function DatabaseSettingsDialog({
   open,
   onOpenChange,
@@ -121,6 +127,10 @@ function leftBehindText(moved: number, left: LeftBehind, newFolder: string): str
   return `${moved} ${moved === 1 ? "backup was" : "backups were"} moved. ${left.count} ${one ? "is" : "are"} still in ${left.folder} ${because}. HoploDex no longer manages ${one ? "it" : "them"} there.`;
 }
 
+/** What this computer is to do with the passphrase on Save (#34): remember it (asking for it
+ * then), forget the saved one, or nothing. */
+type PassphraseChoice = "remember" | "forget" | null;
+
 /** Where the location shown came from: what is saved, or a change not yet
  * saved. */
 interface ShownLocation {
@@ -159,6 +169,14 @@ function SettingsForm({
   const [keepCount, setKeepCount] = useState(String(saved.keepCount));
   const [location, setLocation] = useState<ShownLocation>(savedLocation);
   const [lock, setLock] = useState(status.settings.lock);
+  // This computer's keyring is staged like the rest: nothing touches it until Save. The saved
+  // state is kept here, so it reads right as soon as Save has changed it.
+  const [passphraseSaved, setPassphraseSaved] = useState(status.passphraseSaved);
+  const [passphraseChoice, setPassphraseChoice] = useState<PassphraseChoice>(null);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | undefined>();
+  const passphraseField = useRef<PassphraseFieldHandle>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -221,13 +239,18 @@ function SettingsForm({
     onSaved(settings);
   }
 
-  /** Saves, backup settings first: the lock settings wait until those are
-   * through, which may take a question and a move first. */
+  /** Saves the backup and lock settings, backup settings first: the lock settings wait until those
+   * are through, which may take a question and a move first. Nothing is sent when they are what
+   * is saved, as when only the passphrase was staged. */
   async function save(existingBackups?: ExistingBackupsChoice) {
     setServerError(null);
     setLeftBehind(null);
     setSaving(true);
     try {
+      if (!settingsDirty) {
+        onSaved(status.settings);
+        return;
+      }
       await finish(
         await databasesService.updateBackupSettings(scope, backupInput(existingBackups)),
       );
@@ -243,15 +266,82 @@ function SettingsForm({
     }
   }
 
+  /** The passphrase half of Save is through (#34). Whatever the settings do next, this is done,
+   * so it is said and shown as it now is. */
+  function passphraseDone(remembered: boolean) {
+    setPassphraseSaved(remembered);
+    setPassphraseChoice(null);
+    setNote(
+      remembered
+        ? "The passphrase is now remembered on this computer."
+        : "The saved passphrase was forgotten.",
+    );
+    onPassphraseSavedChange();
+  }
+
+  /** Forgets the saved passphrase, then saves the rest. When the keyring refuses, nothing else
+   * is saved either, and the choice stays staged. */
+  async function forgetThenSave() {
+    setServerError(null);
+    setNote(null);
+    setSaving(true);
+    try {
+      await databasesService.forgetSavedPassphrase(scope);
+    } catch (e) {
+      setServerError(
+        e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE"
+          ? "The saved passphrase couldn't be forgotten: this computer's keyring isn't available. Nothing was saved."
+          : "The saved passphrase couldn't be forgotten. Nothing was saved.",
+      );
+      setSaving(false);
+      return;
+    }
+    passphraseDone(false);
+    await save();
+  }
+
+  /** The passphrase prompt's confirmation (#34): the passphrase is read from the field and
+   * emptied at once, checked and saved by the backend, and goes out of reach here with this call.
+   * A refusal keeps the prompt open with the error; success closes it and saves the rest. */
+  async function rememberThenSave() {
+    const passphrase = passphraseField.current?.read() ?? "";
+    passphraseField.current?.reset();
+    if (passphrase === "") {
+      setAskError("Enter the passphrase to remember it.");
+      // Keeps the prompt open.
+      throw new Error("no passphrase");
+    }
+    try {
+      await databasesService.savePassphrase(scope, passphrase);
+    } catch (e) {
+      if (e instanceof CommandFailure && e.code === "PASSPHRASE_INCORRECT")
+        setAskError(e.fieldErrors?.passphrase ?? "That isn't this database's passphrase.");
+      else if (e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE")
+        setAskError(KEYRING_UNAVAILABLE);
+      else setAskError("The passphrase couldn't be saved.");
+      throw e;
+    }
+    setServerError(null);
+    passphraseDone(true);
+    void save();
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!dirty) return;
     const count = Number(keepCount.trim());
     if (!Number.isInteger(count) || keepCount.trim() === "") {
       setErrors({ keepCount: "Enter a whole number of backups." });
       return;
     }
     setErrors({});
-    void save();
+    // Remembering asks for the passphrase now, not while it was being ticked, so it is held no
+    // longer than the save needs. Cancelling that prompt saves nothing.
+    if (passphraseChoice === "remember") {
+      setAskError(undefined);
+      setAsking(true);
+    } else if (passphraseChoice === "forget") void forgetThenSave();
+    else void save();
   }
 
   /** Nothing is saved: the location goes back to the saved one, and the
@@ -262,6 +352,21 @@ function SettingsForm({
   }
 
   const isDefault = location.input.kind === "default";
+  const savedInput = savedLocation().input;
+  const savedLock = status.settings.lock;
+  // Whether anything differs from what is saved (#34): Save waits for it.
+  const settingsDirty =
+    enabled !== saved.enabled ||
+    keepCount.trim() !== String(saved.keepCount) ||
+    location.input.kind !== savedInput.kind ||
+    (location.input.kind === "custom" &&
+      savedInput.kind === "custom" &&
+      location.input.path !== savedInput.path) ||
+    lock.idleEnabled !== savedLock.idleEnabled ||
+    lock.idleMinutes !== savedLock.idleMinutes ||
+    lock.onScreenLock !== savedLock.onScreenLock;
+  const dirty = settingsDirty || passphraseChoice !== null;
+  const backupsOff = !enabled;
 
   return (
     <>
@@ -281,20 +386,21 @@ function SettingsForm({
               onCheckedChange={setEnabled}
               hint="When a changed database locks or HoploDex quits, at most once a day."
             />
-            <TextField
+            <NumberField
               label="Keep the latest"
-              inputMode="numeric"
               value={keepCount}
-              disabled={saving}
-              onChange={(e) => {
-                setKeepCount(e.target.value);
+              min={MIN_KEEP_COUNT}
+              max={MAX_KEEP_COUNT}
+              disabled={saving || backupsOff}
+              onValueChange={(text) => {
+                setKeepCount(text);
                 setErrors((current) => ({ ...current, keepCount: undefined }));
               }}
               error={errors.keepCount}
               fieldClassName="hd-field--third"
-              trailing={<span className="hd-input__suffix">backups</span>}
+              suffix="backups"
             />
-            <div className="hd-field">
+            <div className="hd-field" data-disabled={backupsOff || undefined}>
               <span className="hd-field__label" id="backup-location-label">
                 Location
               </span>
@@ -310,13 +416,17 @@ function SettingsForm({
                 )}
               </p>
               <div className="hd-settings-location__actions">
-                <Button size="sm" disabled={saving} onClick={() => void chooseFolder()}>
+                <Button
+                  size="sm"
+                  disabled={saving || backupsOff}
+                  onClick={() => void chooseFolder()}
+                >
                   Change…
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={saving || isDefault}
+                  disabled={saving || backupsOff || isDefault}
                   onClick={useDefault}
                 >
                   Use the default
@@ -342,7 +452,18 @@ function SettingsForm({
           </fieldset>
           <LockingSection status={status} lock={lock} disabled={saving} onChange={setLock} />
           <DocumentsSection />
-          <ThisComputer status={status} disabled={saving} onChange={onPassphraseSavedChange} />
+          <ThisComputer
+            status={status}
+            passphraseSaved={passphraseSaved}
+            choice={passphraseChoice}
+            disabled={saving}
+            onChoose={setPassphraseChoice}
+          />
+          {note && (
+            <p className="hd-banner" role="status">
+              {note}
+            </p>
+          )}
           {leftBehind && (
             <p className="hd-banner" role="status">
               {leftBehind}
@@ -353,13 +474,30 @@ function SettingsForm({
           <Button variant="secondary" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" pending={saving}>
+          <Button type="submit" variant="primary" pending={saving} disabled={!dirty}>
             Save
           </Button>
         </footer>
       </form>
       {/* Outside the form: React sends a portal's events up through its
         parents, and the question's own submit mustn't save this form. */}
+      <RememberPassphraseConfirm
+        open={asking}
+        onClose={() => {
+          setAsking(false);
+          setAskError(undefined);
+        }}
+        onConfirm={rememberThenSave}
+      >
+        <PassphraseField
+          ref={passphraseField}
+          label="Passphrase"
+          autoComplete="current-password"
+          autoFocus
+          error={askError}
+          onInput={() => setAskError(undefined)}
+        />
+      </RememberPassphraseConfirm>
       <ExistingBackupsDialog
         question={question}
         newFolder={location.path}
@@ -592,128 +730,53 @@ function BackupActions({
 /** Said wherever passphrases can't be saved (FR-019). */
 const KEYRING_UNAVAILABLE = "Not available: this computer has no keyring service.";
 
-/** Whether this computer remembers the passphrase, and changing that
- * (FR-017, FR-018, FR-019; contracts/ui-databases.md §7). Remembering asks
- * for the passphrase with the FR-017 confirmation; the backend checks it
- * opens the database before saving it. */
+/** Whether this computer remembers the passphrase (FR-017, FR-018, FR-019;
+ * contracts/ui-databases.md §7). Like the rest of the form it only stages the
+ * choice: ticking Remember asks for nothing until Save, and Save then asks
+ * for the passphrase with the FR-017 confirmation; unticking forgets the
+ * saved one on Save. Cancel throws the choice away (#34). */
 function ThisComputer({
   status,
+  passphraseSaved,
+  choice,
   disabled,
-  onChange,
+  onChoose,
 }: {
   status: DatabaseStatus;
+  /** Whether the passphrase is saved now, which Save may change. */
+  passphraseSaved: boolean;
+  choice: PassphraseChoice;
   disabled: boolean;
-  onChange: () => void;
+  onChoose: (choice: PassphraseChoice) => void;
 }) {
-  const scope = useSessionScope();
-  const field = useRef<PassphraseFieldHandle>(null);
-  const [asking, setAsking] = useState(false);
-  const [error, setError] = useState<string | undefined>();
-  const [forgetting, setForgetting] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  async function remember() {
-    const passphrase = field.current?.read() ?? "";
-    field.current?.reset();
-    if (passphrase === "") {
-      setError("Enter the passphrase to remember it.");
-      // Keeps the confirmation open.
-      throw new Error("no passphrase");
-    }
-    try {
-      await databasesService.savePassphrase(scope, passphrase);
-    } catch (e) {
-      if (e instanceof CommandFailure && e.code === "PASSPHRASE_INCORRECT")
-        setError(e.fieldErrors?.passphrase ?? "That isn't this database's passphrase.");
-      else if (e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE")
-        setError(KEYRING_UNAVAILABLE);
-      else setError("The passphrase couldn't be saved.");
-      throw e;
-    }
-    onChange();
-  }
-
-  async function forget() {
-    setProblem(null);
-    setForgetting(true);
-    try {
-      await databasesService.forgetSavedPassphrase(scope);
-      onChange();
-    } catch (e) {
-      setProblem(
-        e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE"
-          ? "The saved passphrase couldn't be forgotten: this computer's keyring isn't available."
-          : "The saved passphrase couldn't be forgotten.",
-      );
-    } finally {
-      setForgetting(false);
-    }
-  }
-
-  let body;
-  if (status.passphraseSaved) {
-    body = (
-      <>
-        <p className="hd-settings-state">
-          The passphrase is remembered on this computer: the database opens without asking for it.
-        </p>
-        <div className="hd-settings-actions__buttons">
-          <Button size="sm" pending={forgetting} disabled={disabled} onClick={() => void forget()}>
-            Forget saved passphrase
-          </Button>
-        </div>
-      </>
-    );
-  } else if (!status.keyringAvailable) {
-    body = <p className="hd-field__hint">{KEYRING_UNAVAILABLE}</p>;
-  } else {
-    body = (
-      <>
-        <p className="hd-settings-state">
-          Not remembered: the database asks for its passphrase each time it opens.
-        </p>
-        <div className="hd-settings-actions__buttons">
-          <Button
-            size="sm"
-            disabled={disabled}
-            onClick={() => {
-              setError(undefined);
-              setAsking(true);
-            }}
-          >
-            Remember the passphrase on this computer…
-          </Button>
-        </div>
-      </>
-    );
-  }
+  const remembered = choice ? choice === "remember" : passphraseSaved;
+  let state: string;
+  if (choice === "remember")
+    state = "When you click Save, you'll be asked for the passphrase to remember it.";
+  else if (choice === "forget")
+    state =
+      "The saved passphrase will be forgotten when you click Save. The database will then ask for its passphrase each time it opens.";
+  else if (passphraseSaved)
+    state =
+      "The passphrase is remembered on this computer: the database opens without asking for it.";
+  else state = "Not remembered: the database asks for its passphrase each time it opens.";
 
   return (
     <fieldset className="hd-form-section hd-form-fieldset">
       <legend className="hd-form-subgroup__title">This computer</legend>
-      {body}
-      {problem && (
-        <p className="hd-field__error" role="alert">
-          {problem}
-        </p>
-      )}
-      <RememberPassphraseConfirm
-        open={asking}
-        onClose={() => {
-          setAsking(false);
-          setError(undefined);
-        }}
-        onConfirm={remember}
-      >
-        <PassphraseField
-          ref={field}
-          label="Passphrase"
-          autoComplete="current-password"
-          autoFocus
-          error={error}
-          onInput={() => setError(undefined)}
+      {passphraseSaved || status.keyringAvailable ? (
+        <Checkbox
+          label="Remember the passphrase on this computer"
+          checked={remembered}
+          disabled={disabled}
+          onCheckedChange={(next) =>
+            onChoose(next === passphraseSaved ? null : next ? "remember" : "forget")
+          }
+          hint={state}
         />
-      </RememberPassphraseConfirm>
+      ) : (
+        <p className="hd-field__hint">{KEYRING_UNAVAILABLE}</p>
+      )}
     </fieldset>
   );
 }

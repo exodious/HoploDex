@@ -8,7 +8,11 @@ import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
-import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectionObserver";
+import {
+  observedTargets,
+  scrollAnchorTo,
+  stubIntersectionObserver,
+} from "../../test/intersectionObserver";
 import { FirearmRecordPage } from "./FirearmRecordPage";
 import { ORIGIN_OPTIONS } from "./types";
 import type { FirearmDetail, Origin } from "./types";
@@ -407,6 +411,23 @@ describe("FirearmRecordPage pinned strip (FR-041, US1/AC18)", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("waits for the action bar, not the whole plate, to scroll away (#47)", async () => {
+    getFirearm.mockResolvedValue(firearm);
+    renderWithBack();
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+
+    const bar = document.querySelector(".hd-record__bar");
+    expect(observedTargets()).toEqual([bar]);
+    expect(bar).toContainElement(headingActions());
+    // The plate follows the bar, so it is still on screen when the bar is not.
+    expect(bar?.compareDocumentPosition(document.querySelector(".hd-plate")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(strip()).toBeNull();
+    scrollAnchorTo(-10);
+    expect(strip()).not.toBeNull();
   });
 
   it("keeps the way back, the name and the heading's actions in reach", async () => {

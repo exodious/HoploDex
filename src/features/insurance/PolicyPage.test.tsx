@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectionObserver";
+import {
+  observedTargets,
+  scrollAnchorTo,
+  stubIntersectionObserver,
+} from "../../test/intersectionObserver";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
@@ -115,6 +119,17 @@ describe("PolicyPage pinned strip (FR-041, US3/AC17)", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("waits for the card's actions, not its whole header, to scroll away (#47)", () => {
+    renderPage();
+
+    const actions = document.querySelector(".hd-policy__actions");
+    expect(observedTargets()).toEqual([actions]);
+    expect(actions).toHaveTextContent("Edit");
+    expect(strip()).toBeNull();
+    scrollAnchorTo(-10);
+    expect(strip()).not.toBeNull();
   });
 
   it("keeps the way back, the name and the heading's actions in reach", () => {

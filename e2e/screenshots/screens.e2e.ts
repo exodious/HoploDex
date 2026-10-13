@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   $,
   $$,
+  ACKNOWLEDGEMENT,
   back,
   browser,
   choose,
@@ -16,6 +17,7 @@ import {
   search,
   selectOption,
   settle,
+  toggle,
 } from "../support/ui";
 import {
   chooseMenuItem,
@@ -76,6 +78,22 @@ async function shotScrolled(name: string) {
   await $(".hd-runhead").waitForExist();
   await shot(name);
   await browser.execute(() => window.scrollTo(0, 0));
+  await $(".hd-runhead").waitForExist({ reverse: true });
+}
+
+/** Scrolls a record page until its action bar has just gone under the top
+ * bar, so the pinned strip shows (#47) with the plate still in view, shoots
+ * the viewport, and scrolls back to the top. */
+async function shotPastActionBar(name: string) {
+  await browser.execute(() => {
+    const topbar = document.querySelector(".hd-topbar")!.getBoundingClientRect().bottom;
+    const bar = document.querySelector(".hd-record__bar")!.getBoundingClientRect();
+    window.scrollTo({ top: window.scrollY + bar.bottom - topbar + 4, behavior: "instant" });
+  });
+  await $(".hd-runhead").waitForExist();
+  await settle();
+  await shot(name);
+  await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await $(".hd-runhead").waitForExist({ reverse: true });
 }
 
@@ -384,6 +402,22 @@ describe("Screenshots: the chooser", () => {
       await fill("Passphrase", "vivid otter ledger crane");
       await $('[role="meter"]').waitForExist();
       await shot(`16-create-database-${suffix}`, { fullPage: true });
+
+      // A weak passphrase's warning keeps the acknowledgement and Create in
+      // view (#41).
+      await fill("Passphrase", "passwordpassword");
+      await fill("Confirm passphrase", "passwordpassword");
+      await toggle(ACKNOWLEDGEMENT);
+      await browser.waitUntil(
+        () =>
+          browser.execute(
+            () =>
+              (document.querySelector('[data-testid="strength-suggestion"]')?.textContent ?? "")
+                .length > 0,
+          ),
+        { timeout: 10000, timeoutMsg: "the weak passphrase's warning never showed" },
+      );
+      await shot(`79-create-database-weak-passphrase-${suffix}`, { fullPage: true });
       await closeDialog();
     });
 
@@ -431,6 +465,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await openRecord(RECORD);
       await shot(`04-record-${suffix}`, { fullPage: true });
       await shotScrolled(`04-record-scrolled-${suffix}`);
+      await shotPastActionBar(`85-record-scrolled-past-action-bar-${suffix}`);
 
       await openDialog("Edit");
       await shot(`05-edit-firearm-${suffix}`, { fullPage: true });
@@ -791,6 +826,38 @@ for (const theme of ["Light", "Dark"] as const) {
 
       await openDialog("Export");
       await shot(`13-export-${suffix}`);
+      await closeDialog();
+    });
+
+    // #34, #35: the settings' backup fields disable with automatic backups,
+    // the idle duration with the idle lock, and the passphrase choice waits
+    // for Save with its state line.
+    it("database settings with backups off, the idle lock off and Remember staged", async () => {
+      await chooseMenuItem("button.hd-db-menu", "Database settings…");
+      await $('[role="dialog"]').waitForExist();
+
+      await toggle("Make automatic backups");
+      await shot(`80-settings-backups-off-${suffix}`, { fullPage: true });
+      await toggle("Make automatic backups");
+
+      await toggle("Lock after a period without use");
+      await shot(`81-settings-idle-lock-off-${suffix}`, { fullPage: true });
+      await toggle("Lock after a period without use");
+
+      await toggle("Remember the passphrase on this computer");
+      // The staged hint can sit below the dialog body's own scroll fold, so
+      // bring it into view inside the body before the shot.
+      await browser.execute(() => {
+        const label = [...document.querySelectorAll('[role="dialog"] label')].find(
+          (l) => l.textContent?.trim() === "Remember the passphrase on this computer",
+        ) as HTMLLabelElement | undefined;
+        document
+          .getElementById(`${label?.htmlFor}-hint`)
+          ?.scrollIntoView({ block: "center" });
+      });
+      await shot(`82-settings-remember-staged-${suffix}`, { fullPage: true });
+      await toggle("Remember the passphrase on this computer");
+
       await closeDialog();
     });
 

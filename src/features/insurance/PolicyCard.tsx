@@ -24,7 +24,7 @@ export function PolicyCard({
   onOpen,
   onEdit,
   onDelete,
-  headRef,
+  actionsRef,
 }: {
   policy: InsurancePolicy;
   /** The blanket policy in force today, if any. */
@@ -38,8 +38,8 @@ export function PolicyCard({
   accessories: AccessorySummary[];
   onEdit: () => void;
   onDelete: () => void;
-  /** The card's header: the policy page pins a strip once it scrolls away. */
-  headRef?: Ref<HTMLElement>;
+  /** The card's actions: the policy page pins a strip once they scroll away. */
+  actionsRef?: Ref<HTMLDivElement>;
 }) {
   const scheduledAmounts = new Map(
     (summary?.individuallyScheduled ?? []).map((s) => [refKey(s.record), s]),
@@ -50,7 +50,7 @@ export function PolicyCard({
 
   return (
     <article className="hd-policy" aria-labelledby={`policy-${policy.id}`}>
-      <header className="hd-policy__head" ref={headRef}>
+      <header className="hd-policy__head">
         <div className="hd-policy__title">
           <h3
             className="hd-policy__name"
@@ -71,7 +71,7 @@ export function PolicyCard({
             <span className="hd-serial">{policy.policyNumber}</span>
           </p>
         </div>
-        <div className="hd-policy__actions">
+        <div className="hd-policy__actions" ref={actionsRef}>
           <Button size="sm" icon="pencil" onClick={onEdit}>
             Edit
           </Button>

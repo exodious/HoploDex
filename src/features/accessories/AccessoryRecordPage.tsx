@@ -61,8 +61,9 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   const [accessory, setAccessory] = useState<AccessoryDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
-  // The plate, which the pinned strip waits to scroll away.
-  const [plate, setPlate] = useState<HTMLElement | null>(null);
+  // The action bar, which the pinned strip waits to scroll away (#47): the
+  // strip takes over the actions the moment they leave the screen.
+  const [bar, setBar] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,12 +228,12 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
 
   return (
     <div className="hd-record">
-      <div className="hd-record__bar">
+      <div className="hd-record__bar" ref={setBar}>
         {back && <BackLink target={back} />}
         <div className="hd-record__actions">{actions("md")}</div>
       </div>
 
-      <article className="hd-plate" aria-labelledby="record-name" ref={setPlate}>
+      <article className="hd-plate" aria-labelledby="record-name">
         <div className="hd-plate__top">
           <PlateFigure
             thumbnailPhotoId={accessory.thumbnailPhotoId}
@@ -431,7 +432,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
       </div>
 
       <RunningHead
-        anchor={plate}
+        anchor={bar}
         headingId="record-name"
         title={name}
         stamp={accessory.serialNumber}

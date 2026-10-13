@@ -217,6 +217,41 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     });
   });
 
+  it("returns to the database settings when a restore opened from there is cancelled (#33)", async () => {
+    // The title of the one dialog open: the settings' own radio buttons would
+    // make "the backup list is there" true in both.
+    const dialogTitle = () =>
+      browser.execute(
+        () =>
+          document.querySelector('[role="dialog"] .hd-dialog__title')?.textContent?.trim() ?? "",
+      );
+    const waitForTitle = (title: string | RegExp) =>
+      browser.waitUntil(
+        async () => {
+          const shown = await dialogTitle();
+          return typeof title === "string" ? shown === title : title.test(shown);
+        },
+        { timeout: 5000, timeoutMsg: `the dialog titled ${title} never showed` },
+      );
+
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await waitForTitle("Database settings");
+    await clickButton("Restore from a backup…");
+    await waitForTitle(/^Restore/);
+    await settle();
+    await clickButton("Cancel");
+    await waitForTitle("Database settings");
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    // Opened from the menu, cancelling goes back to the collection.
+    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    await waitForTitle(/^Restore/);
+    await settle();
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
   it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async () => {
     // Still open after the restore, with both backups in the default folder.
     expect(backupFiles()).toHaveLength(2);
