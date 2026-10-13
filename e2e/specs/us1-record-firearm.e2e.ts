@@ -536,6 +536,40 @@ describe("User Story 1 - Record a Firearm", () => {
     await $('[role="dialog"]').waitForExist({ reverse: true });
     await expect($("#record-name")).toHaveText("E2EEsc Long");
 
+    // #47: the strip takes over the actions the moment their bar has gone
+    // under the top bar, long before the plate under it is scrolled away.
+    // Scrolled to leave 10px of the bar showing, there is no strip yet.
+    const scrollBarTo = (gap: number) =>
+      browser.execute((gap: number) => {
+        const topbar = document.querySelector(".hd-topbar")!.getBoundingClientRect().bottom;
+        const bar = document.querySelector(".hd-record__bar")!.getBoundingClientRect();
+        window.scrollTo({ top: window.scrollY + bar.bottom - topbar - gap, behavior: "instant" });
+      }, gap);
+    const barAndPlate = () =>
+      browser.execute(() => {
+        const topbar = document.querySelector(".hd-topbar")!.getBoundingClientRect().bottom;
+        return {
+          barBottom:
+            document.querySelector(".hd-record__bar")!.getBoundingClientRect().bottom - topbar,
+          plateShown: document.querySelector(".hd-plate")!.getBoundingClientRect().bottom - topbar,
+        };
+      });
+    await scrollBarTo(10);
+    await settle();
+    expect((await barAndPlate()).barBottom).toBeGreaterThan(5);
+    expect(await $(".hd-runhead").isExisting()).toBe(false);
+    // Scrolled until the bar is 4px under the top bar: the strip shows with
+    // the plate still most of the way in view.
+    await scrollBarTo(-4);
+    await $(".hd-runhead").waitForExist({ timeoutMsg: "the strip never showed past the bar" });
+    await settle();
+    const past = await barAndPlate();
+    expect(past.barBottom).toBeLessThan(0);
+    expect(past.plateShown).toBeGreaterThan(100);
+    expect((await pinnedStrip()).actions).toEqual(["Edit", "Mark disposed", "Delete"]);
+    await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await $(".hd-runhead").waitForExist({ reverse: true });
+
     // FR-041: scrolled down, the strip keeps the way back, the name and the
     // heading's actions.
     await scrollToPinnedStrip();

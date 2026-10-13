@@ -1,4 +1,4 @@
-import { $, createDatabase, settleChooserPlate, waitForChooser } from "../support/ui";
+import { $, createDatabase, goTo, settleChooserPlate, waitForChooser } from "../support/ui";
 import { chooseTheme, shot } from "../support/screenshots";
 
 /**
@@ -26,6 +26,20 @@ describe("Screenshots: first run", () => {
       await chooseTheme(theme);
       await $('section[aria-label="Disk encryption"]').waitForExist();
       await shot(`24-disk-encryption-note-${theme.toLowerCase()}`);
+    });
+  }
+
+  // The note tops the Accessories and Insurance pages too (#59).
+  for (const theme of ["Light", "Dark"] as const) {
+    it(`disk-encryption note on Accessories and Insurance (${theme.toLowerCase()})`, async () => {
+      await chooseTheme(theme);
+      await goTo("Accessories");
+      await $('section[aria-label="Disk encryption"]').waitForExist();
+      await shot(`83-accessories-note-banner-${theme.toLowerCase()}`);
+      await goTo("Insurance");
+      await $('section[aria-label="Disk encryption"]').waitForExist();
+      await shot(`84-insurance-note-banner-${theme.toLowerCase()}`);
+      await goTo("Collection");
     });
   }
 });

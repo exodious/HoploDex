@@ -126,6 +126,78 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     expect(blinks).toEqual([1, 1]);
   });
 
+  it("keeps the acknowledgement and Create in view when a weak passphrase's warning shows (#41)", async () => {
+    await clickButton("Create a new database…");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Name", "Weak");
+    await fill("Folder", folder);
+    const inView = () =>
+      browser.execute((acknowledgement: string) => {
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+        const label = [...dialog.querySelectorAll("label")].find(
+          (l) => l.textContent?.trim() === acknowledgement,
+        );
+        const checkbox = document.getElementById(label?.htmlFor ?? "");
+        const create = [...dialog.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Create database",
+        );
+        // Visible without scrolling: inside the window, the dialog, and every
+        // scrolling box between the element and the dialog.
+        const visible = (el: Element | null | undefined) => {
+          if (!el) return false;
+          const box = el.getBoundingClientRect();
+          const page = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+          const within = (outer: DOMRect) =>
+            box.top >= outer.top - 1 &&
+            box.bottom <= outer.bottom + 1 &&
+            box.left >= outer.left - 1 &&
+            box.right <= outer.right + 1;
+          if (!within(page) || !within(dialog.getBoundingClientRect())) return false;
+          for (let up = el.parentElement; up && up !== dialog; up = up.parentElement) {
+            const overflow = getComputedStyle(up).overflowY;
+            if (
+              (overflow === "auto" || overflow === "scroll") &&
+              !within(up.getBoundingClientRect())
+            )
+              return false;
+          }
+          return true;
+        };
+        const scrolled = [dialog, ...dialog.querySelectorAll<HTMLElement>("*")].some(
+          (el) => el.scrollTop > 0,
+        );
+        return {
+          checkbox: visible(checkbox),
+          create: visible(create),
+          scrolled,
+          suggestion:
+            dialog.querySelector('[data-testid="strength-suggestion"]')?.textContent?.trim() ?? "",
+        };
+      }, ACKNOWLEDGEMENT);
+
+    // Before any warning, then with a weak (but long enough) passphrase's.
+    await fill("Passphrase", "p");
+    await fill("Confirm passphrase", "p");
+    const before = await inView();
+    expect(before.checkbox).toBe(true);
+    expect(before.create).toBe(true);
+
+    await fill("Passphrase", "passwordpassword");
+    await fill("Confirm passphrase", "passwordpassword");
+    await browser.waitUntil(async () => (await inView()).suggestion !== "", {
+      timeout: 10000,
+      timeoutMsg: "the weak passphrase's warning never showed",
+    });
+    expect(await inView()).toEqual({
+      checkbox: true,
+      create: true,
+      scrolled: false,
+      suggestion: expect.stringMatching(/\S/),
+    });
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
   it("creates a database only with a long enough passphrase and the acknowledgement (FR-003, FR-004)", async () => {
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
@@ -159,8 +231,19 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
       expect.stringContaining("BitLocker on Windows, FileVault on macOS, or LUKS on Linux"),
     );
 
+    // The same note tops the Accessories and Insurance pages (#59), and
+    // dismissing it on one hides it on all three.
+    await goTo("Accessories");
+    expect(await diskEncryptionNoteShown()).toBe(true);
+    await goTo("Insurance");
+    expect(await diskEncryptionNoteShown()).toBe(true);
+
     await clickEl('section[aria-label="Disk encryption"] button[aria-label="Dismiss"]');
     await $('section[aria-label="Disk encryption"]').waitForExist({ reverse: true });
+    await goTo("Accessories");
+    expect(await diskEncryptionNoteShown()).toBe(false);
+    await goTo("Collection");
+    expect(await diskEncryptionNoteShown()).toBe(false);
   });
 
   it("keeps a firearm that only the right passphrase shows again (FR-005, FR-006)", async () => {
