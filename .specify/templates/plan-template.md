@@ -42,6 +42,41 @@
 
 [Gates determined based on constitution file]
 
+## Test Levels
+
+*Every acceptance scenario needs a test (constitution II), but not an E2E one.
+E2E is the slowest layer and runs on every OS, some of them small VMs, so place
+each scenario at the cheapest level that can show it, and say why wherever the
+plan departs from these defaults.*
+
+- **E2E, one journey per user story**: the story's main path through the real
+  app, keyboard-first where the story calls for it.
+- **E2E, one test per error mechanism per form or dialog**, not one per rule:
+  a field error (the backend's `fieldErrors` land on the right field), an
+  overridable warning (the `confirmedWarnings` resend), and a refusal whose
+  domain code the UI turns into its own message or dialog. A form that already
+  has a mechanism's test needs no new one for a new rule, and a form whose
+  every rule is also checked in the UI can't reach the backend's field errors,
+  so it has none (Vitest shows how it would display them).
+- **E2E, what only the real app shows**: IPC wiring, relaunch, locking, sleep
+  and shutdown, native file drops, focus and real-input behaviour, the PDF
+  surface, and the screenshot walk (a new screen joins
+  `e2e/screenshots/screens.e2e.ts`).
+- **Security**: test a security property where it is enforced (Rust
+  integration tests for the backend's rules) and, when it depends on the IPC
+  boundary, the web view, the file system or the OS (session scoping, browser
+  controls, what is left on disk, the CSP and capabilities, confinement), also
+  in the real app, by E2E or a dedicated check. A security test never moves to
+  a cheaper level.
+- **Everything else** (validation, duplicates, rounding, dates and other edge
+  cases): Rust `ops` integration tests on a real database for persistence and
+  rules, Vitest for UI behaviour. Cite the scenario (`US1 Scenario 9`) in the
+  test's name or a comment, so each scenario's test can be found.
+
+| Story | E2E journey | Other E2E (error mechanism, real app, security) | Scenarios tested in Rust or Vitest |
+|-------|-------------|-------------------------------------------------|------------------------------------|
+| [US1] | [path walked] | [each test and why it needs the real app] | [scenario IDs → level] |
+
 ## Project Structure
 
 ### Documentation (this feature)
