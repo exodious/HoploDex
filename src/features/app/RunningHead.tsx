@@ -6,8 +6,9 @@ import { useNavigation } from "./navigation";
 import "./RunningHead.css";
 
 export interface RunningHeadProps {
-  /** The page's own heading block. The strip shows once it has scrolled
-   * up under the top bar. */
+  /** The page's own action buttons (their bar or group, not the whole
+   * heading block under them). The strip shows once it has scrolled up under
+   * the top bar, so the actions are never out of reach (#47). */
   anchor: HTMLElement | null;
   /** The page's heading, focused when the name is used to return to the top
    * (it needs tabIndex={-1}). */
@@ -22,7 +23,7 @@ export interface RunningHeadProps {
 
 /** A slim strip under the top bar for a long record page, the way a drawing
  * set repeats a reduced title block on every continuation sheet. Once the
- * page's heading scrolls away it keeps the way back, the record's name
+ * page's actions scroll away it keeps the way back, the record's name
  * (which returns to the top) and the record's actions within reach (FR-041). */
 export function RunningHead({ anchor, headingId, title, stamp, actions }: RunningHeadProps) {
   const { back } = useNavigation();

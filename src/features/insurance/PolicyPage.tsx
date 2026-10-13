@@ -10,12 +10,12 @@ import "./insurance.css";
 
 /** One policy on its own, reached from a firearm it covers. It is the same
  * card the Insurance page lists, with the same edit and delete actions,
- * which a pinned strip keeps in reach once the card's header scrolls away. */
+ * which a pinned strip keeps in reach once the card's actions scroll away. */
 export function PolicyPage({ id }: { id: number }) {
   const { firearms, accessories, summary, policiesById } = useCollection();
   const { navigate, back } = useNavigation();
   const { edit, remove, dialogs } = usePolicyEditors(() => navigate({ page: "insurance" }));
-  const [head, setHead] = useState<HTMLElement | null>(null);
+  const [actions, setActions] = useState<HTMLElement | null>(null);
   const policy = policiesById.get(id);
 
   return (
@@ -39,10 +39,10 @@ export function PolicyPage({ id }: { id: number }) {
             )}
             onEdit={() => edit(policy)}
             onDelete={() => remove(policy)}
-            headRef={setHead}
+            actionsRef={setActions}
           />
           <RunningHead
-            anchor={head}
+            anchor={actions}
             headingId={`policy-${policy.id}`}
             title={policy.name}
             stamp={policy.policyNumber}

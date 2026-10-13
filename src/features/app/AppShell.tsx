@@ -339,11 +339,14 @@ export function AppShell() {
         </header>
 
         <main className="hd-main">
+          {/* The database's notes head each of the three list pages and no
+              record page (#59); a dismissal is kept in the session's status,
+              so it hides them on all three. */}
+          {(route.page === "collection" ||
+            route.page === "accessories" ||
+            route.page === "insurance") && <DatabaseNotes />}
           {route.page === "collection" && (
-            <>
-              <DatabaseNotes />
-              <CollectionPage browse={browse} onBrowseChange={setBrowse} />
-            </>
+            <CollectionPage browse={browse} onBrowseChange={setBrowse} />
           )}
           {route.page === "accessories" && (
             <AccessoriesPage browse={accessoryBrowse} onBrowseChange={setAccessoryBrowse} />

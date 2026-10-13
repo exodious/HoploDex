@@ -19,6 +19,9 @@ export function DatabaseMenu() {
   const [dialog, setDialog] = useState<"settings" | "passphrase" | "restore" | "guide" | null>(
     null,
   );
+  // Where the restore dialog was opened from, so closing it goes back there (#33): the Database
+  // settings when that is where "Restore from a backup…" was chosen, the collection otherwise.
+  const [restoreFrom, setRestoreFrom] = useState<"settings" | null>(null);
   const { settingsRequested, clearSettingsRequest } = session;
 
   // Asked for from a failed-backup notice before this database was opened.
@@ -48,7 +51,14 @@ export function DatabaseMenu() {
         <MenuSeparator />
         <MenuItem onSelect={() => setDialog("settings")}>Database settings…</MenuItem>
         <MenuItem onSelect={() => setDialog("passphrase")}>Change passphrase…</MenuItem>
-        <MenuItem onSelect={() => setDialog("restore")}>Restore from a backup…</MenuItem>
+        <MenuItem
+          onSelect={() => {
+            setRestoreFrom(null);
+            setDialog("restore");
+          }}
+        >
+          Restore from a backup…
+        </MenuItem>
         <MenuSeparator />
         <MenuItem onSelect={() => setDialog("guide")}>About databases and security</MenuItem>
       </Menu>
@@ -65,7 +75,10 @@ export function DatabaseMenu() {
         onOpenChange={(open) => setDialog(open ? "settings" : null)}
         status={status}
         onSaved={() => void session.refreshStatus()}
-        onRestore={() => setDialog("restore")}
+        onRestore={() => {
+          setRestoreFrom("settings");
+          setDialog("restore");
+        }}
         onPassphraseSavedChange={() => void session.refreshStatus()}
       />
       {dialog === "passphrase" && (
@@ -77,7 +90,7 @@ export function DatabaseMenu() {
       {dialog === "restore" && (
         <RestoreBackupDialog
           open
-          onOpenChange={(open) => setDialog(open ? "restore" : null)}
+          onOpenChange={(open) => setDialog(open ? "restore" : restoreFrom)}
           name={status.name}
           onChangeLocation={() => setDialog("settings")}
         />

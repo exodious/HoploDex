@@ -202,12 +202,13 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     });
     const props = renderSettings();
 
-    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
     const keep = screen.getByLabelText("Keep the latest");
     await user.clear(keep);
     await user.type(keep, "12");
     await user.click(screen.getByRole("button", { name: "Change…" }));
     expect(await screen.findByText("/media/usb/Backups")).toBeInTheDocument();
+    // The backup fields are disabled once this is unticked.
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
@@ -230,6 +231,9 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     );
     const props = renderSettings();
 
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "500");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Keep between 1 and 100 backups.")).toBeInTheDocument();
@@ -240,7 +244,184 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
   });
 });
 
-describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, §8)", () => {
+describe("DatabaseSettingsDialog: Keep the latest and the backups switch (issue #35)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({
+        folder: DEFAULT_BACKUPS,
+        available: true,
+        backups: [backup(26)],
+      });
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockReset()
+      .mockResolvedValue({
+        settings: settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }),
+        existingBackups: null,
+      });
+    vi.mocked(databasesService.updateLockSettings)
+      .mockReset()
+      .mockResolvedValue(settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }));
+    vi.mocked(openFolderDialog).mockReset();
+  });
+
+  it("steps the number kept with the up and down buttons, and saves it", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const keep = screen.getByRole("spinbutton", { name: "Keep the latest" });
+    await user.click(screen.getByRole("button", { name: "Increase Keep the latest" }));
+    await user.click(screen.getByRole("button", { name: "Increase Keep the latest" }));
+    await user.click(screen.getByRole("button", { name: "Decrease Keep the latest" }));
+    expect(keep).toHaveValue("6");
+    await user.click(keep);
+    await user.keyboard("{ArrowUp}");
+    expect(keep).toHaveValue("7");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(
+        SCOPE,
+        expect.objectContaining({ keepCount: 7 }),
+      ),
+    );
+  });
+
+  it("stays within 1 to 100 when stepped", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const keep = screen.getByRole("spinbutton", { name: "Keep the latest" });
+    await user.clear(keep);
+    await user.type(keep, "100");
+    expect(screen.getByRole("button", { name: "Increase Keep the latest" })).toBeDisabled();
+    await user.clear(keep);
+    await user.type(keep, "1");
+    expect(screen.getByRole("button", { name: "Decrease Keep the latest" })).toBeDisabled();
+  });
+
+  it("still says when what was typed isn't a whole number", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "2.5");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Enter a whole number of backups.")).toBeInTheDocument();
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+  });
+
+  it("disables the number kept and the location's buttons while automatic backups are off, and not restoring", async () => {
+    const user = userEvent.setup();
+    renderSettings(status({ kind: "custom", path: "/media/usb/Backups", available: true }));
+    const backups = screen.getByRole("group", { name: "Backups" });
+    await within(backups).findByRole("button", { name: "Delete all backups…" });
+    expect(within(backups).getByLabelText("Keep the latest")).toBeEnabled();
+    expect(within(backups).getByRole("button", { name: "Change…" })).toBeEnabled();
+    expect(within(backups).getByRole("button", { name: "Use the default" })).toBeEnabled();
+
+    await user.click(within(backups).getByRole("checkbox", { name: "Make automatic backups" }));
+
+    expect(within(backups).getByLabelText("Keep the latest")).toBeDisabled();
+    expect(
+      within(backups).getByRole("button", { name: "Increase Keep the latest" }),
+    ).toBeDisabled();
+    expect(within(backups).getByRole("button", { name: "Change…" })).toBeDisabled();
+    expect(within(backups).getByRole("button", { name: "Use the default" })).toBeDisabled();
+    // The backups there already are still the user's to restore or delete.
+    expect(within(backups).getByRole("button", { name: "Restore from a backup…" })).toBeEnabled();
+    expect(within(backups).getByRole("button", { name: "Delete all backups…" })).toBeEnabled();
+    // Said by the fields themselves (components.css gives them the disabled look).
+    expect(within(backups).getByLabelText("Keep the latest").closest(".hd-field")).toHaveAttribute(
+      "data-disabled",
+    );
+
+    await user.click(within(backups).getByRole("checkbox", { name: "Make automatic backups" }));
+
+    expect(within(backups).getByLabelText("Keep the latest")).toBeEnabled();
+    expect(within(backups).getByRole("button", { name: "Change…" })).toBeEnabled();
+  });
+});
+
+describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockReset()
+      .mockResolvedValue({
+        settings: settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }),
+        existingBackups: null,
+      });
+    vi.mocked(databasesService.updateLockSettings)
+      .mockReset()
+      .mockResolvedValue(settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }));
+  });
+
+  const save = () => screen.getByRole("button", { name: "Save" });
+
+  it("is disabled until a field differs from what is saved, and again when it is put back", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    expect(save()).toBeDisabled();
+
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    expect(save()).toBeEnabled();
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    expect(save()).toBeDisabled();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+    expect(save()).toBeEnabled();
+    await user.clear(keep);
+    await user.type(keep, "5");
+    expect(save()).toBeDisabled();
+
+    await user.click(screen.getByRole("combobox", { name: "After" }));
+    await user.click(screen.getByRole("option", { name: "30 minutes" }));
+    expect(save()).toBeEnabled();
+    await user.click(screen.getByRole("combobox", { name: "After" }));
+    await user.click(screen.getByRole("option", { name: "10 minutes" }));
+    expect(save()).toBeDisabled();
+  });
+
+  it("notices a changed location", async () => {
+    const user = userEvent.setup();
+    renderSettings(status({ kind: "custom", path: "/media/usb/Backups", available: true }));
+    expect(save()).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Use the default" }));
+
+    expect(save()).toBeEnabled();
+  });
+
+  it("does not submit with Enter while nothing differs", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByLabelText("Keep the latest"));
+    await user.keyboard("{Enter}");
+
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves nothing and keeps nothing when Cancel is chosen after a change", async () => {
+    const user = userEvent.setup();
+    const props = renderSettings();
+
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(props.onOpenChange).toHaveBeenCalledWith(false);
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, §8, issue #34)", () => {
   const FACTS =
     "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open the database without knowing the passphrase.";
 
@@ -250,37 +431,79 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
       .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
     vi.mocked(databasesService.savePassphrase).mockReset();
     vi.mocked(databasesService.forgetSavedPassphrase).mockReset();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockReset()
+      .mockResolvedValue({
+        settings: settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }),
+        existingBackups: null,
+      });
+    vi.mocked(databasesService.updateLockSettings)
+      .mockReset()
+      .mockResolvedValue(settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }));
   });
 
   function thisComputer() {
     return screen.getByRole("group", { name: "This computer" });
   }
+  const remember = () =>
+    within(thisComputer()).getByRole("checkbox", {
+      name: "Remember the passphrase on this computer",
+    });
+  const save = () => screen.getByRole("button", { name: "Save" });
+  const withKeyring = (saved = false) => ({
+    ...status(),
+    keyringAvailable: true,
+    passphraseSaved: saved,
+  });
+
+  /** Ticks Remember, clicks Save and answers the passphrase prompt that follows. */
+  async function rememberWith(user: ReturnType<typeof userEvent.setup>, passphrase: string) {
+    await user.click(remember());
+    await user.click(save());
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Remember this database's passphrase?",
+    });
+    await user.type(within(confirm).getByLabelText("Passphrase"), passphrase);
+    await user.click(within(confirm).getByRole("button", { name: "Remember passphrase" }));
+    return confirm;
+  }
 
   it("says the passphrase isn't remembered, and offers to remember it", () => {
-    renderSettings({ ...status(), keyringAvailable: true });
+    renderSettings(withKeyring());
 
     expect(
       within(thisComputer()).getByText(
         "Not remembered: the database asks for its passphrase each time it opens.",
       ),
     ).toBeInTheDocument();
-    expect(
-      within(thisComputer()).getByRole("button", {
-        name: "Remember the passphrase on this computer…",
-      }),
-    ).toBeInTheDocument();
+    expect(remember()).not.toBeChecked();
   });
 
-  it("remembers it after the FR-017 confirmation, with the passphrase typed there", async () => {
+  it("only stages Remember when it is ticked: no prompt, nothing saved, and Save becomes available", async () => {
+    const user = userEvent.setup();
+    renderSettings(withKeyring());
+    expect(save()).toBeDisabled();
+
+    await user.click(remember());
+
+    expect(remember()).toBeChecked();
+    expect(
+      within(thisComputer()).getByText(
+        "When you click Save, you'll be asked for the passphrase to remember it.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+    expect(save()).toBeEnabled();
+  });
+
+  it("asks for the passphrase with the FR-017 confirmation only when Save is clicked, then remembers it and closes", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
-    const props = renderSettings({ ...status(), keyringAvailable: true });
+    const props = renderSettings(withKeyring());
 
-    await user.click(
-      within(thisComputer()).getByRole("button", {
-        name: "Remember the passphrase on this computer…",
-      }),
-    );
+    await user.click(remember());
+    await user.click(save());
     const confirm = await screen.findByRole("alertdialog", {
       name: "Remember this database's passphrase?",
     });
@@ -288,22 +511,49 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(confirm).toHaveTextContent(
       "Locking will no longer need the passphrase on this computer, though it still clears the collection from memory, deletes opened document copies, and releases the database for other computers.",
     );
-    const field = within(confirm).getByLabelText("Passphrase");
-    await user.type(field, "correct horse battery staple");
+    expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+    await user.type(within(confirm).getByLabelText("Passphrase"), "correct horse battery staple");
     // A choice, not a destructive action.
-    const remember = within(confirm).getByRole("button", { name: "Remember passphrase" });
-    expect(remember).not.toHaveClass("hd-button--danger");
-    await user.click(remember);
+    const confirmButton = within(confirm).getByRole("button", { name: "Remember passphrase" });
+    expect(confirmButton).not.toHaveClass("hd-button--danger");
+    await user.click(confirmButton);
 
-    expect(databasesService.savePassphrase).toHaveBeenCalledWith(
-      SCOPE,
-      "correct horse battery staple",
+    await waitFor(() =>
+      expect(databasesService.savePassphrase).toHaveBeenCalledWith(
+        SCOPE,
+        "correct horse battery staple",
+      ),
     );
     await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    // Nothing else differed, so the settings were not sent again.
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+    expect(databasesService.updateLockSettings).not.toHaveBeenCalled();
+    expect(props.onSaved).toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("keeps the confirmation open with the error when the passphrase is wrong", async () => {
+  it("remembers the passphrase before it saves the other settings", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
+    const props = renderSettings(withKeyring());
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+    await rememberWith(user, "correct horse battery staple");
+
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    expect(vi.mocked(databasesService.savePassphrase).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(databasesService.updateBackupSettings).mock.invocationCallOrder[0],
+    );
+    expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(
+      SCOPE,
+      expect.objectContaining({ keepCount: 9 }),
+    );
+  });
+
+  it("keeps the prompt open with the error, and saves nothing, when the passphrase is wrong", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockRejectedValue(
       new CommandFailure({
@@ -312,59 +562,168 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
         fieldErrors: { passphrase: "That isn't this database's passphrase." },
       }),
     );
-    const props = renderSettings({ ...status(), keyringAvailable: true });
+    const props = renderSettings(withKeyring());
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
 
-    await user.click(
-      within(thisComputer()).getByRole("button", {
-        name: "Remember the passphrase on this computer…",
-      }),
-    );
-    const confirm = await screen.findByRole("alertdialog");
-    const field = within(confirm).getByLabelText("Passphrase");
-    await user.type(field, "a guess");
-    await user.click(within(confirm).getByRole("button", { name: "Remember passphrase" }));
+    const confirm = await rememberWith(user, "a guess");
 
     expect(
       await within(confirm).findByText("That isn't this database's passphrase."),
     ).toBeInTheDocument();
-    expect(field).toHaveValue("");
+    expect(within(confirm).getByLabelText("Passphrase")).toHaveValue("");
     expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
   });
 
-  it("saves nothing when the confirmation is cancelled", async () => {
+  it("returns to the form with nothing saved, and Remember still staged, when the prompt is cancelled", async () => {
     const user = userEvent.setup();
-    renderSettings({ ...status(), keyringAvailable: true });
+    const props = renderSettings(withKeyring());
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
 
-    await user.click(
-      within(thisComputer()).getByRole("button", {
-        name: "Remember the passphrase on this computer…",
-      }),
-    );
+    await user.click(remember());
+    await user.click(save());
     const confirm = await screen.findByRole("alertdialog");
     await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    expect(remember()).toBeChecked();
+    expect(keep).toHaveValue("9");
+    expect(save()).toBeEnabled();
   });
 
-  it("shows a saved passphrase and forgets it", async () => {
+  it("says what was done when the passphrase is remembered but the settings then fail", async () => {
     const user = userEvent.setup();
-    vi.mocked(databasesService.forgetSavedPassphrase).mockResolvedValue({
-      passphraseSaved: false,
-    });
-    const props = renderSettings({ ...status(), passphraseSaved: true, keyringAvailable: true });
+    vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
+    vi.mocked(databasesService.updateBackupSettings).mockRejectedValue(
+      new CommandFailure({ code: "INTERNAL_ERROR", message: "The settings couldn't be saved." }),
+    );
+    const props = renderSettings(withKeyring());
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+
+    await rememberWith(user, "correct horse battery staple");
+
+    const dialog = await screen.findByRole("dialog", { name: "Database settings" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "The settings couldn't be saved.",
+    );
+    expect(
+      within(dialog).getByText("The passphrase is now remembered on this computer."),
+    ).toBeInTheDocument();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    // It is shown as it now is, and Save only has the settings left to save.
+    expect(remember()).toBeChecked();
+    expect(save()).toBeEnabled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("shows a saved passphrase, and only stages forgetting it when it is unticked", async () => {
+    const user = userEvent.setup();
+    const props = renderSettings(withKeyring(true));
 
     expect(
       within(thisComputer()).getByText(
         "The passphrase is remembered on this computer: the database opens without asking for it.",
       ),
     ).toBeInTheDocument();
-    await user.click(
-      within(thisComputer()).getByRole("button", { name: "Forget saved passphrase" }),
-    );
+    expect(remember()).toBeChecked();
+    expect(save()).toBeDisabled();
+    await user.click(remember());
 
-    expect(databasesService.forgetSavedPassphrase).toHaveBeenCalledWith(SCOPE);
+    expect(remember()).not.toBeChecked();
+    expect(
+      within(thisComputer()).getByText(
+        /The saved passphrase will be forgotten when you click Save/,
+      ),
+    ).toBeInTheDocument();
+    expect(databasesService.forgetSavedPassphrase).not.toHaveBeenCalled();
+    expect(save()).toBeEnabled();
+    expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
+  });
+
+  it("leaves the saved passphrase alone when Cancel follows unticking", async () => {
+    const user = userEvent.setup();
+    const props = renderSettings(withKeyring(true));
+
+    await user.click(remember());
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(props.onOpenChange).toHaveBeenCalledWith(false);
+    expect(databasesService.forgetSavedPassphrase).not.toHaveBeenCalled();
+    expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
+  });
+
+  it("is back to nothing staged, and Save disabled, when the choice is put back", async () => {
+    const user = userEvent.setup();
+    renderSettings(withKeyring(true));
+
+    await user.click(remember());
+    await user.click(remember());
+
+    expect(save()).toBeDisabled();
+  });
+
+  it("forgets the saved passphrase on Save, and closes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.forgetSavedPassphrase).mockResolvedValue({
+      passphraseSaved: false,
+    });
+    const props = renderSettings(withKeyring(true));
+
+    await user.click(remember());
+    await user.click(save());
+
+    await waitFor(() => expect(databasesService.forgetSavedPassphrase).toHaveBeenCalledWith(SCOPE));
     await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+  });
+
+  it("forgets the passphrase before it saves the other settings", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.forgetSavedPassphrase).mockResolvedValue({
+      passphraseSaved: false,
+    });
+    const props = renderSettings(withKeyring(true));
+
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    await user.click(remember());
+    await user.click(save());
+
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
+    expect(
+      vi.mocked(databasesService.forgetSavedPassphrase).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(databasesService.updateBackupSettings).mock.invocationCallOrder[0]);
+  });
+
+  it("saves nothing, and keeps forgetting staged, when the keyring can't forget it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.forgetSavedPassphrase).mockRejectedValue(
+      new CommandFailure({ code: "KEYRING_UNAVAILABLE", message: "No keyring." }),
+    );
+    const props = renderSettings(withKeyring(true));
+
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    await user.click(remember());
+    await user.click(save());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The saved passphrase couldn't be forgotten: this computer's keyring isn't available. Nothing was saved.",
+    );
+    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
+    expect(remember()).not.toBeChecked();
+    expect(save()).toBeEnabled();
   });
 
   it("says when this computer has no keyring (FR-019)", () => {
@@ -373,6 +732,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(
       within(thisComputer()).getByText("Not available: this computer has no keyring service."),
     ).toBeInTheDocument();
+    expect(within(thisComputer()).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(within(thisComputer()).queryByRole("button")).not.toBeInTheDocument();
   });
 });

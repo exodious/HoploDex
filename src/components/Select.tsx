@@ -56,6 +56,7 @@ export function Select({
       error={error}
       errorId={errorId}
       className={fieldClassName}
+      disabled={disabled}
     >
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger

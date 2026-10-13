@@ -56,6 +56,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
         error={error}
         errorId={errorId}
         className={fieldClassName}
+        disabled={props.disabled}
       >
         <textarea
           ref={ref}

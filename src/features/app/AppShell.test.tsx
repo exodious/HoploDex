@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AccessoryDetail, AccessorySummary } from "../accessories/types";
@@ -7,7 +8,7 @@ import type { FirearmDetail } from "../firearms/types";
 import type { InsurancePolicy } from "../insurance/types";
 import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
-import type { Draft } from "../databases/types";
+import type { DatabaseStatus, Draft } from "../databases/types";
 import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { FORM_VERSION as DISPOSE_FORM_VERSION } from "../firearms/DisposeDialog";
 import { AppShell } from "./AppShell";
@@ -771,5 +772,114 @@ describe("Resumed accessory pending changes open where their form is (FR-027, FR
     const dialog = await screen.findByRole("dialog", { name: "Insurance coverage" });
     expect(within(dialog).getByLabelText(/Scheduled amount/)).toHaveValue("900");
     expect(dialog).toHaveTextContent(OPTIC);
+  });
+});
+
+// #59, contracts/ui-databases.md §10: the database's notes head the three list
+// pages, not the record pages, and dismissing one hides it on all of them.
+describe("The database's notes (#59)", () => {
+  const NOTES: DatabaseStatus["notes"] = {
+    diskEncryption: true,
+    restoredWithPassphraseOf: "2026-09-20T09:00:00Z",
+    openedBackup: { backupOfName: "Main collection", madeAt: "2026-09-20T09:00:00Z" },
+    damagedFileKeptAt: null,
+  };
+
+  /** A session that keeps its notes in state, as the provider's status does. */
+  function renderWithNotes() {
+    function Harness() {
+      const [notes, setNotes] = useState(NOTES);
+      const value = {
+        status: { ...session.status, notes },
+        dismissNote: async (note: "diskEncryption" | "openedBackup" | "restored") =>
+          setNotes((current) => ({
+            ...current,
+            ...(note === "diskEncryption" ? { diskEncryption: false } : {}),
+            ...(note === "openedBackup" ? { openedBackup: null } : {}),
+            ...(note === "restored" ? { restoredWithPassphraseOf: null } : {}),
+          })),
+      } as unknown as SessionState;
+      return (
+        <SessionContext.Provider value={value}>
+          <CollectionContext.Provider value={collection}>
+            <AppShell />
+          </CollectionContext.Provider>
+        </SessionContext.Provider>
+      );
+    }
+    render(<Harness />);
+  }
+
+  const tab = (name: RegExp) =>
+    within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", { name });
+  const noteRegions = () =>
+    ["Restored from a backup", "A backup", "Disk encryption"].map((name) =>
+      screen.queryByRole("region", { name }),
+    );
+
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+    getAccessory.mockReset().mockResolvedValue(opticDetail);
+    listAccessories.mockReset().mockResolvedValue({
+      groups: [{ key: "All", host: null, accessories: [opticSummary] }],
+    });
+  });
+
+  it("shows all three notes at the top of the Collection, Accessories and Insurance pages", async () => {
+    const user = userEvent.setup();
+    renderWithNotes();
+
+    await screen.findByRole("heading", { level: 1, name: "Collection" });
+    expect(noteRegions().every(Boolean)).toBe(true);
+
+    await user.click(tab(/^Accessories/));
+    await screen.findByRole("heading", { level: 1, name: "Accessories" });
+    expect(noteRegions().every(Boolean)).toBe(true);
+
+    await user.click(tab(/^Insurance/));
+    await screen.findByRole("heading", { level: 1, name: "Insurance" });
+    expect(noteRegions().every(Boolean)).toBe(true);
+  });
+
+  it("shows none of them on a firearm, accessory or policy page", async () => {
+    const user = userEvent.setup();
+    renderWithNotes();
+
+    await openColt(user);
+    expect(noteRegions().some(Boolean)).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: policy.name }));
+    await screen.findByRole("heading", { name: policy.name });
+    expect(noteRegions().some(Boolean)).toBe(false);
+
+    await user.click(tab(/^Accessories/));
+    await user.click(await screen.findByRole("button", { name: OPTIC }));
+    await screen.findByRole("heading", { level: 1, name: OPTIC });
+    expect(noteRegions().some(Boolean)).toBe(false);
+  });
+
+  it("hides a note on every page once it is dismissed on one", async () => {
+    const user = userEvent.setup();
+    renderWithNotes();
+    await user.click(tab(/^Accessories/));
+    await screen.findByRole("heading", { level: 1, name: "Accessories" });
+
+    const disk = screen.getByRole("region", { name: "Disk encryption" });
+    await user.click(within(disk).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("region", { name: "Disk encryption" })).not.toBeInTheDocument();
+    // The others stay until each is dismissed.
+    expect(screen.getByRole("region", { name: "A backup" })).toBeInTheDocument();
+
+    await user.click(tab(/^Collection/));
+    await screen.findByRole("heading", { level: 1, name: "Collection" });
+    expect(screen.queryByRole("region", { name: "Disk encryption" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "A backup" })).toBeInTheDocument();
+
+    await user.click(tab(/^Insurance/));
+    await screen.findByRole("heading", { level: 1, name: "Insurance" });
+    expect(screen.queryByRole("region", { name: "Disk encryption" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Restored from a backup" })).toBeInTheDocument();
   });
 });

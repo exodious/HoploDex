@@ -13,6 +13,8 @@ export interface FieldFrameProps {
   errorId?: string;
   labelId?: string;
   className?: string;
+  /** Dims the label and hint along with the control (`--disabled-*` tokens). */
+  disabled?: boolean;
   children: ReactNode;
 }
 
@@ -27,10 +29,14 @@ export function FieldFrame({
   errorId,
   labelId,
   className,
+  disabled,
   children,
 }: FieldFrameProps) {
   return (
-    <div className={["hd-field", className].filter(Boolean).join(" ")}>
+    <div
+      className={["hd-field", className].filter(Boolean).join(" ")}
+      data-disabled={disabled || undefined}
+    >
       <label
         className="hd-field__label"
         htmlFor={inputId}

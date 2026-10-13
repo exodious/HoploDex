@@ -180,6 +180,64 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     ).toBeInTheDocument();
     expect(databasesService.listBackups).toHaveBeenCalledWith(SCOPE, undefined);
   });
+
+  // #33: closing the restore dialog goes back to where it was opened from.
+  it("closes the restore dialog to the collection when it was opened from the menu", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await user.click(await screen.findByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Restore from a backup…" }));
+    const restore = await screen.findByRole("dialog", { name: "Restore from a backup" });
+
+    await user.click(within(restore).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("closes the restore dialog back to the Database settings when it was opened from there", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await user.click(await screen.findByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
+    const settings = await screen.findByRole("dialog", { name: "Database settings" });
+    await user.click(within(settings).getByRole("button", { name: "Restore from a backup…" }));
+    const restore = await screen.findByRole("dialog", { name: "Restore from a backup" });
+
+    await user.click(within(restore).getByRole("button", { name: "Cancel" }));
+
+    expect(await screen.findByRole("dialog", { name: "Database settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Restore from a backup" })).not.toBeInTheDocument();
+  });
+
+  it("goes back to the collection, not the settings, when the restore from the settings is opened again from the menu", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await user.click(await screen.findByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
+    const settings = await screen.findByRole("dialog", { name: "Database settings" });
+    await user.click(within(settings).getByRole("button", { name: "Restore from a backup…" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Restore from a backup" })).getByRole(
+        "button",
+        { name: "Cancel" },
+      ),
+    );
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    await user.click(await screen.findByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Restore from a backup…" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Restore from a backup" })).getByRole(
+        "button",
+        { name: "Cancel" },
+      ),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
 });
 
 describe("Lock now (FR-033, FR-035)", () => {
@@ -233,7 +291,7 @@ describe("Lock now (FR-033, FR-035)", () => {
     await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "Database settings…" }));
     const dialog = await screen.findByRole("dialog", { name: "Database settings" });
-    await user.click(within(dialog).getByRole("textbox", { name: "Keep the latest" }));
+    await user.click(within(dialog).getByRole("spinbutton", { name: "Keep the latest" }));
 
     await user.keyboard("{Control>}l{/Control}");
 

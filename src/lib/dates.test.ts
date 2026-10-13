@@ -3,6 +3,7 @@ import {
   daysUntil,
   dispositionOrderError,
   formatDate,
+  formatDateTime,
   formatRecentDay,
   formatRecentMoment,
   futureDateError,
@@ -28,6 +29,20 @@ describe("formatDate", () => {
   it("renders the calendar date without a time-zone shift", () => {
     expect(formatDate("2019-03-01", "en-US")).toBe("Mar 1, 2019");
     expect(formatDate(null)).toBe("—");
+  });
+});
+
+describe("formatDateTime (#32)", () => {
+  it("shows seconds, so two moments in one minute read differently", () => {
+    const first = new Date(2026, 8, 25, 14, 30, 5).toISOString();
+    const second = new Date(2026, 8, 25, 14, 30, 41).toISOString();
+    expect(formatDateTime(first, "en-US")).toMatch(/2:30:05\sPM/);
+    expect(formatDateTime(second, "en-US")).toMatch(/2:30:41\sPM/);
+    expect(formatDateTime(first, "en-US")).not.toBe(formatDateTime(second, "en-US"));
+  });
+
+  it("returns text that is not a moment unchanged", () => {
+    expect(formatDateTime("not a date")).toBe("not a date");
   });
 });
 

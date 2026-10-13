@@ -72,37 +72,42 @@ export const StrengthHint = forwardRef<StrengthHintHandle, StrengthHintProps>(
     // Catch up with anything typed while zxcvbn was loading.
     useEffect(update, [update]);
 
+    // The advice is always shown. The meter, its label and zxcvbn's
+    // suggestion share one row that is in the layout from the start, empty
+    // until there is something to say, so a weak passphrase's warning
+    // appearing never makes the dialog taller or pushes the fields below it
+    // out of view (#41).
     return (
       <div className="hd-strength">
-        {estimate && (
-          <div className="hd-strength__estimate">
-            <div
-              className="hd-strength__meter"
-              role="meter"
-              aria-label="Passphrase strength"
-              aria-valuemin={0}
-              aria-valuemax={4}
-              aria-valuenow={estimate.score}
-              aria-valuetext={LABELS[estimate.score]}
-              data-score={estimate.score}
-            >
-              {LABELS.map((label, step) => (
-                <span
-                  key={label}
-                  className="hd-strength__step"
-                  data-filled={step <= estimate.score || undefined}
-                />
-              ))}
-            </div>
-            <span className="hd-strength__label">{LABELS[estimate.score]}</span>
-          </div>
-        )}
-        {estimate?.suggestion && (
-          <p className="hd-field__hint" data-testid="strength-suggestion">
-            {estimate.suggestion}
-          </p>
-        )}
         <p className="hd-field__hint">{ADVICE}</p>
+        <div className="hd-strength__estimate" data-testid="strength-estimate">
+          {estimate && (
+            <>
+              <div
+                className="hd-strength__meter"
+                role="meter"
+                aria-label="Passphrase strength"
+                aria-valuemin={0}
+                aria-valuemax={4}
+                aria-valuenow={estimate.score}
+                aria-valuetext={LABELS[estimate.score]}
+                data-score={estimate.score}
+              >
+                {LABELS.map((label, step) => (
+                  <span
+                    key={label}
+                    className="hd-strength__step"
+                    data-filled={step <= estimate.score || undefined}
+                  />
+                ))}
+              </div>
+              <span className="hd-strength__label">{LABELS[estimate.score]}</span>
+            </>
+          )}
+          <p className="hd-field__hint hd-strength__suggestion" data-testid="strength-suggestion">
+            {estimate?.suggestion}
+          </p>
+        </div>
       </div>
     );
   },

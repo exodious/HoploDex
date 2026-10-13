@@ -40,11 +40,12 @@ export function formatDate(iso: string | null, locale?: string): string {
 }
 
 /** A moment (ISO-8601 with a time and zone, such as `2026-09-25T14:30:05Z`)
- * as the user's local date and time. */
+ * as the user's local date and time, to the second (#32): two backups made
+ * in the same minute must read differently. */
 export function formatDateTime(iso: string, locale?: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "medium" }).format(date);
 }
 
 /** Calendar days from the local day of `moment` to that of `now`. */

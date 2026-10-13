@@ -23,6 +23,8 @@ export { MoneyField } from "./MoneyField";
 export type { MoneyFieldProps } from "./MoneyField";
 export { DecimalField } from "./DecimalField";
 export type { DecimalFieldProps } from "./DecimalField";
+export { NumberField } from "./NumberField";
+export type { NumberFieldProps } from "./NumberField";
 export { DateField } from "./DateField";
 export type { DateFieldProps } from "./DateField";
 export { Combobox } from "./Combobox";

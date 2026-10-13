@@ -1,6 +1,6 @@
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CLEAR_PASSPHRASE_FIELDS, PassphraseField } from "./PassphraseField";
 import type { PassphraseFieldHandle } from "./PassphraseField";
@@ -96,6 +96,30 @@ describe("PassphraseField (contracts/ui-databases.md §0, FR-007)", () => {
     await user.type(screen.getByLabelText("Passphrase"), "vivid otter ledger crane mosaic");
     expect(await screen.findByText("Very strong")).toBeInTheDocument();
     expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("holds the meter's and the warning's places before they show, so the layout doesn't move (#41)", async () => {
+    const user = userEvent.setup();
+    render(<PassphraseField label="Passphrase" autoComplete="new-password" strength />);
+
+    const estimate = screen.getByTestId("strength-estimate");
+    const suggestion = screen.getByTestId("strength-suggestion");
+    const hint = estimate.parentElement as HTMLElement;
+    // The class a two-column grid uses to give the hint the whole row below.
+    expect(hint.parentElement).toHaveClass("hd-passphrase--strength");
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
+    expect(estimate).toContainElement(suggestion);
+    expect(suggestion).toBeEmptyDOMElement();
+    const children = [...hint.children];
+
+    await user.type(screen.getByLabelText("Passphrase"), "password");
+    await screen.findByRole("meter", { name: "Passphrase strength" });
+    await waitFor(() => expect(suggestion).not.toBeEmptyDOMElement());
+
+    // The same elements filled in: nothing was added to the hint's flow.
+    expect([...hint.children]).toEqual(children);
+    expect(estimate).toContainElement(screen.getByRole("meter"));
+    expect(estimate).toContainElement(suggestion);
   });
 
   it("shows field errors in the standard slot", () => {

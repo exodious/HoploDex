@@ -33,6 +33,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
         error={error}
         errorId={errorId}
         className={fieldClassName}
+        disabled={props.disabled}
       >
         <div
           className={[

@@ -360,19 +360,35 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     expect(await showsFirearm("HomeGun")).toBe(true);
   });
 
-  it("forgets it from the database settings, and the prompt returns (FR-018)", async () => {
+  it("only stages forgetting it in the database settings: Cancel leaves it saved (FR-018, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await expect($("fieldset*=This computer")).toHaveText(
       expect.stringContaining("The passphrase is remembered on this computer"),
     );
-    await clickButton("Forget saved passphrase");
+    // Nothing differs yet, so there is nothing to save.
+    await expect($('[role="dialog"] button[type="submit"]')).toBeDisabled();
+    await toggle("Remember the passphrase on this computer");
     await expect($("fieldset*=This computer")).toHaveText(
-      expect.stringContaining(
-        "Not remembered: the database asks for its passphrase each time it opens.",
-      ),
+      expect.stringContaining("The saved passphrase will be forgotten when you click Save."),
     );
+    await expect($('[role="dialog"] button[type="submit"]')).toBeEnabled();
     await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Home");
+    await expect($(".hd-db-row--selected .hd-db-row__saved")).toHaveText(SAVED_NOTE);
+    expect(await asksForPassphrase()).toBe(false);
+    await clickButton("Open");
+    await waitForCollection();
+  });
+
+  it("forgets it with Save, and the prompt returns (FR-018, #34)", async () => {
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    await toggle("Remember the passphrase on this computer");
+    await clickButton("Save");
     await $('[role="dialog"]').waitForExist({ reverse: true });
 
     await relaunch();
@@ -380,5 +396,31 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     expect(await asksForPassphrase()).toBe(true);
     expect(await $(".hd-db-row__saved").isExisting()).toBe(false);
     await unlock(home.passphrase);
+  });
+
+  it("remembers it again from the database settings, asking for the passphrase only at Save (FR-017, #34)", async () => {
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    await toggle("Remember the passphrase on this computer");
+    // Ticking asks for nothing: the passphrase is asked for at Save.
+    expect(await $('[role="alertdialog"]').isExisting()).toBe(false);
+    await clickButton("Save");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    // Cancelled: back in the form with nothing saved and the choice still staged.
+    await expect($('[role="dialog"]')).toExist();
+
+    await clickButton("Save");
+    await $('[role="alertdialog"]').waitForExist();
+    await fill("Passphrase", home.passphrase);
+    await clickButton("Remember passphrase");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Home");
+    expect(await asksForPassphrase()).toBe(false);
+    await clickButton("Open");
+    await waitForCollection();
   });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ACCESSORY_KINDS } from "../../test/collectionFixtures";
@@ -15,6 +15,11 @@ import { AccessoryRecordPage } from "./AccessoryRecordPage";
 import type { AccessoryDetail } from "./types";
 import type { RecordLabel } from "../mounts/types";
 import { render } from "../../test/sessionScope";
+import {
+  observedTargets,
+  scrollAnchorTo,
+  stubIntersectionObserver,
+} from "../../test/intersectionObserver";
 
 // specs/006-accessory-links User Story 1, contracts/ui-accessories.md §12:
 // the accessory's record page has the firearm record page's layout. The
@@ -200,6 +205,27 @@ describe("AccessoryRecordPage bar (§12)", () => {
     expect(labels[1]).toMatch(/^Restore/);
     expect(labels[2]).toBe("Delete");
     expect(screen.queryByRole("button", { name: "Mark disposed" })).not.toBeInTheDocument();
+  });
+});
+
+describe("AccessoryRecordPage pinned strip (FR-041, #47)", () => {
+  beforeEach(stubIntersectionObserver);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("waits for the action bar, not the whole plate, to scroll away", async () => {
+    renderPage();
+    await screen.findByRole("heading", { level: 1, name: NAME });
+
+    const bar = document.querySelector(".hd-record__bar");
+    expect(observedTargets()).toEqual([bar]);
+    expect(bar).toContainElement(actions());
+    expect(document.querySelector(".hd-runhead")).toBeNull();
+    // Only the actions are above the edge; the plate is still on screen.
+    scrollAnchorTo(-10);
+    expect(document.querySelector(".hd-runhead")).not.toBeNull();
+    expect(bar?.compareDocumentPosition(document.querySelector(".hd-plate")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 });
 

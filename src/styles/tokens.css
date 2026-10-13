@@ -29,6 +29,12 @@
   --danger: #a8231c;
   --danger-wash: #f8e1de;
   --on-ink: #f9faf7;
+  /* A disabled field (constitution Principle III): its label, text, border and
+     ground, shared by every control through components.css. Disabled text is
+     exempt from the contrast minimum, but stays readable. */
+  --disabled-ink: #7f8791;
+  --disabled-rule: #c4c9c2;
+  --disabled-ground: #e8ebe5;
   /* The chooser's catalogue plate: its drawing lines, the bronze of the
      shield's ornament and owl, and the blueprint grid it sits on. */
   --plate-line: rgb(79 89 101 / 0.62);
@@ -99,6 +105,9 @@
     --danger: #ff8f86;
     --danger-wash: #3b1714;
     --on-ink: #0f1419;
+    --disabled-ink: #626d79;
+    --disabled-rule: #2e3944;
+    --disabled-ground: #121920;
     --plate-line: rgb(168 177 187 / 0.5);
     --bronze: #d3a45f;
     --grid-minor: rgb(147 168 255 / 0.035);
@@ -128,6 +137,9 @@
   --danger: #ff8f86;
   --danger-wash: #3b1714;
   --on-ink: #0f1419;
+  --disabled-ink: #626d79;
+  --disabled-rule: #2e3944;
+  --disabled-ground: #121920;
   --plate-line: rgb(168 177 187 / 0.5);
   --bronze: #d3a45f;
   --grid-minor: rgb(147 168 255 / 0.035);

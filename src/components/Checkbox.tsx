@@ -21,7 +21,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
     const hintId = hint ? `${checkboxId}-hint` : undefined;
 
     return (
-      <div className="hd-checkbox">
+      <div className="hd-checkbox" data-disabled={disabled || undefined}>
         <RadixCheckbox.Root
           ref={ref}
           id={checkboxId}

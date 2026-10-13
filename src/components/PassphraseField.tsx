@@ -80,7 +80,11 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
     useEffect(() => listen<unknown>(CLEAR_PASSPHRASE_FIELDS, reset), [reset]);
 
     return (
-      <div className={["hd-passphrase", fieldClassName].filter(Boolean).join(" ")}>
+      <div
+        className={["hd-passphrase", strength && "hd-passphrase--strength", fieldClassName]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <TextField
           ref={inputRef}
           id={id}
