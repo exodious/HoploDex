@@ -25,6 +25,16 @@ concurrency:
 permissions:
   contents: read
 
+# A pull request gets the same full analysis as main. Diff-informed analysis
+# (the action's default on pull requests) keeps only results located in the
+# lines a PR changed, so a PR that removes a check between an unchanged source
+# and an unchanged sink passes, and the alert first appears on main (code
+# scanning alert #68, from #87). This is the action's feature-flag override,
+# not a documented input: a PR run's log shouldn't say "Computing PR diff
+# ranges".
+env:
+  CODEQL_ACTION_DIFF_INFORMED_QUERIES: false
+
 jobs:
   javascript-typescript:
     name: Analyze (javascript-typescript)
