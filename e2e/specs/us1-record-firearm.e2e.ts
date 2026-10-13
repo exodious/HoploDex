@@ -567,6 +567,17 @@ describe("User Story 1 - Record a Firearm", () => {
     expect(past.barBottom).toBeLessThan(0);
     expect(past.plateShown).toBeGreaterThan(100);
     expect((await pinnedStrip()).actions).toEqual(["Edit", "Mark disposed", "Delete"]);
+    // The top bar is solid: the record's own Edit and Mark disposed buttons,
+    // scrolled under it, must not show through next to Import and Export.
+    const topbarBackground = await browser.execute(
+      () => getComputedStyle(document.querySelector(".hd-topbar")!).backgroundColor,
+    );
+    const alpha = /\/\s*([\d.]+)(%?)\s*\)$|^rgba\([^)]*,\s*([\d.]+)\s*\)$/.exec(topbarBackground);
+    const topbarAlpha = alpha ? (alpha[1] ? Number(alpha[1]) / (alpha[2] ? 100 : 1) : Number(alpha[3])) : 1;
+    expect({ background: topbarBackground, alpha: topbarAlpha }).toEqual({
+      background: topbarBackground,
+      alpha: 1,
+    });
     await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
     await $(".hd-runhead").waitForExist({ reverse: true });
 

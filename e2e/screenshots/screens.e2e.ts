@@ -845,6 +845,16 @@ for (const theme of ["Light", "Dark"] as const) {
       await toggle("Lock after a period without use");
 
       await toggle("Remember the passphrase on this computer");
+      // The staged hint can sit below the dialog body's own scroll fold, so
+      // bring it into view inside the body before the shot.
+      await browser.execute(() => {
+        const label = [...document.querySelectorAll('[role="dialog"] label')].find(
+          (l) => l.textContent?.trim() === "Remember the passphrase on this computer",
+        ) as HTMLLabelElement | undefined;
+        document
+          .getElementById(`${label?.htmlFor}-hint`)
+          ?.scrollIntoView({ block: "center" });
+      });
       await shot(`82-settings-remember-staged-${suffix}`, { fullPage: true });
       await toggle("Remember the passphrase on this computer");
 

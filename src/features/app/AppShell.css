@@ -8,9 +8,10 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: color-mix(in srgb, var(--vellum) 92%, transparent);
+  /* Solid: the page scrolls under this bar, and a translucent one let a
+     record page's own buttons show faintly through next to Import/Export. */
+  background: var(--vellum);
   border-bottom: 1px solid var(--rule);
-  backdrop-filter: saturate(1.2) blur(6px);
 }
 
 .hd-topbar__inner {
