@@ -12,6 +12,7 @@
 use std::ffi::{c_int, c_void};
 use std::io;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use rusqlite::{Connection, ffi};
 
@@ -19,7 +20,7 @@ use rusqlite::{Connection, ffi};
 /// the connection's own VFS handle. SQLCipher encrypts above the VFS, so the
 /// bytes are exactly what is on disk.
 pub struct RawFile<'conn> {
-    file: *mut ffi::sqlite3_file,
+    file: NonNull<ffi::sqlite3_file>,
     _conn: PhantomData<&'conn Connection>,
 }
 
@@ -41,19 +42,20 @@ impl<'conn> RawFile<'conn> {
         };
         // SAFETY: a non-null `file` from SQLite points at its open file
         // object, whose `pMethods` is null only while the file is closed.
-        // `as_ref` is `None` for a null `file`.
-        let open = rc == ffi::SQLITE_OK
-            && unsafe { file.as_ref() }.is_some_and(|object| !object.pMethods.is_null());
-        if !open {
-            return Err(io::Error::other("the database file is not open"));
-        }
+        // Holding it as `NonNull` keeps the null check in the type, so no
+        // later dereference can see the null it started as (code scanning
+        // alerts #55, #68).
+        let file = NonNull::new(file)
+            .filter(|file| rc == ffi::SQLITE_OK && !unsafe { file.as_ref() }.pMethods.is_null())
+            .ok_or_else(|| io::Error::other("the database file is not open"))?;
         Ok(Self { file, _conn: PhantomData })
     }
 
     fn methods(&self) -> &ffi::sqlite3_io_methods {
-        // SAFETY: checked non-null in `of`, and SQLite keeps it for as long
-        // as the connection holds the file open, which outlives `'conn`.
-        unsafe { &*(*self.file).pMethods }
+        // SAFETY: `file` and its `pMethods` were checked non-null in `of`,
+        // and SQLite keeps both for as long as the connection holds the file
+        // open, which outlives `'conn`.
+        unsafe { &*self.file.as_ref().pMethods }
     }
 
     /// The file's length in bytes.
@@ -61,7 +63,7 @@ impl<'conn> RawFile<'conn> {
         let size_of = self.methods().xFileSize.ok_or_else(|| io::Error::other("no xFileSize"))?;
         let mut size: ffi::sqlite3_int64 = 0;
         // SAFETY: `self.file` is the open file these methods belong to.
-        let rc = unsafe { size_of(self.file, &mut size) };
+        let rc = unsafe { size_of(self.file.as_ptr(), &mut size) };
         if rc != ffi::SQLITE_OK {
             return Err(io::Error::other(format!("could not size the database file ({rc})")));
         }
@@ -76,7 +78,8 @@ impl<'conn> RawFile<'conn> {
         let offset = ffi::sqlite3_int64::try_from(offset).map_err(io::Error::other)?;
         // SAFETY: `buf` is valid for `amount` bytes, and `self.file` is the
         // open file these methods belong to.
-        let rc = unsafe { read(self.file, buf.as_mut_ptr().cast::<c_void>(), amount, offset) };
+        let rc =
+            unsafe { read(self.file.as_ptr(), buf.as_mut_ptr().cast::<c_void>(), amount, offset) };
         match rc {
             ffi::SQLITE_OK => Ok(()),
             ffi::SQLITE_IOERR_SHORT_READ => {
