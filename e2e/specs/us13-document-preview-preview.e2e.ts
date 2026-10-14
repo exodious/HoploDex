@@ -192,8 +192,13 @@ function scanRoots(): string[] {
   return [...new Set(roots.map((root) => fs.realpathSync(root)))];
 }
 
-/** The files under the scan roots that hold `needles`. */
-function filesHolding(needles: string[]): string[] {
+/** The files under the scan roots that hold `needles`, read only if written
+ * since `since` (ms since the epoch). The needles are random markers made
+ * after `since`, so a file that holds one was written after it, which sets its
+ * modification and change times; the files that were already there (on a
+ * developer's machine, gigabytes in the temp folder) needn't be read on every
+ * scan. */
+function filesHolding(needles: string[], since: number): string[] {
   const found = new Set<string>();
   const wanted = needles.map((needle) => Buffer.from(needle, "latin1"));
   const visit = (entry: string) => {
@@ -212,7 +217,11 @@ function filesHolding(needles: string[]): string[] {
         return;
       }
       for (const name of names) visit(path.join(entry, name));
-    } else if (stat.isFile() && stat.size <= 256 * 1024 * 1024) {
+    } else if (
+      stat.isFile() &&
+      stat.size <= 256 * 1024 * 1024 &&
+      Math.max(stat.mtimeMs, stat.ctimeMs, stat.birthtimeMs) >= since
+    ) {
       try {
         const content = fs.readFileSync(entry);
         if (wanted.some((needle) => content.includes(needle))) found.add(entry);
@@ -588,6 +597,9 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
 
   it("SC-002: leaves no copy of a PDF, TIFF or text document on disk, during or after a preview", async function () {
     this.timeout(180000);
+    // A little before the markers exist, for file systems whose times are
+    // coarser than a millisecond.
+    const since = Date.now() - 2000;
     const pdfMarker = marker("PDF");
     const tiffMarker = marker("TIFF");
     const textMarker = marker("TXT");
@@ -608,31 +620,31 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     );
     await attach("Marker.txt", "text/plain", Buffer.from(`${textMarker}\n`));
     const markers = [pdfMarker, tiffMarker, textMarker];
-    expect(filesHolding(markers)).toEqual([]); // nothing before the first preview
+    expect(filesHolding(markers, since)).toEqual([]); // nothing before the first preview
 
     const mark = await eventMark();
     await openDocument("Marker.pdf");
     await waitForEvent("preview:pdf-ready", mark);
-    expect(filesHolding(markers)).toEqual([]);
+    expect(filesHolding(markers, since)).toEqual([]);
     await closeViewer();
-    expect(filesHolding(markers)).toEqual([]);
+    expect(filesHolding(markers, since)).toEqual([]);
 
     await openDocument("Marker.tif");
     await $('.hd-dialog__content--xl img[alt="Marker.tif"]').waitForExist({ timeout: 10000 });
-    expect(filesHolding(markers)).toEqual([]);
+    expect(filesHolding(markers, since)).toEqual([]);
     await closeViewer();
-    expect(filesHolding(markers)).toEqual([]);
+    expect(filesHolding(markers, since)).toEqual([]);
 
     await openDocument("Marker.txt");
     await $(".hd-dialog__content--xl pre.hd-preview__text").waitForExist();
-    expect(filesHolding(markers)).toEqual([]);
+    expect(filesHolding(markers, since)).toEqual([]);
     await closeViewer();
-    expect(filesHolding(markers)).toEqual([]);
+    expect(filesHolding(markers, since)).toEqual([]);
 
     // The scan can see a marker at all: a file that holds one is found.
     const control = path.join(scratchDocuments(), "control.txt");
     fs.writeFileSync(control, pdfMarker);
-    expect(filesHolding([pdfMarker])).toEqual([fs.realpathSync(control)]);
+    expect(filesHolding([pdfMarker], since)).toEqual([fs.realpathSync(control)]);
     fs.rmSync(control);
   });
 

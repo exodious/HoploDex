@@ -1,8 +1,7 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
-import { createDatabase, listedNames, search } from "../support/ui";
+import { createDatabase, listedNames, scratchDocuments, search } from "../support/ui";
 import { writeSheetsWorkbook } from "../support/spreadsheets";
 
 /**
@@ -103,7 +102,8 @@ describe("User Story 5 - Export and Import Records", () => {
   let workDir: string;
 
   before(() => {
-    workDir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-export-"));
+    // In the sandbox, which afterSession removes, not the system temp folder.
+    workDir = fs.mkdtempSync(path.join(scratchDocuments(), "export-"));
   });
 
   it("exports the collection to a spreadsheet and photos folder (Scenario 1)", async () => {
