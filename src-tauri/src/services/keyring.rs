@@ -40,7 +40,7 @@ pub struct Keyring {
 
 enum Backend {
     /// No keyring: tests and tools that must never reach the OS keyring,
-    /// and E2E runs that play a computer without one.
+    /// and tests that play a computer without one.
     Off,
     /// The OS keyring (Secret Service, Keychain, Credential Manager), or,
     /// under `mock-keyring`, keyring-core's in-memory store.
@@ -64,24 +64,17 @@ impl Keyring {
         Self { backend: Backend::System {}, available: OnceLock::new() }
     }
 
-    /// The in-memory keyring of an E2E or test build, configured by
-    /// `HOPLODEX_E2E_KEYRING=unavailable` (a computer with no keyring) and
-    /// `HOPLODEX_E2E_KEYRING_FILE` (a file that keeps it across launches).
+    /// The in-memory keyring of an E2E or test build, kept in the file
+    /// `HOPLODEX_E2E_KEYRING_FILE` names, if any, across launches.
     #[cfg(feature = "mock-keyring")]
     pub fn system() -> Self {
-        Self::mock(
-            std::env::var("HOPLODEX_E2E_KEYRING").ok().as_deref(),
-            std::env::var_os("HOPLODEX_E2E_KEYRING_FILE").map(Into::into),
-        )
+        Self::mock(std::env::var_os("HOPLODEX_E2E_KEYRING_FILE").map(Into::into))
     }
 
-    /// [`system`](Self::system) with its two settings given, so tests set
-    /// them without touching the process environment.
+    /// [`system`](Self::system) with its file given, so tests set it without
+    /// touching the process environment.
     #[cfg(feature = "mock-keyring")]
-    pub fn mock(setting: Option<&str>, mirror: Option<std::path::PathBuf>) -> Self {
-        if setting == Some("unavailable") {
-            return Self::off();
-        }
+    pub fn mock(mirror: Option<std::path::PathBuf>) -> Self {
         mock::install_store();
         if let Some(file) = &mirror {
             mock::read_mirror(file);

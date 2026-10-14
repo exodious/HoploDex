@@ -64,6 +64,8 @@ cipher settings (research §20).
 | Seed in step | New tables and backup-only columns are seeded | `tests/human_seed_coverage_test.rs` |
 | Seed sandbox (constitution 1.2.0) | The seed writes into a new directory or one holding its sandbox marker; refuses a non-empty directory without the marker, and any target that is or lies inside the data, config or documents directory resolved from its environment; writes no keyring entry | `tests/seed_sandbox_test.rs` |
 
+_Amended 2026-10-14: the unavailable keyring (US5) is no longer an E2E seam; it is tested in `tests/keyring_test.rs` with `Keyring::off()` and in Vitest, and `us7-databases.e2e.ts` covers the saved passphrases only ([#77](https://github.com/exodious/HoploDex/issues/77), step 8)._
+
 ## Walkthroughs (by hand, against scratch data)
 
 Use `scripts/human-testing.sh` (it now seeds two databases: see

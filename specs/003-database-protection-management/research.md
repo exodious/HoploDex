@@ -592,6 +592,8 @@ remembered passphrase survive a relaunch. Tests that don't concern the
 keyring never reach it at all: `MachineSettings::load` starts with the
 keyring off, and only the app (and `keyring_test`) give it a real one.
 
+_Amended 2026-10-14: `HOPLODEX_E2E_KEYRING=unavailable` is gone, with the E2E spec that used it ([#77](https://github.com/exodious/HoploDex/issues/77), step 8). A computer without a keyring is tested in `keyring_test.rs` (`Keyring::off()`) and Vitest; `HOPLODEX_E2E_KEYRING_FILE` stays._
+
 ---
 
 ## §11 Machine-local settings
