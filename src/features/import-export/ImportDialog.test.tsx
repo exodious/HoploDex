@@ -139,6 +139,73 @@ describe("ImportDialog (FR-026, FR-032)", () => {
   });
 });
 
+// specs/001-firearm-inventory FR-026: a row that matches an existing record waits
+// for the user's decision, and the import applies only once every one has it.
+describe("ImportDialog: deciding matching rows (001 FR-026)", () => {
+  beforeEach(() => {
+    vi.mocked(importExportService.resolveImportConflicts).mockReset();
+  });
+
+  it("keeps Apply decisions disabled until every matching row has a decision", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockResolvedValue(result);
+    await importTheFile(user);
+    const apply = screen.getByRole("button", { name: "Apply decisions" });
+    expect(apply).toBeDisabled();
+    expect(screen.getByText("2 rows still need a decision.")).toBeInTheDocument();
+
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Firearms, row 2: Glock 19" })).getByRole(
+        "radio",
+        { name: "Keep existing" },
+      ),
+    );
+    expect(apply).toBeDisabled();
+    expect(screen.getByText("1 row still needs a decision.")).toBeInTheDocument();
+
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Firearms, row 3: Glock 26" })).getByRole(
+        "radio",
+        { name: "Keep existing" },
+      ),
+    );
+    expect(apply).toBeEnabled();
+    expect(screen.getByText("Every row has a decision.")).toBeInTheDocument();
+    expect(importExportService.resolveImportConflicts).not.toHaveBeenCalled();
+  });
+
+  it("sends Keep existing as a skip and reports the resolved row", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockResolvedValue({
+      ...result,
+      conflicts: [result.conflicts[0]],
+    });
+    vi.mocked(importExportService.resolveImportConflicts).mockResolvedValue({
+      resolvedCount: 1,
+      unresolved: [],
+      warnings: [],
+    });
+    await importTheFile(user);
+
+    await user.click(screen.getByRole("radio", { name: "Keep existing" }));
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+
+    expect(importExportService.resolveImportConflicts).toHaveBeenCalledWith(
+      SCOPE,
+      expect.objectContaining({
+        importSessionId: "import-1",
+        resolutions: [{ conflictId: "c1", action: "skip" }],
+      }),
+    );
+    await screen.findByRole("button", { name: "Done" });
+    expect(document.querySelector(".hd-outcome__headline")).toHaveTextContent(
+      "Resolved 1 matching row.",
+    );
+    expect(screen.queryByRole("button", { name: "Apply decisions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+});
+
 describe("ImportDialog warnings (US4-6, FR-009)", () => {
   it("shows a Warnings section, separate from row errors and conflicts, with the count in the tally", async () => {
     const user = userEvent.setup();

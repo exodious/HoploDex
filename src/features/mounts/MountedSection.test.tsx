@@ -6,6 +6,7 @@ import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
+import { CommandFailure } from "../../services/tauriClient";
 import { MountedSection } from "./MountedSection";
 import type { MountedEntry, RecordLabel, RecordRef } from "./types";
 import { render } from "../../test/sessionScope";
@@ -449,5 +450,41 @@ describe("MountedSection wording (FR-012, constitution III)", () => {
     await user.click(screen.getByRole("option", { name: /Aimpoint/ }));
     await screen.findByRole("alertdialog", { name: /^Move / });
     expect(document.body.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
+  });
+});
+
+// specs/006-accessory-links FR-012, FR-013, the refusals of `mount_record`
+// (mount_test.rs holds the rules): the dialog shows the backend's `host` message
+// and nothing changes.
+describe("MountedSection when the mount is refused (006 FR-012, FR-013)", () => {
+  const aimpoint = label({ kind: "accessory", id: 30 }, "Aimpoint", "T-2", "Optic");
+  const REFUSAL = "LaRue PredatAR is mounted on Aimpoint T-2, so it can't carry it.";
+
+  it("shows fieldErrors.host in the picker, keeps it open and leaves the list as it was", async () => {
+    const user = userEvent.setup();
+    listMountCandidates.mockResolvedValue({ candidates: [{ label: aimpoint, mountedOn: null }] });
+    mountRecord.mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "The mount was refused.",
+        fieldErrors: { host: REFUSAL },
+      }),
+    );
+    renderSection();
+
+    const dialog = await openExistingDialog(user);
+    await user.click(within(dialog).getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: /Aimpoint/ }));
+
+    expect(await within(dialog).findByText(REFUSAL)).toBeInTheDocument();
+    expect(screen.queryByText("The mount was refused.")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /^Mount on / })).toBeInTheDocument();
+    expect(mountRecord).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(screen.queryByText(/^Aimpoint T-2 · Optic mounted on /)).not.toBeInTheDocument();
+    const items = within(screen.getByRole("list", { hidden: true })).getAllByRole("listitem", {
+      hidden: true,
+    });
+    expect(items).toHaveLength(entries.length);
   });
 });

@@ -1,4 +1,6 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
@@ -236,5 +238,49 @@ describe("PhotoGallery: at most 50 photos (001 FR-007, amended 2026-10-11)", () 
         "Scope.jpg wasn't added. This accessory has 50 photos, the most it can have.",
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("PhotoGallery: choosing the thumbnail (001 US4 Scenario 2)", () => {
+  // A parent that holds the thumbnail id the way a record page does: the gallery
+  // calls `onChanged` and the page reloads the record with its new thumbnail.
+  function Page({ scope }: { scope: SessionScope }) {
+    const [thumbnailPhotoId, setThumbnailPhotoId] = useState<number | null>(1);
+    return (
+      <ToastProvider>
+        <SessionScopeContext.Provider value={scope}>
+          <PhotoGallery
+            owner={owner}
+            thumbnailPhotoId={thumbnailPhotoId}
+            onChanged={async () => setThumbnailPhotoId(2)}
+          />
+        </SessionScopeContext.Provider>
+      </ToastProvider>
+    );
+  }
+
+  it("Use as thumbnail in the viewer sets it, then shows Current thumbnail and moves the tag", async () => {
+    const user = userEvent.setup();
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_photos") return [photo(1, "First.jpg"), photo(2, "Second.jpg")];
+      if (command === "set_thumbnail_photo") return { thumbnailPhotoId: 2 };
+      if (command === "get_photo_original") return new ArrayBuffer(0);
+      throw new Error(`unexpected command ${command}`);
+    });
+    render(<Page scope={createSessionScope(1)} />);
+    const first = await screen.findByRole("button", { name: "View First.jpg" });
+    const second = screen.getByRole("button", { name: "View Second.jpg" });
+    expect(within(first).getByText("Thumbnail")).toBeInTheDocument();
+    expect(within(second).queryByText("Thumbnail")).not.toBeInTheDocument();
+
+    await user.click(second);
+    await user.click(await screen.findByRole("button", { name: "Use as thumbnail" }));
+
+    expect(calls("set_thumbnail_photo")).toHaveLength(1);
+    expect(calls("set_thumbnail_photo")[0][1]).toEqual({ owner, photoId: 2 });
+    const current = await screen.findByRole("button", { name: "Current thumbnail" });
+    expect(current).toBeDisabled();
+    expect(within(second).getByText("Thumbnail")).toBeInTheDocument();
+    expect(within(first).queryByText("Thumbnail")).not.toBeInTheDocument();
   });
 });

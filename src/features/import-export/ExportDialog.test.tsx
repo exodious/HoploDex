@@ -286,3 +286,53 @@ describe("ExportDialog with accessories (US5)", () => {
     expect(screen.queryByText(/-accessories\.csv/)).not.toBeInTheDocument();
   });
 });
+
+// specs/001-firearm-inventory spec.md US5, the filtered-export edge case: only the
+// current search results are exported when the user asks for them.
+describe("ExportDialog exporting the current results (001 US5, filtered export)", () => {
+  const filtered = { ...browse, query: "glock" };
+  const exported = {
+    spreadsheetPath: "/out/hoplodex-export-20261001-120000.csv",
+    accessorySpreadsheetPath: null,
+    photosFolderPath: "/out/hoplodex-export-20261001-120000_photos",
+    exportedFirearmCount: 1,
+    exportedAccessoryCount: 0,
+    exportedPhotoCount: 0,
+  };
+
+  it("sends scope filtered with the page's search when the current results are chosen", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.exportCollection).mockResolvedValue(exported);
+    renderDialog(filtered);
+    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await user.click(await screen.findByRole("radio", { name: /Current results/ }));
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    await screen.findByText("/out/hoplodex-export-20261001-120000.csv");
+    expect(importExportService.exportCollection).toHaveBeenCalledTimes(1);
+    expect(importExportService.exportCollection).toHaveBeenCalledWith(SCOPE, {
+      format: "csv",
+      destinationFolder: "/out",
+      scope: "filtered",
+      filter: { query: "glock", includeDisposed: false },
+    });
+  });
+
+  it("sends scope all, with no filter, when the entire collection stays chosen", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.exportCollection).mockResolvedValue(exported);
+    renderDialog(filtered);
+    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    await screen.findByText("/out/hoplodex-export-20261001-120000.csv");
+    expect(importExportService.exportCollection).toHaveBeenCalledWith(SCOPE, {
+      format: "csv",
+      destinationFolder: "/out",
+      scope: "all",
+      filter: undefined,
+    });
+  });
+});
