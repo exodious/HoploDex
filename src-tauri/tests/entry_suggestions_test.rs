@@ -144,6 +144,7 @@ fn aliases_narrow_the_list_and_similar_names_stay_distinct() {
     );
 }
 
+// 004 US2 Scenario 4
 #[test]
 fn a_value_in_the_catalog_and_on_record_appears_once_with_both_markers() {
     // US2-4.
