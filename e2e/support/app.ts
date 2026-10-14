@@ -140,7 +140,10 @@ function appEnv(): NodeJS.ProcessEnv {
 /**
  * Launches the app with this process's environment (the sandbox, the
  * worker's display and the per-spec settings `wdio.conf.ts` sets) and waits
- * until its WebDriver server answers on the worker's port.
+ * until its WebDriver server says it is ready on the worker's port: it
+ * answers `/status` as soon as it listens, but says `ready` only once the
+ * page has loaded (the vendored plugin's #77 patch). A session's first script
+ * sent before that could wait out the whole script timeout on macOS.
  */
 export async function launchApp(timeout = 30000) {
   if (running(state.app)) throw new Error("the app is already running");
@@ -157,11 +160,15 @@ export async function launchApp(timeout = 30000) {
     }
     try {
       const status = await fetch(`http://127.0.0.1:${state.port}/status`);
-      if (status.ok) return;
+      if (status.ok) {
+        const body = (await status.json()) as { value?: { ready?: boolean } };
+        if (body.value?.ready === true) return;
+      }
     } catch {
       // not listening yet
     }
-    if (Date.now() > deadline) throw new Error("the app's WebDriver server never answered");
+    if (Date.now() > deadline)
+      throw new Error("the app's WebDriver server never said it was ready");
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }

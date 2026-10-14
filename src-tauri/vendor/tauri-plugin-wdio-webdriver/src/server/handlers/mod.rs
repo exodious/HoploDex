@@ -33,7 +33,10 @@ pub async fn status<R: Runtime>(state: State<Arc<AppState<R>>>) -> WebDriverResu
     // This is a proxy for WebView2 readiness - windows become available
     // only after the webview is fully initialized
     let window_labels = state.get_window_labels();
-    let ready = !window_labels.is_empty();
+    // HoploDex patch (#77): and only once a page has finished loading, since
+    // a script sent before that may never report back (macOS).
+    let ready = !window_labels.is_empty()
+        && super::PAGE_LOADED.load(std::sync::atomic::Ordering::SeqCst);
 
     Ok(WebDriverResponse::success(json!({
         "ready": ready,

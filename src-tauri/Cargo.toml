@@ -332,6 +332,10 @@ incremental = true
 # `wdio session` refs found nothing over WebDriver classic. Every execute wrapper now
 # returns a web element reference (`SERIALIZE_VALUE_JS`, `platform/executor.rs`) and
 # the script handlers add it to the session's store (`ElementStore::adopt_references`).
+# #77: `/status` answered `ready` as soon as a window existed, before its page had
+# loaded; on macOS a script sent then never reports back and waits out the script
+# timeout. It now says ready only after a page has finished loading (`on_page_load`,
+# `server::PAGE_LOADED`).
 # Only the `e2e` feature builds it. Drop this patch when the fixes are released upstream.
 [patch.crates-io]
 tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }

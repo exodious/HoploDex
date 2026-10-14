@@ -13,6 +13,10 @@ use crate::platform::{create_executor, FrameId, PlatformExecutor, WebviewHandle}
 use crate::server::response::WebDriverErrorResponse;
 use crate::webdriver::{SessionManager, Timeouts};
 
+/// Whether a web view has finished loading a page (HoploDex patch, #77): set
+/// by the plugin's `on_page_load`, read by `/status`.
+pub static PAGE_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Shared state for the `WebDriver` server
 pub struct AppState<R: Runtime> {
     pub app: AppHandle<R>,
