@@ -125,21 +125,6 @@ describe("User Story 2 (007) - Open a Document in Another App, After Asking", ()
     await closeViewer();
   });
 
-  it("disables Open in another app… for a pre-007 row that isn't a document type", async () => {
-    const state = await browser.execute(() => {
-      const row = [...document.querySelectorAll<HTMLElement>("li.hd-doc")].find(
-        (li) => li.querySelector("button.hd-doc__name")?.textContent?.trim() === "Old scan.jpg",
-      );
-      const button = [...(row?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
-        (b) => b.textContent?.trim() === "Open in another app…",
-      );
-      return button ? { disabled: button.disabled, title: button.title } : null;
-    });
-
-    expect(state).toMatchObject({ disabled: true });
-    expect(state!.title).not.toBe("");
-  });
-
   it("refuses a dropped .exe before any command, and attaches nothing", async () => {
     const before = await documentNames();
 

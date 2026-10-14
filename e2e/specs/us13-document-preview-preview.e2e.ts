@@ -61,18 +61,6 @@ const FIXTURES = fileURLToPath(
   new URL("../../src-tauri/tests/fixtures/documents/", import.meta.url),
 );
 
-// The Glock's seeded documents, in list order (examples/human_seed.rs).
-const SEEDED = [
-  "Purchase receipt.pdf",
-  "Appraisal (protected).pdf",
-  "Appraisal scan.tif",
-  "owners-manual-notes.txt",
-  "Round count.csv",
-  "Bill of sale.docx",
-  "Range log.ods",
-  "Old scan.jpg",
-];
-
 // --- Helpers ----------------------------------------------------------------
 
 /** Leaves a record for the Collection page and opens the Glock again, which
@@ -80,25 +68,6 @@ const SEEDED = [
 async function reopenGlock() {
   await goTo("Collection");
   await openRecord(GLOCK);
-}
-
-/** Presses the viewer's "Next document" with a script click, and waits for the
- * title to change. */
-async function nextDocument(from: string) {
-  await clickEl('.hd-dialog__content--xl button[aria-label="Next document"]');
-  await browser.waitUntil(async () => (await viewerTitle()) !== from, {
-    timeout: 10000,
-    timeoutMsg: `the viewer never left "${from}"`,
-  });
-}
-
-async function nextIsEnabled(): Promise<boolean> {
-  return browser.execute(() => {
-    const next = document.querySelector<HTMLButtonElement>(
-      '.hd-dialog__content--xl button[aria-label="Next document"]',
-    );
-    return Boolean(next && !next.disabled);
-  });
 }
 
 /** An error `invoke` rejects with, as the command's `CommandError`, or null. */
@@ -479,7 +448,7 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     await closeViewer();
   });
 
-  it("opens a PDF, F6 into it and back, to the TIFF, PageDown and +, to the text, Escape (keyboard only)", async function () {
+  it("opens a PDF, F6 into it and back, to the TIFF, PageDown and +, to the text, Escape (keyboard only), then previews the Leupold's own receipt on its record", async function () {
     this.timeout(120000);
     skipWithoutRealInput(this);
     const opener = 'button.hd-doc__name[title="Preview Purchase receipt.pdf"]';
@@ -590,31 +559,9 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
         opener,
       ),
     ).toBe(true);
-  });
 
-  it("moves through the Glock's own documents and never into the mounted Leupold's (FR-007)", async function () {
-    this.timeout(180000);
-    await settle();
-    const listed = await browser.execute(() =>
-      [...document.querySelectorAll("button.hd-doc__name")].map((b) => b.textContent?.trim()),
-    );
-    expect(listed).toEqual(expect.arrayContaining(SEEDED));
-
-    await openDocument(listed[0]!);
-    const visited: string[] = [];
-    for (;;) {
-      const title = (await viewerTitle())!;
-      visited.push(title);
-      if (!(await nextIsEnabled())) break;
-      await nextDocument(title);
-    }
-    await closeViewer();
-
-    expect(visited).toEqual(listed);
-    expect(visited).not.toContain("receipt-leupold.pdf");
-  });
-
-  it("previews the Leupold's own receipt on its record", async () => {
+    // The mounted Leupold's own receipt previews on its own record (the
+    // Glock's documents never reach it: FR-007, document_test.rs).
     await goTo("Accessories");
     await $("h1=Accessories").waitForExist();
     await browser.waitUntil(
@@ -631,9 +578,9 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     await $("#record-name").waitForExist();
     await settle();
 
-    const mark = await eventMark();
+    const leupoldMark = await eventMark();
     await openDocument("receipt-leupold.pdf");
-    await waitForEvent("preview:pdf-ready", mark);
+    await waitForEvent("preview:pdf-ready", leupoldMark);
     await closeViewer();
     await goTo("Collection");
     await openRecord(GLOCK);
@@ -706,22 +653,6 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     // Still up, and still previewing.
     await openDocument("owners-manual-notes.txt");
     await $(".hd-dialog__content--xl pre.hd-preview__text").waitForExist();
-    await closeViewer();
-  });
-
-  // The footer's "Open in another app…" is User Story 2's (T093); this check is
-  // its (T086).
-  it("FR-006: 'Open in another app…' stays in the footer beside a damaged PDF", async () => {
-    const mark = await eventMark();
-    await openDocument("three-pages-truncated.pdf");
-    await waitForEvent("preview:pdf-ready", mark);
-    const enabled = await browser.execute(() => {
-      const button = [
-        ...document.querySelectorAll<HTMLButtonElement>(".hd-dialog__content--xl footer button"),
-      ].find((b) => b.textContent?.trim() === "Open in another app…");
-      return Boolean(button && !button.disabled);
-    });
-    expect(enabled).toBe(true);
     await closeViewer();
   });
 

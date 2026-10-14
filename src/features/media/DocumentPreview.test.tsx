@@ -350,6 +350,7 @@ describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
     expect(calls("close_preview")).toEqual([]);
   });
 
+  // 007 US1 Scenario 6 (FR-007)
   it("moves to the next and previous document of the record, with the buttons and with the arrow keys", async () => {
     const { user } = await openViewer();
     await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
@@ -376,6 +377,7 @@ describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
     expect(titleOf()).toBe("Purchase receipt.pdf");
   });
 
+  // 007 US1 Scenario 6 (FR-007)
   it("stops at the last document", async () => {
     await openViewer({ start: 4 });
     await screen.findByRole("dialog", { name: "Bill of sale.docx" });
@@ -1003,6 +1005,7 @@ describe("DocumentPreview: Open in another app… (contract §2, §3)", () => {
       expect(calls("open_document")).toEqual([{ id: 3 }]);
     });
 
+    // 007 FR-006
     it("stays beside a PDF the surface can't show, which is the viewer's own message (FR-006)", async () => {
       await openWithToasts();
       await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
