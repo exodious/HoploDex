@@ -43,6 +43,7 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     onCreate = vi.fn<(input: CreateDatabaseInput) => Promise<void>>().mockResolvedValue(undefined);
   });
 
+  // 003 US2 Scenario 1
   it("starts from the suggested name and folder and says where the file goes", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
@@ -78,6 +79,7 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     expect(note).toHaveTextContent("/mnt/usb/HoploDex backups");
   });
 
+  // 003 US1 Scenario 3
   it("keeps Create database disabled until the no-recovery acknowledgement is ticked (FR-004)", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
@@ -95,6 +97,7 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     ).toBeInTheDocument();
   });
 
+  // 003 US1 Scenario 2
   it("checks the passphrases as they are typed, and waits until they are long enough and match", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
@@ -194,6 +197,7 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     );
   });
 
+  // 003 US1 Scenario 1 (the name field takes the refusal: M2, the field-error mechanism)
   it("says so on the name when the file already exists", async () => {
     const user = userEvent.setup();
     onCreate.mockRejectedValue(

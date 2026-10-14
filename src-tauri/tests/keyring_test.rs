@@ -264,6 +264,7 @@ fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     assert!(saved_failed(&world.open("Main", Unlock::Saved).unwrap_err()));
 }
 
+// 003 US2 Scenario 5
 #[test]
 fn removing_a_database_from_the_list_forgets_its_passphrase() {
     let world = World::new();
@@ -428,6 +429,7 @@ fn saving_a_wrong_passphrase_is_refused_by_the_first_page_check() {
     world.add_firearm("A1");
 }
 
+// 003 US5 Scenario 4
 #[test]
 fn without_a_keyring_nothing_is_saved_and_everything_else_works() {
     // The in-memory store is installed anyway, so `stored` can look in it.

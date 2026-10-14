@@ -103,8 +103,6 @@ export function isolateAppData(): string {
  * setting on; whatever the developer's own environment holds never reaches
  * the app. */
 export interface SessionSettings {
-  /** A computer with no keyring service (FR-019). */
-  noKeyring?: boolean;
   /** A computer whose PDF viewer can't be used safely (007 FR-003a): PDFs
    * are not previewable, TIFF and text still are. */
   pdfOff?: boolean;
@@ -124,11 +122,6 @@ export interface SessionSettings {
  */
 export function applySessionSettings(settings: SessionSettings = {}) {
   delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
-  if (settings.noKeyring) {
-    process.env.HOPLODEX_E2E_KEYRING = "unavailable";
-  } else {
-    delete process.env.HOPLODEX_E2E_KEYRING;
-  }
   if (settings.pdfOff) {
     process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
   } else {

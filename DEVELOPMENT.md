@@ -887,7 +887,7 @@ override that:
   on Linux: use `screenshot`.
 - The sandbox starts with the harness's defaults: the in-memory keyring, the
   native "open in another app" confirmation answered "Open", PDF preview on,
-  the real idle minute. A spec's own settings (`-no-keyring`, `-pdf-off`, the
+  the real idle minute. A spec's own settings (`-pdf-off`, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
 - In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on
@@ -959,8 +959,9 @@ of it:
   `e2e` feature, which includes `mock-keyring`, an in-memory keyring for saved
   passphrases, since a headless session can't unlock a real one. The harness keeps it in
   `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
-  passphrase survives a relaunch, and launches any `*-no-keyring.e2e.ts` spec
-  with `HOPLODEX_E2E_KEYRING=unavailable`, a computer without a keyring.
+  passphrase survives a relaunch. A computer without a keyring is tested in
+  Rust and Vitest, not in E2E (`tests/keyring_test.rs`,
+  `DatabaseChooser.test.tsx`, `DatabaseSettingsDialog.test.tsx`).
 - E2E steps don't sleep. The frontend counts its backend calls and pending
   search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
   helpers in `e2e/support/ui.ts` call `settle()` after each action, which

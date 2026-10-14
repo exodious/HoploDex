@@ -1160,6 +1160,7 @@ describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contract
     );
   });
 
+  // 007 US3 Scenario 1
   it("offers Preview in HoploDex and Open in another app, at Preview by default (US3-1)", () => {
     renderSettings();
 
@@ -1211,6 +1212,7 @@ describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contract
     expect(external()).not.toBeChecked();
   });
 
+  // 007 US3 Scenario 6
   it("changes back to Preview in HoploDex at once, with setDocumentOpening('preview')", async () => {
     const user = userEvent.setup();
     vi.mocked(mediaService.getDocumentOpening).mockResolvedValue("external");

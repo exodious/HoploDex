@@ -43,6 +43,7 @@ fn a_database_reopens_with_its_passphrase_and_keeps_its_rows() {
     assert_eq!(keep, 7);
 }
 
+// 003 US1 Scenario 6
 #[test]
 fn a_wrong_passphrase_is_refused_and_the_file_is_untouched() {
     let db = TestDb::new();
@@ -58,6 +59,7 @@ fn a_wrong_passphrase_is_refused_and_the_file_is_untouched() {
     assert_eq!(fs::read(&path).unwrap(), before, "a refused open must not write the file");
 }
 
+// 003 US1 Scenario 2
 #[test]
 fn a_new_passphrase_needs_twelve_characters_and_no_nul() {
     let short = validate_new_passphrase(&phrase("elevenchars")).unwrap_err();
@@ -351,6 +353,7 @@ mod through_commands {
         assert_eq!(recent[0].path, world.path("Main"));
     }
 
+    // 003 US1 Scenario 6
     #[test]
     fn a_wrong_passphrase_is_refused_through_the_command_and_the_file_is_untouched() {
         let world = World::new();
@@ -373,6 +376,7 @@ mod through_commands {
         assert_eq!(fs::read(world.path("Main")).unwrap(), before);
     }
 
+    // 003 US1 Scenarios 2 and 3
     #[test]
     fn create_refuses_a_short_passphrase_and_a_missing_acknowledgement() {
         let world = World::new();
@@ -412,6 +416,7 @@ mod through_commands {
         assert_eq!(err.code, "PASSPHRASE_INCORRECT");
     }
 
+    // 003 US1 Scenario 4
     #[test]
     fn dismissing_the_disk_encryption_note_is_kept_and_is_not_a_change_to_back_up() {
         let world = World::new();

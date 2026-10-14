@@ -86,11 +86,10 @@ export const config: WebdriverIO.Config = {
     // Only a spec named so gets a setting for its whole session; a spec that
     // needs more sets the variable itself and calls relaunchApp()
     // (applySessionSettings in support/sandbox.ts). Specs that are named:
-    // `-no-keyring` (a computer with no keyring service, FR-019), `-pdf-off`
-    // (a viewer that can't be used safely, 007 FR-003a) and the locking
-    // spec, whose idle minute lasts 3 s so its test doesn't wait a real one.
+    // `-pdf-off` (a viewer that can't be used safely, 007 FR-003a) and the
+    // locking spec, whose idle minute lasts 3 s so its test doesn't wait a
+    // real one.
     applySessionSettings({
-      noKeyring: specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts")),
       pdfOff: specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts")),
       idleMinuteSeconds: specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts")) ? 3 : undefined,
     });
