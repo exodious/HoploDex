@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
+// `human_seed_coverage_test` includes the same file through `human_seed.rs`;
+// one program now holds both copies, which is fine: each is its own module.
+#[allow(clippy::duplicate_mod)]
 #[path = "../examples/support/sandbox.rs"]
 mod sandbox;
 

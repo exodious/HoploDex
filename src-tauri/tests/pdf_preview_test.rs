@@ -21,9 +21,7 @@
 //!   os_check_passed: bool)`;
 //! - `MachineSettings::sweep_hold_leftovers()`.
 
-#[path = "support/preview_support.rs"]
-mod preview_support;
-mod support;
+use crate::{preview_support, support};
 
 use std::fs;
 #[cfg(target_os = "linux")]

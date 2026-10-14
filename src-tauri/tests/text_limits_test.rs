@@ -6,8 +6,8 @@
 //! not a refusal of the file. Run against a real temporary SQLCipher
 //! database.
 
-mod sheets;
-mod support;
+use crate::sheets;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;

@@ -409,6 +409,37 @@ function magentaPixels(
   return count;
 }
 
+/** Dismisses the toasts, as a person can, and waits for them to go. One
+ * hides the PDF surface, which is a web view above the page (an attach
+ * leaves one), and would otherwise take the 4 s it stays up (#77, step 10). */
+async function dismissToasts() {
+  await browser.waitUntil(
+    async () => {
+      await browser.execute(() =>
+        document.querySelectorAll<HTMLElement>(".hd-toast__close").forEach((b) => b.click()),
+      );
+      return (await $$(".hd-toast").length) === 0;
+    },
+    { timeout: 15000, timeoutMsg: "the toasts never went" },
+  );
+}
+
+/** Waits until the viewer's first paint shows on the screen (the page's
+ * magenta, which nothing else in the app is) once the dialog has settled, and
+ * returns the screen it saw, so the test reads that one. */
+async function screenWithPdf(): Promise<Screen> {
+  await settle();
+  let screen: Screen | undefined;
+  await browser.waitUntil(
+    async () => {
+      screen = await windowScreenshot();
+      return magentaPixels(screen) > 5000;
+    },
+    { timeout: 10000, interval: 50, timeoutMsg: "the PDF never showed on the screen" },
+  );
+  return screen!;
+}
+
 /** The rectangle the page's magenta covers, in the page's own coordinates. */
 function magentaBounds(screen: Screen): {
   left: number;
@@ -676,18 +707,14 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     const mark = await eventMark();
     await openDocument("Magenta.pdf");
     await waitForEvent("preview:pdf-ready", mark);
-    // A toast hides the surface, which is a web view above the page (the
-    // attach above left one): wait for them to go.
-    await browser.waitUntil(async () => (await $$(".hd-toast").length) === 0, {
-      timeout: 15000,
-      timeoutMsg: "the toasts never went",
-    });
-    await browser.pause(1500); // the dialog's entrance, and the viewer's first paint
+    // A toast hides the surface (the attach above left one).
+    await dismissToasts();
+    // The dialog's entrance, and the viewer's first paint.
+    const screen = await screenWithPdf();
     const area = await browser.execute(() => {
       const r = document.querySelector(".hd-preview__surface")!.getBoundingClientRect();
       return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
     });
-    const screen = await windowScreenshot();
     expect(magentaPixels(screen)).toBeGreaterThan(5000);
     // Linux GTK allocated the surface its natural size, not the size asked
     // for, so it ran to the window's edges over the footer.
@@ -728,12 +755,9 @@ describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () 
     const mark = await eventMark();
     await openDocument("Magenta.pdf");
     await waitForEvent("preview:pdf-ready", mark);
-    await browser.waitUntil(async () => (await $$(".hd-toast").length) === 0, {
-      timeout: 15000,
-      timeoutMsg: "the toasts never went",
-    });
-    await browser.pause(1000); // the viewer's first paint
-    expect(magentaPixels(await windowScreenshot())).toBeGreaterThan(5000);
+    await dismissToasts();
+    // Waits for the viewer's first paint; the test then reads the screen it saw.
+    expect(magentaPixels(await screenWithPdf())).toBeGreaterThan(5000);
 
     // The viewer's own lock button, since the dialog covers the top bar's.
     await clickEl('.hd-dialog__content--xl button[aria-label="Lock now"]');

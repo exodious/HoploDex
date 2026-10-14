@@ -2,7 +2,7 @@
 //! US1 Acceptance Scenarios 8-9), run against a real temporary SQLCipher
 //! database. Reversal clashes are covered in `disposition_reversal_test.rs`.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::{DisposeInput, ListFirearmsInput, ops};
 use hoplodex_lib::commands::import_export::ImportSessionStore;

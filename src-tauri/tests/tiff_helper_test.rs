@@ -39,9 +39,7 @@
 //! `HelperHandle::command` is what a helper outside a job is started with,
 //! and a parent that is terminated takes the helper with it.
 
-#[path = "support/preview_support.rs"]
-mod preview_support;
-mod support;
+use crate::{preview_support, support};
 
 #[cfg(debug_assertions)]
 use std::net::TcpListener;
@@ -321,7 +319,7 @@ fn the_helper_dies_with_hoplodex_even_if_it_is_killed() {
     };
 
     let mut parent = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "the_parent_stub", "--nocapture", "--test-threads=1"])
+        .args(["--exact", "tiff_helper_test::the_parent_stub", "--nocapture", "--test-threads=1"])
         .env(STUB, "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

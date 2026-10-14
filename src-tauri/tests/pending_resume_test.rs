@@ -4,7 +4,7 @@
 //! state lets through, and a row that stays until the form has opened.
 //! Real SQLCipher files in temp directories.
 
-mod support;
+use crate::support;
 
 use std::path::PathBuf;
 

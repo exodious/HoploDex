@@ -50,9 +50,7 @@
 //!   asks with `ConsentRequest::Setting`; every other call changes without
 //!   asking.
 
-#[path = "support/preview_support.rs"]
-mod preview_support;
-mod support;
+use crate::{preview_support, support};
 
 use std::collections::VecDeque;
 use std::fs;

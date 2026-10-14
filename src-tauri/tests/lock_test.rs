@@ -5,9 +5,7 @@
 //! OS's notices are the lifecycle calls `main.rs` makes for them, some from
 //! another thread while an operation runs, as they arrive in the app.
 
-#[path = "support/preview_support.rs"]
-mod preview_support;
-mod support;
+use crate::{preview_support, support};
 
 use std::fs;
 use std::path::{Path, PathBuf};

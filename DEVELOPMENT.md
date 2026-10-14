@@ -197,7 +197,7 @@ and runs the tests in it as a standard (non-admin) user:
 scripts/tart-vm.sh setup                   # clone, create hoplotest, install the toolchain, log it in at boot
 scripts/tart-vm.sh start                   # start it with a 1920×1080 screen, for the tests and manual testing
 scripts/tart-vm.sh test                    # copy the checkout in, lint and test over SSH, E2E in its desktop
-scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.test.tsx   # one command
+scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.fields.test.tsx   # one command
 scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
 scripts/tart-vm.sh start --tall            # restart it with a 1920×4200 screen, for the screenshot walk
 scripts/tart-vm.sh gui bash -c 'npm run build && npm run screenshots'
@@ -486,14 +486,38 @@ npm run build && npm run test:e2e                        # WebdriverIO E2E, driv
 To run part of a suite:
 
 ```bash
-cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test)'                 # one integration-test file
-cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test) & test(<name>)'  # tests in it whose name contains <name>
-cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                              # tests anywhere whose name contains <name>
-npx vitest run src/features/firearms/FirearmForm.test.tsx                                                 # one Vitest file
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                            # one E2E spec
+cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'test(/^firearm_lifecycle_test::/)'                 # one integration-test file
+cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'test(/^firearm_lifecycle_test::/) & test(<name>)'  # tests in it whose name contains <name>
+cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                                # tests anywhere whose name contains <name>
+npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                            # one Vitest file
+npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                              # one E2E spec
 
-cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test <name>  # the same without nextest
+cargo test --manifest-path src-tauri/Cargo.toml --test integration firearm_lifecycle_test::  # the same without nextest
 ```
+
+Every file in `src-tauri/tests/` is a module of one test program,
+`tests/integration.rs`, so the test crate links once instead of once per file
+(a rebuild after a change to `src/` took 8 s with a program per file, 3 s with
+one), and a test's name starts with its file's name: `firearm_lifecycle_test::`.
+`autotests` is off, so **a new test file needs a `mod` line in
+`tests/integration.rs`** (`test_files_test` fails when one is missing), and a
+test file refers to the shared helpers as `crate::support`,
+`crate::preview_support` and `crate::sheets`. The exceptions, each its own
+`[[test]]` in `Cargo.toml`, are the two release-only tests below,
+`performance_test` and `import_largest_test`; `macos_screen_lock_test`,
+which has its own `main`; and `portability_test` and `tiff_preview_test`,
+which set environment variables for a test. That is sound only while no
+other thread reads the environment, and `cargo test` runs a program's tests
+as threads of one process. A test in one of these isn't prefixed with its
+file's name: select it with `-E 'binary(portability_test)'`, or
+`--test portability_test` under `cargo test`.
+
+Vitest runs every test file in its own worker thread and uses every CPU
+(`pool` and `maxWorkers` in `vite.config.ts`, #77), so a run's wall time is
+about the slowest file plus the rest divided by the CPU count. Keep a file
+well under ten seconds: `FirearmForm`'s tests are four files by topic
+(`FirearmForm.*.test.tsx`, sharing `firearmFormTestSupport.tsx`) for that
+reason. Vitest's end-of-run summary shows each file's time.
 
 The performance budgets (search 500 ms, actions 1 s, suggestions 50 ms at
 10,000 records) are timed only in a release build, so `performance_test.rs`
@@ -552,7 +576,13 @@ Spec files run in parallel, each in a WebdriverIO worker of its own: up to
 worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
 threads, which is why `scripts/dev-container.sh` raises the container's
 process limit. A run takes at least as long as its longest spec file, so keep
-each file to one user story or so. `wdio.conf.ts` builds the app and
+each file to one user story or so. WebdriverIO hands spec files to workers in
+the order `specs` lists them, so `wdio.conf.ts` names the longest files first
+(`LONGEST_FIRST`) and then globs the rest; otherwise file name order can leave
+a long file to start last and run alone. When a spec file is split, renamed or
+grows long, update that list from the per-spec times (issue #77's
+"Measuring"); a name that matches no file fails the run at start-up. `--spec`
+bypasses the order. `wdio.conf.ts` builds the app and
 the human-testing seed once, in `onPrepare`, before any worker starts. For
 debugging, run one spec file at a time, so the log isn't interleaved:
 
@@ -783,6 +813,20 @@ It needs `libX11`, `libXtst` and `python3` (all in the dev container) and
 runs on Linux only. The first call moves the pointer once to find where the
 window sits on the screen. Keys go to the window under the pointer.
 
+Each call returns when the page has seen the input end (a `keyup`, a
+`pointerup` or `mouseup`, or the pointer's arrival, counted by listeners
+`realInput.ts` installs on the window) and the app has settled, as `settle()`
+does for any step, except that it doesn't wait for animations: a test may look
+at one the input started (us7's owl blinking). There is no fixed pause after
+an event. Where the page can't see the input, it waits 150 ms as before: keys
+sent while the page has no focus (F6 into the PDF surface), and an event the
+page never reports within a second. The script runs as `x11-input.py serve`,
+one process for the worker's life, taking a command a line and answering `ok`
+once the X server has processed it, so no Python starts for each key. A test
+that looks at the page after real input needn't pause for it; one that looks
+at something the input only starts (a window closing, a file written) waits
+for that, as with any other step.
+
 A test that sends real input starts with `skipWithoutRealInput(this)` (from
 `realInput.ts`, in an `async function`, not an arrow, for Mocha's `this`),
 which skips it on other platforms. A block whose tests all do calls it from a
@@ -937,7 +981,7 @@ of it:
   `MachineSettings::load` starts with the keyring off, so they never reach the
   OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
   with `--features mock-keyring`, against keyring-core's in-memory store:
-  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'binary(keyring_test)'`.
+  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'test(/^keyring_test::/)'`.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
   own) a throwaway sandbox (`e2e/support/sandbox.ts`, which `npm run session`
   uses too). An E2E build takes its config and cache
@@ -966,9 +1010,12 @@ of it:
   search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
   helpers in `e2e/support/ui.ts` call `settle()` after each action, which
   waits for that count to reach 0, for finite animations shorter than a
-  second to end, and for two painted frames. Anything it can't see (a smooth
+  second to end, and for two painted frames. It leaves the chooser plate's
+  animations running (its draw-in as well as its endless cycle), so a test
+  about the plate calls `settleChooserPlate()`. Anything it can't see (a smooth
   scroll, a thing appearing) gets a `waitUntil` on that condition, not a
-  `browser.pause()`.
+  `browser.pause()`. `waitUntil` and `waitForExist` ask every 20 ms
+  (`waitforInterval` in `wdio.conf.ts`), not WebdriverIO's 100.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
   app at `.human-testing/`: via `XDG_*_HOME` on Linux, and on macOS via a
   `HOME` of its own there (cargo, rustup and npm keep the real one). The seed writes only into a

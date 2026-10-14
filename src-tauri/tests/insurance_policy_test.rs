@@ -4,7 +4,7 @@
 //! assignment (FR-014), run against a real temporary SQLCipher database.
 //! Deleting a policy is covered in `policy_deletion_test.rs`.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::insurance::ops as insurance_ops;

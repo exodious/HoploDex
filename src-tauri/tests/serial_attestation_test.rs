@@ -2,7 +2,7 @@
 //! Acceptance Scenarios 6-7 / FR-029), run against a real temporary
 //! SQLCipher database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::ops;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};

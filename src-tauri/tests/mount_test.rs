@@ -14,7 +14,7 @@
 //! but `mounted_on: Option<RecordRef>` on `FirearmInput` and `AccessoryInput`
 //! (research.md §8) and the `ops` names in contracts/tauri-commands.md.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;

@@ -2,7 +2,7 @@
 //! behavior (001 US2 Acceptance Scenarios 1-5), run against a real
 //! temporary SQLCipher database — no mocks, per the constitution.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::{GroupBy, ListFirearmsInput, ops};

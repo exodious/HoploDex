@@ -3,7 +3,7 @@
 //! with a form, an approved date and "registered to" on any firearm
 //! (FR-007 to FR-014), and nothing about legal status is ever derived.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::entries::ops as entry_ops;

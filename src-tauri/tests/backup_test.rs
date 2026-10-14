@@ -4,7 +4,7 @@
 //! directories, a manual clock with its own time zone, and machine settings
 //! in a temp config directory.
 
-mod support;
+use crate::support;
 
 use std::fs;
 #[cfg(unix)]

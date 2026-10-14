@@ -2,7 +2,7 @@
 //! including thumbnail-fallback behavior (spec.md US4 Acceptance Scenarios
 //! 1-3), run against a real temporary SQLCipher database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;

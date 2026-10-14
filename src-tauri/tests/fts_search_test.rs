@@ -1,7 +1,7 @@
 //! Confirms the FTS5 index (data-model.md's "Virtual table: firearms_fts")
 //! actually matches both free-form notes and structured fields, per FR-013.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::{ListFirearmsInput, ops};
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};

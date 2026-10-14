@@ -2,7 +2,7 @@
 //! failing rows without discarding successful ones (spec.md US5 Acceptance
 //! Scenarios 2-3; FR-020), run against a real temporary SQLCipher database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;

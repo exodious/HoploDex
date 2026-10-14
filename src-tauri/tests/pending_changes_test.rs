@@ -2,7 +2,7 @@
 //! staged in memory, kept inside the database by a lock or an OS shutdown,
 //! and offered at the next open. Real SQLCipher files in temp directories.
 
-mod support;
+use crate::support;
 
 #[cfg(unix)]
 use std::fs;

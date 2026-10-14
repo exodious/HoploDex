@@ -2,7 +2,7 @@
 //! Acceptance Scenario 12), run against a real temporary SQLCipher
 //! database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;

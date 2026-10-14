@@ -4,7 +4,7 @@
 //! that stops the planner using the index brings that back without failing
 //! any behaviour test, so this one reads the plan.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::ops;
 use hoplodex_lib::services::import_matching::FIND_MATCH_SQL;

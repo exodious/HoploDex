@@ -2,7 +2,7 @@
 //! data-model.md "Session states and transitions"). Real SQLCipher files in
 //! temp directories; machine settings in a temp config directory.
 
-mod support;
+use crate::support;
 
 use std::fs;
 use std::path::{Path, PathBuf};

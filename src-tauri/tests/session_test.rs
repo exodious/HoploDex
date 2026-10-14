@@ -1,7 +1,7 @@
 //! The session that holds the open database, and the registry of long
 //! operations (research.md §13; data-model.md "In memory: the session").
 
-mod support;
+use crate::support;
 
 use std::cell::Cell;
 use std::thread;

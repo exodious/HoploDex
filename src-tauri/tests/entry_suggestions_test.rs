@@ -3,7 +3,7 @@
 //! model, cartridge and caliber (research.md §4), and `settle_entry`'s
 //! snapping of same-notation variants (research.md §6).
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::entries::{

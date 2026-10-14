@@ -18,7 +18,7 @@
 
 use std::collections::BTreeSet;
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::db;
 use hoplodex_lib::services::machine_settings::MachineIdentity;

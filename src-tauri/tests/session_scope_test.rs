@@ -5,9 +5,7 @@
 //! SQLCipher files in temp directories; machine settings in a temp config
 //! directory.
 
-#[path = "support/preview_support.rs"]
-mod preview_support;
-mod support;
+use crate::{preview_support, support};
 
 use std::cell::Cell;
 use std::fs;

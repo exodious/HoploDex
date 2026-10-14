@@ -2,7 +2,7 @@
 //! (spec.md US4 Acceptance Scenario 4; FR-010), run against a real
 //! temporary SQLCipher database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::documents::ops as document_ops;

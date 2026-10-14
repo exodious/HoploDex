@@ -3,8 +3,8 @@
 //! Scenario 1), run against a real temporary SQLCipher database and a real
 //! temporary destination folder — no mocks.
 
-mod sheets;
-mod support;
+use crate::sheets;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::{ListFirearmsInput, ops as firearm_ops};

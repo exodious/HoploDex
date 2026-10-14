@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Firearm Collection Inventory App"
 edition = "2024"
 rust-version = "1.97"
+# Every file in tests/ is a module of tests/integration.rs (one test program
+# rather than ~70 that each link the whole app; #77 step 9), so the [[test]]
+# targets are listed by hand. tests/test_files_test.rs checks none is left out.
+autotests = false
 license = "GPL-3.0-only"
 
 [lib]
@@ -191,6 +195,33 @@ windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 [dev-dependencies]
 tempfile = "3"
 
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+# Release-only and `#[ignore]`d (DEVELOPMENT.md "Test"), run by name with
+# `cargo test --release --test <name>`: each stays a program of its own, so
+# that command doesn't build every other test in release as well.
+[[test]]
+name = "performance_test"
+path = "tests/performance_test.rs"
+
+[[test]]
+name = "import_largest_test"
+path = "tests/import_largest_test.rs"
+
+# They set HOME, XDG_* and TMPDIR for a test, which is sound only while no other
+# thread reads the environment. nextest runs every test in a process of its own,
+# but `cargo test` runs a program's tests as threads of one process, so these two
+# keep a program of their own rather than join `integration`.
+[[test]]
+name = "portability_test"
+path = "tests/portability_test.rs"
+
+[[test]]
+name = "tiff_preview_test"
+path = "tests/tiff_preview_test.rs"
+
 # Distributed notices arrive on the main thread's run loop, and libtest runs
 # each test on a thread of its own, so this one has its own `main`.
 [[test]]
@@ -247,6 +278,40 @@ opt-level = 3
 [profile.dev.package.crc32fast]
 opt-level = 3
 
+# The image, SQLite and spreadsheet-writing crates, for the same reason (#77):
+# the import and human-seed tests spent most of their time decoding and
+# encoding images and encrypting pages at opt-level 0. `png`, `zune-core` and
+# `zune-jpeg` are each in the tree twice (`image` and `tiff` pull different
+# versions), so each is named with its version.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package."zune-jpeg@0.4.21"]
+opt-level = 3
+[profile.dev.package."zune-jpeg@0.5.15"]
+opt-level = 3
+[profile.dev.package."zune-core@0.4.12"]
+opt-level = 3
+[profile.dev.package."zune-core@0.5.3"]
+opt-level = 3
+[profile.dev.package."png@0.17.16"]
+opt-level = 3
+[profile.dev.package."png@0.18.1"]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+[profile.dev.package.tiff]
+opt-level = 3
+[profile.dev.package.weezl]
+opt-level = 3
+[profile.dev.package.rust_xlsxwriter]
+opt-level = 3
+[profile.dev.package.adler2]
+opt-level = 3
+[profile.dev.package.simd-adler32]
+opt-level = 3
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
@@ -279,6 +344,10 @@ incremental = true
 # `wdio session` refs found nothing over WebDriver classic. Every execute wrapper now
 # returns a web element reference (`SERIALIZE_VALUE_JS`, `platform/executor.rs`) and
 # the script handlers add it to the session's store (`ElementStore::adopt_references`).
+# #77: `/status` answered `ready` as soon as a window existed, before its page had
+# loaded; on macOS a script sent then never reports back and waits out the script
+# timeout. It now says ready only after a page has finished loading (`on_page_load`,
+# `server::PAGE_LOADED`).
 # Only the `e2e` feature builds it. Drop this patch when the fixes are released upstream.
 [patch.crates-io]
 tauri-plugin-wdio-webdriver = { path = "vendor/tauri-plugin-wdio-webdriver" }

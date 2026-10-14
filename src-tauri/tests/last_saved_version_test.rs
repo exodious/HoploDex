@@ -14,7 +14,7 @@
 //! The `Session` calls are all in `World`'s helpers, so a change to the
 //! `Session` accessors touches one place.
 
-mod support;
+use crate::support;
 
 use std::path::PathBuf;
 use std::sync::Arc;

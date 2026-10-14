@@ -3,7 +3,7 @@
 //! make, model, cartridge and caliber follow FR-015's entry rules, and
 //! `settle_entry` reports the caliber a cartridge derives (FR-003, FR-005).
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::entries::{SettleEntryInput, SettleEntryOutput, ops as entry_ops};

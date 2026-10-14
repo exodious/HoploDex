@@ -80,5 +80,15 @@ pub fn init_with_port<R: Runtime>(port: u16) -> TauriPlugin<R> {
         .on_webview_ready(|webview| {
             platform::register_webview_handlers(&webview);
         })
+        // HoploDex patch (#77): `/status` says ready only once a page has
+        // finished loading. A script sent while the first page is still
+        // loading never reports back on macOS (its result comes back as a
+        // message from the page), so the session's first script waited out
+        // the whole script timeout.
+        .on_page_load(|_webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                server::PAGE_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        })
         .build()
 }

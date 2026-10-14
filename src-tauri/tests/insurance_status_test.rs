@@ -3,7 +3,7 @@
 //! FR-016/017/024/028/036), run against a real temporary SQLCipher
 //! database. "Today" is passed in, so boundary days and expiry are exact.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;

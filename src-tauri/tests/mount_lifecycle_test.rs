@@ -7,7 +7,7 @@
 //! built as the contract's own camelCase JSON, so the tests need nothing
 //! from the struct but its `withMounted` field.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::ops as accessory_ops;

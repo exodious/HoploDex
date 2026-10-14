@@ -2,8 +2,8 @@
 //! serial key, no-serial-always-new, apply-to-remaining (spec.md FR-026,
 //! FR-030), run against a real temporary SQLCipher database.
 
-mod sheets;
-mod support;
+use crate::sheets;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::{DisposeInput, ops as firearm_ops};
 use hoplodex_lib::commands::import_export::ops as import_export_ops;

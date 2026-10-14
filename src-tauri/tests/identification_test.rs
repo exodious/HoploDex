@@ -3,7 +3,7 @@
 //! run against a real temporary SQLCipher database — no mocks, per the
 //! constitution.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::ops;
 use hoplodex_lib::models::firearm::{FirearmInput, Origin};

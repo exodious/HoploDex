@@ -2,7 +2,7 @@
 //! collection table set `app_state.changes_waiting` in the same transaction
 //! as the change, and housekeeping writes never do.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::CloseReason;

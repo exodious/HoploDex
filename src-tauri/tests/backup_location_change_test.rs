@@ -4,7 +4,7 @@
 //! closes, in temp directories, on a manual clock, with machine settings in
 //! a temp config directory.
 
-mod support;
+use crate::support;
 
 use std::fs;
 #[cfg(unix)]

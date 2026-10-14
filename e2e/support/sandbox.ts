@@ -177,13 +177,14 @@ export function seedCollection(options: { pendingFrom?: string } = {}): string {
 
 /** Removes the sandbox. The app and its webview may still be shutting down,
  * and write cache files as they go, so removing the directory once can leave
- * some behind. */
+ * some behind: it removes at once, and waits only before trying again. */
 export async function removeSandbox() {
   const root = state.dir;
   if (!root) return;
-  for (let attempt = 0; attempt < 5 && fs.existsSync(root); attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500));
     fs.rmSync(root, { recursive: true, force: true });
+    if (!fs.existsSync(root)) break;
   }
   state.dir = undefined;
 }
