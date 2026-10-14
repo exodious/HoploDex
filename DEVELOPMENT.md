@@ -486,14 +486,26 @@ npm run build && npm run test:e2e                        # WebdriverIO E2E, driv
 To run part of a suite:
 
 ```bash
-cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test)'                 # one integration-test file
-cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test) & test(<name>)'  # tests in it whose name contains <name>
-cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                              # tests anywhere whose name contains <name>
-npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                          # one Vitest file
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                            # one E2E spec
+cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'test(/^firearm_lifecycle_test::/)'                 # one integration-test file
+cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'test(/^firearm_lifecycle_test::/) & test(<name>)'  # tests in it whose name contains <name>
+cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                                # tests anywhere whose name contains <name>
+npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                            # one Vitest file
+npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                              # one E2E spec
 
-cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test <name>  # the same without nextest
+cargo test --manifest-path src-tauri/Cargo.toml --test integration firearm_lifecycle_test::  # the same without nextest
 ```
+
+Every file in `src-tauri/tests/` is a module of one test program,
+`tests/integration.rs`, so the test crate links once instead of once per file
+(a rebuild after a change to `src/` took 8 s with a program per file, 3 s with
+one), and a test's name starts with its file's name: `firearm_lifecycle_test::`.
+`autotests` is off, so **a new test file needs a `mod` line in
+`tests/integration.rs`** (`test_files_test` fails when one is missing), and a
+test file refers to the shared helpers as `crate::support`,
+`crate::preview_support` and `crate::sheets`. The exceptions, each its own
+`[[test]]` in `Cargo.toml`, are the two release-only tests below,
+`performance_test` and `import_largest_test`, and `macos_screen_lock_test`,
+which has its own `main`.
 
 Vitest runs every test file in its own worker thread and uses every CPU
 (`pool` and `maxWorkers` in `vite.config.ts`, #77), so a run's wall time is
@@ -944,7 +956,7 @@ of it:
   `MachineSettings::load` starts with the keyring off, so they never reach the
   OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
   with `--features mock-keyring`, against keyring-core's in-memory store:
-  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'binary(keyring_test)'`.
+  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'test(/^keyring_test::/)'`.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
   own) a throwaway sandbox (`e2e/support/sandbox.ts`, which `npm run session`
   uses too). An E2E build takes its config and cache

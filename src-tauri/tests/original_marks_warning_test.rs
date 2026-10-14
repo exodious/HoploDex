@@ -2,7 +2,7 @@
 //! (specs/002-firearm-identification User Story 3), run against a real
 //! temporary SQLCipher database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::{DisposeInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, Origin};

@@ -9,8 +9,8 @@
 //! some future path, may hold anything the column can, so they saturate
 //! instead of raising SQLite's integer overflow or wrapping.
 
-mod sheets;
-mod support;
+use crate::sheets;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::{ListAccessoriesInput, ops as accessory_ops};

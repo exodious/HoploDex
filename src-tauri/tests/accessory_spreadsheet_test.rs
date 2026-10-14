@@ -22,8 +22,8 @@
 //!   `ImportResult::imported_accessory_count`;
 //! - `resolve_import_conflicts` unchanged, except `withMounted` (issue #56).
 
-mod sheets;
-mod support;
+use crate::sheets;
+use crate::support;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -1,11 +1,11 @@
 //! Shared by the feature 007 preview tests (`pdf_preview_test`,
 //! `tiff_preview_test`, `tiff_helper_test` and `lock_test`): a recording
 //! `PreviewSurface`, the `PreviewEnv` the `ops` take, a session with a
-//! firearm to attach documents to, and process helpers. A test crate pulls it
-//! in with
+//! firearm to attach documents to, and process helpers. A test program
+//! declares it with
 //! `#[path = "support/preview_support.rs"] mod preview_support;`
-//! beside `mod support;`. It is not a part of `support/mod.rs` so that the
-//! other test crates keep compiling.
+//! beside `mod support;` (`integration.rs` and `performance_test.rs` do), and
+//! a test file uses it as `crate::preview_support`.
 //!
 //! Assumed API (written ahead of T048-T054, T061; the shapes are in each
 //! item's doc comment):

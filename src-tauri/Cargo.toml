@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Firearm Collection Inventory App"
 edition = "2024"
 rust-version = "1.97"
+# Every file in tests/ is a module of tests/integration.rs (one test program
+# rather than ~70 that each link the whole app; #77 step 9), so the [[test]]
+# targets are listed by hand. tests/test_files_test.rs checks none is left out.
+autotests = false
 license = "GPL-3.0-only"
 
 [lib]
@@ -190,6 +194,21 @@ windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+# Release-only and `#[ignore]`d (DEVELOPMENT.md "Test"), run by name with
+# `cargo test --release --test <name>`: each stays a program of its own, so
+# that command doesn't build every other test in release as well.
+[[test]]
+name = "performance_test"
+path = "tests/performance_test.rs"
+
+[[test]]
+name = "import_largest_test"
+path = "tests/import_largest_test.rs"
 
 # Distributed notices arrive on the main thread's run loop, and libtest runs
 # each test on a thread of its own, so this one has its own `main`.

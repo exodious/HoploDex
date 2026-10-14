@@ -3,7 +3,7 @@
 //! spec.md US1 Acceptance Scenario 17) — against a real temporary SQLCipher
 //! database. Search on `finish` is covered in `fts_search_test.rs`.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::{DisposeInput, HistoryChoice, ReverseDispositionInput, ops};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;

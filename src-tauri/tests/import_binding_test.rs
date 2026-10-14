@@ -3,8 +3,8 @@
 //! read them and resolve nowhere else. Two real databases in one `Session`,
 //! the commands' own session-level `ops`.
 
-mod sheets;
-mod support;
+use crate::sheets;
+use crate::support;
 
 use std::path::PathBuf;
 

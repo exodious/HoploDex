@@ -3,7 +3,7 @@
 //! against a real SQLCipher file in a temp directory, made with the
 //! production cipher settings.
 
-mod support;
+use crate::support;
 
 use std::fs;
 use std::path::Path;

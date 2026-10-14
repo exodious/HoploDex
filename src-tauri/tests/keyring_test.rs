@@ -4,7 +4,7 @@
 //! `--features mock-keyring`.
 #![cfg(feature = "mock-keyring")]
 
-mod support;
+use crate::support;
 
 use std::fs;
 use std::path::PathBuf;

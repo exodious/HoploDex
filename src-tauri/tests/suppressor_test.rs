@@ -4,7 +4,7 @@
 //! command layer and in the trigger backstop (FR-003, SC-005). Its caliber is
 //! its bore and its cartridge its rating, never derived (FR-002).
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::entries::{SettleEntryInput, ops as entry_ops};

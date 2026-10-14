@@ -20,9 +20,7 @@
 //! The memory is this process's own, so every test here takes one lock: under
 //! `cargo test` they run one at a time (nextest gives each its own process).
 
-#[path = "support/preview_support.rs"]
-mod preview_support;
-mod support;
+use crate::{preview_support, support};
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

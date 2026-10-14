@@ -2,7 +2,7 @@
 //! `list_document_types` command's op (feature 007, FR-016, FR-017,
 //! research.md §2).
 
-mod support;
+use crate::support;
 
 use std::time::{Duration, Instant};
 

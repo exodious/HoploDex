@@ -8,7 +8,7 @@
 //! Input and output are the contract's JSON (`ListAccessoriesInput`,
 //! `{ groups: AccessoryGroup[] }`), in its own camelCase names.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;

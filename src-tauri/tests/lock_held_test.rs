@@ -6,7 +6,7 @@
 //! connections of one process, so only another process can tell: each test
 //! re-runs this test binary as that process, through [`child_opener`].
 
-mod support;
+use crate::support;
 
 use std::path::Path;
 use std::process::Command;
@@ -37,7 +37,7 @@ fn child_opener() {
 /// What another process gets when it opens `path` now.
 fn open_from_another_process(path: &Path) -> String {
     let output = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "child_opener", "--nocapture", "--test-threads=1"])
+        .args(["--exact", "lock_held_test::child_opener", "--nocapture", "--test-threads=1"])
         .env(CHILD_ENV, path)
         .output()
         .expect("could not start the child process");

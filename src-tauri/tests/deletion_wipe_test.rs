@@ -6,7 +6,7 @@
 //!
 //! Run against a real temporary SQLCipher database — no mocks.
 
-mod support;
+use crate::support;
 
 use std::path::Path;
 

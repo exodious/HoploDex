@@ -4,7 +4,7 @@
 //! allowed for the firearm's type (FR-019, SC-008) in the command layer and
 //! in the trigger backstop.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::entries::ops as entry_ops;

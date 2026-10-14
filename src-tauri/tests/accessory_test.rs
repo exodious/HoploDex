@@ -11,7 +11,7 @@
 //! read as JSON in the contract's own camelCase names, so the tests need
 //! nothing from the structs but the names in contracts/tauri-commands.md.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::accessories::ops;

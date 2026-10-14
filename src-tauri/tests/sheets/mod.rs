@@ -4,7 +4,8 @@
 //! back, and the two-file `import_collection` call.
 //!
 //! Shared by `export_test.rs`, `accessory_spreadsheet_test.rs` and
-//! `import_matching_test.rs` (declare it with `mod sheets;`). Nothing here
+//! `import_matching_test.rs` (and the other spreadsheet tests; `integration.rs`
+//! declares it, they `use crate::sheets;`). Nothing here
 //! mocks anything: the files are real and the import goes through the real
 //! `ops` onto a real temporary database.
 

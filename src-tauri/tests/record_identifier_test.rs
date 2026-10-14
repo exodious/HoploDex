@@ -3,7 +3,7 @@
 //! changed, and never sent over IPC. Real SQLCipher databases, no mocks.
 //! The accessory half is tasks.md T016 (FR-019, FR-022).
 
-mod support;
+use crate::support;
 
 use std::collections::HashSet;
 

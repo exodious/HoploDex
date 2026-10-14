@@ -2,7 +2,7 @@
 //! summary (spec.md US3 Acceptance Scenarios 5-6, 11, 13; FR-015/036), run
 //! against a real temporary SQLCipher database.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::{DisposeInput, ops as firearm_ops};

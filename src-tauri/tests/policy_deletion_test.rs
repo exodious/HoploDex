@@ -3,7 +3,7 @@
 //! run against a real temporary SQLCipher database. "Today" in the status
 //! checks is the real date, so policy dates are wide enough not to matter.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;

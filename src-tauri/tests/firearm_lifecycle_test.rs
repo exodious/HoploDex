@@ -2,7 +2,7 @@
 //! lifecycle (spec.md Acceptance Scenarios 1-5), run against a real
 //! temporary SQLCipher database — no mocks, per the constitution.
 
-mod support;
+use crate::support;
 
 use hoplodex_lib::commands::firearms::{DisposeInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
