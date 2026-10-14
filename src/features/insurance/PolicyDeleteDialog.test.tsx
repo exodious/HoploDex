@@ -97,6 +97,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(onDeleted).toHaveBeenCalled();
   });
 
+  // 001 US3 Scenario 9
   it("lists the scheduled records, with nicknames, and holds delete back until a choice is made", async () => {
     renderDialog();
 
@@ -128,6 +129,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     ).toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 9
   it("moves the firearms to another policy, reminding the user to check its coverage", async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -160,6 +162,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.getByText(/that policy has expired/i)).toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 9
   it("needs the stronger confirmation to leave a non-expired policy's firearms unscheduled", async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -188,6 +191,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.getByText(/covered by the blanket policy in force/i)).toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 10
   it("asks only for the warning to be acknowledged when the policy has expired", async () => {
     const user = userEvent.setup();
     renderDialog({ isExpired: true });
@@ -209,6 +213,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.queryByRole("radio", { name: /Move to another policy/ })).not.toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 15
   it("warns how many unscheduled firearms lose their blanket coverage when the blanket policy in force is deleted", async () => {
     renderDialog({
       scheduledCounts: { firearms: 0, accessories: 0 },

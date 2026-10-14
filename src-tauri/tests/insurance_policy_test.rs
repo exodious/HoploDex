@@ -361,6 +361,7 @@ fn notes_are_stored_and_returned_from_create_update_and_list() {
     assert_eq!(listed[0].policy.notes.as_deref(), Some("Renewal quote received."));
 }
 
+// 001 US3 Scenario 16
 #[test]
 fn blank_or_whitespace_only_notes_are_stored_as_null() {
     let db = TestDb::new();
@@ -379,6 +380,7 @@ fn blank_or_whitespace_only_notes_are_stored_as_null() {
     }
 }
 
+// 001 US3 Scenario 16
 #[test]
 fn notes_are_cleared_when_updated_with_null() {
     let db = TestDb::new();

@@ -218,6 +218,7 @@ beforeEach(() => {
   });
 });
 
+// 001 US3 Scenario 6
 describe("InsurancePage value summary (FR-008, contracts/ui-accessories.md §10)", () => {
   it("shows the collection total with the firearms and accessories subtotals beside it", () => {
     renderPage(collectionWith(summaryWith()));

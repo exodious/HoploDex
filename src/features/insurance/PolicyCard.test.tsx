@@ -117,6 +117,7 @@ function renderCard(
 }
 
 describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
+  // 001 US3 Scenarios 4 and 6, and the Edge Case: renewal (a policy in force shows no warning)
   it("shows the blanket policy in force with its total against its limit", () => {
     renderCard(base, { blanket: blanketInForce });
 
@@ -250,6 +251,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(rows[1]).toHaveTextContent("$900");
   });
 
+  // 001 US3 Scenario 4
   it("flags a blanket total over its limit", () => {
     renderCard(base, {
       blanket: { ...blanketInForce, total: 12_500, underInsured: true },
@@ -277,6 +279,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.queryByText(/not in force/i)).not.toBeInTheDocument();
   });
 
+  // 001 US3 Scenarios 2 and 6
   it("lists the firearms scheduled under the policy with their amounts", () => {
     const scheduled = firearmSummary(5, {
       insurancePolicyId: 1,
@@ -309,6 +312,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.getByText("$500 short")).toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 7
   it("warns when the policy is about to expire", () => {
     renderCard({
       ...base,
@@ -320,6 +324,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.getByText(/Expires in/)).toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 14
   it("stays quiet about an expiry that FR-028 suppresses, since a successor takes over", () => {
     renderCard({ ...base, isExpiringSoon: true, expiringWarning: false });
 
@@ -327,6 +332,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.queryByText(/expired/i)).not.toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 8
   it("warns about an expired policy, and says its scheduled firearms are uninsured", () => {
     const scheduled = firearmSummary(5, { insurancePolicyId: 1, insuranceWarning: "uninsured" });
     renderCard(
@@ -360,6 +366,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.queryByText(/Expired/)).not.toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 16
   it("shows the notes, keeping line breaks, when the policy has any", () => {
     renderCard({ ...base, notes: "Renews in January.\nAsk about the rider." });
 
@@ -369,6 +376,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(notes.textContent).toBe("Renews in January.\nAsk about the rider.");
   });
 
+  // 001 US3 Scenario 16
   it("shows no notes row when the policy has none", () => {
     renderCard(base);
 
