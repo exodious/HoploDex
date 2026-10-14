@@ -80,6 +80,10 @@ fn scenario_12_overlapping_blanket_policies_are_blocked_naming_the_other_policy(
     assert_eq!(err.code, "VALIDATION_ERROR");
     let text = format!("{} {:?}", err.message, err.field_errors);
     assert!(text.contains("Old policy"), "the message names the other policy: {text}");
+    // The error lands on the Coverage starts field, so the form can show it there.
+    let fields = err.field_errors.as_ref().expect("a field error");
+    assert!(fields["effectiveStartDate"].contains("Old policy"), "{fields:?}");
+    assert_eq!(fields.len(), 1, "only the start date is blamed: {fields:?}");
     assert_eq!(insurance_ops::list_policies(&db.conn).unwrap().len(), 1, "nothing was saved");
 }
 
