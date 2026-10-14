@@ -504,8 +504,13 @@ one), and a test's name starts with its file's name: `firearm_lifecycle_test::`.
 test file refers to the shared helpers as `crate::support`,
 `crate::preview_support` and `crate::sheets`. The exceptions, each its own
 `[[test]]` in `Cargo.toml`, are the two release-only tests below,
-`performance_test` and `import_largest_test`, and `macos_screen_lock_test`,
-which has its own `main`.
+`performance_test` and `import_largest_test`; `macos_screen_lock_test`,
+which has its own `main`; and `portability_test` and `tiff_preview_test`,
+which set environment variables for a test. That is sound only while no
+other thread reads the environment, and `cargo test` runs a program's tests
+as threads of one process. A test in one of these isn't prefixed with its
+file's name: select it with `-E 'binary(portability_test)'`, or
+`--test portability_test` under `cargo test`.
 
 Vitest runs every test file in its own worker thread and uses every CPU
 (`pool` and `maxWorkers` in `vite.config.ts`, #77), so a run's wall time is

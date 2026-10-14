@@ -14,7 +14,9 @@
 //! by one in a session, and that `close_preview(id)` ends a `Load` still
 //! running for that id without waiting for the session's lock.
 
-use crate::{preview_support, support};
+#[path = "support/preview_support.rs"]
+mod preview_support;
+mod support;
 
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};

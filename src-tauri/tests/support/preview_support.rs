@@ -4,8 +4,9 @@
 //! firearm to attach documents to, and process helpers. A test program
 //! declares it with
 //! `#[path = "support/preview_support.rs"] mod preview_support;`
-//! beside `mod support;` (`integration.rs` and `performance_test.rs` do), and
-//! a test file uses it as `crate::preview_support`.
+//! beside `mod support;` (`integration.rs`, `performance_test.rs` and
+//! `tiff_preview_test.rs` do), and a module of `integration.rs` uses it as
+//! `crate::preview_support`.
 //!
 //! Assumed API (written ahead of T048-T054, T061; the shapes are in each
 //! item's doc comment):

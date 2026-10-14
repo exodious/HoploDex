@@ -3,7 +3,10 @@
 //! needs a `mod` line here (`test_files_test` fails without one: `autotests` is off).
 //!
 //! `performance_test` and `import_largest_test` (release-only, `#[ignore]`d, run by
-//! name) and `macos_screen_lock_test` (its own `main`) stay programs of their own.
+//! name), `macos_screen_lock_test` (its own `main`), and `portability_test` and
+//! `tiff_preview_test` (they change environment variables, which is sound only while
+//! no other test's thread reads the environment, so under `cargo test` they mustn't
+//! share a process with the rest) stay programs of their own.
 
 #[path = "support/preview_support.rs"]
 mod preview_support;
@@ -64,7 +67,6 @@ mod pending_resume_test;
 mod photo_test;
 mod physical_details_test;
 mod policy_deletion_test;
-mod portability_test;
 mod preview_text_test;
 mod query_plan_test;
 mod record_identifier_test;
@@ -80,6 +82,5 @@ mod take_over_test;
 mod test_files_test;
 mod text_limits_test;
 mod tiff_helper_test;
-mod tiff_preview_test;
 mod valuation_test;
 mod webkit_sandbox_test;

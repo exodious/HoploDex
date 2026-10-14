@@ -210,6 +210,18 @@ path = "tests/performance_test.rs"
 name = "import_largest_test"
 path = "tests/import_largest_test.rs"
 
+# They set HOME, XDG_* and TMPDIR for a test, which is sound only while no other
+# thread reads the environment. nextest runs every test in a process of its own,
+# but `cargo test` runs a program's tests as threads of one process, so these two
+# keep a program of their own rather than join `integration`.
+[[test]]
+name = "portability_test"
+path = "tests/portability_test.rs"
+
+[[test]]
+name = "tiff_preview_test"
+path = "tests/tiff_preview_test.rs"
+
 # Distributed notices arrive on the main thread's run loop, and libtest runs
 # each test on a thread of its own, so this one has its own `main`.
 [[test]]

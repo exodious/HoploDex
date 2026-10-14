@@ -5,6 +5,8 @@
 //! cross-platform check, and anywhere it fails if the pinned cipher
 //! settings ever change.
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
