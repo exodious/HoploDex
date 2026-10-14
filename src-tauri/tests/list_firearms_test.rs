@@ -1,5 +1,5 @@
 //! Integration tests for `list_firearms`'s search/group/`includeDisposed`
-//! behavior (spec.md US2 Acceptance Scenarios 1-5), run against a real
+//! behavior (001 US2 Acceptance Scenarios 1-5), run against a real
 //! temporary SQLCipher database — no mocks, per the constitution.
 
 mod support;
@@ -329,6 +329,7 @@ fn summaries_carry_the_cartridge() {
     assert_eq!(hawken.cartridge, None);
 }
 
+// 004 US1 Scenario 6
 #[test]
 fn group_by_cartridge_keys_by_the_stored_text_with_unspecified_last() {
     let db = TestDb::new();
@@ -484,6 +485,7 @@ fn a_suppressor_groups_under_suppressor_with_its_own_drawing() {
     assert_eq!(summary.action_type_name, None);
 }
 
+// 005 US2 Scenario 9
 /// specs/005-regulated-item-types US2-9, US2-10, FR-016.
 #[test]
 fn grouping_by_registration_follows_the_list_and_the_alphabet_with_unspecified_last() {

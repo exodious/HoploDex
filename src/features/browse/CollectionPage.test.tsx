@@ -91,12 +91,14 @@ describe("the Group by menu (specs/005 contracts/ui-registration.md §6, FR-016)
     expect(trigger).toHaveTextContent("Group byNone");
   });
 
+  // 004 US1 Scenario 6, 005 US2 Scenario 9: the trigger names the grouping
   it("shows the chosen grouping on the trigger", async () => {
     renderPage("caliber");
     const trigger = await screen.findByRole("button", { name: "Group by, Caliber" });
     expect(trigger).toHaveTextContent("Group byCaliber");
   });
 
+  // 004 US1 Scenario 6 (Cartridge), 005 US2 Scenario 9 (Registered as)
   it("offers None, then three headed sections of radio items", async () => {
     const user = userEvent.setup();
     renderPage("caliber");
@@ -130,6 +132,8 @@ describe("the Group by menu (specs/005 contracts/ui-registration.md §6, FR-016)
     expect(checked.map((item) => item.textContent)).toEqual(["Caliber"]);
   });
 
+  // 001 US2 Scenario 2: the page regroups by the chosen item, and None ungroups.
+  // 004 US1 Scenario 6, 005 US2 Scenario 9: choosing Cartridge or Registered as regroups
   it("regroups by the chosen item", async () => {
     const user = userEvent.setup();
     const changes = renderPage("caliber");

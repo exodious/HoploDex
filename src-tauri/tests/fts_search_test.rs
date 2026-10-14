@@ -72,6 +72,7 @@ fn matches_structured_fields() {
     assert_eq!(search(&db.conn, "45 ACP"), 1, "should match caliber");
 }
 
+// 001 US2 Scenario 3: a search matches free-form notes.
 #[test]
 fn matches_free_form_notes_and_accessories() {
     let db = TestDb::new();
