@@ -162,7 +162,7 @@ export async function launchApp(timeout = 30000) {
       // not listening yet
     }
     if (Date.now() > deadline) throw new Error("the app's WebDriver server never answered");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
 

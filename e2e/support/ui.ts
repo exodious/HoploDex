@@ -21,29 +21,39 @@ import { $, $$, browser } from "@wdio/globals";
  * itself in, a form section's highlight, 1.4 to 1.8 s) and nothing waits on
  * them: `settle()` leaves them running. A test that is about one waits for it
  * by name. The interface's own transitions (a dialog or toast easing in,
- * 120 to 240 ms) are shorter and do count. */
+ * 120 to 240 ms) are shorter and do count. The chooser plate's draw-in is
+ * decorative whatever its length (#77, step 10): `settleChooserPlate` is how
+ * a test waits for it. */
 const DECORATIVE_MS = 1000;
 
 /**
  * Waits until the app is idle, in place of a fixed sleep after an action.
  * Idle means all of: no backend call or debounce in flight
  * (`window.__hoplodexBusy` is 0, src/lib/busy.ts); no finite, non-decorative
- * animation or transition running (the chooser plate's endless cycle doesn't
- * count either); and two animation frames have passed in that state, so
- * React has committed and the browser has painted. Fails, saying what was
- * still going, after `timeout` ms.
+ * animation or transition running (neither the chooser plate's draw-in nor
+ * its endless cycle counts, so a test about the plate waits for it with
+ * `settleChooserPlate`); and two animation frames have passed in that state,
+ * so React has committed and the browser has painted. Fails, saying what was
+ * still going, after `timeout` ms. `animations: false` leaves the second
+ * condition out, for real input (support/realInput.ts), after which a test
+ * may look at an animation the input started.
  *
  * It sees what the app reports as work. For anything else a step must wait
  * for (a thing appearing, a window closing, a smooth scroll ending) wait for
  * that condition.
  */
-export async function settle(timeout = 10000) {
+export async function settle(
+  timeout = 10000,
+  { animations = true }: { animations?: boolean } = {},
+) {
   const state = await browser.execute(
     async (limit: number, decorativeMs: number) => {
       const unsettled = () => {
         const busy = (window as unknown as { __hoplodexBusy?: number }).__hoplodexBusy ?? 0;
         const animating = document.getAnimations().filter((a) => {
           const timing = a.effect?.getComputedTiming();
+          const target = (a.effect as KeyframeEffect | null)?.target;
+          if (target?.closest(".hd-catalogue")) return false;
           return (
             a.playState === "running" &&
             timing?.iterations !== Infinity &&
@@ -75,7 +85,8 @@ export async function settle(timeout = 10000) {
       });
     },
     timeout,
-    DECORATIVE_MS,
+    // Nothing is at most -1 ms long, so no animation counts.
+    animations ? DECORATIVE_MS : -1,
   );
   if (state) throw new Error(`The app ${state}`);
 }

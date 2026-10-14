@@ -571,7 +571,13 @@ Spec files run in parallel, each in a WebdriverIO worker of its own: up to
 worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
 threads, which is why `scripts/dev-container.sh` raises the container's
 process limit. A run takes at least as long as its longest spec file, so keep
-each file to one user story or so. `wdio.conf.ts` builds the app and
+each file to one user story or so. WebdriverIO hands spec files to workers in
+the order `specs` lists them, so `wdio.conf.ts` names the longest files first
+(`LONGEST_FIRST`) and then globs the rest; otherwise file name order can leave
+a long file to start last and run alone. When a spec file is split, renamed or
+grows long, update that list from the per-spec times (issue #77's
+"Measuring"); a name that matches no file fails the run at start-up. `--spec`
+bypasses the order. `wdio.conf.ts` builds the app and
 the human-testing seed once, in `onPrepare`, before any worker starts. For
 debugging, run one spec file at a time, so the log isn't interleaved:
 
@@ -802,6 +808,20 @@ It needs `libX11`, `libXtst` and `python3` (all in the dev container) and
 runs on Linux only. The first call moves the pointer once to find where the
 window sits on the screen. Keys go to the window under the pointer.
 
+Each call returns when the page has seen the input end (a `keyup`, a
+`pointerup` or `mouseup`, or the pointer's arrival, counted by listeners
+`realInput.ts` installs on the window) and the app has settled, as `settle()`
+does for any step, except that it doesn't wait for animations: a test may look
+at one the input started (us7's owl blinking). There is no fixed pause after
+an event. Where the page can't see the input, it waits 150 ms as before: keys
+sent while the page has no focus (F6 into the PDF surface), and an event the
+page never reports within a second. The script runs as `x11-input.py serve`,
+one process for the worker's life, taking a command a line and answering `ok`
+once the X server has processed it, so no Python starts for each key. A test
+that looks at the page after real input needn't pause for it; one that looks
+at something the input only starts (a window closing, a file written) waits
+for that, as with any other step.
+
 A test that sends real input starts with `skipWithoutRealInput(this)` (from
 `realInput.ts`, in an `async function`, not an arrow, for Mocha's `this`),
 which skips it on other platforms. A block whose tests all do calls it from a
@@ -985,9 +1005,12 @@ of it:
   search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
   helpers in `e2e/support/ui.ts` call `settle()` after each action, which
   waits for that count to reach 0, for finite animations shorter than a
-  second to end, and for two painted frames. Anything it can't see (a smooth
+  second to end, and for two painted frames. It leaves the chooser plate's
+  animations running (its draw-in as well as its endless cycle), so a test
+  about the plate calls `settleChooserPlate()`. Anything it can't see (a smooth
   scroll, a thing appearing) gets a `waitUntil` on that condition, not a
-  `browser.pause()`.
+  `browser.pause()`. `waitUntil` and `waitForExist` ask every 20 ms
+  (`waitforInterval` in `wdio.conf.ts`), not WebdriverIO's 100.
 - `scripts/human-testing.sh` and `src-tauri/examples/human_seed.rs` point the
   app at `.human-testing/`: via `XDG_*_HOME` on Linux, and on macOS via a
   `HOME` of its own there (cargo, rustup and npm keep the real one). The seed writes only into a

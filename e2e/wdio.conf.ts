@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { browser } from "@wdio/globals";
 import { SevereServiceError } from "webdriverio";
 import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
@@ -41,9 +43,43 @@ function workerCount(): number {
   return Math.max(1, Math.min(8, Math.floor(os.availableParallelism() / 2)));
 }
 
+/**
+ * The longest spec files, longest first (#77, step 10). WebdriverIO hands
+ * spec files to free workers in the order `specs` lists them, so with the
+ * glob alone, in file name order, the long ones can start last and run alone
+ * after the rest are done. Starting them first lets the short ones fill the
+ * other workers. WebdriverIO keeps the patterns' order and drops a file the
+ * glob names again. A name that matches no file only draws a warning from
+ * WebdriverIO and the run goes on, so a renamed or removed file would leave
+ * the list stale unnoticed: loading this config fails instead. Re-measure
+ * with the per-spec times in issue #77 when specs are split or added.
+ */
+const LONGEST_FIRST = [
+  "./specs/us13-document-preview-preview.e2e.ts",
+  "./specs/us7-databases.e2e.ts",
+  "./specs/us12-accessories-browse.e2e.ts",
+  "./specs/us11-regulated-items.e2e.ts",
+  "./specs/us12-accessories-mounting.e2e.ts",
+  "./specs/us12-accessories-dispose.e2e.ts",
+  "./specs/us12-accessories-record.e2e.ts",
+  "./specs/us9-locking.e2e.ts",
+  "./specs/us1-record-firearm.e2e.ts",
+  "./specs/us14-session-isolation.e2e.ts",
+  "./specs/us3-value-insurance.e2e.ts",
+  "./specs/us8-backups.e2e.ts",
+];
+const missing = LONGEST_FIRST.filter(
+  (spec) => !fs.existsSync(fileURLToPath(new URL(spec, import.meta.url))),
+);
+if (missing.length > 0) {
+  throw new Error(
+    `LONGEST_FIRST in e2e/wdio.conf.ts names spec files that don't exist: ${missing}`,
+  );
+}
+
 export const config: WebdriverIO.Config = {
   runner: "local",
-  specs: ["./specs/**/*.e2e.ts"],
+  specs: [...LONGEST_FIRST, "./specs/**/*.e2e.ts"],
   maxInstances: workerCount(),
   // Each worker starts its own display in beforeSession (Linux), so the
   // testrunner mustn't start the one shared display it otherwise starts for
@@ -68,6 +104,10 @@ export const config: WebdriverIO.Config = {
   },
   hostname: "127.0.0.1",
   path: "/",
+  // How often waitUntil, waitForExist and the rest ask again (default 100
+  // ms). A condition that holds after 5 ms is found after 20, not 100: over
+  // thousands of waits that adds up (#77, step 10). The calls are local.
+  waitforInterval: 20,
 
   // One build before any worker starts, so workers neither build nor wait on
   // cargo's lock. A failed build ends the run with no spec run and a non-zero
