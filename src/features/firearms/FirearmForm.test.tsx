@@ -100,6 +100,7 @@ async function selectFirearmType(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("FirearmForm serial-attestation rule", () => {
+  // 001 US1 Scenario 7
   it("blocks submission when serial number is blank and attestation is unchecked", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -118,6 +119,7 @@ describe("FirearmForm serial-attestation rule", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  // 001 US1 Scenario 6
   it("allows submission with a blank serial number once attestation is checked", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -156,6 +158,7 @@ describe("FirearmForm serial-attestation rule", () => {
     expect(submitted.noSerialAttested).toBe(false);
   });
 
+  // 001 US1 Scenario 11
   it("checking attestation disables and does not require the serial number field", async () => {
     const user = userEvent.setup();
     render(<FirearmForm onSubmit={vi.fn()} />);
@@ -388,6 +391,7 @@ describe("FirearmForm free-text maximums", () => {
   });
 });
 
+// 001 US1 Scenarios 13-14
 describe("FirearmForm date rules (FR-003 / FR-004)", () => {
   it("blocks a future acquisition date with a field-level message", async () => {
     const user = userEvent.setup();
@@ -493,6 +497,7 @@ describe("FirearmForm nickname (FR-031)", () => {
   });
 });
 
+// 001 US1 Scenario 17
 describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", () => {
   const group = () => screen.getByRole("group", { name: "Physical details" });
   const barrel = () => within(group()).getByLabelText("Barrel length (in)");
@@ -996,6 +1001,7 @@ describe("FirearmForm origin control (US1)", () => {
     expect(screen.getByRole("radio", { name: /^Domestic/ })).toBeChecked();
   });
 
+  // 002 SC-007, US1 Scenario 7 (the guide opens from the form)
   it("opens the origin guide from the How do I record this? button", async () => {
     const user = userEvent.setup();
     renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
@@ -1779,6 +1785,7 @@ describe("FirearmForm suggestions and snapping (US2)", () => {
     expect(suggestEntries).toHaveBeenLastCalledWith("cartridge", "", undefined);
   });
 
+  // 004 US2 Scenario 4
   it("lists the suggestions with their markers", async () => {
     suggestEntries.mockResolvedValue([
       { value: "9x19mm Parabellum", inCatalog: true, useCount: 2, caliber: "9mm" },

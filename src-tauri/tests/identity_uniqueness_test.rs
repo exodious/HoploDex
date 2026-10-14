@@ -61,6 +61,7 @@ fn the_same_serial_on_a_different_make_or_model_is_not_a_duplicate() {
     assert!(ops::create_firearm(&db.conn, &firearm("Sig", "19", "ABC123"), false, None).is_ok());
 }
 
+// 001 US1 Scenario 10
 #[test]
 fn comparison_ignores_letter_case_and_surrounding_whitespace() {
     let db = TestDb::new();

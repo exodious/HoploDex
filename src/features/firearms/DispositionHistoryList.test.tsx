@@ -9,6 +9,7 @@ describe("DispositionHistoryList (FR-033)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  // 001 US1 Scenario 12
   it("lists each retained disposition as it was recorded", () => {
     render(
       <DispositionHistoryList

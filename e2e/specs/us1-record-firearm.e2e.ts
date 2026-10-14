@@ -10,26 +10,14 @@ import {
   settle,
 } from "../support/ui";
 import {
-  backLinkShown,
   clickEl,
   clickPinned,
   displayName,
-  fieldValue,
   fillFirearmForm,
-  focusedFieldLabel,
-  followAddLink,
-  hasHighlightedSection,
-  isButtonDisabled,
-  isFieldDisabled,
-  isFieldInView,
   listedNames,
-  openPhysicalGroup,
   openFirearm,
-  pasteInto,
   pinnedStrip,
-  pressEscape,
   scrollToPinnedStrip,
-  selectOption,
   titleBlock,
   toggle,
 } from "../support/ui";
@@ -42,6 +30,12 @@ import { createDatabase } from "../support/ui";
  * no mocks, exercising the full stack (React UI -> Tauri IPC -> SQLCipher).
  * See e2e/support/ui.ts for why interactions go through page JS.
  *
+ * Four tests: the story's journey, one field error for each of the two
+ * forms that show a backend refusal on a field (FirearmForm's nickname and
+ * RestoreDialog's New nickname), and the record page's real-layout pinned
+ * strip. Every other rule is checked in Vitest and the Rust integration
+ * tests, each citing its scenario.
+ *
  * Creating a firearm opens its record page, so scenarios assert against
  * the record right after creation.
  */
@@ -51,7 +45,40 @@ describe("User Story 1 - Record a Firearm", () => {
     await createDatabase();
   });
 
-  it("creates a firearm and shows it with its values intact (Scenario 1)", async () => {
+  /** The error shown for the field labelled `label` in the open dialog: the
+   * text of the element its `aria-describedby` names when it is
+   * `aria-invalid`, or `null` when the field shows none. */
+  async function dialogFieldError(label: string): Promise<string | null> {
+    return browser.execute((label: string) => {
+      const labelEl = [
+        ...document.querySelectorAll('[role="dialog"] label, [role="alertdialog"] label'),
+      ].find((l) => l.textContent?.trim() === label) as HTMLLabelElement | undefined;
+      const field = labelEl && document.getElementById(labelEl.htmlFor);
+      if (!field || field.getAttribute("aria-invalid") !== "true") return null;
+      for (const id of (field.getAttribute("aria-describedby") ?? "").split(" ")) {
+        const el = document.getElementById(id);
+        if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
+      }
+      return null;
+    }, label);
+  }
+
+  /** Waits for the labelled field in the open dialog to show an error, and
+   * returns its text. */
+  async function waitForFieldError(label: string): Promise<string> {
+    let text: string | null = null;
+    await browser.waitUntil(
+      async () => {
+        text = await dialogFieldError(label);
+        return text !== null;
+      },
+      { timeoutMsg: `the "${label}" field never showed an error` },
+    );
+    return text!;
+  }
+
+  it("records, edits, disposes and deletes a firearm (Scenarios 1-5)", async () => {
+    // Scenario 1: created, and shown with its values intact.
     await addFirearm({
       make: "Glock",
       model: "19",
@@ -63,9 +90,8 @@ describe("User Story 1 - Record a Firearm", () => {
     await expect($("#record-name")).toHaveText("Glock 19");
     await expect($(".hd-plate__serial")).toHaveText("E2E-001");
     expect(await titleBlock("Caliber")).toBe("9mm");
-  });
 
-  it("persists an edited field on reopen (Scenario 2)", async () => {
+    // Scenario 2: an edited field persists on reopen.
     await clickButton("Edit");
     await fill("Notes", "scratch on left side");
     await clickButton("Save changes");
@@ -77,9 +103,8 @@ describe("User Story 1 - Record a Firearm", () => {
     await back();
     await openFirearm("Glock 19");
     await expect($(".hd-textblock*=scratch on left side")).toExist();
-  });
 
-  it("saves acquisition details and shows them on the record (Scenario 3)", async () => {
+    // Scenario 3: acquisition details are saved and shown.
     await clickButton("Edit");
     await fill("Acquired from", "Local gun shop");
     await fill("Date acquired", "2025-03-01");
@@ -89,9 +114,8 @@ describe("User Story 1 - Record a Firearm", () => {
     await expect($("dd*=Local gun shop")).toExist();
     // Entered as plain digits, shown grouped and with no cents (FR-037).
     await expect($("dd=$1,450")).toExist();
-  });
 
-  it("marks a firearm disposed while retaining its history (Scenario 4)", async () => {
+    // Scenario 4: disposed, with its history retained.
     await clickButton("Mark disposed");
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
@@ -111,9 +135,8 @@ describe("User Story 1 - Record a Firearm", () => {
     await toggle("Show disposed");
     expect(await listedNames()).toContain("Glock 19");
     await toggle("Show disposed");
-  });
 
-  it("deletes a firearm only after confirmation (Scenario 5)", async () => {
+    // Scenario 5: deleted after confirmation, and gone from the collection.
     await addFirearm({
       make: "ToDelete",
       model: "X",
@@ -124,10 +147,6 @@ describe("User Story 1 - Record a Firearm", () => {
 
     await clickButton("Delete");
     await expect($('[role="alertdialog"]')).toExist();
-    await clickButton("Cancel");
-    await expect($("#record-name")).toHaveText("ToDelete X");
-
-    await clickButton("Delete");
     await clickButton("Delete firearm");
 
     // Deleting returns to the collection, without the firearm.
@@ -136,34 +155,7 @@ describe("User Story 1 - Record a Firearm", () => {
     expect(await listedNames()).not.toContain("ToDelete X");
   });
 
-  it("saves a blank serial number once attested (Scenario 6)", async () => {
-    await addFirearm({
-      make: "Homemade",
-      model: "80% build",
-      caliber: ".223",
-      type: "Rifle",
-      noSerial: true,
-    });
-
-    await expect($(".hd-plate__no-serial")).toExist();
-    await back();
-  });
-
-  it("blocks saving a blank, unattested serial number (Scenario 7)", async () => {
-    await clickButton("Add firearm");
-    await fill("Make", "Blocked");
-    await fill("Model", "Case");
-    await choose("Handgun");
-    await fill("Caliber", "9mm");
-    await clickButton("Add firearm");
-
-    await expect($("p*=Enter a serial number, or confirm this firearm has none.")).toExist();
-    await expect($('[role="dialog"]')).toExist();
-    await expect($("#record-name")).not.toExist();
-    await clickButton("Cancel");
-  });
-
-  // --- Scenarios 8-14: nicknames, uniqueness, reversal, dates ---
+  // --- Nicknames, and reversing a disposition ---
 
   const twin = (serial: string, nickname?: string): NewFirearm => ({
     make: "E2ENick",
@@ -174,326 +166,74 @@ describe("User Story 1 - Record a Firearm", () => {
     nickname,
   });
 
-  /** Opens the Add firearm dialog and fills it, without saving. */
-  async function startAdding(firearm: NewFirearm) {
+  it("refuses a duplicate nickname on the Nickname field (Scenario 9)", async () => {
+    await addFirearm(twin("N-1", "Range gun"));
+    await back();
+
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();
-    await fillFirearmForm(firearm);
-  }
+    await fillFirearmForm({ ...twin("N-4", "Range gun"), model: "Third" });
+    await clickButton("Add firearm");
 
-  async function markDisposed(price = "1") {
+    // The backend's refusal lands on the Nickname field, not just the dialog.
+    expect(await waitForFieldError("Nickname")).toContain("already used by E2ENick Twin");
+    await expect($("#record-name")).not.toExist();
+    await clickButton("Cancel");
+  });
+
+  it("blocks a reversal while its nickname is taken, on the New nickname field, until it is renamed (Scenario 12)", async () => {
+    // A disposed firearm, and an active one that holds its nickname.
+    await addFirearm({
+      make: "E2ERestore",
+      model: "Twin",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "R-1",
+      nickname: "Carry gun",
+    });
     await clickButton("Mark disposed");
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
-    await fill("Price received", price);
+    await fill("Price received", "1");
     await clickButton("Mark as disposed");
     await $('[role="alertdialog"], [role="dialog"]').waitForExist({ reverse: true });
     await settle();
-  }
-
-  it("tells identical firearms apart by nickname, and leaves a blank one alone (Scenario 8)", async () => {
-    await addFirearm(twin("N-1", "Range gun"));
     await back();
-    await addFirearm(twin("N-2", "Carry gun"));
-    await back();
-    await addFirearm(twin("N-3"));
-    await back();
-
-    const names = await listedNames();
-    expect(names).toContain("E2ENick Twin “Range gun”");
-    expect(names).toContain("E2ENick Twin “Carry gun”");
-    expect(names).toContain("E2ENick Twin");
-  });
-
-  it("blocks a duplicate nickname, ignoring case, until the first firearm is disposed (Scenario 9)", async () => {
-    await startAdding({ ...twin("N-4", "range GUN"), model: "Third" });
-    await clickButton("Add firearm");
-
-    await expect($('[role="dialog"]*=already used by E2ENick Twin')).toExist();
-    await expect($("#record-name")).not.toExist();
-    await clickButton("Cancel");
-
-    await openFirearm("E2ENick Twin “Range gun”");
-    await markDisposed();
-    await back();
-
-    await addFirearm({ ...twin("N-4", "Range gun"), model: "Third" });
-    await back();
-    expect(await listedNames()).toContain("E2ENick Third “Range gun”");
-  });
-
-  it("blocks a duplicate make/model/serial, naming it, until the first is disposed (Scenario 10)", async () => {
-    const pistol: NewFirearm = {
-      make: "E2EDup",
-      model: "Pistol",
+    await addFirearm({
+      make: "E2ERestore",
+      model: "Third",
       caliber: "9mm",
       type: "Handgun",
-      serial: "D-1",
-    };
-    await addFirearm(pistol);
-    await back();
-
-    await startAdding(pistol);
-    await clickButton("Add firearm");
-    await expect($('[role="dialog"]*=already has this make, model and serial number')).toExist();
-    await clickButton("Cancel");
-
-    await openFirearm("E2EDup Pistol");
-    await markDisposed();
-    await back();
-    await addFirearm(pistol); // reacquired: a new record
-    await back();
-  });
-
-  it("takes a no-serial firearm out of the duplicate check and locks its serial field (Scenario 11)", async () => {
-    const rifle: NewFirearm = {
-      make: "E2EExempt",
-      model: "Rifle",
-      caliber: ".30-06",
-      type: "Rifle",
-      serial: "X-1",
-    };
-    await addFirearm(rifle);
-    await back();
-
-    // A serial typed before the box is checked is discarded with it.
-    await startAdding({ ...rifle, noSerial: true });
-    expect(await isFieldDisabled("Serial number")).toBe(true);
-    await clickButton("Add firearm");
-    await browser.waitUntil(async () => await $("#record-name").isExisting(), {
-      timeoutMsg: "the no-serial firearm was not saved",
+      serial: "R-2",
+      nickname: "Carry gun",
     });
-    await expect($(".hd-plate__no-serial")).toExist();
     await back();
 
-    // Unchecking the box brings the serial requirement back.
-    await clickButton("Add firearm");
-    await $('[role="dialog"]').waitForExist();
-    await fill("Make", "E2EExempt");
-    await fill("Model", "Rifle");
-    await choose("Rifle");
-    await fill("Caliber", ".30-06");
-    await toggle("This firearm has no serial number");
-    await toggle("This firearm has no serial number");
-    await clickButton("Add firearm");
-    await expect($("p*=Enter a serial number, or confirm this firearm has none.")).toExist();
-    await clickButton("Cancel");
-  });
-
-  it("reverses a disposition, blocked while its nickname is taken, then keeps it as history (Scenario 12)", async () => {
-    // Twin "Range gun" was disposed above, and Third now holds that nickname.
     await toggle("Show disposed");
-    await openFirearm("E2ENick Twin “Range gun”");
+    await openFirearm("E2ERestore Twin “Carry gun”");
     await clickButton("Restore to collection");
     await expect($('[role="alertdialog"]')).toExist();
 
-    // The keep/discard choice is never made for the user.
-    expect(await isButtonDisabled("Restore to collection")).toBe(true);
     await choose("Keep as history");
     await clickButton("Restore to collection");
-    await expect($('[role="alertdialog"]*=already used by E2ENick Third')).toExist();
+    // The clash is shown on the New nickname field it asks to change.
+    expect(await waitForFieldError("New nickname")).toContain("already used by E2ERestore Third");
 
     // Rename in the same step to resolve the clash.
-    await fill("New nickname", "Range gun II");
+    await fill("New nickname", "Carry gun II");
     await clickButton("Restore to collection");
     await browser.waitUntil(
       async () =>
         (await $("#record-name").getText()).replace(/\s+/g, " ") ===
-        displayName({ make: "E2ENick", model: "Twin", nickname: "Range gun II" }),
+        displayName({ make: "E2ERestore", model: "Twin", nickname: "Carry gun II" }),
       { timeoutMsg: "the restored firearm never showed its new nickname" },
     );
-
     expect(await titleBlock("Status")).toBe("Active");
-    await expect($("h3=Earlier dispositions")).toExist();
-    await expect($(".hd-past-dispositions*=Jane Doe")).toExist();
     await back();
     await toggle("Show disposed");
   });
 
-  it("rejects future acquisition dates and a disposition before the acquisition (Scenarios 13-14)", async () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const future = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
-    const today = new Date();
-    const todayIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-
-    const dated: NewFirearm = {
-      make: "E2EDates",
-      model: "One",
-      caliber: "9mm",
-      type: "Handgun",
-      serial: "DT-1",
-    };
-    await startAdding({ ...dated, acquisitionDate: future });
-    await clickButton("Add firearm");
-    await expect($(`[role="dialog"]*=Acquisition date can't be in the future`)).toExist();
-    await clickButton("Cancel");
-
-    // Today is fine.
-    await addFirearm({ ...dated, acquisitionDate: todayIso });
-
-    // Dispose it before it was acquired: blocked, naming the field.
-    await clickButton("Mark disposed");
-    await choose("Sold");
-    await fill("Transferred to", "Jane Doe");
-    await fill("Date", "2000-01-01");
-    await fill("Price received", "1");
-    await clickButton("Mark as disposed");
-    await expect($('[role="dialog"]*=earlier than the acquisition date')).toExist();
-    await clickButton("Cancel");
-    expect(await titleBlock("Status")).toBe("Active");
-  });
-  it("opens the edit form on the notes or accessories field from an Add link (Scenario 15)", async () => {
-    // Scenarios 13-14 end on a record; Add firearm lives on the collection.
-    await back();
-    await addFirearm({
-      make: "E2EAdd",
-      model: "Links",
-      caliber: "9mm",
-      type: "Handgun",
-      serial: "ADD-1",
-    });
-
-    for (const [emptyText, label] of [
-      ["No notes recorded.", "Notes"],
-      ["No accessories recorded.", "Accessories"],
-    ] as const) {
-      await followAddLink(emptyText);
-      await $('[role="dialog"]').waitForExist();
-      await browser.waitUntil(async () => (await focusedFieldLabel()) === label, {
-        timeoutMsg: `the ${label} field was not focused`,
-      });
-      // The dialog scrolls the field into view smoothly, which `settle()`
-      // can't see: wait for the scroll to land.
-      await browser.waitUntil(() => isFieldInView(label), {
-        timeoutMsg: `the ${label} field was not scrolled into view`,
-      });
-      expect(await hasHighlightedSection()).toBe(true);
-      await clickButton("Cancel");
-    }
-
-    // The plain Edit button lands on the first field, with nothing highlighted.
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    expect(await focusedFieldLabel()).toBe("Make");
-    expect(await hasHighlightedSection()).toBe(false);
-    await clickButton("Cancel");
-    await back();
-  });
-
-  it("takes amounts as whole dollars only and shows them grouped (Scenario 16)", async () => {
-    await clickButton("Add firearm");
-    await $('[role="dialog"]').waitForExist();
-    await fillFirearmForm({
-      make: "E2EMoney",
-      model: "Whole",
-      caliber: "9mm",
-      type: "Handgun",
-      serial: "MNY-1",
-    });
-
-    // A decimal point, comma or other character is not accepted as typed.
-    await fill("Estimated replacement value", "1,2.5x0");
-    expect(await fieldValue("Estimated replacement value")).toBe("1250");
-
-    // A pasted amount with cents is refused with a message and changes nothing.
-    await pasteInto("Estimated replacement value", "1250.50");
-    expect(await fieldValue("Estimated replacement value")).toBe("1250");
-    await expect($('[role="dialog"]*=whole dollars')).toExist();
-
-    // A pasted "$" and thousands commas are dropped.
-    await fill("Estimated replacement value", "");
-    await pasteInto("Estimated replacement value", "$1,250");
-    expect(await fieldValue("Estimated replacement value")).toBe("1250");
-    await expect($('[role="dialog"]*=whole dollars')).not.toExist();
-
-    await clickButton("Add firearm");
-    await $("#record-name").waitForExist();
-
-    // Only the digits were entered and stored; the record shows "$1,250".
-    expect(await titleBlock("Replacement value")).toBe("$1,250");
-
-    // Editing shows the digits again, never the grouping.
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    expect(await fieldValue("Estimated replacement value")).toBe("1250");
-    await clickButton("Cancel");
-    await back();
-  });
-
-  it("records physical details, rounds excess precision, and hides the panel when cleared (Scenario 17)", async () => {
-    await clickButton("Add firearm");
-    await $('[role="dialog"]').waitForExist();
-    await fillFirearmForm({
-      make: "E2EPhys",
-      model: "Details",
-      caliber: "5.56",
-      type: "Rifle",
-      serial: "PHYS-1",
-    });
-    await openPhysicalGroup();
-    await fill("Barrel length (in)", "16.25");
-    await fill("Overall length (in)", "36");
-    await fill("Weight (lb)", "2");
-    await fill("Weight (oz)", "8.5");
-    await fill("Capacity", "30");
-    await fill("Finish", "Cerakote flat dark earth");
-    await selectOption("Condition", "Excellent");
-    await clickButton("Add firearm");
-    await $("#record-name").waitForExist();
-
-    // Reopened from the collection, the record shows them.
-    await back();
-    await openFirearm("E2EPhys Details");
-    const panel = await $('section[aria-labelledby="physical-title"]');
-    await panel.waitForExist();
-    const shown = (await panel.getText()).replace(/\s+/g, " ");
-    for (const text of ["16.25 in", "36 in", "2 lb 8.5 oz", "30 rounds", "Cerakote", "Excellent"]) {
-      expect(shown).toContain(text);
-    }
-
-    // Extra decimal places are rounded to the stored unit, not rejected:
-    // 16.255 in is saved as 16.26, and 2.53 lb (40.48 oz) as 2 lb 8.5 oz.
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    await fill("Barrel length (in)", "16.255");
-    await fill("Weight (lb)", "2.53");
-    await fill("Weight (oz)", "");
-    await clickButton("Save changes");
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-    await browser.waitUntil(
-      async () =>
-        (await $('section[aria-labelledby="physical-title"]').getText())
-          .replace(/\s+/g, " ")
-          .includes("16.26 in"),
-      { timeoutMsg: "the rounded barrel length never showed" },
-    );
-    expect(
-      (await $('section[aria-labelledby="physical-title"]').getText()).replace(/\s+/g, " "),
-    ).toContain("2 lb 8.5 oz");
-
-    // Clearing all six saves normally and the panel disappears.
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    for (const label of [
-      "Barrel length (in)",
-      "Overall length (in)",
-      "Weight (lb)",
-      "Weight (oz)",
-      "Capacity",
-      "Finish",
-    ]) {
-      await fill(label, "");
-    }
-    await selectOption("Condition", "Not recorded");
-    await clickButton("Save changes");
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-    await $('section[aria-labelledby="physical-title"]').waitForExist({ reverse: true });
-    await back();
-  });
-
-  it("goes back with Escape, and keeps a long record's name and actions in reach (Scenario 18)", async () => {
+  it("keeps a long record's name and actions in reach as it scrolls (Scenario 18)", async () => {
     // Enough notes to make the record scroll well past its plate.
     const notes = Array.from({ length: 80 }, (_, i) => `Range note ${i + 1}.`).join("\n");
     await addFirearm({
@@ -504,37 +244,6 @@ describe("User Story 1 - Record a Firearm", () => {
       serial: "ESC-1",
       notes,
     });
-    // FR-040: the back link shows its shortcut, and Escape does what it does.
-    expect(await backLinkShown()).toEqual({ label: "Collection", key: "Esc" });
-    await pressEscape();
-    await expect($("#record-name")).not.toExist();
-    await expect($(".hd-page-title")).toHaveText("Collection");
-
-    // With a dialog open, Escape closes the dialog and stays on the record.
-    await openFirearm("E2EEsc Long");
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    await pressEscape();
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-    await expect($("#record-name")).toHaveText("E2EEsc Long");
-
-    // With a menu open inside it, Escape closes only the menu.
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    await openPhysicalGroup();
-    await browser.execute(() => {
-      const label = [...document.querySelectorAll('[role="dialog"] label')].find(
-        (l) => l.textContent?.trim() === "Condition",
-      ) as HTMLLabelElement | undefined;
-      document.getElementById(label?.htmlFor ?? "")?.click();
-    });
-    await $('[role="listbox"]').waitForExist();
-    await pressEscape();
-    await $('[role="listbox"]').waitForExist({ reverse: true });
-    await expect($('[role="dialog"]')).toExist();
-    await pressEscape();
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-    await expect($("#record-name")).toHaveText("E2EEsc Long");
 
     // #47: the strip takes over the actions the moment their bar has gone
     // under the top bar, long before the plate under it is scrolled away.
@@ -573,7 +282,11 @@ describe("User Story 1 - Record a Firearm", () => {
       () => getComputedStyle(document.querySelector(".hd-topbar")!).backgroundColor,
     );
     const alpha = /\/\s*([\d.]+)(%?)\s*\)$|^rgba\([^)]*,\s*([\d.]+)\s*\)$/.exec(topbarBackground);
-    const topbarAlpha = alpha ? (alpha[1] ? Number(alpha[1]) / (alpha[2] ? 100 : 1) : Number(alpha[3])) : 1;
+    const topbarAlpha = alpha
+      ? alpha[1]
+        ? Number(alpha[1]) / (alpha[2] ? 100 : 1)
+        : Number(alpha[3])
+      : 1;
     expect({ background: topbarBackground, alpha: topbarAlpha }).toEqual({
       background: topbarBackground,
       alpha: 1,
@@ -594,7 +307,7 @@ describe("User Story 1 - Record a Firearm", () => {
 
     await clickPinned("Edit");
     await expect($('[role="dialog"]*=Edit E2EEsc Long')).toExist();
-    await pressEscape();
+    await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
     await expect($(".hd-runhead")).toExist();
 
@@ -605,8 +318,5 @@ describe("User Story 1 - Record a Firearm", () => {
     });
     await $(".hd-runhead").waitForExist({ reverse: true });
     await expect($("#record-name")).toBeFocused();
-
-    await pressEscape();
-    await expect($(".hd-page-title")).toHaveText("Collection");
   });
 });

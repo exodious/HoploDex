@@ -28,6 +28,7 @@ describe("ConfirmDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  // 001 US1 Scenario 5: cancelling a firearm's delete confirmation deletes nothing.
   it("does not call onConfirm when cancelled", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

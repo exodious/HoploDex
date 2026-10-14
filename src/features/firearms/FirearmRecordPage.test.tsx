@@ -176,6 +176,7 @@ describe("FirearmRecordPage 'Add' links (FR-038, US1 Acceptance Scenario 15)", (
   });
 });
 
+// 001 US1 Scenario 17
 describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17)", () => {
   beforeEach(() => {
     getFirearm.mockReset();

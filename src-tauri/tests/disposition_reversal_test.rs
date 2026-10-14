@@ -43,6 +43,7 @@ fn message(err: &CommandError) -> String {
     format!("{} {:?}", err.message, err.field_errors)
 }
 
+// 001 US1 Scenario 12
 #[test]
 fn keeping_the_history_restores_the_firearm_and_retains_the_disposition() {
     let db = TestDb::new();
@@ -132,6 +133,7 @@ fn a_reversal_that_clashes_on_nickname_is_blocked_naming_the_record_and_changes_
     assert_eq!(history_count(&db, original.id), 0, "and no history was written");
 }
 
+// 001 US1 Scenario 12
 #[test]
 fn a_reversal_can_rename_to_resolve_a_nickname_clash_in_the_same_step() {
     let db = TestDb::new();

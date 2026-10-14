@@ -276,6 +276,7 @@ const backLink = () => document.querySelector(".hd-backlink");
 const onCollection = () =>
   expect(screen.getByRole("heading", { level: 1, name: "Collection" })).toBeInTheDocument();
 
+// 001 US1 Scenario 18
 describe("Escape goes back wherever a back link shows", () => {
   beforeEach(() => {
     // jsdom has no scrolling; the shell scrolls on every page change.
@@ -300,6 +301,7 @@ describe("Escape goes back wherever a back link shows", () => {
     onCollection();
   });
 
+  // 001 US3 Scenario 17
   it("retraces firearm → policy one step at a time", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -315,6 +317,7 @@ describe("Escape goes back wherever a back link shows", () => {
     onCollection();
   });
 
+  // 001 US3 Scenario 17
   it("returns from the Insurance page when a link led there", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -325,6 +328,7 @@ describe("Escape goes back wherever a back link shows", () => {
     onCollection();
   });
 
+  // 001 US3 Scenario 17
   it("closes an open dialog without leaving the page", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -338,6 +342,7 @@ describe("Escape goes back wherever a back link shows", () => {
   });
 });
 
+// 001 US1 Scenario 18
 describe("Escape stays on a record while something else wants it (FR-040, US1/AC18)", () => {
   beforeEach(() => {
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
