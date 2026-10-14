@@ -583,6 +583,7 @@ describe("ImportDialog files and the two tables (US5)", () => {
     return user;
   }
 
+  // 001 US5 Scenario 3
   it("names each failed row's table, whichever table it is in", async () => {
     await importWith({
       rowErrors: [

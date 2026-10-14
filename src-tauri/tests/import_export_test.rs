@@ -17,6 +17,7 @@ fn write_csv(dir: &TempDir, contents: &str) -> std::path::PathBuf {
     path
 }
 
+// 001 US5 Scenario 2
 #[test]
 fn scenario_2_imports_new_records_from_a_spreadsheet() {
     let db = TestDb::new();
@@ -48,6 +49,7 @@ fn scenario_2_imports_new_records_from_a_spreadsheet() {
     assert!(all.iter().any(|f| f.make == "Sig" && f.model == "P226"));
 }
 
+// 001 US5 Scenario 3
 #[test]
 fn scenario_3_reports_a_failing_row_without_discarding_successful_ones() {
     let db = TestDb::new();
@@ -647,6 +649,7 @@ fn import_rejects_bad_physical_details_as_row_errors_naming_the_column() {
     }
 }
 
+// 001 US1 Scenario 17 (FR-039)
 #[test]
 fn an_export_re_imports_with_all_six_intact() {
     use hoplodex_lib::models::firearm::Condition;

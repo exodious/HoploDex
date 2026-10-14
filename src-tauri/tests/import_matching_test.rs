@@ -64,6 +64,7 @@ fn existing_firearm() -> FirearmInput {
     }
 }
 
+// 001 FR-026
 #[test]
 fn a_matching_make_model_serial_produces_a_conflict_not_a_silent_overwrite() {
     let db = TestDb::new();
@@ -411,6 +412,7 @@ fn a_row_repeating_an_earlier_row_of_the_same_file_conflicts_with_the_record_it_
     assert!(!result.conflicts[0].duplicate_allowed);
 }
 
+// 001 FR-026 (Keep existing)
 #[test]
 fn resolving_a_conflict_as_skip_leaves_the_original_untouched() {
     let db = TestDb::new();

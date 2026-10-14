@@ -167,6 +167,7 @@ describe("ExportDialog with accessories (US5)", () => {
     );
   });
 
+  // 001 US5, filtered export edge case
   it("shows each scope's own counts, asking for the filtered one with the current filter", async () => {
     mockScope(
       scope({ firearmCount: 3, accessoryCount: 2 }),
