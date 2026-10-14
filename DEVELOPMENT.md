@@ -197,7 +197,7 @@ and runs the tests in it as a standard (non-admin) user:
 scripts/tart-vm.sh setup                   # clone, create hoplotest, install the toolchain, log it in at boot
 scripts/tart-vm.sh start                   # start it with a 1920×1080 screen, for the tests and manual testing
 scripts/tart-vm.sh test                    # copy the checkout in, lint and test over SSH, E2E in its desktop
-scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.test.tsx   # one command
+scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.fields.test.tsx   # one command
 scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
 scripts/tart-vm.sh start --tall            # restart it with a 1920×4200 screen, for the screenshot walk
 scripts/tart-vm.sh gui bash -c 'npm run build && npm run screenshots'
@@ -489,11 +489,18 @@ To run part of a suite:
 cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test)'                 # one integration-test file
 cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'binary(firearm_lifecycle_test) & test(<name>)'  # tests in it whose name contains <name>
 cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                              # tests anywhere whose name contains <name>
-npx vitest run src/features/firearms/FirearmForm.test.tsx                                                 # one Vitest file
+npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                          # one Vitest file
 npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                            # one E2E spec
 
 cargo test --manifest-path src-tauri/Cargo.toml --test firearm_lifecycle_test <name>  # the same without nextest
 ```
+
+Vitest runs every test file in its own worker thread and uses every CPU
+(`pool` and `maxWorkers` in `vite.config.ts`, #77), so a run's wall time is
+about the slowest file plus the rest divided by the CPU count. Keep a file
+well under ten seconds: `FirearmForm`'s tests are four files by topic
+(`FirearmForm.*.test.tsx`, sharing `firearmFormTestSupport.tsx`) for that
+reason. Vitest's end-of-run summary shows each file's time.
 
 The performance budgets (search 500 ms, actions 1 s, suggestions 50 ms at
 10,000 records) are timed only in a release build, so `performance_test.rs`

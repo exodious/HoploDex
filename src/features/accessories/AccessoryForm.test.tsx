@@ -40,7 +40,7 @@ function render(ui: ReactElement, kinds: AccessoryKind[] = ACCESSORY_KINDS) {
 
 // 004's make, model, cartridge and caliber fields settle and suggest through
 // the entries commands, which accessories share (FR-003): the same
-// stand-ins as FirearmForm.test.tsx.
+// stand-ins as firearmFormTestSupport.tsx.
 const settleEntry = vi.fn();
 const suggestEntries = vi.fn();
 vi.mock("../firearms/firearmsService", () => ({
