@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AccessoryDetail, AccessorySummary } from "../accessories/types";
 import type { FirearmSummary } from "../browse/types";
@@ -18,6 +18,7 @@ import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
 import { peekResumedDraft, render, setResumedDraft } from "../../test/sessionScope";
 
 const getFirearm = vi.fn();
+const deleteFirearm = vi.fn();
 const listFirearms = vi.fn();
 const getAccessory = vi.fn();
 const listAccessories = vi.fn();
@@ -26,6 +27,7 @@ const listAccessories = vi.fn();
 // entry commands (specs/006-accessory-links FR-003).
 vi.mock("../firearms/firearmsService", () => ({
   getFirearm: (_scope: unknown, id: number) => getFirearm(id),
+  deleteFirearm: (_scope: unknown, id: number, confirmed: boolean) => deleteFirearm(id, confirmed),
   settleEntry: async (_scope: unknown, _field: string, text: string) => ({
     value: text.trim(),
     changedBy: null,
@@ -38,7 +40,7 @@ vi.mock("../accessories/accessoriesService", () => ({
   listAccessories: (_scope: unknown, input: unknown) => listAccessories(input),
 }));
 vi.mock("../browse/browseService", () => ({
-  listFirearms: () => listFirearms(),
+  listFirearms: (_scope: unknown, input: unknown) => listFirearms(input),
 }));
 // The media panels and thumbnails talk to Tauri; they aren't under test.
 vi.mock("../media/PhotoGallery", () => ({ PhotoGallery: () => null }));
@@ -254,10 +256,10 @@ const session = {
   },
 } as unknown as SessionState;
 
-function renderShell() {
+function renderShell(state: CollectionState = collection) {
   render(
     <SessionContext.Provider value={session}>
-      <CollectionContext.Provider value={collection}>
+      <CollectionContext.Provider value={state}>
         <AppShell />
       </CollectionContext.Provider>
     </SessionContext.Provider>,
@@ -511,6 +513,7 @@ describe("Resumed pending changes open where their form is (FR-039)", () => {
     setResumedDraft({ formVersion, label: "Colt Python", ...draft });
   }
 
+  // 003 US6 Scenario 6: resuming reopens the edit form with the kept input.
   it("an edit reopens the firearm's edit form with the changes", async () => {
     resume({ kind: "firearm", mode: "edit", targetId: 1, values: coltValues });
     renderShell();
@@ -881,5 +884,171 @@ describe("The database's notes (#59)", () => {
     await screen.findByRole("heading", { level: 1, name: "Insurance" });
     expect(screen.queryByRole("region", { name: "Disk encryption" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Restored from a backup" })).toBeInTheDocument();
+  });
+});
+
+// 001 US2, the "keeps the search when returning from a record" regression:
+// opening a record used to discard the search, grouping and view the user had
+// set up. They live in the shell, so the page returned to has them.
+describe("The collection's search, grouping and view survive opening a record", () => {
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    listFirearms.mockReset().mockImplementation(async (input: { query?: string }) => ({
+      groups: [{ key: ".357", firearms: input.query ? [summary] : [summary, uninsured] }],
+    }));
+  });
+  afterEach(() => localStorage.clear());
+
+  it("returns to the same search, grouping and tiles", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.type(await screen.findByRole("searchbox"), "python");
+    await user.click(screen.getByRole("button", { name: "Group by, None" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Caliber" }));
+    await user.click(screen.getByRole("radio", { name: "Tiles" }));
+    await waitFor(() =>
+      expect(listFirearms).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: "python", groupBy: "caliber" }),
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: /Colt Python/ }));
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+
+    await user.click(backLink() as HTMLElement);
+
+    expect(await screen.findByRole("searchbox")).toHaveValue("python");
+    expect(screen.getByRole("button", { name: "Group by, Caliber" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Tiles" })).toBeChecked();
+    expect(await screen.findByRole("button", { name: /Colt Python/ })).toBeInTheDocument();
+    expect(document.querySelector(".hd-tile")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Ruger 10\/22/ })).not.toBeInTheDocument();
+  });
+});
+
+const insuranceTab = () =>
+  within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", {
+    name: /^Insurance/,
+  });
+
+// 001 ui-review (PR #1 regression): the Insurance tab's number counts the
+// active firearms that are uninsured or under-insured, nothing else.
+describe("The Insurance tab's count", () => {
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    deleteFirearm.mockReset().mockResolvedValue(undefined);
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+  });
+
+  const underInsured: FirearmSummary = { ...summary, insuranceWarning: "under_insured" };
+  // Disposed firearms are left out of coverage checks, whatever their flag.
+  const disposed: FirearmSummary = {
+    ...uninsured,
+    id: 4,
+    model: "Mark IV",
+    serialNumber: "R4",
+    status: "disposed",
+  };
+  // A policy that is about to lapse is called out on the Insurance page, not
+  // counted in the tab.
+  const lapsing: InsurancePolicy = { ...policy, id: 8, name: "Lapsing", expiringWarning: true };
+
+  /** The number on the Insurance tab, or 0 when it shows none. */
+  const tabCount = () =>
+    Number(insuranceTab().querySelector(".hd-tab__alert")?.textContent?.replace(/\D/g, "") ?? 0);
+
+  /** The shell over a collection whose `refresh` drops the deleted firearm,
+   * as the real one does after the backend deletes it. */
+  function ShellOver({ all }: { all: FirearmSummary[] }) {
+    const [firearms, setFirearms] = useState(all);
+    const state: CollectionState = {
+      ...collection,
+      firearms,
+      firearmsById: new Map(firearms.map((f) => [f.id, f])),
+      policies: [policy, lapsing],
+      policiesById: new Map([
+        [policy.id, policy],
+        [lapsing.id, lapsing],
+      ]),
+      refresh: async () => setFirearms((list) => list.filter((f) => f.id !== underInsured.id)),
+    };
+    return (
+      <SessionContext.Provider value={session}>
+        <CollectionContext.Provider value={state}>
+          <AppShell />
+        </CollectionContext.Provider>
+      </SessionContext.Provider>
+    );
+  }
+
+  it("counts only active firearms with a warning, and recounts after a delete", async () => {
+    const user = userEvent.setup();
+    render(<ShellOver all={[underInsured, uninsured, disposed]} />);
+
+    // One under-insured and one uninsured firearm: not the disposed one, and
+    // not the policy that is about to lapse.
+    expect(tabCount()).toBe(2);
+
+    await openColt(user);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(await screen.findByRole("button", { name: "Delete firearm" }));
+
+    await waitFor(() => expect(deleteFirearm).toHaveBeenCalledWith(1, true));
+    await waitFor(() => expect(tabCount()).toBe(1));
+  });
+});
+
+// 001 ui-review (PR #1 regression): a link from one page to another is
+// followed by a Back that lands on the page the user came from, and a policy
+// opens on its own page.
+describe("Following a link to a policy or a firearm, and Back", () => {
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    getFirearm.mockReset().mockResolvedValue(detail);
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+  });
+
+  const onePolicyPage = () => {
+    expect(document.querySelectorAll(".hd-policy")).toHaveLength(1);
+    expect(document.querySelector(".hd-policy__name")).toHaveTextContent(policy.name);
+    // It is the policy's own page, not the Insurance listing.
+    expect(screen.queryByRole("heading", { level: 1, name: "Insurance" })).not.toBeInTheDocument();
+  };
+
+  it("goes policy → firearm → Back to that policy's own page", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await openColt(user);
+    await user.click(screen.getByRole("button", { name: policy.name }));
+    await screen.findByRole("heading", { name: policy.name });
+    onePolicyPage();
+    expect(backLink()).toHaveTextContent("Colt Python");
+
+    const card = document.querySelector<HTMLElement>(".hd-policy")!;
+    await user.click(within(card).getByRole("button", { name: "Colt Python" }));
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(backLink()).toHaveTextContent(policy.name);
+
+    await user.click(backLink() as HTMLElement);
+    await screen.findByRole("heading", { name: policy.name });
+    onePolicyPage();
+  });
+
+  it("opens a policy's own page from the Insurance list, and Back returns to the list", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(insuranceTab());
+    expect(screen.getByRole("heading", { level: 1, name: "Insurance" })).toBeInTheDocument();
+
+    await user.click(document.querySelector<HTMLElement>("button.hd-policy__open")!);
+    await screen.findByRole("heading", { name: policy.name });
+    onePolicyPage();
+    // On its own page the name is the heading, not a link to itself.
+    expect(document.querySelector(".hd-policy__open")).toBeNull();
+    expect(backLink()).toHaveTextContent("Insurance");
+
+    await user.click(backLink() as HTMLElement);
+    expect(await screen.findByRole("heading", { level: 1, name: "Insurance" })).toBeInTheDocument();
   });
 });

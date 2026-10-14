@@ -317,3 +317,111 @@ describe("InsurancePage records no policy covers (FR-008)", () => {
     expect(open).toHaveBeenCalledWith({ page: "accessory", id: 9, from: "insurance" });
   });
 });
+
+// 001 ui-review (PR #1 regression): the legend's Under-insured figure is how
+// much coverage is missing, not the firearms' value, and Uninsured includes a
+// firearm scheduled on an expired policy (US3 Scenario 8).
+describe("InsurancePage coverage overview legend", () => {
+  const firearm = (id: number, overrides: Partial<FirearmSummary>): FirearmSummary => ({
+    ...colt,
+    id,
+    make: "InsE2EReview",
+    serialNumber: `REV-${id}`,
+    ...overrides,
+  });
+  const scheduledPolicy: InsurancePolicy = { ...rider, id: 3, name: "Review Policy" };
+  const expiredPolicy: InsurancePolicy = {
+    ...rider,
+    id: 4,
+    name: "Review Rider (expired)",
+    isInForce: false,
+    isExpired: true,
+    expiredWarning: true,
+  };
+  // Unscheduled, so under the blanket policy and $4,000 over its limit.
+  const rifle = firearm(1, {
+    model: "Rifle",
+    estimatedValue: 5_000,
+    insuranceWarning: "under_insured",
+  });
+  // Scheduled for $1,500 of a $2,000 value: $500 short.
+  const pistol = firearm(2, {
+    model: "Pistol",
+    estimatedValue: 2_000,
+    insuranceWarning: "under_insured",
+    insurancePolicyId: scheduledPolicy.id,
+    scheduledCoverageAmount: 1_500,
+  });
+  // Scheduled on a policy that has expired (for far less than its value):
+  // uninsured, its whole value, and nothing toward the shortfall.
+  const pump = firearm(3, {
+    model: "Pump",
+    estimatedValue: 600,
+    insuranceWarning: "uninsured",
+    insurancePolicyId: expiredPolicy.id,
+    scheduledCoverageAmount: 100,
+  });
+
+  it("reads Under-insured $4,500 short and Uninsured $600", () => {
+    const summary = {
+      collectionTotal: 7_600,
+      firearmsTotal: 7_600,
+      accessoriesTotal: 0,
+      blanket: {
+        policyId: blanketPolicy.id,
+        policyName: blanketPolicy.name,
+        limit: 1_000,
+        total: 5_000,
+        underInsured: true,
+        firearmCount: 1,
+        accessoryCount: 0,
+      },
+      byPolicy: [
+        {
+          policyId: scheduledPolicy.id,
+          policyName: scheduledPolicy.name,
+          isExpired: false,
+          isExpiringSoon: false,
+          individuallyScheduled: [
+            {
+              record: { kind: "firearm", id: pistol.id },
+              estimatedValue: 2_000,
+              scheduledAmount: 1_500,
+              underInsured: true,
+            },
+          ],
+        },
+        {
+          policyId: expiredPolicy.id,
+          policyName: expiredPolicy.name,
+          isExpired: true,
+          isExpiringSoon: false,
+          individuallyScheduled: [
+            {
+              record: { kind: "firearm", id: pump.id },
+              estimatedValue: 600,
+              scheduledAmount: 100,
+              underInsured: false,
+            },
+          ],
+        },
+      ],
+      uninsured: [{ record: { kind: "firearm", id: pump.id }, estimatedValue: 600 }],
+    } as ValueSummary;
+    const firearms = [rifle, pistol, pump];
+    renderPage({
+      ...collectionWith(summary, []),
+      firearms,
+      firearmsById: new Map(firearms.map((f) => [f.id, f])),
+      policies: [blanketPolicy, scheduledPolicy, expiredPolicy],
+      policiesById: new Map([blanketPolicy, scheduledPolicy, expiredPolicy].map((p) => [p.id, p])),
+    });
+
+    // The legend's parts are separate elements, so their text runs together.
+    const legend = document
+      .querySelector<HTMLElement>(".hd-overview__legend")!
+      .textContent!.replace(/\s+/g, "");
+    expect(legend).toContain("Under-insured$4,500short");
+    expect(legend).toContain("Uninsured$600");
+  });
+});
