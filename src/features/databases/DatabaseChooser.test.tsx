@@ -68,6 +68,7 @@ describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
     vi.mocked(databasesService.getChooserState).mockReset();
   });
 
+  // 003 US1 Scenario 1
   it("welcomes a first run with the two page actions as large buttons", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [], selectedPath: null }),
@@ -132,6 +133,7 @@ describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
     expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
   });
 
+  // 003 US1 Scenario 6
   it("says a wrong passphrase didn't open it and keeps the field for another try (FR-006)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
@@ -231,6 +233,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     );
   }
 
+  // 003 US2 Scenario 3
   it("lists the recent databases, most recent first, with their folders", async () => {
     renderChooser();
 
@@ -244,6 +247,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     expect(within(rows[1]).getByTitle("/mnt/nas/family")).toBeInTheDocument();
   });
 
+  // 003 US2 Scenario 4, US6 Scenario 1
   it("selects the database just closed", async () => {
     renderChooser({}, shared.path);
 
@@ -297,6 +301,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     await waitFor(() => expect(screen.queryByText("Shared collection")).not.toBeInTheDocument());
   });
 
+  // 003 US2 Scenario 5
   it("every row can be removed from the list, which leaves the file alone", async () => {
     const user = userEvent.setup();
     renderChooser();
@@ -790,6 +795,7 @@ describe("DatabaseChooser (User Story 5)", () => {
     expect(session.openDatabase).toHaveBeenLastCalledWith(saved.path, "the new passphrase here");
   });
 
+  // 003 US5 Scenario 4
   it("disables remembering on a computer with no keyring (FR-019)", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ keyringAvailable: false }),
@@ -804,6 +810,7 @@ describe("DatabaseChooser (User Story 5)", () => {
   });
 });
 
+// 003 US6 Scenarios 1, 4a, 5 and 8: the notice a lock leaves in the chooser (the "lockedByUser" notice, for Ctrl+L, is checked above).
 describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md §1, §3, §14)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
@@ -911,6 +918,7 @@ describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md 
     expect(screen.getByText("HoploDex locked “Main collection”.")).toBeInTheDocument();
   });
 
+  // 003 US6 Scenario 1: the chooser shows the locked database selected, its passphrase prompt open.
   it("selects the locked database with its passphrase field focused", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ notices: [{ kind: "closed", databasePath: shared.path, reason: "idle" }] }),
@@ -957,6 +965,7 @@ describe("What the chooser knows about the selected database (FR-040)", () => {
     vi.mocked(databasesService.getChooserState).mockReset();
   });
 
+  // 003 FR-040
   it("shows the selected database's last open here and its backups, and no other row's", async () => {
     const opened = daysAgo(0);
     const latest = daysAgo(1, 17, 40);
@@ -1011,6 +1020,7 @@ describe("What the chooser knows about the selected database (FR-040)", () => {
     ).toBeInTheDocument();
   });
 
+  // 003 FR-040
   it("says there are no backups, or one, without an oldest", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
