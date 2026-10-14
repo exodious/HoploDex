@@ -4,7 +4,7 @@ Saves the E2E app's window, as the user sees it, on Windows (#27, #88).
 
 .DESCRIPTION
 The Windows counterpart of the X display's `import -window root` that
-e2e/specs/us13-document-preview.e2e.ts and e2e/support/screenshots.ts use on
+e2e/specs/us13-document-preview-preview.e2e.ts and e2e/support/screenshots.ts use on
 Linux. A WebDriver screenshot holds only the main web view, so it leaves out
 007's PDF surface, a child web view over the viewer's page area; this asks the
 window to paint itself (PrintWindow with PW_RENDERFULLCONTENT, which includes

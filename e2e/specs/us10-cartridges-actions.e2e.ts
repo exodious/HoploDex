@@ -1,5 +1,4 @@
 import {
-  back,
   browser,
   choose,
   clickButton,
@@ -8,18 +7,20 @@ import {
   fieldValue,
   fill,
   focusedFieldLabel,
-  groupBy,
   settle,
 } from "../support/ui";
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/004-cartridges-action-types' User Story 2
- * (US2-3, US2-4, US2-10): the Cartridge suggestion list is driven with the
+ * (US2-3, US2-10): the Cartridge suggestion list is driven with the
  * keyboard alone, as real key events through the X server, since the
  * list's focus and highlight behaviour is WebKitGTK's to get right and
  * WebDriver's own keys don't pass through GTK. See "Real keyboard and mouse
  * input" in DEVELOPMENT.md.
+ *
+ * The list's contents and markers (US2-4) and grouping by Cartridge (US1-6)
+ * are tested in Rust and Vitest (see the citations in those tests).
  */
 describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-types)", () => {
   before(function () {
@@ -57,6 +58,13 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
     for (const key of ["9", "x", "1"]) await realKey(key);
     await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
 
+    // Escape closes the list, not the dialog, and keeps the typed text (US2-10).
+    await realKey("Escape");
+    await $('[role="listbox"]').waitForExist({ reverse: true });
+    await expect($('[role="dialog"]')).toExist();
+    expect(await fieldValue("Cartridge")).toBe("9x1");
+
+    // Down opens the list again, and Down moves through it.
     for (let step = 0; step < 8; step++) {
       await realKey("Down");
       if ((await highlightedOption())?.startsWith("9x19mm Parabellum")) break;
@@ -78,31 +86,5 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
     await clickButton("Add firearm");
     await $("#record-name").waitForExist({ timeout: 8000 });
     await settle();
-  });
-
-  it("finds the firearm under its cartridge when grouped by Cartridge", async () => {
-    await back();
-    await groupBy("Cartridge");
-    await $("h2.hd-group__title*=9x19mm Parabellum").waitForExist({ timeout: 5000 });
-  });
-
-  it("offers the value now on record, marked with its count (US2-4)", async () => {
-    await clickButton("Add firearm");
-    await $('[role="dialog"]').waitForExist();
-    await realClick('[data-field="cartridge"] input');
-    for (const key of ["9", "x", "1"]) await realKey(key);
-
-    await $('[role="option"]*=9x19mm Parabellum').waitForDisplayed({ timeout: 5000 });
-    const row = (await $('[role="option"]*=9x19mm Parabellum').getText()).replace(/\s+/g, " ");
-    expect(row).toContain("Built-in · 9mm · 1 in collection");
-    // Once, however many places it comes from.
-    expect((await $$('[role="option"]*=9x19mm Parabellum')).length).toBe(1);
-
-    await realKey("Escape");
-    await $('[role="listbox"]').waitForExist({ reverse: true });
-    // Escape closed the list, not the dialog, and kept the text.
-    await expect($('[role="dialog"]')).toExist();
-    expect(await fieldValue("Cartridge")).toBe("9x1");
-    await clickButton("Cancel");
   });
 });

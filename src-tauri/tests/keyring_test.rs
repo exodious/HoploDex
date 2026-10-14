@@ -53,7 +53,7 @@ struct World {
 impl World {
     /// A computer whose keyring works.
     fn new() -> Self {
-        Self::with_keyring(Keyring::mock(None, None))
+        Self::with_keyring(Keyring::mock(None))
     }
 
     fn with_keyring(keyring: Keyring) -> Self {
@@ -264,6 +264,7 @@ fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     assert!(saved_failed(&world.open("Main", Unlock::Saved).unwrap_err()));
 }
 
+// 003 US2 Scenario 5
 #[test]
 fn removing_a_database_from_the_list_forgets_its_passphrase() {
     let world = World::new();
@@ -428,13 +429,14 @@ fn saving_a_wrong_passphrase_is_refused_by_the_first_page_check() {
     world.add_firearm("A1");
 }
 
+// 003 US5 Scenario 4
 #[test]
 fn without_a_keyring_nothing_is_saved_and_everything_else_works() {
     // The in-memory store is installed anyway, so `stored` can look in it.
     // Under nextest this test has a process to itself, and the unavailable
     // keyring never installs one.
-    Keyring::mock(None, None);
-    let world = World::with_keyring(Keyring::mock(Some("unavailable"), None));
+    Keyring::mock(None);
+    let world = World::with_keyring(Keyring::off());
     let state = ops::chooser_state(&world.session, &world.machine, None, None);
     assert!(!state.keyring_available);
 
@@ -511,7 +513,7 @@ fn an_e2e_keyring_file_keeps_saved_passphrases_between_launches() {
     let _alone = store_to_itself();
     let files = TempDir::new().unwrap();
     let file = files.path().join("keyring.json");
-    let world = World::with_the_store_to_itself(Keyring::mock(None, Some(file.clone())));
+    let world = World::with_the_store_to_itself(Keyring::mock(Some(file.clone())));
     world.create("Main");
     let id = world.database_id();
     world.save(TEST_PASSPHRASE).unwrap();
@@ -524,7 +526,7 @@ fn an_e2e_keyring_file_keeps_saved_passphrases_between_launches() {
         .unwrap()
         .delete_credential()
         .unwrap();
-    let relaunched = Keyring::mock(None, Some(file.clone()));
+    let relaunched = Keyring::mock(Some(file.clone()));
     assert_eq!(
         relaunched.load(&id).map(|p| p.as_str().to_owned()).as_deref(),
         Some(TEST_PASSPHRASE)

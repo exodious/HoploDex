@@ -84,6 +84,7 @@ describe("Combobox", () => {
     expect(input().getAttribute("aria-controls")).toBe(list.id);
   });
 
+  // 004 US2 Scenario 4
   it("opens on focus with the list for the current text, and names each row with its marker", async () => {
     const user = userEvent.setup();
     render(<Harness load={load} />);
@@ -230,6 +231,7 @@ describe("Combobox", () => {
     expect(input()).toHaveValue("9x");
   });
 
+  // 004 US2 Scenario 10
   it("closes an open list on Escape keeping the text, and lets Escape through once closed", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();

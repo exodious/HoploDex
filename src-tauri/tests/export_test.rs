@@ -140,6 +140,7 @@ fn exports_as_xlsx_when_requested() {
 /// FR-039 / spreadsheet-format.md "Physical details": plain numbers with no
 /// unit text and no trailing zeros, and the condition's display name,
 /// between `scheduled_coverage_amount` and `photo_filenames`.
+// 001 US1 Scenario 17
 #[test]
 fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() {
     use hoplodex_lib::models::firearm::Condition;
@@ -758,6 +759,7 @@ fn rifle(make: &str) -> FirearmInput {
     FirearmInput { firearm_type_id: RIFLE, ..firearm_with_photo(make) }
 }
 
+// 001 US5 Edge Case: filtered export (only the matches, and what is mounted on them)
 #[test]
 fn a_filtered_export_holds_what_is_mounted_on_the_matches_firearm_or_accessory_but_not_the_rest() {
     let db = TestDb::new();

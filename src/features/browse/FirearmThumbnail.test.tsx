@@ -124,3 +124,17 @@ describe("FirearmThumbnail: a late response (US1-2)", () => {
     expect(scope.thumbnails.size).toBe(0);
   });
 });
+
+describe("FirearmThumbnail: no photo (001 US4 Scenario 3)", () => {
+  it("draws the type's generic drawing and fetches nothing when thumbnailPhotoId is null", async () => {
+    const scope = createSessionScope(1);
+    const { container } = render(
+      withScope(scope, <FirearmThumbnail thumbnailPhotoId={null} genericThumbnailKey="rifle" />),
+    );
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
+
+    expect(container.querySelector('svg[data-drawing="rifle"]')).not.toBeNull();
+    expect(photo(container)).toBeNull();
+    expect(vi.mocked(tauriClient.invoke)).not.toHaveBeenCalled();
+  });
+});

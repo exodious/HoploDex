@@ -9,7 +9,7 @@ description: "Task list template for feature implementation"
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The project constitution's Testing Standards principle is NON-NEGOTIABLE — every user story MUST include the test tasks below (contract/integration tests written first, expected to fail, then implementation makes them pass).
+**Tests**: The project constitution's Testing Standards principle is NON-NEGOTIABLE — every user story MUST include the test tasks below (written first, expected to fail, then implementation makes them pass), each at the level plan.md's Test Levels gives it: its scenarios in Rust integration tests or Vitest, and in E2E only the story's journey and the tests the plan lists there.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -85,8 +85,8 @@ Examples of foundational tasks (adjust based on your project):
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T010 [P] [US1] Rust integration tests for [scenario IDs: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
+- [ ] T011 [P] [US1] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, in e2e/specs/us[NN]-[name].e2e.ts
 
 ### Implementation for User Story 1
 
@@ -109,8 +109,8 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Tests for User Story 2 (mandatory per constitution)
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T018 [P] [US2] Rust integration tests for [scenario IDs: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
+- [ ] T019 [P] [US2] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, in e2e/specs/us[NN]-[name].e2e.ts
 
 ### Implementation for User Story 2
 
@@ -131,8 +131,8 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Tests for User Story 3 (mandatory per constitution)
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T024 [P] [US3] Rust integration tests for [scenario IDs: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
+- [ ] T025 [P] [US3] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, in e2e/specs/us[NN]-[name].e2e.ts
 
 ### Implementation for User Story 3
 
@@ -201,8 +201,8 @@ Examples of foundational tasks (adjust based on your project):
 
 ```bash
 # Launch all tests for User Story 1 together (if tests requested):
-Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
-Task: "Integration test for [user journey] in tests/integration/test_[name].py"
+Task: "Rust integration tests for [scenario IDs] in src-tauri/tests/[name]_test.rs"
+Task: "E2E journey for [story] in e2e/specs/us[NN]-[name].e2e.ts"
 
 # Launch all models for User Story 1 together:
 Task: "Create [Entity1] model in src/models/[entity1].py"

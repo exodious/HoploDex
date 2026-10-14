@@ -42,6 +42,7 @@ fn field_error(input: &FirearmInput, field: &str) {
     );
 }
 
+// 001 US1 Scenario 17
 #[test]
 fn all_six_round_trip_through_create_update_and_get() {
     let db = TestDb::new();

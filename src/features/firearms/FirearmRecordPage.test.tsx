@@ -176,6 +176,7 @@ describe("FirearmRecordPage 'Add' links (FR-038, US1 Acceptance Scenario 15)", (
   });
 });
 
+// 001 US1 Scenario 17
 describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
@@ -220,6 +221,38 @@ describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17
 
     await screen.findByText("No notes recorded.");
     expect(screen.queryByRole("region", { name: "Physical details" })).not.toBeInTheDocument();
+  });
+});
+
+// 001 US1 Scenario 6: a firearm saved without a serial number says why.
+describe("FirearmRecordPage serial number (US1)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows 'None — attested as not required' for a firearm attested as having no serial", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, serialNumber: null, noSerialAttested: true });
+    renderPage();
+
+    expect(await screen.findByText("None — attested as not required")).toBeInTheDocument();
+    expect(screen.queryByText("V1")).not.toBeInTheDocument();
+  });
+});
+
+// 001 US1 Scenarios 3 and 16: amounts are whole dollars, shown grouped.
+describe("FirearmRecordPage amounts (FR-037, US1)", () => {
+  beforeEach(() => {
+    getFirearm.mockReset();
+  });
+
+  it("shows the replacement value and the price paid as grouped whole dollars", async () => {
+    getFirearm.mockResolvedValue({ ...firearm, estimatedValue: 1250, acquisitionPrice: 1450 });
+    renderPage();
+
+    const replacement = (await screen.findByText("Replacement value")).closest("div");
+    expect(replacement).toHaveTextContent("$1,250");
+    const price = screen.getByText("Price paid").closest("div");
+    expect(price).toHaveTextContent("$1,450");
   });
 });
 

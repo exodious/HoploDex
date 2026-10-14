@@ -80,6 +80,10 @@ fn scenario_12_overlapping_blanket_policies_are_blocked_naming_the_other_policy(
     assert_eq!(err.code, "VALIDATION_ERROR");
     let text = format!("{} {:?}", err.message, err.field_errors);
     assert!(text.contains("Old policy"), "the message names the other policy: {text}");
+    // The error lands on the Coverage starts field, so the form can show it there.
+    let fields = err.field_errors.as_ref().expect("a field error");
+    assert!(fields["effectiveStartDate"].contains("Old policy"), "{fields:?}");
+    assert_eq!(fields.len(), 1, "only the start date is blamed: {fields:?}");
     assert_eq!(insurance_ops::list_policies(&db.conn).unwrap().len(), 1, "nothing was saved");
 }
 
@@ -357,6 +361,7 @@ fn notes_are_stored_and_returned_from_create_update_and_list() {
     assert_eq!(listed[0].policy.notes.as_deref(), Some("Renewal quote received."));
 }
 
+// 001 US3 Scenario 16
 #[test]
 fn blank_or_whitespace_only_notes_are_stored_as_null() {
     let db = TestDb::new();
@@ -375,6 +380,7 @@ fn blank_or_whitespace_only_notes_are_stored_as_null() {
     }
 }
 
+// 001 US3 Scenario 16
 #[test]
 fn notes_are_cleared_when_updated_with_null() {
     let db = TestDb::new();

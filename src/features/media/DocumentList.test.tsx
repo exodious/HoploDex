@@ -292,6 +292,7 @@ describe("DocumentList: the Preview button and the name (contract §1)", () => {
     expect(button.getAttribute("title")).toMatch(/this computer/i);
   });
 
+  // 007 US3 Scenario 1
   it("titles the name for what it does, and opens the viewer on it", async () => {
     const user = await renderList();
     const name = screen.getByRole("button", { name: "Purchase receipt.pdf" });
@@ -817,6 +818,7 @@ describe("DocumentList: Open in another app… (contract §1)", () => {
     },
   );
 
+  // 007 US2 Scenario 7 (FR-017)
   it("is disabled, with its reason as the title, for a row that isn't a document type", async () => {
     const user = await renderList();
 

@@ -5,12 +5,9 @@ import {
   addFirearm,
   browser,
   chooseMenuItem,
-  chooserNames,
   clickButton,
-  clickEl,
   createDatabase,
   expect,
-  fieldValue,
   fill,
   goTo,
   isButtonDisabled,
@@ -51,64 +48,47 @@ async function relaunch() {
   await waitForChooser();
 }
 
-async function diskEncryptionNoteShown(): Promise<boolean> {
-  return $('section[aria-label="Disk encryption"]').isExisting();
+/** The error shown for the field labelled `label` in the open dialog: the
+ * text of the element its `aria-describedby` names when it is `aria-invalid`,
+ * or `null` when the field shows none. */
+async function dialogFieldError(label: string): Promise<string | null> {
+  return browser.execute((label: string) => {
+    const labelEl = [...document.querySelectorAll('[role="dialog"] label')].find(
+      (l) => l.textContent?.trim() === label,
+    ) as HTMLLabelElement | undefined;
+    const field = labelEl && document.getElementById(labelEl.htmlFor);
+    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
+    for (const id of (field.getAttribute("aria-describedby") ?? "").split(" ")) {
+      const el = document.getElementById(id);
+      if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
+    }
+    return null;
+  }, label);
 }
 
 describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", () => {
   const folder = `${scratchDocuments()}/Typed folder`;
 
-  it("welcomes a first run", async () => {
+  it("fits the first-run chooser in the window, with no scrollbar, and its plate animates", async () => {
     await waitForChooser();
-    await expect($(".hd-chooser__welcome")).toHaveText(
-      "HoploDex keeps your collection in an encrypted database file that only your passphrase opens.",
-    );
-    await expect($("button=Create a new database…")).toExist();
-    await expect($("button=Open another database file…")).toExist();
-  });
-
-  it("fits the first-run chooser in the window, with no scrollbar", async () => {
     // The plate is as tall as the window less the top bar; a 1px miss made
     // the page always scroll.
     const overflow = await browser.execute(
       () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
     );
     expect(overflow).toBeLessThanOrEqual(0);
-  });
 
-  it("draws the catalogue plate in, then cycles its firearm drawings (#23)", async () => {
-    // In the app's own engine: the draw-in's CSS animations, and the cycle's
-    // Web Animations, which repeat until a database is opened.
+    // Smoke check of the catalogue plate (#23) in the app's own engine: the
+    // draw-in's CSS animations and the cycle's Web Animations, which repeat
+    // until a database is opened. Its structure and timing are in
+    // CataloguePlate.test.tsx.
     const plate = await browser.execute(() => {
-      const svg = document.querySelector(".hd-catalogue");
-      const all = svg?.getAnimations({ subtree: true }) ?? [];
+      const all = document.querySelector(".hd-catalogue")?.getAnimations({ subtree: true }) ?? [];
       const forever = all.filter((a) => a.effect?.getComputedTiming().iterations === Infinity);
-      return {
-        hidden: svg?.getAttribute("aria-hidden"),
-        drawing: all.length - forever.length,
-        cycling: forever.length,
-        drawings: [...(svg?.querySelectorAll(".layer") ?? [])].map((l) =>
-          l.getAttribute("data-drawing"),
-        ),
-        numbers: [...(svg?.querySelectorAll(".layer .no") ?? [])].map((n) => n.textContent),
-      };
+      return { drawing: all.length - forever.length, cycling: forever.length };
     });
-    expect(plate.hidden).toBe("true");
-    expect(plate.drawing).toBeGreaterThan(500);
+    expect(plate.drawing).toBeGreaterThan(0);
     expect(plate.cycling).toBeGreaterThan(0);
-    // shuffled at startup, each keeping its own number
-    expect([...plate.drawings].sort()).toEqual([
-      "handgun",
-      "other",
-      "rifle",
-      "shotgun",
-      "suppressor",
-    ]);
-    expect(plate.numbers).toEqual(
-      plate.drawings.map(
-        (d) => ({ rifle: "2", handgun: "3", shotgun: "4", suppressor: "5", other: "6" })[d!],
-      ),
-    );
   });
 
   it("blinks the owl when its beak is clicked, once its pupils are in", async function () {
@@ -222,55 +202,46 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 
-  it("creates a database only with a long enough passphrase and the acknowledgement (FR-003, FR-004)", async () => {
+  // The create dialog to the collection, M2 (the backend's refusal lands on the
+  // name field) and the relaunch that shows nothing before the passphrase.
+  // The dialog's own rules (Saved as, 12 characters, matching, the
+  // acknowledgement) are in CreateDatabaseDialog.test.tsx.
+  it("creates a database, keeps a firearm that only the right passphrase shows again (FR-003, FR-005, FR-006)", async () => {
+    // A file already at the name asked for; the backend refuses the create.
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(`${folder}/Taken.hoplodex`, "");
+
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
-    await fill("Name", "Test");
+    await fill("Name", "Taken");
     await fill("Folder", folder);
-    await expect($(`p=Saved as ${folder}/Test.hoplodex`)).toExist();
-
-    // Create waits for a long enough passphrase, confirmed, and for the
-    // no-recovery acknowledgement.
-    await fill("Passphrase", "too short");
-    await fill("Confirm passphrase", "too short");
-    await toggle(ACKNOWLEDGEMENT);
-    await expect($("p=Use at least 12 characters.")).toExist();
-    expect(await isButtonDisabled("Create database")).toBe(true);
-    expect(fs.existsSync(`${folder}/Test.hoplodex`)).toBe(false);
-
     await fill("Passphrase", E2E_PASSPHRASE);
     await fill("Confirm passphrase", E2E_PASSPHRASE);
     await toggle(ACKNOWLEDGEMENT);
-    expect(await isButtonDisabled("Create database")).toBe(true);
-    await toggle(ACKNOWLEDGEMENT);
+    await clickButton("Create database");
+    await browser.waitUntil(async () => (await dialogFieldError("Name")) !== null, {
+      timeout: 10000,
+      timeoutMsg: "the refusal never landed on the Name field",
+    });
+    expect(await dialogFieldError("Name")).toBe(
+      "A file with this name already exists in that folder.",
+    );
+    expect(await dialogFieldError("Folder")).toBeNull();
+    // Nothing was created, and the file that was there is untouched.
+    expect(fs.readFileSync(`${folder}/Taken.hoplodex`, "utf8")).toBe("");
+    expect(await $('nav[aria-label="Sections"]').isExisting()).toBe(false);
+
+    // Another name, and the passphrases typed again (they are cleared on a
+    // refusal), creates it.
+    await fill("Name", "Test");
+    expect(await dialogFieldError("Name")).toBeNull();
+    await fill("Passphrase", E2E_PASSPHRASE);
+    await fill("Confirm passphrase", E2E_PASSPHRASE);
     expect(await isButtonDisabled("Create database")).toBe(false);
     await clickButton("Create database");
     await waitForCollection();
     expect(fs.existsSync(`${folder}/Test.hoplodex`)).toBe(true);
-  });
 
-  it("shows the disk-encryption note until it is dismissed (FR-008)", async () => {
-    expect(await diskEncryptionNoteShown()).toBe(true);
-    await expect($('section[aria-label="Disk encryption"]')).toHaveText(
-      expect.stringContaining("BitLocker on Windows, FileVault on macOS, or LUKS on Linux"),
-    );
-
-    // The same note tops the Accessories and Insurance pages (#59), and
-    // dismissing it on one hides it on all three.
-    await goTo("Accessories");
-    expect(await diskEncryptionNoteShown()).toBe(true);
-    await goTo("Insurance");
-    expect(await diskEncryptionNoteShown()).toBe(true);
-
-    await clickEl('section[aria-label="Disk encryption"] button[aria-label="Dismiss"]');
-    await $('section[aria-label="Disk encryption"]').waitForExist({ reverse: true });
-    await goTo("Accessories");
-    expect(await diskEncryptionNoteShown()).toBe(false);
-    await goTo("Collection");
-    expect(await diskEncryptionNoteShown()).toBe(false);
-  });
-
-  it("keeps a firearm that only the right passphrase shows again (FR-005, FR-006)", async () => {
     await addFirearm({
       make: "LockedE2E",
       model: "Model 1",
@@ -301,7 +272,6 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
         timeoutMsg: "the firearm isn't listed after reopening",
       },
     );
-    expect(await diskEncryptionNoteShown()).toBe(false);
   });
 });
 
@@ -328,7 +298,7 @@ async function asksForPassphrase(): Promise<boolean> {
 }
 
 describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
-  it("keeps two databases with their own passphrases in two folders", async () => {
+  it("keeps two databases with their own passphrases in two folders, and switches between them (US2-1, US2-4)", async () => {
     await switchDatabase();
     await createDatabase(club);
     await addFirearm({
@@ -351,44 +321,19 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
 
     expect(fs.existsSync(`${club.folder}/Club.hoplodex`)).toBe(true);
     expect(fs.existsSync(`${home.folder}/Home.hoplodex`)).toBe(true);
-  });
 
-  it("switches through the database menu, listing the most recent first", async () => {
+    // Switching to the first: only its own firearms show.
     await switchDatabase();
-
-    expect(await chooserNames()).toEqual(["Home", "Club", "Test"]);
-    expect(await selectedChooserRow()).toBe("Home");
-
     await selectChooserRow("Club");
-    await submitPassphrase(home.passphrase);
-    await expect(
-      $(
-        "p=That passphrase didn't open “Club”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
-      ),
-    ).toExist();
     await unlock(club.passphrase);
     expect(await showsFirearm("ClubGun")).toBe(true);
     expect(await showsFirearm("HomeGun")).toBe(false);
   });
 
-  it("removes a database from the list, leaving its file where it is (US2-5)", async () => {
-    const file = `${scratchDocuments()}/Typed folder/Test.hoplodex`;
-    await switchDatabase();
-
-    await chooseMenuItem('button[aria-label="More actions for Test"]', "Remove from list");
-
-    await browser.waitUntil(async () => !(await chooserNames()).includes("Test"), {
-      timeout: 5000,
-      timeoutMsg: "Test is still listed",
-    });
-    expect(await chooserNames()).toEqual(["Club", "Home"]);
-    expect(fs.existsSync(file)).toBe(true);
-  });
-
-  it("asks save, discard or cancel when quitting with an unsaved firearm form (FR-010)", async () => {
-    // "Club" was closed last, so it is selected.
-    expect(await selectedChooserRow()).toBe("Club");
-    await unlock(club.passphrase);
+  it("asks save, discard or cancel when quitting with an unsaved firearm form, and Discard quits (FR-010)", async () => {
+    // "Club" is open from the switch above. The prompt's buttons, Cancel and a
+    // Save that fails validation are in SessionProvider.test.tsx; here the
+    // real quit request, the process ending and the relaunch.
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();
     await fill("Make", "Unsaved make");
@@ -397,21 +342,6 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
     await requestQuit();
     await $(prompt).waitForExist();
     await expect($(prompt)).toHaveText(expect.stringContaining("Save changes to New firearm?"));
-    await clickButton("Cancel");
-    await $(prompt).waitForExist({ reverse: true });
-    expect(await fieldValue("Make")).toBe("Unsaved make");
-
-    // The form isn't complete, so saving fails there and nothing closes.
-    await requestQuit();
-    await $(prompt).waitForExist();
-    await clickButton("Save changes");
-    await $(prompt).waitForExist({ reverse: true });
-    expect(await fieldValue("Make")).toBe("Unsaved make");
-    await expect($("p=Enter the model.")).toExist();
-
-    // Discarding quits; the relaunched app has nothing of the draft.
-    await requestQuit();
-    await $(prompt).waitForExist();
     // The click quits the app, so it is scheduled for after this script has
     // answered: a click made inside it would take the session down unanswered.
     await browser.execute(() => {

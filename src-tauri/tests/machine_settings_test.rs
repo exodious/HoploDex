@@ -61,6 +61,7 @@ fn the_identity_names_this_computer() {
     assert!(!identity.display_name.ends_with(".local"));
 }
 
+// 003 US2 Scenario 3
 #[test]
 fn touch_recent_keeps_the_most_recent_first_and_refreshes_the_name() {
     let config = TempDir::new().unwrap();
@@ -299,6 +300,7 @@ fn locate_onto_a_path_already_listed_keeps_one_entry_for_it() {
     assert_eq!(recent[0].database_id.as_deref(), Some("b".repeat(32).as_str()));
 }
 
+// 003 US2 Scenario 5
 #[test]
 fn remove_drops_only_the_entry_and_never_the_file() {
     let config = TempDir::new().unwrap();

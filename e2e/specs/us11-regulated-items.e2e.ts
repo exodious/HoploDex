@@ -1,7 +1,5 @@
 import {
   $,
-  addFirearm,
-  back,
   browser,
   clickButton,
   createDatabase,
@@ -13,11 +11,14 @@ import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/005-regulated-item-types' User Story 2
- * (SC-001, US2-1, US2-2, US2-5, US2-9): a Suppressor is added and registered
+ * (SC-001, US2-1, US2-2, US2-5): a Suppressor is added and registered
  * from the keyboard alone, as real key events through the X server, since the
  * suggestion list's and menu's focus behaviour is WebKitGTK's to get right and
  * WebDriver's own keys don't pass through GTK. See "Real keyboard and mouse
  * input" in DEVELOPMENT.md.
+ *
+ * Grouping by Registered as, with Unspecified last (US2-9), is tested in Rust
+ * and Vitest (see the citations in those tests).
  */
 
 /** The whole task must take well under two minutes (SC-001); this is a guard
@@ -190,43 +191,5 @@ describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
       ["Rated cartridge", ".300 Winchester Magnum"],
       ["Caliber", ".30"],
     ]);
-  });
-
-  it("groups by Registered as from the keyboard, with Unspecified last (US2-9)", async () => {
-    await back();
-    await back().catch(() => undefined);
-    await addFirearm({
-      make: "Ruger",
-      model: "10/22",
-      type: "Rifle",
-      caliber: ".22 LR",
-      serial: "E2E-PLAIN",
-    });
-    await back();
-
-    // Keys only from the page: Tab to the grouping button, open the menu, jump
-    // to "Registered as" by typing, choose it.
-    await realClick("h1");
-    for (let step = 0; step < 12; step++) {
-      await realKey("Tab");
-      const onGroupBy = await browser.execute(
-        () =>
-          document.activeElement?.getAttribute("aria-haspopup") === "menu" &&
-          (document.activeElement?.getAttribute("aria-label") ?? "").startsWith("Group by"),
-      );
-      if (onGroupBy) break;
-    }
-    await realKey("Return");
-    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
-    await realKey("r");
-    await realKey("Return");
-
-    await browser.waitUntil(async () => (await $$("h2.hd-group__title").length) >= 2, {
-      timeoutMsg: "the collection never regrouped",
-    });
-    const titles = await $$("h2.hd-group__title").map((title) => title.getText());
-    expect(titles.map((title) => title.split("\n")[0].trim())[0]).toContain("Suppressor");
-    expect(titles[titles.length - 1]).toContain("Unspecified");
-    await expect($('button[aria-label="Group by, Registered as"]')).toExist();
   });
 });

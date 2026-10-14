@@ -464,6 +464,7 @@ fn resuming_returns_the_exact_draft_and_opening_the_form_removes_it() {
     );
 }
 
+// 003 US6 Scenario 6: discarding.
 #[test]
 fn discarding_removes_them() {
     let world = World::new();

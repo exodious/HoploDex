@@ -88,6 +88,7 @@ describe("DisposeDialog", () => {
     expect(onDispose).toHaveBeenCalledWith(expect.objectContaining({ price: 99_999_999 }));
   });
 
+  // 001 US1 Scenario 14
   it("blocks a disposition date before the acquisition date", async () => {
     const user = userEvent.setup();
     const onDispose = vi.fn().mockResolvedValue(undefined);

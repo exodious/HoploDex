@@ -135,6 +135,7 @@ describe("Menu radio items (specs/005 contracts/ui-registration.md §6)", () => 
     await waitFor(() => expect(items[2]).toHaveFocus());
   });
 
+  // 005 US2 Scenario 9: typeahead ("r") reaches Registered as
   it("moves across groups, to the ends and by typeahead", async () => {
     const user = userEvent.setup();
     render(<RadioMenu />);

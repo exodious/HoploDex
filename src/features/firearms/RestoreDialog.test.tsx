@@ -32,6 +32,7 @@ function renderDialog(onRestore = vi.fn().mockResolvedValue(undefined)) {
 }
 
 describe("RestoreDialog (FR-033)", () => {
+  // 001 US1 Scenario 12
   it("asks what to do with the disposition and never picks for the user", async () => {
     const user = userEvent.setup();
     const { onRestore } = renderDialog();

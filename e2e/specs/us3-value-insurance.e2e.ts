@@ -5,30 +5,23 @@ import {
   browser,
   choose,
   clickButton,
-  clickEl,
   expect,
-  fieldValue,
   fill,
   settle,
 } from "../support/ui";
 import { goTo, isButtonDisabled, openFirearm, policyCardText, selectOption } from "../support/ui";
-import { titleBlock, toggle } from "../support/ui";
-import {
-  backLinkShown,
-  clickPinned,
-  pinnedStrip,
-  pressEscape,
-  scrollToPinnedStrip,
-} from "../support/ui";
+import { titleBlock } from "../support/ui";
 import { createDatabase } from "../support/ui";
 
 /**
- * End-to-end coverage of User Story 3's acceptance scenarios (spec.md),
- * driven against the real built app through its embedded WebDriver server.
- * Coverage is implicit: a firearm is scheduled on a policy with its own
- * amount, or left unscheduled and covered by the one blanket policy in force
- * (FR-036). Seeds its own uniquely-named policies and firearms rather than
- * assuming a clean slate; the scenarios build on each other in order. See
+ * End-to-end coverage of User Story 3 (spec.md), driven against the real
+ * built app through its embedded WebDriver server: one journey through
+ * the story's scenarios, plus the policy form's field error. Coverage is
+ * implicit: a firearm is scheduled on a policy with its own amount, or left
+ * unscheduled and covered by the one blanket policy in force (FR-036). The
+ * rules each scenario states (the over-limit total, expiry warnings, the
+ * deletion choices, notes, Escape) are tested in Rust and Vitest, citing
+ * their scenario; this spec keeps what needs the real app. See
  * e2e/support/ui.ts for why interactions go through page JS.
  */
 
@@ -68,16 +61,6 @@ async function addPolicy(opts: NewPolicy) {
   await goTo("Collection");
 }
 
-/** Edits the named policy's fields from its card on the Insurance page. */
-async function editPolicy(name: string, fields: Record<string, string>) {
-  await goTo("Insurance");
-  await clickInPolicyCard(name, "Edit");
-  for (const [label, value] of Object.entries(fields)) await fill(label, value);
-  await clickButton("Save changes");
-  await $('[role="dialog"]').waitForExist({ reverse: true });
-  await settle();
-}
-
 async function addFirearmWithValue(opts: {
   make: string;
   model: string;
@@ -111,13 +94,32 @@ async function openCoverage(name: string) {
   await openFirearm(name);
 }
 
+/** The error shown for the field labelled `label` in the open dialog: the
+ * text of the element its `aria-describedby` names when it is `aria-invalid`,
+ * or `null` when the field shows none. */
+async function dialogFieldError(label: string): Promise<string | null> {
+  return browser.execute((label: string) => {
+    const labelEl = [...document.querySelectorAll('[role="dialog"] label')].find(
+      (l) => l.textContent?.trim() === label,
+    ) as HTMLLabelElement | undefined;
+    const field = labelEl && document.getElementById(labelEl.htmlFor);
+    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
+    for (const id of (field.getAttribute("aria-describedby") ?? "").split(" ")) {
+      const el = document.getElementById(id);
+      if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
+    }
+    return null;
+  }, label);
+}
+
 describe("User Story 3 - Track Value and Insurance Coverage", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
   });
 
-  it("flags an unscheduled firearm as uninsured while no blanket policy is in force (Scenarios 1, 13)", async () => {
+  it("flags, covers and schedules firearms, keeps the total current, and moves them when their policy is deleted (Scenarios 1-3, 5, 9, 11, 13)", async () => {
+    // Scenarios 1, 13: no blanket policy in force, so an unscheduled firearm is uninsured.
     await addFirearmWithValue({
       make: "InsE2EGlock",
       model: "19",
@@ -131,9 +133,8 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await goTo("Insurance");
     const gaps = await $("section*=Not covered").getText();
     expect(gaps).toContain("InsE2EGlock 19");
-  });
 
-  it("covers it as soon as a blanket policy is entered, without editing the firearm (Scenarios 11, 13)", async () => {
+    // Scenarios 11, 13: a blanket policy covers it at once, without editing the firearm.
     await addPolicy({
       name: "InsE2E Blanket A",
       policyNumber: "A-1",
@@ -155,9 +156,8 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
       valueDollars: "500",
     });
     expect(await titleBlock("Coverage")).toBe("Covered");
-  });
 
-  it("flags a scheduled firearm under-insured, then clears once it's scheduled sufficiently (Scenarios 2-3)", async () => {
+    // Scenarios 2-3: scheduled below its value it is under-insured, then clears.
     await addPolicy({
       name: "InsE2E Rider",
       policyNumber: "R-1",
@@ -178,30 +178,8 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     expect(await titleBlock("Coverage")).toBe("Covered");
     await goTo("Insurance");
     expect(await policyCardText("InsE2E Rider")).not.toContain("short");
-  });
 
-  it("flags every unscheduled firearm when their combined value exceeds the blanket limit (Scenario 4)", async () => {
-    await goTo("Collection");
-    await addFirearmWithValue({
-      make: "InsE2EMossberg",
-      model: "500",
-      serial: "INS-B-2",
-      valueDollars: "500",
-    });
-    expect(await titleBlock("Coverage")).toBe("Covered");
-
-    // Sig and Mossberg are unscheduled and worth $1,000 together.
-    await editPolicy("InsE2E Blanket A", { "Blanket coverage limit": "800" });
-
-    await openCoverage("InsE2EMossberg 500");
-    expect(await titleBlock("Coverage")).toBe("Under-insured");
-    await goTo("Insurance");
-    const card = await policyCardText("InsE2E Blanket A");
-    expect(card).toContain("$1,000 of $800 limit");
-    expect(card).toContain("Over by $200");
-  });
-
-  it("updates the collection total immediately after add/edit/dispose (Scenario 5)", async () => {
+    // Scenario 5: the collection total follows an add, an edit and a disposal.
     const before = await collectionTotal();
 
     await addFirearmWithValue({
@@ -226,266 +204,59 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await fill("Price received", "250");
     await clickButton("Mark as disposed");
     expect(await collectionTotal()).toBeCloseTo(before, 2);
-  });
 
-  it("breaks the value summary down into the blanket policy, scheduled firearms and uninsured (Scenario 6)", async () => {
+    // Scenario 9: deleting the Rider moves its firearm to another policy, which
+    // the Insurance page and the firearm's record both show afterwards.
+    await addPolicy({
+      name: "InsE2E Rider Two",
+      policyNumber: "R-2",
+      startDate: "2020-01-01",
+      endDate: isoDaysFromNow(200),
+    });
     await goTo("Insurance");
     await expect($(".hd-page-sub*=estimated replacement value")).toExist();
-
-    // Section labels are upper-cased by CSS, and getText() returns what's rendered.
-    const blanket = (await policyCardText("InsE2E Blanket A")).toLowerCase();
-    expect(blanket).toContain("blanket coverage");
-    expect(blanket).toContain("covers every firearm and accessory not scheduled individually");
-
-    const rider = (await policyCardText("InsE2E Rider")).toLowerCase();
-    expect(rider).toContain("scheduled individually");
-    expect(rider).toContain("inse2eglock 19");
-  });
-
-  it("blocks a blanket policy overlapping another, naming it, but accepts a shared boundary day (Scenario 12)", async () => {
-    await submitPolicy({
-      name: "InsE2E Blanket Overlap",
-      policyNumber: "O-1",
-      blanketLimitDollars: "50000",
-      startDate: isoDaysFromNow(300),
-      endDate: isoDaysFromNow(700),
-    });
-    await expect($('[role="dialog"]*=InsE2E Blanket A')).toExist();
-    await clickButton("Cancel");
-    await expect($("article.hd-policy*=InsE2E Blanket Overlap")).not.toExist();
-
-    // Starting on the day the other ends is fine; the later start is in force.
-    await addPolicy({
-      name: "InsE2E Blanket Next",
-      policyNumber: "N-1",
-      blanketLimitDollars: "50000",
-      startDate: isoDaysFromNow(365),
-      endDate: isoDaysFromNow(730),
-    });
-    await goTo("Insurance");
-    await expect($("article.hd-policy*=InsE2E Blanket Next")).toExist();
-  });
-
-  it("flags a policy expiring within 30 days, unless a successor blanket policy takes over (Scenarios 7, 14)", async () => {
-    await editPolicy("InsE2E Blanket A", { "Coverage ends": isoDaysFromNow(15) });
-
-    await goTo("Insurance");
-    expect(await policyCardText("InsE2E Blanket A")).toContain("Expires in 15 days");
-    await goTo("Collection");
-    await expect($(".hd-attention*=InsE2E Blanket A")).toExist();
-
-    // The successor now starts the day this one ends: no gap, no warning.
-    await editPolicy("InsE2E Blanket Next", { "Coverage starts": isoDaysFromNow(15) });
-
-    await goTo("Insurance");
-    expect(await policyCardText("InsE2E Blanket A")).not.toContain("Expires in");
-    await goTo("Collection");
-    const banner = (await $(".hd-attention").isExisting())
-      ? await $(".hd-attention").getText()
-      : "";
-    expect(banner).not.toContain("InsE2E Blanket A");
-  });
-
-  it("flags firearms on an expired policy as uninsured (Scenario 8)", async () => {
-    await addPolicy({
-      name: "InsE2E Rider Old",
-      policyNumber: "RO-1",
-      startDate: "2020-01-01",
-      endDate: isoDaysFromNow(-5),
-    });
-    await addFirearmWithValue({
-      make: "InsE2EWinchester",
-      model: "94",
-      serial: "INS-EXP-2",
-      valueDollars: "100",
-    });
-    await assignCoverage({ policyName: "InsE2E Rider Old", amountDollars: "100" });
-
-    expect(await titleBlock("Coverage")).toBe("Uninsured");
-    await expect($(".hd-coverage*=expired")).toExist();
-
-    await goTo("Insurance");
-    const card = await policyCardText("InsE2E Rider Old");
-    expect(card).toContain("Expired");
-    expect(card).toContain("Uninsured");
-  });
-
-  it("treats a renewed policy's firearms as insured again (Edge Case: renewal)", async () => {
-    await editPolicy("InsE2E Rider Old", { "Coverage ends": isoDaysFromNow(200) });
-
-    const card = await policyCardText("InsE2E Rider Old");
-    expect(card).toContain("In force");
-    expect(card).not.toContain("Uninsured");
-    expect(card).toContain("Covered");
-  });
-
-  it("moves the scheduled firearms to another policy when their policy is deleted (Scenario 9)", async () => {
-    await goTo("Insurance");
     await clickInPolicyCard("InsE2E Rider", "Delete InsE2E Rider");
     await expect($('[role="alertdialog"]*=InsE2EGlock 19')).toExist();
-    // Nothing can be deleted until the firearms have been dealt with.
+    // Nothing can be deleted until the firearm has been dealt with.
     expect(await isButtonDisabled("Delete policy")).toBe(true);
 
     await choose("Move to another policy");
-    await selectOption("Move to", "InsE2E Rider Old");
+    await selectOption("Move to", "InsE2E Rider Two");
     await expect($('[role="alertdialog"]*=actually covers this firearm.')).toExist();
     await clickButton("Delete policy");
     await waitForPolicyGone("InsE2E Rider");
 
     // The firearm kept its $600 scheduled amount, now on the other policy.
-    expect(await policyCardText("InsE2E Rider Old")).toContain("InsE2EGlock 19");
+    expect(await policyCardText("InsE2E Rider Two")).toContain("InsE2EGlock 19");
     await openCoverage("InsE2EGlock 19");
     expect(await titleBlock("Coverage")).toBe("Covered");
+    await expect($(".hd-coverage*=$600")).toExist();
   });
 
-  it("lets an expired policy's firearms be left unscheduled with only a warning (Scenario 10)", async () => {
+  // InsurancePolicyForm's field error: the backend refuses an overlap and the
+  // message lands on the Coverage starts field.
+  it("blocks a blanket policy overlapping another, naming it on the Coverage starts field (Scenario 12)", async () => {
+    // Years away from the journey's policies, so the two never overlap.
     await addPolicy({
-      name: "InsE2E Rider Lapsed",
-      policyNumber: "RL-1",
-      startDate: "2020-01-01",
-      endDate: isoDaysFromNow(-10),
+      name: "InsE2E Overlap Base",
+      policyNumber: "OB-1",
+      blanketLimitDollars: "50000",
+      startDate: "2010-01-01",
+      endDate: "2011-01-01",
     });
-    await addFirearmWithValue({
-      make: "InsE2ERemington",
-      model: "870",
-      serial: "INS-LAPSED-1",
-      valueDollars: "100",
+
+    await submitPolicy({
+      name: "InsE2E Overlap New",
+      policyNumber: "ON-1",
+      blanketLimitDollars: "50000",
+      startDate: "2010-06-01",
+      endDate: "2012-01-01",
     });
-    await assignCoverage({ policyName: "InsE2E Rider Lapsed", amountDollars: "100" });
-    expect(await titleBlock("Coverage")).toBe("Uninsured");
-
-    await goTo("Insurance");
-    await clickInPolicyCard("InsE2E Rider Lapsed", "Delete InsE2E Rider Lapsed");
-    await expect($('[role="alertdialog"]*=already treated as uninsured')).toExist();
-    await choose("Leave unscheduled");
-    // No stronger confirmation: they were uninsured already.
-    await expect($('[role="alertdialog"] [role="checkbox"]')).not.toExist();
-    await clickButton("Delete policy");
-    await waitForPolicyGone("InsE2E Rider Lapsed");
-
-    // Unscheduled, so the blanket policy in force covers it. Its $800 limit is
-    // already exceeded by the other unscheduled firearms, which is why this
-    // reads under-insured rather than covered.
-    await openCoverage("InsE2ERemington 870");
-    await expect($(".hd-coverage*=InsE2E Blanket A")).toExist();
-    expect(await titleBlock("Coverage")).toBe("Under-insured");
-  });
-
-  it("needs the stronger confirmation to leave a current policy's firearms unscheduled (Scenario 9)", async () => {
-    await goTo("Insurance");
-    await clickInPolicyCard("InsE2E Rider Old", "Delete InsE2E Rider Old");
-    await choose("Leave unscheduled");
-    expect(await isButtonDisabled("Delete policy")).toBe(true);
-
-    await toggle("2 firearms will lose their scheduled coverage");
-    await clickButton("Delete policy");
-    await waitForPolicyGone("InsE2E Rider Old");
-  });
-
-  it("warns how many firearms lose coverage when the blanket policy in force is deleted (Scenario 15)", async () => {
-    await goTo("Insurance");
-    await clickInPolicyCard("InsE2E Blanket A", "Delete InsE2E Blanket A");
-    await expect($('[role="alertdialog"]*=lose its blanket coverage')).toExist();
-    await clickButton("Delete policy");
-    await waitForPolicyGone("InsE2E Blanket A");
-
-    // Nothing else is in force today (the successor starts later), so an
-    // unscheduled firearm is uninsured again.
-    await openCoverage("InsE2ESig P226");
-    expect(await titleBlock("Coverage")).toBe("Uninsured");
-  });
-
-  it("keeps free-form notes on a policy, and shows none once they are cleared (Scenario 16)", async () => {
-    const notes = "Renews in January. Appraisal is in the safe.";
-    await addPolicy({
-      name: "InsE2E Renewal",
-      policyNumber: "N-1",
-      startDate: isoDaysFromNow(-30),
-      endDate: isoDaysFromNow(300),
-    });
-    await goTo("Insurance");
-    expect(await policyCardText("InsE2E Renewal")).not.toContain("Notes");
-
-    await editPolicy("InsE2E Renewal", { Notes: notes });
-    expect(await policyCardText("InsE2E Renewal")).toContain(notes);
-
-    // Reopening the form shows what was saved.
-    await clickInPolicyCard("InsE2E Renewal", "Edit");
-    expect(await fieldValue("Notes")).toBe(notes);
+    await $('[role="dialog"]*=InsE2E Overlap Base').waitForExist();
+    expect(await dialogFieldError("Coverage starts")).toContain("InsE2E Overlap Base");
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
-
-    await editPolicy("InsE2E Renewal", { Notes: "" });
-    const cleared = await policyCardText("InsE2E Renewal");
-    expect(cleared).not.toContain(notes);
-    expect(cleared).not.toContain("Notes");
-  });
-
-  it("goes back with Escape from a policy and a linked Insurance page, and keeps a long policy's actions in reach (Scenario 17)", async () => {
-    // Enough notes to make the policy page scroll well past its header.
-    const notes = Array.from({ length: 80 }, (_, i) => `Rider clause ${i + 1}.`).join("\n");
-    await addPolicy({
-      name: "InsE2E Long",
-      policyNumber: "L-1",
-      startDate: isoDaysFromNow(-30),
-      endDate: isoDaysFromNow(300),
-    });
-    await editPolicy("InsE2E Long", { Notes: notes });
-
-    // Scheduled for less than it is worth, so the collection offers
-    // "Review insurance".
-    await goTo("Collection");
-    await addFirearmWithValue({
-      make: "InsE2EEsc",
-      model: "Long",
-      serial: "INS-ESC-1",
-      valueDollars: "2000",
-    });
-    await assignCoverage({ policyName: "InsE2E Long", amountDollars: "1000" });
-
-    // A policy opened from a firearm: Escape returns to the firearm.
-    const openPolicy = async () => {
-      await clickEl(".hd-facts .hd-link");
-      await $(".hd-policy").waitForExist({ timeout: 4000 });
-      await expect($(".hd-policy__name")).toHaveText("InsE2E Long");
-    };
-    await openPolicy();
-    expect(await backLinkShown()).toEqual({ label: "InsE2EEsc Long", key: "Esc" });
-    await pressEscape();
-    await expect($("#record-name")).toHaveText("InsE2EEsc Long");
-
-    // Scrolled down, the strip keeps the way back, the name, Edit and Delete.
-    await openPolicy();
-    await scrollToPinnedStrip();
-    expect(await pinnedStrip()).toEqual({
-      back: "InsE2EEsc Long",
-      backKey: "Esc",
-      name: "InsE2E Long",
-      stamp: "L-1",
-      actions: ["Edit", "Delete InsE2E Long"],
-    });
-
-    await clickPinned("Edit");
-    await expect($('[role="dialog"]*=Edit InsE2E Long')).toExist();
-    await pressEscape();
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-
-    await clickPinned("Delete InsE2E Long");
-    await expect($('[role="alertdialog"]*=Delete InsE2E Long?')).toExist();
-    await pressEscape();
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
-    await expect($(".hd-policy__name")).toHaveText("InsE2E Long");
-
-    await pressEscape();
-    await expect($("#record-name")).toHaveText("InsE2EEsc Long");
-
-    // The Insurance page opened from a link: Escape returns to the collection.
-    await goTo("Collection");
-    await clickButton("Review insurance");
-    await expect($(".hd-page-title")).toHaveText("Insurance");
-    expect(await backLinkShown()).toEqual({ label: "Collection", key: "Esc" });
-    await pressEscape();
-    await expect($(".hd-page-title")).toHaveText("Collection");
+    await expect($("article.hd-policy*=InsE2E Overlap New")).not.toExist();
   });
 });
 

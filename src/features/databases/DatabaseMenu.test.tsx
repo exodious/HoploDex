@@ -181,7 +181,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     expect(databasesService.listBackups).toHaveBeenCalledWith(SCOPE, undefined);
   });
 
-  // #33: closing the restore dialog goes back to where it was opened from.
+  // 003 #33: closing the restore dialog goes back to where it was opened from.
   it("closes the restore dialog to the collection when it was opened from the menu", async () => {
     const user = userEvent.setup();
     renderMenu();

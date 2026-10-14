@@ -822,6 +822,7 @@ fn any_other_opener_failure_is_an_internal_error() {
 
 // --- Refusals before any dialog (US2-7, FR-017) ---------------------------------
 
+// 007 US2 Scenario 7 (FR-017)
 #[test]
 fn a_row_the_attach_rules_would_refuse_is_refused_before_the_dialog_and_can_be_deleted() {
     let world = World::new();
@@ -1058,6 +1059,7 @@ fn set_opening(
     answer["changed"].as_bool().unwrap_or_else(|| panic!("no `changed` in {answer}"))
 }
 
+// 007 US3 Scenario 1
 #[test]
 fn the_default_is_preview_and_the_setting_needs_no_open_database() {
     let config = TempDir::new().unwrap();
@@ -1108,6 +1110,7 @@ fn cancelling_the_settings_dialog_keeps_preview() {
     assert_eq!(reloaded.document_opening(), DocumentOpening::Preview, "nothing was written");
 }
 
+// 007 US3 Scenario 6
 #[test]
 fn preview_never_asks_and_setting_the_current_value_changes_nothing() {
     let world = World::new();

@@ -89,6 +89,7 @@ describe("BrowseList cartridge and caliber", () => {
     expect(screen.getByRole("columnheader", { name: "Caliber" })).toBeInTheDocument();
   });
 
+  // 004 US1 Scenario 6
   it("offers Cartridge in the Group by control, after Caliber", () => {
     const values = GROUP_BY_OPTIONS.map((option) => option.value);
     expect(values).toContain("cartridge");

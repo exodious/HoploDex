@@ -195,6 +195,7 @@ fn notices(events: &TestEvents) -> Vec<Value> {
 
 // --- Close triggers ---------------------------------------------------------
 
+// 003 US3 Scenario 1
 #[test]
 fn a_close_after_changes_makes_one_backup_then_clears_the_changes() {
     let world = World::new();
@@ -214,6 +215,7 @@ fn a_close_after_changes_makes_one_backup_then_clears_the_changes() {
     assert_eq!(world.backup_record(), (false, Some("2026-09-25T12:30:05Z".to_owned())));
 }
 
+// 003 US3 Scenario 1a
 #[test]
 fn a_second_close_the_same_day_makes_none_but_the_next_days_close_does() {
     let world = World::new();

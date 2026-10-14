@@ -92,6 +92,7 @@ describe("expiryLabel", () => {
     expect(label({ isExpired: true, effectiveEndDate: "2026-03-01" })).toBe("Expired Mar 1, 2026");
   });
 
+  // 001 US3 Scenario 7
   it("counts down an expiring policy, using the backend's flag rather than its own window", () => {
     expect(label({ isExpiringSoon: true, effectiveEndDate: "2026-06-27" })).toBe(
       "Expires in 12 days",
@@ -120,6 +121,7 @@ describe("coverageStatus", () => {
     expect(status.detail).toMatch(/no blanket policy/i);
   });
 
+  // 001 US3 Scenario 8
   it("blames an expired policy when the firearm is scheduled on one", () => {
     const expired = { ...policy, isExpired: true, effectiveEndDate: "2025-12-01" };
     const status = coverageStatus(
@@ -143,6 +145,7 @@ describe("coverageStatus", () => {
     expect(status.detail).toBe("Scheduled for $3,000 — $1,000 short of its value.");
   });
 
+  // 001 US3 Scenario 4
   it("blames the blanket limit when an unscheduled firearm is under-insured", () => {
     const status = coverageStatus(firearm(), "under_insured", undefined, {
       ...blanket,

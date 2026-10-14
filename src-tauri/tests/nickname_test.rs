@@ -62,6 +62,7 @@ fn scenario_8_two_identical_firearms_are_told_apart_by_nickname() {
     assert_eq!(nicknames, vec![None, Some("Carry gun".into()), Some("Range gun".into())]);
 }
 
+// 001 US1 Scenario 8
 #[test]
 fn a_blank_nickname_is_stored_as_null_and_others_are_trimmed() {
     let db = TestDb::new();

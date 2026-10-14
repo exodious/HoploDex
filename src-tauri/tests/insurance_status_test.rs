@@ -171,6 +171,28 @@ fn scenario_8_a_firearm_scheduled_under_an_expired_policy_is_uninsured_whatever_
     assert_eq!(warning_for(&db, f.id, "2026-06-10"), InsuranceWarning::None);
 }
 
+// 001 US3 Edge Cases (renewal): moving an expired policy's end date into the future clears the
+// flag at once, because a scheduled firearm depends only on its policy's dates.
+#[test]
+fn renewal_moving_an_expired_policys_end_date_forward_clears_its_firearms_uninsured_flag() {
+    let db = TestDb::new();
+    let rider =
+        insurance_ops::create_policy(&db.conn, &policy("Rider", "2025-01-01", "2026-06-10", None))
+            .unwrap();
+    let f = firearm_ops::create_firearm(&db.conn, &valued("Glock", 50_000), false, None).unwrap();
+    insurance_ops::assign_firearm_coverage(&db.conn, f.id, Some(rider.id), Some(90_000)).unwrap();
+    assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::Uninsured);
+
+    insurance_ops::update_policy(
+        &db.conn,
+        rider.id,
+        &policy("Rider", "2025-01-01", "2027-06-10", None),
+    )
+    .unwrap();
+
+    assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::None);
+}
+
 #[test]
 fn a_blanket_policy_that_has_expired_leaves_unscheduled_firearms_uninsured() {
     let db = TestDb::new();

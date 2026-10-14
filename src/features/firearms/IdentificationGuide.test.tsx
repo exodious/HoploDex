@@ -19,6 +19,7 @@ function Wrapper({ part }: { part?: GuidePart }) {
 // specs/002-firearm-identification contracts/ui-identification.md §8, FR-015, SC-007;
 // specs/005-regulated-item-types contracts/ui-registration.md §7, FR-014
 describe("IdentificationGuide", () => {
+  // 002 SC-007, US1 Scenario 7 (the guide's title and disclaimer)
   it("shows the title and the disclaimer at the top", () => {
     render(<IdentificationGuide open onOpenChange={vi.fn()} />);
 
@@ -42,6 +43,7 @@ describe("IdentificationGuide", () => {
     );
   });
 
+  // 002 SC-007, US1 Scenario 7 (the guide's Re-imported M1 Carbine example)
   it("keeps the six origin examples under Where it came from", () => {
     render(<IdentificationGuide open onOpenChange={vi.fn()} />);
 
@@ -114,6 +116,7 @@ describe("IdentificationGuide", () => {
     expect(scrollIntoView).toHaveBeenCalled();
   });
 
+  // 002 SC-007, US1 Scenario 7 (Escape closes the guide)
   it("closes with Escape and returns focus to the opening button", async () => {
     const user = userEvent.setup();
     render(<Wrapper />);

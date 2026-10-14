@@ -14,22 +14,20 @@ import {
   expect,
   fieldValue,
   fill,
-  openFirearm,
   scratchDocuments,
   selectChooserRow,
   selectOption,
   selectedChooserRow,
   submitPassphrase,
   waitForChooser,
-  waitForCollection,
   settle,
 } from "../support/ui";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's User
  * Story 6 against the real built app: "lock now" with Ctrl+L while a form
- * has unsaved input, the pending changes offered at the next open (resumed,
- * then discarded), and the idle lock.
+ * has unsaved input and the pending changes resumed at the next open, and the
+ * idle lock.
  */
 
 const folder = `${scratchDocuments()}/Locking`;
@@ -100,7 +98,11 @@ async function chooserSays(text: string): Promise<boolean> {
 }
 
 describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
-  it("locks with Ctrl+L while a firearm is being edited, leaving nothing from the collection", async () => {
+  // One journey for the story: lock with Ctrl+L while a form has unsaved input,
+  // then resume it at the next open (003 US6 Scenarios 1, 2, 6 and 7). What the
+  // chooser says after a lock (the notice, the selected row), discarding the
+  // changes and closing from the dialog are covered below the E2E level.
+  it("locks with Ctrl+L while a firearm is being edited, leaving nothing from the collection, and resumes the exact input at the next open", async () => {
     await createDatabase({ folder, name: "Locked" });
     await addFirearm(firearm);
     await editNotes("typed before the lock");
@@ -113,18 +115,7 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
     const text = await browser.execute(() => document.body.textContent ?? "");
     expect(text).not.toContain("typed before the lock");
     expect(text).not.toContain("LK-1");
-  });
 
-  it("shows the locked database selected, with the locked notice", async () => {
-    expect(await selectedChooserRow()).toBe("Locked");
-    expect(await chooserSays("HoploDex locked “Locked”.")).toBe(true);
-    const focused = await browser.execute(
-      () => document.activeElement?.closest(".hd-db-row--selected") != null,
-    );
-    expect(focused).toBe(true);
-  });
-
-  it("offers the unsaved changes at the next open, and resuming brings back the exact input", async () => {
     await submitPassphrase(E2E_PASSPHRASE);
 
     expect(await pendingQuestion()).toContain("Your changes were kept.");
@@ -133,24 +124,13 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
 
     await dialogTitled(`Edit ${firearm.make} ${firearm.model}`);
     expect(await fieldValue("Notes")).toBe("typed before the lock");
-  });
 
-  it("discards them on the next open when asked to, leaving the form clean", async () => {
-    await pressLockShortcut();
-    await waitForChooser();
-    await submitPassphrase(E2E_PASSPHRASE);
-    await pendingQuestion();
-
-    await clickButton("Discard changes");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Discard changes");
-    await waitForCollection();
-
-    await openFirearm(`${firearm.make} ${firearm.model}`);
-    await clickButton("Edit");
-    await $('[role="dialog"]').waitForExist();
-    expect(await fieldValue("Notes")).toBe("");
+    // Leave the form so the next test finds the collection.
     await clickButton("Cancel");
+    await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
+      timeout: 5000,
+      timeoutMsg: "the edit form never closed",
+    });
   });
 
   it("locks after the idle duration set in its settings", async () => {
@@ -232,31 +212,5 @@ describe("User Story 4 (008) - Pending changes from another version", () => {
     const again = await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
     expect(again).toContain("They were kept by HoploDex 1.2.0.");
     expect(await footerButtons()).toEqual(["Discard changes", "Close the database"]);
-  });
-
-  it("close from the dialog, reopen and resume", async () => {
-    await reseed();
-
-    await openSharedToPending();
-    expect(await footerButtons()).toEqual([
-      "Discard changes",
-      "Close the database",
-      "Resume editing",
-    ]);
-
-    await clickButton("Close the database");
-    await waitForChooser();
-    expect(await selectedChooserRow()).toBe(SHARED);
-
-    await submitPassphrase(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
-    await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
-    await clickButton("Resume editing");
-
-    await dialogTitled("Edit Beretta 92FS");
-    expect(await fieldValue("Make")).toBe("Beretta");
-    expect(await fieldValue("Model")).toBe("92FS");
-    expect(await fieldValue("Serial number")).toBe("BER92-0417");
-    expect(await fieldValue("Caliber")).toBe("9mm");
-    expect(await fieldValue("Notes")).toBe("Swapped the grips for the walnut set; half typed");
   });
 });

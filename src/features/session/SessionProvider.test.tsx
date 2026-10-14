@@ -185,6 +185,7 @@ describe("SessionProvider (User Story 1)", () => {
     expect(databasesService.getChooserState).not.toHaveBeenCalled();
   });
 
+  // 003 US1 Scenario 4
   it("shows the disk-encryption note until it is dismissed (FR-008)", async () => {
     const user = userEvent.setup();
     vi.mocked(sessionService.getDatabaseStatus).mockResolvedValue(status(true));
@@ -317,6 +318,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
+  // 003 FR-010
   it("asks save, discard or cancel about a form with unsaved input", async () => {
     const user = userEvent.setup();
     await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
@@ -333,6 +335,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
     expect(sessionService.closeDatabase).not.toHaveBeenCalled();
   });
 
+  // 003 FR-010
   it("keeps everything open on cancel", async () => {
     const user = userEvent.setup();
     await renderOpen(<InsurancePolicyForm onSubmit={vi.fn()} />);
@@ -382,6 +385,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
     );
   });
 
+  // 003 FR-010
   it("closes nothing when the save fails validation, and the form shows why", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

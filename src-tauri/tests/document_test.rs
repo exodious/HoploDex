@@ -342,6 +342,36 @@ fn documents_are_listed_by_owner_and_only_that_owners() {
     assert_eq!(ids(RecordRef::Accessory(other)).len(), 2);
 }
 
+/// 007 FR-007 (US1-6): a mounted record's documents are its own. Browsing a host's documents
+/// never reaches the accessory mounted on it, and the other way round.
+#[test]
+fn a_host_and_the_accessory_mounted_on_it_list_only_their_own_documents() {
+    let db = TestDb::new();
+    let host = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let optic = create_accessory(&db, "A-1");
+    let item = RecordRef::Accessory(optic);
+    let host_ref = RecordRef::Firearm(host.id);
+    hoplodex_lib::commands::mounts::ops::mount_record(
+        &db.conn,
+        &parse(json!({ "item": item, "host": host_ref })),
+    )
+    .unwrap();
+    let on_host =
+        document_ops::add_document(&db.conn, host_ref, SAMPLE_PDF_BYTES, "host.pdf").unwrap();
+    let on_optic =
+        document_ops::add_document(&db.conn, item, SAMPLE_PDF_BYTES, "optic.pdf").unwrap();
+
+    let names = |owner| -> Vec<String> {
+        document_ops::list_documents(&db.conn, owner)
+            .unwrap()
+            .into_iter()
+            .map(|d| d.original_filename)
+            .collect()
+    };
+    assert_eq!(names(host_ref), vec![on_host.original_filename]);
+    assert_eq!(names(item), vec![on_optic.original_filename]);
+}
+
 #[test]
 fn a_document_row_needs_exactly_one_owner() {
     let db = TestDb::new();

@@ -65,6 +65,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     ).toBeInTheDocument();
   });
 
+  // 001 US3 Scenario 12
   it("shows the backend's overlap message, naming the other policy, on the start date", async () => {
     const user = userEvent.setup();
     const message = "These dates overlap the blanket policy Old policy (2025-01-01 to 2026-01-01).";
@@ -114,6 +115,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(screen.getByLabelText("Blanket coverage limit")).toHaveValue("");
   });
 
+  // 001 US3 Scenario 16
   it("submits blank notes as null", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -126,6 +128,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(onSubmit.mock.calls[0][0].notes).toBeNull();
   });
 
+  // 001 US3 Scenario 16
   it("submits entered notes, keeping line breaks", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -141,6 +144,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(onSubmit.mock.calls[0][0].notes).toBe("Renews in January.\nAsk about the rider.");
   });
 
+  // 001 US3 Scenario 16
   it("prefills the notes from an existing policy", () => {
     render(
       <InsurancePolicyForm

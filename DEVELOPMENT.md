@@ -548,9 +548,11 @@ into it. That binary embeds whatever is in `dist/`, so **run `npm run build`
 first** (the same goes for `npm run screenshots`).
 
 Spec files run in parallel, each in a WebdriverIO worker of its own: up to
-`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 4. Each
-worker runs its own app (a few hundred MB for WebKitGTK), so more workers
-than that gain little and slow every step. `wdio.conf.ts` builds the app and
+`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 8. Each
+worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
+threads, which is why `scripts/dev-container.sh` raises the container's
+process limit. A run takes at least as long as its longest spec file, so keep
+each file to one user story or so. `wdio.conf.ts` builds the app and
 the human-testing seed once, in `onPrepare`, before any worker starts. For
 debugging, run one spec file at a time, so the log isn't interleaved:
 
@@ -885,7 +887,7 @@ override that:
   on Linux: use `screenshot`.
 - The sandbox starts with the harness's defaults: the in-memory keyring, the
   native "open in another app" confirmation answered "Open", PDF preview on,
-  the real idle minute. A spec's own settings (`-no-keyring`, `-pdf-off`, the
+  the real idle minute. A spec's own settings (`-pdf-off`, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
 - In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on
@@ -902,8 +904,8 @@ before `npm run test:e2e -- --spec <file>` runs it:
    `waitForCollection()`, or `unlock(passphrase)` for a seeded collection,
    from `e2e/support/ui.ts`, instead of the typed-in paths and passphrase.
    A spec that needs the seeded collection must be named in `beforeSession`
-   in `wdio.conf.ts` (only the screenshot walk and `us13-document-preview`
-   are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
+   in `wdio.conf.ts` (only the screenshot walk, the `us13-document-preview-*`
+   files and `us14-session-isolation` are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
 2. Import `$`, `browser` and `expect` from `../support/ui`, like the other
    specs, not from `@wdio/globals`.
 3. Replace the recorded selectors where a helper exists (`clickButton`,
@@ -957,8 +959,9 @@ of it:
   `e2e` feature, which includes `mock-keyring`, an in-memory keyring for saved
   passphrases, since a headless session can't unlock a real one. The harness keeps it in
   `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
-  passphrase survives a relaunch, and launches any `*-no-keyring.e2e.ts` spec
-  with `HOPLODEX_E2E_KEYRING=unavailable`, a computer without a keyring.
+  passphrase survives a relaunch. A computer without a keyring is tested in
+  Rust and Vitest, not in E2E (`tests/keyring_test.rs`,
+  `DatabaseChooser.test.tsx`, `DatabaseSettingsDialog.test.tsx`).
 - E2E steps don't sleep. The frontend counts its backend calls and pending
   search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
   helpers in `e2e/support/ui.ts` call `settle()` after each action, which

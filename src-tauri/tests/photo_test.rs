@@ -112,6 +112,8 @@ fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
     assert_eq!(updated.thumbnail_photo_id, Some(second.id));
 }
 
+// 001 US4 Scenario 3: with no photo left, `thumbnail_photo_id` is None, which is
+// what makes the record show its type's generic drawing (FirearmThumbnail.test.tsx).
 #[test]
 fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic() {
     let db = TestDb::new();

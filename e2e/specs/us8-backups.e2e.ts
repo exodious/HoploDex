@@ -26,8 +26,9 @@ import { realClick, skipWithoutRealInput } from "../support/realInput";
 /**
  * End-to-end coverage of specs/003-database-protection-management's User
  * Story 3 against the real built app: a backup when a changed database is
- * closed, at most once a day, restoring from one, and moving or leaving
- * them when the backup location changes.
+ * closed, restoring from one, and moving them when the backup location
+ * changes. The rules (once a day, the chooser's facts, leaving them, and
+ * the return from a cancelled restore) are tested in Rust and Vitest.
  */
 
 const folder = `${scratchDocuments()}/Backed up`;
@@ -91,27 +92,23 @@ async function backToTheDefault(choice: string) {
   await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
 }
 
-/** What the chooser row `row` says under `label` (FR-040): the moment, and
- * the note after it, or `null` when the row doesn't show that fact. */
-async function chooserFact(
-  label: string,
-  row = ".hd-db-row--selected",
-): Promise<{ moment: string; note: string } | null> {
-  return browser.execute(
-    (row: string, label: string) => {
-      const term = [...document.querySelectorAll(`${row} .hd-db-row__details dt`)].find(
-        (dt) => dt.textContent?.trim() === label,
-      );
-      const detail = term?.nextElementSibling;
-      if (!detail) return null;
-      return {
-        moment: detail.firstChild?.textContent?.trim() ?? "",
-        note: detail.querySelector(".hd-db-row__fact-note")?.textContent?.trim() ?? "",
-      };
-    },
-    row,
-    label,
-  );
+/** The error shown for the field labelled `label` in the open dialog: the
+ * text of the element its `aria-describedby` names when it is `aria-invalid`,
+ * or `null` when the field shows none. */
+async function passphraseFieldError(label: string): Promise<string | null> {
+  return browser.execute((label: string) => {
+    const labelEl = [...document.querySelectorAll('[role="dialog"] label')].find(
+      (l) => l.textContent?.trim() === label,
+    ) as HTMLLabelElement | undefined;
+    const field = labelEl && document.getElementById(labelEl.htmlFor);
+    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
+    const ids = (field.getAttribute("aria-describedby") ?? "").split(" ");
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
+    }
+    return null;
+  }, label);
 }
 
 async function listed(make: string): Promise<boolean> {
@@ -120,7 +117,7 @@ async function listed(make: string): Promise<boolean> {
 }
 
 describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => {
-  it("backs up a changed database when it is closed (FR-025)", async () => {
+  it("backs up a changed database when it is closed and restores that backup with its passphrase (FR-025, FR-028)", async () => {
     await createDatabase({ folder, name: "Kept" });
     await addFirearm({
       make: "BackedUp",
@@ -133,15 +130,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     await closeDatabase();
 
     expect(backupFiles()).toHaveLength(1);
-    // The chooser, back on the database just closed, says so (FR-040).
-    const opened = await chooserFact("Last opened here");
-    expect(opened?.moment).toMatch(/^Today at /);
-    const backedUp = await chooserFact("Last backup");
-    expect(backedUp?.moment).toMatch(/^Today at /);
-    expect(backedUp?.note).toBe("1 kept");
-  });
 
-  it("makes no second backup the same day", async () => {
     await unlock(E2E_PASSPHRASE);
     await addFirearm({
       make: "AfterBackup",
@@ -150,17 +139,44 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
       type: "Handgun",
       serial: "BK-2",
     });
+    expect(await listed("AfterBackup")).toBe(true);
 
-    await closeDatabase();
-
+    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
+    await settle();
+    // A wrong passphrase: the backend's field error lands on the field, and
+    // nothing is restored (003 US3 Scenario 5; the dialog's UI side is in
+    // RestoreBackupDialog.test.tsx).
+    await fill("Passphrase for this backup", "not the backup's passphrase");
+    await clickEl('[role="dialog"] button[type="submit"]');
+    await $('[role="alertdialog"]').waitForExist();
+    await clickEl('[role="alertdialog"] .hd-button--danger');
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    const message = await passphraseFieldError("Passphrase for this backup");
+    expect(message).toMatch(/^That passphrase didn't open the backup from /);
     expect(backupFiles()).toHaveLength(1);
+
+    await fill("Passphrase for this backup", E2E_PASSPHRASE);
+    await clickEl('[role="dialog"] button[type="submit"]');
+    await $('[role="alertdialog"]').waitForExist();
+    await clickEl('[role="alertdialog"] .hd-button--danger');
+    await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
+    await waitForCollection();
+
+    await expect($('section[aria-label="Restored from a backup"]')).toExist();
+    expect(await listed("BackedUp")).toBe(true);
+    expect(await listed("AfterBackup")).toBe(false);
+    // The "before restoring" backup holds the change the restore undid.
+    await browser.waitUntil(async () => backupFiles().length === 2, {
+      timeout: 5000,
+      timeoutMsg: "no before-restoring backup appeared",
+    });
   });
 
   it("opens the restore dialog from a real click with no focus ring, sized to its content", async function () {
     // Both regressions were WebKitGTK's, and need a real click, as a person
     // makes, to show: WebDriver's own clicks don't bring them out.
     skipWithoutRealInput(this);
-    await unlock(E2E_PASSPHRASE);
     await realClick("button.hd-db-menu");
     await realClick('[role="menuitem"]*=Restore from a backup');
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
@@ -190,90 +206,18 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(Math.abs(slack)).toBeLessThan(1);
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
-    await closeDatabase();
-  });
-
-  it("restores that backup with its passphrase, backing up the current database first (FR-028)", async () => {
-    await unlock(E2E_PASSPHRASE);
-    expect(await listed("AfterBackup")).toBe(true);
-
-    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
-    await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
-    await settle();
-    await fill("Passphrase for this backup", E2E_PASSPHRASE);
-    await clickEl('[role="dialog"] button[type="submit"]');
-    await $('[role="alertdialog"]').waitForExist();
-    await clickEl('[role="alertdialog"] .hd-button--danger');
-    await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
-    await waitForCollection();
-
-    await expect($('section[aria-label="Restored from a backup"]')).toExist();
-    expect(await listed("BackedUp")).toBe(true);
-    expect(await listed("AfterBackup")).toBe(false);
-    // The "before restoring" backup holds the change the restore undid.
-    await browser.waitUntil(async () => backupFiles().length === 2, {
-      timeout: 5000,
-      timeoutMsg: "no before-restoring backup appeared",
-    });
-  });
-
-  it("returns to the database settings when a restore opened from there is cancelled (#33)", async () => {
-    // The title of the one dialog open: the settings' own radio buttons would
-    // make "the backup list is there" true in both.
-    const dialogTitle = () =>
-      browser.execute(
-        () =>
-          document.querySelector('[role="dialog"] .hd-dialog__title')?.textContent?.trim() ?? "",
-      );
-    const waitForTitle = (title: string | RegExp) =>
-      browser.waitUntil(
-        async () => {
-          const shown = await dialogTitle();
-          return typeof title === "string" ? shown === title : title.test(shown);
-        },
-        { timeout: 5000, timeoutMsg: `the dialog titled ${title} never showed` },
-      );
-
-    await chooseMenuItem("button.hd-db-menu", "Database settings…");
-    await waitForTitle("Database settings");
-    await clickButton("Restore from a backup…");
-    await waitForTitle(/^Restore/);
-    await settle();
-    await clickButton("Cancel");
-    await waitForTitle("Database settings");
-    await clickButton("Cancel");
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-
-    // Opened from the menu, cancelling goes back to the collection.
-    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
-    await waitForTitle(/^Restore/);
-    await settle();
-    await clickButton("Cancel");
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-  });
-
-  it("leaves the backups at the old location, which no longer lists them (FR-026, US3-4a)", async () => {
-    // Still open after the restore, with both backups in the default folder.
-    expect(backupFiles()).toHaveLength(2);
-    fs.mkdirSync(elsewhere, { recursive: true });
-    await useElsewhere("move");
-    // Both moved, and any backup the lock made is at the new location too.
-    const moved = backupFiles(elsewhere);
-    expect(moved.length).toBeGreaterThanOrEqual(2);
-    expect(backupFiles()).toEqual([]);
-
-    await backToTheDefault("Leave them where they are");
-
-    expect(backupFiles(elsewhere)).toEqual(moved);
-    expect(backupFiles()).toEqual([]);
-    expect(await restorable()).toBe(0);
   });
 
   it("moves the backups to the new location (FR-026, US3-4a)", async () => {
-    // Their folder chosen again: they are the database's backups again.
-    await useElsewhere();
+    // Open, with both backups in the default folder: the journey above.
+    expect(backupFiles()).toHaveLength(2);
+    // Setting the new location with its choice sent directly, as the folder
+    // picker is the OS's own; the way back is through the settings dialog.
+    fs.mkdirSync(elsewhere, { recursive: true });
+    await useElsewhere("move");
     const made = backupFiles(elsewhere);
     expect(made.length).toBeGreaterThanOrEqual(2);
+    expect(backupFiles()).toEqual([]);
     expect(await restorable()).toBe(made.length);
 
     await backToTheDefault("Move them to the new location");
@@ -281,19 +225,5 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     expect(backupFiles()).toEqual(made);
     expect(backupFiles(elsewhere)).toEqual([]);
     expect(await restorable()).toBe(made.length);
-  });
-
-  it("shows what it knows of the selected database only (FR-040)", async () => {
-    await closeDatabase();
-    await createDatabase({ folder: elsewhere, name: "Other" });
-    await closeDatabase();
-
-    // The one just closed is selected; "Kept", with its backups, isn't.
-    await expect($(".hd-db-row--selected .hd-db-row__name")).toHaveText("Other");
-    expect(await chooserFact("Last opened here")).not.toBeNull();
-    const kept = ".hd-db-row:not(.hd-db-row--selected)";
-    await expect($(`${kept} .hd-db-row__name`)).toHaveText("Kept");
-    expect(await chooserFact("Last opened here", kept)).toBeNull();
-    expect(await chooserFact("Last backup", kept)).toBeNull();
   });
 });

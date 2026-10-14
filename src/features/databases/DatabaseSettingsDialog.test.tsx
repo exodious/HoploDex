@@ -363,6 +363,7 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
 
   const save = () => screen.getByRole("button", { name: "Save" });
 
+  // 003 US5 Scenario 4 (with no keyring there is nothing to change); issue #34
   it("is disabled until a field differs from what is saved, and again when it is put back", async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -729,6 +730,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(save()).toBeEnabled();
   });
 
+  // 003 US5 Scenario 4
   it("says when this computer has no keyring (FR-019)", () => {
     renderSettings({ ...status(), keyringAvailable: false });
 
@@ -921,6 +923,7 @@ describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.
     await user.click(screen.getByRole("button", { name: "Save" }));
   }
 
+  // 003 US3 Scenario 4a
   it("sends the backup settings first and holds back the lock settings until the question is answered", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.updateBackupSettings)
@@ -1157,6 +1160,7 @@ describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contract
     );
   });
 
+  // 007 US3 Scenario 1
   it("offers Preview in HoploDex and Open in another app, at Preview by default (US3-1)", () => {
     renderSettings();
 
@@ -1208,6 +1212,7 @@ describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contract
     expect(external()).not.toBeChecked();
   });
 
+  // 007 US3 Scenario 6
   it("changes back to Preview in HoploDex at once, with setDocumentOpening('preview')", async () => {
     const user = userEvent.setup();
     vi.mocked(mediaService.getDocumentOpening).mockResolvedValue("external");

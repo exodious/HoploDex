@@ -24,8 +24,9 @@ import {
 
 /**
  * How many spec files run at once: HOPLODEX_E2E_WORKERS, or half the CPUs,
- * at most 4. Each worker runs its own app (a few hundred MB for WebKitGTK),
- * and more than 4 gains little while making every step slower.
+ * at most 8. Each worker runs its own app (a few hundred MB for WebKitGTK).
+ * On a 24-core host 8 workers slow each spec by about a tenth against 4, and
+ * the run then waits on its longest spec file (#77, step 6).
  * HOPLODEX_E2E_WORKERS=1 runs one spec file at a time, for debugging.
  */
 function workerCount(): number {
@@ -37,7 +38,7 @@ function workerCount(): number {
     }
     return count;
   }
-  return Math.max(1, Math.min(4, Math.floor(os.availableParallelism() / 2)));
+  return Math.max(1, Math.min(8, Math.floor(os.availableParallelism() / 2)));
 }
 
 export const config: WebdriverIO.Config = {
@@ -85,22 +86,22 @@ export const config: WebdriverIO.Config = {
     // Only a spec named so gets a setting for its whole session; a spec that
     // needs more sets the variable itself and calls relaunchApp()
     // (applySessionSettings in support/sandbox.ts). Specs that are named:
-    // `-no-keyring` (a computer with no keyring service, FR-019), `-pdf-off`
-    // (a viewer that can't be used safely, 007 FR-003a) and the locking
-    // spec, whose idle minute lasts 3 s so its test doesn't wait a real one.
+    // `-pdf-off` (a viewer that can't be used safely, 007 FR-003a) and the
+    // locking spec, whose idle minute lasts 3 s so its test doesn't wait a
+    // real one.
     applySessionSettings({
-      noKeyring: specs.some((spec) => spec.endsWith("-no-keyring.e2e.ts")),
       pdfOff: specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts")),
       idleMinuteSeconds: specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts")) ? 3 : undefined,
     });
-    // The screenshot walk, 007's preview spec (which opens the seed's Glock and
-    // its documents) and 008's session isolation spec (which switches between
-    // the seed's two databases) want the realistic collection.
+    // The screenshot walk, 007's preview specs (`us13-document-preview-*`,
+    // which open the seed's Glock and its documents) and 008's session
+    // isolation spec (which switches between the seed's two databases) want
+    // the realistic collection.
     if (
       specs.some(
         (spec) =>
           spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
-          spec.endsWith("/e2e/specs/us13-document-preview.e2e.ts") ||
+          spec.includes("/e2e/specs/us13-document-preview-") ||
           spec.endsWith("/e2e/specs/us14-session-isolation.e2e.ts"),
       )
     ) {
