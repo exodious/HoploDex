@@ -156,6 +156,7 @@ impl Setup {
     }
 }
 
+// 003 US2 Scenario 3
 #[test]
 fn opening_installs_the_database_and_puts_it_first_in_the_recent_list() {
     let setup = Setup::new();
@@ -403,6 +404,7 @@ fn the_chooser_marks_a_missing_file_unavailable() {
     assert_eq!(rows, [("Moved", false), ("Kept", true)]);
 }
 
+// 003 US6 Scenario 1: after a lock the chooser has that database selected.
 #[test]
 fn the_chooser_selects_the_database_just_closed() {
     let setup = Setup::new();
@@ -446,6 +448,7 @@ fn a_new_run_selects_the_most_recent() {
     assert_eq!(state.recent[0].name, "First");
 }
 
+// 003 US2 Scenarios 3 and 5
 #[test]
 fn locate_and_remove_through_the_commands() {
     let setup = Setup::new();

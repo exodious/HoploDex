@@ -158,6 +158,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
   });
 
+  // 003 US6 Scenario 6: resuming reopens the form with the changes still unsaved.
   it("resumes: the form opens with the kept changes as unsaved input, then the dialog goes", async () => {
     const user = userEvent.setup();
     renderOpen(pending);
@@ -174,6 +175,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(openScope?.resumed).toBeNull();
   });
 
+  // 003 US6 Scenario 6: discarding the pending changes (confirmed first) opens the collection with no form.
   it("asks before discarding, then discards", async () => {
     const user = userEvent.setup();
     vi.mocked(sessionService.resolvePendingChanges).mockResolvedValue({});
@@ -271,6 +273,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     });
   });
 
+  // 008 US4 Scenarios 2 and 5: closing from the dialog (the buttons offered, the chooser shown, the changes kept).
   describe("Close the database (US4, contracts/ui.md §1)", () => {
     const cases: [string, PendingSummary, string[]][] = [
       ["a resumable change", pending, ["Discard changes", "Close the database", "Resume editing"]],

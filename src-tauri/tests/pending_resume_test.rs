@@ -317,6 +317,7 @@ fn not_opened_returns_the_summary_for_the_dialog_and_blocks_again() {
     assert_eq!(again.draft, Some(edit_draft(firearm)));
 }
 
+// 003 US6 Scenario 6: discarding.
 #[test]
 fn discard_deletes_the_row_and_serves_the_collection() {
     let world = World::new();
@@ -402,6 +403,7 @@ fn a_user_lock_a_sleep_and_a_close_while_resuming_leave_the_row() {
     }
 }
 
+// 008 US4 Scenarios 2 and 5: closing from the dialog.
 #[test]
 fn close_database_is_served_in_unresolved_and_in_resuming() {
     for state in [State::Unresolved, State::Resuming] {
@@ -469,6 +471,7 @@ fn the_forms_own_staging_replaces_the_one_opened_made() {
 
 // --- Closing from the dialog (US4-2, US4-3, US4-5) --------------------------------
 
+// 008 US4 Scenarios 2 and 5; 003 US6 Scenario 6 (a backup carries no pending changes).
 #[test]
 fn a_close_leaves_the_row_and_its_backup_has_no_pending_changes() {
     for state in [State::Unresolved, State::Resuming] {
@@ -512,6 +515,7 @@ fn a_close_leaves_the_row_and_its_backup_has_no_pending_changes() {
     }
 }
 
+// 008 US4 Scenario 3; 003 US6 Scenario 6.
 #[test]
 fn resume_after_a_close_returns_every_field_as_written() {
     let world = World::new();
