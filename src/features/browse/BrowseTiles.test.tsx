@@ -75,6 +75,7 @@ describe("BrowseTiles caliber line", () => {
 
 // specs/005-regulated-item-types US1-4, FR-001: a Suppressor with no photo
 // shows its own drawing, not the generic "other" one.
+// 001 US4 Scenario 3: a record with no photo shows a drawing for its type in the tiles.
 describe("BrowseTiles suppressor", () => {
   it("shows the suppressor drawing for a Suppressor with no photo", () => {
     const firearms = [

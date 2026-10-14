@@ -10,7 +10,6 @@ import {
   back,
   browser,
   clickButton,
-  clickEl,
   expect,
   settle,
 } from "../support/ui";
@@ -56,7 +55,11 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     await createDatabase();
   });
 
-  it("shows a firearm with no photos with its type's generic drawing (Scenario 3)", async () => {
+  // Scenarios 1 and 4 as one journey: the document is attached to the record the
+  // photo was added to, and Scenario 5's test needs the copy this leaves.
+  // Scenarios 2 and 3 are Rust and Vitest (see the citations in photo_test.rs,
+  // PhotoGallery.test.tsx and FirearmThumbnail.test.tsx).
+  it("adds a photo that becomes the thumbnail, attaches a document and reopens it (Scenarios 1, 4)", async () => {
     await addFirearm({
       make: "InsE2EMediaGlock",
       model: "43",
@@ -64,16 +67,11 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       type: "Handgun",
       serial: "MEDIA-1",
     });
-
+    // With no photo yet, the plate shows the type's drawing and the gallery
+    // offers the first drop (Scenario 3's strip; the drawing itself is Vitest).
     await expect($(".hd-plate__figure svg.hd-drawing")).toExist();
     await expect($("button*=Drop photos here")).toExist();
 
-    await back();
-    expect(await rowThumbnail("InsE2EMediaGlock 43")).toBe("drawing");
-  });
-
-  it("adds a photo that becomes the thumbnail (Scenario 1)", async () => {
-    await openFirearm("InsE2EMediaGlock 43");
     await attachFile('input[aria-label="Add photos"]', {
       name: "range-day.png",
       type: "image/png",
@@ -102,43 +100,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       timeoutMsg: "the collection row never showed the new photo thumbnail",
     });
     await openFirearm("InsE2EMediaGlock 43");
-  });
 
-  it("adds a second photo and lets it be explicitly selected as thumbnail (Scenario 2)", async () => {
-    await attachFile('input[aria-label="Add photos"]', {
-      name: "bench.png",
-      type: "image/png",
-      base64: SAMPLE_PNG_BASE64,
-    });
-    await browser.waitUntil(
-      async () =>
-        (await browser.execute(() => document.querySelectorAll(".hd-photo").length)) === 2,
-    );
-
-    // The first photo added stays the thumbnail until another is chosen.
-    const tagsBefore = await browser.execute(() =>
-      [...document.querySelectorAll(".hd-photo")].map((p) =>
-        Boolean(p.querySelector(".hd-photo__tag")),
-      ),
-    );
-    expect(tagsBefore).toEqual([true, false]);
-
-    await clickEl('button[aria-label="View bench.png"]');
-    await clickButton("Use as thumbnail");
-    await expect($("button=Current thumbnail")).toExist();
-    await browser.keys(["Escape"]);
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-    await settle();
-
-    const tagsAfter = await browser.execute(() =>
-      [...document.querySelectorAll(".hd-photo")].map((p) =>
-        Boolean(p.querySelector(".hd-photo__tag")),
-      ),
-    );
-    expect(tagsAfter).toEqual([false, true]);
-  });
-
-  it("attaches a document and can reopen it (Scenario 4)", async () => {
     await attachFile('input[aria-label="Attach documents"]', {
       name: "receipt.pdf",
       type: "application/pdf",
