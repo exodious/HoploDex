@@ -266,6 +266,40 @@ opt-level = 3
 [profile.dev.package.crc32fast]
 opt-level = 3
 
+# The image, SQLite and spreadsheet-writing crates, for the same reason (#77):
+# the import and human-seed tests spent most of their time decoding and
+# encoding images and encrypting pages at opt-level 0. `png`, `zune-core` and
+# `zune-jpeg` are each in the tree twice (`image` and `tiff` pull different
+# versions), so each is named with its version.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package."zune-jpeg@0.4.21"]
+opt-level = 3
+[profile.dev.package."zune-jpeg@0.5.15"]
+opt-level = 3
+[profile.dev.package."zune-core@0.4.12"]
+opt-level = 3
+[profile.dev.package."zune-core@0.5.3"]
+opt-level = 3
+[profile.dev.package."png@0.17.16"]
+opt-level = 3
+[profile.dev.package."png@0.18.1"]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+[profile.dev.package.tiff]
+opt-level = 3
+[profile.dev.package.weezl]
+opt-level = 3
+[profile.dev.package.rust_xlsxwriter]
+opt-level = 3
+[profile.dev.package.adler2]
+opt-level = 3
+[profile.dev.package.simd-adler32]
+opt-level = 3
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
