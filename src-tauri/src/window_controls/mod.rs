@@ -45,8 +45,6 @@ pub fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::R
 
 #[cfg(test)]
 mod tests {
-    use super::INSTALLED;
-
     /// FR-014: an E2E build (`--profile e2e --features e2e`, which has no
     /// debug assertions) installs the filters, so the E2E suite and the
     /// screenshot walk run with the controls a user has. Run it with `cargo
@@ -54,7 +52,7 @@ mod tests {
     #[cfg(all(feature = "e2e", not(debug_assertions)))]
     #[test]
     fn an_e2e_build_installs_the_filters() {
-        assert!(std::hint::black_box(INSTALLED));
+        assert!(std::hint::black_box(super::INSTALLED));
     }
 
     /// FR-014: a plain debug build (the default test profile) keeps Inspect
@@ -64,6 +62,6 @@ mod tests {
     fn a_plain_debug_build_does_not_install_the_filters() {
         // `black_box`: a constant assertion is clippy's error, and this one is
         // the point of the test.
-        assert!(!std::hint::black_box(INSTALLED));
+        assert!(!std::hint::black_box(super::INSTALLED));
     }
 }
