@@ -165,6 +165,50 @@ describe("FirearmForm serial-attestation rule", () => {
 
     expect(screen.getByLabelText("Serial number")).toBeDisabled();
   });
+
+  // 001 US1 Scenario 11: a firearm with no serial number is taken out of the
+  // duplicate check, so what was typed before is not sent.
+  it("submits serialNumber null when 'no serial' is checked after a serial was typed", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    expect(screen.getByLabelText("Serial number")).toHaveValue("ABC123");
+    await user.click(screen.getByLabelText("This firearm has no serial number"));
+    expect(screen.getByLabelText("Serial number")).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      serialNumber: null,
+      noSerialAttested: true,
+    });
+  });
+
+  // 001 US1 Scenario 11: unlocking the serial field puts the rule back.
+  it("unchecking 'no serial' unlocks the field, asks for a serial again and blocks the save", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText("Make"), "Homemade");
+    await user.type(screen.getByLabelText("Model"), "80% build");
+    await user.type(screen.getByLabelText("Caliber"), ".223");
+    await selectFirearmType(user);
+    const checkbox = screen.getByLabelText("This firearm has no serial number");
+    await user.click(checkbox);
+    expect(screen.getByLabelText("Serial number")).toBeDisabled();
+
+    await user.click(checkbox);
+
+    expect(screen.getByLabelText("Serial number")).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+    expect(
+      screen.getByText("Enter a serial number, or confirm this firearm has none."),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });
 
 async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
@@ -205,6 +249,35 @@ describe("FirearmForm amount cap (#67)", () => {
       estimatedValue: 99_999_999,
       acquisitionPrice: 99_999_999,
     });
+  });
+});
+
+// 001 US1 Scenarios 3 and 16: amounts are whole dollars, and editing shows them
+// as typed (no grouping, no cents).
+describe("FirearmForm amounts when editing (FR-037)", () => {
+  it("prefills the replacement value and price paid as plain whole dollars", () => {
+    render(
+      <FirearmForm
+        initialValues={
+          {
+            id: 1,
+            make: "Colt",
+            model: "Python",
+            serialNumber: "V1",
+            noSerialAttested: false,
+            caliber: ".357",
+            firearmTypeId: 1,
+            status: "active",
+            estimatedValue: 1250,
+            acquisitionPrice: 1450,
+          } as Firearm
+        }
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Estimated replacement value")).toHaveValue("1250");
+    expect(screen.getByLabelText("Price paid")).toHaveValue("1450");
   });
 });
 
@@ -639,6 +712,56 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
 
     expect(await screen.findByText("Weight must be greater than 0.")).toBeInTheDocument();
+  });
+
+  // 001 US1 Scenario 17: clearing all six removes the Physical details panel
+  // from the record, so every one is sent as null.
+  it("submits all six as null after a record's physical details are cleared", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderWithPhysicalGroup(
+      <FirearmForm
+        initialValues={
+          {
+            id: 1,
+            make: "Colt",
+            model: "Python",
+            serialNumber: "V1",
+            noSerialAttested: false,
+            caliber: ".357",
+            firearmTypeId: 1,
+            status: "active",
+            barrelLengthHundredths: 1625,
+            overallLengthHundredths: 1800,
+            weightTenthsOz: 405,
+            capacity: 6,
+            finish: "Blued",
+            condition: "excellent",
+          } as Firearm
+        }
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(barrel()).toHaveValue("16.25");
+
+    await user.clear(barrel());
+    await user.clear(overall());
+    await user.clear(weightLb());
+    await user.clear(weightOz());
+    await user.clear(capacity());
+    await user.clear(finish());
+    await pickCondition(user, "Not recorded");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      barrelLengthHundredths: null,
+      overallLengthHundredths: null,
+      weightTenthsOz: null,
+      capacity: null,
+      finish: null,
+      condition: null,
+    });
   });
 });
 
