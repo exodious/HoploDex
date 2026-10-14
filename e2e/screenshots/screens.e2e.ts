@@ -851,9 +851,7 @@ for (const theme of ["Light", "Dark"] as const) {
         const label = [...document.querySelectorAll('[role="dialog"] label')].find(
           (l) => l.textContent?.trim() === "Remember the passphrase on this computer",
         ) as HTMLLabelElement | undefined;
-        document
-          .getElementById(`${label?.htmlFor}-hint`)
-          ?.scrollIntoView({ block: "center" });
+        document.getElementById(`${label?.htmlFor}-hint`)?.scrollIntoView({ block: "center" });
       });
       await shot(`82-settings-remember-staged-${suffix}`, { fullPage: true });
       await toggle("Remember the passphrase on this computer");
