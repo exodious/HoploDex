@@ -3,7 +3,9 @@
 //! by `examples/portable_fixture.rs`; opening it here compares every field
 //! and byte to the known values, so on macOS and Windows this is the
 //! cross-platform check, and anywhere it fails if the pinned cipher
-//! settings ever change.
+//! settings ever change. Every test here keys with the pinned KDF, in a
+//! `test-kdf` build too (`one_at_a_time`), which is why the pinned settings
+//! are checked here rather than with the rest of the file format.
 
 mod support;
 
@@ -19,6 +21,7 @@ use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 use rusqlite::Connection;
+use rusqlite::types::Value;
 use tempfile::TempDir;
 
 #[allow(dead_code)]
@@ -27,10 +30,13 @@ mod portable_fixture;
 
 /// Held for the whole of each test here, so they run one at a time: one of
 /// them changes the environment, which is only sound while no other thread
-/// (SQLCipher's C code included) might be reading it.
+/// (SQLCipher's C code included) might be reading it. It also makes a
+/// `test-kdf` build key with the pinned KDF, which the fixture needs.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 fn one_at_a_time() -> MutexGuard<'static, ()> {
+    #[cfg(feature = "test-kdf")]
+    hoplodex_lib::db::cipher::test_kdf::use_real_kdf();
     ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
@@ -91,6 +97,33 @@ fn the_fixture_opens_with_its_passphrase_and_holds_the_known_records() {
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].original_filename, portable_fixture::DOCUMENT_NAME);
     assert_eq!(documents[0].file_bytes, portable_fixture::DOCUMENT);
+}
+
+/// A pragma's value as text, whether SQLCipher reports it as text or as a
+/// number.
+fn pragma_text(conn: &Connection, name: &str) -> String {
+    let value: Value = conn.query_row(&format!("PRAGMA {name}"), [], |row| row.get(0)).unwrap();
+    match value {
+        Value::Text(text) => text,
+        Value::Integer(n) => n.to_string(),
+        other => panic!("PRAGMA {name} returned {other:?}"),
+    }
+}
+
+#[test]
+fn a_new_database_gets_the_pinned_cipher_settings() {
+    let _serial = one_at_a_time();
+    let db = support::TestDb::new();
+
+    for (name, expected) in [
+        ("cipher_page_size", "4096"),
+        ("kdf_iter", "1000000"),
+        ("cipher_kdf_algorithm", "PBKDF2_HMAC_SHA512"),
+        ("cipher_hmac_algorithm", "HMAC_SHA512"),
+        ("cipher_plaintext_header_size", "0"),
+    ] {
+        assert_eq!(pragma_text(&db.conn, name), expected, "PRAGMA {name}");
+    }
 }
 
 #[test]

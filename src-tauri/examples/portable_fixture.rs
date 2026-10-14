@@ -93,6 +93,13 @@ pub fn firearm() -> FirearmInput {
 }
 
 fn main() {
+    // A `test-kdf` build keys with a KDF no other build uses (db/cipher.rs).
+    if cfg!(feature = "test-kdf") {
+        eprintln!(
+            "The portability fixture must be built without the test-kdf feature: no other build could open what it makes."
+        );
+        std::process::exit(1);
+    }
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(FIXTURE);
     if let Some(folder) = path.parent() {
         std::fs::create_dir_all(folder).expect("the fixtures folder");

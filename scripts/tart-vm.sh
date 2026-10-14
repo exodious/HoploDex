@@ -538,8 +538,8 @@ step npm run format:check
 step cargo fmt --check --manifest-path src-tauri/Cargo.toml
 step cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
 step npm test
-step cargo nextest run --manifest-path src-tauri/Cargo.toml
-step cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'test(/^keyring_test::/)'
+step cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf
+step cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/)'
 step npm run build
 step npm run audit
 if [ ${#failures[@]} -gt 0 ]; then

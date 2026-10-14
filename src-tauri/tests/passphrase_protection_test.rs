@@ -100,9 +100,10 @@ fn a_new_database_is_fully_encrypted_with_the_pinned_settings_and_state() {
     let header = &fs::read(db.path()).unwrap()[..16];
     assert_ne!(header, b"SQLite format 3\0", "the whole file must be encrypted");
 
+    // kdf_iter is checked in portability_test, which keys with the pinned KDF
+    // in a `test-kdf` build too.
     for (name, expected) in [
         ("cipher_page_size", "4096"),
-        ("kdf_iter", "1000000"),
         ("cipher_kdf_algorithm", "PBKDF2_HMAC_SHA512"),
         ("cipher_hmac_algorithm", "HMAC_SHA512"),
         ("cipher_plaintext_header_size", "0"),
@@ -134,6 +135,16 @@ fn a_new_database_is_fully_encrypted_with_the_pinned_settings_and_state() {
         )
         .unwrap();
     assert_eq!(settings, (1, 5, "default".to_owned(), 1, 10, 0));
+}
+
+/// The tests key with the test KDF only when built with `test-kdf`, and then
+/// every database does (db/cipher.rs).
+#[test]
+fn a_database_is_keyed_with_the_kdf_this_build_uses() {
+    let db = TestDb::new();
+
+    let expected = if cfg!(feature = "test-kdf") { "1000" } else { "1000000" };
+    assert_eq!(pragma_text(&db.conn, "kdf_iter"), expected);
 }
 
 #[test]
