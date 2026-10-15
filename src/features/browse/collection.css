@@ -195,8 +195,10 @@
   border: 0;
 }
 
-/* A row focused from the keyboard scrolls clear of both sticky rows. */
-.hd-table .hd-row__name {
+/* Anything in a row that takes focus (the name, a "Mounted on" link in the
+   name cell or its own column) scrolls clear of both sticky rows when it is
+   focused from the keyboard. */
+.hd-table .hd-row :is(a, button) {
   scroll-margin-top: calc(var(--hd-sticky-top) + var(--hd-thead-height) + 4.5rem);
 }
 

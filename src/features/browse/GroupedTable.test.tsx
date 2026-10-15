@@ -155,4 +155,98 @@ describe("GroupedTable", () => {
 
     expect(onRowClick).toHaveBeenCalledWith(GROUPS[1].rows[0]);
   });
+
+  // Issue #51: every 150-row batch used to render every row already mounted
+  // (about 400 ms of React commit at 5,000 to 10,000 rows).
+  describe("rendering more rows", () => {
+    const items = (from: number, to: number): Item[] =>
+      Array.from({ length: to - from }, (_, i) => ({
+        id: from + i,
+        name: `Item ${from + i}`,
+        kind: "x",
+        amount: from + i,
+      }));
+    const group = (rows: Item[]): TableGroup<Item>[] => [
+      { key: "All", title: "All", total: 400, rows },
+    ];
+    const rowKey = (item: Item) => item.id;
+    const onRowClick = () => {};
+
+    function countedColumns() {
+      const cell = vi.fn((item: Item) => item.name);
+      const columns: TableColumn<Item>[] = [
+        { id: "name", header: "Name", cell },
+        { id: "amount", header: "Amount", numeric: true, cell: (item) => item.amount },
+      ];
+      return { cell, columns };
+    }
+
+    it("renders only the rows added, not the ones already mounted", () => {
+      const { cell, columns } = countedColumns();
+      const first = items(0, 150);
+      const { rerender } = render(
+        <GroupedTable<Item>
+          columns={columns}
+          groups={group(first)}
+          grouped
+          rowKey={rowKey}
+          onRowClick={onRowClick}
+        />,
+      );
+      expect(cell).toHaveBeenCalledTimes(150);
+      cell.mockClear();
+
+      // What a page does for the next batch: new group and array objects
+      // around the same row objects, the same columns and callback.
+      rerender(
+        <GroupedTable<Item>
+          columns={columns}
+          groups={group([...first, ...items(150, 300)])}
+          grouped
+          rowKey={rowKey}
+          onRowClick={onRowClick}
+        />,
+      );
+
+      expect(cell).toHaveBeenCalledTimes(150);
+      expect(cell.mock.calls.map(([item]) => item.id)).toEqual(
+        Array.from({ length: 150 }, (_, i) => 150 + i),
+      );
+      expect(screen.getAllByRole("row")).toHaveLength(1 + 1 + 300); // heading, title, rows
+    });
+
+    it("renders a row again when its own row object, its muting or the columns change", () => {
+      const { cell, columns } = countedColumns();
+      const rows = items(0, 3);
+      const table = (props: {
+        columns?: TableColumn<Item>[];
+        rows?: Item[];
+        isMuted?: (item: Item) => boolean;
+      }) => (
+        <GroupedTable<Item>
+          columns={props.columns ?? columns}
+          groups={group(props.rows ?? rows)}
+          grouped
+          rowKey={rowKey}
+          isMuted={props.isMuted}
+          onRowClick={onRowClick}
+        />
+      );
+      const { rerender } = render(table({}));
+      cell.mockClear();
+
+      rerender(table({ rows: [rows[0], { ...rows[1], name: "Renamed" }, rows[2]] }));
+      expect(cell.mock.calls.map(([item]) => item.id)).toEqual([1]);
+      expect(screen.getByText("Renamed")).toBeInTheDocument();
+      cell.mockClear();
+
+      rerender(table({ rows, isMuted: (item) => item.id === 2 }));
+      expect(screen.getByText("Item 2").closest("tr")).toHaveClass("hd-row--disposed");
+      cell.mockClear();
+
+      // A regrouping hands over new columns: every row is drawn against them.
+      rerender(table({ rows, columns: [...columns], isMuted: (item) => item.id === 2 }));
+      expect(cell).toHaveBeenCalledTimes(3);
+    });
+  });
 });

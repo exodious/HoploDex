@@ -132,6 +132,21 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     });
     expect(clipping).toBe("visible/paint");
 
+    // Anything in a row that takes focus, such as a "Mounted on" link, scrolls
+    // clear of both sticky rows as the name does (collection.css). The rows
+    // here hold no mounts, so a link and a button are put in one to look at.
+    const margins = await browser.execute(() => {
+      const cell = document.querySelector<HTMLElement>(".hd-row td")!;
+      const probes = ["a", "button"].map((tag) => cell.appendChild(document.createElement(tag)));
+      const result = [document.querySelector(".hd-row__name")!, ...probes].map(
+        (el) => getComputedStyle(el).scrollMarginTop,
+      );
+      probes.forEach((el) => el.remove());
+      return result;
+    });
+    expect(parseFloat(margins[0])).toBeGreaterThan(100);
+    expect(margins).toEqual([margins[0], margins[0], margins[0]]);
+
     // The Caliber column starts and ends in the same place in every group.
     const columns = await browser.execute(() =>
       [...document.querySelectorAll<HTMLElement>("th.hd-col--caliber, td.hd-col--caliber")].map(

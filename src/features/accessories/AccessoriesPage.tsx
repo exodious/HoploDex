@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
@@ -11,6 +11,7 @@ import { GroupByMenu } from "../browse/GroupByMenu";
 import { GroupedTable } from "../browse/GroupedTable";
 import type { TableColumn } from "../browse/GroupedTable";
 import type { GroupByOption } from "../browse/GroupByMenu";
+import { useRenderLimit } from "../browse/renderLimit";
 import { SearchBar } from "../browse/SearchBar";
 import { SEARCH_DEBOUNCE_MS, useDebounced, useSearchShortcut } from "../browse/searchHooks";
 import { hasAny } from "../mounts/recordCounts";
@@ -87,11 +88,14 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
   const [groups, setGroups] = useState<AccessoryGroup[] | null>(null);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [renderLimit, setRenderLimit] = useState(RENDER_STEP);
   const searchRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const query = useDebounced(browse.query.trim(), SEARCH_DEBOUNCE_MS);
+  const [renderLimit, setRenderLimit] = useRenderLimit(
+    RENDER_STEP,
+    JSON.stringify([query, browse.groupBy, browse.includeDisposed]),
+  );
 
   function update(patch: Partial<AccessoryBrowseState>) {
     onBrowseChange({ ...browse, ...patch });
@@ -124,10 +128,6 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     };
   }, [scope, query, browse.groupBy, browse.includeDisposed, revision]);
 
-  useEffect(() => {
-    setRenderLimit(RENDER_STEP);
-  }, [query, browse.groupBy, browse.includeDisposed]);
-
   useSearchShortcut(searchRef);
 
   const activeCount = accessories.filter((a) => a.status === "active").length;
@@ -153,10 +153,13 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [renderLimit, total]);
+  }, [renderLimit, total, setRenderLimit]);
 
   const grouped = browse.groupBy !== undefined;
-  const openRecord = (id: number) => open({ page: "accessory", id, from: "accessories" });
+  const openRecord = useCallback(
+    (id: number) => open({ page: "accessory", id, from: "accessories" }),
+    [open],
+  );
 
   const addButton = (
     <Button variant="primary" icon="plus" onClick={() => openDialog("addAccessory")}>
@@ -357,9 +360,17 @@ function AccessoryList({
   onSelect,
 }: LayoutProps & { groupBy: AccessoryGroupBy | undefined }) {
   const shared = sharedHostNames(groups);
+  // The columns and the click handler stay the same while the grouping and
+  // `onSelect` do, so rows already mounted are not rendered again when more
+  // rows are added (GroupedTable, issue #51).
+  const columns = useMemo(() => accessoryColumns(groupBy, onSelect), [groupBy, onSelect]);
+  const onRowClick = useCallback(
+    (accessory: AccessorySummary) => onSelect(accessory.id),
+    [onSelect],
+  );
   return (
     <GroupedTable
-      columns={accessoryColumns(groupBy, onSelect)}
+      columns={columns}
       groups={groups
         .filter((group) => group.accessories.length > 0)
         .map((group) => ({
@@ -369,12 +380,15 @@ function AccessoryList({
           rows: group.accessories,
         }))}
       grouped={groupBy !== undefined}
-      rowKey={(accessory) => accessory.id}
-      isMuted={(accessory) => accessory.status === "disposed"}
-      onRowClick={(accessory) => onSelect(accessory.id)}
+      rowKey={accessoryKey}
+      isMuted={isDisposed}
+      onRowClick={onRowClick}
     />
   );
 }
+
+const accessoryKey = (accessory: AccessorySummary) => accessory.id;
+const isDisposed = (accessory: AccessorySummary) => accessory.status === "disposed";
 
 /** The columns, in order. A column whose value is the group's title is left
  * out: the host's name is the title when grouped by Mounted on. Coverage is

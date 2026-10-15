@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from "react";
 import { formatDollars } from "../../lib/money";
 import { FirearmName } from "../app/FirearmName";
 import { CoverageCell } from "./CoverageCell";
@@ -18,9 +19,14 @@ export interface BrowseListProps {
  * 1): one table for every group, with the serial number under each name so
  * firearms sharing a make and model stay distinguishable. */
 export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
+  // The columns and the click handler stay the same while the grouping and
+  // `onSelect` do, so rows already mounted are not rendered again when more
+  // rows are added (GroupedTable, issue #51).
+  const columns = useMemo(() => firearmColumns(groupBy, onSelect), [groupBy, onSelect]);
+  const onRowClick = useCallback((firearm: FirearmSummary) => onSelect(firearm.id), [onSelect]);
   return (
     <GroupedTable
-      columns={firearmColumns(groupBy, onSelect)}
+      columns={columns}
       groups={groups.map((group) => ({
         key: group.key,
         title: group.key,
@@ -28,12 +34,15 @@ export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
         rows: group.firearms,
       }))}
       grouped={groupBy !== undefined}
-      rowKey={(firearm) => firearm.id}
-      isMuted={(firearm) => firearm.status === "disposed"}
-      onRowClick={(firearm) => onSelect(firearm.id)}
+      rowKey={firearmKey}
+      isMuted={isDisposed}
+      onRowClick={onRowClick}
     />
   );
 }
+
+const firearmKey = (firearm: FirearmSummary) => firearm.id;
+const isDisposed = (firearm: FirearmSummary) => firearm.status === "disposed";
 
 /** The columns, in order, less the ones the grouping repeats in its titles.
  * Widths are shares of the table, so they are the same in every group. The

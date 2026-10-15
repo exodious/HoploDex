@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { scrollAnchorTo, stubIntersectionObserver } from "../../test/intersectionObserver";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import {
@@ -19,7 +21,15 @@ const listFirearms = vi.fn();
 vi.mock("./browseService", () => ({
   listFirearms: (_scope: unknown, input: unknown) => listFirearms(input),
 }));
-vi.mock("./FirearmThumbnail", () => ({ FirearmThumbnail: () => null }));
+// Each render of a row's thumbnail is counted: it renders once for each time
+// its row does.
+const thumbnailRendered = vi.hoisted(() => vi.fn());
+vi.mock("./FirearmThumbnail", () => ({
+  FirearmThumbnail: () => {
+    thumbnailRendered();
+    return null;
+  },
+}));
 
 const summary = {
   id: 1,
@@ -222,5 +232,75 @@ describe("the attention banner's expiring policies (FR-028)", () => {
 
     await screen.findByRole("button", { name: "Group by, None" });
     expect(document.querySelector(".hd-attention")).toBeNull();
+  });
+});
+
+// Issue #51, constitution IV: with thousands of firearms the first rows mount
+// and the rest as the end of the list nears. Each batch used to render every
+// row already mounted (about 400 ms at 5,000 to 10,000 rows), and a regrouping
+// with every row mounted drew them all again under the new columns.
+describe("with thousands of firearms", () => {
+  beforeEach(() => stubIntersectionObserver());
+  afterEach(() => vi.unstubAllGlobals());
+
+  const many = Array.from({ length: 400 }, (_, i) => ({
+    ...summary,
+    id: 100 + i,
+    model: `Model ${i}`,
+  }));
+  const rowCount = () => screen.getAllByRole("row").length - 1; // less the heading row
+
+  function renderMany() {
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "All", firearms: many }] });
+    let regroup: (groupBy: BrowseState["groupBy"]) => void = () => {};
+    function Harness() {
+      const [browse, setBrowse] = useState<BrowseState>({
+        query: "",
+        groupBy: undefined,
+        includeDisposed: false,
+        view: "list",
+      });
+      regroup = (groupBy) => setBrowse((current) => ({ ...current, groupBy }));
+      return (
+        <CollectionContext.Provider value={{ ...collection, firearms: many }}>
+          <CollectionPage browse={browse} onBrowseChange={setBrowse} />
+        </CollectionContext.Provider>
+      );
+    }
+    render(<Harness />);
+    return (groupBy: BrowseState["groupBy"]) => act(() => regroup(groupBy));
+  }
+
+  it("renders only the rows of the next batch, not the ones already mounted", async () => {
+    thumbnailRendered.mockClear();
+    renderMany();
+    await screen.findByText("Colt Model 0");
+    expect(rowCount()).toBe(150);
+    expect(thumbnailRendered).toHaveBeenCalledTimes(150);
+    thumbnailRendered.mockClear();
+
+    scrollAnchorTo(500);
+    await waitFor(() => expect(rowCount()).toBe(300));
+
+    expect(thumbnailRendered).toHaveBeenCalledTimes(150);
+    thumbnailRendered.mockClear();
+    scrollAnchorTo(500);
+    await waitFor(() => expect(rowCount()).toBe(400));
+    expect(thumbnailRendered).toHaveBeenCalledTimes(100);
+  });
+
+  it("draws no more than the first batch of rows when the grouping changes", async () => {
+    const regroup = renderMany();
+    await screen.findByText("Colt Model 0");
+    scrollAnchorTo(500);
+    await waitFor(() => expect(rowCount()).toBe(300));
+    // The new list is still being fetched.
+    listFirearms.mockReturnValue(new Promise(() => {}));
+    thumbnailRendered.mockClear();
+
+    regroup("type");
+
+    expect(rowCount() - 1).toBe(150); // less the group's title row
+    expect(thumbnailRendered.mock.calls.length).toBeLessThanOrEqual(150);
   });
 });
