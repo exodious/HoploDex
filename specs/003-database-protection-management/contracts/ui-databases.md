@@ -28,6 +28,7 @@ facts each text states are required.
     suggestion, and "Longer is stronger: several unrelated words make a good
     passphrase." The hint never blocks (FR-003). The zxcvbn module is loaded
     lazily (research §18).
+    _Amended 2026-10-14 (#102): in a Web Worker, so loading it never freezes the dialog._
   - Errors use the standard field-error slot. The minimum-length message is
     "Use at least 12 characters." The confirmation message is "The
     passphrases don't match." A new passphrase that is the current one:

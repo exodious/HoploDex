@@ -106,6 +106,40 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
     expect(blinks).toEqual([1, 1]);
   });
 
+  // The first time the dialog opens, zxcvbn's dictionaries load. That used to
+  // hold the page's main thread for about a second; it is in a worker now.
+  it("opens Create database and estimates the passphrase without freezing the page (#102)", async () => {
+    // The longest wait between two animation frames, from before the dialog
+    // opens until the meter shows. A frozen page draws no frames.
+    await browser.execute(() => {
+      const probe = { longest: 0, running: true };
+      (window as unknown as { __frameGaps: typeof probe }).__frameGaps = probe;
+      let last = performance.now();
+      const frame = (now: number) => {
+        probe.longest = Math.max(probe.longest, now - last);
+        last = now;
+        if (probe.running) requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    });
+    await clickButton("Create a new database…");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Passphrase", "vivid otter ledger crane");
+    await $('[role="meter"]').waitForExist({ timeout: 10000 });
+    const longest = await browser.execute(() => {
+      const probe = (window as unknown as { __frameGaps: { longest: number; running: boolean } })
+        .__frameGaps;
+      probe.running = false;
+      return probe.longest;
+    });
+    expect(await $('[role="meter"]').getAttribute("aria-valuetext")).toBe("Very strong");
+    // About 1,000 ms before #102 under Xvfb; a busy test machine's slowest
+    // ordinary frame stays well under this.
+    expect(longest).toBeLessThan(400);
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
   it("keeps the acknowledgement and Create in view when a weak passphrase's warning shows (#41)", async () => {
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
