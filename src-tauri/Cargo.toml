@@ -52,7 +52,8 @@ e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 # (db/cipher.rs's `test_kdf`), which took three quarters of the tests' CPU. A
 # file made by such a build opens in no other build. db/cipher.rs refuses to
 # compile it with `custom-protocol` or `e2e` or without debug assertions, and
-# examples/human_seed.rs and portable_fixture.rs refuse to run with it.
+# the app (main.rs), examples/human_seed.rs and portable_fixture.rs refuse to
+# run with it.
 test-kdf = []
 
 [dependencies]

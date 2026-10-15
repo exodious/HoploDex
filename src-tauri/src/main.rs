@@ -154,6 +154,16 @@ fn main() {
     if args.first().map(String::as_str) == Some(import_helper::ARGUMENT) {
         import_helper::run(&args);
     }
+    // The tests run the helpers above from a `test-kdf` build, but the app
+    // itself must not start in one: a database it made would have the tests'
+    // KDF (db/cipher.rs). db/cipher.rs already keeps the feature out of
+    // release, E2E and shipped builds; this covers `cargo run` and `tauri dev`.
+    if cfg!(feature = "test-kdf") {
+        eprintln!(
+            "HoploDex can't start in a build with the test-kdf feature, which is for the tests only."
+        );
+        std::process::exit(1);
+    }
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the
     // first web context exists (research.md §9).
