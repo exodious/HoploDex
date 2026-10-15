@@ -11,6 +11,9 @@
 //! of the developer's real `machine.json` and Documents folder (#27, "Never
 //! touch the real databases" in CLAUDE.md). An E2E build launched without
 //! the sandbox fails to start rather than fall back to the real directories.
+//! A `test-kdf` build does the same (db/cipher.rs): its app refuses to start
+//! (main.rs), and if that refusal were ever lost, the tests that check it
+//! would run it in their sandbox, never on the developer's data.
 //!
 //! It also names the two web views' data folders (research.md §6, "Windows'
 //! user data folder"): the main window's and the PDF preview surface's,
@@ -50,7 +53,7 @@ fn preview_webview_dir(cache: &Path) -> PathBuf {
     cache.join(PREVIEW_WEBVIEW_FOLDER)
 }
 
-#[cfg(not(feature = "e2e"))]
+#[cfg(not(any(feature = "e2e", feature = "test-kdf")))]
 mod resolve {
     use std::path::PathBuf;
 
@@ -73,7 +76,7 @@ mod resolve {
     }
 }
 
-#[cfg(feature = "e2e")]
+#[cfg(any(feature = "e2e", feature = "test-kdf"))]
 mod resolve {
     use std::path::PathBuf;
 
@@ -116,7 +119,7 @@ mod resolve {
 
     fn sandbox_dir(variable: &str) -> tauri::Result<PathBuf> {
         super::sandbox_dir(std::env::var_os(variable)).ok_or_else(|| {
-            log::error!("E2E build: {variable} is unset or not an absolute path");
+            log::error!("E2E or test-kdf build: {variable} is unset or not an absolute path");
             tauri::Error::UnknownPath
         })
     }
@@ -125,7 +128,7 @@ mod resolve {
 /// A sandbox directory from an E2E variable's value: an absolute path, or
 /// nothing, so an unset, empty or relative one (which would land in the
 /// working directory) never stands in for a real directory.
-#[cfg(any(test, feature = "e2e"))]
+#[cfg(any(test, feature = "e2e", feature = "test-kdf"))]
 fn sandbox_dir(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
     value.map(PathBuf::from).filter(|path| path.is_absolute())
 }
@@ -145,8 +148,9 @@ mod tests {
     }
 
     /// An E2E build's cache directory, and so both web view folders, lie
-    /// under the sandbox, never the OS's real cache (#27).
-    #[cfg(feature = "e2e")]
+    /// under the sandbox, never the OS's real cache (#27). A `test-kdf`
+    /// build's too.
+    #[cfg(any(feature = "e2e", feature = "test-kdf"))]
     #[test]
     fn an_e2e_builds_web_view_folders_fall_under_the_sandbox() {
         let sandbox = std::env::temp_dir().join("hoplodex-e2e-cache-home");
