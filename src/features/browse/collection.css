@@ -131,8 +131,10 @@
    group's title row sticks under that. Sticky is set on the cells (not on the
    rows or sections, which WebKit does not stick), so each needs an opaque
    background. The window is the scroll container, so the table must not be:
-   `overflow: clip` rounds the corners without becoming one, where `hidden`
-   would trap the sticky cells. */
+   `contain: paint` rounds the corners without becoming one, where `overflow:
+   hidden` would trap the sticky cells. It is not `overflow: clip`, which
+   costs a full-table clip on every batch of rows and every scroll frame: with
+   10,000 rows in WebKitGTK, +10% a batch and +35% a scrolled frame (#51). */
 .hd-table {
   /* The top bar is --topbar-height plus its 1px border. */
   --hd-sticky-top: calc(var(--topbar-height) + 1px);
@@ -144,7 +146,7 @@
   background: var(--sheet);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
-  overflow: clip;
+  contain: paint;
 }
 
 .hd-table th {

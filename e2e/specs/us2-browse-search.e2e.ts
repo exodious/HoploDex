@@ -123,6 +123,15 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await expect($$(".hd-table")).toBeElementsArrayOfSize(1);
     await expect($$(".hd-group-row")).toBeElementsArrayOfSize(3);
 
+    // The table rounds its corners with `contain: paint`, not `overflow: clip`,
+    // which made every batch of rows and every scrolled frame of a 10,000-row
+    // list about a tenth slower (collection.css, "List view").
+    const clipping = await browser.execute(() => {
+      const style = getComputedStyle(document.querySelector(".hd-table")!);
+      return `${style.overflowX}/${style.contain}`;
+    });
+    expect(clipping).toBe("visible/paint");
+
     // The Caliber column starts and ends in the same place in every group.
     const columns = await browser.execute(() =>
       [...document.querySelectorAll<HTMLElement>("th.hd-col--caliber, td.hd-col--caliber")].map(
