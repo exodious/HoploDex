@@ -29,7 +29,7 @@ use hoplodex_lib::session::scoped::{SESSION_HEADER, ScopedSession, Target};
 use hoplodex_lib::session::{Session, SessionId, lifecycle};
 use preview_support::TestPreview;
 use serde_json::json;
-use support::{TestEvents, passphrase, sample_png_bytes, test_session};
+use support::{ManualClock, TestEvents, passphrase, sample_png_bytes, test_session_at};
 use tempfile::TempDir;
 
 /// A throwaway world: a folder for databases, a config directory for
@@ -40,18 +40,25 @@ struct World {
     machine: MachineSettings,
     session: Session,
     events: Arc<TestEvents>,
+    /// The session's clock, which each close moves on a minute: a backup's
+    /// name says the second it was made, and the app's KDF no longer keeps
+    /// two backups of the same file a second apart (`test-kdf`).
+    clock: Arc<ManualClock>,
 }
 
 impl World {
     fn new() -> Self {
         let config = TempDir::new().unwrap();
-        let (session, events) = test_session(&config.path().join("opened-documents"));
+        let clock = ManualClock::at("2026-05-01T09:00:00-04:00");
+        let (session, events) =
+            test_session_at(&config.path().join("opened-documents"), clock.clone());
         Self {
             dir: TempDir::new().unwrap(),
             machine: MachineSettings::load(config.path()).unwrap(),
             config,
             session,
             events,
+            clock,
         }
     }
 
@@ -74,6 +81,7 @@ impl World {
 
     fn close(&self, id: SessionId) {
         lifecycle::close_normal(&self.session, id, &self.machine, CloseReason::Closed).unwrap();
+        self.clock.advance(chrono::Duration::minutes(1));
     }
 
     fn scoped(&self, id: SessionId) -> ScopedSession {

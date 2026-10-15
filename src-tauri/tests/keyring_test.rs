@@ -20,7 +20,7 @@ use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
-use support::{TEST_PASSPHRASE, TestEvents, passphrase, test_session};
+use support::{ManualClock, TEST_PASSPHRASE, TestEvents, passphrase, test_session_at};
 use tempfile::TempDir;
 
 const SERVICE: &str = "io.github.exodious.HoploDex";
@@ -48,6 +48,10 @@ struct World {
     session: Session,
     _events: Arc<TestEvents>,
     _store: Option<RwLockReadGuard<'static, ()>>,
+    /// The session's clock, which each close moves on a minute: a backup's
+    /// name says the second it was made, and the app's KDF no longer keeps
+    /// two backups of the same file a second apart (`test-kdf`).
+    clock: Arc<ManualClock>,
 }
 
 impl World {
@@ -63,7 +67,9 @@ impl World {
     /// For a test that holds [`store_to_itself`].
     fn with_the_store_to_itself(keyring: Keyring) -> Self {
         let config = TempDir::new().unwrap();
-        let (session, events) = test_session(&config.path().join("opened-documents"));
+        let clock = ManualClock::at("2026-05-01T09:00:00-04:00");
+        let (session, events) =
+            test_session_at(&config.path().join("opened-documents"), clock.clone());
         Self {
             folder: TempDir::new().unwrap(),
             scratch: TempDir::new().unwrap(),
@@ -72,6 +78,7 @@ impl World {
             session,
             _events: events,
             _store: None,
+            clock,
         }
     }
 
@@ -96,6 +103,7 @@ impl World {
             CloseReason::Closed,
         )
         .unwrap();
+        self.clock.advance(chrono::Duration::minutes(1));
     }
 
     fn database_id(&self) -> String {

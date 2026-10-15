@@ -477,22 +477,22 @@ fixed one shows the chooser.
 ## Test
 
 ```bash
-cargo nextest run --manifest-path src-tauri/Cargo.toml   # Rust unit + integration tests, real temp SQLCipher DB
-cargo test --manifest-path src-tauri/Cargo.toml --doc    # Rust doctests (nextest doesn't run them; there are none today)
-npm test                                                 # Vitest frontend unit tests (jsdom)
-npm run build && npm run test:e2e                        # WebdriverIO E2E, driven against the built app
+cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf   # Rust unit + integration tests, real temp SQLCipher DB
+cargo test --manifest-path src-tauri/Cargo.toml --doc                        # Rust doctests (nextest doesn't run them; there are none today)
+npm test                                                                     # Vitest frontend unit tests (jsdom)
+npm run build && npm run test:e2e                                            # WebdriverIO E2E, driven against the built app
 ```
 
 To run part of a suite:
 
 ```bash
-cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'test(/^firearm_lifecycle_test::/)'                 # one integration-test file
-cargo nextest run --manifest-path src-tauri/Cargo.toml -E 'test(/^firearm_lifecycle_test::/) & test(<name>)'  # tests in it whose name contains <name>
-cargo nextest run --manifest-path src-tauri/Cargo.toml <name>                                                # tests anywhere whose name contains <name>
-npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                            # one Vitest file
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                              # one E2E spec
+cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E 'test(/^firearm_lifecycle_test::/)'   # one integration-test file
+cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E 'test(/^firearm_lifecycle_test::/) & test(<name>)'  # tests in it whose name contains <name>
+cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf <name>                                   # tests anywhere whose name contains <name>
+npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                                    # one Vitest file
+npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                                      # one E2E spec
 
-cargo test --manifest-path src-tauri/Cargo.toml --test integration firearm_lifecycle_test::  # the same without nextest
+cargo test --manifest-path src-tauri/Cargo.toml --features test-kdf --test integration firearm_lifecycle_test::  # the same without nextest
 ```
 
 Every file in `src-tauri/tests/` is a module of one test program,
@@ -511,6 +511,20 @@ other thread reads the environment, and `cargo test` runs a program's tests
 as threads of one process. A test in one of these isn't prefixed with its
 file's name: select it with `-E 'binary(portability_test)'`, or
 `--test portability_test` under `cargo test`.
+
+**`--features test-kdf`** (#77 step 11) keys every test database with 1,000
+PBKDF2 iterations instead of the pinned 1,000,000, which was three quarters of
+the Rust tests' CPU; every other cipher setting and every code path is the
+app's. The tests pass without it too, only slower. A file a `test-kdf` build
+makes opens in no other build, so the feature is for the tests alone:
+`db/cipher.rs` won't compile it with `custom-protocol` or `e2e` or without
+debug assertions (so never in a release, E2E or shipped build), and
+the app itself (`cargo run`, `tauri dev`), `human_seed` and `portable_fixture` refuse to run with it, though the tests still start the binary's helpers. `test_kdf_startup_test` checks the app's refusal; it starts the app in a sandbox, since a `test-kdf` build, like an E2E build, takes its directories only from the `HOPLODEX_E2E_*` variables (`app_dirs.rs`). `portability_test`
+keys with the pinned KDF whatever the build (`cipher::test_kdf::use_real_kdf`,
+which applies to its whole process), so the committed fixture and the pinned
+settings are checked in every run. A test that makes two backups of one file
+needs them a second apart, since a backup's name says the second it was made:
+use a `ManualClock` and move it on, rather than sleeping.
 
 Vitest runs every test file in its own worker thread and uses every CPU
 (`pool` and `maxWorkers` in `vite.config.ts`, #77), so a run's wall time is
@@ -981,7 +995,7 @@ of it:
   `MachineSettings::load` starts with the keyring off, so they never reach the
   OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
   with `--features mock-keyring`, against keyring-core's in-memory store:
-  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features mock-keyring -E 'test(/^keyring_test::/)'`.
+  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/)'`.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
   own) a throwaway sandbox (`e2e/support/sandbox.ts`, which `npm run session`
   uses too). An E2E build takes its config and cache

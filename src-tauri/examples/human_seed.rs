@@ -188,6 +188,13 @@ fn usage(problem: &str) -> ! {
 }
 
 fn main() {
+    // A `test-kdf` build keys with a KDF no other build uses (db/cipher.rs).
+    if cfg!(feature = "test-kdf") {
+        eprintln!(
+            "The human-testing seed must be built without the test-kdf feature: no other build could open what it makes."
+        );
+        std::process::exit(1);
+    }
     let args = parse_args();
     if let Err(problem) = sandbox::check_sandbox(&args.dir, &|name| std::env::var_os(name)) {
         eprintln!("{problem}");

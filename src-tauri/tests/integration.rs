@@ -80,6 +80,7 @@ mod session_test;
 mod suppressor_test;
 mod take_over_test;
 mod test_files_test;
+mod test_kdf_startup_test;
 mod text_limits_test;
 mod tiff_helper_test;
 mod valuation_test;
