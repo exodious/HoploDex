@@ -1,36 +1,11 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { RefObject } from "react";
-import type { ZxcvbnFactory } from "@zxcvbn-ts/core";
+import { estimateStrength, startStrengthWorker } from "./strength/client";
+import type { Estimate } from "./strength/estimate";
 import "./components.css";
 
 const LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"] as const;
 const ADVICE = "Longer is stronger: several unrelated words make a good passphrase.";
-
-let estimator: Promise<ZxcvbnFactory> | null = null;
-
-/** zxcvbn and its dictionaries are large, so they load only when a strength
- * hint is first shown (research.md §18). Everything runs here in the page:
- * no keystroke crosses IPC. */
-function loadEstimator(): Promise<ZxcvbnFactory> {
-  estimator ??= Promise.all([
-    import("@zxcvbn-ts/core"),
-    import("@zxcvbn-ts/language-common"),
-    import("@zxcvbn-ts/language-en"),
-  ]).then(
-    ([core, common, en]) =>
-      new core.ZxcvbnFactory({
-        translations: en.translations,
-        graphs: common.adjacencyGraphs,
-        dictionary: { ...common.dictionary, ...en.dictionary },
-      }),
-  );
-  return estimator;
-}
-
-interface Estimate {
-  score: number;
-  suggestion: string;
-}
 
 export interface StrengthHintHandle {
   /** Re-estimates from the input's current value. */
@@ -47,30 +22,48 @@ export interface StrengthHintProps {
  * advises: a weak passphrase is never refused for being weak (FR-003). */
 export const StrengthHint = forwardRef<StrengthHintHandle, StrengthHintProps>(
   ({ inputRef }, ref) => {
-    const [factory, setFactory] = useState<ZxcvbnFactory | null>(null);
     const [estimate, setEstimate] = useState<Estimate | null>(null);
+    // One estimate at a time: what is typed while one is being worked out
+    // (zxcvbn may still be loading) is estimated when it comes back, from the
+    // input's value then. Nothing here keeps the value.
+    const asking = useRef(false);
+    const stale = useRef(false);
+    const mounted = useRef(true);
 
+    // zxcvbn and its dictionaries are large, so they load only when a
+    // strength hint is first shown (research.md §18), in a worker (#102).
     useEffect(() => {
-      let current = true;
-      void loadEstimator().then((loaded) => current && setFactory(loaded));
+      mounted.current = true;
+      startStrengthWorker();
       return () => {
-        current = false;
+        mounted.current = false;
       };
     }, []);
 
-    const update = useCallback(() => {
-      const value = inputRef.current?.value ?? "";
-      if (!factory || !value) {
-        setEstimate(null);
-        return;
-      }
-      const { score, feedback } = factory.check(value);
-      setEstimate({ score, suggestion: feedback.warning || feedback.suggestions[0] || "" });
-    }, [factory, inputRef]);
+    const update = useCallback(
+      function update() {
+        if (asking.current) {
+          stale.current = true;
+          return;
+        }
+        const value = inputRef.current?.value ?? "";
+        if (!value) {
+          setEstimate(null);
+          return;
+        }
+        asking.current = true;
+        stale.current = false;
+        void estimateStrength(value).then((answer) => {
+          asking.current = false;
+          if (!mounted.current) return;
+          if (stale.current) update();
+          else setEstimate(answer);
+        });
+      },
+      [inputRef],
+    );
 
     useImperativeHandle(ref, () => ({ update }), [update]);
-    // Catch up with anything typed while zxcvbn was loading.
-    useEffect(update, [update]);
 
     // The advice is always shown. The meter, its label and zxcvbn's
     // suggestion share one row that is in the layout from the start, empty

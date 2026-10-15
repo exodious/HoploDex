@@ -862,6 +862,8 @@ never blocks: only FR-003's 12-character minimum and the match with the
 confirmation field block. The estimate runs in the frontend, so no
 keystrokes cross IPC.
 
+_Amended 2026-10-15 (#102): building zxcvbn blocked the page's main thread for 70–125 ms (Linux, macOS, Windows) the first time the hint showed, so zxcvbn now loads and runs in a Web Worker (`src/components/strength/`), still in the page: no keystroke crosses IPC._
+
 **Alternatives considered**: a length-and-character-class heuristic
 (rejected: it rates `passwordpassword` highly and pushes users towards the
 composition rules FR-003 forbids); the Rust `zxcvbn` crate (rejected: every

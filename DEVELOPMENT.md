@@ -1008,7 +1008,13 @@ of it:
   directories on Linux (with a `user-dirs.dirs`) and `HOME` on macOS. On
   Windows the app puts each web view's data folder (`main-webview` and
   `preview-webview2`) under `HOPLODEX_E2E_CACHE_HOME`, so no
-  `WEBVIEW2_USER_DATA_FOLDER` is set. Each spec starts at
+  `WEBVIEW2_USER_DATA_FOLDER` is set. One thing is shared on purpose: on
+  Linux, Mesa's shader cache (`MESA_SHADER_CACHE_DIR`) is
+  `node_modules/.cache/hoplodex-e2e-shaders` for every sandbox and run. In
+  software rendering (the dev container's Xvfb), Mesa compiles the dialog
+  shadow's shader the first time one is drawn, which stops the window
+  painting for about a second; with a cache per sandbox, every spec paid that
+  (#102). It holds compiled shaders only. Each spec starts at
   a first run and creates its database by typing a location in the sandbox
   (`createDatabase()` in `e2e/support/ui.ts`), or unlocks the seeded one
   with its passphrase (`unlock()`). There is no database key in the

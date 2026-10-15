@@ -1,6 +1,6 @@
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CLEAR_PASSPHRASE_FIELDS, PassphraseField } from "./PassphraseField";
 import type { PassphraseFieldHandle } from "./PassphraseField";
@@ -96,6 +96,23 @@ describe("PassphraseField (contracts/ui-databases.md §0, FR-007)", () => {
     await user.type(screen.getByLabelText("Passphrase"), "vivid otter ledger crane mosaic");
     expect(await screen.findByText("Very strong")).toBeInTheDocument();
     expect(screen.getByLabelText("Passphrase")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("estimates what was typed last, even when it changed while an estimate was being worked out (#102)", async () => {
+    render(<PassphraseField label="Passphrase" autoComplete="new-password" strength />);
+    const input = screen.getByLabelText("Passphrase");
+
+    // Both before the first answer comes back from the strength worker.
+    fireEvent.input(input, { target: { value: "password" } });
+    fireEvent.input(input, { target: { value: "vivid otter ledger crane mosaic" } });
+    expect(await screen.findByText("Very strong")).toBeInTheDocument();
+
+    fireEvent.input(input, { target: { value: "password" } });
+    fireEvent.input(input, { target: { value: "" } });
+    await waitFor(() => expect(screen.queryByRole("meter")).not.toBeInTheDocument());
+    // Nothing else is still coming.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
   });
 
   it("holds the meter's and the warning's places before they show, so the layout doesn't move (#41)", async () => {
