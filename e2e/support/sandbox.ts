@@ -43,6 +43,17 @@ function writeUserDirs(configDir: string, documents: string) {
 }
 
 /**
+ * Mesa's shader cache on Linux, kept across sandboxes and runs (in
+ * node_modules, which the dev container keeps in a volume). Rendering in
+ * software (the dev container's Xvfb has no GPU), Mesa compiles the shader
+ * for a dialog's box-shadow the first time one is drawn: about a second in
+ * which the window paints nothing, so `settle()` waits it out. With each
+ * sandbox's own empty cache, every spec paid it again (#102). It holds
+ * compiled shaders, nothing of the app's or the developer's.
+ */
+export const SHADER_CACHE = path.join(repoRoot, "node_modules", ".cache", "hoplodex-e2e-shaders");
+
+/**
  * Points the app at a throwaway data, config, cache and documents directory
  * for this session, so each spec starts at a first run and E2E runs never
  * see the developer's real databases, their recent list or their Documents
@@ -85,6 +96,8 @@ export function isolateAppData(): string {
     process.env.XDG_CACHE_HOME = cache;
     process.env.XDG_CONFIG_HOME = config;
     writeUserDirs(config, documents);
+    fs.mkdirSync(SHADER_CACHE, { recursive: true });
+    process.env.MESA_SHADER_CACHE_DIR = SHADER_CACHE;
   } else if (process.platform === "darwin") {
     // macOS ignores XDG_*: Tauri builds every directory (Application Support,
     // Caches, Documents) from HOME, so the app gets a home of its own inside
