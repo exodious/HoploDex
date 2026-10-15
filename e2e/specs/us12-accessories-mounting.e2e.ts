@@ -11,7 +11,6 @@ import {
   searchMountDialog,
   seedFirearms,
   tabTo,
-  tabToControl,
   typeReal,
   backToCollectionByKeys,
 } from "../support/accessories";
@@ -103,7 +102,12 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
     expect(asked).toContain(
       "It is mounted on LaRue PredatAR. Moving it takes everything mounted on it along.",
     );
-    await tabToControl("Move");
+    // A non-destructive question opens with focus on its confirm button, so
+    // Enter confirms (issue #44): no Tab.
+    await browser.waitUntil(
+      () => browser.execute(() => document.activeElement?.textContent?.trim() === "Move"),
+      { timeout: 5000, timeoutMsg: "focus did not start on Move" },
+    );
     await realKey("Return");
 
     await mountedSectionShows("SilencerCo Omega 300");

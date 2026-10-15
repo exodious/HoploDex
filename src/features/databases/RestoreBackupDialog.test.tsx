@@ -203,6 +203,8 @@ describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
     await restore();
 
     expect(session.restoreBackup).toHaveBeenCalledWith(older.path, PASSPHRASE, undefined);
+    // The confirmation's submit doesn't reach the form it sits in (issue #44).
+    expect(session.restoreBackup).toHaveBeenCalledTimes(1);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 

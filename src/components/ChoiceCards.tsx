@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
+import { keepEnterOut } from "./radioKeys";
 import "./components.css";
 
 export interface ChoiceCard<T extends string> {
@@ -68,6 +69,7 @@ export function ChoiceCards<T extends string>({
               checked={value === option.value}
               onChange={() => onChange(option.value)}
               required={required}
+              onKeyDown={keepEnterOut}
             />
             <span className="hd-choice__face">
               {option.art && <span className="hd-choice__art">{option.art}</span>}

@@ -147,6 +147,25 @@ describe("ExistingBackupsDialog (contracts/ui-databases.md §7, FR-026, US3-4a)"
     confirm = screen.getByRole("alertdialog");
     await user.click(within(confirm).getByRole("button", { name: "Delete all backups" }));
     expect(send).toHaveBeenCalledWith("delete");
+    // The confirmation's submit must not also submit the question it sits in
+    // (React sends a portal's events up to the enclosing form).
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #44: Enter on the confirm button, the focused default, confirms once.
+  it("confirms the deletion once with Enter on the confirmation's button", async () => {
+    const user = userEvent.setup();
+    const send = vi.fn().mockResolvedValue(SAVED);
+    renderQuestion(send);
+    await user.click(screen.getByRole("radio", { name: /Delete them/ }));
+    await user.click(changeLocation());
+    const confirm = screen.getByRole("alertdialog");
+    within(confirm).getByRole("button", { name: "Delete all backups" }).focus();
+
+    await user.keyboard("{Enter}");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith("delete");
   });
 
   it("cancels without sending anything", async () => {

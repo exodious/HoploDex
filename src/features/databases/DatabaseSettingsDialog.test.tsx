@@ -537,6 +537,26 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
+  // Issue #44: Enter in the confirmation's passphrase field confirms it, and
+  // doesn't also save the settings form behind it.
+  it("takes Enter in the FR-017 confirmation's passphrase field as Remember passphrase", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
+    renderSettings(withKeyring());
+    await user.click(remember());
+    await user.click(save());
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Remember this database's passphrase?",
+    });
+
+    await user.type(within(confirm).getByLabelText("Passphrase"), "correct horse battery{Enter}");
+
+    await waitFor(() =>
+      expect(databasesService.savePassphrase).toHaveBeenCalledWith(SCOPE, "correct horse battery"),
+    );
+    expect(databasesService.savePassphrase).toHaveBeenCalledTimes(1);
+  });
+
   it("remembers the passphrase before it saves the other settings", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });

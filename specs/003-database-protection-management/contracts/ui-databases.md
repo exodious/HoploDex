@@ -59,6 +59,7 @@ facts each text states are required.
 - **`ConfirmDialog`** gains an optional third action (`alternativeLabel`,
   `onAlternative`) for the save / discard / cancel question (§6). No screen
   builds its own three-button prompt.
+  _Amended 2026-10-15 (#44): it is also the app's Enter rule for confirmations. Its body and footer are one form whose submit button is confirm, so Enter in a single-line field confirms unless confirm is disabled or an action is pending; Enter on Cancel cancels; Enter on a radio, checkbox or select only operates it; and Enter ending an IME composition does nothing. Focus starts on confirm in a non-destructive question with nothing to fill in, on Cancel in a destructive one, and in the first field when there is one._
 - _Amended 2026-10-13: `NumberField` (`src/components/`) is a whole number you can type or step with up and down buttons, ArrowUp and ArrowDown (clamped to `min`..`max`); it is the app's own control, not the browser's `type="number"` spinners, which differ in WebKitGTK, WebView2 and WKWebView. Every disabled field (label, hint, control, prefix and suffix, `Select` trigger, `Checkbox`) takes the one look from the `--disabled-ink`, `--disabled-rule` and `--disabled-ground` tokens in `tokens.css` (#35)._
 - **`Menu`** (new, `src/components/`, on `@radix-ui/react-dropdown-menu`):
   the database menu (§4). It gives the menu roles and arrow-key navigation
@@ -195,6 +196,8 @@ passphrase to take it over." Confirming reads and clears the field, closes
 the dialog, and resends the open with `takeOver: true`, the row showing its
 busy state; a wrong passphrase is then refused in the row like any other.
 
+_Amended 2026-10-15 (#44): Enter in the passphrase field confirms, as **Take over** does; an empty field is refused as above._
+
 ### Storage that can't be reached while open (FR-032, research §6)
 
 When a save fails with `DATABASE_UNAVAILABLE`, the form or dialog that was
@@ -289,6 +292,8 @@ with a third action appears. Title: "Save changes to <label>?". Buttons:
 style), **Cancel**. Saving runs the form's own submit. If it fails validation
 the dialog closes and the form shows its errors, and nothing closes. A lock
 never shows this (FR-033).
+
+_Amended 2026-10-15 (#44): focus starts on **Save changes**, so Enter saves; Escape and Cancel keep the form (§0)._
 
 ## 7. Database settings (FR-024, FR-026, FR-029, FR-034, FR-036, FR-038, FR-017)
 
@@ -421,6 +426,8 @@ account this defeats the passphrase. Locking will no longer need the
 passphrase on this computer, though it still clears the collection from
 memory, deletes opened document copies, and releases the database for
 other computers."
+
+_Amended 2026-10-15 (#44): Enter in its "Passphrase" field confirms, as **Remember passphrase** does (§0); the settings form behind it is not submitted._
 
 **Change passphrase** (FR-015, FR-016, US4): a `Dialog` titled "Change
 passphrase", with **Current

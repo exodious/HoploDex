@@ -1,14 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { killApp, relaunchApp } from "../support/app";
+import { realKey, skipWithoutRealInput } from "../support/realInput";
 import { sandboxPath, seedCollection } from "../support/sandbox";
 import {
   $,
+  $$,
   E2E_PASSPHRASE,
   addFirearm,
   browser,
   chooseMenuItem,
   clickButton,
+  clickEl,
   confirmTakeOver,
   createDatabase,
   expect,
@@ -212,5 +215,54 @@ describe("User Story 4 (008) - Pending changes from another version", () => {
     const again = await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`);
     expect(again).toContain("They were kept by HoploDex 1.2.0.");
     expect(await footerButtons()).toEqual(["Discard changes", "Close the database"]);
+  });
+});
+
+// Issue #44: the app's Enter rule, with real key presses in the real app.
+// Enter in a confirmation's field confirms it, and Enter on a radio only
+// operates the radio: WebKitGTK would otherwise submit the radio's form.
+describe("Issue #44 - Enter in a confirmation's field and on a radio", () => {
+  it("takes over with Enter in the passphrase field, then Enter on a radio submits nothing", async function () {
+    skipWithoutRealInput(this);
+    await reseed();
+    await waitForChooser();
+    if ((await selectedChooserRow()) !== SHARED) await selectChooserRow(SHARED);
+    const passphrase = process.env.HOPLODEX_E2E_SEED_PASSPHRASE!;
+    await submitPassphrase(passphrase);
+    await clickEl("button=Take over…");
+    await $('[role="alertdialog"]').waitForExist();
+    const field = await $(`[role="alertdialog"] input[type="password"]`);
+    await browser.waitUntil(async () => field.isFocused(), { timeoutMsg: "no focus in the field" });
+    await fill(`Passphrase for “${SHARED}”`, passphrase);
+
+    await realKey("Return");
+
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    expect(await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`)).toContain(
+      "Your changes were kept.",
+    );
+
+    // The pending edit resumes in a form with radios (the firearm's type).
+    await clickButton("Resume editing");
+    await browser.waitUntil(
+      async () => (await $$('[role="dialog"] input[type="radio"]')).length > 0,
+      {
+        timeout: 10000,
+        timeoutMsg: "the edit form never showed its radios",
+      },
+    );
+    await browser.execute(() => {
+      const seen = window as unknown as { __submits?: number };
+      seen.__submits = 0;
+      document.addEventListener("submit", () => (seen.__submits = (seen.__submits ?? 0) + 1), true);
+      document.querySelector<HTMLInputElement>('[role="dialog"] input[type="radio"]')!.focus();
+    });
+
+    await realKey("Return");
+
+    expect(
+      await browser.execute(() => (window as unknown as { __submits?: number }).__submits),
+    ).toBe(0);
+    expect(await $('[role="dialog"]').isExisting()).toBe(true);
   });
 });

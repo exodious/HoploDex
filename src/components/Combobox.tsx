@@ -161,6 +161,13 @@ export function Combobox({
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     onKeyDown?.(event);
     if (event.defaultPrevented) return;
+    // Keys that belong to an input method's composition (Enter confirms the
+    // composed text) never pick a row or reach the form. Safari reports
+    // `isComposing` false on the keydown that ends one, but keyCode 229.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      if (event.key === "Enter") event.preventDefault();
+      return;
+    }
     switch (event.key) {
       case "ArrowDown":
       case "ArrowUp": {
