@@ -61,6 +61,8 @@ spec Assumptions).
 | Tab / Shift+Tab | Close the list, keep the typed text, move focus as usual (this is "leaving the field", §2) |
 | Home / End | Move the text caret, as in any text field |
 
+_Amended 2026-10-15 (#44): an Enter or other key that belongs to an input method's composition (`isComposing`, or keyCode 229) never picks a row or submits the form; the Enter row above applies to every other Enter._
+
 **Pointer**: clicking a row picks it. Clicking outside closes the list and
 keeps the text.
 
@@ -167,6 +169,8 @@ half width (`hd-field--half`, as Nickname).
   cartridge is recorded, else "9mm". A new **Action** column follows **Type**,
   blank when none. The Caliber column is hidden when grouped by Caliber or
   Cartridge; the Action column when grouped by Action; Type as today.
+
+  _Amended 2026-10-15 (issue #51): the list is one table for every group (not one per group), so the columns line up across groups; its heading row and the current group's title row stick under the top bar. A narrow window drops Type, whatever the grouping (it used to drop the third column, which varied). See `features/browse/GroupedTable.tsx`._
 - **Tile view**: the caliber line shows the same text as the list's Caliber
   cell. Tiles do not show the action.
 - A long cartridge is truncated with an ellipsis in the cell, the full text in

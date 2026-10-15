@@ -100,6 +100,67 @@ describe("BrowseList cartridge and caliber", () => {
   });
 });
 
+// Issue #51: one table, the same columns in every group, the same one dropped
+// in a narrow window whatever the grouping.
+describe("BrowseList as one table", () => {
+  const groups: VisibleGroup[] = [
+    { key: "Handgun", firearms: [firearms[0]], total: 1 },
+    { key: "Rifle", firearms: [firearms[1], firearms[2]], total: 2 },
+  ];
+
+  it("is one table with one heading row, and a labelled row group per group", () => {
+    render(<BrowseList groups={groups} groupBy="type" onSelect={vi.fn()} />);
+
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Firearm",
+      "Caliber",
+      "Action",
+      "Est. value",
+      "Coverage",
+    ]);
+    const rifles = screen.getByRole("rowgroup", { name: "Rifle" });
+    // The title row, then the two firearms.
+    expect(within(rifles).getAllByRole("row")).toHaveLength(3);
+    expect(screen.getByRole("rowgroup", { name: "Handgun" })).toBeInTheDocument();
+  });
+
+  it("has no title row when not grouped", () => {
+    render(<BrowseList groups={groups.slice(1)} groupBy={undefined} onSelect={vi.fn()} />);
+
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(3); // heading row, two firearms
+  });
+
+  it.each([undefined, "type", "action_type", "caliber", "cartridge", "make"] as const)(
+    "drops only Type in a narrow window, grouped by %s",
+    (groupBy) => {
+      render(<BrowseList groups={groups} groupBy={groupBy} onSelect={vi.fn()} />);
+
+      const narrowHidden = screen
+        .queryAllByRole("columnheader")
+        .filter((header) => header.classList.contains("hd-col--narrow-hidden"))
+        .map((header) => header.textContent);
+      expect(narrowHidden).toEqual(groupBy === "type" ? [] : ["Type"]);
+    },
+  );
+
+  it("gives the same column the same width however it is grouped", () => {
+    const widthOf = (groupBy: GroupBy | undefined) => {
+      const { container, unmount } = render(
+        <BrowseList groups={groups} groupBy={groupBy} onSelect={vi.fn()} />,
+      );
+      const width = container.querySelector<HTMLElement>("col.hd-col--value")?.style.width;
+      unmount();
+      return width;
+    };
+
+    expect(widthOf(undefined)).toBe("14%");
+    expect(widthOf("make")).toBe("14%");
+    expect(widthOf("caliber")).toBe("14%");
+  });
+});
+
 // specs/004-cartridges-action-types US3-8, contracts/ui-entry.md §6.
 describe("BrowseList action", () => {
   const withActions = [

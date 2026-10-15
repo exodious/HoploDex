@@ -283,6 +283,22 @@ describe("AccessoriesPage list (§2)", () => {
     expect(headers.indexOf("Value")).toBeLessThan(headers.indexOf("Coverage"));
   });
 
+  // Issue #51: Coverage is the column a narrow window drops, as the collection
+  // drops Type, whatever the grouping.
+  it.each([undefined, "kind", "mounted_on"] as const)(
+    "drops only Coverage in a narrow window, grouped by %s",
+    async (groupBy) => {
+      renderPage({ groupBy });
+
+      await screen.findByText(NAMES.optic);
+      const narrowHidden = screen
+        .getAllByRole("columnheader")
+        .filter((header) => header.classList.contains("hd-col--narrow-hidden"))
+        .map((header) => header.textContent);
+      expect(narrowHidden).toEqual(["Coverage"]);
+    },
+  );
+
   it("names each accessory by RecordName, as a link to its record", async () => {
     renderPage();
 
@@ -872,11 +888,19 @@ describe("AccessoriesPage search and grouping (US4)", () => {
       ]);
     });
 
-    it("shows each group as its own section named by its heading", async () => {
+    // Issue #51: one table, so the columns line up; each group is a row group
+    // named by its title, which opens with its title row.
+    it("shows every group in one table, each its own row group named by its title", async () => {
       renderPage({ groupBy: "mounted_on" }, { respond: () => ({ groups: hostGroups }) });
 
       await screen.findByText(NAMES.magazine);
-      expect(screen.getByRole("region", { name: "Not mounted" })).toBeInTheDocument();
+      expect(screen.getAllByRole("table")).toHaveLength(1);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      const notMounted = screen.getByRole("rowgroup", { name: "Not mounted" });
+      expect(within(notMounted).getAllByRole("row")[0]).toHaveTextContent("Not mounted2");
+      expect(
+        screen.getByRole("rowgroup", { name: "Winchester Model 70 “Deer rifle”" }),
+      ).toBeInTheDocument();
     });
 
     it("groups the tiles the same way", async () => {
@@ -926,7 +950,8 @@ describe("AccessoriesPage search and grouping (US4)", () => {
 
         const rows = () =>
           view === "list"
-            ? screen.getAllByRole("row").length - 1
+            ? // Less the heading row and the group's title row.
+              screen.getAllByRole("row").length - 2
             : screen.getAllByRole("listitem").length;
         expect(rows()).toBe(150);
         expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("All400");

@@ -97,6 +97,25 @@ async function shotPastActionBar(name: string) {
   await $(".hd-runhead").waitForExist({ reverse: true });
 }
 
+/** Scrolls a grouped list (issue #51) into its second group, so the heading
+ * row under the top bar and that group's title under it both show over rows
+ * scrolling beneath, shoots the viewport, and scrolls back to the top. */
+async function shotStuckRows(name: string) {
+  await browser.execute(() => {
+    const topbar = document.querySelector(".hd-topbar")!.getBoundingClientRect().bottom;
+    const head = document.querySelector(".hd-table thead")!.getBoundingClientRect().height;
+    const titles = [...document.querySelectorAll(".hd-group-row")];
+    const target = titles[1] ?? titles[0];
+    window.scrollTo({
+      top: window.scrollY + target.getBoundingClientRect().top - topbar - head + 120,
+      behavior: "instant",
+    });
+  });
+  await settle();
+  await shot(name);
+  await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
+}
+
 async function openDialog(button: string) {
   await clickButton(button);
   await $('[role="dialog"]').waitForExist();
@@ -660,6 +679,8 @@ for (const theme of ["Light", "Dark"] as const) {
       await $$("h2.hd-group__title")[0].waitForExist();
       await shot(`46-grouped-by-registered-as-${suffix}`);
       await groupBy("Type");
+      // #51: one table, its heading and the current group's title sticky.
+      await shotStuckRows(`86-grouped-list-sticky-rows-${suffix}`);
 
       await choose("Tiles");
       await $$(".hd-tile__name")[0].waitForExist();
@@ -692,6 +713,8 @@ for (const theme of ["Light", "Dark"] as const) {
       await $$("h2.hd-group__title")[0].waitForExist();
       await shot(`50-accessories-grouped-by-mounted-on-${suffix}`, { fullPage: true });
       await groupBy("Kind");
+      await $$("h2.hd-group__title")[0].waitForExist();
+      await shotStuckRows(`87-accessories-grouped-list-sticky-rows-${suffix}`);
     });
 
     it("the accessory form", async () => {

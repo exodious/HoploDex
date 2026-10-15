@@ -126,22 +126,39 @@
 
 /* ── List view ───────────────────────────────────────────────────────── */
 
+/* One table for the whole page (issue #51, GroupedTable.tsx): the columns line
+   up across groups, the heading row sticks under the top bar, and the current
+   group's title row sticks under that. Sticky is set on the cells (not on the
+   rows or sections, which WebKit does not stick), so each needs an opaque
+   background. The window is the scroll container, so the table must not be:
+   `overflow: clip` rounds the corners without becoming one, where `hidden`
+   would trap the sticky cells. */
 .hd-table {
+  /* The top bar is --topbar-height plus its 1px border. */
+  --hd-sticky-top: calc(var(--topbar-height) + 1px);
+  --hd-thead-height: 40px;
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   background: var(--sheet);
   border: 1px solid var(--rule);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .hd-table th {
-  padding: 10px var(--space-4);
+  position: sticky;
+  top: var(--hd-sticky-top);
+  z-index: 2;
+  box-sizing: border-box;
+  height: var(--hd-thead-height);
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--rule);
   font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
+  line-height: 1.2;
   text-transform: uppercase;
   text-align: left;
   color: var(--ink-2);
@@ -154,8 +171,31 @@
   vertical-align: middle;
 }
 
-.hd-table tr:last-child td {
+.hd-table tbody:last-child tr:last-child td {
   border-bottom: 0;
+}
+
+/* A group's title row, inside the table. The title's rule is the cell's, so
+   it sticks with the cell; the sticky cells of later groups sit over this
+   one as they reach the top, which is how the next title replaces it. */
+.hd-table .hd-group-row td {
+  position: sticky;
+  top: calc(var(--hd-sticky-top) + var(--hd-thead-height));
+  z-index: 1;
+  padding: var(--space-6) var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--ink);
+  background: var(--sheet);
+}
+
+.hd-table .hd-group__title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* A row focused from the keyboard scrolls clear of both sticky rows. */
+.hd-table .hd-row__name {
+  scroll-margin-top: calc(var(--hd-sticky-top) + var(--hd-thead-height) + 4.5rem);
 }
 
 /* specs/004-cartridges-action-types FR-027: a long cartridge is cut short
@@ -396,20 +436,9 @@
     margin-left: 0;
   }
 
-  .hd-table th:nth-child(3),
-  .hd-table td:nth-child(3) {
-    display: none;
-  }
-
-  /* The accessories table has the Mounted on column before Value, so the
-     narrow layout drops Coverage, its fourth, instead. */
-  .hd-table--accessories th:nth-child(3),
-  .hd-table--accessories td:nth-child(3) {
-    display: table-cell;
-  }
-
-  .hd-table--accessories th:nth-child(4),
-  .hd-table--accessories td:nth-child(4) {
+  /* The column a page can best spare goes, whatever the grouping: the
+     table's columns carry the class (GroupedTable's `narrowHidden`). */
+  .hd-table .hd-col--narrow-hidden {
     display: none;
   }
 }
