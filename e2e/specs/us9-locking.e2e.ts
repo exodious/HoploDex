@@ -18,6 +18,7 @@ import {
   expect,
   fieldValue,
   fill,
+  openFirearm,
   scratchDocuments,
   selectChooserRow,
   selectOption,
@@ -164,6 +165,8 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
     // The idle lock above left the chooser.
     await submitPassphrase(E2E_PASSPHRASE);
     await $('nav[aria-label="Sections"]').waitForExist();
+    // The open lands on the collection list, not on the record.
+    await openFirearm(`${firearm.make} ${firearm.model}`);
     await editNotes("typed before the log out");
 
     // The quit loginwindow sends, to this process only.
