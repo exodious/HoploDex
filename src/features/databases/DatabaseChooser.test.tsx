@@ -473,6 +473,33 @@ describe("DatabaseChooser (User Story 2)", () => {
     await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent("Opening"));
   });
 
+  // Issue #44: Enter in the passphrase field confirms, like the button.
+  it("takes over when Enter is pressed in the passphrase field", async () => {
+    const user = userEvent.setup();
+    const openDatabase = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "DATABASE_OPEN_ELSEWHERE",
+          message: "open elsewhere",
+          details: { machineName: "Workshop PC", since },
+        }),
+      )
+      .mockResolvedValue(undefined);
+    renderChooser({ openDatabase });
+    await openMain(user);
+    await user.click(await screen.findByRole("button", { name: "Take over…" }));
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Take over “Main collection”?",
+    });
+    const field = within(confirm).getByLabelText("Passphrase for “Main collection”");
+    await waitFor(() => expect(field).toHaveFocus());
+
+    await user.type(field, `${PASSPHRASE}{Enter}`);
+
+    expect(openDatabase).toHaveBeenLastCalledWith(main.path, PASSPHRASE, { takeOver: true });
+  });
+
   it("won't take over without the passphrase", async () => {
     const user = userEvent.setup();
     const openDatabase = failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since });

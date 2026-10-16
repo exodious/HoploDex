@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
 import { formatDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
@@ -8,7 +8,10 @@ import { CoverageCell } from "../browse/CoverageCell";
 import { FirearmThumbnail } from "../browse/FirearmThumbnail";
 import { MountLines } from "../browse/MountLines";
 import { GroupByMenu } from "../browse/GroupByMenu";
+import { GroupedTable } from "../browse/GroupedTable";
+import type { TableColumn } from "../browse/GroupedTable";
 import type { GroupByOption } from "../browse/GroupByMenu";
+import { useRenderLimit } from "../browse/renderLimit";
 import { SearchBar } from "../browse/SearchBar";
 import { SEARCH_DEBOUNCE_MS, useDebounced, useSearchShortcut } from "../browse/searchHooks";
 import { hasAny } from "../mounts/recordCounts";
@@ -85,11 +88,14 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
   const [groups, setGroups] = useState<AccessoryGroup[] | null>(null);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [renderLimit, setRenderLimit] = useState(RENDER_STEP);
   const searchRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const query = useDebounced(browse.query.trim(), SEARCH_DEBOUNCE_MS);
+  const [renderLimit, setRenderLimit] = useRenderLimit(
+    RENDER_STEP,
+    JSON.stringify([query, browse.groupBy, browse.includeDisposed]),
+  );
 
   function update(patch: Partial<AccessoryBrowseState>) {
     onBrowseChange({ ...browse, ...patch });
@@ -122,10 +128,6 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     };
   }, [scope, query, browse.groupBy, browse.includeDisposed, revision]);
 
-  useEffect(() => {
-    setRenderLimit(RENDER_STEP);
-  }, [query, browse.groupBy, browse.includeDisposed]);
-
   useSearchShortcut(searchRef);
 
   const activeCount = accessories.filter((a) => a.status === "active").length;
@@ -151,10 +153,13 @@ export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [renderLimit, total]);
+  }, [renderLimit, total, setRenderLimit]);
 
   const grouped = browse.groupBy !== undefined;
-  const openRecord = (id: number) => open({ page: "accessory", id, from: "accessories" });
+  const openRecord = useCallback(
+    (id: number) => open({ page: "accessory", id, from: "accessories" }),
+    [open],
+  );
 
   const addButton = (
     <Button variant="primary" icon="plus" onClick={() => openDialog("addAccessory")}>
@@ -322,19 +327,28 @@ function sharedHostNames(groups: AccessoryGroup[]): Set<string> {
   return shared;
 }
 
-/** A group's heading and its count. Grouped by Mounted on, a host's heading is
- * its name as a link, with its serial number in muted text when another host
- * has the same name. */
-function AccessoryGroupHeading({ group, shared }: { group: VisibleGroup; shared: Set<string> }) {
+/** A group's title. Grouped by Mounted on, a host's title is its name as a
+ * link, with its serial number in muted text when another host has the same
+ * name. */
+function AccessoryGroupTitle({ group, shared }: { group: VisibleGroup; shared: Set<string> }) {
   const { host } = group;
   return (
-    <h2 className="hd-group__title">
+    <>
       {host ? <RecordName label={host} link /> : group.key}
       {host?.serialNumber && shared.has(recordNameText(host)) && (
         <span className="hd-group__serial">
           <span className="hd-serial">{host.serialNumber}</span>
         </span>
       )}
+    </>
+  );
+}
+
+/** A group's heading and its count, over its tiles. */
+function AccessoryGroupHeading({ group, shared }: { group: VisibleGroup; shared: Set<string> }) {
+  return (
+    <h2 className="hd-group__title">
+      <AccessoryGroupTitle group={group} shared={shared} />
       <span className="hd-group__count hd-num">{group.total}</span>
     </h2>
   );
@@ -345,99 +359,109 @@ function AccessoryList({
   groupBy,
   onSelect,
 }: LayoutProps & { groupBy: AccessoryGroupBy | undefined }) {
-  const grouped = groupBy !== undefined;
-  // A column repeating the group heading adds nothing: the host's name is the
-  // heading when grouped by Mounted on.
-  const showMountedOn = groupBy !== "mounted_on";
   const shared = sharedHostNames(groups);
-  return (
-    <div className="hd-browse">
-      {groups
-        .filter((group) => group.accessories.length > 0)
-        .map((group, index) => (
-          <section
-            key={groupKey(group)}
-            className="hd-group"
-            aria-label={grouped ? group.key : undefined}
-          >
-            {grouped && <AccessoryGroupHeading group={group} shared={shared} />}
-            <table className="hd-table hd-table--accessories">
-              <thead className={index > 0 ? "hd-sr-only" : undefined}>
-                <tr>
-                  <th scope="col">Accessory</th>
-                  {showMountedOn && <th scope="col">Mounted on</th>}
-                  <th scope="col" className="hd-table__num">
-                    Value
-                  </th>
-                  <th scope="col">Coverage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.accessories.map((accessory) => (
-                  <tr
-                    key={accessory.id}
-                    className={
-                      accessory.status === "disposed" ? "hd-row hd-row--disposed" : "hd-row"
-                    }
-                    onClick={() => onSelect(accessory.id)}
-                  >
-                    <td>
-                      <div className="hd-row__identity">
-                        <FirearmThumbnail
-                          className="hd-row__thumb"
-                          thumbnailPhotoId={accessory.thumbnailPhotoId}
-                          genericThumbnailKey={accessory.genericThumbnailKey}
-                        />
-                        <div className="hd-row__names">
-                          <button
-                            type="button"
-                            className="hd-row__name"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelect(accessory.id);
-                            }}
-                          >
-                            {nameOf(accessory)}
-                          </button>
-                          {accessory.serialNumber && (
-                            <span className="hd-row__serial">
-                              <span className="hd-serial">{accessory.serialNumber}</span>
-                            </span>
-                          )}
-                          {/* FR-016: what is mounted on it, counted as the
-                              collection's rows count it; its own host has
-                              the Mounted on column. */}
-                          <MountLines mountedOn={null} mountedCounts={accessory.mountedCounts} />
-                        </div>
-                      </div>
-                    </td>
-                    {showMountedOn && (
-                      <td>
-                        {/* FR-013: the direct host only. */}
-                        {accessory.mountedOn ? (
-                          <RecordName label={accessory.mountedOn} link />
-                        ) : (
-                          <>
-                            <span aria-hidden>—</span>
-                            <span className="hd-sr-only">Not mounted</span>
-                          </>
-                        )}
-                      </td>
-                    )}
-                    <td className="hd-table__num hd-num">
-                      {formatDollars(accessory.estimatedValue)}
-                    </td>
-                    <td>
-                      <CoverageCell firearm={accessory} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ))}
-    </div>
+  // The columns and the click handler stay the same while the grouping and
+  // `onSelect` do, so rows already mounted are not rendered again when more
+  // rows are added (GroupedTable, issue #51).
+  const columns = useMemo(() => accessoryColumns(groupBy, onSelect), [groupBy, onSelect]);
+  const onRowClick = useCallback(
+    (accessory: AccessorySummary) => onSelect(accessory.id),
+    [onSelect],
   );
+  return (
+    <GroupedTable
+      columns={columns}
+      groups={groups
+        .filter((group) => group.accessories.length > 0)
+        .map((group) => ({
+          key: groupKey(group),
+          title: <AccessoryGroupTitle group={group} shared={shared} />,
+          total: group.total,
+          rows: group.accessories,
+        }))}
+      grouped={groupBy !== undefined}
+      rowKey={accessoryKey}
+      isMuted={isDisposed}
+      onRowClick={onRowClick}
+    />
+  );
+}
+
+const accessoryKey = (accessory: AccessorySummary) => accessory.id;
+const isDisposed = (accessory: AccessorySummary) => accessory.status === "disposed";
+
+/** The columns, in order. A column whose value is the group's title is left
+ * out: the host's name is the title when grouped by Mounted on. Coverage is
+ * what a narrow window drops. */
+function accessoryColumns(
+  groupBy: AccessoryGroupBy | undefined,
+  onSelect: (id: number) => void,
+): TableColumn<AccessorySummary>[] {
+  const columns: (TableColumn<AccessorySummary> | false)[] = [
+    {
+      id: "accessory",
+      header: "Accessory",
+      cell: (accessory) => (
+        <div className="hd-row__identity">
+          <FirearmThumbnail
+            className="hd-row__thumb"
+            thumbnailPhotoId={accessory.thumbnailPhotoId}
+            genericThumbnailKey={accessory.genericThumbnailKey}
+          />
+          <div className="hd-row__names">
+            <button
+              type="button"
+              className="hd-row__name"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(accessory.id);
+              }}
+            >
+              {nameOf(accessory)}
+            </button>
+            {accessory.serialNumber && (
+              <span className="hd-row__serial">
+                <span className="hd-serial">{accessory.serialNumber}</span>
+              </span>
+            )}
+            {/* FR-016: what is mounted on it, counted as the collection's rows
+                count it; its own host has the Mounted on column. */}
+            <MountLines mountedOn={null} mountedCounts={accessory.mountedCounts} />
+          </div>
+        </div>
+      ),
+    },
+    groupBy !== "mounted_on" && {
+      id: "mounted-on",
+      header: "Mounted on",
+      width: "28%",
+      cell: (accessory) =>
+        // FR-013: the direct host only.
+        accessory.mountedOn ? (
+          <RecordName label={accessory.mountedOn} link />
+        ) : (
+          <>
+            <span aria-hidden>—</span>
+            <span className="hd-sr-only">Not mounted</span>
+          </>
+        ),
+    },
+    {
+      id: "value",
+      header: "Value",
+      width: "12%",
+      numeric: true,
+      cell: (accessory) => formatDollars(accessory.estimatedValue),
+    },
+    {
+      id: "coverage",
+      header: "Coverage",
+      width: "16%",
+      narrowHidden: true,
+      cell: (accessory) => <CoverageCell firearm={accessory} />,
+    },
+  ];
+  return columns.filter((column) => column !== false);
 }
 
 function AccessoryTiles({ groups, grouped, onSelect }: LayoutProps & { grouped: boolean }) {

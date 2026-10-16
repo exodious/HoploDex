@@ -47,6 +47,45 @@ describe("RestoreDialog (FR-033)", () => {
     expect(onRestore).toHaveBeenCalledWith({ history: "keep" });
   });
 
+  // Issue #44: the app's Enter rule in a confirmation with fields.
+  it("takes Enter in the New nickname field as Restore, once a choice is made", async () => {
+    const user = userEvent.setup();
+    const message = 'That nickname is already used by Sig P226 "Old Faithful".';
+    const onRestore = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "VALIDATION_ERROR",
+          message,
+          fieldErrors: { nickname: message },
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    renderDialog(onRestore);
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    await user.click(screen.getByRole("button", { name: "Restore to collection" }));
+    const rename = await screen.findByLabelText("New nickname");
+    await user.clear(rename);
+
+    await user.type(rename, "Old Faithful II{Enter}");
+
+    expect(onRestore).toHaveBeenLastCalledWith({ history: "keep", nickname: "Old Faithful II" });
+  });
+
+  it("does nothing on Enter in a radio, before or after a choice", async () => {
+    const user = userEvent.setup();
+    const { onRestore } = renderDialog();
+
+    screen.getByRole("radio", { name: /Keep as history/ }).focus();
+    await user.keyboard("{Enter}");
+    expect(onRestore).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    await user.keyboard("{Enter}");
+    expect(onRestore).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Restore to collection" })).toBeEnabled();
+  });
+
   it("can discard the disposition instead", async () => {
     const user = userEvent.setup();
     const { onRestore } = renderDialog();

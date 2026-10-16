@@ -182,6 +182,44 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     });
   });
 
+  // Issue #44: Enter operates the focused control and never submits from a
+  // radio, checkbox or select; on Delete it deletes.
+  it("only operates a radio or the acknowledgement on Enter, and deletes on Enter at Delete", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const radio = await screen.findByRole("radio", { name: /Leave unscheduled/ });
+    await user.click(radio);
+    const acknowledge = screen.getByRole("checkbox", {
+      name: /2 firearms will lose their scheduled coverage/,
+    });
+    await user.click(acknowledge);
+    expect(await deleteButton()).toBeEnabled();
+
+    radio.focus();
+    await user.keyboard("{Enter}");
+    acknowledge.focus();
+    await user.keyboard("{Enter}");
+
+    expect(insuranceService.deleteInsurancePolicy).not.toHaveBeenCalled();
+    expect(acknowledge).toBeChecked();
+
+    (await deleteButton()).focus();
+    await user.keyboard("{Enter}");
+    expect(insuranceService.deleteInsurancePolicy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing on Enter in a radio while delete is held back", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const radio = await screen.findByRole("radio", { name: /Leave unscheduled/ });
+    await user.click(radio);
+    expect(await deleteButton()).toBeDisabled();
+
+    await user.keyboard("{Enter}");
+
+    expect(insuranceService.deleteInsurancePolicy).not.toHaveBeenCalled();
+  });
+
   it("says unscheduled firearms will be blanket-covered when another blanket policy is in force", async () => {
     const user = userEvent.setup();
     renderDialog({ unscheduleOutcome: "blanket" });

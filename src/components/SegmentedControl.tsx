@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
+import { keepEnterOut } from "./radioKeys";
 import "./components.css";
 
 export interface SegmentedOption<T extends string> {
@@ -62,6 +63,7 @@ export function SegmentedControl<T extends string>({
               checked={value === option.value}
               disabled={busy}
               onChange={() => onChange(option.value)}
+              onKeyDown={keepEnterOut}
             />
             <span className="hd-segmented__face">
               {option.icon && <Icon name={option.icon} size={16} />}

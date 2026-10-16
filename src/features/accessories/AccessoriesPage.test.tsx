@@ -30,6 +30,8 @@ vi.mock("./accessoriesService", () => ({
 // The thumbnail talks to Tauri; it isn't under test. A record with no photo
 // shows its kind's drawing, as the real one does; one with a photo shows an
 // image.
+// Each render of one is counted: a row's renders once for each time it does.
+const thumbnailRendered = vi.hoisted(() => vi.fn());
 vi.mock("../browse/FirearmThumbnail", async () => {
   const { TypeDrawing } = await import("../browse/TypeDrawing");
   return {
@@ -39,12 +41,14 @@ vi.mock("../browse/FirearmThumbnail", async () => {
     }: {
       thumbnailPhotoId: number | null;
       genericThumbnailKey: string;
-    }) =>
-      thumbnailPhotoId == null ? (
+    }) => {
+      thumbnailRendered();
+      return thumbnailPhotoId == null ? (
         <TypeDrawing typeKey={genericThumbnailKey} />
       ) : (
         <img alt="" data-testid="photo-thumbnail" data-photo-id={thumbnailPhotoId} />
-      ),
+      );
+    },
   };
 });
 
@@ -282,6 +286,22 @@ describe("AccessoriesPage list (§2)", () => {
     expect(headers.indexOf("Accessory")).toBeLessThan(headers.indexOf("Value"));
     expect(headers.indexOf("Value")).toBeLessThan(headers.indexOf("Coverage"));
   });
+
+  // Issue #51: Coverage is the column a narrow window drops, as the collection
+  // drops Type, whatever the grouping.
+  it.each([undefined, "kind", "mounted_on"] as const)(
+    "drops only Coverage in a narrow window, grouped by %s",
+    async (groupBy) => {
+      renderPage({ groupBy });
+
+      await screen.findByText(NAMES.optic);
+      const narrowHidden = screen
+        .getAllByRole("columnheader")
+        .filter((header) => header.classList.contains("hd-col--narrow-hidden"))
+        .map((header) => header.textContent);
+      expect(narrowHidden).toEqual(["Coverage"]);
+    },
+  );
 
   it("names each accessory by RecordName, as a link to its record", async () => {
     renderPage();
@@ -872,11 +892,19 @@ describe("AccessoriesPage search and grouping (US4)", () => {
       ]);
     });
 
-    it("shows each group as its own section named by its heading", async () => {
+    // Issue #51: one table, so the columns line up; each group is a row group
+    // named by its title, which opens with its title row.
+    it("shows every group in one table, each its own row group named by its title", async () => {
       renderPage({ groupBy: "mounted_on" }, { respond: () => ({ groups: hostGroups }) });
 
       await screen.findByText(NAMES.magazine);
-      expect(screen.getByRole("region", { name: "Not mounted" })).toBeInTheDocument();
+      expect(screen.getAllByRole("table")).toHaveLength(1);
+      expect(screen.getAllByRole("columnheader")).toHaveLength(3);
+      const notMounted = screen.getByRole("rowgroup", { name: "Not mounted" });
+      expect(within(notMounted).getAllByRole("row")[0]).toHaveTextContent("Not mounted2");
+      expect(
+        screen.getByRole("rowgroup", { name: "Winchester Model 70 “Deer rifle”" }),
+      ).toBeInTheDocument();
     });
 
     it("groups the tiles the same way", async () => {
@@ -926,7 +954,8 @@ describe("AccessoriesPage search and grouping (US4)", () => {
 
         const rows = () =>
           view === "list"
-            ? screen.getAllByRole("row").length - 1
+            ? // Less the heading row and the group's title row.
+              screen.getAllByRole("row").length - 2
             : screen.getAllByRole("listitem").length;
         expect(rows()).toBe(150);
         expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("All400");
@@ -939,5 +968,34 @@ describe("AccessoriesPage search and grouping (US4)", () => {
         expect(screen.getByText("Make Model 399 · Optic")).toBeInTheDocument();
       },
     );
+
+    // Issue #51: each batch used to render every row already mounted.
+    it("renders only the rows of the next batch in the list, not the ones already mounted", async () => {
+      renderPage({ view: "list", groupBy: "kind" }, { all: many, active: many });
+      await screen.findByText("Make Model 0 · Optic");
+      thumbnailRendered.mockClear();
+
+      scrollAnchorTo(500);
+      await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2 + 300));
+
+      expect(thumbnailRendered).toHaveBeenCalledTimes(150);
+    });
+
+    it("draws no more than the first batch of rows when the grouping changes", async () => {
+      const user = userEvent.setup();
+      renderPage({ view: "list", groupBy: "kind" }, { all: many, active: many });
+      await screen.findByText("Make Model 0 · Optic");
+      scrollAnchorTo(500);
+      await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(2 + 300));
+      // The new list is still being fetched.
+      listAccessories.mockReturnValue(new Promise(() => {}));
+      thumbnailRendered.mockClear();
+
+      await user.click(screen.getByRole("button", { name: /^Group by/ }));
+      await user.click(screen.getByRole("menuitemradio", { name: "Make" }));
+
+      expect(screen.getAllByRole("row")).toHaveLength(2 + 150);
+      expect(thumbnailRendered.mock.calls.length).toBeLessThanOrEqual(150);
+    });
   });
 });

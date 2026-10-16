@@ -815,6 +815,27 @@ describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-01
     });
   });
 
+  // Issue #44: Enter on a radio only operates it, in the confirmation too.
+  it("does not replace on Enter in a Keep / Dispose radio, and does on Enter at the confirm button", async () => {
+    const user = userEvent.setup();
+    const confirm = await replaceBoth(user);
+    const group = within(confirm).getByRole("group", {
+      name: "Mounted on Ruger Precision (Firearms, row 2)",
+    });
+    within(within(group).getByRole("radiogroup", { name: OPTIC }))
+      .getByRole("radio", {
+        name: "Dispose with it",
+      })
+      .focus();
+
+    await user.keyboard("{Enter}");
+    expect(importExportService.resolveImportConflicts).not.toHaveBeenCalled();
+
+    within(confirm).getByRole("button", { name: "Replace firearms" }).focus();
+    await user.keyboard("{Enter}");
+    expect(importExportService.resolveImportConflicts).toHaveBeenCalledTimes(1);
+  });
+
   it("asks nothing more when the rows being replaced dispose of nothing that carries records", async () => {
     vi.mocked(importExportService.importCollection).mockResolvedValue(result);
     const user = userEvent.setup();

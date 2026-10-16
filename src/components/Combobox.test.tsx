@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Combobox } from "./Combobox";
 import type { ComboboxOption } from "./Combobox";
@@ -230,6 +230,29 @@ describe("Combobox", () => {
     expect(onPick).not.toHaveBeenCalled();
     expect(input()).toHaveValue("9x");
   });
+
+  // Issue #44: the app's Enter rule, IME clause.
+  it.each([
+    ["isComposing", { isComposing: true }],
+    ["keyCode 229 (Safari's end-of-composition keydown)", { keyCode: 229 }],
+  ])(
+    "does not pick the highlighted row on an Enter that ends a composition: %s",
+    async (_name, init) => {
+      const user = userEvent.setup();
+      const onPick = vi.fn();
+      render(<Harness load={load} onPick={onPick} />);
+      await user.type(input(), "9x");
+      await screen.findAllByRole("option");
+      await user.keyboard("{ArrowDown}");
+
+      const notPrevented = fireEvent.keyDown(input(), { key: "Enter", ...init });
+
+      expect(notPrevented).toBe(false); // the form's implicit submit is cancelled too
+      expect(onPick).not.toHaveBeenCalled();
+      expect(input()).toHaveValue("9x");
+      expect(screen.getByRole("listbox")).toBeVisible();
+    },
+  );
 
   // 004 US2 Scenario 10
   it("closes an open list on Escape keeping the text, and lets Escape through once closed", async () => {

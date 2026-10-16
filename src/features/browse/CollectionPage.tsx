@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Icon, SegmentedControl } from "../../components";
 import { daysUntil } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
@@ -10,6 +10,7 @@ import { BrowseList } from "./BrowseList";
 import { BrowseTiles } from "./BrowseTiles";
 import * as browseService from "./browseService";
 import { GroupByMenu } from "./GroupByMenu";
+import { useRenderLimit } from "./renderLimit";
 import { SearchBar } from "./SearchBar";
 import { SEARCH_DEBOUNCE_MS, useDebounced, useSearchShortcut } from "./searchHooks";
 import { GROUP_BY_OPTIONS, GROUP_BY_SECTIONS } from "./types";
@@ -33,11 +34,14 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
   const [groups, setGroups] = useState<FirearmGroup[] | null>(null);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [renderLimit, setRenderLimit] = useState(RENDER_STEP);
   const searchRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const query = useDebounced(browse.query.trim(), SEARCH_DEBOUNCE_MS);
+  const [renderLimit, setRenderLimit] = useRenderLimit(
+    RENDER_STEP,
+    JSON.stringify([query, browse.groupBy, browse.includeDisposed]),
+  );
 
   function update(patch: Partial<BrowseState>) {
     onBrowseChange({ ...browse, ...patch });
@@ -70,10 +74,6 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     };
   }, [scope, query, browse.groupBy, browse.includeDisposed, revision]);
 
-  useEffect(() => {
-    setRenderLimit(RENDER_STEP);
-  }, [query, browse.groupBy, browse.includeDisposed]);
-
   useSearchShortcut(searchRef);
 
   const total = groups?.reduce((n, g) => n + g.firearms.length, 0) ?? 0;
@@ -96,12 +96,15 @@ export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) 
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [renderLimit, total]);
+  }, [renderLimit, total, setRenderLimit]);
 
   const activeCount = firearms.filter((f) => f.status === "active").length;
   const disposedCount = firearms.length - activeCount;
   const grouped = browse.groupBy !== undefined;
-  const openRecord = (id: number) => open({ page: "firearm", id, from: "collection" });
+  const openRecord = useCallback(
+    (id: number) => open({ page: "firearm", id, from: "collection" }),
+    [open],
+  );
 
   if (loaded && firearms.length === 0) {
     return (

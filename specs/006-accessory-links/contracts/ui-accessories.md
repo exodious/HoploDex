@@ -69,6 +69,8 @@ Requirement IDs refer to [spec.md](../spec.md), and commands to
   and Coverage (the `InsuranceWarningBadge` the collection uses). A
   column whose value is the group heading is left out, as the collection
   page does for type.
+
+  _Amended 2026-10-15 (issue #51): the list is one table for every group, not one per group, so the columns line up; its heading row sticks under the top bar, and the current group's title row (inside the table, with its count) sticks under that. A narrow window drops Coverage, whatever the grouping. See `features/browse/GroupedTable.tsx`._
 - **Tiles**: the thumbnail, or the kind's `TypeDrawing` when the accessory
   has no photo (FR-007a), then its name and value. A mounted accessory
   shows "Mounted on {host}" as a link under its name, and one carrying
