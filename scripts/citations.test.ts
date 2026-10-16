@@ -1,7 +1,19 @@
 // The spec citation check (#121, scripts/citations.mjs): its rules on small
 // texts against the real specs, then the whole tree.
 import { beforeAll, describe, expect, it } from "vitest";
-import { check, checkE2eDescribes, checkText, loadSpecs } from "./citations.mjs";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  check,
+  checkE2eDescribes,
+  checkedFiles,
+  checkText,
+  loadSpecs,
+  ROOT,
+  walkedFiles,
+} from "./citations.mjs";
 
 let specs: ReturnType<typeof loadSpecs>;
 beforeAll(() => {
@@ -86,6 +98,45 @@ describe("spec citations", () => {
     expect(messages('describe("Issue #44 - Enter", () => {')).toEqual([
       "no describe() names a story",
     ]);
+  });
+
+  it("finds the files to check in a copy of the checkout without git", () => {
+    // The walk finds every tracked file and nothing git ignores.
+    const tracked = execFileSync(
+      "git",
+      ["-C", ROOT, "ls-files", "--", "src", "src-tauri", "e2e", "scripts", "tools"],
+      {
+        encoding: "utf8",
+      },
+    )
+      .split("\n")
+      .filter(Boolean);
+    const walked = walkedFiles();
+    expect(tracked.filter((file) => !walked.includes(file))).toEqual([]);
+    let ignored = "";
+    try {
+      ignored = execFileSync("git", ["-C", ROOT, "check-ignore", "--no-index", "--stdin"], {
+        encoding: "utf8",
+        input: walked.join("\n"),
+      });
+    } catch (error) {
+      // Exit status 1: none of them is ignored.
+      if ((error as { status?: number }).status !== 1) throw error;
+    }
+    expect(ignored).toBe("");
+
+    // And checkedFiles() falls back to it where git has no repository.
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-citations-"));
+    try {
+      fs.copyFileSync(path.join(ROOT, ".gitignore"), path.join(copy, ".gitignore"));
+      fs.mkdirSync(path.join(copy, "src"));
+      fs.writeFileSync(path.join(copy, "src", "a.ts"), "// FR-001\n");
+      fs.mkdirSync(path.join(copy, "src", "node_modules"));
+      fs.writeFileSync(path.join(copy, "src", "node_modules", "b.ts"), "// FR-002\n");
+      expect(checkedFiles(copy)).toEqual(["src/a.ts"]);
+    } finally {
+      fs.rmSync(copy, { recursive: true, force: true });
+    }
   });
 
   it("finds nothing wrong in the code, tests and tooling", () => {

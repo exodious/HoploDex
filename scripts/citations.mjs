@@ -263,15 +263,71 @@ export function checkE2eDescribes(text, specs) {
   return problems;
 }
 
-/** The files checked: tracked text files under `CHECKED_DIRS`. */
+/**
+ * Whether the root `.gitignore` keeps `file` out, as far as a walk of a copy
+ * without git needs (the macOS VM's, `scripts/tart-vm.sh`): a folder path
+ * (`src-tauri/target/`), a folder name (`node_modules/`), a name
+ * (`.DS_Store`) or a `*.ext` pattern. `citations.test.ts` checks the walk
+ * against git.
+ */
+function gitignored(root) {
+  const rules = fs.existsSync(path.join(root, ".gitignore"))
+    ? fs
+        .readFileSync(path.join(root, ".gitignore"), "utf8")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#") && !line.startsWith("!"))
+    : [];
+  return (file, isDirectory) => {
+    const name = file.slice(file.lastIndexOf("/") + 1);
+    if (name === ".git") return true;
+    return rules.some((rule) => {
+      if (rule.startsWith("*")) return !isDirectory && name.endsWith(rule.slice(1));
+      const folder = rule.endsWith("/");
+      const pattern = rule.replace(/^\/|\/$/g, "");
+      if (folder && !isDirectory) return false;
+      if (pattern.includes("*")) {
+        const regex = new RegExp(`^${pattern.replace(/[.]/g, "\\.").replace(/\*/g, "[^/]*")}$`);
+        return regex.test(pattern.includes("/") ? file : name);
+      }
+      return pattern.includes("/") ? file === pattern : name === pattern;
+    });
+  };
+}
+
+/** Every file under `CHECKED_DIRS`, found by walking them, less what git ignores. */
+export function walkedFiles(root = ROOT) {
+  const ignored = gitignored(root);
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const file = `${dir}/${entry.name}`;
+      if (ignored(file, entry.isDirectory())) continue;
+      if (entry.isDirectory()) walk(file);
+      else if (entry.isFile()) found.push(file);
+    }
+  };
+  for (const dir of CHECKED_DIRS) if (fs.existsSync(path.join(root, dir))) walk(dir);
+  return found.sort();
+}
+
+/**
+ * The files checked: tracked files under `CHECKED_DIRS`, or every file there
+ * when the checkout is a copy without git.
+ */
 export function checkedFiles(root = ROOT) {
-  return execFileSync("git", ["-C", root, "ls-files", "-z", "--", ...CHECKED_DIRS], {
-    encoding: "utf8",
-  })
-    .split("\0")
-    .filter(
-      (file) => file && !EXEMPT.has(file) && !EXEMPT_DIRS.some((dir) => file.startsWith(dir)),
-    );
+  let files;
+  try {
+    files = execFileSync("git", ["-C", root, "ls-files", "-z", "--", ...CHECKED_DIRS], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split("\0");
+  } catch {
+    files = walkedFiles(root);
+  }
+  return files.filter(
+    (file) => file && !EXEMPT.has(file) && !EXEMPT_DIRS.some((dir) => file.startsWith(dir)),
+  );
 }
 
 /** Every problem in `files` (relative to `root`), as `file:line: message`. */
