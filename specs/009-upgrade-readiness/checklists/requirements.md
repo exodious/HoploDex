@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,6 +31,6 @@
 
 ## Notes
 
-- Three [NEEDS CLARIFICATION] markers are open, put to the owner: FR-007 (are policy names unique), FR-010 (ask before an upgrade, or tell after), FR-012 (what happens when the backup before an upgrade can't be made).
+- The three [NEEDS CLARIFICATION] markers were answered by the owner on 2026-10-16 (recorded under Clarifications): unique policy names (FR-007), ask before an upgrade (FR-010), and a folder of the user's choosing when the backup can't be made at the backup location (FR-012).
 - FR-001's identifier format (a version-4 UUID) is a data rule carried over from 006 FR-019, not an implementation choice. The Source Request quotes the issues verbatim, including their technical detail; the requirements themselves name no technology.
 - Story 4 is the maintainer's story (upgrade steps, the project's checks); its requirements (FR-021 to FR-023) are stated as outcomes, and the plan decides how the checks work.
