@@ -608,11 +608,12 @@ fn create_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     let mut file = options.open(path)?;
     // A copy that couldn't be written whole (the disk filled) is not left
-    // behind: it was made here, by `create_new`.
+    // behind: it was made here, by `create_new`. Overwritten like every
+    // other decrypted copy, which needs no new space.
     let written = file.write_all(bytes).and_then(|()| file.flush());
     if written.is_err() {
         drop(file);
-        let _ = std::fs::remove_file(path);
+        let _ = secure_delete_file(path);
     }
     written
 }
