@@ -228,6 +228,7 @@ fn sqlite_full_is_disk_full() {
 // ------------------------------------------------- a really full file system
 
 /// The tmpfs's mount point, which the re-run inside the namespace gets.
+#[cfg(target_os = "linux")]
 const MOUNT_VARIABLE: &str = "HOPLODEX_TEST_FULL_DISK_MOUNT";
 
 /// Runs `body` with a folder on a tmpfs of `size_kib` KiB. Outside the
