@@ -72,7 +72,7 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 - [X] T016 [P] [US1] Integration test: create/edit/dispose/delete firearm lifecycle against a real SQLCipher DB (Acceptance Scenarios 1–5) in `src-tauri/tests/firearm_lifecycle_test.rs`
 - [X] T017 [P] [US1] Integration test: serial-number attestation validation — blank+attested saves, blank+unattested blocked (Scenarios 6–7) in `src-tauri/tests/serial_attestation_test.rs`
 - [X] T018 [P] [US1] Vitest unit test for `FirearmForm` serial-attestation UI rule in `src/features/firearms/FirearmForm.test.tsx`
-- [X] T019 [P] [US1] E2E test covering all User Story 1 acceptance scenarios in `e2e/specs/us1-record-firearm.e2e.ts`
+- [X] T019 [P] [US1] E2E test covering all User Story 1 acceptance scenarios in `e2e/specs/record-firearm.e2e.ts`
 
 ### Implementation for User Story 1
 
@@ -101,7 +101,7 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 - [X] T030 [P] [US2] Integration test for `list_firearms` search/group/`includeDisposed` behavior against a real DB (Scenarios 1–5) in `src-tauri/tests/list_firearms_test.rs`
 - [X] T031 [P] [US2] Integration test confirming FTS5 search matches both free-form notes and structured fields in `src-tauri/tests/fts_search_test.rs`
-- [X] T032 [P] [US2] E2E test covering all User Story 2 acceptance scenarios in `e2e/specs/us2-browse-search.e2e.ts`
+- [X] T032 [P] [US2] E2E test covering all User Story 2 acceptance scenarios in `e2e/specs/browse-search.e2e.ts`
 
 ### Implementation for User Story 2
 
@@ -128,7 +128,7 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 - [X] T040 [P] [US3] Integration test for insurance-policy CRUD and delete-blocked-while-assigned behavior in `src-tauri/tests/insurance_policy_test.rs`
 - [X] T041 [P] [US3] Integration test for insurance-status calculations — uninsured, under-insured, blanket-limit-exceeded, expired-policy override (Scenarios 1–4, 7–8) in `src-tauri/tests/insurance_status_test.rs`
 - [X] T042 [P] [US3] Integration test for value-summary auto-recompute-on-mutation and per-policy/unassigned breakdown (Scenarios 5–6) in `src-tauri/tests/valuation_test.rs`
-- [X] T043 [P] [US3] E2E test covering all User Story 3 acceptance scenarios in `e2e/specs/us3-value-insurance.e2e.ts`
+- [X] T043 [P] [US3] E2E test covering all User Story 3 acceptance scenarios in `e2e/specs/value-insurance.e2e.ts`
 
 ### Implementation for User Story 3
 
@@ -160,7 +160,7 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 
 - [X] T057 [P] [US4] Integration test for `add_photo`/`set_thumbnail_photo`/`delete_photo` including thumbnail-fallback behavior (Scenarios 1–3) in `src-tauri/tests/photo_test.rs`
 - [X] T058 [P] [US4] Integration test for `add_document`/`get_document`/`delete_document` (Scenario 4) in `src-tauri/tests/document_test.rs`
-- [X] T059 [P] [US4] E2E test covering all User Story 4 acceptance scenarios in `e2e/specs/us4-photos-documents.e2e.ts`
+- [X] T059 [P] [US4] E2E test covering all User Story 4 acceptance scenarios in `e2e/specs/photos-documents.e2e.ts`
 
 ### Implementation for User Story 4
 
@@ -189,7 +189,7 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 - [X] T069 [P] [US5] Integration test: `export_collection` produces a spreadsheet + photos folder matching contracts/spreadsheet-format.md (Scenario 1) in `src-tauri/tests/export_test.rs`
 - [X] T070 [P] [US5] Integration test: `import_collection` creates/updates records and reports failing rows without discarding successful ones (Scenarios 2–3) in `src-tauri/tests/import_export_test.rs`
 - [X] T071 [P] [US5] Integration test: import matching/conflict resolution — make+model+serial key, no-serial-always-new, apply-to-remaining (FR-026, FR-030) in `src-tauri/tests/import_matching_test.rs`
-- [X] T072 [P] [US5] E2E test covering all User Story 5 acceptance scenarios in `e2e/specs/us5-export-import.e2e.ts`
+- [X] T072 [P] [US5] E2E test covering all User Story 5 acceptance scenarios in `e2e/specs/export-import.e2e.ts`
 
 ### Implementation for User Story 5
 
@@ -265,7 +265,7 @@ frontend in `src/`, WebdriverIO E2E suite in `e2e/`.
 Task: "Integration test: create/edit/dispose/delete firearm lifecycle in src-tauri/tests/firearm_lifecycle_test.rs"
 Task: "Integration test: serial-number attestation validation in src-tauri/tests/serial_attestation_test.rs"
 Task: "Vitest unit test for FirearmForm serial-attestation rule in src/features/firearms/FirearmForm.test.tsx"
-Task: "E2E test for User Story 1 in e2e/specs/us1-record-firearm.e2e.ts"
+Task: "E2E test for User Story 1 in e2e/specs/record-firearm.e2e.ts"
 
 # Launch independent-file implementation tasks together:
 Task: "Implement Firearm model in src-tauri/src/models/firearm.rs"
@@ -328,7 +328,7 @@ With multiple developers:
 - [X] T090 CRITICAL: Write a failing regression test that a decrypted `open_document` copy is deleted (contents overwritten, then removed) by the exit cleanup and by the startup sweep, including retry of anything that could not be deleted, in `src-tauri/tests/document_test.rs` per Constitution V / FR-035 (contradicts)
 - [X] T091 CRITICAL: Implement a best-effort secure-delete helper (overwrite then unlink) in `src-tauri/src/services/secure_delete.rs` and use it to clear `OPENED_DOCUMENTS_DIR` in `src-tauri/src/commands/documents.rs` per Constitution V / FR-035 (contradicts) (depends on T090)
 - [X] T092 CRITICAL: Run the opened-documents cleanup on normal application exit (Tauri run-event exit handler) and replace the startup `remove_dir_all` with the secure sweep in `src-tauri/src/main.rs` per FR-035 / SC-010 (contradicts) (depends on T091)
-- [X] T093 CRITICAL: Extend `e2e/specs/us4-photos-documents.e2e.ts` to assert no decrypted copy remains after the app exits and is relaunched per US4/AC5 (missing)
+- [X] T093 CRITICAL: Extend `e2e/specs/photos-documents.e2e.ts` to assert no decrypted copy remains after the app exits and is relaunched per US4/AC5 (missing)
 - [X] T094 [P] Write failing tests for future acquisition/disposition dates and disposition-before-acquisition (create, update, dispose, import row error; today accepted) in `src-tauri/tests/firearm_lifecycle_test.rs` and `src-tauri/tests/import_export_test.rs` per US1/AC13–14 (missing)
 - [X] T095 Implement date validation against the local current date in `src-tauri/src/models/firearm.rs`, `dispose_firearm` in `src-tauri/src/commands/firearms.rs`, and the import row validator in `src-tauri/src/commands/import_export.rs` per FR-003 / FR-004 (missing) (depends on T094)
 - [X] T096 [P] Enforce the same date rules in `src/features/firearms/FirearmForm.tsx` and `src/features/firearms/DisposeDialog.tsx` (max date = today, field-level messages, disposition ≥ acquisition) with Vitest coverage in `FirearmForm.test.tsx` and `DisposeDialog.test.tsx` per FR-003 / FR-004 (missing) (depends on T095)
@@ -357,14 +357,14 @@ With multiple developers:
 - [X] T119 [P] Update the frontend coverage types, services and helpers (`src/features/firearms/types.ts`, `src/features/insurance/types.ts`, `insuranceService.ts`, `coverage.ts`, `coverage.test.ts`) to schedule-only coverage and the new value-summary shape per FR-014 / FR-015 (contradicts) (depends on T117)
 - [X] T120 [P] Rework `CoverageDialog.tsx`, `CoverageCell.tsx` and `FirearmRecordPage.tsx` so a firearm is scheduled under a policy or left unscheduled (showing "covered by <blanket policy>" or "uninsured"), with `CoverageDialog.test.tsx` updated, per FR-014 / FR-036 (contradicts) (depends on T119)
 - [X] T121 [P] Rework `InsurancePolicyForm.tsx`, `PolicyCard.tsx`, `InsurancePage.tsx` and the value-summary panel: optional blanket limit, blanket block for the policy in force, scheduled firearms per policy, distinct uninsured group, expiring/expired warnings with FR-028 suppression, per FR-015 / FR-027 / FR-028 (contradicts) (depends on T119)
-- [X] T122 Update `e2e/specs/us3-value-insurance.e2e.ts` for implicit blanket coverage, overlap blocking, boundary-day acceptance and warning suppression per US3/AC11–14 (partial) (depends on T120, T121)
+- [X] T122 Update `e2e/specs/value-insurance.e2e.ts` for implicit blanket coverage, overlap blocking, boundary-day acceptance and warning suppression per US3/AC11–14 (partial) (depends on T120, T121)
 - [X] T123 [P] Write failing tests for `get_policy_deletion_impact` and `delete_insurance_policy` (move keeps scheduled amounts, unschedule falls to the blanket policy in force or uninsured, non-expired unschedule needs `confirmUnschedule`, expired needs only a warning, unresolved deletion refused with `POLICY_HAS_FIREARMS`, in-force blanket deletion reports `blanketFirearmCount`, one transaction) in `src-tauri/tests/insurance_policy_test.rs` per US3/AC9–10, 15 (missing)
 - [X] T124 Implement `get_policy_deletion_impact` and the move/unschedule resolution in `delete_insurance_policy` (FK stays `ON DELETE RESTRICT` as a backstop) in `src-tauri/src/commands/insurance.rs`, and register the impact command in `src-tauri/src/main.rs`, per FR-034 (missing) (depends on T115, T123)
 - [X] T125 [P] Build the policy-deletion dialog (move to another policy with a reminder to confirm coverage, or leave unscheduled with the stronger confirmation for a non-expired policy, the expired-policy warning, and the in-force blanket warning) on the shared `ConfirmDialog` pattern in `src/features/insurance/` and wire it into `PolicyCard.tsx`, per FR-034 / Constitution III (missing) (depends on T124)
 - [X] T126 [P] Add `.github/workflows/ci.yml` running `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `eslint`, `prettier --check`, `vitest` and the app build on Windows, macOS and Linux, and document it in `README.md`, per plan: Testing / FR-022 / Constitution I (missing) (the workflow is intentionally kept disabled at `.github/workflows-disabled/` until the user enables it)
   _Amended 2026-10-09: the parked workflow was deleted, unreviewed and never run; full CI isn't implemented yet ([#25](https://github.com/exodious/HoploDex/issues/25)). CodeQL and the dependency audit run as their own workflows (DEVELOPMENT.md, "Continuous integration")._
 - [X] T127 [P] Re-validate the 500 ms `list_firearms` and `get_value_summary` budget at the 10,000-record fixture with nicknames and blanket computation in `src-tauri/tests/performance_test.rs` per Constitution IV (partial) (depends on T117)
-- [X] T128 Update `e2e/specs/us1-record-firearm.e2e.ts` for nickname, duplicate blocking/warning, date validation and disposition reversal (US1/AC8–14), then re-run the full quickstart.md walkthrough across all five user stories, per T088 / US1 (partial) (depends on T101, T106, T110, T122, T125)
+- [X] T128 Update `e2e/specs/record-firearm.e2e.ts` for nickname, duplicate blocking/warning, date validation and disposition reversal (US1/AC8–14), then re-run the full quickstart.md walkthrough across all five user stories, per T088 / US1 (partial) (depends on T101, T106, T110, T122, T125)
 - [X] T129 Revise FR-029/FR-032 so "no serial number" excludes a serial number: drop the FR-032b exempt-duplicate warning and its `warnings`/`SavedFirearm` plumbing (Rust, `saveWarnings.ts`, import report), reject a record with both, add the `serial_number`/`no_serial_attested` CHECK, and rewrite US1 Scenario 11 and its tests (supersedes the warning parts of T103-T106)
 - [X] T130 [P] Write failing tests for whole-dollar amounts: `create_firearm`/`update_firearm`/`dispose_firearm`/`assign_firearm_coverage`/policy commands reject a fractional or negative amount with `VALIDATION_ERROR` and a `fieldErrors` entry, and import accepts `450`, `450.00`, `$1,250` and rejects `450.50` and `-5` as row errors naming the column, in `src-tauri/tests/firearm_lifecycle_test.rs`, `src-tauri/tests/insurance_policy_test.rs` and `src-tauri/tests/import_export_test.rs` per FR-037 (missing)
 - [X] T131 Store amounts as whole dollars: change `estimated_value`, `acquisition_price`, `disposition_price`, `scheduled_coverage_amount`, `blanket_coverage_limit` and `disposition_history.disposition_price` to whole-dollar `INTEGER` with `CHECK (col IS NULL OR col >= 0)` in `src-tauri/src/db/migrations/0001_initial.sql`, update the model and command validation, the value-summary arithmetic, and the spreadsheet export/import parser (zero fraction accepted, non-zero cents a row error) in `src-tauri/src/models/`, `src-tauri/src/commands/`, `src-tauri/src/services/valuation.rs`, `src-tauri/src/services/spreadsheet.rs` and `src-tauri/src/commands/import_export.rs` per FR-037 / data-model.md (contradicts) (depends on T130)
@@ -372,7 +372,7 @@ With multiple developers:
 - [X] T133 Replace the cents helpers with whole-dollar ones (`formatDollars`, `dollarsToInput`, digits-only `parseDollars`), make `MoneyField` filter keystrokes to digits with no grouping while editing, and update every amount display and form (`FirearmForm.tsx`, `DisposeDialog.tsx`, `RestoreDialog.tsx`, `DispositionHistoryList.tsx`, `FirearmRecordPage.tsx`, `BrowseList.tsx`, `BrowseTiles.tsx`, `CollectionPage.tsx`, `CoverageDialog.tsx`, `coverage.ts`, `InsurancePolicyForm.tsx`, `PolicyCard.tsx`, `InsurancePage.tsx`, `src/features/firearms/types.ts`) so the UI no longer multiplies or divides by 100, per FR-037 (contradicts) (depends on T131, T132)
 - [X] T134 [P] Write a failing test that following the "Add" link for notes (or accessories) on `FirearmRecordPage` opens the edit form with that field focused and scrolled into view and its section highlighted (highlight animation skipped under `prefers-reduced-motion`), in `src/features/firearms/FirearmRecordPage.test.tsx` and `FirearmForm.test.tsx` per FR-038 / US1/AC15 (missing)
 - [X] T135 Add a `focusField` option (`"notes" | "accessories"`) to the edit dialog and `FirearmForm.tsx` that scrolls the field into view, focuses it, and applies a brief highlight to its section, and have both `onAdd` handlers in `FirearmRecordPage.tsx` pass it, per FR-038 / Constitution III (missing) (depends on T134)
-- [X] T136 Extend `e2e/specs/us1-record-firearm.e2e.ts` for the "Add" link landing on the notes and accessories fields and for whole-dollar entry, paste rejection and "$1,250" display (US1/AC15-16), and update `e2e` fixtures that enter cents (depends on T133, T135)
+- [X] T136 Extend `e2e/specs/record-firearm.e2e.ts` for the "Add" link landing on the notes and accessories fields and for whole-dollar entry, paste rejection and "$1,250" display (US1/AC15-16), and update `e2e` fixtures that enter cents (depends on T133, T135)
 
 ## Phase 10: Constitution Gaps
 
@@ -398,7 +398,7 @@ With multiple developers:
 - [X] T145 [US3] Add `notes: Option<String>` to `InsurancePolicy` and `InsurancePolicyInput` (blank or whitespace-only stored as null, otherwise trimmed) in `src-tauri/src/models/insurance_policy.rs`, include it in the INSERT and UPDATE statements in `src-tauri/src/commands/insurance.rs`, and add `notes: None` to the `InsurancePolicyInput` literals in `src-tauri/tests/support/mod.rs` and `src-tauri/tests/list_firearms_test.rs`, per FR-027 (missing) (depends on T144)
 - [X] T146 [P] [US3] Write failing Vitest tests that `InsurancePolicyForm` shows a "Notes" text area prefilled from the policy and submits a blank value as `null`, and that `PolicyCard` shows the notes (line breaks kept) when present and no notes row when absent, in `src/features/insurance/InsurancePolicyForm.test.tsx` and `src/features/insurance/PolicyCard.test.tsx` per FR-027 / US3/AC16 (missing)
 - [X] T147 [US3] Add `notes: string | null` to `src/features/insurance/types.ts`, a "Notes" `TextArea` (blank sent as `null` via the existing `blankToNull`) to `src/features/insurance/InsurancePolicyForm.tsx`, and a notes row to `src/features/insurance/PolicyCard.tsx` shown only when set, with `white-space: pre-wrap` in `src/features/insurance/insurance.css`, per FR-027 (missing) (depends on T145, T146)
-- [X] T148 [US3] Extend `e2e/specs/us3-value-insurance.e2e.ts` to enter notes on a policy, reopen it and see them, then clear them and see none (US3/AC16) (depends on T147)
+- [X] T148 [US3] Extend `e2e/specs/value-insurance.e2e.ts` to enter notes on a policy, reopen it and see them, then clear them and see none (US3/AC16) (depends on T147)
 
 ---
 
@@ -432,8 +432,8 @@ With multiple developers:
 
 ### End-to-end
 
-- [X] T158 [US1] Extend `e2e/specs/us1-record-firearm.e2e.ts` to enter all six physical details, save, reopen and see "16.25 in" and "2 lb 8.5 oz"; enter `16.255` and see the field-level rejection with nothing saved; clear all six and see the panel disappear (US1/AC17) (depends on T157)
-- [X] T159 [P] [US1] Extend `e2e/specs/us2-browse-search.e2e.ts` to find a firearm by a word in its finish, and `e2e/specs/us5-export-import.e2e.ts` to export a firearm with physical details, re-import the file and see all six values intact (US1/AC17, FR-039) (depends on T153, T157)
+- [X] T158 [US1] Extend `e2e/specs/record-firearm.e2e.ts` to enter all six physical details, save, reopen and see "16.25 in" and "2 lb 8.5 oz"; enter `16.255` and see the field-level rejection with nothing saved; clear all six and see the panel disappear (US1/AC17) (depends on T157)
+- [X] T159 [P] [US1] Extend `e2e/specs/browse-search.e2e.ts` to find a firearm by a word in its finish, and `e2e/specs/export-import.e2e.ts` to export a firearm with physical details, re-import the file and see all six values intact (US1/AC17, FR-039) (depends on T153, T157)
 
 ---
 
@@ -481,5 +481,5 @@ Task: "Write failing form/record tests in FirearmForm.test.tsx and FirearmRecord
 
 - [X] T167 [P] Add Vitest cases to `src/features/app/AppShell.test.tsx` that Escape does not leave a firearm record while focus is in a text field (input or textarea) or while a menu or popover is open (a Radix `Select` list or the `DateField` calendar), and that the page is unchanged afterwards, per US1/AC18 / FR-040 (partial)
 - [X] T168 [P] Add page-level Vitest cases in `src/features/firearms/FirearmRecordPage.test.tsx` and a new `src/features/insurance/PolicyPage.test.tsx` that, once the heading has scrolled away (stubbed `IntersectionObserver`, as in `RunningHead.test.tsx`), the pinned strip shows the back link, the record's name and the same actions as the heading (firearm: Edit, "Mark disposed" or "Restore to collection", Delete; policy: Edit, Delete), and that each strip action opens the same dialog as its heading counterpart, per FR-041 / US1/AC18 / US3/AC17 (partial)
-- [X] T169 Extend `e2e/specs/us1-record-firearm.e2e.ts` (open a record, press Escape and land on the collection; open the edit dialog, press Escape and stay on the record; scroll to the bottom, see `.hd-runhead` with the name and actions, use its Edit, and use its name to return to the top) and `e2e/specs/us3-value-insurance.e2e.ts` (policy opened from a firearm: Escape returns to the firearm; Insurance page opened from a link: Escape returns; on a long policy page the strip keeps Edit and Delete in reach), per US1/AC18 / US3/AC17 (partial) (depends on T167, T168)
+- [X] T169 Extend `e2e/specs/record-firearm.e2e.ts` (open a record, press Escape and land on the collection; open the edit dialog, press Escape and stay on the record; scroll to the bottom, see `.hd-runhead` with the name and actions, use its Edit, and use its name to return to the top) and `e2e/specs/value-insurance.e2e.ts` (policy opened from a firearm: Escape returns to the firearm; Insurance page opened from a link: Escape returns; on a long policy page the strip keeps Edit and Delete in reach), per US1/AC18 / US3/AC17 (partial) (depends on T167, T168)
 - [X] T170 Add quickstart walkthrough steps to `specs/001-firearms-inventory/quickstart.md`: US1 step 16 (Escape returns from a record but not while a dialog, menu or text field has focus, and the pinned strip on a long record) and US3 step 14 (Escape from a policy and from a linked Insurance page, and the pinned strip on a long policy), per plan: quickstart validation / FR-040 / FR-041 (partial)

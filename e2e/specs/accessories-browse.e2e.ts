@@ -29,7 +29,7 @@ const groupHeadings = () =>
     ),
   );
 
-describe("User Story 4 - Browsing accessories by what they are mounted on (specs/006-accessory-links)", () => {
+describe("006 US4 - Browse, Group and Search Accessories (was us12-accessories-browse)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });

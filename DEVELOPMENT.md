@@ -180,8 +180,9 @@ It runs on the host, with the app's window on the real desktop. It needs an
 unlocked, logged-in session: while the screen is locked, WKWebView reports
 every page as hidden and gives it no animation frames, so every step times
 out with "The app never settled". The tests that use real input
-(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore-dialog
-regressions, all of us10, us11 and us12) are skipped, and reported as
+(`e2e/support/realInput.ts`, X11 only: `databases`' owl beak, `backups`' restore-dialog
+regressions, all of `cartridges-actions`, `regulated-items` and the
+`accessories-*` files) are skipped, and reported as
 pending. `quit-cleanup.py` runs there too (see below), and so does the
 screenshot walk, but macOS keeps a window within the screen, so the
 full-page shots are cut off at the screen's height unless the display is
@@ -198,7 +199,7 @@ scripts/tart-vm.sh setup                   # clone, create hoplotest, install th
 scripts/tart-vm.sh start                   # start it with a 1920×1080 screen, for the tests and manual testing
 scripts/tart-vm.sh test                    # copy the checkout in, lint and test over SSH, E2E in its desktop
 scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.fields.test.tsx   # one command
-scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
+scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/record-firearm.e2e.ts
 scripts/tart-vm.sh start --tall            # restart it with a 1920×4200 screen, for the screenshot walk
 scripts/tart-vm.sh gui bash -c 'npm run build && npm run screenshots'
 scripts/tart-vm.sh fetch e2e/screenshots-out   # copy results back
@@ -343,7 +344,7 @@ What they install, to set it up by hand instead:
   inactivity limit, and the user's screen saver is off by policy. The
   user's "Show animations in Windows" is turned on (a bit of
   `UserPreferencesMask`): Windows Server starts with it off, and WebView2
-  then reports reduced motion, so us7's catalogue-plate test fails. Both
+  then reports reduced motion, so `databases`' catalogue-plate test fails. Both
   live in the user's own registry, so if they've never signed in, restart (auto-logon signs them in) and run the script again.
   Avoid connecting with Remote Desktop as that user before a test run: it
   takes over the console session, which stops drawing once you
@@ -407,10 +408,10 @@ frame takes some of the 1200×800, so the shots are 1184×761. Full-page shots
 grow the window past the bottom of the screen, which Windows allows. So take
 before/after pairs on one platform.
 With Windows' "Show animations in Windows" off (Settings › Accessibility ›
-Visual effects), WebView2 reports reduced motion and us7's catalogue-plate
+Visual effects), WebView2 reports reduced motion and `databases`' catalogue-plate
 test fails; `setup-system.ps1 -AutoLogon` turns it on.
 A WebDriver screenshot leaves out the PDF surface (a child web view), so where
-Linux takes the X display with `import -window root`, us13's pixel checks and
+Linux takes the X display with `import -window root`, `document-preview`'s pixel checks and
 the walk's viewer shots (`shotDisplay`) run `e2e/scripts/window-shot.ps1` on
 Windows. It saves the client area of this worker's app window (by its process,
 `appPid()`), so a point in the page is the same point in the picture. It asks
@@ -490,7 +491,7 @@ cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E 't
 cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E 'test(/^firearm_lifecycle_test::/) & test(<name>)'  # tests in it whose name contains <name>
 cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf <name>                                   # tests anywhere whose name contains <name>
 npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                                    # one Vitest file
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                                      # one E2E spec
+npm run test:e2e -- --spec e2e/specs/record-firearm.e2e.ts                                                      # one E2E spec
 
 cargo test --manifest-path src-tauri/Cargo.toml --features test-kdf --test integration firearm_lifecycle_test::  # the same without nextest
 ```
@@ -641,7 +642,7 @@ release binary in `scripts/build-appimage.sh`. The feature also implies
 `mock-keyring`, and lets
 `HOPLODEX_E2E_IDLE_MINUTE_SECONDS` set how many seconds the idle lock counts
 as one minute (default 60). The harness sets it to 3 for
-`us9-locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
+`locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
 the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
@@ -690,7 +691,7 @@ built E2E binary:
 None needs the real directories: each launch gets a scratch sandbox. An
 E2E build never hands an opened document to the OS either, so no real
 viewer starts: `open_document` writes the copy's path to
-`HOPLODEX_E2E_OPENED_LOG` instead, which us4 checks.
+`HOPLODEX_E2E_OPENED_LOG` instead, which `photos-documents` checks.
 
 Feature 007 adds two more E2E-only seams, both read only by a build with the
 `e2e` feature. `HOPLODEX_E2E_CONSENT` answers the native confirmation before a
@@ -831,7 +832,7 @@ Each call returns when the page has seen the input end (a `keyup`, a
 `pointerup` or `mouseup`, or the pointer's arrival, counted by listeners
 `realInput.ts` installs on the window) and the app has settled, as `settle()`
 does for any step, except that it doesn't wait for animations: a test may look
-at one the input started (us7's owl blinking). There is no fixed pause after
+at one the input started (`databases`' owl blinking). There is no fixed pause after
 an event. Where the page can't see the input, it waits 150 ms as before: keys
 sent while the page has no focus (F6 into the PDF surface), and an event the
 page never reports within a second. The script runs as `x11-input.py serve`,
@@ -851,18 +852,19 @@ if a test reaches them without it.
 Real input stays on Linux only, by decision (#27): Windows and macOS skip
 these tests rather than port the helper. Two kinds need it. WebKitGTK
 regressions (a focus ring, a first layout) only matter on Linux. The
-keyboard-only flows (us10, us11, us12) need it on every platform, because
+keyboard-only flows (`cartridges-actions`, `regulated-items`, the `accessories-*`
+files) need it on every platform, because
 the embedded WebDriver's key presses are synthetic: they don't move focus on
 Tab or type text. So use real input only for what needs it, and keep it out
 of anything else's way. A check that needs it goes in a test of its own,
 which leaves the database as it found it, and the other tests don't depend
-on it. us8's restore-dialog regressions are an example. The screenshot walk
+on it. `backups`' restore-dialog regressions are an example. The screenshot walk
 uses no real input, so it runs everywhere.
 
-One exception runs on macOS only: us7's quit test (#107) presses ⌘Q, chooses
+One exception runs on macOS only: `databases`' quit test (#107) presses ⌘Q, chooses
 the app menu's Quit and sends the quit Apple Event the Dock's Quit sends (to
 the sandboxed app's process only) with `e2e/support/macInput.ts`, which
-compiles `src-tauri/examples/real_input.swift`. us9 sends the quit event with
+compiles `src-tauri/examples/real_input.swift`. `locking` sends the quit event with
 a log out's reason (`kAEReallyLogOut`), which must end the app at once with
 its unsaved input kept as pending changes. It needs Accessibility for
 whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the
@@ -971,8 +973,8 @@ before `npm run test:e2e -- --spec <file>` runs it:
    `waitForCollection()`, or `unlock(passphrase)` for a seeded collection,
    from `e2e/support/ui.ts`, instead of the typed-in paths and passphrase.
    A spec that needs the seeded collection must be named in `beforeSession`
-   in `wdio.conf.ts` (only the screenshot walk, the `us13-document-preview-*`
-   files and `us14-session-isolation` are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
+   in `wdio.conf.ts` (only the screenshot walk, `document-preview`,
+   `document-open-elsewhere`, `document-open-setting` and `session-isolation` are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
 2. Import `$`, `browser` and `expect` from `../support/ui`, like the other
    specs, not from `@wdio/globals`.
 3. Replace the recorded selectors where a helper exists (`clickButton`,
@@ -1107,7 +1109,7 @@ saves only when the run was started with `--screenshots`, so a normal
 `test:e2e` is unaffected:
 
 ```bash
-npm run test:e2e -- --screenshots --spec e2e/specs/us1-record-firearm.e2e.ts
+npm run test:e2e -- --screenshots --spec e2e/specs/record-firearm.e2e.ts
 ```
 
 The seed writes into a new `seed` folder in the sandbox, and the harness

@@ -26,7 +26,7 @@ scripts/dev-container.sh npm test
 scripts/dev-container.sh bash -c 'cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets \
   && cargo fmt --manifest-path src-tauri/Cargo.toml --check && npm run lint && npm run format:check'
 scripts/dev-container.sh npm run audit
-scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/us11-regulated-items.e2e.ts'
+scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/regulated-items.e2e.ts'
 scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
 ```
 
@@ -54,7 +54,7 @@ constitution II).
 | US2-8, FR-014, SC-002: record only | No hint, warning or prompt anywhere | `tests/registration_test.rs` (every type × no classification and each classification, rifles and shotguns with barrels of 10.5 in and 14 in, all save), `FirearmForm.test.tsx` and `FirearmRecordPage.test.tsx` (contracts/ui-registration.md §3's text search) |
 | US3: automatic or select-fire | Handgun, Rifle, Shotgun, Other with and without Machine gun; not offered for Suppressor | `tests/action_type_test.rs` (mapping for types 1 to 4, list order, the id and sort order, every combination with a classification saves), `tests/list_firearms_test.rs` (group order), `tests/fts_search_test.rs` ("select-fire"), `FirearmForm.test.tsx` (not rendered for a Suppressor) |
 | US4: export and import | Columns; disclosure; round trip; error rows; pre-feature sheet | `tests/import_export_test.rs` (US4-1, 3 to 8: header order, blank cells, case-insensitive match including a non-offered class, every row error in spreadsheet-format.md, snapped forms and names reported, US4-7's Suppressor row with a cartridge and a blank caliber is an error with nothing in `derivedCalibers` while a Rifle row in the same sheet still derives, a sheet without the four columns), `tests/export_test.rs` (US4-1 values), `ExportDialog.test.tsx` (US4-2: note with and without registered firearms in each scope), `ImportDialog.test.tsx` (field names Form and Registered to in the report) |
-| SC-001 | A registered suppressor, keyboard only, under 2 minutes, no inapplicable field offered | `e2e/specs/us11-regulated-items.e2e.ts` (create one from the keyboard with real input, with a caliber and a rated cartridge, pick "Form 4" from the list, save, reopen; the run's elapsed time is asserted well under 2 minutes as a guard, not as a measure of a person) |
+| SC-001 | A registered suppressor, keyboard only, under 2 minutes, no inapplicable field offered | `e2e/specs/regulated-items.e2e.ts` (create one from the keyboard with real input, with a caliber and a rated cartridge, pick "Form 4" from the list, save, reopen; the run's elapsed time is asserted well under 2 minutes as a guard, not as a measure of a person) |
 | SC-003 | Export → import into an empty database reproduces everything | `tests/import_export_test.rs` (round trip exact without same-notation variants; merged and reported with them) |
 | SC-004 | A classification no longer offered opens, shows, edits and saves | `tests/registration_test.rs` (raw `UPDATE registration_classes SET offered = 0`, then `get_firearm`, `update_firearm` with another field changed, and import by that name), `FirearmForm.test.tsx` (the select offers it for that record only) |
 | SC-006 | 10,000 firearms: group by Registered as and Registered to within 1 s; search within 500 ms; suggestions within 50 ms | `tests/performance_test.rs` |

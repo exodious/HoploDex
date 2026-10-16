@@ -72,7 +72,7 @@ async function highlightedOption(): Promise<string | null> {
   });
 }
 
-describe("User Story 2 - Registration (specs/005-regulated-item-types)", () => {
+describe("005 US2 - Record an Item's Registration (was us11-regulated-items)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });

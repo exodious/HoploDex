@@ -58,7 +58,7 @@ function isoDaysFromNow(days: number): string {
 const SAMPLE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAGUlEQVR42mNgaPhPPhrVPKp5VPOo5oHVDADApFaPDOtbFgAAAABJRU5ErkJggg==";
 
-describe("User Story 1 - Recording accessories (specs/006-accessory-links)", () => {
+describe("006 US1 - Record an Accessory (was us12-accessories-record)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });

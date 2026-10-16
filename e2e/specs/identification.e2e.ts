@@ -80,7 +80,7 @@ async function fillOriginalMarks(maker: string, model: string, serial: string) {
  * Driven against the real built app through its embedded WebDriver server — no
  * mocks. See e2e/support/ui.ts for why interactions go through page JS.
  */
-describe("User Story 1 - Identification (specs/002-firearm-identification)", () => {
+describe("002 US1 - Record Where a Firearm Came From (was us6-identification)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

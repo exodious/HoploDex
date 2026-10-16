@@ -45,7 +45,7 @@ async function documentNames(): Promise<string[]> {
   );
 }
 
-describe("User Story 2 (007) - Open a Document in Another App, After Asking", () => {
+describe("007 US2 - Open a Document in Another Program, Knowingly (was us13-document-preview-open-elsewhere)", () => {
   before(async () => {
     await relaunchAnswering("cancel");
   });

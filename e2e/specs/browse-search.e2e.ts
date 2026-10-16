@@ -19,7 +19,7 @@ import { resizeWindow } from "../support/screenshots";
  * Seeds its own uniquely-named records rather than assuming an empty
  * collection. See e2e/support/ui.ts for why interactions go through page JS.
  */
-describe("User Story 2 - Browse, Search, and Group", () => {
+describe("001 US2 - Browse, Search, and Group the Collection (was us2-browse-search)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

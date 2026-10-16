@@ -112,7 +112,7 @@ async function dialogFieldError(label: string): Promise<string | null> {
   }, label);
 }
 
-describe("User Story 3 - Track Value and Insurance Coverage", () => {
+describe("001 US3 - Track Value and Insurance Coverage (was us3-value-insurance)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

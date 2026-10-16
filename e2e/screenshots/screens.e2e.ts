@@ -1241,7 +1241,7 @@ describe("Screenshots: the import dialog's reading phase", () => {
     // request is held, the backend's progress events are sent, and Stop
     // reading ends the held request the way `cancel_import` does
     // (OPERATION_STOPPED). The request is a `fetch` the page can replace; its
-    // `invoke` can't be (us5-export-import.e2e.ts reads a real 180 MB file).
+    // `invoke` can't be (export-import.e2e.ts reads a real 180 MB file).
     await goTo("Collection");
     await chooseTheme("Light");
     await openDialog("Import");

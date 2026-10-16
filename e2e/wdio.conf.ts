@@ -56,18 +56,18 @@ function workerCount(): number {
  * with the per-spec times in issue #77 when specs are split or added.
  */
 const LONGEST_FIRST = [
-  "./specs/us13-document-preview-preview.e2e.ts",
-  "./specs/us7-databases.e2e.ts",
-  "./specs/us12-accessories-browse.e2e.ts",
-  "./specs/us11-regulated-items.e2e.ts",
-  "./specs/us12-accessories-mounting.e2e.ts",
-  "./specs/us12-accessories-dispose.e2e.ts",
-  "./specs/us12-accessories-record.e2e.ts",
-  "./specs/us9-locking.e2e.ts",
-  "./specs/us1-record-firearm.e2e.ts",
-  "./specs/us14-session-isolation.e2e.ts",
-  "./specs/us3-value-insurance.e2e.ts",
-  "./specs/us8-backups.e2e.ts",
+  "./specs/document-preview.e2e.ts",
+  "./specs/databases.e2e.ts",
+  "./specs/accessories-browse.e2e.ts",
+  "./specs/regulated-items.e2e.ts",
+  "./specs/accessories-mounting.e2e.ts",
+  "./specs/accessories-dispose.e2e.ts",
+  "./specs/accessories-record.e2e.ts",
+  "./specs/locking.e2e.ts",
+  "./specs/record-firearm.e2e.ts",
+  "./specs/session-isolation.e2e.ts",
+  "./specs/value-insurance.e2e.ts",
+  "./specs/backups.e2e.ts",
 ];
 const missing = LONGEST_FIRST.filter(
   (spec) => !fs.existsSync(fileURLToPath(new URL(spec, import.meta.url))),
@@ -142,18 +142,20 @@ export const config: WebdriverIO.Config = {
     // real one.
     applySessionSettings({
       pdfOff: specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts")),
-      idleMinuteSeconds: specs.some((spec) => spec.endsWith("/us9-locking.e2e.ts")) ? 3 : undefined,
+      idleMinuteSeconds: specs.some((spec) => spec.endsWith("/locking.e2e.ts")) ? 3 : undefined,
     });
-    // The screenshot walk, 007's preview specs (`us13-document-preview-*`,
-    // which open the seed's Glock and its documents) and 008's session
+    // The screenshot walk, 007's preview specs (`document-preview`,
+    // `document-open-elsewhere` and `document-open-setting`, which open the seed's Glock and its documents) and 008's session
     // isolation spec (which switches between the seed's two databases) want
     // the realistic collection.
     if (
       specs.some(
         (spec) =>
           spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
-          spec.includes("/e2e/specs/us13-document-preview-") ||
-          spec.endsWith("/e2e/specs/us14-session-isolation.e2e.ts"),
+          spec.endsWith("/e2e/specs/document-preview.e2e.ts") ||
+          spec.endsWith("/e2e/specs/document-open-elsewhere.e2e.ts") ||
+          spec.endsWith("/e2e/specs/document-open-setting.e2e.ts") ||
+          spec.endsWith("/e2e/specs/session-isolation.e2e.ts"),
       )
     ) {
       seedCollection();

@@ -99,7 +99,7 @@ async function nameTitle(name: string): Promise<string | null> {
   );
 }
 
-describe("User Story 3 (007) - Choose How Documents Open", () => {
+describe("007 US3 - Choose How Documents Open (was us13-document-preview-setting)", () => {
   const SETTING_TITLE = "Open documents in another app?";
 
   before(async () => {

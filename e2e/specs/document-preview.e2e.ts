@@ -464,7 +464,7 @@ function magentaBounds(screen: Screen): {
 
 // --- The spec ---------------------------------------------------------------
 
-describe("User Story 1 (007) - Preview a Document Without Leaving HoploDex", () => {
+describe("007 US1 - Preview a Document Inside the Application (was us13-document-preview-preview)", () => {
   before(async () => {
     await chooseMainCollection();
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);

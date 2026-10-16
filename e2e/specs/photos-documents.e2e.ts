@@ -49,7 +49,7 @@ function filesUnder(dir: string): string[] {
     );
 }
 
-describe("User Story 4 - Attach Photos and Documents", () => {
+describe("001 US4 - Attach Photos and Documents (was us4-photos-documents)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

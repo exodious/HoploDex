@@ -102,7 +102,7 @@ async function chooserSays(text: string): Promise<boolean> {
   );
 }
 
-describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
+describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", () => {
   // One journey for the story: lock with Ctrl+L while a form has unsaved input,
   // then resume it at the next open (003 US6 Scenarios 1, 2, 6 and 7). What the
   // chooser says after a lock (the notice, the selected row), discarding the
@@ -230,7 +230,7 @@ async function footerButtons(): Promise<string[]> {
   );
 }
 
-describe("User Story 4 (008) - Pending changes from another version", () => {
+describe("008 US4 - Pending Changes Kept by Another Version (was us9-locking)", () => {
   it("pending changes from another version: close, then reopen", async () => {
     await reseed("1.2.0");
 

@@ -15,7 +15,7 @@ import { realClick, realKey } from "./realInput";
 
 /**
  * What the accessory E2E specs share (specs/006-accessory-links; the
- * `us12-accessories-*.e2e.ts` files, one per user story): real-key helpers for
+ * `accessories-*.e2e.ts` files, one per user story): real-key helpers for
  * the keyboard-only flows, the three firearms they start from, and the two
  * seeds a story that needs earlier stories' records starts with. Each spec
  * file is a fresh app and sandbox, so a story that used to build on the one

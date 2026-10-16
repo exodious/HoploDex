@@ -93,7 +93,7 @@ async function tally(label: string): Promise<number> {
   }, label);
 }
 
-describe("User Story 5 - Export and Import Records", () => {
+describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

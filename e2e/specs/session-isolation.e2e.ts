@@ -158,7 +158,7 @@ async function raiseToast(name: string): Promise<number> {
   return Date.now();
 }
 
-describe("User Story 1 (008) - Nothing of one session reaches the next", () => {
+describe("008 US1 - Each Database's Data Stays With Its Own Session (was us14-session-isolation)", () => {
   let mainPicture = "";
   let mainPhotoOne = "";
   let sharedPicture = "";

@@ -1612,7 +1612,7 @@ fn get(world: &Fixture, url: &str) -> tauri::http::Response<Vec<u8>> {
 /// research.md §22 "open_preview -> PDF surface shown, 10 MB": what Rust does
 /// up to the surface showing it, with the recording surface and the
 /// `hdpreview` handler serving the document to it. The web view's own
-/// creation and first paint are the surface check's and the us13 E2E's.
+/// creation and first paint are the surface check's and `document-preview.e2e.ts`'s.
 #[test]
 #[ignore = "release only: see DEVELOPMENT.md"]
 fn open_preview_of_a_10_mb_pdf_is_served_to_its_surface_within_a_second_at_10k_plus_10k_records() {

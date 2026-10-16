@@ -53,7 +53,7 @@ const titleBlockText = () =>
     (document.querySelector(".hd-titleblock")?.textContent ?? "").replace(/\s+/g, " "),
   );
 
-describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-links)", () => {
+describe("006 US3 - Dispose and Delete With Items Mounted (was us12-accessories-dispose)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });

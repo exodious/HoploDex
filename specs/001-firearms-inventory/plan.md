@@ -174,11 +174,11 @@ src/**/*.test.tsx                 # Vitest unit tests, colocated with components
 e2e/
 ├── wdio.conf.ts                  # WebdriverIO config using tauri-driver (amended: the embedded WebDriver server)
 └── specs/
-    ├── us1-record-firearm.e2e.ts
-    ├── us2-browse-search.e2e.ts
-    ├── us3-value-insurance.e2e.ts
-    ├── us4-photos-documents.e2e.ts
-    └── us5-export-import.e2e.ts
+    ├── record-firearm.e2e.ts
+    ├── browse-search.e2e.ts
+    ├── value-insurance.e2e.ts
+    ├── photos-documents.e2e.ts
+    └── export-import.e2e.ts
 ```
 
 _Amended 2026-10-07 (noted by [spec 007](../007-document-preview/tasks.md) T119): later features added `src/features/` folders (`app/`, `databases/`, `session/`, `accessories/`, `mounts/`), `src-tauri/src/session/` and E2E spec files (15 in all). `src/services/` holds only `tauriClient.ts`, the one `invoke()` wrapper; each feature has its own `*Service.ts`. CLAUDE.md's Architecture section describes the current layout._

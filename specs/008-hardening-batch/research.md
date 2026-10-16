@@ -1329,18 +1329,18 @@ quickstart.md. In outline:
   - `browserControls.test.ts`;
   - `TextArea`'s counter.
 - **E2E (WebdriverIO)**:
-  - `us14-session-isolation.e2e.ts`: two databases seeded with colliding
+  - `session-isolation.e2e.ts`: two databases seeded with colliding
     ids, where the thumbnail shown after lock-and-switch is B's, not A's.
-  - `us15-browser-controls.e2e.ts`:
+  - `browser-controls.e2e.ts`:
     - `contextmenu` events dispatched at each kind of target, asserting
       `defaultPrevented`;
     - real F5, Ctrl+R, Alt+← and mouse back on Linux (XTest) with typed
       input surviving;
     - every OS: the app's own and editing shortcuts still work.
-  - `us9-locking.e2e.ts` gains pending changes from another version
+  - `locking.e2e.ts` gains pending changes from another version
     (seeded by `human_seed --pending-from 1.2.0`): open, close from the
     dialog, reopen.
-  - `us5-export-import.e2e.ts` gains a refused file and a cancelled read.
+  - `export-import.e2e.ts` gains a refused file and a cancelled read.
 - **The window controls check** (new, per OS, like the PDF surface check):
   `examples/window_controls_check.rs` builds the main window with the app's
   own `window_controls` code and a test page. With real input (XTest, and

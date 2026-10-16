@@ -33,7 +33,7 @@ import { realKey, skipWithoutRealInput } from "../support/realInput";
  * seeds are in `support/accessories.ts`.
  */
 
-describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
+describe("006 US2 - Mount an Item on a Firearm (was us12-accessories-mounting)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });

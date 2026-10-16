@@ -112,7 +112,7 @@ function greater(actual: number, floor: number, message: string) {
   if (!(actual > floor)) throw new Error(`${message}: got ${actual}`);
 }
 
-describe("User Story 3 (008) - The Window Behaves Like an Application, Not a Browser", () => {
+describe("008 US3 - No Browser Controls in the Main Window (was us15-browser-controls)", () => {
   before(async () => {
     await createDatabase({ folder, name: "Controls" });
     await addFirearm(firearm);

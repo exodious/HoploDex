@@ -73,7 +73,7 @@ async function dialogFieldError(label: string): Promise<string | null> {
   }, label);
 }
 
-describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", () => {
+describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databases)", () => {
   const folder = `${scratchDocuments()}/Typed folder`;
 
   it("fits the first-run chooser in the window, with no scrollbar, and its plate animates", async () => {
@@ -304,7 +304,7 @@ async function asksForPassphrase(): Promise<boolean> {
   return $(".hd-db-row--selected input").isExisting();
 }
 
-describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
+describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another Computer (was us7-databases)", () => {
   it("keeps two databases with their own passphrases in two folders, and switches between them (US2-1, US2-4)", async () => {
     await switchDatabase();
     await createDatabase(club);
@@ -415,7 +415,7 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
   });
 });
 
-describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphrase", () => {
+describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7-databases)", () => {
   const SAVED_NOTE = "Opens without a passphrase on this computer";
 
   it("remembers a passphrase at open, after the confirmation (FR-017)", async () => {

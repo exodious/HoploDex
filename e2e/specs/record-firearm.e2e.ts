@@ -39,7 +39,7 @@ import { createDatabase } from "../support/ui";
  * Creating a firearm opens its record page, so scenarios assert against
  * the record right after creation.
  */
-describe("User Story 1 - Record a Firearm", () => {
+describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();

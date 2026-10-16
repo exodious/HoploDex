@@ -398,7 +398,7 @@ fn seed_shared(conn: &Connection) -> i64 {
     // spec 008 US1: this photo, the first in this database, has the id 1 that
     // the main database's first photo (the Glock's thumbnail) has, with other
     // bytes, so a thumbnail kept across a switch shows the wrong image
-    // (e2e/specs/us14-session-isolation.e2e.ts).
+    // (e2e/specs/session-isolation.e2e.ts).
     let (name, bytes, mime) = seed_photo!("beretta-92fs-atf.jpg");
     let photo =
         must(photo_ops::add_photo(conn, RecordRef::Firearm(beretta), &bytes, name, mime), name);

@@ -22,7 +22,7 @@ import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
  * The list's contents and markers (US2-4) and grouping by Cartridge (US1-6)
  * are tested in Rust and Vitest (see the citations in those tests).
  */
-describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-types)", () => {
+describe("004 US2 - Pick From a Narrowing List While Typing (was us10-cartridges-actions)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });

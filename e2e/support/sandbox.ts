@@ -20,7 +20,7 @@ import { repoRoot, seedBinary } from "./build";
  * The current sandbox's directory. It lives on `globalThis`, not in a module
  * variable, for the reason support/app.ts gives: WebdriverIO loads
  * `wdio.conf.ts` apart from the spec files, so this module is evaluated twice
- * in a worker, and a spec that reseeds (us9) must see the sandbox the config's
+ * in a worker, and a spec that reseeds (`locking`) must see the sandbox the config's
  * copy made.
  */
 interface SandboxState {
@@ -33,7 +33,7 @@ export const SANDBOX_PREFIX = "hoplodex-e2e-";
 /** The file the harness writes into a sandbox when it makes it: the process
  * id of the process that owns it. Only a directory that has one is a
  * sandbox for {@link sweepStaleSandboxes}; the prefix alone is not enough
- * (us13 writes plain files named `hoplodex-e2e-screen-<pid>.png` into the same
+ * (`document-preview` writes plain files named `hoplodex-e2e-screen-<pid>.png` into the same
  * folder). {@link removeSandbox} deletes it last. */
 export const OWNER_MARKER = ".hoplodex-e2e-owner";
 

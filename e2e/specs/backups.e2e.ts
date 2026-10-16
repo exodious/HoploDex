@@ -116,7 +116,7 @@ async function listed(make: string): Promise<boolean> {
   return (await listedNames()).some((name) => name.includes(make));
 }
 
-describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => {
+describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)", () => {
   it("backs up a changed database when it is closed and restores that backup with its passphrase (FR-025, FR-028)", async () => {
     await createDatabase({ folder, name: "Kept" });
     await addFirearm({
