@@ -24,7 +24,8 @@ import {
   waitForChooser,
   waitForCollection,
 } from "../support/ui";
-import { relaunchApp, waitForAppToQuit } from "../support/app";
+import { appPid, relaunchApp, waitForAppToQuit } from "../support/app";
+import { chooseMenuBarItem, pressCommandQ, skipWithoutMacInput } from "../support/macInput";
 import { realClick, skipWithoutRealInput } from "../support/realInput";
 
 /**
@@ -328,6 +329,49 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
     await unlock(club.passphrase);
     expect(await showsFirearm("ClubGun")).toBe(true);
     expect(await showsFirearm("HomeGun")).toBe(false);
+  });
+
+  it("asks the same question for ⌘Q and the macOS menu's Quit, and Cancel keeps the form as it was (FR-010, #107)", async function () {
+    skipWithoutMacInput(this);
+    // macOS's own Quit (`terminate:`) used to end the process without a
+    // request, so unsaved input was lost. "Club" is open from the switch above.
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Make", "Unsaved make");
+
+    const prompt = '[role="alertdialog"]';
+    for (const quit of [
+      () => pressCommandQ(appPid()),
+      () => chooseMenuBarItem(appPid(), "Quit HoploDex"),
+    ]) {
+      quit();
+      await $(prompt).waitForExist();
+      await expect($(prompt)).toHaveText(expect.stringContaining("Save changes to New firearm?"));
+      await clickButton("Cancel");
+      await $(prompt).waitForExist({ reverse: true });
+      // Still running, with the form and what was typed in it.
+      await expect($('[role="dialog"]')).toExist();
+      expect(
+        await browser.execute(
+          () => (document.querySelector('[role="dialog"] input') as HTMLInputElement).value,
+        ),
+      ).toBe("Unsaved make");
+    }
+
+    // Quitting for real, so the next test starts from a clean open of "Club".
+    pressCommandQ(appPid());
+    await $(prompt).waitForExist();
+    await browser.execute(() => {
+      const discard = [...document.querySelectorAll('[role="alertdialog"] button')].find(
+        (button) => button.textContent?.trim() === "Discard changes",
+      ) as HTMLElement | undefined;
+      setTimeout(() => discard?.click(), 100);
+    });
+    await waitForAppToQuit(15000);
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Club");
+    await unlock(club.passphrase);
+    expect(await showsFirearm("Unsaved make")).toBe(false);
   });
 
   it("asks save, discard or cancel when quitting with an unsaved firearm form, and Discard quits (FR-010)", async () => {

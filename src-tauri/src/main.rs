@@ -35,15 +35,59 @@ use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+#[cfg(target_os = "macos")]
+use tauri::{
+    Runtime,
+    menu::{Menu, MenuItem, MenuItemKind},
+};
 
 /// What the frontend is sent when the user closes the window or quits: it
 /// asks about unsaved changes, then calls `quit_application` (research.md
 /// §17).
 const QUIT_REQUESTED: &str = "app:quit-requested";
 
+/// The application menu's Quit item on macOS (and so ⌘Q).
+#[cfg(target_os = "macos")]
+const QUIT_MENU_ID: &str = "quit";
+
 /// The OS is shutting down or ending the application, so its exit request
 /// is let through rather than asked about (research.md §17).
 static OS_ENDING: AtomicBool = AtomicBool::new(false);
+
+/// Asks the frontend to quit: the unsaved-changes question first, then
+/// `quit_application` (research.md §17).
+fn request_quit(app: &AppHandle) {
+    if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
+        log::warn!("could not emit {QUIT_REQUESTED}: {err}");
+    }
+}
+
+/// Tauri's default application menu, with its Quit item swapped for one that
+/// asks (#107). The predefined one is `terminate:`, which ends the process
+/// through tao's `applicationWillTerminate` without a
+/// `RunEvent::ExitRequested`, so ⌘Q and the menu's Quit skipped the
+/// unsaved-changes question and the database's normal close. The OS's own
+/// shutdown still ends the app at once through NSWorkspace's power-off
+/// notice (`platform/macos.rs`), which does not come through this menu.
+#[cfg(target_os = "macos")]
+fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::default(handle)?;
+    // The first submenu is the application's, whose last item is Quit.
+    if let Some(MenuItemKind::Submenu(application)) = menu.items()?.into_iter().next() {
+        let items = application.items()?;
+        if let Some(last @ MenuItemKind::Predefined(_)) = items.last() {
+            application.remove(last)?;
+            application.append(&MenuItem::with_id(
+                handle,
+                QUIT_MENU_ID,
+                "Quit HoploDex",
+                true,
+                Some("CmdOrCtrl+Q"),
+            )?)?;
+        }
+    }
+    Ok(menu)
+}
 
 /// The OS ends the application (FR-039): the open database closes at once,
 /// keeping unsaved input as pending changes before the key is cleared and
@@ -170,6 +214,14 @@ fn main() {
     #[cfg(target_os = "linux")]
     let webkit_sandbox = sandbox_probe::decide_and_apply();
     let builder = tauri::Builder::default();
+    // ⌘Q and the application menu's Quit are requests, like the window's
+    // close button (research.md §17, #107).
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu).on_menu_event(|app, event| {
+        if event.id() == QUIT_MENU_ID {
+            request_quit(app);
+        }
+    });
     // The E2E suite's WebDriver server, on 127.0.0.1 at
     // `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs any
     // script in the page, so it must never reach a shipped build.
@@ -292,9 +344,7 @@ fn main() {
             // about first, and the database is closed normally.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                if let Err(err) = window.app_handle().emit(QUIT_REQUESTED, ()) {
-                    log::warn!("could not emit {QUIT_REQUESTED}: {err}");
-                }
+                request_quit(window.app_handle());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -388,9 +438,7 @@ fn main() {
                 if !OS_ENDING.load(Ordering::SeqCst) =>
             {
                 api.prevent_exit();
-                if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
-                    log::warn!("could not emit {QUIT_REQUESTED}: {err}");
-                }
+                request_quit(app);
             }
             // Decrypted copies of opened documents live only as long as the
             // session (FR-035); the startup sweep covers abnormal exits.

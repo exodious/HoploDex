@@ -848,6 +848,8 @@ ask. They save the staged draft as pending changes, clear the open marker if
 that is part of the same write, close the connection, delete the decrypted
 document copies, then exit (FR-039 ordering).
 
+_Amended 2026-10-16 (#107): on macOS the predefined Quit item (⌘Q) is `terminate:`, which ends the process without a `RunEvent::ExitRequested`, so it skipped the question. `main.rs` now replaces it in the application menu with an item that emits `app:quit-requested`. A quit that doesn't come through the menu (the Dock's Quit, an Apple Event) still takes the old path._
+
 ---
 
 ## §18 Passphrase strength hint

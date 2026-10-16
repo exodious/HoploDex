@@ -859,6 +859,12 @@ which leaves the database as it found it, and the other tests don't depend
 on it. us8's restore-dialog regressions are an example. The screenshot walk
 uses no real input, so it runs everywhere.
 
+One exception runs on macOS only: us7's ⌘Q and menu Quit test (#107)
+presses ⌘Q and chooses the app menu's Quit with `e2e/support/macInput.ts`,
+which compiles `src-tauri/examples/real_input.swift`. It needs Accessibility
+for whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the
+other platforms.
+
 The PDF surface and window controls checks do not use that helper. They are
 Rust examples run outside WebDriver, and each OS gives them its own input
 script in `src-tauri/examples/`: `real_input.py` (Linux; it wraps

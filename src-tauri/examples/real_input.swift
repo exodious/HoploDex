@@ -28,6 +28,8 @@
 //   real_input scroll X Y N    wheel N notches at X Y (negative: down)
 //   real_input menu PID        the PID's menu bar items, as paths,
 //                                   with any disabled ones marked
+//   real_input activate PID    make the PID's app the frontmost one
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -176,7 +178,11 @@ case "press":
         }
     }
     print(pressed ? "pressed" : "not found")
+case "activate":
+    guard let app = NSRunningApplication(processIdentifier: Int32(args[2])!) else { exit(1) }
+    app.activate(options: [.activateAllWindows])
+    usleep(300_000)
 default:
-    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID | activate PID\n".data(using: .utf8)!)
     exit(2)
 }
