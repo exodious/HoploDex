@@ -55,14 +55,20 @@ fn request_quit(app: &AppHandle) {
 
 /// The OS ends the application (FR-039): the open database closes at once,
 /// keeping unsaved input as pending changes before the key is cleared and
-/// decrypted document copies are deleted, with no backup; then it exits.
-fn end_for_the_os(app: &AppHandle) {
+/// decrypted document copies are deleted, with no backup. Safe to run twice
+/// at once (the second waits for the first's close).
+fn close_for_the_os(app: &AppHandle) {
     OS_ENDING.store(true, Ordering::SeqCst);
     // The session's close ends the preview first (the PDF surface is closed
     // and the helper killed), then the copies the PDF viewer left on macOS
     // are swept (FR-003a, research.md §7).
     lifecycle::will_shut_down(&app.state::<Session>(), &app.state::<MachineSettings>());
     app.state::<MachineSettings>().sweep_hold_leftovers();
+}
+
+/// [`close_for_the_os`], then the app exits.
+fn end_for_the_os(app: &AppHandle) {
+    close_for_the_os(app);
     app.exit(0);
 }
 
@@ -389,18 +395,34 @@ fn main() {
     // Quit, an Apple Event quit) is a request, like the window's close
     // button (research.md §17, #107). tao ends the app from
     // `applicationWillTerminate:` with no `RunEvent::ExitRequested`, so the
-    // delegate is asked first. The OS's own shutdown is let through; the
-    // app's exit with a code (`quit_application`) stops the loop and never
-    // calls `terminate:`.
+    // delegate is asked first. A quit the OS sends as a session ends (its
+    // Apple Event names a log out, restart or shut down, or the power-off
+    // notice came first) must not be cancelled, or the log out is: it is
+    // answered NSTerminateLater, closed off the main thread (FR-039), then
+    // replied to. The app's own exit with a code (`quit_application`,
+    // `end_for_the_os`) stops the loop and never calls `terminate:`.
     #[cfg(target_os = "macos")]
     {
         let handle = app.handle().clone();
-        platform::ask_before_terminate(move || {
-            if OS_ENDING.load(Ordering::SeqCst) {
-                return true;
+        platform::ask_before_terminate(move |source| {
+            if source == platform::QuitSource::User && !OS_ENDING.load(Ordering::SeqCst) {
+                request_quit(&handle);
+                return platform::Termination::Cancel;
             }
-            request_quit(&handle);
-            false
+            // The close waits on other threads, some of which wait on this
+            // one, so it can't run here; the reply is queued back to it.
+            let app = handle.clone();
+            let spawned = thread::Builder::new().name("os-terminate".into()).spawn(move || {
+                close_for_the_os(&app);
+                platform::reply_to_terminate(true);
+            });
+            match spawned {
+                Ok(_) => platform::Termination::Later,
+                Err(err) => {
+                    log::error!("could not close for the OS ending the app: {err}");
+                    platform::Termination::Now
+                }
+            }
         });
     }
     app.run(|app, event| match event {

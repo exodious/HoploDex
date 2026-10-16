@@ -850,6 +850,8 @@ document copies, then exit (FR-039 ordering).
 
 _Amended 2026-10-16 (#107): on macOS every `terminate:` (⌘Q, the application menu's and the Dock's Quit, an Apple Event quit) ends the process through tao's `applicationWillTerminate:` without a `RunEvent::ExitRequested`, so it skipped the question. `platform/macos.rs`'s `ask_before_terminate` adds `applicationShouldTerminate:` to tao's app delegate class (tao defines none): it cancels the termination and emits `app:quit-requested`, except while `OS_ENDING` is set (NSWorkspace's power-off notice, FR-039). `quit_application` exits with a code, which stops the loop and never calls `terminate:`._
 
+_Amended 2026-10-16 (#107, follow-up): the power-off notice only queues an event, so `OS_ENDING` was set too late and a log out's `terminate:` could be cancelled, which cancels the log out and skips FR-039. The hook now reads `kAEQuitReason` from the current Apple Event (log out, restart, shut down, quit all) and the notice sets a flag on the posting thread; for either it answers `NSTerminateLater`, closes on its own thread (`close_for_the_os`: pending changes kept, copies cleared) and replies `replyToApplicationShouldTerminate:` on the main queue. Only a quit with no such reason (⌘Q, the menu, the Dock) is cancelled and asked about._
+
 ---
 
 ## §18 Passphrase strength hint

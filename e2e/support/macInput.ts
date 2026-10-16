@@ -58,6 +58,17 @@ export function sendQuitEvent(pid: number) {
   if (result !== "sent") throw new Error("the quit event wasn't sent");
 }
 
+/** Quits the app with process id `pid` as loginwindow does when a log out,
+ * restart or shut down asks every application to quit: the quit Apple Event
+ * with its `kAEQuitReason` (`kAEReallyLogOut`, "rlgo"), sent to that one
+ * process (FR-039, #107). */
+export function sendLogOutQuitEvent(pid: number) {
+  const result = execFileSync(realInput(), ["quit", String(pid), "rlgo"])
+    .toString()
+    .trim();
+  if (result !== "sent") throw new Error(`the log out's quit event wasn't sent: ${result}`);
+}
+
 /** The title of the application menu's Quit item in the app with process id
  * `pid`: "Quit" and the process's localized name, which is the executable's in
  * the E2E build and the bundle's in a release. */

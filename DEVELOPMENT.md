@@ -862,7 +862,9 @@ uses no real input, so it runs everywhere.
 One exception runs on macOS only: us7's quit test (#107) presses ⌘Q, chooses
 the app menu's Quit and sends the quit Apple Event the Dock's Quit sends (to
 the sandboxed app's process only) with `e2e/support/macInput.ts`, which
-compiles `src-tauri/examples/real_input.swift`. It needs Accessibility for
+compiles `src-tauri/examples/real_input.swift`. us9 sends the quit event with
+a log out's reason (`kAEReallyLogOut`), which must end the app at once with
+its unsaved input kept as pending changes. It needs Accessibility for
 whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the
 other platforms.
 
