@@ -1,5 +1,5 @@
-// Typed wrappers over `invoke` for the accessory commands: contracts/tauri-commands.md
-// "Accessories (new)"; the screens that use them are in contracts/ui-accessories.md.
+// Typed wrappers over `invoke` for the accessory commands: 006 contracts/tauri-commands.md
+// "Accessories (new)"; the screens that use them are in 006 contracts/ui-accessories.md.
 
 import type { SessionScope } from "../session/sessionScope";
 import type { DisposeInput } from "../firearms/types";

@@ -1,6 +1,6 @@
 //! Regenerates `tests/fixtures/portable-v1.hoplodex`, the committed database
 //! that `tests/portability_test.rs` opens on whatever computer runs the tests
-//! (SC-001, SC-002, research.md §20). It is made through the app's own
+//! (003 SC-001, SC-002, research.md §20). It is made through the app's own
 //! `db::create_database` and `ops`, with [`PASSPHRASE`], and holds one
 //! firearm, one photo and one document, whose known values the test compares.
 //!
@@ -26,7 +26,7 @@ use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 
 /// The fixture's passphrase. Its "é" checks that a precomposed character
-/// gives the same key everywhere (research.md §1).
+/// gives the same key everywhere (003 research.md §1).
 pub const PASSPHRASE: &str = "portable fixture, café edition";
 
 /// The fixture, relative to `src-tauri`.

@@ -27,13 +27,13 @@ import {
 } from "../support/ui";
 
 /**
- * End-to-end coverage of specs/007-document-preview's User Story 3 (spec.md,
- * contracts/ui-document-preview.md): choosing how documents open, in Database
- * settings, against the real built app on the human-testing seed's Glock 19
- * Gen5 (the harness seeds the collection for this spec, wdio.conf.ts). The
- * helpers are in `support/documentPreview.ts`. Its sibling specs are the
- * preview itself (`us13-document-preview-preview`) and opening in another app
- * (`us13-document-preview-open-elsewhere`).
+ * End-to-end coverage of 007 US3 (007 spec.md, contracts/ui-document-preview.md):
+ * choosing how documents open, in Database settings, against the real built
+ * app on the human-testing seed's Glock 19 Gen5 (the harness seeds the
+ * collection for this spec, wdio.conf.ts). The helpers are in
+ * `support/documentPreview.ts`. Its sibling specs are the preview itself
+ * (`document-preview`) and opening in another app
+ * (`document-open-elsewhere`).
  */
 
 /** Opens Database settings, and closes them again with Cancel. */
@@ -99,7 +99,7 @@ async function nameTitle(name: string): Promise<string | null> {
   );
 }
 
-describe("User Story 3 (007) - Choose How Documents Open", () => {
+describe("007 US3 - Choose How Documents Open (was us13-document-preview-setting)", () => {
   const SETTING_TITLE = "Open documents in another app?";
 
   before(async () => {
@@ -113,15 +113,15 @@ describe("User Story 3 (007) - Choose How Documents Open", () => {
     process.env.HOPLODEX_E2E_CONSENT = "open";
   });
 
-  it("US3-2: changing to Open in another app asks, in the consent log, and takes effect; US3-1, US3-3, US3-5 and US3-6 are its steps", async function () {
-    // US3-1: it starts at Preview in HoploDex, and the name previews.
+  it("007 US3-2: changing to Open in another app asks, in the consent log, and takes effect; 007 US3-1, US3-3, US3-5 and US3-6 are its steps", async function () {
+    // 007 US3-1: it starts at Preview in HoploDex, and the name previews.
     await openDatabaseSettings();
     expect(await openingChecked("Preview in HoploDex")).toBe(true);
     expect(await openingChecked("Open in another app")).toBe(false);
     await closeDatabaseSettings();
     expect(await nameTitle("owners-manual-notes.txt")).toBe("Preview owners-manual-notes.txt");
 
-    // US3-2: changing to Open in another app asks once, in the consent log.
+    // 007 US3-2: changing to Open in another app asks once, in the consent log.
     let asked = logLines("HOPLODEX_E2E_CONSENT_LOG").length;
     await setOpening("Open in another app");
 
@@ -134,7 +134,7 @@ describe("User Story 3 (007) - Choose How Documents Open", () => {
     expect(await openingChecked("Open in another app")).toBe(true);
     await closeDatabaseSettings();
 
-    // US3-3: opening two documents by name asks once, and opens both.
+    // 007 US3-3: opening two documents by name asks once, and opens both.
     if (openedRoot) {
       asked = logLines("HOPLODEX_E2E_CONSENT_LOG").length;
       const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
@@ -158,7 +158,7 @@ describe("User Story 3 (007) - Choose How Documents Open", () => {
       expect(await viewerTitle()).toBeNull();
     }
 
-    // US3-5: Preview on the PDF previews it, and asks nothing.
+    // 007 US3-5: Preview on the PDF previews it, and asks nothing.
     asked = logLines("HOPLODEX_E2E_CONSENT_LOG").length;
     const openedBefore = openedRoot ? logLines("HOPLODEX_E2E_OPENED_LOG").length : 0;
 
@@ -175,7 +175,7 @@ describe("User Story 3 (007) - Choose How Documents Open", () => {
     if (openedRoot) expect(logLines("HOPLODEX_E2E_OPENED_LOG")).toHaveLength(openedBefore);
     await closeViewer();
 
-    // US3-6: changing back to Preview in HoploDex asks nothing, and the name
+    // 007 US3-6: changing back to Preview in HoploDex asks nothing, and the name
     // previews again.
     await setOpening("Preview in HoploDex");
 
@@ -186,7 +186,7 @@ describe("User Story 3 (007) - Choose How Documents Open", () => {
     await closeViewer();
   });
 
-  it("US3-4: after a lock and an unlock, the next open asks again", async function () {
+  it("007 US3-4: after a lock and an unlock, the next open asks again", async function () {
     if (!openedRoot) return this.skip();
     // The journey above leaves the setting at Preview: set it again, and open
     // one document, so the lock has an open this session to forget.

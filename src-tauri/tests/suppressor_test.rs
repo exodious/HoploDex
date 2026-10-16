@@ -1,8 +1,8 @@
-//! specs/005-regulated-item-types User Story 1 through `ops`, against a real
+//! 005 US1 through `ops`, against a real
 //! temporary SQLCipher database: Suppressor is a fifth firearm type that
-//! omits the action, barrel length and capacity (FR-001 to FR-004), in the
-//! command layer and in the trigger backstop (FR-003, SC-005). Its caliber is
-//! its bore and its cartridge its rating, never derived (FR-002).
+//! omits the action, barrel length and capacity (005 FR-001 to FR-004), in the
+//! command layer and in the trigger backstop (005 FR-003, SC-005). Its caliber is
+//! its bore and its cartridge its rating, never derived (005 FR-002).
 
 use crate::support;
 
@@ -31,7 +31,7 @@ fn field_error(err: &CommandError, field: &str) -> Option<String> {
 
 #[test]
 fn the_type_list_has_five_types_and_suppressor_omits_three_fields() {
-    // US1-1, FR-001. Listed in `sort_order`, which puts Other last.
+    // 005 US1-1, FR-001. Listed in `sort_order`, which puts Other last.
     let db = TestDb::new();
     let output = entry_ops::list_firearm_types(&db.conn).unwrap();
     let names: Vec<&str> = output.types.iter().map(|t| t.name.as_str()).collect();
@@ -43,7 +43,7 @@ fn the_type_list_has_five_types_and_suppressor_omits_three_fields() {
         assert_eq!(t.action_type_applies, !omits, "{}", t.name);
         assert_eq!(t.barrel_length_applies, !omits, "{}", t.name);
         assert_eq!(t.capacity_applies, !omits, "{}", t.name);
-        // FR-002, research.md §15: only a Suppressor's caliber is never
+        // 005 FR-002, research.md §15: only a Suppressor's caliber is never
         // worked out from its cartridge.
         assert_eq!(t.caliber_from_cartridge, !omits, "{}", t.name);
     }
@@ -60,7 +60,7 @@ fn the_type_list_has_five_types_and_suppressor_omits_three_fields() {
 
 #[test]
 fn a_suppressor_saves_and_reopens_intact() {
-    // US1-3.
+    // 005 US1-3.
     let db = TestDb::new();
     let input = FirearmInput {
         overall_length_hundredths: Some(800),
@@ -87,7 +87,7 @@ fn a_suppressor_saves_and_reopens_intact() {
 
 #[test]
 fn a_suppressor_with_an_inapplicable_field_is_refused_per_field() {
-    // FR-003, FR-022.
+    // 005 FR-003, FR-022.
     let db = TestDb::new();
     let action = FirearmInput { action_type_id: Some(1), ..suppressor("S-1") };
     let err = ops::create_firearm(&db.conn, &action, false, None).unwrap_err();
@@ -136,7 +136,7 @@ fn a_suppressor_with_an_inapplicable_field_is_refused_per_field() {
 
 #[test]
 fn changing_a_rifle_to_a_suppressor_needs_the_fields_cleared() {
-    // US1-5, FR-004.
+    // 005 US1-5, FR-004.
     let db = TestDb::new();
     let rifle = FirearmInput {
         firearm_type_id: RIFLE,
@@ -177,7 +177,7 @@ fn changing_a_rifle_to_a_suppressor_needs_the_fields_cleared() {
 
 #[test]
 fn a_suppressor_takes_a_cartridge_and_needs_none() {
-    // US1-7, FR-002.
+    // 005 US1-7, FR-002.
     let db = TestDb::new();
     let settled = entry_ops::settle_entry(
         &db.conn,
@@ -197,7 +197,7 @@ fn a_suppressor_takes_a_cartridge_and_needs_none() {
 
 #[test]
 fn a_suppressor_keeps_its_bore_and_rated_cartridge_apart() {
-    // US1-1, US1-3, FR-002, research.md §15: the caliber is the bore and the
+    // 005 US1-1, US1-3, FR-002, research.md §15: the caliber is the bore and the
     // cartridge the rating. ".22 WMR" would derive ".22" for a rifle, but a
     // suppressor's two values are whatever the owner entered, and nothing on
     // save ties one to the other.
@@ -226,7 +226,7 @@ fn a_suppressor_keeps_its_bore_and_rated_cartridge_apart() {
 
 #[test]
 fn the_triggers_refuse_a_raw_write_the_command_layer_would_have_caught() {
-    // FR-003, SC-005.
+    // 005 FR-003, SC-005.
     let db = TestDb::new();
     let insert = |type_id: i64, column: &str, serial: &str| {
         db.conn.execute(

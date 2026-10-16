@@ -76,7 +76,7 @@ function label(choice: BackupInfo) {
   return `${formatDateTime(choice.madeAt)} — ${formatBytes(choice.sizeBytes)}`;
 }
 
-describe("RestoreBackupDialog (contracts/ui-databases.md §9)", () => {
+describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.listBackups)
       .mockReset()

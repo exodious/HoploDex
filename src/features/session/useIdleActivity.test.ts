@@ -5,7 +5,7 @@ import { pauseIdleForFileInput, useIdleActivity, withIdlePaused } from "./useIdl
 
 vi.mock("./sessionService");
 
-describe("useIdleActivity (research.md §15)", () => {
+describe("useIdleActivity (003 research.md §15)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(sessionService.noteActivity).mockReset().mockResolvedValue(undefined);

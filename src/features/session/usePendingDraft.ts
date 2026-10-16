@@ -6,12 +6,12 @@ import * as sessionService from "./sessionService";
 
 /**
  * The firearm or policy form with unsaved input, for the session layer
- * (specs/003 plan.md): closing, switching or quitting asks save, discard or
- * cancel about it first (FR-010, contracts/ui-databases.md §6), and a lock
- * keeps its input as pending changes instead (FR-039). While it has unsaved
+ * (003 plan.md): closing, switching or quitting asks save, discard or
+ * cancel about it first (003 FR-010, contracts/ui-databases.md §6), and a lock
+ * keeps its input as pending changes instead (003 FR-039). While it has unsaved
  * input, its draft is mirrored into the backend's memory, so a lock the
  * backend starts on its own (idle, screen lock, sleep, shutdown) has it
- * without asking the webview (research.md §16).
+ * without asking the webview (003 research.md §16).
  */
 export interface DirtyForm {
   /** What the question names, such as "Glock 19 (edit)" or "New firearm". */
@@ -42,14 +42,14 @@ export interface RegisteredForm extends DirtyForm {
 interface Registration {
   current: RegisteredForm;
   /** The session the form belongs to: its drafts are staged through it
-   * (specs/008 research.md §4). */
+   * (008 research.md §4). */
   scope: SessionScope;
 }
 
 /** Every mounted form, the most recently opened last. */
 const registered: Registration[] = [];
 
-/** How long after the last edit a draft is staged (research.md §16). */
+/** How long after the last edit a draft is staged (003 research.md §16). */
 export const STAGE_DELAY_MS = 250;
 
 function draftOf({ label, draft }: RegisteredForm): Draft {
@@ -112,7 +112,7 @@ export function useDirtyForm(form: RegisteredForm): void {
     registered.push(entry);
     // The session ends: what the backend held for it goes with it, so the
     // next session's first draft is never thought to be staged already
-    // (research.md §4).
+    // (008 research.md §4).
     const forgetStaged = entry.scope.onEnd(resetStaging);
     return () => {
       forgetStaged();
@@ -169,7 +169,7 @@ export function getDirtyForm(): DirtyForm | null {
   return form && { label: form.label, submit: form.submit };
 }
 
-/** The unsaved input at this moment, for "lock now" (FR-035), which keeps
+/** The unsaved input at this moment, for "lock now" (003 FR-035), which keeps
  * it exactly as it is rather than as last staged. */
 export function currentDraft(): Draft | null {
   const form = latestDirty();
@@ -179,7 +179,7 @@ export function currentDraft(): Draft | null {
 // --- Resuming -----------------------------------------------------------------
 //
 // The draft the user chose to resume lives in the session scope
-// (`scope.resumed`, specs/008 research.md §6): a form matches it only through
+// (`scope.resumed`, 008 research.md §6): a form matches it only through
 // the scope it rendered under, so another session's form, however alike, can't
 // take it.
 

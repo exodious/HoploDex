@@ -1,6 +1,6 @@
 //! The human-testing seed writes only into a sandbox it made, and never into
 //! the real data, config or documents directory (constitution 1.2.0,
-//! research.md §21). Every case builds its own environment around a temp
+//! 003 research.md §21). Every case builds its own environment around a temp
 //! `HOME`; the developer's real directories are never resolved.
 
 use std::collections::HashMap;

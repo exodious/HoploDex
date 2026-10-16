@@ -19,7 +19,7 @@ export interface ExportDialogProps {
   browse: BrowseState;
 }
 
-/** "3 firearms and 2 accessories" (specs/006-accessory-links FR-020). */
+/** "3 firearms and 2 accessories" (006 FR-020). */
 function scopeCounts(scope: ExportScope): string {
   const firearms = `${scope.firearmCount} ${scope.firearmCount === 1 ? "firearm" : "firearms"}`;
   const accessories = `${scope.accessoryCount} ${
@@ -34,7 +34,7 @@ function scopeCounts(scope: ExportScope): string {
 type ScopeState = ExportScope | "unknown" | null;
 
 /** Export to a spreadsheet plus a sibling folder of original photos in a
- * single action (US5, FR-018, SC-005). */
+ * single action (001 US5, FR-018, SC-005). */
 export function ExportDialog({ open, onOpenChange, browse }: ExportDialogProps) {
   return (
     <Dialog
@@ -99,7 +99,7 @@ function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => v
   }, [sessionScope, filterActive, query, browse.includeDisposed]);
 
   const chosen = filterActive && scope === "filtered" ? filteredScope : allScope;
-  // FR-020, FR-021: registration details and accessories leave the database
+  // 005 FR-020 and 006 FR-021: registration details and accessories leave the database
   // too, so the note names them whenever the chosen scope holds either.
   const includesRegistration = chosen === "unknown" || (chosen?.includesRegistration ?? false);
   const includesAccessories = chosen === "unknown" || (chosen?.includesAccessories ?? false);

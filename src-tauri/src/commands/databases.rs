@@ -1,10 +1,9 @@
 //! Choosing, creating and opening databases, and the open database's own
-//! status (specs/003-database-protection-management
-//! contracts/tauri-commands.md). The commands are thin: each passphrase
-//! argument becomes a [`Passphrase`] at once, and is dropped, and wiped,
-//! when the command returns (FR-007). The logic is in [`ops`], which takes
-//! its paths and `machine.json` from the caller so the tests use throwaway
-//! ones.
+//! status (003 contracts/tauri-commands.md). The commands are thin: each
+//! passphrase argument becomes a [`Passphrase`] at once, and is dropped, and
+//! wiped, when the command returns (003 FR-007). The logic is in [`ops`],
+//! which takes its paths and `machine.json` from the caller so the tests use
+//! throwaway ones.
 
 use std::sync::Arc;
 
@@ -61,12 +60,12 @@ pub mod ops {
     use crate::session::{OpenDatabase, Session, SessionId};
     use crate::session::{lifecycle, pending};
 
-    /// The name the create dialog suggests (research.md §19).
+    /// The name the create dialog suggests (003 research.md §19).
     pub const SUGGESTED_NAME: &str = "My collection";
 
     /// The folder the create dialog suggests: `HoploDex` in the documents
     /// folder, or in `~/Documents` when the OS names none. Never the app
-    /// data directory, where the pre-feature database lives (research.md
+    /// data directory, where the pre-feature database lives (003 research.md
     /// §19).
     pub fn suggested_folder(documents: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
         documents
@@ -76,8 +75,8 @@ pub mod ops {
     }
 
     /// A recent-list entry as the chooser shows it: unavailable when its
-    /// file isn't at its path (FR-012), and otherwise with its backups and
-    /// whether it changed after this computer left it (FR-040). Only file
+    /// file isn't at its path (003 FR-012), and otherwise with its backups and
+    /// whether it changed after this computer left it (003 FR-040). Only file
     /// names and times are read: nothing is decrypted.
     fn recent_database(entry: RecentEntry) -> RecentDatabase {
         let available = entry.path.is_file();
@@ -102,7 +101,7 @@ pub mod ops {
 
     /// A missing folder means no backups only when it is the default one,
     /// which the first backup makes. A chosen folder that isn't there may be
-    /// on a drive that isn't plugged in, so then nothing is said (FR-040).
+    /// on a drive that isn't plugged in, so then nothing is said (003 FR-040).
     fn backup_summary(database: &Path, folder: &Path, database_id: &str) -> Option<BackupSummary> {
         if matches!(folder.try_exists(), Ok(false))
             && folder != backups::resolve_folder(database, "default")
@@ -128,11 +127,11 @@ pub mod ops {
         Some(parse(a)? > parse(b)?)
     }
 
-    /// The chooser's state (FR-012, FR-020, FR-021). The selected row is the
-    /// database just closed or locked (FR-033), or else the most recent.
+    /// The chooser's state (003 FR-012, FR-020, FR-021). The selected row is the
+    /// database just closed or locked (003 FR-033), or else the most recent.
     /// Whether passphrases can be saved here is probed the first time it is
-    /// asked (FR-019); whether the screen lock is reported, when the
-    /// system-events listener started (FR-038).
+    /// asked (003 FR-019); whether the screen lock is reported, when the
+    /// system-events listener started (003 FR-038).
     pub fn chooser_state(
         session: &Session,
         machine: &MachineSettings,
@@ -159,7 +158,7 @@ pub mod ops {
     }
 
     /// Creates `<folder>/<name>.hoplodex` with `passphrase` and opens it
-    /// (FR-003, FR-004, FR-009). A missing folder is made first.
+    /// (003 FR-003, FR-004, FR-009). A missing folder is made first.
     pub fn create_database(
         session: &Session,
         machine: &MachineSettings,
@@ -197,9 +196,9 @@ pub mod ops {
     pub enum Unlock<'a> {
         /// A passphrase the user typed. `remember` saves it in this
         /// computer's keyring once it has opened the database; the UI sends
-        /// it only after the FR-017 confirmation.
+        /// it only after the 003 FR-017 confirmation.
         Typed { passphrase: &'a Passphrase, remember: bool },
-        /// The passphrase saved in this computer's keyring (FR-017).
+        /// The passphrase saved in this computer's keyring (003 FR-017).
         Saved,
     }
 
@@ -210,18 +209,18 @@ pub mod ops {
         }
     }
 
-    /// Opens the database at `path` (FR-005, FR-006), closing any other open
+    /// Opens the database at `path` (003 FR-005, FR-006), closing any other open
     /// database first as a switch. A refused open changes neither the file
     /// nor the session. `take_over` opens a database marked open on another
-    /// computer (FR-032); the UI sends it only after its confirmation. A
+    /// computer (003 FR-032); the UI sends it only after its confirmation. A
     /// database that is damaged, or that the passphrase didn't open (the two
     /// can't be told apart at page 1), says whether it has backups to
-    /// restore from (FR-028, US3-6).
+    /// restore from (003 FR-028, US3-6).
     ///
     /// The saved passphrase is found through the recent entry's cached
     /// database id, since the file can't be read without it. When it no
-    /// longer opens the database the refusal says so (US5-5), and the next
-    /// typed passphrase that does replaces it (FR-018).
+    /// longer opens the database the refusal says so (003 US5-5), and the next
+    /// typed passphrase that does replaces it (003 FR-018).
     pub fn open_database(
         session: &Session,
         machine: &MachineSettings,
@@ -286,7 +285,7 @@ pub mod ops {
 
     /// Replaces the passphrase saved for the database at `path`, if one is,
     /// with `passphrase`, the one it opens with now: after a passphrase
-    /// change (FR-018) or a restore (research.md §8). Returns whether one is
+    /// change (003 FR-018) or a restore (003 research.md §8). Returns whether one is
     /// saved afterwards.
     pub(crate) fn refresh_saved(
         machine: &MachineSettings,
@@ -311,7 +310,7 @@ pub mod ops {
             .is_some_and(|listed| !listed.is_empty())
     }
 
-    /// Closes the open database or switches away from it (FR-010). The
+    /// Closes the open database or switches away from it (003 FR-010). The
     /// frontend has already dealt with unsaved changes.
     pub fn close_database(
         session: &Session,
@@ -329,7 +328,7 @@ pub mod ops {
     }
 
     /// Takes `path` off this computer's recent list, and forgets its saved
-    /// passphrase (FR-018). The database file is never touched (FR-012,
+    /// passphrase (003 FR-018). The database file is never touched (003 FR-012,
     /// US2-5).
     pub fn remove_recent_database(machine: &MachineSettings, path: &str) -> RecentRemoved {
         let removed = machine.remove_recent(Path::new(path));
@@ -344,22 +343,22 @@ pub mod ops {
         RecentRemoved { removed: true }
     }
 
-    /// This computer's way of opening a document (007, FR-011); no database
+    /// This computer's way of opening a document (007 FR-011); no database
     /// need be open.
     pub fn get_document_opening(machine: &MachineSettings) -> DocumentOpening {
         machine.document_opening()
     }
 
-    /// Sets this computer's way of opening a document (FR-011, FR-012).
+    /// Sets this computer's way of opening a document (007 FR-011, FR-012).
     /// Choosing `External` while it is `Preview` asks first, and Cancel
     /// leaves it unchanged; every other change is made without asking; the
     /// current value is a no-op. The answer is not the session's: it never
-    /// sets `external_open_confirmed` (US3-2). A change to `External` clears
-    /// an earlier yes in the open database (research.md §17, amended
+    /// sets `external_open_confirmed` (007 US3-2). A change to `External` clears
+    /// an earlier yes in the open database (007 research.md §17, amended
     /// 2026-10-07), so the next open asks once with the "won't be asked
-    /// again" line (US3-3). No database need be open: `session` is touched
+    /// again" line (007 US3-3). No database need be open: `session` is touched
     /// only if one is. While the dialog is up the idle clock waits for it
-    /// (research.md §16).
+    /// (007 research.md §16).
     pub fn set_document_opening(
         session: &Session,
         machine: &MachineSettings,
@@ -390,9 +389,9 @@ pub mod ops {
     }
 
     /// Saves the open database's passphrase in this computer's keyring
-    /// (FR-017), once it is proved to be the one the file opens with,
-    /// against its first page (research.md §1a). The UI sends it only after
-    /// the FR-017 confirmation. `scratch_dir` takes the page-1 probe.
+    /// (003 FR-017), once it is proved to be the one the file opens with,
+    /// against its first page (003 research.md §1a). The UI sends it only after
+    /// the 003 FR-017 confirmation. `scratch_dir` takes the page-1 probe.
     pub fn save_passphrase(
         session: &Session,
         id: SessionId,
@@ -420,7 +419,7 @@ pub mod ops {
     }
 
     /// Deletes the passphrase saved for the database at `path`, or for the
-    /// open one (FR-018). `KEYRING_UNAVAILABLE`, with nothing changed, when
+    /// open one (003 FR-018). `KEYRING_UNAVAILABLE`, with nothing changed, when
     /// the keyring can't be reached to delete it.
     pub fn forget_saved_passphrase(
         session: &Session,
@@ -445,7 +444,7 @@ pub mod ops {
     }
 
     /// Points an unavailable recent entry at where the user found its file
-    /// (FR-012), keeping everything else about it.
+    /// (003 FR-012), keeping everything else about it.
     pub fn locate_database(
         machine: &MachineSettings,
         path: &str,
@@ -530,7 +529,7 @@ pub mod ops {
         .map_err(CommandError::from_db)
     }
 
-    /// Dismisses a note for good (`diskEncryption`, FR-008) or for this
+    /// Dismisses a note for good (`diskEncryption`, 003 FR-008) or for this
     /// session. Dismissing is housekeeping, not a change to back up.
     pub fn dismiss_note(
         session: &Session,
@@ -556,13 +555,13 @@ pub mod ops {
         }
     }
 
-    /// Saves the backup settings (FR-024, FR-026), a change to the
-    /// collection (FR-025). Lowering the number kept deletes nothing now:
+    /// Saves the backup settings (003 FR-024, FR-026), a change to the
+    /// collection (003 FR-025). Lowering the number kept deletes nothing now:
     /// the next backup rotates.
     ///
     /// A changed location (its resolved folder, however spelled) with
     /// backups of the database at the old one saves nothing until
-    /// `existing_backups` says what to do with them (research.md §22):
+    /// `existing_backups` says what to do with them (003 research.md §22):
     /// `leave` saves; `delete` deletes them as "delete all backups" does and
     /// saves only when every one went; `move` checks the new folder and its
     /// space, saves, then moves them. An old folder that can't be read
@@ -680,7 +679,7 @@ pub mod ops {
         }
     }
 
-    /// Moves the backups at the old location to the new one (FR-026,
+    /// Moves the backups at the old location to the new one (003 FR-026,
     /// research.md §22): the new folder is checked for availability and
     /// room first, with nothing saved if it fails; then the settings are
     /// saved, and kept whatever happens to the move, which runs as the
@@ -742,7 +741,7 @@ pub mod ops {
         })
     }
 
-    /// Stops the backup the current close is making (FR-027). Its partial
+    /// Stops the backup the current close is making (003 FR-027). Its partial
     /// file is removed and the changes stay waiting. Anything else running
     /// is left alone.
     pub fn skip_backup(operations: &Operations) {
@@ -751,8 +750,8 @@ pub mod ops {
         }
     }
 
-    /// Saves the lock settings (FR-034, FR-038), a change to the collection
-    /// (FR-025). They take effect at once: the idle time starts again.
+    /// Saves the lock settings (003 FR-034, FR-038), a change to the collection
+    /// (003 FR-025). They take effect at once: the idle time starts again.
     pub fn update_lock_settings(
         session: &Session,
         id: SessionId,
@@ -781,7 +780,7 @@ pub mod ops {
         session.inspect(id, |open| collection_settings(&open.conn, &open.path))
     }
 
-    /// "Lock now" (FR-033, FR-035): `draft`, the form's unsaved input, is
+    /// "Lock now" (003 FR-033, FR-035): `draft`, the form's unsaved input, is
     /// kept as pending changes, then the database closes as a lock. No
     /// confirmation.
     pub fn lock_database(
@@ -794,7 +793,7 @@ pub mod ops {
     }
 
     /// Mirrors the open form's unsaved input into memory, for a lock the
-    /// backend starts on its own (research.md §16). `None` clears it.
+    /// backend starts on its own (003 research.md §16). `None` clears it.
     pub fn stage_pending_changes(
         session: &Session,
         id: SessionId,
@@ -804,7 +803,7 @@ pub mod ops {
     }
 
     /// Moves the pending changes along: resume, opened, notOpened or discard
-    /// (FR-039; 008 FR-003, contracts/tauri-commands.md).
+    /// (003 FR-039; 008 FR-003, contracts/tauri-commands.md).
     pub fn resolve_pending_changes(
         session: &Session,
         id: SessionId,
@@ -813,13 +812,13 @@ pub mod ops {
         pending::resolve(session, id, action)
     }
 
-    /// Input to the application's windows restarts the idle time (FR-035).
+    /// Input to the application's windows restarts the idle time (003 FR-035).
     pub fn note_activity(session: &Session) {
         session.idle().note_activity(session.clock().now());
     }
 
     /// A native file or folder dialog opened or closed: the idle clock
-    /// pauses while it is open (research.md §15).
+    /// pauses while it is open (003 research.md §15).
     pub fn set_idle_paused(session: &Session, reason: IdlePauseReason, paused: bool) {
         session.idle().set_paused(reason, paused, session.clock().now());
     }
@@ -832,7 +831,7 @@ pub async fn get_chooser_state(
     machine: State<'_, MachineSettings>,
 ) -> Result<ChooserState, CommandError> {
     // `document_dir` honours `user-dirs.dirs`, so a sandboxed run suggests a
-    // sandboxed folder (research.md §19).
+    // sandboxed folder (003 research.md §19).
     Ok(ops::chooser_state(
         &session,
         &machine,
@@ -897,7 +896,7 @@ pub async fn close_database(
     ops::close_database(&session.session, session.id, &machine, reason)
 }
 
-/// Closes the open database, if any, as a quit, then exits (research.md
+/// Closes the open database, if any, as a quit, then exits (003 research.md
 /// §17). The frontend has already dealt with unsaved changes.
 #[tauri::command]
 pub async fn quit_application(
@@ -937,7 +936,7 @@ pub async fn locate_database(
     ops::locate_database(&machine, &path, &new_path)
 }
 
-/// Where the page-1 probe of a passphrase check goes (research.md §1a).
+/// Where the page-1 probe of a passphrase check goes (003 research.md §1a).
 pub(crate) const PROBE_DIR: &str = "passphrase-probes";
 
 #[tauri::command]
@@ -963,7 +962,7 @@ pub async fn save_passphrase(
 
 /// With a `path`, the passphrase saved for that database, which needs no
 /// session; without one, the open database's, which needs the request's
-/// (`UNSCOPED_COMMANDS`, contracts/tauri-commands.md).
+/// (`UNSCOPED_COMMANDS`, 008 contracts/tauri-commands.md).
 #[tauri::command]
 pub async fn forget_saved_passphrase(
     path: Option<String>,

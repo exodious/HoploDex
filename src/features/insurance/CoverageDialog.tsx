@@ -23,9 +23,9 @@ export type CoverageDialogProps = RecordSubjectProps & {
 };
 
 /** Schedules a firearm or an accessory under an insurance policy with its own
- * coverage amount, or leaves it unscheduled (US3, FR-014, FR-036; 006
- * FR-009). An unscheduled record needs no assignment: the blanket policy in
- * force covers it. */
+ * coverage amount, or leaves it unscheduled (001 US3, FR-014, FR-036;
+ * 006 FR-009). An unscheduled record needs no assignment: the blanket policy
+ * in force covers it. */
 export function CoverageDialog({ open, onOpenChange, onSave, ...record }: CoverageDialogProps) {
   const subject = useRecordSubject(record as RecordSubjectProps);
   return (
@@ -41,7 +41,7 @@ export function CoverageDialog({ open, onOpenChange, onSave, ...record }: Covera
   );
 }
 
-/** The version of this form's kept drafts (research.md §16). Raise it when
+/** The version of this form's kept drafts (003 research.md §16). Raise it when
  * {@link CoverageValues} changes shape, so older drafts are only discarded. */
 export const FORM_VERSION = 1;
 
@@ -73,7 +73,7 @@ function CoverageForm({
     mode: "coverage",
     targetId: subject.id,
   };
-  // Pending changes the user resumed start as unsaved input (FR-039).
+  // Pending changes the user resumed start as unsaved input (003 FR-039).
   const [resumed] = useState(() =>
     resumedValues<CoverageValues>(scope, target, {
       policyId: initialPolicyId,
@@ -102,8 +102,8 @@ function CoverageForm({
         ? "Enter the amount scheduled on the policy."
         : undefined;
 
-  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
-  // and a lock keeps it (FR-039).
+  // Closing or quitting asks about unsaved input first (003 FR-010),
+  // and a lock keeps it (003 FR-039).
   const values: CoverageValues = { policyId, amount };
   useDirtyForm({
     label: `${subject.name} (coverage)`,

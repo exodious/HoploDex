@@ -31,9 +31,9 @@ import type { CollectionState } from "./collectionStore";
 export function CollectionProvider({ children }: { children: ReactNode }) {
   const scope = useSessionScope();
   const [firearms, setFirearms] = useState<FirearmSummary[]>([]);
-  // The list is fixed at run time (FR-017), so it is fetched once, beside the
-  // policies but not with every refresh.
   const [accessories, setAccessories] = useState<AccessorySummary[]>([]);
+  // The list is fixed at run time (004 FR-017), so it is fetched once, beside the
+  // policies but not with every refresh.
   const [actionTypes, setActionTypes] = useState<ActionTypesOutput>(NO_ACTION_TYPES);
   const [actionTypesFailed, setActionTypesFailed] = useState(false);
   const [firearmTypes, setFirearmTypes] = useState<FirearmTypesOutput>(NO_FIREARM_TYPES);

@@ -15,14 +15,14 @@ import { realClick, realKey } from "./realInput";
 
 /**
  * What the accessory E2E specs share (specs/006-accessory-links; the
- * `us12-accessories-*.e2e.ts` files, one per user story): real-key helpers for
+ * `accessories-*.e2e.ts` files, one per user story): real-key helpers for
  * the keyboard-only flows, the three firearms they start from, and the two
  * seeds a story that needs earlier stories' records starts with. Each spec
  * file is a fresh app and sandbox, so a story that used to build on the one
  * before it recreates that state here instead.
  */
 
-/** The whole path must take well under a minute (SC-001 asks for the first
+/** The whole path must take well under a minute (006 SC-001 asks for the first
  * part, an accessory recorded and mounted, in under one); this is a guard
  * against a flow that became slow or needs the mouse, not a benchmark. */
 export const TASK_LIMIT_MS = 60_000;
@@ -290,8 +290,8 @@ export async function createAccessory(input: {
 }
 
 /** What the Mounting story leaves behind, for the stories after it: the
- * three firearms, the Nikon P3 Optic mounted on the Rifle (US2-1) and the
- * Suppressor moved from the Rifle to the AR (US2-3a, US2-4). The records are
+ * three firearms, the Nikon P3 Optic mounted on the Rifle (006 US2-1) and the
+ * Suppressor moved from the Rifle to the AR (006 US2-3a, US2-4). The records are
  * made through the backend (setup, not timed), and the app is left on the
  * AR's record, where the Mounting story ended. */
 export async function seedMountedRecords() {

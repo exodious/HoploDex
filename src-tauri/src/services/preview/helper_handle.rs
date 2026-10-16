@@ -1,4 +1,4 @@
-//! The app's side of the TIFF render helper (007's research.md §11):
+//! The app's side of the TIFF render helper (007 research.md §11):
 //! [`HelperHandle`] starts `hoplodex --render-helper`, loads a document into
 //! it, asks it for pages, restarts it when it dies (at most twice per
 //! preview), and kills and waits for it when dropped. Starting, the time
@@ -21,7 +21,7 @@ use crate::services::helper::handle::{HelperProcess, lock};
 /// How often a preview's helper is started again after it dies.
 pub const MAX_RESTARTS: u8 = 2;
 
-/// How long the helper may take (research.md §11): past either, the parent
+/// How long the helper may take (007 research.md §11): past either, the parent
 /// kills it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HelperLimits {
@@ -237,7 +237,7 @@ pub struct HelperHandle {
 impl HelperHandle {
     /// The command the app runs for the helper: `--render-helper`, a cleared
     /// environment, its stdin and stdout piped, stderr discarded, and no
-    /// console window on Windows (007's research.md §11). Tests add arguments
+    /// console window on Windows (007 research.md §11). Tests add arguments
     /// to it and spawn it themselves. On Windows the app does not run this
     /// command: it starts the helper into its job object with
     /// `helper::job::spawn`, so a helper started from this command is in no

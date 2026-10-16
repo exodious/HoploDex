@@ -1,6 +1,6 @@
 //! macOS: IOKit's system power notices for sleep and wake, the
 //! `com.apple.screenIsLocked` distributed notification, and NSWorkspace's
-//! power-off notice (research.md §14).
+//! power-off notice (003 research.md §14).
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -225,7 +225,7 @@ pub enum QuitSource {
     /// The user: ⌘Q, the application menu's or the Dock's Quit, a script's
     /// quit. It is a request, so the user is asked about unsaved changes.
     User,
-    /// The OS is ending the session (log out, restart, shut down): FR-039.
+    /// The OS is ending the session (log out, restart, shut down): 003 FR-039.
     System,
 }
 
@@ -277,7 +277,7 @@ const SYSTEM_QUIT_REASONS: [[u8; 4]; 7] =
 /// an event without one). The race this settles: the power-off notice only
 /// queues an event for the system-events thread, which sets `OS_ENDING` later,
 /// so a `terminate:` can arrive first, and cancelling it would cancel the
-/// user's log out ("HoploDex interrupted log out") and skip FR-039.
+/// user's log out ("HoploDex interrupted log out") and skip 003 FR-039.
 pub fn quit_source(reason: Option<u32>, power_off_noticed: bool) -> QuitSource {
     let by_reason = reason
         .is_some_and(|code| SYSTEM_QUIT_REASONS.iter().any(|r| u32::from_be_bytes(*r) == code));
@@ -413,7 +413,7 @@ fn add_terminate_hook(
 /// `decide` is told who asked: for the user it passes the request on and
 /// returns `Cancel` (the quit then comes back through `quit_application`,
 /// which exits with a code through `stop:`, not `terminate:`); for the OS
-/// ending the session (FR-039) it returns `Later`, closes off the main thread
+/// ending the session (003 FR-039) it returns `Later`, closes off the main thread
 /// and calls [`reply_to_terminate`], never cancelling the log out.
 ///
 /// Call it once the event loop has been created (it sets the delegate) and

@@ -1,5 +1,5 @@
 //! The child's side: opens the spreadsheet and sends its rows as frames,
-//! stopping at the first limit it crosses (research.md §8, §9).
+//! stopping at the first limit it crosses (008 research.md §8, §9).
 //!
 //! The app starts itself again as `hoplodex --import-helper`. `main()` hands
 //! the arguments to [`run`] before it sets up anything else, so the helper has
@@ -23,7 +23,7 @@
 //! 4. each sheet is read cell by cell with `worksheet_cells_reader`, which
 //!    builds no dense grid, under the row, column, cell and text limits.
 //!
-//! Progress follows the same stages (research.md §11): the bytes arriving, the
+//! Progress follows the same stages (008 research.md §11): the bytes arriving, the
 //! parts inflated in step 2, and the parts `calamine` reads in step 4, the last
 //! two in unpacked bytes against the sizes the archive declares.
 
@@ -350,7 +350,7 @@ fn read_csv<R: Read, W: Write>(
 
 /// What a workbook's reading is measured in. The bar follows three stages,
 /// each by the parts' unpacked bytes against the sizes the archive declares
-/// (research.md §11): the file arriving (by its own bytes, the only size known
+/// (008 research.md §11): the file arriving (by its own bytes, the only size known
 /// before the archive can be read), the archive check, and the sheets being
 /// parsed. The declared sizes are only for the bar, never trusted, so each is
 /// clamped.

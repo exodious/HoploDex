@@ -98,7 +98,7 @@ async function calibrate() {
 // pointer's last position), then settle(), as every other step does, so the
 // page's handlers, React's commit and any backend call they started are done.
 // That settle leaves animations running, as the fixed pause did: a test may
-// look at one the input started (us7's owl blinking).
+// look at one the input started (`databases`' owl blinking).
 //
 // A key whose press moves the focus out of this web view (F6 into the PDF
 // surface) is done once its keydown is seen. Keys sent while the page has no

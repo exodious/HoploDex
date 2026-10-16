@@ -2,7 +2,7 @@ import type { CollectionSettings } from "./types";
 
 /** A new database's backup and lock settings, as the `collection_settings`
  * defaults in src-tauri/src/db/migrations/0001_initial.sql give them
- * (FR-024, FR-026, FR-034, FR-038). */
+ * (003 FR-024, FR-026, FR-034, FR-038). */
 export const DEFAULT_SETTINGS = {
   backupsEnabled: true,
   keepCount: 5,

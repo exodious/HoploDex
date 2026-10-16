@@ -18,12 +18,12 @@ import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 export interface ChooserRow {
   path: string;
   name: string;
-  /** The file is at `path` (FR-012). */
+  /** The file is at `path` (003 FR-012). */
   available: boolean;
-  /** Its passphrase is saved on this computer (FR-017). */
+  /** Its passphrase is saved on this computer (003 FR-017). */
   passphraseSaved: boolean;
   /** What this computer knows about it, for a database in the recent list
-   * (FR-040); a file just picked has none. */
+   * (003 FR-040); a file just picked has none. */
   details?: RowDetails;
 }
 
@@ -54,12 +54,12 @@ export interface RecentDatabaseRowProps {
   unavailableNote?: string;
   /** The last open found the database open on another computer. */
   elsewhere?: OpenElsewhere;
-  /** The saved passphrase no longer opens it, so it is asked for (US5-5). */
+  /** The saved passphrase no longer opens it, so it is asked for (003 US5-5). */
   savedFailed?: boolean;
-  /** Passphrases can be saved on this computer (FR-019). */
+  /** Passphrases can be saved on this computer (003 FR-019). */
   keyringAvailable: boolean;
   /** Restoring from a backup is offered below the error: the database is
-   * damaged, or the passphrase didn't open it, and it has backups (US3-6). */
+   * damaged, or the passphrase didn't open it, and it has backups (003 US3-6). */
   onRestore?: () => void;
   onSelect: () => void;
   /** Opens with the typed passphrase, remembered on this computer when
@@ -74,7 +74,7 @@ export interface RecentDatabaseRowProps {
 /** One database in the chooser: its name and folder and, when selected, what
  * this computer knows about it, its passphrase and **Open** (only **Open**
  * when the passphrase is saved), or what stopped it opening
- * (contracts/ui-databases.md §1). */
+ * (003 contracts/ui-databases.md §1). */
 export function RecentDatabaseRow({
   entry,
   selected,
@@ -318,7 +318,7 @@ function onDay(moment: string): string {
 }
 
 /** What this computer knows about the selected database before it is
- * unlocked (FR-040): its last open here, whether the file changed after it
+ * unlocked (003 FR-040): its last open here, whether the file changed after it
  * was last closed here, and its backups. Nothing from inside it. */
 function Details({ details }: { details: RowDetails }) {
   const { lastOpenedAt, backups, changedSinceLeftAt } = details;

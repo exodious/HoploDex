@@ -18,9 +18,10 @@ import type {
 } from "./types";
 import { render } from "../../test/sessionScope";
 
-// specs/006-accessory-links User Story 1, contracts/ui-accessories.md §2.
+// 006 US1, 006 contracts/ui-accessories.md §2.
 // This is the plain list and tiles, then the Mounted on column and tile line
-// (User Story 2, §2), then search and grouping (User Story 4, §2).
+// (006 US2, 006 contracts/ui-accessories.md §2), then search and grouping
+// (006 US4, 006 contracts/ui-accessories.md §2).
 
 const listAccessories = vi.fn();
 
@@ -205,7 +206,7 @@ beforeEach(() => {
   openDialog.mockReset();
 });
 
-describe("AccessoriesPage controls (§2)", () => {
+describe("AccessoriesPage controls (006 contracts/ui-accessories.md §2)", () => {
   it("has the collection page's List | Tiles switch, Show disposed box and an Add accessory button", async () => {
     renderPage();
 
@@ -276,7 +277,7 @@ describe("AccessoriesPage controls (§2)", () => {
   });
 });
 
-describe("AccessoriesPage list (§2)", () => {
+describe("AccessoriesPage list (006 contracts/ui-accessories.md §2)", () => {
   it("has the columns Accessory, Value and Coverage", async () => {
     renderPage();
 
@@ -365,7 +366,7 @@ describe("AccessoriesPage list (§2)", () => {
   });
 });
 
-describe("AccessoriesPage tiles (§2, FR-007a)", () => {
+describe("AccessoriesPage tiles (006 contracts/ui-accessories.md §2, FR-007a)", () => {
   it("shows a tile with the kind's drawing when there is no photo, then the name and value", async () => {
     renderPage({ view: "tile" });
 
@@ -429,7 +430,7 @@ describe("AccessoriesPage tiles (§2, FR-007a)", () => {
   });
 });
 
-describe("AccessoriesPage empty state (§2)", () => {
+describe("AccessoriesPage empty state (006 contracts/ui-accessories.md §2)", () => {
   it("says 'No accessories recorded yet.' with the Add accessory button", async () => {
     renderPage({}, { all: [], active: [] });
 
@@ -455,10 +456,10 @@ describe("AccessoriesPage empty state (§2)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §2,
+// 006 US2 (006 contracts/ui-accessories.md §2,
 // FR-013, FR-016): the direct host, as a link, in the list's Mounted on
 // column and under the tile's name.
-describe("AccessoriesPage mounted on (US2)", () => {
+describe("AccessoriesPage mounted on (006 US2)", () => {
   const upper: RecordLabel = {
     record: { kind: "accessory", id: 11 },
     make: "BCM",
@@ -550,7 +551,7 @@ describe("AccessoriesPage mounted on (US2)", () => {
     expect(open).not.toHaveBeenCalledWith(expect.objectContaining({ page: "accessory", id: 1 }));
   });
 
-  // FR-016, as the collection page's FR-016a: what is mounted on an accessory,
+  // 006 FR-016, as the collection page's 006 FR-016a: what is mounted on an accessory,
   // at any depth, counted by kind and not named.
   const carrying = summary({
     id: 11,
@@ -583,9 +584,9 @@ describe("AccessoriesPage mounted on (US2)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 4 (contracts/ui-accessories.md §2,
+// 006 US4 (006 contracts/ui-accessories.md §2,
 // FR-016 to FR-018): the collection page's search bar and "Group by" menu.
-describe("AccessoriesPage search and grouping (US4)", () => {
+describe("AccessoriesPage search and grouping (006 US4)", () => {
   const deerRifle: RecordLabel = {
     record: { kind: "firearm", id: 7 },
     make: "Winchester",
@@ -936,7 +937,7 @@ describe("AccessoriesPage search and grouping (US4)", () => {
       includeDisposed: true,
     });
   });
-  // constitution IV, research.md §22: as the collection page, only the first
+  // constitution IV, 006 research.md §22: as the collection page, only the first
   // rows mount, the rest as the end of the list nears.
   describe("with thousands of accessories", () => {
     beforeEach(() => stubIntersectionObserver());

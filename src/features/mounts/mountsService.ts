@@ -1,6 +1,6 @@
-// Typed wrappers over `invoke` for the mount commands: contracts/tauri-commands.md
+// Typed wrappers over `invoke` for the mount commands: 006 contracts/tauri-commands.md
 // "Mounts (new)" (`mount_record`, `list_mount_candidates`); the screens that use
-// them are in contracts/ui-accessories.md. The collection is refreshed by the
+// them are in 006 contracts/ui-accessories.md. The collection is refreshed by the
 // caller after a mount (`useCollection().refresh()`), as for every mutation.
 
 import type { SessionScope } from "../session/sessionScope";
@@ -21,7 +21,7 @@ export type ListMountCandidatesInput = {
 
 export type MountRecordOutput = { item: RecordLabel; host: RecordLabel | null };
 
-/** Moves `item` onto `host`, or unmounts it with `null` (FR-012). A rejected
+/** Moves `item` onto `host`, or unmounts it with `null` (006 FR-012). A rejected
  * host fails with `fieldErrors.host`. */
 export function mountRecord(
   scope: SessionScope,

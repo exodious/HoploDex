@@ -1,4 +1,4 @@
-//! specs/006-accessory-links research.md §6: the record identifier (FR-019),
+//! 006 research.md §6: the record identifier (006 FR-019),
 //! a random version 4 UUID, lowercase and hyphenated.
 
 use std::fmt::Write;

@@ -1,4 +1,4 @@
-//! Research.md §5: Tauri counts every registered custom protocol as local,
+//! 007 research.md §5: Tauri counts every registered custom protocol as local,
 //! and with no app manifest a local page may call every app command. So
 //! `build.rs` gives `tauri_build` an app manifest naming every command
 //! (`COMMANDS`), and `capabilities/default.json` allows each one on the

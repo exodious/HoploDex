@@ -1,10 +1,11 @@
-//! Opening a document in another app (feature 007, T083; FR-008 to FR-012,
-//! FR-017, SC-004; research.md §16-§18; contracts/tauri-commands.md
-//! "open_document"; ui contract §4). Real SQLCipher databases and real files
-//! in temp directories. The native dialog is a recording `Consent` that
-//! answers as told, and the OS's opener is a recording `Opener` that can fail.
+//! Opening a document in another app (007 T083, FR-008 to FR-012, FR-017,
+//! SC-004; 007 research.md §16-§18; 007 contracts/tauri-commands.md
+//! "open_document"; 007 contracts/ui-document-preview.md §4). Real SQLCipher
+//! databases and real files in temp directories. The native dialog is a
+//! recording `Consent` that answers as told, and the OS's opener is a
+//! recording `Opener` that can fail.
 //!
-//! Written ahead of T087-T089; it fails to compile until they exist. Assumed
+//! Written ahead of 007 T087-T089; it fails to compile until they exist. Assumed
 //! API:
 //! - `services::consent::{Consent, ConsentRequest, ConsentAnswer,
 //!   needs_consent}`:
@@ -13,8 +14,8 @@
 //!   - `enum ConsentAnswer { Open, Cancel }`;
 //!   - `#[derive(Clone, Debug)] enum ConsentRequest { Document { name: String,
 //!     kind: String, first_of_session_with_external: bool }, Setting }`, with
-//!     `fn title(&self) -> String` and `fn body(&self) -> String` (ui
-//!     contract §4); `kind` is the document type's label ("PDF", "Word");
+//!     `fn title(&self) -> String` and `fn body(&self) -> String` (007
+//!     contracts/ui-document-preview.md §4); `kind` is the document type's label ("PDF", "Word");
 //!   - `fn needs_consent(setting: DocumentOpening, confirmed_this_session:
 //!     bool) -> bool`;
 //! - `commands::documents::{Opener, OpenFailure}`: `trait Opener: Send + Sync
@@ -35,13 +36,13 @@
 //! session lock and only into the session that asked) and `issue_71_*` (Unix
 //! modes from creation, the symlink and owner check).
 //!
-//! Room for T090 (macOS: the `com.apple.quarantine` attribute) and T091
+//! Room for 007 T090 (macOS: the `com.apple.quarantine` attribute) and 007 T091
 //! (Windows: the folder's DACL and the `:Zone.Identifier` stream), which the
 //! macOS and Windows sessions add as `#[cfg(...)]` cases at the end of this
 //! file.
 //!
-//! T095 (US3), written ahead of T099; it fails to compile until that exists.
-//! Further assumed API (contracts/tauri-commands.md "Setting commands"),
+//! 007 T095 (007 US3), written ahead of 007 T099; it fails to compile until that exists.
+//! Further assumed API (007 contracts/tauri-commands.md "Setting commands"),
 //! `commands::databases::ops`, on `MachineSettings` alone (no open database):
 //! - `get_document_opening(machine: &MachineSettings) -> DocumentOpening`;
 //! - `set_document_opening(session: &Session, machine: &MachineSettings,
@@ -210,7 +211,7 @@ impl Opener for FakeOpener {
 }
 
 /// Fails the test, rather than hangs it, if the session's lock is held by
-/// the caller: the dialog and the opener run outside it (research.md §16,
+/// the caller: the dialog and the opener run outside it (007 research.md §16,
 /// §18).
 fn assert_session_lock_free(session: &Session, who: &str) {
     let session = session.clone();
@@ -349,7 +350,7 @@ fn document_request(request: &ConsentRequest) -> (&str, &str, bool) {
     }
 }
 
-// --- The request (FR-008, US2-1, ui contract §4) --------------------------------
+// --- The request (007 FR-008, US2-1, contracts/ui-document-preview.md §4) -------
 
 #[test]
 fn the_default_setting_asks_about_each_open_and_names_the_document_and_its_kind() {
@@ -406,7 +407,7 @@ fn the_rule_asks_unless_the_setting_is_external_and_this_session_has_confirmed()
     assert!(!needs_consent(External, true));
 }
 
-// --- Cancel (US2-2, SC-004) -----------------------------------------------------
+// --- Cancel (007 US2-2, SC-004) -------------------------------------------------
 
 #[test]
 fn cancel_writes_nothing_and_starts_nothing() {
@@ -425,7 +426,7 @@ fn cancel_writes_nothing_and_starts_nothing() {
     assert!(!world.confirmed(), "a Cancel confirms nothing");
 }
 
-// --- Open (US2-3, FR-010) -------------------------------------------------------
+// --- Open (007 US2-3, FR-010) ---------------------------------------------------
 
 #[test]
 fn open_writes_a_copy_named_by_the_stored_stem_and_the_canonical_extension() {
@@ -445,7 +446,7 @@ fn open_writes_a_copy_named_by_the_stored_stem_and_the_canonical_extension() {
     assert_eq!(opener.paths(), vec![expected.clone()], "the opener is called once, with the copy");
     assert_eq!(opener.calls()[0].1, pdf_bytes(), "the file was complete when the opener got it");
     assert_eq!(world.files(), vec![expected], "the canonical extension, not \"Pdf\"");
-    assert!(world.confirmed(), "an \"Open in another app\" confirms this session (FR-012)");
+    assert!(world.confirmed(), "an \"Open in another app\" confirms this session (007 FR-012)");
 }
 
 #[test]
@@ -517,7 +518,7 @@ fn the_copy_is_cleared_on_close_and_by_the_startup_sweep() {
     assert!(world.files().is_empty(), "the startup sweep deletes it");
 }
 
-// --- The session's confirmation (FR-012, research.md §17) ----------------------
+// --- The session's confirmation (007 FR-012, research.md §17) ------------------
 
 #[test]
 fn with_the_setting_external_one_yes_covers_the_session_and_a_lock_forgets_it() {
@@ -556,7 +557,7 @@ fn each_open_or_unlock_is_a_new_generation() {
     assert_ne!(world.generation(), first);
 }
 
-// --- A lock while the dialog is up (#65, US2-3) ---------------------------------
+// --- A lock while the dialog is up (#65, 007 US2-3) -----------------------------
 
 #[test]
 fn issue_65_a_lock_while_the_dialog_is_up_writes_no_copy_and_starts_nothing() {
@@ -762,7 +763,7 @@ fn issue_71_a_folder_owned_by_someone_else_is_refused() {
     assert!(world.files().is_empty(), "no file in a folder someone else owns");
 }
 
-// --- No app for the type (US2-5) -------------------------------------------------
+// --- No app for the type (007 US2-5) ---------------------------------------------
 
 #[test]
 fn an_opener_with_no_app_for_the_type_deletes_the_copy_at_once() {
@@ -778,7 +779,7 @@ fn an_opener_with_no_app_for_the_type_deletes_the_copy_at_once() {
     assert!(world.files().is_empty(), "the copy is gone");
 }
 
-/// FR-010, research.md §18 (amended 2026-10-07): when the OS says up front
+/// 007 FR-010, research.md §18 (amended 2026-10-07): when the OS says up front
 /// that no program is registered for the type, nothing else happens.
 #[test]
 fn a_type_with_no_registered_app_is_refused_before_the_dialog_and_nothing_is_written() {
@@ -818,9 +819,9 @@ fn any_other_opener_failure_is_an_internal_error() {
     assert_eq!(code(refused), "INTERNAL_ERROR");
 }
 
-// --- Refusals before any dialog (US2-7, FR-017) ---------------------------------
+// --- Refusals before any dialog (007 US2-7, FR-017) -----------------------------
 
-// 007 US2 Scenario 7 (FR-017)
+// 007 US2-7, FR-017
 #[test]
 fn a_row_the_attach_rules_would_refuse_is_refused_before_the_dialog_and_can_be_deleted() {
     let world = World::new();
@@ -956,7 +957,7 @@ fn a_shown_pdf_surface_is_hidden_while_the_dialog_is_up() {
     assert!(!surface.is_closed(), "hidden, not closed: the viewer stays");
 }
 
-// --- The text (ui contract §4) ----------------------------------------------------
+// --- The text (007 contracts/ui-document-preview.md §4) ---------------------------
 
 /// `needles` all appear in `text`, in this order.
 fn assert_in_order(text: &str, needles: &[&str]) {
@@ -1037,7 +1038,7 @@ fn the_text_for_the_setting_is_the_contracts_word_for_word() {
     );
 }
 
-// --- The setting (US3-1, US3-2, US3-6, FR-011, FR-012) ----------------------------
+// --- The setting (007 US3-1, US3-2, US3-6, FR-011, FR-012) ------------------------
 
 impl World {
     /// `set_document_opening`'s answer's `changed`.
@@ -1057,7 +1058,7 @@ fn set_opening(
     answer["changed"].as_bool().unwrap_or_else(|| panic!("no `changed` in {answer}"))
 }
 
-// 007 US3 Scenario 1
+// 007 US3-1
 #[test]
 fn the_default_is_preview_and_the_setting_needs_no_open_database() {
     let config = TempDir::new().unwrap();
@@ -1108,7 +1109,7 @@ fn cancelling_the_settings_dialog_keeps_preview() {
     assert_eq!(reloaded.document_opening(), DocumentOpening::Preview, "nothing was written");
 }
 
-// 007 US3 Scenario 6
+// 007 US3-6
 #[test]
 fn preview_never_asks_and_setting_the_current_value_changes_nothing() {
     let world = World::new();
@@ -1125,7 +1126,10 @@ fn preview_never_asks_and_setting_the_current_value_changes_nothing() {
     );
     assert_eq!(consent.requests().len(), 1);
 
-    assert!(world.set_opening(&consent, DocumentOpening::Preview), "back, without asking (US3-6)");
+    assert!(
+        world.set_opening(&consent, DocumentOpening::Preview),
+        "back, without asking (007 US3-6)"
+    );
     assert_eq!(consent.requests().len(), 1);
     assert_eq!(databases::get_document_opening(&world.machine), DocumentOpening::Preview);
 }
@@ -1136,7 +1140,7 @@ fn the_settings_dialog_does_not_confirm_the_session() {
     let id = world.pdf("receipt.pdf");
     let setting_consent = FakeConsent::open();
     assert!(world.set_opening(&setting_consent, DocumentOpening::External));
-    assert!(!world.confirmed(), "the session flag is set only by a document's dialog (US3-3)");
+    assert!(!world.confirmed(), "the session flag is set only by a document's dialog (007 US3-3)");
 
     let consent = FakeConsent::open();
     let opener = FakeOpener::new();
@@ -1149,8 +1153,8 @@ fn the_settings_dialog_does_not_confirm_the_session() {
 
 #[test]
 fn switching_to_external_clears_a_yes_given_under_preview() {
-    // research.md §17, amended 2026-10-07: the session's earlier yes does not
-    // carry over to the setting that makes it matter (US3-3).
+    // 007 research.md §17, amended 2026-10-07: the session's earlier yes does not
+    // carry over to the setting that makes it matter (007 US3-3).
     let world = World::new();
     let id = world.pdf("receipt.pdf");
     let first = FakeConsent::open();
@@ -1210,7 +1214,7 @@ fn the_idle_clock_is_paused_while_the_settings_dialog_is_up_and_starts_again_aft
     assert!(lifecycle::idle_tick(&world.session, &world.machine), "and runs out as usual");
 }
 
-// --- Opening with the setting (US3-3, US3-4, FR-012) ------------------------------
+// --- Opening with the setting (007 US3-3, US3-4, FR-012) --------------------------
 
 #[test]
 fn with_external_the_first_open_says_it_wont_ask_again_and_the_second_doesnt_ask() {
@@ -1371,7 +1375,7 @@ fn quarantine_of(path: &Path) -> Option<String> {
     Some(String::from_utf8(value).unwrap())
 }
 
-/// T090 (research.md §18): the copy handed to the other app carries a
+/// 007 T090 (007 research.md §18): the copy handed to the other app carries a
 /// quarantine mark in the form a browser gives a download, and keeps it when
 /// a second open reuses the copy.
 #[cfg(target_os = "macos")]
@@ -1400,7 +1404,7 @@ fn macos_the_copy_carries_a_quarantine_attribute() {
     assert_eq!(quarantine_of(&copy).as_deref(), Some(mark.as_str()));
 }
 
-/// Windows (T091): reading a file's DACL back, and widening one.
+/// Windows (007 T091): reading a file's DACL back, and widening one.
 #[cfg(windows)]
 mod windows_acl {
     use std::os::windows::ffi::OsStrExt;

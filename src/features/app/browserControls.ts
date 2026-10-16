@@ -1,16 +1,16 @@
 /**
- * The browser's own controls, taken out of the page (feature 008, FR-010,
- * FR-012, FR-013; research.md §12): HoploDex is an application, so reload,
+ * The browser's own controls, taken out of the page (008 FR-010, FR-012,
+ * FR-013; 008 research.md §12): HoploDex is an application, so reload,
  * history navigation, print, save, view source, find and the developer tools
  * do nothing, and its context menu appears only where there is something to
- * edit or copy. The native side (`window_controls/`, research.md §13, §14)
+ * edit or copy. The native side (`window_controls/`, 008 research.md §13, §14)
  * trims what a menu offers and covers what a page can't cancel.
  *
  * The listeners are in the capture phase on `window` and installed before
  * React renders, so they run before any other. The app's own keys ("/",
  * Ctrl/⌘+L, Escape) and the editing keys (Ctrl/⌘+C, X, V, Z, Y, A, and the
  * arrow, Home and End keys with Shift) are not in the key table, so they
- * work as before. Only production builds install it (FR-014).
+ * work as before. Only production builds install it (008 FR-014).
  */
 
 export type Platform = "macos" | "windows" | "linux";
@@ -50,7 +50,7 @@ const BROWSER_KEYS = [
   "browserhome",
 ];
 
-/** The chords the page cancels, for `platform` (FR-012). */
+/** The chords the page cancels, for `platform` (008 FR-012). */
 export function keyTable(platform: Platform): readonly KeyRule[] {
   const rules: KeyRule[] = [
     // Reload.
@@ -73,9 +73,9 @@ export function keyTable(platform: Platform): readonly KeyRule[] {
     { key: "c", mod: true, shift: true },
   ];
   if (platform === "macos") {
-    // Option+←/→ moves the caret by word on macOS (FR-013), so Alt is left
+    // Option+←/→ moves the caret by word on macOS (008 FR-013), so Alt is left
     // alone there; ⌘[ and ⌘] are Back and Forward, and ⌘←/→ are too outside
-    // text; ⌃⌘D is Look Up (FR-011).
+    // text; ⌃⌘D is Look Up (008 FR-011).
     rules.push(
       { key: "[", mod: true },
       { key: "]", mod: true },
@@ -204,7 +204,7 @@ function insideSelection(target: Element, point: { x: number; y: number }, doc: 
 }
 
 /** Whether a context menu may open for a right-click on `target` at `point`
- * (FR-010): on editable text, a `select`, and on a non-empty selection, which
+ * (008 FR-010): on editable text, a `select`, and on a non-empty selection, which
  * includes a read-only or disabled field with text selected in it. Nowhere
  * else: a blank area, a row, a card, a button, an image, a dialog body. */
 export function allowsContextMenu(
@@ -225,7 +225,7 @@ export function isNavigationButton(button: number): boolean {
 
 /** Installs the listeners on `target` and returns a function that removes
  * them, or `null` when nothing is installed: only production builds have
- * them (FR-014), so development keeps its reload and developer tools. */
+ * them (008 FR-014), so development keeps its reload and developer tools. */
 export function installBrowserControls(
   target: Window = window,
   userAgent: string = navigator.userAgent,
@@ -248,7 +248,7 @@ export function installBrowserControls(
   const onMouseButton = (event: MouseEvent) => {
     if (isNavigationButton(event.button)) event.preventDefault();
   };
-  // A force click's default action is Look Up (FR-011).
+  // A force click's default action is Look Up (008 FR-011).
   const onForceClick = (event: Event) => event.preventDefault();
 
   const listeners: [string, EventListener][] = [

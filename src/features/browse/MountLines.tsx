@@ -2,7 +2,7 @@ import { describeCounts, hasAny, type RecordCounts } from "../mounts/recordCount
 import { RecordName } from "../mounts/RecordName";
 import type { RecordLabel } from "../mounts/types";
 
-// specs/006-accessory-links FR-016, FR-016a, contracts/ui-accessories.md §8,
+// 006 FR-016, FR-016a, contracts/ui-accessories.md §2,
 // §9: a mounted record names its host under its name (the host a link); a
 // firearm or accessory with records mounted on it counts everything below at
 // any depth, by kind ("1 firearm and 2 accessories mounted", issue #56), not

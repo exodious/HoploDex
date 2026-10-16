@@ -1,5 +1,5 @@
 //! The operating system's sleep, wake, screen-lock and shutdown notices, as
-//! one stream (research.md §14). Each OS backend runs on its own thread and
+//! one stream (003 research.md §14). Each OS backend runs on its own thread and
 //! sends [`SystemEvent`]s; `main.rs` hands each to `session::lifecycle`. A
 //! wake watchdog also notices a sleep the OS gave no usable notice of.
 
@@ -70,7 +70,7 @@ pub enum SystemEvent {
 
 static SCREEN_LOCK_SUPPORTED: AtomicBool = AtomicBool::new(false);
 
-/// Whether this desktop tells applications that the screen locked (FR-038),
+/// Whether this desktop tells applications that the screen locked (003 FR-038),
 /// as found when the listener started. Always false before then, as in the
 /// tests.
 pub fn screen_lock_supported() -> bool {
@@ -93,7 +93,7 @@ pub fn spawn_listener(sender: Sender<SystemEvent>) {
 }
 
 /// How far wall time may run ahead of monotonic time before it counts as
-/// a sleep (research.md §14).
+/// a sleep (003 research.md §14).
 const WAKE_JUMP: Duration = Duration::from_secs(5);
 
 /// Notices a sleep from the clocks alone: the monotonic clock stops while

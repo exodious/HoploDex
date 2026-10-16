@@ -1,7 +1,7 @@
-//! specs/005-regulated-item-types User Story 2 through `ops`, against a real
+//! 005 US2 through `ops`, against a real
 //! temporary SQLCipher database: an optional "registered as" classification
 //! with a form, an approved date and "registered to" on any firearm
-//! (FR-007 to FR-014), and nothing about legal status is ever derived.
+//! (005 FR-007 to FR-014), and nothing about legal status is ever derived.
 
 use crate::support;
 
@@ -38,7 +38,7 @@ fn tomorrow() -> String {
 
 #[test]
 fn the_list_has_the_six_classifications_in_order_all_offered() {
-    // US2-1.
+    // 005 US2-1.
     let db = TestDb::new();
     let output = entry_ops::list_registration_classes(&db.conn).unwrap();
     let names: Vec<&str> = output.classes.iter().map(|c| c.name.as_str()).collect();
@@ -60,7 +60,7 @@ fn the_list_has_the_six_classifications_in_order_all_offered() {
 
 #[test]
 fn registration_saves_and_reopens_intact_on_a_suppressor_and_a_rifle() {
-    // US2-3, US2-4, FR-011: nothing derived is returned.
+    // 005 US2-3, US2-4, FR-011: nothing derived is returned.
     let db = TestDb::new();
     for (serial, type_id) in [("S1", SUPPRESSOR), ("R1", RIFLE)] {
         let input = FirearmInput { caliber: ".30".into(), ..registered(serial, type_id) };
@@ -97,7 +97,7 @@ fn registration_saves_and_reopens_intact_on_a_suppressor_and_a_rifle() {
 
 #[test]
 fn details_without_a_classification_are_refused() {
-    // FR-009, in the command layer and in the table's CHECK.
+    // 005 FR-009, in the command layer and in the table's CHECK.
     let db = TestDb::new();
     let message = "Choose what the firearm is registered as first.";
     for (field, input) in [
@@ -155,7 +155,7 @@ fn an_unknown_classification_is_refused() {
 
 #[test]
 fn the_approved_date_must_be_a_date_and_not_in_the_future() {
-    // US2-6, FR-010.
+    // 005 US2-6, FR-010.
     let db = TestDb::new();
     let future = FirearmInput { registration_approved: Some(tomorrow()), ..registered("1", RIFLE) };
     let err = ops::create_firearm(&db.conn, &future, false, None).unwrap_err();
@@ -224,7 +224,7 @@ fn form_and_registered_to_follow_the_entry_rules_and_are_trimmed() {
 
 #[test]
 fn changing_the_classification_keeps_details_and_clearing_all_clears_them() {
-    // FR-012.
+    // 005 FR-012.
     let db = TestDb::new();
     let created = ops::create_firearm(&db.conn, &registered("1", RIFLE), false, None).unwrap();
     let other = FirearmInput { registration_class_id: Some(2), ..FirearmInput::from(&created) };
@@ -249,7 +249,7 @@ fn changing_the_classification_keeps_details_and_clearing_all_clears_them() {
 
 #[test]
 fn disposal_reversal_and_coverage_keep_the_details_and_deleting_removes_them() {
-    // FR-013, US2-12.
+    // 005 FR-013, US2-12.
     let db = TestDb::new();
     let created = ops::create_firearm(&db.conn, &registered("1", RIFLE), false, None).unwrap();
     let same = |f: &hoplodex_lib::models::Firearm| {
@@ -305,7 +305,7 @@ fn disposal_reversal_and_coverage_keep_the_details_and_deleting_removes_them() {
 
 #[test]
 fn a_classification_no_longer_offered_is_still_held_and_accepted() {
-    // SC-004, research.md §5.
+    // 005 SC-004, research.md §5.
     let db = TestDb::new();
     let held = ops::create_firearm(
         &db.conn,
@@ -337,7 +337,7 @@ fn a_classification_no_longer_offered_is_still_held_and_accepted() {
 
 #[test]
 fn every_type_saves_with_no_classification_and_with_each_of_the_six() {
-    // FR-008, FR-014, SC-002: the classification is independent of type and
+    // 005 FR-008, FR-014, SC-002: the classification is independent of type and
     // nothing judges it.
     let db = TestDb::new();
     let mut n = 0;

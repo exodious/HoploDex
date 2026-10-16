@@ -9,7 +9,7 @@ import { FORM_VERSION as FIREARM_FORM } from "../firearms/FirearmForm";
 import { FORM_VERSION as RESTORE_FORM } from "../firearms/RestoreDialog";
 import type { PendingSummary } from "../databases/types";
 
-/** The version of each form's drafts this frontend can open (research.md
+/** The version of each form's drafts this frontend can open (003 research.md
  * §16). */
 const FORM_VERSIONS: Record<string, number> = {
   "firearm/add": FIREARM_FORM,
@@ -35,7 +35,7 @@ function canResume(pending: PendingSummary): boolean {
   );
 }
 
-/** Where changes a form this build doesn't know came from (contracts/ui.md
+/** Where changes a form this build doesn't know came from (008 contracts/ui.md
  * §1): the version that kept them when one is recorded and differs from this
  * build's, the same version number when only the build differs, or neither
  * known. */
@@ -53,7 +53,7 @@ function keptBy(pending: PendingSummary): string {
 export interface PendingChangesDialogProps {
   pending: PendingSummary;
   /** The changes were resumed and their form is opening beneath the dialog,
-   * which stays up until it has (specs/008 contracts/ui.md §1 "Resuming"). */
+   * which stays up until it has (008 contracts/ui.md §1 "Resuming"). */
   opening?: boolean;
   /** The form couldn't be opened: the changes are still kept, and Resume
    * editing is offered again. */
@@ -68,9 +68,9 @@ export interface PendingChangesDialogProps {
 }
 
 /** Unsaved changes kept at a lock, offered before the collection can be
- * used (FR-039, contracts/ui-databases.md §13). It can't be dismissed: the
+ * used (003 FR-039, contracts/ui-databases.md §13). It can't be dismissed: the
  * changes are resumed or discarded, and discarding asks first, or the
- * database is closed with the changes kept (specs/008 contracts/ui.md §1). */
+ * database is closed with the changes kept (008 contracts/ui.md §1). */
 export function PendingChangesDialog({
   pending,
   opening = false,

@@ -1,4 +1,4 @@
-//! Pending changes (FR-039, research.md §16): the open form's unsaved input,
+//! Pending changes (003 FR-039, research.md §16): the open form's unsaved input,
 //! staged in memory while the database is open and written into it only by
 //! a lock or an OS shutdown, then offered at the next open. Housekeeping:
 //! writing or removing them never makes a backup due, and a backup never
@@ -12,12 +12,12 @@ use crate::models::database::{
 };
 use crate::session::{Session, SessionId};
 
-/// The most a draft's `values` may take, serialized (data-model.md).
+/// The most a draft's `values` may take, serialized (003 data-model.md).
 pub const MAX_VALUES_BYTES: usize = 1 << 20;
-/// The most characters a draft's label may have (data-model.md).
+/// The most characters a draft's label may have (003 data-model.md).
 const MAX_LABEL_CHARS: usize = 200;
 
-/// Checks a draft (data-model.md "Validation rules") and returns its values
+/// Checks a draft (003 data-model.md "Validation rules") and returns its values
 /// serialized, as `pending_changes.values_json` keeps them: at most 1 MiB,
 /// a kind and mode that go together (a firearm or an accessory in any
 /// mode, a policy only added or edited), and a target for everything but an add.
@@ -65,8 +65,8 @@ pub fn stage(session: &Session, id: SessionId, draft: Option<Draft>) -> Result<(
 
 /// Writes `draft` as the database's pending changes, replacing any, and,
 /// with `clear_marker`, clears the open marker in the same transaction
-/// (FR-037's step 2 at sleep and shutdown). A draft also records this build's
-/// version as the one that saved the database (FR-015). With no draft only
+/// (003 FR-037's step 2 at sleep and shutdown). A draft also records this build's
+/// version as the one that saved the database (008 FR-015). With no draft only
 /// the marker is cleared: a row already there, such as one resumed whose form never
 /// opened, is left as it is (008 research.md §6).
 pub fn write_pending(
@@ -95,7 +95,7 @@ pub fn write_pending(
         .map_err(CommandError::from_db)?;
     }
     if draft.is_some() {
-        // The version that kept the changes, atomically with them (FR-015,
+        // The version that kept the changes, atomically with them (008 FR-015,
         // research.md §16).
         crate::db::record_saved_version(&tx).map_err(CommandError::from_db)?;
     }
@@ -114,7 +114,7 @@ pub fn write_pending(
 /// exists: it may have been deleted on another computer. The frontend also
 /// treats a form version it doesn't know as not resumable. `saved_by_version`
 /// is the version that last saved the database, and `app_version` this
-/// build's, so the dialog can word where the changes came from (FR-016).
+/// build's, so the dialog can word where the changes came from (008 FR-016).
 pub fn summary(conn: &Connection) -> Result<Option<PendingSummary>, CommandError> {
     let row = conn
         .query_row(
@@ -203,7 +203,7 @@ fn row_missing() -> CommandError {
     CommandError::new("INTERNAL_ERROR", "The unsaved changes couldn't be read.")
 }
 
-/// Moves the database's pending changes along (FR-039; 008 FR-003,
+/// Moves the database's pending changes along (003 FR-039; 008 FR-003,
 /// research.md §6, data-model.md "PendingState"). The row, the state and the
 /// session's staged draft change together, under one hold of the session's
 /// mutex:

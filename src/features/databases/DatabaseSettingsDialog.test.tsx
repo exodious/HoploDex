@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
 // The "Documents" fieldset reads and writes this computer's setting through the
 // documents store (src/features/media/documentOpening.ts), over these two
-// wrappers (specs/007-document-preview T096).
+// wrappers (007 T096).
 vi.mock("../media/mediaService");
 
 // Every test starts with the default setting, "preview", loaded in the store.
@@ -93,7 +93,7 @@ function renderSettings(current: DatabaseStatus = status()) {
   return props;
 }
 
-describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () => {
+describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.listBackups)
       .mockReset()
@@ -133,7 +133,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     expect(screen.getByRole("button", { name: "Use the default" })).toBeEnabled();
   });
 
-  it("states what backups are and aren't (FR-029)", () => {
+  it("states what backups are and aren't (003 FR-029)", () => {
     renderSettings();
 
     for (const statement of [
@@ -146,7 +146,7 @@ describe("DatabaseSettingsDialog: Backups (contracts/ui-databases.md §7)", () =
     }
   });
 
-  it("says old backups are deleted as securely as the computer allows, with the guide a click away (FR-030)", async () => {
+  it("says old backups are deleted as securely as the computer allows, with the guide a click away (003 FR-030)", async () => {
     const user = userEvent.setup();
     renderSettings();
 
@@ -363,7 +363,7 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
 
   const save = () => screen.getByRole("button", { name: "Save" });
 
-  // 003 US5 Scenario 4 (with no keyring there is nothing to change); issue #34
+  // 003 US5-4 (with no keyring there is nothing to change); issue #34
   it("is disabled until a field differs from what is saved, and again when it is put back", async () => {
     const user = userEvent.setup();
     renderSettings();
@@ -425,7 +425,7 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
   });
 });
 
-describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, §8, issue #34)", () => {
+describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md §7, §8, issue #34)", () => {
   const FACTS =
     "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open the database without knowing the passphrase.";
 
@@ -501,7 +501,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(save()).toBeEnabled();
   });
 
-  it("asks for the passphrase with the FR-017 confirmation only when Save is clicked, then remembers it and closes", async () => {
+  it("asks for the passphrase with the 003 FR-017 confirmation only when Save is clicked, then remembers it and closes", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
     const props = renderSettings(withKeyring());
@@ -539,7 +539,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
 
   // Issue #44: Enter in the confirmation's passphrase field confirms it, and
   // doesn't also save the settings form behind it.
-  it("takes Enter in the FR-017 confirmation's passphrase field as Remember passphrase", async () => {
+  it("takes Enter in the 003 FR-017 confirmation's passphrase field as Remember passphrase", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
     renderSettings(withKeyring());
@@ -750,8 +750,8 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
     expect(save()).toBeEnabled();
   });
 
-  // 003 US5 Scenario 4
-  it("says when this computer has no keyring (FR-019)", () => {
+  // 003 US5-4
+  it("says when this computer has no keyring (003 FR-019)", () => {
     renderSettings({ ...status(), keyringAvailable: false });
 
     expect(
@@ -762,7 +762,7 @@ describe("DatabaseSettingsDialog: This computer (contracts/ui-databases.md §7, 
   });
 });
 
-describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034, FR-036, FR-038)", () => {
+describe("DatabaseSettingsDialog: Locking (003 contracts/ui-databases.md §7, FR-034, FR-036, FR-038)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.listBackups)
       .mockReset()
@@ -890,7 +890,7 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
     expect(locking()).not.toHaveTextContent("anyone using this computer account");
   });
 
-  it("says a saved passphrase reopens a locked database (FR-036)", async () => {
+  it("says a saved passphrase reopens a locked database (003 FR-036)", async () => {
     await renderSettled({ ...status(), passphraseSaved: true });
 
     expect(locking()).toHaveTextContent(
@@ -899,7 +899,7 @@ describe("DatabaseSettingsDialog: Locking (contracts/ui-databases.md §7, FR-034
   });
 });
 
-describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.md §7, FR-026, US3-4a, US3-4b)", () => {
+describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databases.md §7, FR-026, US3-4a, US3-4b)", () => {
   const USB = "/media/usb/Backups";
   const saved = (existingBackups: ExistingBackupsOutcome | null): BackupSettingsSaved => ({
     settings: settings({ kind: "custom", path: USB, available: true }),
@@ -943,7 +943,7 @@ describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.
     await user.click(screen.getByRole("button", { name: "Save" }));
   }
 
-  // 003 US3 Scenario 4a
+  // 003 US3-4a
   it("sends the backup settings first and holds back the lock settings until the question is answered", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.updateBackupSettings)
@@ -1145,7 +1145,7 @@ describe("DatabaseSettingsDialog: changing the location (contracts/ui-databases.
   });
 });
 
-describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contracts/ui-document-preview.md §5, US3)", () => {
+describe("DatabaseSettingsDialog: Documents (007 contracts/ui-document-preview.md §5, US3)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.listBackups)
       .mockReset()
@@ -1180,8 +1180,8 @@ describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contract
     );
   });
 
-  // 007 US3 Scenario 1
-  it("offers Preview in HoploDex and Open in another app, at Preview by default (US3-1)", () => {
+  // 007 US3-1
+  it("offers Preview in HoploDex and Open in another app, at Preview by default (007 US3-1)", () => {
     renderSettings();
 
     expect(within(control()).getAllByRole("radio")).toHaveLength(2);
@@ -1232,7 +1232,7 @@ describe("DatabaseSettingsDialog: Documents (specs/007-document-preview contract
     expect(external()).not.toBeChecked();
   });
 
-  // 007 US3 Scenario 6
+  // 007 US3-6
   it("changes back to Preview in HoploDex at once, with setDocumentOpening('preview')", async () => {
     const user = userEvent.setup();
     vi.mocked(mediaService.getDocumentOpening).mockResolvedValue("external");

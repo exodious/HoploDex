@@ -1,5 +1,5 @@
 //! Replacing a database file in one step, for a passphrase change and a
-//! restore (research.md §4; contracts/database-file.md "Replacing the
+//! restore (003 research.md §4; 003 contracts/database-file.md "Replacing the
 //! file"). The connection is closed first: Windows cannot replace an open
 //! file. The verified copy waits at `.<file>.new` in the same folder, and the
 //! previous contents at `.<file>.old` until they are securely deleted. The
@@ -27,7 +27,7 @@ const RENAME_RETRY_EVERY: Duration = Duration::from_millis(100);
 /// What a finished replacement did with the previous contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Replaced {
-    /// The previous file was securely deleted (US4-5).
+    /// The previous file was securely deleted (003 US4-4; 003 US4-5 when it wasn't).
     pub old_removed: bool,
     /// Where it still is when it wasn't.
     pub old_path: PathBuf,
@@ -165,7 +165,7 @@ fn is_regular(path: &Path) -> bool {
 }
 
 /// Finishes or undoes a replacement of `path` that a crash interrupted
-/// between its two renames, before `path` is opened (research.md §4), when
+/// between its two renames, before `path` is opened (003 research.md §4), when
 /// the database is missing:
 /// - `.new` present: it is renamed into place, completing the swap;
 /// - only `.old` present: it is renamed back.

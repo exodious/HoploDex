@@ -8,7 +8,7 @@ import "../app/AppShell.css";
 import "../databases/databases.css";
 
 /** How long a close runs before a short backup's progress is shown anyway
- * (SC-005). */
+ * (003 SC-005). */
 const SHOW_AFTER_MS = 1000;
 
 export interface ClosingScreenProps {
@@ -17,7 +17,7 @@ export interface ClosingScreenProps {
 }
 
 /** Shown in place of the app shell while a normal close runs
- * (contracts/ui-databases.md §5, FR-027). A backup the close makes shows its
+ * (003 contracts/ui-databases.md §5, FR-027). A backup the close makes shows its
  * progress at once when it is expected to take over a second, and otherwise
  * only if the close is still running a second after it began. The backup
  * can be skipped; its changes then wait for the next close. */

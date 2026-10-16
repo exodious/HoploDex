@@ -2,7 +2,7 @@ import type { AccessorySummary } from "../accessories/types";
 import type { FirearmSummary, InsuranceWarning } from "../browse/types";
 import type { RecordLabel } from "../mounts/types";
 
-// specs/006-accessory-links FR-009, contracts/ui-accessories.md §10: the
+// 006 FR-009, contracts/ui-accessories.md §10: the
 // insurance screens list firearms and accessories together, each named by
 // `RecordName` and keyed by its `RecordRef` (a firearm and an accessory can
 // share an id).

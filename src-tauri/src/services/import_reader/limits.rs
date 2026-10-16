@@ -1,5 +1,5 @@
 //! The import's limits: file size, rows, columns, cell length and the like
-//! (research.md §9, data-model.md "Import limits").
+//! (008 research.md §9, 008 data-model.md "Import limits").
 //!
 //! The helper applies them as it reads; the parent checks the file size from
 //! the file's metadata first and the cell count across both files of an
@@ -54,7 +54,7 @@ pub enum ImportLimit {
 }
 
 impl ImportLimit {
-    /// Every limit, in the order of data-model.md's table.
+    /// Every limit, in the order of 008 data-model.md's table.
     pub const ALL: [ImportLimit; 10] = [
         Self::FileSize,
         Self::UnpackedSize,
@@ -69,7 +69,7 @@ impl ImportLimit {
     ];
 
     /// What the file passed, and what the app imports instead, as the
-    /// message's sentences (contracts/tauri-commands.md,
+    /// message's sentences (008 contracts/tauri-commands.md,
     /// `IMPORT_LIMIT_EXCEEDED`): `more than 100,000 rows. HoploDex imports at
     /// most 100,000 rows per table.`
     pub fn description(self) -> String {

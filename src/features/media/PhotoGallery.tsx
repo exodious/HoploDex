@@ -33,8 +33,8 @@ function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** Photos for a firearm or an accessory (US4). The first photo added becomes the
- * thumbnail automatically (FR-008); the viewer lets the user pick another,
+/** Photos for a firearm or an accessory (001 US4). The first photo added becomes the
+ * thumbnail automatically (001 FR-008); the viewer lets the user pick another,
  * see the full-resolution original, or delete it. */
 export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGalleryProps) {
   const scope = useSessionScope();
@@ -45,7 +45,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
   const [deleting, setDeleting] = useState<PhotoSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // The system's file chooser gives the window no input while it is open
-  // (research.md §15).
+  // (003 research.md §15).
   useEffect(() => (inputRef.current ? pauseIdleForFileInput(inputRef.current) : undefined), []);
 
   async function load() {
@@ -65,9 +65,9 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
   }, [owner.kind, owner.id]);
 
   /** Adds each photo in turn, carrying on past one that fails so a bad file
-   * doesn't cost the rest of a batch. A batch stops at the scope's end (FR-002,
-   * research.md §5): what was added stays added, and nothing more is sent. It
-   * also stops once the record is full (FR-007, amended 2026-10-11): the photos
+   * doesn't cost the rest of a batch. A batch stops at the scope's end (008 FR-002,
+   * 008 research.md §5): what was added stays added, and nothing more is sent. It
+   * also stops once the record is full (001 FR-007, amended 2026-10-11): the photos
    * up to the limit stay, and the rest are named as not added. */
   async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
     if (pending.length === 0) return;

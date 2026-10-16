@@ -9,7 +9,7 @@ Needs Python 3 (standard library only), ImageMagick (`magick`) and libtiff's
 `python3 generate.py scan-pdf OUT [PAGES [DPI]]` instead writes one extra,
 uncommitted document for performance runs (see `make_scan_pdf`).
 
-Written for HoploDex (feature 007, T004); the output is covered by the
+Written for HoploDex (007 T004); the output is covered by the
 project's own license, there is no third-party content.
 """
 import os
@@ -535,7 +535,7 @@ def make_scan_pdf(path, pages=10, dpi=300):
     """Opt-in (`python3 generate.py scan-pdf OUT [PAGES] [DPI]`, not part of the
     committed fixtures): a PDF that looks like what a scanner makes of a typed
     ledger, for measuring the viewer's first paint on a document of realistic
-    weight (T152, SC-001). `pages` US Letter pages at `dpi`, each a typed
+    weight (007 T152, SC-001). `pages` US Letter pages at `dpi`, each a typed
     acquisition record with rules, a box and drawn signatures, in grey with the
     paper's grain and a little skew and softness, JPEG-compressed (quality 85)
     inside the PDF as a scanner's own PDF output is. The defaults come to about

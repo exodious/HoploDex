@@ -38,14 +38,14 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     insuranceWarning: "none",
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
-    // specs/006-accessory-links US2: not mounted, nothing mounted on it.
+    // 006 US2: not mounted, nothing mounted on it.
     mountedOn: null,
     mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
   };
 }
 
-// specs/004-cartridges-action-types FR-027 / US1-10: the tile's caliber line
+// 004 FR-027 / US1-10: the tile's caliber line
 // reads as the list's Caliber cell.
 describe("BrowseTiles caliber line", () => {
   it("shows the cartridge with its caliber, or the caliber alone", () => {
@@ -63,7 +63,7 @@ describe("BrowseTiles caliber line", () => {
     expect(within(hawken).queryByText(/\(/)).not.toBeInTheDocument();
   });
 
-  // specs/004-cartridges-action-types US3-8: tiles do not show the action.
+  // 004 US3-8: tiles do not show the action.
   it("does not show the action", () => {
     const firearms = [summary({ id: 1, actionTypeName: "Semi-automatic" })];
     const groups: VisibleGroup[] = [{ key: "All", firearms, total: 1 }];
@@ -73,9 +73,9 @@ describe("BrowseTiles caliber line", () => {
   });
 });
 
-// specs/005-regulated-item-types US1-4, FR-001: a Suppressor with no photo
+// 005 US1-4, FR-001: a Suppressor with no photo
 // shows its own drawing, not the generic "other" one.
-// 001 US4 Scenario 3: a record with no photo shows a drawing for its type in the tiles.
+// 001 US4-3: a record with no photo shows a drawing for its type in the tiles.
 describe("BrowseTiles suppressor", () => {
   it("shows the suppressor drawing for a Suppressor with no photo", () => {
     const firearms = [
@@ -98,9 +98,9 @@ describe("BrowseTiles suppressor", () => {
   });
 });
 
-// specs/006-accessory-links US2-11, FR-016a, contracts/ui-accessories.md §9:
+// 006 US2-11, FR-016a, contracts/ui-accessories.md §9:
 // the same lines as the list, under the tile's name.
-describe("BrowseTiles mount details (US2-11)", () => {
+describe("BrowseTiles mount details (006 US2-11)", () => {
   const upper: RecordLabel = {
     record: { kind: "accessory", id: 11 },
     make: "BCM",

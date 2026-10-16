@@ -12,39 +12,39 @@ import type { InsurancePolicy, ValueSummary } from "../insurance/types";
  * Everything the app shows about the collection as a whole: every firearm's
  * browse summary (active and disposed), the value summary, and the policy
  * list. Re-fetched in full after every mutating command, so no view can
- * show a stale total or warning (FR-015, SC-003) — there is no separate
+ * show a stale total or warning (001 FR-015, SC-003) — there is no separate
  * "refresh" action.
  */
 export interface CollectionState {
   firearms: FirearmSummary[];
   firearmsById: Map<number, FirearmSummary>;
-  /** specs/006-accessory-links: every accessory's browse summary (active and
-   * disposed), beside `firearms` and refreshed with them, so a name resolves
-   * without another call (research.md §20). */
+  /** Every accessory's browse summary (active and disposed), beside
+   * `firearms` and refreshed with them, so a name resolves without another
+   * call (006 research.md §20). */
   accessories: AccessorySummary[];
   accessoriesById: Map<number, AccessorySummary>;
   summary: ValueSummary | null;
   policies: InsurancePolicy[];
   policiesById: Map<number, InsurancePolicy>;
-  /** specs/004-cartridges-action-types FR-017: the fixed action list and
+  /** 004 FR-017: the fixed action list and
    * its mapping to firearm types, loaded once per open database. */
   actionTypes: ActionTypesOutput;
   /** The action list couldn't be loaded, so Action offers nothing to
    * choose; the form says so. The backend still checks every save. */
   actionTypesFailed: boolean;
-  /** specs/005-regulated-item-types FR-001/FR-003: the fixed firearm types
+  /** 005 FR-001/FR-003: the fixed firearm types
    * and the fields each omits, loaded once per open database. */
   firearmTypes: FirearmTypesOutput;
   /** The type list couldn't be loaded, so Type offers nothing to choose;
    * the form says so. The backend still checks every save. */
   firearmTypesFailed: boolean;
-  /** specs/006-accessory-links FR-001: the accessory kinds (offered or not,
+  /** 006 FR-001: the accessory kinds (offered or not,
    * in sort order), loaded once per open database. */
   accessoryKinds: AccessoryKindsOutput;
   /** The kind list couldn't be loaded, so Kind offers nothing to choose;
    * the form says so. The backend still checks every save. */
   accessoryKindsFailed: boolean;
-  /** specs/005-regulated-item-types FR-007: the fixed registration
+  /** 005 FR-007: the fixed registration
    * classifications, loaded once per open database. */
   registrationClasses: RegistrationClassesOutput;
   /** The list couldn't be loaded, so Registered as offers only Unspecified;
@@ -121,7 +121,7 @@ export function useRegistrationClasses(): RegistrationClassesOutput & { failed: 
   };
 }
 
-/** "Glock 19", or `Glock 19 “Old Faithful”` when it has a nickname (FR-031)
+/** "Glock 19", or `Glock 19 “Old Faithful”` when it has a nickname (001 FR-031)
  * — the display name for a firearm wherever it is named in plain text. */
 export function firearmName(firearm: {
   make: string;

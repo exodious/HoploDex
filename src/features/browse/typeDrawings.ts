@@ -7,17 +7,17 @@
  * proportions hold up. Muzzle-right puts the right side toward the viewer,
  * so only right-side features are drawn (ejection ports, not slide stops).
  *
- * The suppressor (specs/005-regulated-item-types FR-001, research.md §4) was
+ * The suppressor (005 FR-001, research.md §4) was
  * drawn for this project, traced from side-on photographs of rifle
  * suppressors for proportion (a tube about 6:1 in length to diameter), with
  * no brand marks. It is a partial section, cut away between two break lines
  * to show a generic cone-baffle stack. Like the rest of the source it is
  * GPL-3.0-only.
  *
- * The fourteen accessory kinds (specs/006-accessory-links FR-002, FR-007a,
- * research.md §15) are `optic`, `light`, `magazine`, `stock`, `upper`,
- * `barrel`, `trigger`, `muzzle`, `conversion`, `mount`, `bipod`, `sling`,
- * `case` and `accessory` (the kind "Other"). They were drawn for this
+ * The fourteen accessory kinds (006 FR-002, FR-007a, research.md §15) are
+ * `optic`, `light`, `magazine`, `stock`, `upper`, `barrel`, `trigger`,
+ * `muzzle`, `conversion`, `mount`, `bipod`, `sling`, `case` and `accessory`
+ * (the kind "Other"). They were drawn for this
  * project from the published dimensions of common patterns (an AR-15
  * magazine and its 5.56 cartridge, a bolt-action rifle stock, a carbine
  * barrel's profile, an AR-15 drop-in trigger, a 30 mm scope), each at a

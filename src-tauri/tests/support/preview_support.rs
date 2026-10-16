@@ -8,7 +8,7 @@
 //! `tiff_preview_test.rs` do), and a module of `integration.rs` uses it as
 //! `crate::preview_support`.
 //!
-//! Assumed API (written ahead of T048-T054, T061; the shapes are in each
+//! Assumed API (written ahead of 007 T048-T054, T061; the shapes are in each
 //! item's doc comment):
 //! - `services::preview::{PreviewSurface, SurfaceFactory, SurfaceSpec,
 //!   Preview, PreviewContent, HelperHandle, HelperLimits}`;

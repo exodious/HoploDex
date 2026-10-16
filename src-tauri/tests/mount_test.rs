@@ -1,18 +1,18 @@
-//! specs/006-accessory-links User Story 2 through `ops`, against a real
+//! 006 US2 through `ops`, against a real
 //! temporary SQLCipher database (no mocks): mounting a firearm or an
 //! accessory on another record from the form or from `mount_record`
-//! (FR-009, FR-012), the chain and the depth-first list below a record
-//! (FR-013), the loop and active-host rules (FR-010), that nothing about a
-//! kind, type or caliber is judged (FR-011), the candidate lists
-//! (`list_mount_candidates`), disposing a host or an item (FR-014), and the
-//! table's own backstops (data-model.md "Rules").
+//! (006 FR-010, FR-012), the chain and the depth-first list below a record
+//! (006 FR-013), the loop and active-host rules (006 FR-010), that nothing about a
+//! kind, type or caliber is judged (006 FR-011), the candidate lists
+//! (`list_mount_candidates`), disposing a host or an item (006 FR-014), and the
+//! table's own backstops (006 data-model.md "Rules").
 //!
-//! Written before the implementation (tasks.md T054). Commands the contract
+//! Written before the implementation (006 tasks.md T054). Commands the contract
 //! describes as JSON (`MountRecord`'s input and output, `list_mount_candidates`,
 //! `DisposeInput`, the details) are built from and read as JSON in the
 //! contract's own camelCase names, so the tests need nothing from the structs
 //! but `mounted_on: Option<RecordRef>` on `FirearmInput` and `AccessoryInput`
-//! (research.md §8) and the `ops` names in contracts/tauri-commands.md.
+//! (006 research.md §8) and the `ops` names in 006 contracts/tauri-commands.md.
 
 use crate::support;
 
@@ -211,7 +211,7 @@ fn rows_for_item(db: &TestDb, item: RecordRef) -> i64 {
         .unwrap()
 }
 
-// --- Mounting and the two views of it (US2-1, US2-2) ---------------------------------------
+// --- Mounting and the two views of it (006 US2-1, US2-2) -----------------------------------
 
 #[test]
 fn saving_an_optics_mounted_on_shows_on_both_records() {
@@ -276,7 +276,7 @@ fn mount_record_puts_a_suppressor_firearm_on_a_rifle_and_shows_on_both() {
     assert_eq!(mounted(&db, rifle), [(can, rifle, 1)]);
 }
 
-// --- Moving and unmounting (US2-3, US2-5, FR-012, FR-013) ----------------------------------
+// --- Moving and unmounting (006 US2-3, US2-5, FR-012, FR-013) ------------------------------
 
 #[test]
 fn mounting_on_another_host_moves_the_item_in_one_step() {
@@ -308,7 +308,7 @@ fn unmounting_deletes_the_row_and_keeps_no_record_of_it() {
 
     assert_eq!(record_of(&output["item"]), optic);
     assert_eq!(output["host"], Value::Null);
-    assert_eq!(mount_rows(&db), 0, "no row, so no history (FR-013)");
+    assert_eq!(mount_rows(&db), 0, "no row, so no history (006 FR-013)");
     assert_eq!(mounted_on(&db, optic), None);
     assert!(chain(&db, optic).is_empty());
     assert!(mounted(&db, rifle).is_empty());
@@ -334,7 +334,7 @@ fn saving_the_form_with_no_mounted_on_unmounts_and_with_another_moves() {
     assert_eq!(mount_rows(&db), 0);
 }
 
-// --- The depth-first list and the chain (US2-10, US2-12) -----------------------------------
+// --- The depth-first list and the chain (006 US2-10, US2-12) -------------------------------
 
 #[test]
 fn a_receiver_lists_what_is_on_it_depth_first_and_a_red_dot_names_its_chain() {
@@ -364,7 +364,7 @@ fn a_receiver_lists_what_is_on_it_depth_first_and_a_red_dot_names_its_chain() {
     assert!(mounted(&db, red_dot).is_empty());
 }
 
-// --- The subtree follows (US2-9, US2-13, US2-14) -------------------------------------------
+// --- The subtree follows (006 US2-9, US2-13, US2-14) ---------------------------------------
 
 #[test]
 fn unmounting_an_upper_keeps_its_optic_and_mounting_it_elsewhere_moves_both() {
@@ -408,7 +408,7 @@ fn moving_an_optic_to_a_second_upper_removes_it_from_the_first() {
     assert_eq!(rows_for_item(&db, optic), 1);
 }
 
-// --- Nothing is judged (US2-7, US2-8, US2-15, FR-011) --------------------------------------
+// --- Nothing is judged (006 US2-7, US2-8, US2-15, FR-011) ----------------------------------
 
 #[test]
 fn an_unlikely_mount_is_made_without_a_warning_or_a_check_of_kind_type_or_caliber() {
@@ -455,7 +455,7 @@ fn a_form_save_judges_nothing_either() {
     assert_eq!(chain(&db, can), [rifle, upper]);
 }
 
-// --- Loops, disposed and missing hosts (US2-16, FR-010) ------------------------------------
+// --- Loops, disposed and missing hosts (006 US2-16, FR-010) --------------------------------
 
 #[test]
 fn a_record_cannot_be_mounted_on_itself_through_mount_record_or_the_form() {
@@ -599,7 +599,7 @@ fn a_missing_item_is_not_found() {
     }
 }
 
-// --- list_mount_candidates (US2-3a, US2-4, US2-6, US2-16) ----------------------------------
+// --- list_mount_candidates (006 US2-3a, US2-4, US2-6, US2-16) ------------------------------
 
 #[test]
 fn host_candidates_leave_out_the_record_what_is_below_it_and_anything_disposed() {
@@ -661,7 +661,7 @@ fn item_candidates_leave_out_the_host_its_chain_and_what_is_directly_on_it() {
     let for_record = |record: RecordRef| {
         found.iter().find(|c| record_of(&c["label"]) == record).unwrap().clone()
     };
-    // US2-3a: a candidate that is mounted says where, with the host's label.
+    // 006 US2-3a: a candidate that is mounted says where, with the host's label.
     let on_rifle_entry = for_record(on_rifle);
     assert_eq!(record_of(&on_rifle_entry["mountedOn"]), rifle);
     assert_eq!(on_rifle_entry["mountedOn"]["nickname"], "Deer rifle");
@@ -760,7 +760,7 @@ fn an_empty_query_returns_the_first_fifty_and_the_limit_is_at_most_a_hundred() {
     assert_eq!(more.len(), 100, "capped");
 }
 
-// --- Disposing (FR-014's default) ----------------------------------------------------------
+// --- Disposing (006 FR-014's default) ------------------------------------------------------
 
 #[test]
 fn disposing_a_rifle_leaves_what_was_mounted_on_it_active_and_unmounted() {
@@ -800,7 +800,7 @@ fn disposing_a_mounted_optic_unmounts_it() {
     assert_eq!(mount_rows(&db), 0);
 }
 
-// --- A record disposed with its host that fails its own checks (FR-014, US3/AC2) ------------
+// --- A record disposed with its host that fails its own checks (006 FR-014, US3-2; 001 FR-004)
 
 #[test]
 fn a_mounted_record_acquired_after_the_disposition_date_names_itself_and_nothing_changes() {
@@ -905,7 +905,7 @@ fn the_mounted_list_carries_each_records_acquisition_date() {
     assert_eq!(date_of(sling), Value::Null);
 }
 
-// --- The table's own backstops (data-model.md "Rules") -------------------------------------
+// --- The table's own backstops (006 data-model.md "Rules") ---------------------------------
 
 fn sql_error(db: &TestDb, sql: &str) -> String {
     db.conn.execute(sql, []).unwrap_err().to_string()
@@ -1053,7 +1053,7 @@ fn deleting_either_record_cascades_its_rows_away() {
     assert_eq!(mounted_on(&db, optic), None);
 }
 
-// --- SC-004: a random walk over every operation (tasks.md T080) ----------------------------
+// --- 006 SC-004: a random walk over every operation (006 tasks.md T080) --------------------
 
 /// A fixed-seed generator (SplitMix64), so the walk is the same every run.
 struct Rng(u64);
@@ -1119,7 +1119,7 @@ fn graph(db: &TestDb) -> hoplodex_lib::services::mounts::MountGraph {
     hoplodex_lib::services::mounts::MountGraph::load(&db.conn).unwrap()
 }
 
-/// SC-004's three invariants, which must hold after every step.
+/// 006 SC-004's three invariants, which must hold after every step.
 fn assert_mounts_sound(db: &TestDb, step: usize, what: &str) {
     let statuses = status_map(db);
     let pairs = mount_pairs(db);
@@ -1157,7 +1157,7 @@ fn is_below(
     graph.chain(record).contains(&other)
 }
 
-/// The rule of FR-010, stated independently of the code under test: the
+/// The rule of 006 FR-010, stated independently of the code under test: the
 /// item and the host are active and the host is not the item or below it.
 fn mount_allowed(db: &TestDb, item: RecordRef, host: Option<RecordRef>) -> bool {
     let Some(host) = host else { return true };

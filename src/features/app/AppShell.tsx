@@ -88,8 +88,8 @@ export function AppShell() {
     refresh,
   } = useCollection();
   const notify = useToast();
-  // Resumed pending changes open where their form is (FR-039), in the session
-  // that resumed them (specs/008 research.md §6).
+  // Resumed pending changes open where their form is (003 FR-039), in the session
+  // that resumed them (008 research.md §6).
   const [route, setRoute] = useState<Route>(() => resumedRoute(scope.resumed?.draft ?? null));
   const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
@@ -139,7 +139,7 @@ export function AppShell() {
         case "accessories":
           return "Accessories";
         case "accessory": {
-          // FR-005: "{make} {model} · {kind}".
+          // 006 FR-005: "{make} {model} · {kind}".
           const accessory = accessoriesById.get(target.id);
           return accessory
             ? accessoryNameText(accessory.make, accessory.model, accessory.kindName)
@@ -210,7 +210,7 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Escape goes back wherever a back link shows (FR-040), unless it's closing a
+  // Escape goes back wherever a back link shows (001 FR-040), unless it's closing a
   // dialog or popover or the user is typing in a field.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

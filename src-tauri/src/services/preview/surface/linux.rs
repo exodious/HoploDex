@@ -1,16 +1,16 @@
 //! The surface on Linux: WebKitGTK's settings, filter and signals
-//! (research.md §6-§10).
+//! (007 research.md §6-§10).
 //!
 //! Tauri's `Window::add_child` can't place a child web view on Linux: it packs
 //! it into the window's `GtkBox` beside the main web view and ignores its
 //! bounds (`pdf_surface_check` showed the PDF filling the lower half of the
-//! window, research.md §4). So `attach` moves the main web view into a
+//! window, 007 research.md §4). So `attach` moves the main web view into a
 //! `GtkOverlay` and the surface over it, and `place` positions the surface
 //! there with margins and a size request, as GTK does it. GTK's C API is
 //! called directly: `gtk` is not a dependency of this crate, and `webkit2gtk`
 //! doesn't re-export it.
 //!
-//! `attach` also does what research.md §6 and §10 ask of WebKitGTK: WebRTC
+//! `attach` also does what 007 research.md §6 and §10 ask of WebKitGTK: WebRTC
 //! off, the content filter that blocks every URL the surface may not load
 //! (compiled into a store under the cache folder, installed before the
 //! document is asked for, and the surface refused if it can't be), the
@@ -79,7 +79,7 @@ unsafe extern "C" {
 }
 
 /// The proxy: `proxy_url` on WebKitGTK sends loopback through it too (wry's
-/// empty bypass list), so the tripwire sees everything (research.md §6).
+/// empty bypass list), so the tripwire sees everything (007 research.md §6).
 ///
 /// The `data_directory` is not for a folder here (an incognito web view's
 /// context is ephemeral and keeps nothing). It is what tells
@@ -88,13 +88,13 @@ unsafe extern "C" {
 /// first web view of that key, and an incognito web view builds a context of
 /// its own that the registration never reaches. Without a key of its own the
 /// surface can't load an `hdpreview:` URL ("The URL can't be shown"), found
-/// by `pdf_surface_check` (research.md §4).
+/// by `pdf_surface_check` (007 research.md §4).
 ///
 /// The key must also be new for each surface: the store keeps a key's entry
 /// for the life of the app on Linux, and a second surface under the same key
 /// would find the protocol "already registered" and never get it, so every
 /// PDF after the first would fail to load (found by
-/// `us13-document-preview-preview.e2e.ts`). Each surface leaves one small entry in
+/// `document-preview.e2e.ts`). Each surface leaves one small entry in
 /// the store, and nothing on disk.
 pub(super) fn customize<R: Runtime>(
     builder: WebviewBuilder<R>,
@@ -129,7 +129,7 @@ const FILTER_ID: &str = "preview-block-all";
 /// is refused. WebKit compiles it on its own thread, in a few milliseconds.
 const FILTER_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The content filter (research.md §6): every URL is blocked but the
+/// The content filter (007 research.md §6): every URL is blocked but the
 /// surface's own scheme and the PDF viewer's. `blob:`, `data:` and `about:`
 /// name nothing outside the page and are what the viewer itself makes
 /// (`pdf_surface_check`), so they stay.
@@ -202,7 +202,7 @@ pub(super) fn attach<R: Runtime>(
     Ok(())
 }
 
-/// WebRTC off (research.md §6): off by default and absent in most builds,
+/// WebRTC off (007 research.md §6): off by default and absent in most builds,
 /// but set explicitly.
 fn harden(view: &webkit2gtk::WebView) {
     let Some(settings) = WebViewExt::settings(view) else {
@@ -216,7 +216,7 @@ fn harden(view: &webkit2gtk::WebView) {
 }
 
 /// Printing refused, the context menu cut down to Copy and Select All, and
-/// the input the app watches for (research.md §10).
+/// the input the app watches for (007 research.md §10).
 fn connect_signals(
     view: &webkit2gtk::WebView,
     raw: *mut webkit2gtk::ffi::WebKitWebView,

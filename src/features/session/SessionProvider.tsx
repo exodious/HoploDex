@@ -25,7 +25,7 @@ import { currentDraft, getDirtyForm } from "./usePendingDraft";
 type Phase =
   | { kind: "starting" }
   /** `selectedPath`: the database just closed, which the chooser selects
-   * (FR-033). */
+   * (003 FR-033). */
   | { kind: "chooser"; selectedPath: string | null }
   /** `opens` counts every open, so reopening the same file still mounts a
    * fresh collection tree. */
@@ -33,7 +33,7 @@ type Phase =
   /** A normal close is running (a backup may be under way). */
   | { kind: "closing"; name: string; opens: number };
 
-/** Where resuming the open's pending changes is (specs/008 research.md §6):
+/** Where resuming the open's pending changes is (008 research.md §6):
  * `opening` from the moment Resume editing is answered until their form
  * reports it opened, `failed` when it reports it can't. `attempt` counts the
  * resumes, so a retry mounts the collection afresh and its pages load again. */
@@ -55,13 +55,14 @@ interface Question {
 /** Holds the session and shows the chooser whenever no database is open.
  * `children`, the collection's providers and shell, render only while one
  * is, keyed by that open, so a close or switch drops every piece of
- * collection state with the tree that held it (contracts/ui-databases.md §3).
- * Quitting, and a normal close, ask first about a form with unsaved input
- * (FR-010, §6); a lock never asks, and keeps it as pending changes, which
- * the next open offers before the collection shows (FR-039, §13). Ctrl/⌘+L
- * locks from anywhere (FR-035), and so does every dialog's lock button; input
- * is reported for the idle lock (FR-034). The window's title names the open
- * database (§4). */
+ * collection state with the tree that held it (003 contracts/ui-databases.md
+ * §3). Quitting, and a normal close, ask first about a form with unsaved input
+ * (003 FR-010, contracts/ui-databases.md §6); a lock never asks, and keeps it
+ * as pending changes, which the next open offers before the collection shows
+ * (003 FR-039, contracts/ui-databases.md §13). Ctrl/⌘+L locks from anywhere
+ * (003 FR-035), and so does every dialog's lock button; input is reported for
+ * the idle lock (003 FR-034). The window's title names the open database
+ * (003 contracts/ui-databases.md §4). */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "starting" });
   const [question, setQuestion] = useState<Question | null>(null);
@@ -73,7 +74,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // The latest open's scope, ended or not: a closing event is matched against
   // its id even after it ended. Every end is synchronous and made here, in
   // an event handler, never inside a state updater, so nothing of the next
-  // session can render or send before the old scope is dead (research.md §3).
+  // session can render or send before the old scope is dead (008 research.md §3).
   const scopeRef = useRef<SessionScope | null>(null);
 
   /** Takes the pending changes the open reported out of the status, which
@@ -90,7 +91,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /** The dialog goes when the resumed form reports it opened, and comes back
-   * with its error when it reports it can't (contracts/ui.md §1). */
+   * with its error when it reports it can't (008 contracts/ui.md §1). */
   const watchResume = useCallback(
     (scope: SessionScope) => {
       const reportOpened = scope.resumeOpened;
@@ -163,7 +164,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [opened, toChooser]);
 
   // A normal close replaces the collection with the closing screen, which
-  // shows the backup the close may make (FR-027). The scope ends first, and
+  // shows the backup the close may make (003 FR-027). The scope ends first, and
   // only for its own session: a late event of an older one, or one with no
   // session id, changes nothing.
   useEffect(
@@ -202,7 +203,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /** "Lock now": at once, with no question, keeping unsaved input exactly
-   * as it is now (FR-033, FR-035). The backend's `session:closing` and
+   * as it is now (003 FR-033, FR-035). The backend's `session:closing` and
    * `session:closed` then take the collection away. */
   const lockDatabase = useCallback(async () => {
     const scope = scopeRef.current;
@@ -210,7 +211,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       const locking = sessionService.lockDatabase(scope, currentDraft());
       // The request is on its way with this session's id: nothing more goes
-      // out under it (research.md §3).
+      // out under it (008 research.md §3).
       scope.end();
       await locking;
     } catch (error) {
@@ -245,7 +246,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   /** Resumes or discards the pending changes the open reported. On resume,
    * the collection mounts beneath the dialog, which stays up until the form
-   * they belong to has opened with them (FR-003, research.md §6). */
+   * they belong to has opened with them (008 FR-003, research.md §6). */
   const resolvePending = useCallback(
     async (action: "resume" | "discard") => {
       const scope = openScope(scopeRef.current);
@@ -282,7 +283,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [unlessUnsaved, toChooser],
   );
 
-  // The window's close button, or quitting from the OS (research.md §17).
+  // The window's close button, or quitting from the OS (003 research.md §17).
   useEffect(
     () =>
       sessionService.onQuitRequested(
@@ -389,7 +390,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           <Inert active={phase.status.pendingChanges != null}>
             {/* Every toast of the session goes with the tree keyed by the open,
               and a late `notify` of its closures reaches no provider
-              (research.md §4). */}
+              (008 research.md §4). */}
             <ToastProvider key={`${phase.status.path}#${phase.opens}.${resume.attempt}`}>
               {/* A screen that fails to render leaves the session, and with it
                 the way to close the database and to quit, in place. */}

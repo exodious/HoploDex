@@ -1,4 +1,4 @@
-//! Value-summary computation (FR-015; 006 FR-008/FR-009): the collection
+//! Value-summary computation (001 FR-015; 006 FR-008/FR-009): the collection
 //! total with its firearms and accessories subtotals, the blanket policy in
 //! force against its limit, each policy's individually scheduled records, and
 //! the records nothing covers — always recomputed fresh from the current
@@ -68,9 +68,9 @@ pub struct ValueSummary {
     pub uninsured: Vec<UninsuredRecord>,
 }
 
-/// Input is always "current active, non-disposed firearms and accessories" (FR-025) — the
+/// Input is always "current active, non-disposed firearms and accessories" (001 FR-025) — the
 /// frontend re-invokes this after every mutating command rather than
-/// maintaining its own running total (contracts/tauri-commands.md).
+/// maintaining its own running total (001 contracts/tauri-commands.md).
 pub fn get_value_summary(conn: &Connection) -> Result<ValueSummary, CommandError> {
     get_value_summary_as_of(conn, chrono::Local::now().date_naive())
 }

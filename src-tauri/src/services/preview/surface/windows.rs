@@ -1,10 +1,10 @@
 //! The surface on Windows: WebView2's settings, browser arguments and
-//! events (research.md §6-§10).
+//! events (007 research.md §6-§10).
 //!
 //! `customize` gives the surface its own browser process and its proxy.
 //! `attach` then reaches the web view's COM interfaces through Tauri's
 //! `with_webview` (`webview2-com`, the crate wry uses), on the main thread,
-//! and sets what research.md §6-§10 ask of Edge: the request filter, the PDF
+//! and sets what 007 research.md §6-§10 ask of Edge: the request filter, the PDF
 //! toolbar without Save, Save As and Print, Save As cancelled, a context menu
 //! of Copy only, the browser accelerator keys and developer tools off, and
 //! `AcceleratorKeyPressed` for Escape, F6 and key activity. Each interface is
@@ -41,7 +41,7 @@ use super::{Hooks, Rect};
 /// How long `attach` waits for the main thread to set the web view up.
 const ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How often the foreground window's input is sampled (research.md §10).
+/// How often the foreground window's input is sampled (007 research.md §10).
 const SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Input this recent, while HoploDex is the foreground window, is activity.
@@ -56,7 +56,7 @@ const VK_F6: u32 = 0x75;
 /// none (wry 0.55's `webview2/mod.rs`), so they are written out here.
 const WRY_DEFAULT_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
-/// The surface's browser arguments, in full (research.md §6): wry's defaults,
+/// The surface's browser arguments, in full (007 research.md §6): wry's defaults,
 /// the proxy (which also takes loopback, and is the layer that covers Edge's
 /// viewer frames, which the filter can't see) and WebRTC kept to the proxy.
 /// `proxy_url` itself is not used, since wry would add it only to arguments
@@ -77,7 +77,7 @@ fn browser_args(proxy_url: &Url) -> String {
 /// the surface may show, which `surface/mod.rs` keeps current: the same
 /// address, whatever fragment) and the URLs that name nothing outside the page
 /// (`blob:`, `data:`, `about:`). Everything else is answered with a 403
-/// (research.md §6). The filter sees only the top frame, whose one request
+/// (007 research.md §6). The filter sees only the top frame, whose one request
 /// besides the document is for the viewer it embeds: Edge's viewer and its
 /// frames are not seen by it (the proxy is the layer there).
 fn request_allowed(uri: &str, document: &Url) -> bool {
@@ -93,7 +93,7 @@ fn request_allowed(uri: &str, document: &Url) -> bool {
 
 /// A user data folder of its own, so the surface has a browser process of its
 /// own: browser arguments belong to that process, which every web view
-/// sharing a folder shares (research.md §6).
+/// sharing a folder shares (007 research.md §6).
 pub(super) fn customize<R: Runtime>(
     builder: WebviewBuilder<R>,
     proxy_url: &Url,
@@ -154,7 +154,7 @@ fn configure(
         // Requests: every one the web view makes is seen, and all but the
         // surface's own are refused. The newer filter also covers workers;
         // the older one is the top frame's documents (the proxy is the layer
-        // under both, research.md §6).
+        // under both, 007 research.md §6).
         match webview.cast::<ICoreWebView2_22>() {
             Ok(webview22) => webview22
                 .AddWebResourceRequestedFilterWithRequestSourceKinds(
@@ -288,7 +288,7 @@ fn input_age_ms() -> Option<u32> {
 }
 
 /// Samples the input clock each second and passes recent input on as
-/// activity while HoploDex is the foreground window (research.md §10), until
+/// activity while HoploDex is the foreground window (007 research.md §10), until
 /// the surface is gone: its web view is no longer in the window, or the
 /// hooks have been let go of.
 fn watch_input<R: Runtime>(webview: Webview<R>, hooks: Weak<Hooks>) {

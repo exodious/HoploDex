@@ -58,7 +58,7 @@ function pendingSend() {
   return { send, finish: (saved: BackupSettingsSaved) => finish(saved) };
 }
 
-describe("ExistingBackupsDialog (contracts/ui-databases.md §7, FR-026, US3-4a)", () => {
+describe("ExistingBackupsDialog (003 contracts/ui-databases.md §7, FR-026, US3-4a)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.onBackupsMoveProgress)
       .mockReset()
@@ -112,7 +112,7 @@ describe("ExistingBackupsDialog (contracts/ui-databases.md §7, FR-026, US3-4a)"
     await waitFor(() => expect(props.onDone).toHaveBeenCalledWith(SAVED));
   });
 
-  // 003 US3 Scenario 4a
+  // 003 US3-4a
   it("leaves them", async () => {
     const user = userEvent.setup();
     const send = vi.fn().mockResolvedValue({ ...SAVED, existingBackups: { action: "leave" } });

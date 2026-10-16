@@ -1,5 +1,5 @@
-//! The app's side of a confined helper, whatever its mode (008's research.md
-//! §8; 007's §11): [`HelperProcess`] starts `hoplodex <mode argument>`, runs
+//! The app's side of a confined helper, whatever its mode (008 research.md §8;
+//! 007 research.md §11): [`HelperProcess`] starts `hoplodex <mode argument>`, runs
 //! one request and its answer under a time limit by killing the helper when
 //! it passes, and kills and waits for it when dropped. What is sent and read,
 //! and when to start another, is the mode's (`preview::helper_handle` for
@@ -43,7 +43,7 @@ type Started = (Proc, Stdin, Stdout);
 
 /// The command the app runs for a helper: `mode_argument` (such as
 /// `--render-helper`), a cleared environment, its stdin and stdout piped,
-/// stderr discarded, and no console window on Windows (007's research.md
+/// stderr discarded, and no console window on Windows (007 research.md
 /// §11). Tests add arguments to it and spawn it themselves. On Windows the
 /// app does not run this command: it starts the helper into its job object
 /// with `job::spawn`, so a helper started from this command is in no job of
@@ -65,7 +65,7 @@ pub fn command(exe: &Path, mode_argument: &str) -> Command {
     command
 }
 
-/// Starts the helper the app's way (007's research.md §11). On Windows that
+/// Starts the helper the app's way (007 research.md §11). On Windows that
 /// is into its own job object of `memory_limit` bytes, by `CreateProcessW`,
 /// before it runs any code; elsewhere the helper sets its own limit
 /// (`confine::confine`).

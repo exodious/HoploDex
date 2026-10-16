@@ -17,14 +17,14 @@ import {
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/006-accessory-links' User Story 3 (US3-1,
- * US3-2): the Rifle, carrying an Optic and the AR (which carries the
- * Suppressor), is marked disposed from the keyboard with the Optic disposed
- * with it. The Rifle, the Optic on it and the Suppressor on the AR are what the
- * Mounting story (`us12-accessories-mounting`) left, and the unmounted Sling is
- * what the Browsing story (`us12-accessories-browse`) added; here the
- * `before` hook makes them through the backend (see `support/accessories.ts`).
- * Real keys, as in those stories.
+ * End-to-end coverage of 006 US3-1 and US3-2: the Rifle, carrying an Optic and
+ * the AR (which carries the Suppressor), is marked disposed from the keyboard
+ * with the Optic disposed with it. The Rifle, the Optic on it and the
+ * Suppressor on the AR are what the Mounting story
+ * (`accessories-mounting`) left, and the unmounted Sling is what the
+ * Browsing story (`accessories-browse`) added; here the `before` hook
+ * makes them through the backend (see `support/accessories.ts`). Real keys, as
+ * in those stories.
  */
 
 /** The name of the radio group the focused radio button is in (a group's
@@ -53,7 +53,7 @@ const titleBlockText = () =>
     (document.querySelector(".hd-titleblock")?.textContent ?? "").replace(/\s+/g, " "),
   );
 
-describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-links)", () => {
+describe("006 US3 - Dispose and Delete With Items Mounted (was us12-accessories-dispose)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });
@@ -68,7 +68,7 @@ describe("User Story 3 - Disposing with what is mounted (specs/006-accessory-lin
     });
   });
 
-  it("marks the Rifle disposed with its Optic, from the keyboard, and leaves the rest unmounted (US3-1, US3-2)", async () => {
+  it("marks the Rifle disposed with its Optic, from the keyboard, and leaves the rest unmounted (006 US3-1, US3-2)", async () => {
     // Setup, not timed: the Rifle carries the Optic already; mount the AR on
     // it too, so that the AR (with the Suppressor on it) can be kept.
     await backToCollectionByKeys();

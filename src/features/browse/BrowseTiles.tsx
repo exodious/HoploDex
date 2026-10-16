@@ -14,9 +14,9 @@ export interface BrowseTilesProps {
   onSelect: (id: number) => void;
 }
 
-/** Tile/thumbnail layout for browsing the collection (US2 Acceptance
- * Scenario 1). Shows a firearm's own photo thumbnail, or its type's
- * generic drawing when it has none (FR-009, US4 Scenario 3). */
+/** Tile/thumbnail layout for browsing the collection (001 US2-1).
+ * Shows a firearm's own photo thumbnail, or its type's generic drawing when
+ * it has none (001 FR-009, US4-3). */
 export function BrowseTiles({ groups, grouped, onSelect }: BrowseTilesProps) {
   return (
     <div className="hd-browse">

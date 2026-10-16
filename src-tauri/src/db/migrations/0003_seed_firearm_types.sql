@@ -1,15 +1,16 @@
--- Seeds the type, action, classification and accessory-kind lists: the initial FirearmType set per spec.md's
--- Assumptions and research.md §10 (generic per-type thumbnails), and
+-- Seeds the type, action, classification and accessory-kind lists: the initial
+-- FirearmType set per 001 spec.md's Assumptions and 001 research.md §10
+-- (generic per-type thumbnails), and
 -- specs/004-cartridges-action-types' action types with their mapping to the
--- seeded types (FR-018; research.md §10), and specs/005-regulated-item-types'
+-- seeded types (004 FR-018; 004 research.md §10), and specs/005-regulated-item-types'
 -- Suppressor type and registration classifications, and
 -- specs/006-accessory-links' accessory kinds. The file keeps its name because
 -- `schema_migrations` records it.
 
 -- Fixed ids (005 research.md §4), listed in `sort_order`, which puts Other,
 -- the catch-all, last. Suppressor has no action, barrel length or capacity
--- (FR-003): its three flags are 0. Its caliber is its bore, never worked out
--- from its rated cartridge (FR-002, research.md §15).
+-- (005 FR-003): its three flags are 0. Its caliber is its bore, never worked out
+-- from its rated cartridge (005 FR-002, research.md §15).
 INSERT INTO firearm_types (id, name, generic_thumbnail_key, sort_order, action_type_applies, barrel_length_applies, capacity_applies, caliber_from_cartridge) VALUES
     (1, 'Handgun', 'handgun', 1, 1, 1, 1, 1),
     (2, 'Rifle', 'rifle', 2, 1, 1, 1, 1),
@@ -17,7 +18,7 @@ INSERT INTO firearm_types (id, name, generic_thumbnail_key, sort_order, action_t
     (4, 'Other', 'other', 5, 1, 1, 1, 1),
     (5, 'Suppressor', 'suppressor', 4, 0, 0, 0, 0);
 
--- FR-007: fixed ids, listed in `sort_order`, all offered. No rule about what
+-- 005 FR-007: fixed ids, listed in `sort_order`, all offered. No rule about what
 -- is regulated lives here.
 INSERT INTO registration_classes (id, name, sort_order, offered) VALUES
     (1, 'Suppressor', 1, 1),
@@ -44,9 +45,9 @@ INSERT INTO action_types (id, name, sort_order) VALUES
     (11, 'Percussion', 12),
     (12, 'Inline muzzleloader', 13);
 
--- FR-018's table, plus 005 US3's id 13 (Handgun, Rifle and Shotgun all allow
+-- 004 FR-018's table, plus 005 US3's id 13 (Handgun, Rifle and Shotgun all allow
 -- it: the exclusions below name the ids they refuse, so it is included).
--- Other (4) has no rows, so it allows every action (FR-017).
+-- Other (4) has no rows, so it allows every action (004 FR-017).
 -- Handgun (1): all but Pump action, Falling block and Inline muzzleloader.
 INSERT INTO firearm_type_actions (firearm_type_id, action_type_id)
 SELECT 1, id FROM action_types WHERE id NOT IN (5, 7, 12);
@@ -57,7 +58,7 @@ SELECT 2, id FROM action_types;
 INSERT INTO firearm_type_actions (firearm_type_id, action_type_id)
 SELECT 3, id FROM action_types WHERE id <> 8;
 
--- specs/006-accessory-links FR-002 (data-model.md's "Entity: Accessory
+-- 006 FR-002 (006 data-model.md's "Entity: Accessory
 -- Kind"): fixed ids, so an id means the same kind in every build; listed in
 -- `sort_order`, all offered. Trigger and Bipod came after the first twelve,
 -- so they take the next ids and `sort_order` puts them beside their

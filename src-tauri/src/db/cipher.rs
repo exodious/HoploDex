@@ -1,5 +1,5 @@
 //! The pinned SQLCipher settings of the database file format
-//! (contracts/database-file.md, research.md §1, FR-011). Every connection
+//! (003 contracts/database-file.md, research.md §1, FR-011). Every connection
 //! and every attached schema gets them straight after its key and before its
 //! first read, so a different SQLCipher build default can never write a file
 //! another platform cannot open.
@@ -90,7 +90,7 @@ pub mod test_kdf {
 
 /// Stops SQLCipher writing to stderr (it logs every failed HMAC check, which
 /// is every wrong passphrase) for the rest of the process. Release builds
-/// only: debug builds keep the log (research.md §1).
+/// only: debug builds keep the log (003 research.md §1).
 pub fn silence_cipher_log() {
     #[cfg(not(debug_assertions))]
     {

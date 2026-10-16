@@ -1,7 +1,7 @@
-//! The record identifier on firearms (specs/006-accessory-links FR-019,
+//! The record identifier on firearms (006 FR-019,
 //! research.md §6): a random version 4 UUID, set once at creation, never
 //! changed, and never sent over IPC. Real SQLCipher databases, no mocks.
-//! The accessory half is tasks.md T016 (FR-019, FR-022).
+//! The accessory half is 006 tasks.md T016 (006 FR-019, FR-022).
 
 use crate::support;
 
@@ -16,7 +16,7 @@ use hoplodex_lib::services::record_id;
 use rusqlite::Connection;
 use support::TestDb;
 
-/// The shape FR-019 gives, checked without a regex dependency.
+/// The shape 006 FR-019 gives, checked without a regex dependency.
 fn is_v4_uuid(text: &str) -> bool {
     let bytes = text.as_bytes();
     bytes.len() == 36
@@ -217,7 +217,7 @@ fn the_identifier_is_never_serialized_by_a_firearm_or_its_detail() {
     }
 }
 
-// --- On accessories (T016) -----------------------------------------------------------------
+// --- On accessories (006 T016) -------------------------------------------------------------
 
 fn accessory_uid_in_database(conn: &Connection, id: i64) -> String {
     conn.query_row("SELECT uid FROM accessories WHERE id = ?1", [id], |r| r.get(0)).unwrap()

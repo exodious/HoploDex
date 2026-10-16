@@ -1,5 +1,5 @@
-//! Integration tests for User Story 1's create/edit/dispose/delete
-//! lifecycle (spec.md Acceptance Scenarios 1-5), run against a real
+//! Integration tests for 001 US1's create/edit/dispose/delete
+//! lifecycle (001 US1-1 to US1-5), run against a real
 //! temporary SQLCipher database — no mocks, per the constitution.
 
 use crate::support;
@@ -185,7 +185,7 @@ fn deleting_a_firearm_cascades_to_its_photos_and_documents() {
     assert_eq!(doc_count, 0);
 }
 
-// --- Date rules (FR-003 / FR-004, US1 Acceptance Scenarios 13-14) ---
+// --- Date rules (001 FR-003 / FR-004, US1-13, US1-14) ---
 
 fn today() -> chrono::NaiveDate {
     chrono::Local::now().date_naive()
@@ -295,7 +295,7 @@ fn a_date_that_is_not_a_real_calendar_date_is_rejected() {
     assert!(err.field_errors.as_ref().unwrap().contains_key("acquisitionDate"));
 }
 
-// --- Whole-dollar amounts (FR-037, US1 Acceptance Scenario 16) ---
+// --- Whole-dollar amounts (001 FR-037, US1-16) ---
 
 fn assert_field_error(err: &hoplodex_lib::commands::CommandError, field: &str) {
     assert_eq!(err.code, "VALIDATION_ERROR");

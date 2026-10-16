@@ -35,7 +35,7 @@
   border-top: 0;
 }
 
-/* FR-038: the section a form opened on, marked briefly so the user sees where
+/* 001 FR-038: the section a form opened on, marked briefly so the user sees where
    to type. Under prefers-reduced-motion it is tinted but not animated. */
 .hd-form-section[data-highlight] {
   background: var(--niter-wash);
@@ -262,7 +262,7 @@
   color: var(--ink-2);
 }
 
-/* specs/004-cartridges-action-types contracts/ui-entry.md §3: a guessed
+/* 004 contracts/ui-entry.md §3: a guessed
    caliber is tagged in words at the end of the field, and a saved caliber
    the new cartridge disagrees with gets a one-action suggestion under it. */
 .hd-guess-tag {
@@ -287,7 +287,7 @@
   color: var(--ink-2);
 }
 
-/* specs/006-accessory-links contracts/ui-accessories.md §7: the dispose
+/* 006 contracts/ui-accessories.md §7: the dispose
    dialog's note under its title. Its Mounted group is in mounts.css. */
 .hd-dialog__note {
   display: block;

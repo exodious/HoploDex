@@ -7,7 +7,7 @@ import type { MountCandidate } from "./mountsService";
 import { recordNameText } from "./recordNames";
 import type { RecordLabel, RecordRef } from "./types";
 
-// specs/006-accessory-links contracts/ui-accessories.md §4 (FR-010, FR-012):
+// 006 contracts/ui-accessories.md §4 (006 FR-010, FR-012):
 // the "Mounted on" field of both forms, and the search of the Mounted
 // section's "Mount on {name}" dialog. A `Combobox` over `list_mount_candidates`.
 
@@ -15,8 +15,8 @@ export interface MountChooserProps {
   /** What is chosen now; `null` = not mounted. */
   value: RecordLabel | null;
   /** `mountedOn` is where a chosen candidate is mounted now (`null` when
-   * nowhere), for the question a move needs (§5); it is not passed when the
-   * field is cleared. */
+   * nowhere), for the question a move needs (006 contracts/ui-accessories.md §5); it
+   * is not passed when the field is cleared. */
   onChange: (label: RecordLabel | null, mountedOn?: RecordLabel | null) => void;
   /** The record being placed (role "host": left out of the list with
    * everything mounted on it; `null` for a new record), or the record
@@ -41,7 +41,7 @@ function candidateKey(label: RecordLabel): string {
 }
 
 /** The muted text after a name: a firearm's type, then the serial number. An
- * accessory's kind is already in its name (FR-005). */
+ * accessory's kind is already in its name (006 FR-005). */
 function candidateMarker(label: RecordLabel): string | undefined {
   const parts: string[] = [];
   if (label.record.kind === "firearm") parts.push(label.typeName);

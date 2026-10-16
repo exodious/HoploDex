@@ -28,4 +28,4 @@ The generators for hostile documents are not here: they are code, in
 - The compound-file writer in `generate.py` makes version 3 files whose
   streams are all padded to 4096 bytes, so none uses the mini stream.
 - `three-pages.pdf`, the truncated and the bit-flipped copy are meant for the
-  PDF viewer, which reports the damaged ones in its own words (spec FR-006).
+  PDF viewer, which reports the damaged ones in its own words (007 FR-006).

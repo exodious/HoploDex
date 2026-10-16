@@ -7,7 +7,7 @@ import {
   parseDollars,
 } from "./money";
 
-describe("parseDollars (FR-037)", () => {
+describe("parseDollars (001 FR-037)", () => {
   it("treats a blank field as no value", () => {
     expect(parseDollars("  ")).toEqual({ ok: true, dollars: null });
     expect(parseDollars("")).toEqual({ ok: true, dollars: null });
@@ -57,8 +57,8 @@ describe("parseDollars (FR-037)", () => {
   });
 });
 
-// 001 US1 Scenario 16
-describe("formatDollars (FR-037)", () => {
+// 001 US1-16
+describe("formatDollars (001 FR-037)", () => {
   it("groups thousands and never shows cents", () => {
     expect(formatDollars(1000)).toBe("$1,000");
     expect(formatDollars(100)).toBe("$100");
@@ -72,7 +72,7 @@ describe("formatDollars (FR-037)", () => {
   });
 });
 
-// 001 US1 Scenario 16
+// 001 US1-16
 describe("dollarsToInput", () => {
   it("is plain digits with no grouping, and round-trips through parseDollars", () => {
     expect(dollarsToInput(1250)).toBe("1250");

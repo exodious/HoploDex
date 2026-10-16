@@ -10,9 +10,9 @@ const DISK_ENCRYPTION =
   "Your collection is encrypted with your passphrase. For extra protection, also turn on your computer's disk encryption: BitLocker on Windows, FileVault on macOS, or LUKS on Linux.";
 
 /** The notes shown once at the top of the Collection, Accessories and
- * Insurance pages (contracts/ui-databases.md §10, #59). The disk-encryption note stays until it is dismissed, on any
- * computer, since dismissing it is kept in the database (FR-008). A backup
- * opened directly (research.md §9) and a restore (FR-028) are told once, in
+ * Insurance pages (003 contracts/ui-databases.md §10, #59). The disk-encryption note stays until it is dismissed, on any
+ * computer, since dismissing it is kept in the database (003 FR-008). A backup
+ * opened directly (003 research.md §9) and a restore (003 FR-028) are told once, in
  * this session. */
 export function DatabaseNotes() {
   const { status, dismissNote } = useSession();

@@ -13,7 +13,7 @@ import type {
   Suggestion,
 } from "./types";
 
-/** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009). */
+/** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (002 FR-009). */
 export function createFirearm(
   scope: SessionScope,
   input: FirearmInput,
@@ -59,26 +59,26 @@ export function getFirearm(scope: SessionScope, id: number): Promise<FirearmDeta
   return scope.invoke<FirearmDetail>("get_firearm", { id });
 }
 
-/** specs/004-cartridges-action-types FR-017/FR-018: the fixed action list and
+/** 004 FR-017/FR-018: the fixed action list and
  * which actions each firearm type allows. */
 export function listActionTypes(scope: SessionScope): Promise<ActionTypesOutput> {
   return scope.invoke<ActionTypesOutput>("list_action_types");
 }
 
-/** specs/005-regulated-item-types FR-001/FR-003: the fixed firearm types, in
+/** 005 FR-001/FR-003: the fixed firearm types, in
  * id order, with the fields each omits. */
 export function listFirearmTypes(scope: SessionScope): Promise<FirearmTypesOutput> {
   return scope.invoke<FirearmTypesOutput>("list_firearm_types");
 }
 
-/** specs/005-regulated-item-types FR-007: the fixed registration
+/** 005 FR-007: the fixed registration
  * classifications in list order, including any no longer offered. */
 export function listRegistrationClasses(scope: SessionScope): Promise<RegistrationClassesOutput> {
   return scope.invoke<RegistrationClassesOutput>("list_registration_classes");
 }
 
 /** specs/004-cartridges-action-types: what an entered value becomes, and for
- * a cartridge the caliber it derives (contracts/tauri-commands.md). */
+ * a cartridge the caliber it derives (004 contracts/tauri-commands.md). */
 export function settleEntry(
   scope: SessionScope,
   field: EntryFieldName,
@@ -89,8 +89,8 @@ export function settleEntry(
 
 /** The ranked suggestions for what is typed so far, best first, at most 20.
  * `make` is the make on the form, which limits a model's list to that make's
- * models (contracts/tauri-commands.md). Nothing is kept between calls
- * (FR-011). */
+ * models (004 contracts/tauri-commands.md). Nothing is kept between calls
+ * (004 FR-011). */
 export async function suggestEntries(
   scope: SessionScope,
   field: EntryFieldName,

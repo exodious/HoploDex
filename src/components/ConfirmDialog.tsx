@@ -43,8 +43,8 @@ export interface ConfirmDialogProps {
  * import) per constitution Principle III — no screen invents its own. With
  * an alternative action it is also the save / discard / cancel question.
  *
- * It follows the app's Enter rule (issue #44, specs/003 contracts/
- * ui-databases.md §8): the body and footer are one `<form>` and the confirm
+ * It follows the app's Enter rule (issue #44, 003 contracts/ui-databases.md
+ * §0): the body and footer are one `<form>` and the confirm
  * button is its submit button, so Enter in a single-line field in `children`
  * confirms, unless `confirmDisabled` or an action is pending. Enter on a
  * button activates that button (Cancel cancels), and on a radio, checkbox or

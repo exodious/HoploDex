@@ -11,7 +11,7 @@ export interface FirearmThumbnailProps {
 }
 
 /** Renders a firearm's thumbnail: its designated photo if it has one, or
- * its type's generic drawing otherwise (FR-009, US4 Scenario 3). Photos
+ * its type's generic drawing otherwise (001 FR-009, US4-3). Photos
  * load only once the frame scrolls near the viewport, so a long
  * collection doesn't issue one IPC call per row up front. Thumbnails never
  * change after upload, so the session scope keeps the ones loaded

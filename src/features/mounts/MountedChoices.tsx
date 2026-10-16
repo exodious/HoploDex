@@ -14,7 +14,7 @@ const CHOICES = [
 export interface MountedChoicesProps {
   mounted: MountedEntry[];
   /** The records disposed with it, by `recordKey`, each with the price typed
-   * for it (blank: none). A record not here is kept (FR-014). */
+   * for it (blank: none). A record not here is kept (006 FR-014). */
   disposeWith: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
   /** The group's heading. */
@@ -29,7 +29,7 @@ export interface MountedChoicesProps {
   statements: string[];
 }
 
-/** The **Mounted** group (contracts/ui-accessories.md §7): everything below
+/** The **Mounted** group (006 contracts/ui-accessories.md §7): everything below
  * the record, each with a Keep | Dispose with it choice and, where the form
  * has prices, an optional price for a record disposed with it. Below it,
  * what happens to the rest. Shared by the dispose dialog and the import's

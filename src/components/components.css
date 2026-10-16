@@ -1178,7 +1178,7 @@
   color: var(--niter);
 }
 
-/* ── Passphrase strength (FR-003) ─────────────────────────────────────── */
+/* ── Passphrase strength (003 FR-003) ─────────────────────────────────────── */
 
 .hd-passphrase {
   display: flex;
@@ -1363,7 +1363,7 @@
   padding: var(--space-1);
 }
 
-/* Eight rows, then it scrolls (contracts/ui-entry.md §1). */
+/* Eight rows, then it scrolls (004 contracts/ui-entry.md §1). */
 .hd-combobox__list {
   --combobox-row: 36px;
   max-height: calc(8 * var(--combobox-row));

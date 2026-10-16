@@ -18,8 +18,8 @@ import { setResumedDraft } from "../../test/sessionScope";
 
 beforeEach(resetServiceMocks);
 
-// specs/002-firearm-identification contracts/ui-identification.md §1-§3
-describe("FirearmForm origin control (US1)", () => {
+// 002 contracts/ui-identification.md §1-§3
+describe("FirearmForm origin control (002 US1)", () => {
   it("offers Domestic/Imported/Re-imported/Unspecified with their one-line descriptions", () => {
     renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
 
@@ -181,7 +181,7 @@ describe("FirearmForm origin control (US1)", () => {
     expect(screen.getByRole("radio", { name: /^Domestic/ })).toBeChecked();
   });
 
-  // 002 SC-007, US1 Scenario 7 (the guide opens from the form)
+  // 002 SC-007, US1-7 (the guide opens from the form)
   it("opens the origin guide from the How do I record this? button", async () => {
     const user = userEvent.setup();
     renderWithOriginGroup(<FirearmForm onSubmit={vi.fn()} />);
@@ -195,8 +195,8 @@ describe("FirearmForm origin control (US1)", () => {
   });
 });
 
-// specs/002-firearm-identification contracts/ui-identification.md §2, US2
-describe("FirearmForm original maker's marks (US2)", () => {
+// 002 contracts/ui-identification.md §2, US2
+describe("FirearmForm original maker's marks (002 US2)", () => {
   const group = () => screen.getByRole("group", { name: "Original maker's marks" });
 
   it("shows the fieldset for an import-marked origin, with a hint and all three fields optional", async () => {
@@ -298,7 +298,7 @@ describe("FirearmForm original maker's marks (US2)", () => {
   });
 });
 
-describe("FirearmForm original-marks warning (US3, FR-009)", () => {
+describe("FirearmForm original-marks warning (002 US3, FR-009)", () => {
   it("opens a confirm-to-save dialog on ORIGINAL_MARKS_MATCH and resends confirmed on Save anyway", async () => {
     const user = userEvent.setup();
     const message =
@@ -587,7 +587,7 @@ describe("FirearmForm physical details disclosure", () => {
   });
 });
 
-describe("FirearmForm resuming pending changes (FR-039)", () => {
+describe("FirearmForm resuming pending changes (003 FR-039)", () => {
   afterEach(() => setResumedDraft(null));
 
   const beretta = {

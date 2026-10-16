@@ -32,7 +32,7 @@ custom-protocol = ["tauri/custom-protocol"]
 # Enabled for E2E builds and the keyring tests only. Swaps the OS-native
 # keyring (Secret Service/Keychain/Credential Manager), which holds a
 # database's passphrase only when the user asks this computer to remember
-# it (FR-017), for keyring-core's in-memory mock store: a headless session
+# it (003 FR-017), for keyring-core's in-memory mock store: a headless session
 # can't answer the Secret Service's unlock prompt, and tests must never
 # reach the developer's real keyring. Tests play a computer with no keyring
 # with `Keyring::off()`.
@@ -58,8 +58,8 @@ test-kdf = []
 
 [dependencies]
 # `unstable`: `Window::add_child`, the PDF preview's child web view
-# (research.md §4). `macos-proxy`, macOS only (below): `proxy_url` there
-# (research.md §6).
+# (007 research.md §4). `macos-proxy`, macOS only (below): `proxy_url` there
+# (007 research.md §6).
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -73,7 +73,7 @@ tauri-plugin-wdio-webdriver = { version = "1.4.0", optional = true }
 rust_xlsxwriter = "0.96"
 calamine = "0.36"
 csv = "1.4"
-# The import helper's CSV parser, bounded by the field (008's research.md §8):
+# The import helper's CSV parser, bounded by the field (008 research.md §8):
 # `csv`'s own reader grows a record's buffer to the size of the field.
 # Promoted from transitive, at the version already in Cargo.lock.
 csv-core = "0.1.13"
@@ -83,44 +83,44 @@ chrono = "0.4"
 getrandom = { version = "0.3", features = ["std"] }
 log = "0.4"
 image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
-# Passphrase NFC normalization (research.md §1).
+# Passphrase NFC normalization (003 research.md §1).
 unicode-normalization = "0.1.25"
-# The open marker's machine name (research.md §6).
+# The open marker's machine name (003 research.md §6).
 gethostname = "1.1.0"
-# Free space before a copy (research.md §4).
+# Free space before a copy (003 research.md §4).
 fs4 = "1.1.0"
 # Promoted from transitive, at the version already in Cargo.lock: wiping
-# passphrases from memory (research.md §1).
+# passphrases from memory (003 research.md §1).
 zeroize = "1.9"
 # Document content checks, which read directory structures and decompress
-# nothing but small parts (research.md §2), text decoding (§12) and page
-# PNGs (§11).
+# nothing but small parts (007 research.md §2), text decoding (007 research.md §12) and page
+# PNGs (007 research.md §11).
 # Promoted from transitive, at the versions already in Cargo.lock: `zip` is
 # the 8.x `calamine` uses, `png` the 0.17 `image` uses.
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 cfb = "0.7.3"
-# An OOXML package's relationship parts (research.md §2), at the version and
+# An OOXML package's relationship parts (007 research.md §2), at the version and
 # with the feature `calamine` already brings.
 quick-xml = { version = "0.41", features = ["encoding"] }
 encoding_rs = "0.8.35"
 png = "0.17.16"
-# TIFF pages, decoded in the render helper on every OS (research.md §11).
+# TIFF pages, decoded in the render helper on every OS (007 research.md §11).
 # `fax` is at 0.2, the one `tiff` uses, so the tree has a single copy.
 tiff = "0.11.3"
 fax = "0.2.7"
 
 # Promoted from transitive, at the version already in Cargo.lock: asking the
-# storage to discard a securely deleted file's blocks (research.md §12).
+# storage to discard a securely deleted file's blocks (003 research.md §12).
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.189"
 
-# Sleep, wake, screen-lock and shutdown notices (research.md §14). Each is
+# Sleep, wake, screen-lock and shutdown notices (003 research.md §14). Each is
 # already in the tree for its platform; only the features are switched on.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5.18"
-# The render helper's confinement (research.md §11).
+# The render helper's confinement (007 research.md §11).
 landlock = "0.4.7"
-# The PDF surface's filter, settings and signals (research.md §6-§10). The
+# The PDF surface's filter, settings and signals (007 research.md §6-§10). The
 # version and features wry uses, `v2_40` on top of its `v2_38`.
 webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 
@@ -136,7 +136,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSURL",
 ] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSWorkspace"] }
-# The PDF surface's content rule list, SPI switches and input (research.md
+# The PDF surface's content rule list, SPI switches and input (007 research.md
 # §6, §7, §10). Promoted from dev-dependencies.
 block2 = "0.6.2"
 objc2-web-kit = { version = "0.3.2", default-features = false, features = [
@@ -150,16 +150,16 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "WKWebView",
     "WKWebViewConfiguration",
 ] }
-# `proxy_url` on macOS (research.md §6); macOS 14 and later, and the minimum
+# `proxy_url` on macOS (007 research.md §6); macOS 14 and later, and the minimum
 # is 26.
 tauri = { version = "2", features = ["unstable", "macos-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
-# File identity for the take-over check (research.md §6). Unix uses `stat`
+# File identity for the take-over check (003 research.md §6). Unix uses `stat`
 # directly: opening a handle there would drop SQLite's locks when closed.
 same-file = "1.0.6"
 windows-sys = { version = "0.61", features = [
-    # FSCTL_SET_ZERO_DATA after a secure delete (research.md §12).
+    # FSCTL_SET_ZERO_DATA after a secure delete (003 research.md §12).
     "Win32_Foundation",
     # The hidden window that receives power and session messages.
     "Win32_Graphics_Gdi",
@@ -170,14 +170,14 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Shutdown",
     "Win32_UI_WindowsAndMessaging",
     # `GetLastInputInfo`, sampled for the idle lock while the PDF surface is
-    # up (research.md §10).
+    # up (007 research.md §10).
     "Win32_UI_Input_KeyboardAndMouse",
-    # The render helper's job object and mitigations (research.md §11), the
-    # external copy's DACL (§18) and `GetLastInputInfo` (§10).
+    # The render helper's job object and mitigations (007 research.md §11), the
+    # external copy's DACL (007 research.md §18) and `GetLastInputInfo` (007 research.md §10).
     "Win32_System_JobObjects",
     "Win32_System_Threading",
     # The helper's error mode, parent watch and WER flags, and the mitigation
-    # policy structures (research.md §11).
+    # policy structures (007 research.md §11).
     "Win32_System_Diagnostics_Debug",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_ErrorReporting",
@@ -186,16 +186,16 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security_Authorization",
     "Win32_System_SystemInformation",
     # Opening the external copy's folder for its DACL without following a
-    # reparse point (research.md §18).
+    # reparse point (007 research.md §18).
     "Win32_Storage_FileSystem",
     # The pipes of the render helper HoploDex starts into its job object
-    # (research.md §11, amended 2026-10-07).
+    # (007 research.md §11, amended 2026-10-07).
     "Win32_System_Pipes",
     # `AssocQueryStringW`: whether a program is registered for a document type
-    # (research.md §18, amended 2026-10-07).
+    # (007 research.md §18, amended 2026-10-07).
     "Win32_UI_Shell",
 ] }
-# The PDF surface's settings and events (research.md §6-§10). The versions
+# The PDF surface's settings and events (007 research.md §6-§10). The versions
 # wry uses.
 webview2-com = "0.38.2"
 windows = { version = "0.61.3", features = ["Win32_Foundation"] }
@@ -236,7 +236,7 @@ path = "tests/tiff_preview_test.rs"
 name = "macos_screen_lock_test"
 harness = false
 
-# WinSock, for the tripwire's exclusive bind (research.md §6).
+# WinSock, for the tripwire's exclusive bind (007 research.md §6).
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Networking_WinSock",
@@ -261,8 +261,8 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
-# What the import helper reads a file with (008's research.md §8), optimized in
-# debug and test builds too: a refusal is to take under 5 s (SC-003), and an
+# What the import helper reads a file with (008 research.md §8), optimized in
+# debug and test builds too: a refusal is to take under 5 s (008 SC-002), and an
 # unoptimized `miniz_oxide` inflates a gibibyte in far longer, and unoptimized
 # `calamine` and `quick-xml` read a workbook of five million cells in over half
 # a minute. Only these crates: the rest of a test build stays as quick to

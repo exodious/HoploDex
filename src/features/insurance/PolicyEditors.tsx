@@ -16,10 +16,10 @@ export function usePolicyEditors(onDeleted?: () => void) {
   const [editing, setEditing] = useState<InsurancePolicy | "new" | null>(null);
   const [deleting, setDeleting] = useState<InsurancePolicy | null>(null);
 
-  // Pending changes the user resumed for a policy reopen its form (FR-039),
+  // Pending changes the user resumed for a policy reopen its form (003 FR-039),
   // which takes them as its unsaved input. A policy the loaded collection
   // doesn't have can't open its form: tell the scope, so the pending changes
-  // dialog comes back (specs/008 research.md §6).
+  // dialog comes back (008 research.md §6).
   useEffect(() => {
     const resumed = scope.resumed?.draft;
     if (resumed?.kind !== "policy") return;

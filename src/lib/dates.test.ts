@@ -53,7 +53,7 @@ describe("daysUntil", () => {
   });
 });
 
-describe("futureDateError (FR-003 / FR-004)", () => {
+describe("futureDateError (001 FR-003 / FR-004)", () => {
   it("allows today and earlier, and blank", () => {
     expect(futureDateError("2026-09-20", "Acquisition date", "2026-09-20")).toBeUndefined();
     expect(futureDateError("1968-10-22", "Acquisition date", "2026-09-20")).toBeUndefined();
@@ -67,7 +67,7 @@ describe("futureDateError (FR-003 / FR-004)", () => {
   });
 });
 
-describe("dispositionOrderError (FR-004)", () => {
+describe("dispositionOrderError (001 FR-004)", () => {
   it("blocks a disposition before the acquisition, but not the same day", () => {
     expect(dispositionOrderError("2025-03-01", "2025-02-28")).toBe(
       "Disposition date can't be earlier than the acquisition date.",
@@ -81,7 +81,7 @@ describe("dispositionOrderError (FR-004)", () => {
   });
 });
 
-describe("formatRecentMoment and formatRecentDay (FR-040)", () => {
+describe("formatRecentMoment and formatRecentDay (003 FR-040)", () => {
   const now = new Date(2026, 8, 29, 10, 30);
   const time = (d: Date) => new Intl.DateTimeFormat("en-US", { timeStyle: "short" }).format(d);
 

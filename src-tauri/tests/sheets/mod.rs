@@ -1,5 +1,5 @@
-//! Spreadsheet fixtures for the two-table tests (specs/006-accessory-links
-//! US5, contracts/spreadsheet-format.md): rows built from named cells in the
+//! Spreadsheet fixtures for the two-table tests (006 US5,
+//! contracts/spreadsheet-format.md): rows built from named cells in the
 //! real column order of each table, CSV files and workbooks written and read
 //! back, and the two-file `import_collection` call.
 //!
@@ -184,7 +184,7 @@ pub fn read_import(path: &Path) -> Vec<ReadTable> {
     crate::support::read_files(&[import_file(path)])
 }
 
-/// `import_collection` on one or two files (contracts/tauri-commands.md:
+/// `import_collection` on one or two files (006 contracts/tauri-commands.md:
 /// `files: { filePath, format }[]`), read in the import helper first, as the
 /// app does.
 pub fn import(

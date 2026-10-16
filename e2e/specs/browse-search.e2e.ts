@@ -14,12 +14,12 @@ import { createDatabase, invokeCommand, search } from "../support/ui";
 import { resizeWindow } from "../support/screenshots";
 
 /**
- * End-to-end coverage of User Story 2's acceptance scenarios (spec.md),
+ * End-to-end coverage of 001 US2's acceptance scenarios (001 spec.md),
  * driven against the real built app through its embedded WebDriver server.
  * Seeds its own uniquely-named records rather than assuming an empty
  * collection. See e2e/support/ui.ts for why interactions go through page JS.
  */
-describe("User Story 2 - Browse, Search, and Group", () => {
+describe("001 US2 - Browse, Search, and Group the Collection (was us2-browse-search)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
@@ -53,7 +53,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await back();
   });
 
-  it("shows the same firearms in both list and tile view, groups them by type and searches notes (Scenarios 1-3, 5)", async () => {
+  it("shows the same firearms in both list and tile view, groups them by type and searches notes (001 US2-1 to US2-3 and US2-5)", async () => {
     await search("Browse");
     const inList = await listedNames();
     expect(inList).toEqual(
@@ -71,7 +71,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await choose("List");
     await expect($(".hd-table")).toExist();
 
-    // Scenario 2: the type headings render (the grouping itself is a backend rule).
+    // 001 US2-2: the type headings render (the grouping itself is a backend rule).
     await groupBy("Type");
     await expect($("h2.hd-group__title*=Handgun")).toExist();
     await expect($("h2.hd-group__title*=Rifle")).toExist();
@@ -79,11 +79,11 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await groupBy("None");
     await expect($$("h2.hd-group__title")).toBeElementsArrayOfSize(0);
 
-    // Scenario 3: a notes search narrows the list to the matching firearm.
+    // 001 US2-3: a notes search narrows the list to the matching firearm.
     await search("distinctivenotecrackedhandle");
     expect(await listedNames()).toEqual(["BrowseRuger 10-22-Browse"]);
 
-    // Scenario 5: clearing the search shows the full collection again.
+    // 001 US2-5: clearing the search shows the full collection again.
     await search("");
     expect(await listedNames()).toEqual(expect.arrayContaining(inList));
   });

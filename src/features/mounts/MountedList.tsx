@@ -6,11 +6,12 @@ import { RecordName } from "./RecordName";
 import type { MountedEntry } from "./types";
 import "./mounts.css";
 
-// specs/006-accessory-links research.md §14, contracts/ui-accessories.md §5:
+// 006 research.md §14, 006 contracts/ui-accessories.md §5:
 // everything mounted below a record as one flat, depth-first outline with a
 // single fixed indent, so the depth never widens the layout. Shared by the
 // Mounted section (an Unmount button on each direct entry) and the dispose
-// dialog (§7: a keep or dispose choice and a price field on each row).
+// dialog (006 contracts/ui-accessories.md §7: a keep or dispose choice and a price
+// field on each row).
 
 export interface MountedListProps {
   /** `MountDetail.mounted`: depth-first, below the record asked about. */

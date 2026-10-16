@@ -1,5 +1,5 @@
 //! Restoring a database from a backup, including one that no longer opens
-//! (FR-028, SC-004, SC-007; research.md §8). Real SQLCipher files in temp
+//! (003 FR-028, SC-004, SC-007; 003 research.md §8). Real SQLCipher files in temp
 //! directories, a manual clock, and machine settings in a temp config
 //! directory.
 
@@ -175,7 +175,7 @@ impl World {
     }
 
     fn set_backups(&self, enabled: bool, keep_count: i64, location: BackupLocationInput) {
-        // Backups already at an old location stay there, as before FR-026
+        // Backups already at an old location stay there, as before 003 FR-026
         // asked about them; backup_location_change_test covers the rest.
         let existing_backups = Some(ExistingBackupsChoice::Leave);
         databases::update_backup_settings(
@@ -232,7 +232,7 @@ fn restoring_an_earlier_backup_reproduces_exactly_its_content() {
     let status = world.restore(&older.path, support::TEST_PASSPHRASE).unwrap();
 
     assert_eq!(status.path, world.path().to_string_lossy());
-    assert_eq!(open_collection(&world), expected, "SC-007");
+    assert_eq!(open_collection(&world), expected, "003 SC-007");
     assert!(expected.iter().any(|row| row.starts_with("photos: ")), "blobs included");
 }
 
@@ -415,7 +415,7 @@ fn restore_stopped_in(phase: &'static str) {
     assert_eq!(open_collection(&world), current);
     world.close();
     world.open();
-    assert_eq!(open_collection(&world), current, "SC-004");
+    assert_eq!(open_collection(&world), current, "003 SC-004");
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn a_restore_stopped_just_before_the_replacement_changes_nothing() {
     restore_stopped_in("replacing");
 }
 
-// --- A damaged database (US3-6) ---------------------------------------------
+// --- A damaged database (003 US3-6) -----------------------------------------
 
 /// "Mine" with two backups, closed, then cut short so it no longer opens.
 fn damaged(world: &World) -> Vec<BackupInfo> {
@@ -705,7 +705,7 @@ fn issue_62_a_database_file_that_is_gone_is_put_back() {
     assert_eq!(open_collection(&world), expected);
 }
 
-// --- Preconditions and failures (FR-028, research.md §8) --------------------
+// --- Preconditions and failures (003 FR-028, research.md §8) ----------------
 
 fn assert_nothing_changed(world: &World, before: &[u8], names: &[String]) {
     assert_eq!(fs::read(world.path()).unwrap(), before, "the database is byte-identical");

@@ -26,7 +26,7 @@ scripts/dev-container.sh npm test
 scripts/dev-container.sh bash -c 'cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets \
   && cargo fmt --manifest-path src-tauri/Cargo.toml --check && npm run lint && npm run format:check'
 scripts/dev-container.sh npm run audit
-scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/us10-cartridges-actions.e2e.ts'
+scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/cartridges-actions.e2e.ts'
 scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
 ```
 
@@ -59,7 +59,7 @@ constitution II).
 | SC-005 | Delete the only firearm with a unique cartridge: gone from `suggest_entries` and from the database file's bytes | `tests/deletion_wipe_test.rs`, `tests/entry_suggestions_test.rs` |
 | SC-006, SC-007 | Round trip exact without same-notation variants; with them, merged and each merge reported; every derived and snapped value in the report | `tests/import_export_test.rs` |
 | SC-008 | No path saves a disallowed action | `tests/action_type_test.rs` (command layer and raw `INSERT`/`UPDATE`) |
-| End to end, real input | Pick "9x19mm Parabellum" from a typed "9x1" with the keyboard only; caliber fills; save; group by Cartridge | `e2e/specs/us10-cartridges-actions.e2e.ts`, driving keys through the real-input harness (DEVELOPMENT.md, "Real keyboard and mouse input") |
+| End to end, real input | Pick "9x19mm Parabellum" from a typed "9x1" with the keyboard only; caliber fills; save; group by Cartridge | `e2e/specs/cartridges-actions.e2e.ts`, driving keys through the real-input harness (DEVELOPMENT.md, "Real keyboard and mouse input") |
 | Seed in step | Every new column and spreadsheet column seeded | `tests/human_seed_coverage_test.rs` (unchanged logic) |
 
 ## Human-testing seed

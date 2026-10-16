@@ -48,7 +48,7 @@ export interface InsuranceWarningBadgeProps {
  * The single shared way every screen flags an insurance-related warning
  * (uninsured/under-insured firearms, expiring/expired policies) per
  * constitution Principle III — no screen renders its own ad-hoc warning
- * text (SC-004: warnings must always be visibly flagged).
+ * text (001 SC-004: warnings must always be visibly flagged).
  */
 export function InsuranceWarningBadge({ kind, label }: InsuranceWarningBadgeProps) {
   return <Badge tone="warn">{label ?? LABELS[kind]}</Badge>;

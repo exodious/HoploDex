@@ -1,5 +1,5 @@
-//! The version the app reports is the version released (FR-015, specs/008-
-//! hardening-batch research.md §16): `package.json`, `tauri.conf.json` and
+//! The version the app reports is the version released (008 FR-015,
+//! research.md §16): `package.json`, `tauri.conf.json` and
 //! `Cargo.toml` name the same one, and `APP_VERSION` is it.
 
 use std::fs;

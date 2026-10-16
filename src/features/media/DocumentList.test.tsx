@@ -11,14 +11,14 @@ import { SessionScopeContext, createSessionScope } from "../session/sessionScope
 import type { SessionScope } from "../session/sessionScope";
 import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 
-// specs/007-document-preview/contracts/ui-document-preview.md §1 and §2,
-// tasks.md T041 (User Story 1). The list is `<DocumentList owner />` and hosts
+// 007 contracts/ui-document-preview.md §1 and §2,
+// 007 T041 (007 US1). The list is `<DocumentList owner />` and hosts
 // the viewer over the record. The backend is pinned at the IPC boundary
-// (`invoke`, `listen`) with the command names of contracts/tauri-commands.md.
-// The US2 part (T084) adds the picker's `accept`, drops (`listenForFileDrops`,
-// routed by ui contract §6), "Open in another app…" and its results; toasts
-// are read through a ToastProvider around the list. The US3 part (T097) adds
-// the name following this computer's setting, held in the store of
+// (`invoke`, `listen`) with the command names of 007 contracts/tauri-commands.md.
+// The 007 US2 part (007 T084) adds the picker's `accept`, drops (`listenForFileDrops`,
+// routed by 007 contracts/ui-document-preview.md §6), "Open in another app…" and its
+// results; toasts are read through a ToastProvider around the list. The 007 US3 part
+// (007 T097) adds the name following this computer's setting, held in the store of
 // documentOpening.ts: `loadDocumentOpening()` reads it with
 // `get_document_opening`, `chooseDocumentOpening(value)` sends
 // `set_document_opening` `{ value }` and resolves with `changed`, and
@@ -233,7 +233,7 @@ let openAnswer: (args: Record<string, unknown>) => unknown;
 /** The list item for the document named `name`. */
 const row = (name: string) => screen.getByRole("button", { name }).closest("li") as HTMLElement;
 
-describe("DocumentList: kind labels and the meta line (contract §1)", () => {
+describe("DocumentList: kind labels and the meta line (007 contracts/ui-document-preview.md §1)", () => {
   it("takes the kind label from list_document_types, and a pre-007 row's from its extension", async () => {
     await renderList();
 
@@ -270,7 +270,7 @@ describe("DocumentList: kind labels and the meta line (contract §1)", () => {
   });
 });
 
-describe("DocumentList: the Preview button and the name (contract §1)", () => {
+describe("DocumentList: the Preview button and the name (007 contracts/ui-document-preview.md §1)", () => {
   it("shows a ghost Preview button for every previewable kind, and none for the rest", async () => {
     await renderList();
 
@@ -292,7 +292,7 @@ describe("DocumentList: the Preview button and the name (contract §1)", () => {
     expect(button.getAttribute("title")).toMatch(/this computer/i);
   });
 
-  // 007 US3 Scenario 1
+  // 007 US3-1
   it("titles the name for what it does, and opens the viewer on it", async () => {
     const user = await renderList();
     const name = screen.getByRole("button", { name: "Purchase receipt.pdf" });
@@ -329,7 +329,7 @@ describe("DocumentList: the Preview button and the name (contract §1)", () => {
   });
 });
 
-describe("DocumentList: after the PDF preview ends (contracts/tauri-commands.md events)", () => {
+describe("DocumentList: after the PDF preview ends (007 contracts/tauri-commands.md events)", () => {
   async function openReceipt() {
     const user = await renderList();
     await user.click(screen.getByRole("button", { name: "Purchase receipt.pdf" }));
@@ -360,7 +360,7 @@ describe("DocumentList: after the PDF preview ends (contracts/tauri-commands.md 
   });
 });
 
-describe("DocumentList: deleting from the viewer (contract §2 Footer)", () => {
+describe("DocumentList: deleting from the viewer (007 contracts/ui-document-preview.md §2 Footer)", () => {
   async function deleteFromViewer(name: string) {
     const user = await renderList();
     await user.click(screen.getByRole("button", { name }));
@@ -399,7 +399,7 @@ describe("DocumentList: deleting from the viewer (contract §2 Footer)", () => {
   });
 });
 
-describe("DocumentList: the viewer's messages while a PDF is shown (contract §2, tasks.md T149)", () => {
+describe("DocumentList: the viewer's messages while a PDF is shown (007 contracts/ui-document-preview.md §2, 007 T149)", () => {
   async function deleteFromViewer(name: string) {
     const user = await renderList();
     await user.click(screen.getByRole("button", { name }));
@@ -487,7 +487,7 @@ describe("DocumentList: the viewer's messages while a PDF is shown (contract §2
   });
 });
 
-// --- User Story 2 (T084) ------------------------------------------------------
+// --- 007 US2 (007 T084) -------------------------------------------------------
 
 const REFUSED =
   "wasn't attached. Documents can be PDF, TIFF, text, CSV, RTF, Word, spreadsheet or OpenDocument files.";
@@ -508,7 +508,7 @@ async function renderListWithTypes() {
   return user;
 }
 
-describe("DocumentList: the picker (contract §6)", () => {
+describe("DocumentList: the picker (007 contracts/ui-document-preview.md §6)", () => {
   it("accepts the extensions of list_document_types, in its order, and no others", async () => {
     await renderList();
 
@@ -604,7 +604,7 @@ describe("DocumentList: the picker (contract §6)", () => {
   });
 });
 
-describe("DocumentList: drops (contract §6)", () => {
+describe("DocumentList: drops (007 contracts/ui-document-preview.md §6)", () => {
   it("attaches a dropped document of an allowed type through add_document_from_path", async () => {
     await renderListWithTypes();
 
@@ -616,7 +616,7 @@ describe("DocumentList: drops (contract §6)", () => {
     ]);
   });
 
-  it("refuses a dropped .exe before any command, with the toast of §6", async () => {
+  it("refuses a dropped .exe before any command, with the toast of 007 contracts/ui-document-preview.md §6", async () => {
     await renderListWithTypes();
     const before = backend.invoke.mock.calls.length;
 
@@ -663,7 +663,7 @@ describe("DocumentList: drops (contract §6)", () => {
   });
 });
 
-describe("DocumentList: a drop before the document types have loaded (contract §6, tasks.md T158)", () => {
+describe("DocumentList: a drop before the document types have loaded (007 contracts/ui-document-preview.md §6, 007 T158)", () => {
   /** The list with `list_document_types` held until the test lets it answer. */
   async function renderListHoldingTypes() {
     const types$ = deferred<DocumentType[]>();
@@ -717,7 +717,7 @@ describe("DocumentList: a drop before the document types have loaded (contract �
   });
 });
 
-describe("DocumentList: the empty state (contract §6)", () => {
+describe("DocumentList: the empty state (007 contracts/ui-document-preview.md §6)", () => {
   it("says what can be dropped, and offers choose files", async () => {
     docs = [];
     render(
@@ -735,7 +735,7 @@ describe("DocumentList: the empty state (contract §6)", () => {
   });
 });
 
-describe("DocumentList: Open in another app… (contract §1)", () => {
+describe("DocumentList: Open in another app… (007 contracts/ui-document-preview.md §1)", () => {
   const OPEN = "Open in another app…";
   const openButton = (name: string) => within(row(name)).getByRole("button", { name: OPEN });
 
@@ -818,7 +818,7 @@ describe("DocumentList: Open in another app… (contract §1)", () => {
     },
   );
 
-  // 007 US2 Scenario 7 (FR-017)
+  // 007 US2-7 (007 FR-017)
   it("is disabled, with its reason as the title, for a row that isn't a document type", async () => {
     const user = await renderList();
 
@@ -831,9 +831,9 @@ describe("DocumentList: Open in another app… (contract §1)", () => {
   });
 });
 
-// --- User Story 3 (T097) ------------------------------------------------------
+// --- 007 US3 (007 T097) -------------------------------------------------------
 
-describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6)", () => {
+describe("DocumentList: the name follows the setting (007 contracts/ui-document-preview.md §1, US3-5, US3-6)", () => {
   /** Renders the list with this computer's setting loaded as `value`. */
   async function renderListWith(value: "preview" | "external") {
     opening = value;
@@ -865,7 +865,7 @@ describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6
     }
   });
 
-  it("with 'external', the name of a previewable document opens it in another app, and 'Preview' still previews it (US3-5)", async () => {
+  it("with 'external', the name of a previewable document opens it in another app, and 'Preview' still previews it (007 US3-5)", async () => {
     const user = await renderListWith("external");
 
     await user.click(screen.getByRole("button", { name: "Purchase receipt.pdf" }));
@@ -924,7 +924,7 @@ describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6
     await screen.findByRole("dialog", { name: "Old scan.jpg" });
   });
 
-  it("changes back to 'preview': the name previews again, with its title (US3-6)", async () => {
+  it("changes back to 'preview': the name previews again, with its title (007 US3-6)", async () => {
     const user = await renderListWith("external");
     expect(screen.getByRole("button", { name: "Notes.txt" })).toHaveAttribute(
       "title",
@@ -1013,7 +1013,7 @@ describe("DocumentList: the name follows the setting (contract §1, US3-5, US3-6
   });
 });
 
-// specs/008-hardening-batch tasks.md T029 (US1-2, US1-5), research.md §5: the
+// 008 tasks.md T029 (008 US1-2, US1-5), 008 research.md §5: the
 // list's batch checks `scope.ended` before each file, and a load that
 // resolves after the scope ended never reaches the list. The scope is real,
 // so every request has to go through it; the rest of the file is pinned at
@@ -1032,7 +1032,7 @@ function renderInScope(scope: SessionScope) {
 
 const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 30))));
 
-describe("DocumentList: the scope's end (US1-2, US1-5)", () => {
+describe("DocumentList: the scope's end (008 US1-2, US1-5)", () => {
   it("stops a batch at the scope's end: of three dropped documents, exactly one add is sent", async () => {
     const scope = createSessionScope(1);
     const base = backend.invoke.getMockImplementation()!;

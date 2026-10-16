@@ -12,7 +12,7 @@ vi.mock("./insuranceService");
 
 const policy = { id: 3, name: "Collectibles rider" } as InsurancePolicy;
 
-// specs/006-accessory-links FR-009, contracts/ui-accessories.md §10: the
+// 006 FR-009, contracts/ui-accessories.md §10: the
 // impact counts records of both kinds, and lists them as `RecordLabel`s.
 const colt: RecordLabel = {
   record: { kind: "firearm", id: 1 },
@@ -70,7 +70,7 @@ function renderDialog(overrides: Partial<PolicyDeletionImpact> = {}) {
 
 const deleteButton = () => screen.findByRole("button", { name: "Delete policy" });
 
-describe("PolicyDeleteDialog (FR-034)", () => {
+describe("PolicyDeleteDialog (001 FR-034)", () => {
   beforeEach(() => {
     vi.mocked(insuranceService.deleteInsurancePolicy).mockResolvedValue({
       deleted: true,
@@ -97,7 +97,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(onDeleted).toHaveBeenCalled();
   });
 
-  // 001 US3 Scenario 9
+  // 001 US3-9
   it("lists the scheduled records, with nicknames, and holds delete back until a choice is made", async () => {
     renderDialog();
 
@@ -107,7 +107,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(await deleteButton()).toBeDisabled();
   });
 
-  it("counts and lists scheduled firearms and accessories together, each by its name (US1, FR-009)", async () => {
+  it("counts and lists scheduled firearms and accessories together, each by its name (006 US1, FR-009)", async () => {
     const user = userEvent.setup();
     renderDialog({
       scheduledCounts: { firearms: 2, accessories: 1 },
@@ -129,7 +129,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     ).toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 9
+  // 001 US3-9
   it("moves the firearms to another policy, reminding the user to check its coverage", async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -162,7 +162,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.getByText(/that policy has expired/i)).toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 9
+  // 001 US3-9
   it("needs the stronger confirmation to leave a non-expired policy's firearms unscheduled", async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -229,7 +229,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.getByText(/covered by the blanket policy in force/i)).toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 10
+  // 001 US3-10
   it("asks only for the warning to be acknowledged when the policy has expired", async () => {
     const user = userEvent.setup();
     renderDialog({ isExpired: true });
@@ -251,7 +251,7 @@ describe("PolicyDeleteDialog (FR-034)", () => {
     expect(screen.queryByRole("radio", { name: /Move to another policy/ })).not.toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 15
+  // 001 US3-15
   it("warns how many unscheduled firearms lose their blanket coverage when the blanket policy in force is deleted", async () => {
     renderDialog({
       scheduledCounts: { firearms: 0, accessories: 0 },

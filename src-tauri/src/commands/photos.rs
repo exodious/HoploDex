@@ -11,7 +11,7 @@ use crate::services::attachments::{
 };
 use crate::session::scoped::ScopedSession;
 
-/// What `set_thumbnail_photo` returns (contracts/tauri-commands.md "Photos
+/// What `set_thumbnail_photo` returns (006 contracts/tauri-commands.md "Photos
 /// and documents (amended)"): the frontend already holds the record.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,8 +66,8 @@ pub mod ops {
     }
 
     /// The first photo added to a record automatically becomes its
-    /// thumbnail (FR-008, US4 Acceptance Scenario 1; 006 FR-007a). A record
-    /// holds at most `MAX_PHOTOS_PER_RECORD` (FR-007, amended 2026-10-11).
+    /// thumbnail (001 FR-008, US4-1; 006 FR-007a). A record
+    /// holds at most `MAX_PHOTOS_PER_RECORD` (001 FR-007, amended 2026-10-11).
     pub fn add_photo(
         conn: &Connection,
         owner: RecordRef,
@@ -177,7 +177,7 @@ pub mod ops {
 
     /// If the deleted photo was the thumbnail, falls back to the
     /// next-oldest remaining photo, or `null` (generic thumbnail) if none
-    /// remain (contracts/tauri-commands.md's `delete_photo`).
+    /// remain (001 contracts/tauri-commands.md's `delete_photo`).
     pub fn delete_photo(
         conn: &Connection,
         photo_id: i64,

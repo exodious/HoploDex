@@ -1,4 +1,4 @@
-//! Passphrases as the backend holds them (research.md §1, FR-003, FR-007):
+//! Passphrases as the backend holds them (003 research.md §1, FR-003, FR-007):
 //! normalized to Unicode NFC so the same passphrase typed on any platform
 //! gives the same key, never trimmed, and wiped from memory when dropped.
 

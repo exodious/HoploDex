@@ -1,10 +1,10 @@
-//! The PDF preview, behind the app's `PreviewSurface` (feature 007, T031;
-//! research.md §4, §6-§8, §17, §20, §21): `open_preview` for a PDF, the
+//! The PDF preview, behind the app's `PreviewSurface` (007 T031;
+//! 007 research.md §4, §6-§8, §17, §20, §21): `open_preview` for a PDF, the
 //! `hdpreview` protocol handler called directly, the surface's bounds and
 //! its end, `PdfAvailability` and the hold, and what the preview refuses.
 //! Real SQLCipher databases in temp directories; the web view is a recorder.
 //!
-//! Assumed API (T048, T049, T058, T060, T061, T057; each item's shape is
+//! Assumed API (007 T048, T049, T058, T060, T061, T057; each item's shape is
 //! also in tests/support/preview_support.rs):
 //! - `commands::preview::PreviewEnv { hook_timeout, .. }` and, in
 //!   `commands::preview::ops`: `open_preview(&Arc<Session>, &PreviewEnv,
@@ -115,7 +115,7 @@ fn code_of<T: std::fmt::Debug>(result: Result<T, hoplodex_lib::commands::Command
     result.unwrap_err().code
 }
 
-// --- Opening, and the protocol (FR-001, FR-002, research.md §4) ----------------
+// --- Opening, and the protocol (007 FR-001, FR-002, research.md §4) ------------
 
 #[test]
 fn a_pdf_opens_on_the_surface_and_the_handler_serves_exactly_its_bytes() {
@@ -278,7 +278,7 @@ fn close_preview_closes_the_surface_ignores_a_stale_id_and_replaced_ids_are_refu
     world.close(second);
 }
 
-// --- The surface's bounds (research.md §4) --------------------------------------
+// --- The surface's bounds (007 research.md §4) ----------------------------------
 
 #[test]
 fn bounds_are_validated_and_the_surface_stays_hidden_until_ready() {
@@ -335,7 +335,7 @@ fn bounds_are_validated_and_the_surface_stays_hidden_until_ready() {
     assert!(!surface.bounds_calls().last().unwrap().1, "hidden again while something covers it");
 }
 
-// --- The hook, and a download (research.md §7, §8) ------------------------------
+// --- The hook, and a download (007 research.md §7, §8) --------------------------
 
 #[cfg(target_os = "linux")]
 #[test]
@@ -476,7 +476,7 @@ fn a_download_of_the_surfaces_own_url_means_no_viewer_and_ends_the_preview() {
     assert_eq!(code_of(world.open(id)), "PDF_PREVIEW_UNAVAILABLE");
 }
 
-// --- PdfAvailability and the hold (FR-003a, research.md §7, §17) -----------------
+// --- PdfAvailability and the hold (007 FR-003a, research.md §7, §17) -------------
 
 #[test]
 fn when_pdf_preview_is_off_pdfs_fail_but_tiff_and_text_still_preview() {
@@ -580,7 +580,7 @@ fn the_sweep_deletes_only_the_recorded_leftovers() {
     assert_eq!(hold.version.as_deref(), Some("1.2.3"), "the hold itself stays");
 }
 
-// --- What a preview refuses (FR-006, US2-4) --------------------------------------
+// --- What a preview refuses (007 FR-006, US2-4) ----------------------------------
 
 #[test]
 fn a_pdf_that_is_not_one_fails_before_any_surface_exists() {

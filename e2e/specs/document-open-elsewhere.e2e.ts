@@ -12,15 +12,14 @@ import {
 import { $$, browser, expect, settle } from "../support/ui";
 
 /**
- * End-to-end coverage of specs/007-document-preview's User Story 2 (spec.md,
- * contracts/ui-document-preview.md): opening a document in another app, after
- * the native confirmation, against the real built app on the human-testing
- * seed's Glock 19 Gen5 (the harness seeds the collection for this spec,
- * wdio.conf.ts). The seams the E2E build has for the confirmation and for the
- * other app log what they were asked; the helpers are in
- * `support/documentPreview.ts`. Its sibling specs are the preview itself
- * (`us13-document-preview-preview`) and the setting
- * (`us13-document-preview-setting`).
+ * End-to-end coverage of 007 US2 (007 spec.md, contracts/ui-document-preview.md):
+ * opening a document in another app, after the native confirmation, against
+ * the real built app on the human-testing seed's Glock 19 Gen5 (the harness
+ * seeds the collection for this spec, wdio.conf.ts). The seams the E2E build
+ * has for the confirmation and for the other app log what they were asked; the
+ * helpers are in `support/documentPreview.ts`. Its sibling specs are the
+ * preview itself (`document-preview`) and the setting
+ * (`document-open-setting`).
  */
 
 function filesUnder(dir: string): string[] {
@@ -45,7 +44,7 @@ async function documentNames(): Promise<string[]> {
   );
 }
 
-describe("User Story 2 (007) - Open a Document in Another App, After Asking", () => {
+describe("007 US2 - Open a Document in Another Program, Knowingly (was us13-document-preview-open-elsewhere)", () => {
   before(async () => {
     await relaunchAnswering("cancel");
   });

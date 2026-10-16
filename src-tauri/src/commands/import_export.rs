@@ -36,7 +36,7 @@ use crate::session::{Session, SessionId};
 #[serde(rename_all = "camelCase")]
 pub struct ExportResult {
     pub spreadsheet_path: PathBuf,
-    /// specs/006-accessory-links FR-020: the second CSV file. `None` for a
+    /// 006 FR-020: the second CSV file. `None` for a
     /// workbook (its second sheet is in `spreadsheet_path`) and when the
     /// export holds no accessory.
     pub accessory_spreadsheet_path: Option<PathBuf>,
@@ -47,7 +47,7 @@ pub struct ExportResult {
     pub exported_photo_count: usize,
 }
 
-/// The records an export writes (FR-020): `ops::export_records`.
+/// The records an export writes (006 FR-020): `ops::export_records`.
 #[derive(Debug, Clone, Default)]
 pub struct ExportRecords {
     pub firearm_ids: Vec<i64>,
@@ -62,11 +62,11 @@ pub struct ExportScope {
     pub accessory_count: usize,
     /// 005 FR-020's disclosure: some exported firearm has a classification.
     pub includes_registration: bool,
-    /// FR-021's disclosure: the export holds an accessory.
+    /// 006 FR-021's disclosure: the export holds an accessory.
     pub includes_accessories: bool,
 }
 
-/// Which table a row, and so a report entry, belongs to (FR-022).
+/// Which table a row, and so a report entry, belongs to (006 FR-022).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportTable {
@@ -102,8 +102,8 @@ pub struct ImportConflict {
     /// The record the row matched, by its identifier or, for a firearm row,
     /// by make, model and serial number.
     pub existing_record: RecordRef,
-    /// Whether "create a duplicate" may be offered: false where FR-032 would
-    /// block the resulting record (FR-026). Always true for an accessory.
+    /// Whether "create a duplicate" may be offered: false where 001 FR-032 would
+    /// block the resulting record (001 FR-026). Always true for an accessory.
     pub duplicate_allowed: bool,
     pub make: String,
     pub model: String,
@@ -129,22 +129,22 @@ pub struct ImportResult {
     pub skipped_count: usize,
     pub row_errors: Vec<RowError>,
     pub conflicts: Vec<ImportConflict>,
-    /// specs/002-firearm-identification FR-009: rows whose original marks
-    /// match another active firearm's, imported anyway (US4-6); and
-    /// specs/006-accessory-links FR-023: mounts that couldn't be made.
+    /// 002 FR-009: rows whose original marks
+    /// match another active firearm's, imported anyway (002 US4-6); and
+    /// 006 FR-023: mounts that couldn't be made.
     /// Disjoint from `row_errors` — a row appears here only when it did not
     /// fail.
     pub warnings: Vec<RowError>,
-    /// specs/004-cartridges-action-types FR-025: rows whose blank caliber was
+    /// 004 FR-025: rows whose blank caliber was
     /// filled in from the cartridge. Imported and conflict rows only, never
     /// failed ones.
     pub derived_calibers: Vec<DerivedCaliberReport>,
-    /// FR-026, SC-007: every value the import changed to a spelling already
+    /// 004 FR-026, SC-007: every value the import changed to a spelling already
     /// in use. Imported and conflict rows only.
     pub snapped_values: Vec<SnappedValue>,
 }
 
-/// A caliber worked out from the row's cartridge (FR-025).
+/// A caliber worked out from the row's cartridge (004 FR-025).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DerivedCaliberReport {
@@ -157,7 +157,7 @@ pub struct DerivedCaliberReport {
     pub source: CaliberSource,
 }
 
-/// A value changed to the spelling in use (FR-026).
+/// A value changed to the spelling in use (004 FR-026).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnappedValue {
@@ -176,7 +176,7 @@ pub struct ConflictResolution {
     pub action: String,
     /// Issue #56: for an `overwrite` that disposes of the record, the
     /// records of its `mounted` list to dispose of with it, taking the row's
-    /// type, recipient and date and no price. The rest are kept (FR-014).
+    /// type, recipient and date and no price. The rest are kept (006 FR-014).
     #[serde(default)]
     pub with_mounted: Vec<RecordRef>,
 }
@@ -186,16 +186,16 @@ pub struct ConflictResolution {
 pub struct ResolveResult {
     pub resolved_count: usize,
     /// Conflicts the chosen action could not be applied to (a duplicate
-    /// FR-032 forbids, an overwrite that fails validation). They stay open
+    /// 001 FR-032 forbids, an overwrite that fails validation). They stay open
     /// in the import session, so a different action can still be chosen.
     pub unresolved: Vec<RowError>,
-    /// specs/002-firearm-identification FR-009: as `ImportResult::warnings`,
+    /// 002 FR-009: as `ImportResult::warnings`,
     /// for rows saved by an `overwrite` or `duplicate` resolution, and the
     /// mounts those could not make (006 FR-023).
     pub warnings: Vec<RowError>,
 }
 
-/// One file of an import: a CSV file or a workbook (FR-022).
+/// One file of an import: a CSV file or a workbook (006 FR-022).
 #[derive(Debug, Clone)]
 pub struct ImportFile {
     pub file_path: PathBuf,
@@ -250,7 +250,7 @@ struct PendingConflict {
     existing_uid: String,
     new_input: PendingInput,
     /// The row's `mounted_on` cell, applied when the row overwrites or is
-    /// added as a duplicate (research.md §18).
+    /// added as a duplicate (006 research.md §18).
     mounted_on: Option<String>,
 }
 
@@ -258,7 +258,7 @@ struct PendingConflict {
 /// `resolve_import_conflicts`.
 struct ImportSession {
     pending: Vec<PendingConflict>,
-    /// Research.md §18's outcome map for the rows that conflicted: each
+    /// 006 research.md §18's outcome map for the rows that conflicted: each
     /// one's identifier to the existing record it matched, so a mount can
     /// name such a row as its host.
     outcomes: HashMap<String, RecordRef>,
@@ -352,7 +352,7 @@ pub mod ops {
         all_ids(conn, "firearms")
     }
 
-    /// The records an export writes (FR-020). `"all"` is a full backup:
+    /// The records an export writes (006 FR-020). `"all"` is a full backup:
     /// every firearm and every accessory, active or disposed, unlike
     /// `list_firearms`'s default of active only. `"filtered"` is the
     /// firearms `filter` matches on the collection page and everything
@@ -399,7 +399,7 @@ pub mod ops {
     }
 
     /// What `export_collection` would write for this scope and filter, and
-    /// what the export dialog must disclose about it (FR-020, FR-021).
+    /// what the export dialog must disclose about it (006 FR-020, FR-021).
     pub fn get_export_scope(
         conn: &Connection,
         scope: &str,
@@ -519,7 +519,7 @@ pub mod ops {
 
     /// [`export_collection`], checking `is_cancelled` between rows. An
     /// export that stops or fails removes what it made and nothing else; a
-    /// stop fails with `OPERATION_STOPPED` (FR-037).
+    /// stop fails with `OPERATION_STOPPED` (003 FR-037).
     ///
     /// Each export owns its outputs (issue #74): `base_name` is used as it
     /// stands when nothing in `destination_folder` already has that name,
@@ -926,7 +926,7 @@ pub mod ops {
             return Err(CommandError::operation_stopped(OperationKind::Export, None, None));
         }
         // The accessory table only when the export holds an accessory
-        // (contracts/spreadsheet-format.md "Two tables").
+        // (006 contracts/spreadsheet-format.md "Two tables").
         let has_accessories = !accessory_rows.is_empty();
         let mut accessory_spreadsheet_path = None;
         match files.format {
@@ -972,7 +972,7 @@ pub mod ops {
     }
 
     /// A condition cell: the display name (`Like new`) or the stored form
-    /// (`like_new`), in any letter case (FR-039).
+    /// (`like_new`), in any letter case (001 FR-039).
     fn parse_condition(value: &str) -> Result<Condition, String> {
         let wanted = value.trim().to_lowercase();
         Condition::ALL
@@ -984,8 +984,8 @@ pub mod ops {
     /// An `origin` cell: exactly `Domestic`/`Imported`/`Re-imported`, matched
     /// ignoring letter case. Unlike `condition`, no alias is accepted —
     /// `reimported`/`re_imported` are row errors — since the label and the
-    /// intent are the same word here (spreadsheet-format.md "Origin values",
-    /// research.md §9, FR-014/US4-3).
+    /// intent are the same word here (002 contracts/spreadsheet-format.md
+    /// "Origin values", 002 research.md §9, FR-014/US4-3).
     fn parse_origin(value: &str) -> Result<Origin, String> {
         match value.trim().to_lowercase().as_str() {
             "domestic" => Ok(Origin::Domestic),
@@ -998,7 +998,7 @@ pub mod ops {
     }
 
     /// The spreadsheet column a validation field error is about, where the
-    /// field is named differently over IPC (contracts/spreadsheet-format.md
+    /// field is named differently over IPC (005 contracts/spreadsheet-format.md
     /// "Row errors"); any other field is shown as it is.
     fn sheet_column(field: &str) -> String {
         match field {
@@ -1041,7 +1041,7 @@ pub mod ops {
     }
 
     /// The entry cells of a raw row, for either table: the fields a row
-    /// is settled on (FR-015, FR-025, FR-026). The registration fields are
+    /// is settled on (004 FR-015, FR-025, FR-026). The registration fields are
     /// the firearm table's alone.
     trait EntryCells {
         fn cell(&self, field: EntryField) -> Option<&str>;
@@ -1096,7 +1096,7 @@ pub mod ops {
         }
     }
 
-    /// The snapping context of one import (research.md §12): the four fields'
+    /// The snapping context of one import (004 research.md §12): the four fields'
     /// vocabularies as they were on record when the import started, in
     /// firearms and accessories together, and the sheets' own majority
     /// spellings across both tables. Rows added by the import never enter
@@ -1184,7 +1184,7 @@ pub mod ops {
         Ok(())
     }
 
-    /// FR-015, FR-025, FR-026 and (005) FR-021 for one row: checks the entry cells,
+    /// 004 FR-015, FR-025, FR-026 and 005 FR-021 for one row: checks the entry cells,
     /// snaps them, and fills a blank caliber in from the cartridge, unless the
     /// row's type never derives one (005 FR-022). Returns the row to parse;
     /// the error is a row error's message.
@@ -1242,9 +1242,9 @@ pub mod ops {
         Ok((row, settled))
     }
 
-    /// [`settle_row`] for an accessory row (FR-024): make, model, caliber and
+    /// [`settle_row`] for an accessory row (006 FR-024): make, model, caliber and
     /// cartridge are all optional, so a blank caliber is derived from the
-    /// cartridge when it can be, and otherwise stays blank (research.md §16).
+    /// cartridge when it can be, and otherwise stays blank (006 research.md §16).
     fn settle_accessory_row(
         snapping: &Snapping,
         raw: &RawAccessoryRow,
@@ -1288,7 +1288,7 @@ pub mod ops {
 
     /// Parses and validates one raw spreadsheet row into a `FirearmInput`,
     /// resolving `firearm_type`/`insurance_policy_name` by lookup — a
-    /// human-readable `Err` message per FR-020, never a panic/abort of the
+    /// human-readable `Err` message per 001 FR-020, never a panic/abort of the
     /// whole import.
     fn parse_row(conn: &Connection, raw: &RawImportRow) -> Result<FirearmInput, String> {
         let make = raw.make.clone().ok_or("Missing required field: make")?;
@@ -1307,7 +1307,7 @@ pub mod ops {
             .map_err(|e| format!("Database error resolving firearm type: {e}"))?
             .ok_or_else(|| format!("Unknown firearm type: {type_name}"))?;
 
-        // FR-024: by name, ignoring letter case and surrounding whitespace;
+        // 004 FR-024: by name, ignoring letter case and surrounding whitespace;
         // blank = none.
         let action_type_id = match &raw.action_type {
             None => None,
@@ -1325,7 +1325,7 @@ pub mod ops {
             }
         };
 
-        // specs/005-regulated-item-types FR-021: by name among every
+        // 005 FR-021: by name among every
         // classification, offered or not, ignoring letter case and
         // surrounding whitespace; blank = none.
         let registration_class_id = match &raw.registered_as {
@@ -1417,7 +1417,7 @@ pub mod ops {
             // country, original marks disallowed by the row's origin) is
             // enforced below by the same `validate_firearm_input` call
             // `condition`/`status` already go through, so no separate check
-            // is needed here (FR-014).
+            // is needed here (002 FR-014).
             origin: raw.origin.as_deref().map(parse_origin).transpose()?,
             year_of_manufacture: parse_scaled_decimal(
                 "year_of_manufacture",
@@ -1438,11 +1438,11 @@ pub mod ops {
             registration_approved: raw.registration_approved.clone(),
             registered_to: raw.registered_to.clone(),
             // The row's mounted_on is resolved once every row is settled
-            // (research.md §18), never while it is parsed.
+            // (006 research.md §18), never while it is parsed.
             mounted_on: None,
         };
 
-        // FR-022: fields the type doesn't have come first, so a Suppressor
+        // 005 FR-022: fields the type doesn't have come first, so a Suppressor
         // row with an action is never reported as "allowed".
         firearm_ops::check_fields_apply(conn, &input).map_err(|e| row_message(&e))?;
         firearm_ops::check_action_allowed(conn, firearm_type_id, action_type_id)
@@ -1453,7 +1453,7 @@ pub mod ops {
 
     /// Parses and validates one raw accessory row into an `AccessoryInput`
     /// and its kind's name, resolving `kind` and `insurance_policy_name` by
-    /// lookup (FR-024). A human-readable `Err` message, as `parse_row`.
+    /// lookup (006 FR-024). A human-readable `Err` message, as `parse_row`.
     fn parse_accessory_row(
         conn: &Connection,
         raw: &RawAccessoryRow,
@@ -1573,7 +1573,7 @@ pub mod ops {
         landed: Landed,
     }
 
-    /// FR-022: the row's identifier, trimmed and lowercased, or the row
+    /// 006 FR-022: the row's identifier, trimmed and lowercased, or the row
     /// error it earns: malformed, or used by an earlier row of either table.
     fn row_record_id(
         cell: Option<&str>,
@@ -1593,7 +1593,7 @@ pub mod ops {
     }
 
     /// The record of `kind` that holds `uid`, if any; one of the other kind
-    /// is a row error (contracts/spreadsheet-format.md "Record ID").
+    /// is a row error (006 contracts/spreadsheet-format.md "Record ID").
     fn matched_by_record_id(
         conn: &Connection,
         kind: RecordKind,
@@ -1665,7 +1665,7 @@ pub mod ops {
             }
             // Rules that need the rest of the collection to judge
             // (nickname/identity uniqueness) fail one row, not the whole
-            // import (FR-020).
+            // import (001 FR-020).
             Err(e) if e.code == "VALIDATION_ERROR" => Err(Fail::Row(row_message(&e))),
             Err(e) => Err(Fail::Fatal(e)),
         }
@@ -1711,7 +1711,7 @@ pub mod ops {
         }
     }
 
-    /// A mount to make once every row is settled (research.md §18).
+    /// A mount to make once every row is settled (006 research.md §18).
     struct MountRequest {
         table: ImportTable,
         row: usize,
@@ -1756,7 +1756,7 @@ pub mod ops {
         Ok((by_uid, active))
     }
 
-    /// Research.md §18: makes each request's mount, in the order given. A
+    /// 006 research.md §18: makes each request's mount, in the order given. A
     /// mount that can't be made never fails the row: the record stays
     /// unmounted and a warning names the row and the reason. The graph is
     /// loaded once and kept current, so each mount is checked against the
@@ -1851,7 +1851,7 @@ pub mod ops {
 
     /// An `overwrite`: a row that disposes of the record takes the dispose
     /// dialog's steps, unmounting it and everything on it and disposing of
-    /// the records chosen with it (FR-014, issue #56). `save` saves the
+    /// the records chosen with it (006 FR-014, issue #56). `save` saves the
     /// row.
     fn replace<T>(
         conn: &Connection,
@@ -1975,7 +1975,7 @@ pub mod ops {
         }
     }
 
-    /// FR-022: the files of an import, checked before any is read: at least
+    /// 006 FR-022: the files of an import, checked before any is read: at least
     /// one, and at most two (a firearm table and an accessory table).
     pub fn check_files(files: &[ImportFile]) -> Result<(), CommandError> {
         if files.is_empty() {
@@ -1990,7 +1990,7 @@ pub mod ops {
         Ok(())
     }
 
-    /// FR-022: the tables read from the files (`import_reader::read_files`),
+    /// 006 FR-022: the tables read from the files (`import_reader::read_files`),
     /// as the firearm rows and the accessory rows; stops with
     /// `VALIDATION_ERROR` naming the file (and the sheet) when two sheets
     /// hold the same table.
@@ -2071,7 +2071,7 @@ pub mod ops {
     /// Phase one of `import_collection`: reads the files without the
     /// session's lock (`import_reader::read_files`). The user's stop
     /// (`cancel_import`) is `OPERATION_STOPPED`; the session ending, or a
-    /// sleep or quit beginning its close, is `DATABASE_CLOSED` (research.md
+    /// sleep or quit beginning its close, is `DATABASE_CLOSED` (008 research.md
     /// §11).
     pub fn read_import_files(
         helper_exe: &Path,
@@ -2121,7 +2121,7 @@ pub mod ops {
     }
 
     /// Each row is validated independently; a failing row is reported in
-    /// `rowErrors` and does not block other rows (FR-020). A row matching
+    /// `rowErrors` and does not block other rows (001 FR-020). A row matching
     /// an existing record, by identifier or, for a firearm, by `(make,
     /// model, serial_number)`, becomes a pending conflict (stored in
     /// `store`) rather than being silently applied.
@@ -2140,9 +2140,9 @@ pub mod ops {
     /// `is_cancelled` between rows and
     /// reporting each imported row to `record_imported`. Each row is saved
     /// on its own, so a stop keeps every row imported before it, and fails
-    /// with `OPERATION_STOPPED` and their number (FR-037). The firearm
+    /// with `OPERATION_STOPPED` and their number (003 FR-037). The firearm
     /// table's rows come first, then the accessory table's, then the mounts
-    /// (research.md §17, §18).
+    /// (006 research.md §17, §18).
     pub fn import_collection_stoppable(
         conn: &Connection,
         tables: Vec<ReadTable>,
@@ -2228,11 +2228,11 @@ pub mod ops {
         })
     }
 
-    /// specs/002-firearm-identification FR-009/T048: `saved`'s original
+    /// 002 FR-009/T048: `saved`'s original
     /// marks against the firearms active now, excluding itself. Import and
     /// conflict resolution always save with `confirmed_warnings: true`
     /// (never prompting), so this is how a match is still surfaced — as a
-    /// warning, never failing the row (US4-6).
+    /// warning, never failing the row (002 US4-6).
     fn original_marks_warning(
         conn: &Connection,
         saved: &crate::models::firearm::Firearm,
@@ -2253,11 +2253,11 @@ pub mod ops {
     /// Applies each conflict's resolution: `overwrite` updates the existing
     /// record (keeping its identifier), `duplicate` inserts the imported row
     /// as a new record with a new identifier alongside it (only where
-    /// FR-032 allows), `skip` (the default, including any conflict not
+    /// 001 FR-032 allows), `skip` (the default, including any conflict not
     /// covered by `resolutions` or `apply_to_remaining`) leaves the existing
     /// record and its mount untouched. A conflict the action can't be
     /// applied to is reported in `unresolved` and stays open in the session.
-    /// A saved row's `mounted_on` is applied by the rules of research.md §18,
+    /// A saved row's `mounted_on` is applied by the rules of 006 research.md §18,
     /// after all are saved: a blank cell leaves an overwritten record
     /// unmounted.
     pub fn resolve_import_conflicts(
@@ -2409,7 +2409,7 @@ struct ProgressPayload {
     total: usize,
 }
 
-/// Input for `get_export_scope` (contracts/tauri-commands.md).
+/// Input for `get_export_scope` (006 contracts/tauri-commands.md).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetExportScopeInput {
@@ -2468,11 +2468,11 @@ pub struct ImportFileInput {
 #[serde(rename_all = "camelCase")]
 pub struct ImportCollectionInput {
     /// One file, or two: the firearm table and the accessory table
-    /// (FR-022).
+    /// (006 FR-022).
     pub files: Vec<ImportFileInput>,
 }
 
-/// What `import_collection:progress` reports (contracts/tauri-commands.md):
+/// What `import_collection:progress` reports (008 contracts/tauri-commands.md):
 /// the bytes of the files read, then the rows saved.
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2521,7 +2521,7 @@ pub async fn import_collection(
     })?;
     // Phase one: the files are read in the import helper without the
     // session's lock, so a lock goes ahead at once and ends the reading
-    // (research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
+    // (008 research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
     // sleep's or the session's ending is `DATABASE_CLOSED`.
     let mut last_percent = None;
     let mut last_file = String::new();
@@ -2574,7 +2574,7 @@ pub async fn import_collection(
     )
 }
 
-/// Stops the running import if it is still reading its files (research.md
+/// Stops the running import if it is still reading its files (008 research.md
 /// §11); does nothing otherwise.
 #[tauri::command]
 pub async fn cancel_import(session: tauri::State<'_, Session>) -> Result<(), CommandError> {

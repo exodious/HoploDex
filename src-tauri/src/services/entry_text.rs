@@ -1,7 +1,7 @@
 //! The entry key and the entry rules for make, model, cartridge and caliber
-//! (specs/004-cartridges-action-types research.md §3 and §9).
+//! (004 research.md §3 and §9).
 //!
-//! Two values are same-notation variants (FR-013) exactly when their
+//! Two values are same-notation variants (004 FR-013) exactly when their
 //! [`entry_key`]s are equal. Suggestion deduplication, matching, snapping in
 //! the form and on import, and the import's sheet pass all compare through
 //! it, so they cannot drift apart.
@@ -9,11 +9,11 @@
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
-/// FR-015: the longest value, in characters, the four fields accept.
+/// 004 FR-015: the longest value, in characters, the four fields accept.
 pub const MAX_ENTRY_CHARS: usize = 100;
 
-/// The six fields with suggestions and snapping (FR-009; specs/005-regulated-item-types
-/// research.md §7 adds the registration form and "Registered to").
+/// The six fields with suggestions and snapping (004 FR-009; 005 research.md §7
+/// adds the registration form and "Registered to").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EntryField {
@@ -70,7 +70,7 @@ impl EntryField {
         }
     }
 
-    /// Make, model and caliber are required; the rest are optional (FR-001).
+    /// Make, model and caliber are required; the rest are optional (004 FR-001).
     pub fn required(&self) -> bool {
         matches!(self, Self::Make | Self::Model | Self::Caliber)
     }
@@ -106,7 +106,7 @@ const DASHES: &[char] = &[
     '\u{10EAD}',
 ];
 
-/// Steps 1 and 2 of research.md §3: NFKC, Unicode lower case, `×` as `x`
+/// Steps 1 and 2 of 004 research.md §3: NFKC, Unicode lower case, `×` as `x`
 /// and every dash as `-`.
 pub fn fold(text: &str) -> String {
     // NFKC leaves ASCII alone, and nearly every make, model and cartridge is
@@ -202,13 +202,13 @@ fn ascii_for_each_token(folded: &str, mut each: impl FnMut(&str)) {
     }
 }
 
-/// The words of a value: its tokens without `and` (research.md §3, step 4).
+/// The words of a value: its tokens without `and` (004 research.md §3, step 4).
 /// Used for word-prefix matching and initialisms.
 pub fn words(text: &str) -> Vec<String> {
     tokens(text).into_iter().filter(|token| token != "and").collect()
 }
 
-/// The comparison form of a value (research.md §3): its words joined with
+/// The comparison form of a value (004 research.md §3): its words joined with
 /// nothing between them. "Smith & Wesson", "smith and wesson" and
 /// "Smith&Wesson" are all `smithwesson`.
 pub fn entry_key(text: &str) -> String {
@@ -285,7 +285,7 @@ pub fn initialism(text: &str) -> String {
     words(text).iter().filter_map(|word| word.chars().next()).collect()
 }
 
-/// FR-015: once trimmed, at most [`MAX_ENTRY_CHARS`] characters (Unicode
+/// 004 FR-015: once trimmed, at most [`MAX_ENTRY_CHARS`] characters (Unicode
 /// scalar values) and no control characters (Unicode `Cc`); make, model and
 /// caliber must also be non-empty. The message names the field.
 pub fn check_entry_text(field: EntryField, value: &str) -> Result<(), String> {
@@ -304,9 +304,8 @@ pub fn check_entry_text(field: EntryField, value: &str) -> Result<(), String> {
 }
 
 /// [`check_entry_text`] for a field that may be left blank on this record
-/// (an accessory's make and model, specs/006-accessory-links FR-001): a blank
-/// value passes whatever the field's own requirement, and any other is
-/// judged by the same rules.
+/// (an accessory's caliber, 006 FR-001): a blank value passes whatever
+/// the field's own requirement, and any other is judged by the same rules.
 pub fn check_optional_entry_text(field: EntryField, value: &str) -> Result<(), String> {
     if value.trim().is_empty() { Ok(()) } else { check_entry_text(field, value) }
 }

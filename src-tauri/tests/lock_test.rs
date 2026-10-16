@@ -1,4 +1,4 @@
-//! Locking (FR-033–FR-038, SC-010; research.md §14, §15): "lock now", the
+//! Locking (003 FR-033–FR-038, SC-010; 003 research.md §14, §15): "lock now", the
 //! idle lock on a manual clock, the lock at sleep with the operations it
 //! stops, a sleep during a close, finishing on waking, the lock at screen
 //! lock and the OS shutdown. Real SQLCipher files in temp directories; the
@@ -259,7 +259,7 @@ fn stopped_notice(world: &World, operation: &str, extra: Value) -> Value {
     notice
 }
 
-// --- Lock now (FR-033, FR-035) -----------------------------------------------
+// --- Lock now (003 FR-033, FR-035) -------------------------------------------
 
 #[test]
 fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
@@ -322,7 +322,7 @@ fn lock_now_with_nothing_open_is_refused() {
     assert_eq!(refused.code, "DATABASE_CLOSED");
 }
 
-// --- The idle lock (FR-034, FR-035, SC-010) ----------------------------------
+// --- The idle lock (003 FR-034, FR-035, SC-010) ------------------------------
 
 #[test]
 fn the_idle_lock_locks_between_ten_and_eleven_minutes_after_the_last_input() {
@@ -475,7 +475,7 @@ fn lock_settings_allow_one_to_two_hundred_and_forty_minutes() {
     assert_eq!(refused.code, "VALIDATION_ERROR");
 }
 
-// --- Sleep, with the idle lock on (FR-037) -----------------------------------
+// --- Sleep, with the idle lock on (003 FR-037) -------------------------------
 
 #[test]
 fn a_sleep_announces_the_close_before_the_connection_closes() {
@@ -584,7 +584,7 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
 }
 
 /// An import reading a large valid file when `go` closes the collection from
-/// this thread (008 T051; research.md §11): the close goes ahead without
+/// this thread (008 T051, research.md §11): the close goes ahead without
 /// waiting for the reading, and the reading ends within a second with
 /// `DATABASE_CLOSED`, never `OPERATION_STOPPED` (which only `cancel_import`
 /// gives), with nothing imported and the helper gone.
@@ -1002,7 +1002,7 @@ fn a_running_move_of_backups_pauses_the_idle_clock() {
     assert!(world.tick());
 }
 
-// --- A sleep during a close already under way (FR-037, FR-038) -------------
+// --- A sleep during a close already under way (003 FR-037, FR-038) ---------
 
 /// A changed, multi-chunk database whose close is made to sleep midway
 /// through its backup by `close`.
@@ -1059,7 +1059,7 @@ fn a_sleep_during_a_user_closes_backup_finishes_the_close_at_once() {
     });
 }
 
-// --- Finishing on waking (FR-037, research.md §14) -------------------------
+// --- Finishing on waking (003 FR-037, research.md §14) ---------------------
 
 #[test]
 fn a_sleep_lock_cut_short_after_its_first_step_is_finished_on_waking() {
@@ -1133,7 +1133,7 @@ fn the_wake_watchdog_reports_wall_time_running_ahead_of_monotonic_time() {
     );
 }
 
-// --- The screen lock (FR-038) ------------------------------------------------
+// --- The screen lock (003 FR-038) --------------------------------------------
 
 #[test]
 fn with_the_option_on_a_screen_lock_locks_as_a_normal_close() {
@@ -1171,7 +1171,7 @@ fn passphrase_fields_clear_at_sleep_and_screen_lock_whatever_is_open() {
     assert_eq!(world.events.payloads("system:clear-passphrase-fields").len(), 2);
 }
 
-// --- Shutdown (FR-039) -------------------------------------------------------
+// --- Shutdown (003 FR-039) ---------------------------------------------------
 
 #[test]
 fn a_shutdown_keeps_the_draft_deletes_document_copies_and_makes_no_backup() {
@@ -1195,9 +1195,9 @@ fn a_shutdown_keeps_the_draft_deletes_document_copies_and_makes_no_backup() {
     assert_eq!(world.closed_reasons(), vec![json!("shutdown")]);
 }
 
-// --- A preview open at every way the collection goes (FR-014, SC-006; 007 T036) -
+// --- A preview open at every way the collection goes (007 FR-014, SC-006; 007 T036) -
 //
-// Assumed API (T048, T049, T068; see tests/support/preview_support.rs): the
+// Assumed API (007 T048, T049, T068; see tests/support/preview_support.rs): the
 // preview is part of what a close removes, and it is gone from the screen by
 // the time the close is announced (`session:closing` for a normal close,
 // `session:closed` for an immediate one): the PDF surface is closed then, and

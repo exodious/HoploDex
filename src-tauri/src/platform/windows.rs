@@ -1,6 +1,6 @@
 //! Windows: power, session and shutdown messages, received by one hidden,
 //! never-shown top-level window with its own message loop on its own thread
-//! (research.md §14). Broadcasts go only to top-level windows, so a
+//! (003 research.md §14). Broadcasts go only to top-level windows, so a
 //! message-only (`HWND_MESSAGE`) window would miss them.
 
 use std::sync::mpsc::{self, Sender};

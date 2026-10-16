@@ -18,7 +18,7 @@ export interface PolicyDeleteDialogProps {
 
 type Choice = "move" | "unschedule";
 
-/** Deleting a policy never silently un-insures a record (FR-034, 006 FR-009):
+/** Deleting a policy never silently un-insures a record (001 FR-034, 006 FR-009):
  * with firearms or accessories scheduled under it, the user first moves them to another policy
  * (each keeps its scheduled amount) or leaves them unscheduled, with a
  * stronger confirmation when the policy is still current. Built on the

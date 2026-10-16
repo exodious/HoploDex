@@ -1,13 +1,13 @@
-//! specs/006-accessory-links User Story 5 through `ops`, against real
+//! 006 US5 through `ops`, against real
 //! temporary SQLCipher databases and real files (no mocks): a collection of
 //! firearms, accessories and mounts exported as two tables and imported
-//! again (SC-002, SC-003, US5-3, US5-4), the mount warnings (FR-023, US5-5),
-//! the row errors of the accessory table and of `record_id` (FR-022, FR-024,
-//! US5-6), either table alone and a sheet from before the feature (US5-7,
-//! US5-8), and the stops before any row is saved (FR-022).
+//! again (006 SC-002, SC-003, US5-3, US5-4), the mount warnings (006 FR-023, US5-5),
+//! the row errors of the accessory table and of `record_id` (006 FR-022, FR-024,
+//! US5-6), either table alone and a sheet from before the feature (006 US5-7,
+//! US5-8), and the stops before any row is saved (006 FR-022).
 //!
-//! Written before the implementation (tasks.md T100), against
-//! contracts/spreadsheet-format.md and contracts/tauri-commands.md. The ops
+//! Written before the implementation (006 tasks.md T100), against
+//! 006 contracts/spreadsheet-format.md and contracts/tauri-commands.md. The ops
 //! this file assumes:
 //!
 //! - `import_export::ops::export_records(conn, scope, filter) -> ExportRecords`
@@ -123,7 +123,7 @@ fn add_policies(db: &TestDb) -> i64 {
     home.id
 }
 
-/// SC-002's collection: an accessory of every kind, scheduled and not,
+/// 006 SC-002's collection: an accessory of every kind, scheduled and not,
 /// active and disposed (one with no price), and mounts of firearms and
 /// accessories on both kinds of host. Returns the number of firearms and
 /// accessories.
@@ -422,7 +422,7 @@ fn fresh_uid() -> String {
     record_id::generate()
 }
 
-// --- SC-002: the round trip into an empty database (US5-3) ----------------------------------------
+// --- 006 SC-002: the round trip into an empty database (006 US5-3) --------------------------------
 
 /// Imports `paths` into an empty database that has the sample collection's
 /// policies by name, and checks that it holds exactly what `source` holds.
@@ -484,7 +484,7 @@ fn two_csv_files_reproduce_the_collection_in_either_order() {
 }
 
 /// Notes that a spreadsheet program would read as formulas (or that merely
-/// look like one), for a firearm and for an accessory (T127, Constitution V).
+/// look like one), for a firearm and for an accessory (006 T127, Constitution V).
 const FORMULA_NOTES: [&str; 7] = [
     "=HYPERLINK(\"http://example.invalid\",\"x\")",
     "+1+1",
@@ -630,7 +630,7 @@ fn a_disposed_row_may_have_a_blank_disposition_price_in_either_table() {
     assert_eq!(priced, 0);
 }
 
-// --- SC-003: importing the collection into itself (US5-4) -------------------------------------------
+// --- 006 SC-003: importing the collection into itself (006 US5-4) -----------------------------------
 
 #[test]
 fn re_importing_an_export_with_skip_for_every_conflict_creates_and_changes_nothing() {
@@ -784,7 +784,7 @@ fn a_single_conflict_is_resolved_on_its_own_and_the_rest_are_left() {
     assert_eq!(mount_of(&db.conn, optic), Some(uid_of(&db.conn, rifle)));
 }
 
-// --- Replacing a record with a disposed row (FR-014, issue #56) ------------------------------------------
+// --- Replacing a record with a disposed row (006 FR-014, issue #56) --------------------------------------
 
 /// A Rifle carrying an Optic (which carries a Light) and a Sling, and a
 /// firearm table whose one row, matching the Rifle, marks it sold.
@@ -1043,7 +1043,7 @@ fn a_record_chosen_that_is_no_longer_below_the_host_leaves_the_conflict_open() {
     assert_eq!(disposition_of(&db.conn, fixture.sling).0, "active");
 }
 
-// --- Mount warnings (FR-023, US5-5) ---------------------------------------------------------------------
+// --- Mount warnings (006 FR-023, US5-5) -----------------------------------------------------------------
 
 fn disposed_firearm(db: &TestDb) -> RecordRef {
     new_firearm(
@@ -1327,7 +1327,7 @@ fn skip_leaves_the_record_and_its_mount_and_warns_of_nothing() {
     assert_eq!(mount_of(&db.conn, optic), Some(uid_of(&db.conn, rifle)));
 }
 
-// --- Row errors (US5-6, FR-022, FR-024) ---------------------------------------------------------------------
+// --- Row errors (006 US5-6, FR-022, FR-024) -----------------------------------------------------------------
 
 #[test]
 fn accessory_rows_with_a_blank_or_unknown_kind_make_or_model_a_bad_amount_or_a_bad_date_fail_alone()
@@ -1637,7 +1637,7 @@ fn every_report_entry_names_the_table_it_came_from() {
     assert_eq!(result.imported_accessory_count, 1);
 }
 
-// --- Either table alone, and a sheet from before the feature (US5-7, US5-8) -------------------------
+// --- Either table alone, and a sheet from before the feature (006 US5-7, US5-8) ---------------------
 
 #[test]
 fn a_firearm_sheet_from_before_the_feature_imports_as_it_did() {
@@ -1735,7 +1735,7 @@ fn the_accessory_table_alone_resolves_its_mounts_against_the_database() {
     assert_eq!(firearms_after, firearms_before, "no firearm is imported or changed");
 }
 
-// --- Stops before any row is saved (FR-022) --------------------------------------------------------------
+// --- Stops before any row is saved (006 FR-022) ----------------------------------------------------------
 
 fn assert_stopped_with(err: &CommandError, db: &TestDb) {
     assert_eq!(err.code, "VALIDATION_ERROR", "{err:?}");

@@ -12,10 +12,10 @@ export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   error?: string;
   hint?: ReactNode;
   fieldClassName?: string;
-  /** The most characters the field should hold (specs/008-hardening-batch
-   * contracts/ui.md §3). From 90% of it a counter, "<n> of <limit>", shows
-   * under the field; over it the counter takes the error style. The text is
-   * never cut off: the form shows the field's error and refuses to submit. */
+  /** The most characters the field should hold (008 contracts/ui.md §3). From
+   * 90% of it a counter, "<n> of <limit>", shows under the field; over it the
+   * counter takes the error style. The text is never cut off: the form shows
+   * the field's error and refuses to submit. */
   limit?: number;
 }
 

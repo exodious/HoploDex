@@ -18,6 +18,7 @@ description: "Task list template for feature implementation"
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
+- In this file, bare IDs (FR-001, US1, T012) mean this feature's. In code, comments and test names, cite them with the feature's number, `[###] FR-001`, `[###] US1-2`, `[###] T012`, `[###] research.md §3` (DEVELOPMENT.md, "Spec citations"); `npm test` fails on a bare one
 - Work that must be built, tested or run on a specific platform gets one task per platform
 
 ## Path Conventions
@@ -85,8 +86,8 @@ Examples of foundational tasks (adjust based on your project):
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Rust integration tests for [scenario IDs: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
-- [ ] T011 [P] [US1] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, in e2e/specs/us[NN]-[name].e2e.ts
+- [ ] T010 [P] [US1] Rust integration tests for [scenario IDs, cited as [###] US[n]-[m]: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
+- [ ] T011 [P] [US1] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, as `describe("[###] US[n] - [story heading]")` in e2e/specs/[topic].e2e.ts, the existing file whose setup it shares unless plan.md's Test Levels gives a reason for a new one
 
 ### Implementation for User Story 1
 
@@ -109,8 +110,8 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Tests for User Story 2 (mandatory per constitution)
 
-- [ ] T018 [P] [US2] Rust integration tests for [scenario IDs: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
-- [ ] T019 [P] [US2] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, in e2e/specs/us[NN]-[name].e2e.ts
+- [ ] T018 [P] [US2] Rust integration tests for [scenario IDs, cited as [###] US[n]-[m]: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
+- [ ] T019 [P] [US2] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, as `describe("[###] US[n] - [story heading]")` in e2e/specs/[topic].e2e.ts, the existing file whose setup it shares unless plan.md's Test Levels gives a reason for a new one
 
 ### Implementation for User Story 2
 
@@ -131,8 +132,8 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Tests for User Story 3 (mandatory per constitution)
 
-- [ ] T024 [P] [US3] Rust integration tests for [scenario IDs: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
-- [ ] T025 [P] [US3] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, in e2e/specs/us[NN]-[name].e2e.ts
+- [ ] T024 [P] [US3] Rust integration tests for [scenario IDs, cited as [###] US[n]-[m]: rules, validation, edge cases] in src-tauri/tests/[name]_test.rs, and Vitest for [scenario IDs: UI behaviour] in src/features/[area]/[Component].test.tsx
+- [ ] T025 [P] [US3] E2E journey for [story], plus only the E2E tests plan.md's Test Levels lists for it, as `describe("[###] US[n] - [story heading]")` in e2e/specs/[topic].e2e.ts, the existing file whose setup it shares unless plan.md's Test Levels gives a reason for a new one
 
 ### Implementation for User Story 3
 
@@ -202,7 +203,7 @@ Examples of foundational tasks (adjust based on your project):
 ```bash
 # Launch all tests for User Story 1 together (if tests requested):
 Task: "Rust integration tests for [scenario IDs] in src-tauri/tests/[name]_test.rs"
-Task: "E2E journey for [story] in e2e/specs/us[NN]-[name].e2e.ts"
+Task: "E2E journey for [story] in e2e/specs/[topic].e2e.ts"
 
 # Launch all models for User Story 1 together:
 Task: "Create [Entity1] model in src/models/[entity1].py"

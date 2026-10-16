@@ -35,7 +35,7 @@ vi.mock("../../services/tauriClient", async (importOriginal) => ({
 }));
 
 // Counts every call of `useToast`, and otherwise leaves it as it is: the guard
-// of specs/008-hardening-batch research.md §4 reads the count.
+// of 008 research.md §4 reads the count.
 const toastConsumers = vi.hoisted(() => ({ spy: vi.fn() }));
 vi.mock("../../components/toastContext", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../components/toastContext")>();
@@ -109,7 +109,7 @@ function renderSession() {
   );
 }
 
-describe("SessionProvider (User Story 1)", () => {
+describe("SessionProvider (003 US1)", () => {
   beforeEach(() => {
     vi.mocked(sessionService.getDatabaseStatus).mockReset().mockRejectedValue(closed);
     vi.mocked(sessionService.dismissNote).mockReset().mockResolvedValue(undefined);
@@ -140,7 +140,7 @@ describe("SessionProvider (User Story 1)", () => {
     expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
   });
 
-  it("names the open database in the window's title, and only then (§4)", async () => {
+  it("names the open database in the window's title, and only then (003 contracts/ui-databases.md §4)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.openDatabase).mockResolvedValue(status(false));
     setTitle.mockClear();
@@ -185,8 +185,8 @@ describe("SessionProvider (User Story 1)", () => {
     expect(databasesService.getChooserState).not.toHaveBeenCalled();
   });
 
-  // 003 US1 Scenario 4
-  it("shows the disk-encryption note until it is dismissed (FR-008)", async () => {
+  // 003 US1-4
+  it("shows the disk-encryption note until it is dismissed (003 FR-008)", async () => {
     const user = userEvent.setup();
     vi.mocked(sessionService.getDatabaseStatus).mockResolvedValue(status(true));
     renderSession();
@@ -219,7 +219,7 @@ describe("SessionProvider (User Story 1)", () => {
   });
 });
 
-// --- User Story 2 -----------------------------------------------------------
+// --- 003 US2 ----------------------------------------------------------------
 
 const SHARED = "/mnt/nas/family/Shared collection.hoplodex";
 
@@ -259,7 +259,7 @@ function CloseButtons() {
   );
 }
 
-describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () => {
+describe("SessionProvider (003 US2, FR-010: close, switch and quit)", () => {
   let sessionClosed: (closed: SessionClosed) => void;
   let quitRequested: () => void;
 
@@ -456,7 +456,7 @@ describe("SessionProvider (User Story 2: close, switch and quit, FR-010)", () =>
   });
 });
 
-// --- 007: the document viewer (SC-006, contracts/ui-document-preview.md §9) ----
+// --- 007: the document viewer (007 SC-006, contracts/ui-document-preview.md §9) ----
 
 const notesDocument: DocumentSummary = {
   id: 3,
@@ -469,7 +469,7 @@ const notesDocument: DocumentSummary = {
   openable: true,
 };
 
-describe("SessionProvider (007: the document viewer, SC-006)", () => {
+describe("SessionProvider (007: the document viewer, 007 SC-006)", () => {
   let sessionClosed: (closed: SessionClosed) => void;
 
   beforeEach(() => {
@@ -551,7 +551,7 @@ describe("SessionProvider (007: the document viewer, SC-006)", () => {
   );
 });
 
-// --- 008: the session scope (FR-002, research.md §3) -------------------------
+// --- 008: the session scope (008 FR-002, research.md §3) -------------------------
 
 describe("SessionProvider (008: the session scope)", () => {
   let sessionClosed: (closed: SessionClosed) => void;
@@ -732,7 +732,7 @@ describe("SessionProvider (008: the session scope)", () => {
   });
 });
 
-// --- 008: toasts go with the session (US1-6, FR-005, research.md §4) ----------
+// --- 008: toasts go with the session (008 US1-6, FR-005, research.md §4) ----------
 
 describe("SessionProvider (008: notifications go with the session)", () => {
   let sessionClosed: (closed: SessionClosed) => void;
@@ -827,7 +827,7 @@ describe("SessionProvider (008: notifications go with the session)", () => {
     expect(screen.queryByText("Too late.")).not.toBeInTheDocument();
   });
 
-  it("renders no useToast consumer outside the tree keyed by the open (research.md §4)", async () => {
+  it("renders no useToast consumer outside the tree keyed by the open (008 research.md §4)", async () => {
     const user = userEvent.setup();
     vi.mocked(sessionService.getDatabaseStatus).mockRejectedValue(closed);
     render(
@@ -882,7 +882,7 @@ describe("SessionProvider (008: notifications go with the session)", () => {
   });
 });
 
-// --- 008: resuming pending changes until their form opens (US1-3, US1-4) -----
+// --- 008: resuming pending changes until their form opens (008 US1-3, US1-4) -----
 
 describe("SessionProvider (008: resuming pending changes)", () => {
   let sessionClosed: (closed: SessionClosed) => void;
@@ -1039,7 +1039,7 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     expect(screen.getByRole("button", { name: "Collection button" })).toBeInTheDocument();
   });
 
-  it("brings the dialog back with its error when the record fails to load (US1-4)", async () => {
+  it("brings the dialog back with its error when the record fails to load (008 US1-4)", async () => {
     const user = userEvent.setup();
     failWith = "The policy wasn't found.";
     renderPending();
@@ -1062,7 +1062,7 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers Close the database with the other two in that dialog (US4, T095)", async () => {
+  it("offers Close the database with the other two in that dialog (008 US4, T095)", async () => {
     const user = userEvent.setup();
     failWith = "The policy wasn't found.";
     renderPending();
@@ -1128,7 +1128,7 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     expect(screen.getByRole("button", { name: "Collection button" })).toBeInTheDocument();
   });
 
-  it("keeps the changes for the next open when the database locks while opening (US1-3)", async () => {
+  it("keeps the changes for the next open when the database locks while opening (008 US1-3)", async () => {
     const user = userEvent.setup();
     renderPending();
     await user.click(within(await dialog()).getByRole("button", { name: "Resume editing" }));

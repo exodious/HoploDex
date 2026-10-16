@@ -64,7 +64,7 @@ function renderDialog(
   return onSave;
 }
 
-describe("CoverageDialog (FR-014, FR-036)", () => {
+describe("CoverageDialog (001 FR-014, FR-036)", () => {
   it("requires a scheduled amount instead of saving $0", async () => {
     // Regression: a blank scheduled amount was saved as $0.
     const user = userEvent.setup();
@@ -137,12 +137,12 @@ describe("CoverageDialog (FR-014, FR-036)", () => {
   });
 });
 
-// specs/006-accessory-links FR-009, FR-027, contracts/ui-accessories.md §10:
+// 006 FR-009, FR-027, contracts/ui-accessories.md §10:
 // the dialog serves an accessory as it serves a firearm. Given one (in place
 // of the firearm) it names it by `RecordName`, hands the same input to
 // `onSave`, which the accessory's page sends as `assign_accessory_coverage`,
 // and keeps its draft as `kind: "accessory"`.
-describe("CoverageDialog for an accessory (FR-009)", () => {
+describe("CoverageDialog for an accessory (006 FR-009)", () => {
   const accessory = {
     id: 3,
     accessoryKindId: 1,
@@ -221,7 +221,7 @@ describe("CoverageDialog for an accessory (FR-009)", () => {
     expect(screen.getByText(/uninsured/i)).toBeInTheDocument();
   });
 
-  it("keeps its unsaved input as a draft of the accessory (FR-027)", async () => {
+  it("keeps its unsaved input as a draft of the accessory (006 FR-027)", async () => {
     const user = userEvent.setup();
     renderAccessoryDialog();
     expect(getDirtyForm()).toBeNull();

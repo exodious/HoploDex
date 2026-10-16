@@ -1,6 +1,6 @@
 //! Integration tests for a firearm's optional physical details — barrel
-//! length, overall length, weight, capacity, finish and condition (FR-039,
-//! spec.md US1 Acceptance Scenario 17) — against a real temporary SQLCipher
+//! length, overall length, weight, capacity, finish and condition (001 FR-039,
+//! US1-17) — against a real temporary SQLCipher
 //! database. Search on `finish` is covered in `fts_search_test.rs`.
 
 use crate::support;
@@ -42,7 +42,7 @@ fn field_error(input: &FirearmInput, field: &str) {
     );
 }
 
-// 001 US1 Scenario 17
+// 001 US1-17
 #[test]
 fn all_six_round_trip_through_create_update_and_get() {
     let db = TestDb::new();

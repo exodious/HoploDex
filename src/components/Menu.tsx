@@ -37,7 +37,7 @@ export function Menu({ trigger, children, align = "start" }: MenuProps) {
 }
 
 /** A menu of radio items opens with focus on the checked one, where Radix
- * would start at the first item (contracts/ui-registration.md §6). Radix
+ * would start at the first item (005 contracts/ui-registration.md §6). Radix
  * places focus in its own mount effects, so this waits a frame. */
 function focusCheckedItem(content: HTMLElement | null) {
   if (!content) return;
@@ -90,7 +90,7 @@ export interface MenuRadioGroupProps {
 }
 
 /** A group of `MenuRadioItem`s: `role="group"`, named by its `label`
- * (specs/005-regulated-item-types contracts/ui-registration.md §6). */
+ * (005 contracts/ui-registration.md §6). */
 export function MenuRadioGroup({ value, onValueChange, label, children }: MenuRadioGroupProps) {
   const labelId = useId();
   return (

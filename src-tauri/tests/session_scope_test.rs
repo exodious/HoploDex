@@ -1,4 +1,4 @@
-//! A session names its requests (008 FR-004; research.md §2): every accessor
+//! A session names its requests (008 FR-004; 008 research.md §2): every accessor
 //! of `Session` takes the id of the session the caller means, compares it
 //! with the open database's under the session's mutex, and refuses
 //! `DATABASE_CLOSED`, running nothing, when it isn't the open one. Real
@@ -356,7 +356,7 @@ fn a_passphrase_change_keeps_the_session() {
     .unwrap();
 
     // The same open, re-keyed: the id a web view holds is still its session
-    // (research.md §1).
+    // (008 research.md §1).
     assert_eq!(world.session.current_id(), id);
     assert_every_accessor_serves(&world, id);
     let status = databases::database_status(&world.session, &world.machine).unwrap();

@@ -31,7 +31,7 @@ export interface RestoreBackupDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The database being restored. */
   name: string;
-  /** For a database that doesn't open (US3-6): its path. Without it, the
+  /** For a database that doesn't open (003 US3-6): its path. Without it, the
    * open database is restored. */
   databasePath?: string;
   /** Opens the backup settings, offered when the backup location stops the
@@ -43,7 +43,7 @@ export interface RestoreBackupDialogProps {
  * showing that it is still looking (a slow network folder). */
 const LIST_WAIT_MS = 400;
 
-/** Restores a database from one of its backups (contracts/ui-databases.md
+/** Restores a database from one of its backups (003 contracts/ui-databases.md
  * §9, FR-028). The backup's own passphrase is asked for, since it keeps the
  * one it was made with. The current database is backed up first, or, when
  * it is damaged, kept beside the restored one. The open database is "the
@@ -153,7 +153,7 @@ function RestoreForm({
 
   async function restore() {
     if (!chosen) return;
-    // Read once and emptied at once (FR-007).
+    // Read once and emptied at once (003 FR-007).
     const typed = passphrase.current?.read() ?? "";
     passphrase.current?.reset();
     setRunning(true);

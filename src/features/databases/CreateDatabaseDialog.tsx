@@ -33,9 +33,9 @@ export interface CreateDatabaseDialogProps {
   onCreate: (input: CreateDatabaseInput) => Promise<void>;
 }
 
-/** Creates a database protected by a passphrase the user chooses (FR-003,
+/** Creates a database protected by a passphrase the user chooses (003 FR-003,
  * FR-004, FR-009), saying before it exists where it and its backups will be
- * (FR-024). */
+ * (003 FR-024). */
 export function CreateDatabaseDialog({
   open,
   onOpenChange,
@@ -111,7 +111,7 @@ function CreateDatabaseForm({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     // Each passphrase is read once and the field emptied at once, whatever
-    // happens next (FR-007).
+    // happens next (003 FR-007).
     const typed = passphrase.current?.read() ?? "";
     const confirmed = confirmation.current?.read() ?? "";
     passphrase.current?.reset();

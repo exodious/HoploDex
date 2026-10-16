@@ -1,13 +1,13 @@
 # The window controls check on Windows (specs/008-hardening-batch/research.md
-# §13, §14, §18, quickstart.md): builds src-tauri\examples\window_controls_check.rs
+# §13, §14, §18, 008 quickstart.md): builds src-tauri\examples\window_controls_check.rs
 # with the E2E profile (a development build installs none of the filters,
-# FR-014) and runs it with real input. It opens the main window with the app's
+# 008 FR-014) and runs it with real input. It opens the main window with the app's
 # own `window_controls::apply` (WebView2's context menu filter, browser
 # accelerator keys and swipe navigation off) and a test page, right-clicks a
 # blank area, a row, a button, an image, a text field and a selection and logs
-# every item each menu offered, presses every FR-012 key (the Browser Back,
+# every item each menu offered, presses every 008 FR-012 key (the Browser Back,
 # Forward and Refresh keys by virtual key code) and the mouse's back and
-# forward buttons, and fails if a menu offered an item outside FR-011's list or
+# forward buttons, and fails if a menu offered an item outside 008 FR-011's list or
 # appeared where none belongs, or the page reloaded or navigated.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\windows\window-controls-check.ps1
@@ -20,7 +20,7 @@
 # screenshot go to e2e\screenshots-out\window-controls\. Exits with the
 # example's code (0 passed, 1 no window, 3 usage, 4 a check failed).
 #
-# Run on the Windows VM for T085.
+# Run on the Windows VM for 008 T085.
 param([Parameter(ValueFromRemainingArguments)][string[]]$Rest = @())
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path "$PSScriptRoot\..\..").Path

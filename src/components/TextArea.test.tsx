@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { TextArea } from "./TextArea";
 
-// specs/008-hardening-batch contracts/ui.md §3: a long text area with a
+// 008 contracts/ui.md §3: a long text area with a
 // `limit` shows "<n> of 4,000" under the field from 90% of the limit.
 
 function Harness({ initial = "", limit }: { initial?: string; limit?: number }) {

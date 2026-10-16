@@ -1,6 +1,6 @@
-//! Integration tests for make + model + serial-number uniqueness (FR-032,
-//! spec.md US1 Acceptance Scenarios 10-11 and FR-029), run against a real temporary
-//! SQLCipher database.
+//! Integration tests for make + model + serial-number uniqueness (001 FR-032,
+//! US1-10, US1-11 and FR-029), run against a real temporary SQLCipher
+//! database.
 
 use crate::support;
 
@@ -9,7 +9,7 @@ use hoplodex_lib::commands::firearms::{DisposeInput, ops};
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, Origin};
 use support::{TestDb, firearm};
 
-/// A record attested as having no serial number, so it records none (FR-029).
+/// A record attested as having no serial number, so it records none (001 FR-029).
 fn no_serial(make: &str, model: &str) -> FirearmInput {
     FirearmInput { serial_number: None, no_serial_attested: true, ..firearm(make, model, "") }
 }
@@ -61,7 +61,7 @@ fn the_same_serial_on_a_different_make_or_model_is_not_a_duplicate() {
     assert!(ops::create_firearm(&db.conn, &firearm("Sig", "19", "ABC123"), false, None).is_ok());
 }
 
-// 001 US1 Scenario 10
+// 001 US1-10
 #[test]
 fn comparison_ignores_letter_case_and_surrounding_whitespace() {
     let db = TestDb::new();
@@ -173,11 +173,11 @@ fn the_database_refuses_a_duplicate_even_if_the_app_check_is_bypassed() {
 
     let backstop =
         db.conn.execute("UPDATE firearms SET serial_number = 'abc123' WHERE id = ?1", [other.id]);
-    assert!(backstop.is_err(), "the identity trigger backs up FR-032");
+    assert!(backstop.is_err(), "the identity trigger backs up 001 FR-032");
 }
 
-// specs/002-firearm-identification User Story 3: the year-of-manufacture
-// exception to the identity rule (FR-007/FR-008, data-model.md's "Identity
+// 002 US3: the year-of-manufacture
+// exception to the identity rule (002 FR-007/FR-008, data-model.md's "Identity
 // uniqueness"; amends 001 FR-032).
 
 fn with_year(make: &str, model: &str, serial: &str, year: Option<i64>) -> FirearmInput {
@@ -190,7 +190,7 @@ fn a_duplicate_with_no_year_on_either_record_is_blocked_and_points_to_the_year()
     ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-1", None), false, None).unwrap();
 
     let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-1", None), false, None)
-        .expect_err("no year on either record still blocks (US3-1)");
+        .expect_err("no year on either record still blocks (002 US3-1)");
     let message = blocked_message(&err);
     assert!(message.contains("Colt") && message.contains("SAA-1"), "{message}");
     assert!(
@@ -206,7 +206,7 @@ fn a_duplicate_with_different_years_on_each_record_is_accepted() {
         .unwrap();
 
     ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-2", Some(1944)), false, None)
-        .expect("both records have a year and the years differ (FR-008)");
+        .expect("both records have a year and the years differ (002 FR-008)");
 }
 
 #[test]
@@ -228,13 +228,13 @@ fn a_duplicate_with_a_year_missing_on_one_record_is_blocked() {
         .unwrap();
 
     let err = ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-4", None), false, None)
-        .expect_err("a missing year on one side still blocks (FR-008)");
+        .expect_err("a missing year on one side still blocks (002 FR-008)");
     blocked_message(&err);
 }
 
 #[test]
 fn the_same_rule_applies_to_a_pre_1968_domestic_pair() {
-    // US3-3: pre-1968 domestic firearms whose maker restarted serial
+    // 002 US3-3: pre-1968 domestic firearms whose maker restarted serial
     // numbering are told apart the same way as any other pair.
     let db = TestDb::new();
     let smith_1955 = FirearmInput {
@@ -261,7 +261,7 @@ fn the_same_rule_applies_to_a_pre_1968_domestic_pair() {
 
 #[test]
 fn editing_a_second_firearms_year_to_match_the_first_is_blocked() {
-    // US3-4a
+    // 002 US3-4 (editing the year to match)
     let db = TestDb::new();
     ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-5", Some(1943)), false, None)
         .unwrap();
@@ -281,7 +281,7 @@ fn editing_a_second_firearms_year_to_match_the_first_is_blocked() {
 
 #[test]
 fn the_database_backstop_allows_a_pair_distinguished_by_year() {
-    // T028: the raw-SQL backstop applies the same year exception the
+    // 002 T028: the raw-SQL backstop applies the same year exception the
     // command layer does.
     let db = TestDb::new();
     ops::create_firearm(&db.conn, &with_year("Colt", "1873", "SAA-6", Some(1943)), false, None)
@@ -353,10 +353,10 @@ fn the_database_refuses_a_record_with_both_a_serial_number_and_the_attestation()
     let backstop =
         db.conn.execute("UPDATE firearms SET no_serial_attested = 1 WHERE id = ?1", [firearm.id]);
 
-    assert!(backstop.is_err(), "the CHECK backs up FR-029");
+    assert!(backstop.is_err(), "the CHECK backs up 001 FR-029");
 }
 
-// specs/002-firearm-identification FR-006: the app never states or implies
+// 002 FR-006: the app never states or implies
 // a mark, year or import is legal or illegal.
 #[test]
 fn the_fr_008_identity_clash_message_never_judges_legality() {
@@ -377,7 +377,7 @@ fn the_fr_008_identity_clash_message_never_judges_legality() {
     }
 }
 
-// specs/005-regulated-item-types US1-6, FR-005: a Suppressor is identified
+// 005 US1-6, FR-005: a Suppressor is identified
 // like any firearm.
 
 fn suppressor(serial: &str) -> FirearmInput {

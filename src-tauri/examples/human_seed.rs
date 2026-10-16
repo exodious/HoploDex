@@ -80,7 +80,7 @@ const REGISTERED_MACHINE_GUN: i64 = 5;
 /// 005 US3: "Automatic or select-fire", unrelated to any classification.
 const ACTION_AUTOMATIC: i64 = 13;
 
-// Ids seeded by migration 0003_seed_firearm_types (specs/004-cartridges-action-types FR-018).
+// Ids seeded by migration 0003_seed_firearm_types (004 FR-018).
 const SEMI_AUTOMATIC: i64 = 1;
 const REVOLVER: i64 = 2;
 const BOLT_ACTION: i64 = 3;
@@ -88,8 +88,8 @@ const LEVER_ACTION: i64 = 4;
 const PUMP_ACTION: i64 = 5;
 const PERCUSSION: i64 = 11;
 
-// Ids seeded by migration 0003_seed_firearm_types (specs/006-accessory-links
-// FR-002): the accessory kinds.
+// Ids seeded by migration 0003_seed_firearm_types (006 FR-002): the accessory
+// kinds.
 const KIND_OPTIC: i64 = 1;
 const KIND_LIGHT: i64 = 2;
 const KIND_MAGAZINE: i64 = 3;
@@ -398,7 +398,7 @@ fn seed_shared(conn: &Connection) -> i64 {
     // spec 008 US1: this photo, the first in this database, has the id 1 that
     // the main database's first photo (the Glock's thumbnail) has, with other
     // bytes, so a thumbnail kept across a switch shows the wrong image
-    // (e2e/specs/us14-session-isolation.e2e.ts).
+    // (e2e/specs/session-isolation.e2e.ts).
     let (name, bytes, mime) = seed_photo!("beretta-92fs-atf.jpg");
     let photo =
         must(photo_ops::add_photo(conn, RecordRef::Firearm(beretta), &bytes, name, mime), name);
@@ -514,7 +514,7 @@ fn seed_policies(conn: &Connection) -> Policies {
     };
 
     // The renewal starts the day after the old blanket policy ends, so the
-    // old one is expired-but-replaced and raises no warning (FR-028).
+    // old one is expired-but-replaced and raises no warning (001 FR-028).
     create(policy(
         "Homeowners Blanket 2025",
         "HB-2025-88120",
@@ -641,7 +641,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         // specs/004-cartridges-action-types: a built-in cartridge and its
         // bore class.
         cartridge: text("9x19mm Parabellum"),
-        // specs/004-cartridges-action-types US3: an action allowed for each
+        // 004 US3: an action allowed for each
         // seeded type (Handgun, Rifle, Shotgun, Other), below.
         action_type_id: Some(SEMI_AUTOMATIC),
         ..base("Glock", "19 Gen5", "BXKT482", "9mm", HANDGUN)
@@ -696,7 +696,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         ],
     );
     // A row stored before 007, of a type `add_document` now refuses: it stays
-    // listed and deletable, and is neither previewed nor opened (FR-017).
+    // listed and deletable, and is neither previewed nor opened (007 FR-017).
     must(
         conn.execute(
             "INSERT INTO document_attachments
@@ -758,7 +758,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     photos(benelli, &[seed_photo!("benelli-m4.jpg")]);
 
     // Same identity as a disposed record below: a firearm reacquired as a
-    // new record (FR-032 only protects active records).
+    // new record (001 FR-032 only protects active records).
     let disposed_p365 = add(FirearmInput {
         nickname: text("Carry"),
         estimated_value: Some(600),
@@ -837,7 +837,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     // specs/004-cartridges-action-types: a muzzleloader records only its
-    // caliber (spec Edge Cases), and "7.62x39" finds the SKS (US1-9). No
+    // caliber (004 spec.md Edge Cases), and "7.62x39" finds the SKS (004 US1-9). No
     // value, so the blanket's totals are unchanged.
     add(FirearmInput {
         notes: text("Percussion cap; patched round ball over 90 gr FFg."),
@@ -872,7 +872,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     // Disposed and reacquired twice, keeping both past dispositions
-    // (FR-033): shows the disposition history on the record.
+    // (001 FR-033): shows the disposition history on the record.
     let p320 = add(FirearmInput {
         nickname: text("Reacquired"),
         estimated_value: Some(500),
@@ -1019,7 +1019,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         acquisition_date: text("2020-09-09"),
         insurance_policy_id: Some(policies.expired_rider),
         scheduled_coverage_amount: Some(700),
-        // specs/004-cartridges-action-types US1-2: a wildcat, whose caliber
+        // 004 US1-2: a wildcat, whose caliber
         // the form guesses from its name.
         notes: text("Rebarreled by a gunsmith to a wildcat of his own."),
         cartridge: text(".30 Custom Improved"),
@@ -1053,11 +1053,11 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("FN", "Model 1922", "FN-88431", ".32 ACP", HANDGUN)
     });
 
-    // -- specs/002-firearm-identification User Story 2: original maker's marks --
+    // -- 002 US2: original maker's marks --
 
     // The importer assigned its own serial number (per the paperwork); the
     // maker's own make, model and serial are entered as the original marks
-    // (contracts/ui-identification.md §8 example 3).
+    // (002 contracts/ui-identification.md §8 example 3).
     add(FirearmInput {
         notes: text(
             "Importer re-stamped a new serial on the receiver; the maker's original \
@@ -1081,7 +1081,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
 
     // The importer adopted the maker's own model and serial as the main
-    // marks: no separate original-marks entry is needed (US2-3).
+    // marks: no separate original-marks entry is needed (002 US2-3).
     let imported_beretta = add(FirearmInput {
         notes: text("Importer's stamp only; the maker's marks are already the main marks."),
         estimated_value: Some(480),
@@ -1107,12 +1107,12 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Ruger", "GP100", "RU-100234", ".357 Magnum", HANDGUN)
     });
 
-    // -- specs/002-firearm-identification User Story 3: identity's year
+    // -- 002 US3: identity's year
     // exception and the original-marks warning --
 
-    // Two pre-1968 revolvers whose maker restarted serial numbering: FR-008
+    // Two pre-1968 revolvers whose maker restarted serial numbering: 002 FR-008
     // accepts the pair because each carries a year of manufacture and the
-    // years differ (contracts/ui-identification.md §8 example 6).
+    // years differ (002 contracts/ui-identification.md §8 example 6).
     add(FirearmInput {
         notes: text("Maker restarted its serial range that year; see the paired 1962 example."),
         estimated_value: Some(450),
@@ -1132,11 +1132,11 @@ pub fn seed(conn: &Connection, extra: usize) {
         ..base("Smith & Wesson", "Model 10", "S-100", ".38 Special", HANDGUN)
     });
 
-    // A matching original-marks pair, so the FR-009 warning is visible when
+    // A matching original-marks pair, so the 002 FR-009 warning is visible when
     // editing either one: both carry the same original maker, model and
     // serial number despite different main marks. Seeded with
     // `confirmed_warnings: true` since the warning would otherwise block the
-    // second insert (research.md §5).
+    // second insert (002 research.md §5).
     let original_marks_first = FirearmInput {
         notes: text("Original-marks warning demo, firearm 1 of 2 (edit either to see it)."),
         estimated_value: Some(700),
@@ -1214,7 +1214,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     let patriot = add(FirearmInput {
         estimated_value: Some(450),
         acquisition_date: text("2021-06-06"),
-        // specs/004-cartridges-action-types US2-7: disposed, so its unique
+        // 004 US2-7: disposed, so its unique
         // cartridge is still suggested.
         cartridge: text("6.5 Patriot Wildcat"),
         ..base("Mossberg", "Patriot", "MP778899", "6.5mm", RIFLE)
@@ -1228,7 +1228,7 @@ pub fn seed(conn: &Connection, extra: usize) {
     });
     dispose(cracked, DispositionType::Destroyed, "County buyback program", "2025-02-11", 0);
 
-    // -- specs/004-cartridges-action-types US2: suggestion and snapping data -
+    // -- 004 US2: suggestion and snapping data -
     //
     // Typing "sw", "smith w" or "s&w" in Make lists "Smith & Wesson" (on
     // several firearms above) and "S&W" (on one, a different notation that
@@ -1243,9 +1243,9 @@ pub fn seed(conn: &Connection, extra: usize) {
         cartridge: text(".38 Special"),
         ..base("S&W", "Model 60", "S&W-60-1", ".357", HANDGUN)
     });
-    // specs/005-regulated-item-types US1: a Suppressor has no action, barrel
+    // 005 US1: a Suppressor has no action, barrel
     // length or capacity. Its caliber is its bore and its cartridge the most
-    // powerful one it is rated for (research.md §15); this one's rating isn't
+    // powerful one it is rated for (005 research.md §15); this one's rating isn't
     // known, so it has no cartridge. No classification.
     add(FirearmInput {
         estimated_value: Some(450),
@@ -1255,7 +1255,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         finish: text("Cerakote graphite black"),
         ..base("SilencerCo", "Sparrow 22", "SP22-20418", ".22", SUPPRESSOR)
     });
-    // specs/005-regulated-item-types US2: registration is a record of what
+    // 005 US2: registration is a record of what
     // the owner enters, independent of the type. A Suppressor registered as
     // Suppressor on Form 4, with the approved form attached. A .30 bore rated
     // for .300 Winchester Magnum: neither value comes from the other.
@@ -1307,7 +1307,7 @@ pub fn seed(conn: &Connection, extra: usize) {
         barrel_length_hundredths: Some(1050),
         ..base("Ruger", "Mini Thirty", "580-90021", ".30", RIFLE)
     });
-    // A select-fire rifle registered as a Machine gun (US3): the action and
+    // A select-fire rifle registered as a Machine gun (005 US3): the action and
     // the classification are entered separately.
     add(FirearmInput {
         estimated_value: Some(14500),
@@ -1495,7 +1495,7 @@ fn seed_accessories(conn: &Connection, policies: &Policies, glock: i64) {
         ..bare(KIND_LIGHT, "Streamlight", "TLR-7 Sub")
     });
     // A pair of magazines kept together is one record, with the count in its
-    // model and the value of both (FR-001).
+    // model and the value of both (006 FR-005).
     let magazines = add(AccessoryInput {
         caliber: text("9mm"),
         cartridge: text("9x19mm Parabellum"),
@@ -1621,7 +1621,7 @@ fn seed_accessories(conn: &Connection, policies: &Policies, glock: i64) {
     );
 }
 
-/// specs/006-accessory-links US2 (data-model.md "Seed and coverage"): the
+/// 006 US2 (006 data-model.md "Seed and coverage"): the
 /// user stories' mounts, with records of their own so the other parts of the
 /// seed stay as they were. Every `mounts` column is set in some row: an
 /// accessory and a firearm each as an item, and each as a host. Unvalued, so
@@ -1673,7 +1673,7 @@ fn seed_mounts(conn: &Connection) {
     });
     add_accessory(accessory(KIND_OPTIC, "Trijicon", "ACOG TA31 4x32", spare_upper));
 
-    // A firearm mounted on an accessory (FR-009): a pistol kept in its case.
+    // A firearm mounted on an accessory (006 FR-010): a pistol kept in its case.
     let case =
         add_accessory(AccessoryInput { ..bare_accessory(KIND_CASE, "Pelican", "1170 case") });
     add_firearm(FirearmInput {
@@ -1681,7 +1681,7 @@ fn seed_mounts(conn: &Connection) {
         ..base("Walther", "PPK/S", "PPKS-221903", ".380", HANDGUN)
     });
 
-    // US3: a rifle carrying a launcher (a firearm) that carries a light, so
+    // 006 US3: a rifle carrying a launcher (a firearm) that carries a light, so
     // disposing of the rifle asks about the launcher and, through it, the
     // light.
     let carbine = add_firearm(FirearmInput {
@@ -1695,7 +1695,7 @@ fn seed_mounts(conn: &Connection) {
     add_accessory(accessory(KIND_LIGHT, "Streamlight", "TLR-1 HL", launcher));
 
     // A rifle disposed of with its optic, which went with it and has no
-    // price of its own (FR-014); its light was kept, so it is active and
+    // price of its own (006 FR-014); its light was kept, so it is active and
     // unmounted.
     let sold_rifle = add_firearm(FirearmInput {
         nickname: text("Sold with scope"),
@@ -1860,7 +1860,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         }
         writer.flush().expect("flush an import sample");
     };
-    // specs/004-cartridges-action-types FR-023: a sheet exported before
+    // 004 FR-023: a sheet exported before
     // `cartridge` and `action_type` existed, so its header lacks both.
     let write_without = |name: &str, dropped: &[&str], rows: Vec<Vec<String>>| {
         let kept: Vec<usize> = (0..FIREARM_COLUMNS.len())
@@ -1918,7 +1918,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
             ]),
             // specs/002-firearm-identification: an importer-assigned main
             // serial with the original maker's marks entered separately
-            // (contracts/ui-identification.md §8 example 3).
+            // (002 contracts/ui-identification.md §8 example 3).
             row(&[
                 ("make", "Ridgeline Arms"),
                 ("model", "Imported CZ 75"),
@@ -2105,7 +2105,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("firearm_type", "Handgun"),
                 ("estimated_value", "400"),
             ]),
-            // specs/002-firearm-identification US4-3: not one of the three
+            // 002 US4-3: not one of the three
             // accepted spellings (no `Reimported` alias).
             row(&[
                 ("make", "Bad"),
@@ -2116,7 +2116,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("firearm_type", "Handgun"),
                 ("origin", "Reimported"),
             ]),
-            // US4-7: a year later than the current local year.
+            // 002 US4-7: a year later than the current local year.
             row(&[
                 ("make", "Future"),
                 ("model", "Manufacture Year"),
@@ -2132,7 +2132,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                     .to_string(),
                 ),
             ]),
-            // US4-4: country of manufacture is never allowed on a
+            // 002 US4-4: country of manufacture is never allowed on a
             // re-imported row (it is displayed as the United States, never
             // stored).
             row(&[
@@ -2145,7 +2145,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("origin", "Re-imported"),
                 ("country_of_manufacture", "Germany"),
             ]),
-            // US4-6: original marks matching the seeded warning-demo pair
+            // 002 US4-6: original marks matching the seeded warning-demo pair
             // (Ridgeline Arms Imported Hi-Power A/B) — imports, but appears
             // under the import report's Warnings, not as a row error.
             row(&[
@@ -2163,7 +2163,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         ],
     );
 
-    // specs/004-cartridges-action-types US4: the report's "Calibers filled in
+    // 004 US4: the report's "Calibers filled in
     // from the cartridge" and "Spellings matched to existing values"
     // sections, and the action and entry-rule row errors. Import it into the
     // seeded collection, which has "Smith & Wesson" on several firearms.
@@ -2254,7 +2254,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         ])],
     );
 
-    // specs/005-regulated-item-types US4: a round-trip sheet, as export
+    // 005 US4: a round-trip sheet, as export
     // writes it: a suppressor and two registered firearms, one of them with a
     // same-notation variant of a form on record ("FORM 4") that import
     // matches and lists under "Spellings matched to existing values".
@@ -2303,7 +2303,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     // a future approved date, a Suppressor row with an action, a barrel
     // length and a capacity (all three reported on the one row), and a
     // Suppressor row with a rated cartridge and a blank caliber, which isn't
-    // worked out from the cartridge (research.md §15).
+    // worked out from the cartridge (005 research.md §15).
     write(
         "import-registration-errors.csv",
         vec![
@@ -2401,7 +2401,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
         ])],
     );
 
-    // specs/006-accessory-links US5-7: a sheet exported before this feature
+    // 006 US5-7: a sheet exported before this feature
     // has neither `record_id` nor `mounted_on`, and imports as it always did.
     write_without(
         "import-before-accessories.csv",
@@ -2420,7 +2420,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-/// specs/008-hardening-batch FR-006: a workbook the import refuses as a whole,
+/// 008 FR-006: a workbook the import refuses as a whole,
 /// to see the refusal in the dialog's banner. `import-refused-too-many-sheets.xlsx`
 /// has 20 sheets, each with `x` in A1, where an import takes at most 16
 /// (`import_reader::limits::MAX_SHEETS`); nothing in it is read as a record.
@@ -2461,7 +2461,7 @@ mod sample_ids {
     pub const ERROR_TWICE: &str = "7f3c9a10-2b4d-4e6a-8c1f-5d0b3a9e7c31";
 }
 
-/// specs/006-accessory-links US5: the accessory table and the record
+/// 006 US5: the accessory table and the record
 /// identifier and mount columns of both tables.
 /// - `import-mounts-firearms.csv` + `import-accessories.csv`: pick the two
 ///   files together. A rifle, an optic on it, a suppressor on an upper, and
@@ -2587,7 +2587,7 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
     ];
     write("import-accessories.csv", ACCESSORY_COLUMNS, &accessories);
 
-    // Both tables in one workbook (FR-022), the accessory sheet mounted on
+    // Both tables in one workbook (006 FR-022), the accessory sheet mounted on
     // the firearm sheet and the reverse.
     let mut workbook = rust_xlsxwriter::Workbook::new();
     for (name, columns, rows) in
@@ -2606,7 +2606,7 @@ fn write_accessory_import_samples(dir: &Path, firearm_row: &RowBuilder) {
     }
     workbook.save(dir.join("import-collection.xlsx")).expect("save the sample workbook");
 
-    // Each mount warning, in the report's Warnings (FR-023). Every row
+    // Each mount warning, in the report's Warnings (006 FR-023). Every row
     // imports, unmounted.
     let disposed = [
         ("status", "disposed"),

@@ -1,7 +1,7 @@
-//! specs/004-cartridges-action-types User Story 2 through `ops`, against a
+//! 004 US2 through `ops`, against a
 //! real temporary SQLCipher database: the ranked suggestion list for make,
-//! model, cartridge and caliber (research.md §4), and `settle_entry`'s
-//! snapping of same-notation variants (research.md §6).
+//! model, cartridge and caliber (004 research.md §4), and `settle_entry`'s
+//! snapping of same-notation variants (004 research.md §6).
 
 use crate::support;
 
@@ -72,7 +72,7 @@ fn makes_db() -> TestDb {
 
 #[test]
 fn makes_are_found_by_prefix_word_and_initialism() {
-    // US2-1.
+    // 004 US2-1.
     let db = makes_db();
     for typed in ["sw", "s&w", "smith w", "smith and w", "wesson"] {
         assert!(
@@ -86,7 +86,7 @@ fn makes_are_found_by_prefix_word_and_initialism() {
 
 #[test]
 fn a_cartridge_is_found_by_its_leading_digits_with_or_without_the_dot() {
-    // US2-2.
+    // 004 US2-2.
     let db = TestDb::new();
     for typed in ["30", ".30"] {
         let list = suggest(&db, EntryField::Cartridge, typed);
@@ -108,7 +108,7 @@ fn a_cartridge_is_found_by_its_leading_digits_with_or_without_the_dot() {
 
 #[test]
 fn a_bore_class_lists_its_cartridges_most_common_first() {
-    // US2-3.
+    // 004 US2-3.
     let db = TestDb::new();
     let list = suggest(&db, EntryField::Cartridge, "9mm");
     let order: Vec<usize> = ["9x19mm Parabellum", ".380 ACP", "9x18mm Makarov", "9x21mm"]
@@ -144,10 +144,10 @@ fn aliases_narrow_the_list_and_similar_names_stay_distinct() {
     );
 }
 
-// 004 US2 Scenario 4
+// 004 US2-4
 #[test]
 fn a_value_in_the_catalog_and_on_record_appears_once_with_both_markers() {
-    // US2-4.
+    // 004 US2-4.
     let db = TestDb::new();
     record(&db, "Glock", "17", Some("9x19mm Parabellum"), "9mm");
     record(&db, "Glock", "19", Some("9X19MM PARABELLUM"), "9mm");
@@ -242,7 +242,7 @@ fn text_over_100_characters_matches_nothing() {
 
 #[test]
 fn a_variant_of_a_make_snaps_to_the_spelling_on_record() {
-    // US2-5.
+    // 004 US2-5.
     let db = makes_db();
     for typed in ["smith and wesson", "Smith&Wesson", "SMITH & WESSON", " smith  &  wesson "] {
         let settled = settle(&db, EntryField::Make, typed);
@@ -263,7 +263,7 @@ fn a_variant_of_a_make_snaps_to_the_spelling_on_record() {
 #[test]
 fn a_cartridge_variant_snaps_to_the_catalog_but_another_notation_is_kept() {
     use hoplodex_lib::services::suggestions::ChangedBy;
-    // US2-6.
+    // 004 US2-6.
     let db = TestDb::new();
     for typed in ["9 x 19mm parabellum", "9×19mm Parabellum"] {
         let settled = settle(&db, EntryField::Cartridge, typed);
@@ -321,7 +321,7 @@ fn a_derived_caliber_is_itself_snapped_against_calibers() {
 
 #[test]
 fn a_value_disappears_with_its_only_firearm_but_not_when_it_is_disposed() {
-    // US2-7.
+    // 004 US2-7.
     let db = TestDb::new();
     let deleted = record(&db, "Ruger", "Wildcat", Some("Wildcat Special"), ".30");
     let disposed = record(&db, "Ruger", "Bobcat", Some("Bobcat Special"), ".30");
@@ -351,7 +351,7 @@ fn a_value_disappears_with_its_only_firearm_but_not_when_it_is_disposed() {
 
 #[test]
 fn a_value_saved_only_as_a_pending_draft_is_not_suggested() {
-    // US2-8.
+    // 004 US2-8.
     let db = TestDb::new();
     db.conn
         .execute(
@@ -369,7 +369,7 @@ fn a_value_saved_only_as_a_pending_draft_is_not_suggested() {
 
 #[test]
 fn models_are_offered_only_for_the_make_on_the_form() {
-    // US2-9, US2-11.
+    // 004 US2-9, US2-11.
     let db = TestDb::new();
     record(&db, "Marlin", "336", None, ".30");
     record(&db, "Marlin", "336", None, ".30");
@@ -422,7 +422,7 @@ fn a_make_is_ignored_for_the_other_fields() {
 
 /// The 25 most common cartridges, each findable by some 1 to 4 characters of
 /// its name or an alias, in the first 8 suggestions of an empty collection,
-/// and settling it derives its catalog caliber (SC-001).
+/// and settling it derives its catalog caliber (004 SC-001).
 #[test]
 fn the_25_most_common_cartridges_are_found_within_four_characters() {
     let db = TestDb::new();
@@ -449,7 +449,7 @@ fn the_25_most_common_cartridges_are_found_within_four_characters() {
     }
 }
 
-/// SC-003: 20 makes and cartridges on record; every case, spacing, separator
+/// 004 SC-003: 20 makes and cartridges on record; every case, spacing, separator
 /// and `&`/`and` variant settles to the recorded spelling, and a different
 /// notation never changes.
 #[test]
@@ -530,7 +530,7 @@ fn registered(db: &TestDb, form: Option<&str>, to: Option<&str>) -> i64 {
 
 #[test]
 fn form_suggests_the_built_in_names_first_then_those_on_record() {
-    // specs/005-regulated-item-types US2-5, FR-009.
+    // 005 US2-5, FR-009.
     let db = TestDb::new();
     for typed in ["F", "Form"] {
         let found = suggest(&db, EntryField::RegistrationForm, typed);
@@ -556,7 +556,7 @@ fn form_suggests_the_built_in_names_first_then_those_on_record() {
 
 #[test]
 fn registered_to_offers_only_values_on_record_and_snaps_to_them() {
-    // FR-009, FR-013, SC-007.
+    // 005 FR-009, FR-013, SC-007.
     let db = TestDb::new();
     assert!(suggest(&db, EntryField::RegisteredTo, "").is_empty());
     let id = registered(&db, None, Some("Smith Family Trust"));
@@ -583,7 +583,7 @@ fn registered_to_offers_only_values_on_record_and_snaps_to_them() {
     let _ = id;
 }
 
-// --- Accessories share the vocabulary (specs/006-accessory-links FR-003, tasks.md T018) ----
+// --- Accessories share the vocabulary (006 FR-003, tasks.md T018) --------------------------
 
 /// An accessory of `make` and `model` (kind Optic) with the given cartridge
 /// and caliber; every value is suggested from firearms and accessories
@@ -605,7 +605,7 @@ fn accessory_record(
 
 #[test]
 fn a_make_recorded_only_on_an_accessory_is_suggested_and_a_variant_snaps_to_it() {
-    // US1-6.
+    // 006 US1-6.
     let db = makes_db();
     accessory_record(&db, "Leupold & Stevens", "VX-5HD", None, None);
 
@@ -696,7 +696,7 @@ fn a_spelling_used_across_both_tables_is_ranked_and_snapped_by_its_combined_use(
 
 #[test]
 fn a_value_disappears_with_its_only_accessory_but_not_when_it_is_disposed() {
-    // US1-10.
+    // 006 US1-10.
     let db = TestDb::new();
     let deleted =
         accessory_record(&db, "Wildcat Optics", "Eagle", Some("Wildcat Special"), Some("Zork 3"));
@@ -749,7 +749,7 @@ fn a_make_stays_while_either_a_firearm_or_an_accessory_still_holds_it() {
     assert!(suggest(&db, EntryField::Make, "shared").is_empty());
 }
 
-// --- The warm-up at open (SC-004's first keystroke) ---------------------------
+// --- The warm-up at open (004 SC-004's first keystroke) -----------------------
 
 /// The bytes of page cache `conn` holds (SQLite's `SQLITE_DBSTATUS_CACHE_USED`).
 fn page_cache_bytes(conn: &rusqlite::Connection) -> i32 {
@@ -831,7 +831,7 @@ fn opening_a_database_warms_the_pages_the_suggestions_read() {
 /// and no sort. The accessories' make and model indexes were partial on
 /// columns that are `NOT NULL`, which SQLite can't use, so the models over
 /// both tables scanned and sorted the accessories and took 51ms on Windows
-/// at 10,000 firearms and 10,000 accessories, against SC-004's 50ms.
+/// at 10,000 firearms and 10,000 accessories, against 004 research.md §5's 50ms.
 #[test]
 fn every_suggestion_query_reads_a_covering_index_without_sorting() {
     use hoplodex_lib::services::suggestions::vocabulary_queries;
@@ -854,11 +854,11 @@ fn every_suggestion_query_reads_a_covering_index_without_sorting() {
     }
 }
 
-// --- specs/007-document-preview T162: a call reads the values as they are now ---
+// --- 007 T162: a call reads the values as they are now ---
 
 #[test]
 fn a_suggestion_reflects_a_create_an_update_and_a_delete_at_once_in_both_tables() {
-    // Nothing is kept between calls (FR-011), so each write shows in the
+    // Nothing is kept between calls (004 FR-011), so each write shows in the
     // very next one, whichever table it was made in.
     let db = TestDb::new();
     assert!(suggest(&db, EntryField::Model, "tracer").is_empty());

@@ -1,7 +1,7 @@
 // Mirrors src-tauri/src/commands/insurance.rs, src-tauri/src/models/
 // insurance_policy.rs and src-tauri/src/services/{insurance_status,
-// valuation}.rs's wire shapes (camelCase, per contracts/tauri-commands.md),
-// User Story 3.
+// valuation}.rs's wire shapes (camelCase, per 001 contracts/tauri-commands.md),
+// 001 US3.
 
 import type { RecordCounts } from "../mounts/recordCounts";
 import type { RecordLabel, RecordRef } from "../mounts/types";
@@ -14,9 +14,9 @@ export interface InsurancePolicy {
   companyContact: string | null;
   agentName: string | null;
   agentContact: string | null;
-  /** Free-form notes (FR-027); null when there are none. */
+  /** Free-form notes (001 FR-027); null when there are none. */
   notes: string | null;
-  /** Set for a blanket policy (FR-036); null for a schedule-only one. */
+  /** Set for a blanket policy (001 FR-036); null for a schedule-only one. */
   blanketCoverageLimit: number | null;
   effectiveStartDate: string;
   effectiveEndDate: string;
@@ -24,7 +24,7 @@ export interface InsurancePolicy {
   updatedAt: string;
   /** Derived by the backend as of today. `isExpired`/`isExpiringSoon` are
    * facts about the dates; the `*Warning` flags are what to warn about,
-   * which FR-028 suppresses for a blanket policy that has been renewed or
+   * which 001 FR-028 suppresses for a blanket policy that has been renewed or
    * replaced. */
   isInForce: boolean;
   isExpired: boolean;
@@ -47,7 +47,7 @@ export type InsurancePolicyInput = Omit<
 >;
 
 /** `policyId: null` leaves the firearm unscheduled, i.e. covered by the
- * blanket policy in force (FR-036); a policy needs its own amount. */
+ * blanket policy in force (001 FR-036); a policy needs its own amount. */
 export interface AssignCoverageInput {
   policyId: number | null;
   scheduledCoverageAmount?: number;
@@ -101,7 +101,7 @@ export interface ValueSummary {
 }
 
 /** `get_policy_deletion_impact`'s output: what deleting a policy would do,
- * for the FR-034 dialog to explain before anything changes. */
+ * for the 001 FR-034 dialog to explain before anything changes. */
 export interface PolicyDeletionImpact {
   isExpired: boolean;
   isBlanketInForce: boolean;
@@ -116,7 +116,7 @@ export interface PolicyDeletionImpact {
   otherPolicies: { id: number; name: string; isExpired: boolean }[];
 }
 
-/** How the firearms and accessories scheduled under a deleted policy are resolved (FR-034). */
+/** How the firearms and accessories scheduled under a deleted policy are resolved (001 FR-034). */
 export type ScheduledFirearmsAction =
   { action: "move"; targetPolicyId: number } | { action: "unschedule"; confirmUnschedule?: true };
 

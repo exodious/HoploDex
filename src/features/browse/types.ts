@@ -1,5 +1,5 @@
 // Mirrors src-tauri/src/commands/firearms.rs's list_firearms wire shapes
-// (camelCase, per contracts/tauri-commands.md), User Story 2.
+// (camelCase, per 001 contracts/tauri-commands.md), 001 US2.
 
 import type { FirearmStatus } from "../firearms/types";
 import type { RecordCounts } from "../mounts/recordCounts";
@@ -31,13 +31,13 @@ export interface FirearmSummary {
   nickname: string | null;
   serialNumber: string | null;
   caliber: string;
-  /** specs/004-cartridges-action-types FR-001: `null` = none recorded. */
+  /** 004 FR-001: `null` = none recorded. */
   cartridge: string | null;
   firearmTypeName: string;
-  /** specs/004-cartridges-action-types FR-020: the action's name; `null` =
+  /** 004 FR-020: the action's name; `null` =
    * none recorded. */
   actionTypeName: string | null;
-  /** specs/005-regulated-item-types FR-016: the classification's name;
+  /** 005 FR-016: the classification's name;
    * `null` = none. */
   registeredAs: string | null;
   status: FirearmStatus;
@@ -47,10 +47,10 @@ export interface FirearmSummary {
   insuranceWarning: InsuranceWarning;
   insurancePolicyId: number | null;
   scheduledCoverageAmount: number | null;
-  /** specs/006-accessory-links FR-013: the direct host only. */
+  /** 006 FR-013: the direct host only. */
   mountedOn: RecordLabel | null;
   /** Everything mounted below, at any depth, by kind
-   * (contracts/ui-accessories.md §9). */
+   * (006 contracts/ui-accessories.md §9). */
   mountedCounts: RecordCounts;
 }
 
@@ -91,7 +91,7 @@ export const GROUP_BY_SECTIONS: { section: GroupBySection; heading: string }[] =
   { section: "registration", heading: "Registration" },
 ];
 
-/** specs/004-cartridges-action-types FR-027: where browsing shows the
+/** 004 FR-027: where browsing shows the
  * caliber, "9x19mm Parabellum (9mm)" with a cartridge, else the caliber. */
 export function caliberText(firearm: { cartridge: string | null; caliber: string }): string {
   return firearm.cartridge ? `${firearm.cartridge} (${firearm.caliber})` : firearm.caliber;

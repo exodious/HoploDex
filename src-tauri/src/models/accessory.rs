@@ -1,4 +1,4 @@
-//! specs/006-accessory-links data-model.md "Entity: Accessory": the accessory
+//! 006 data-model.md "Entity: Accessory": the accessory
 //! record, its input and its validation.
 
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ use crate::services::entry_text::{EntryField, check_entry_text, check_optional_e
 #[serde(rename_all = "camelCase")]
 pub struct Accessory {
     pub id: i64,
-    /// FR-019: the record identifier. Set once at creation and never sent
+    /// 006 FR-019: the record identifier. Set once at creation and never sent
     /// over IPC; only the spreadsheet carries it.
     #[serde(skip)]
     pub uid: String,
@@ -43,7 +43,7 @@ pub struct Accessory {
     pub thumbnail_photo_id: Option<i64>,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
-    /// research.md §8: the direct host. Not a column: `from_row` leaves it
+    /// 006 research.md §8: the direct host. Not a column: `from_row` leaves it
     /// `None` and the loaders fill it from `mounts`.
     pub mounted_on: Option<RecordRef>,
     pub created_at: String,
@@ -82,7 +82,7 @@ impl Accessory {
 }
 
 /// All `Accessory` fields except `id`, `uid`, `thumbnailPhotoId` and the
-/// timestamps, per contracts/tauri-commands.md's `AccessoryInput`.
+/// timestamps, per 006 contracts/tauri-commands.md's `AccessoryInput`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessoryInput {
@@ -118,7 +118,7 @@ pub struct AccessoryInput {
     pub insurance_policy_id: Option<i64>,
     #[serde(default)]
     pub scheduled_coverage_amount: Option<i64>,
-    /// FR-010; checked and saved by the command, as `FirearmInput`'s.
+    /// 006 FR-010; checked and saved by the command, as `FirearmInput`'s.
     #[serde(default)]
     pub mounted_on: Option<RecordRef>,
 }
@@ -154,7 +154,7 @@ impl From<&Accessory> for AccessoryInput {
 
 impl AccessoryInput {
     /// The input as it is stored: every text field is trimmed and a blank
-    /// one becomes `None`, as for `FirearmInput` (FR-001, FR-003).
+    /// one becomes `None`, as for `FirearmInput` (006 FR-001, FR-003).
     pub fn normalized(&self) -> Self {
         let trimmed = |value: &Option<String>| {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
@@ -175,8 +175,8 @@ impl AccessoryInput {
     }
 }
 
-/// data-model.md "Validation rules", shared by the commands and import
-/// (FR-024). `stored` is the record an update replaces: 004's entry rules
+/// 006 data-model.md "Validation rules", shared by the commands and import
+/// (006 FR-024). `stored` is the record an update replaces: 004's entry rules
 /// then apply only to a make, model, cartridge or caliber whose trimmed
 /// value differs from the stored one, so an existing value over the cap
 /// stays valid until that field is edited. Create and import pass `None`.
@@ -204,7 +204,7 @@ pub fn validate_accessory_input(
         if stored_value.is_some_and(|stored| stored.trim() == value.trim()) {
             continue;
         }
-        // FR-001: make and model are required, as a firearm's are; a
+        // 006 FR-001: make and model are required, as a firearm's are; a
         // caliber, required of a firearm, is optional here.
         let checked = if field == EntryField::Caliber {
             check_optional_entry_text(field, value)
@@ -216,7 +216,7 @@ pub fn validate_accessory_input(
         }
     }
 
-    // specs/008-hardening-batch research.md §10: the free-text maximums.
+    // 008 research.md §10: the free-text maximums.
     for (field, label, value, max) in [
         ("serialNumber", "Serial number", &input.serial_number, MAX_SHORT_TEXT_CHARS),
         ("acquisitionSource", "Acquired from", &input.acquisition_source, MAX_SHORT_TEXT_CHARS),

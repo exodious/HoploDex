@@ -39,7 +39,7 @@ import type {
 import "../firearms/forms.css";
 import "./databases.css";
 
-/** The idle durations offered, in minutes (FR-034). */
+/** The idle durations offered, in minutes (003 FR-034). */
 const IDLE_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 240];
 
 /** How many backups may be kept: 1 to the backend's `MAX_KEEP_COUNT`
@@ -47,7 +47,7 @@ const IDLE_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 240];
 const MIN_KEEP_COUNT = 1;
 const MAX_KEEP_COUNT = 100;
 
-/** What backups are and aren't (FR-029), said wherever they are set up. */
+/** What backups are and aren't (003 FR-029), said wherever they are set up. */
 const BACKUP_STATEMENTS = [
   "Each backup is a complete copy of the collection.",
   "A backup opens only with the passphrase you had when it was made.",
@@ -67,11 +67,11 @@ export interface DatabaseSettingsDialogProps {
   onPassphraseSavedChange: () => void;
 }
 
-/** The open database's settings (contracts/ui-databases.md §7): its
- * backups, where they go and how many are kept (FR-024, FR-026), what they
- * are (FR-029), restoring from one, and deleting them all, and when it
- * locks (FR-034, FR-038), and whether this computer remembers its
- * passphrase (FR-017), which all apply with Save, like every other form,
+/** The open database's settings (003 contracts/ui-databases.md §7): its
+ * backups, where they go and how many are kept (003 FR-024, FR-026), what they
+ * are (003 FR-029), restoring from one, and deleting them all, and when it
+ * locks (003 FR-034, FR-038), and whether this computer remembers its
+ * passphrase (003 FR-017), which all apply with Save, like every other form,
  * and which Cancel discards. Save waits until something differs from what
  * is saved (#34). */
 export function DatabaseSettingsDialog({
@@ -111,11 +111,11 @@ export function DatabaseSettingsDialog({
 
 type Errors = Partial<Record<"keepCount" | "location", string>>;
 
-/** Why a move left backups at the old location (FR-026). */
+/** Why a move left backups at the old location (003 FR-026). */
 type LeftBehind = NonNullable<Extract<ExistingBackupsOutcome, { action: "move" }>["leftBehind"]>;
 
 /** The warning shown when a move left backups behind
- * (contracts/ui-databases.md §7 "Afterwards"). */
+ * (003 contracts/ui-databases.md §7 "Afterwards"). */
 function leftBehindText(moved: number, left: LeftBehind, newFolder: string): string {
   const because = {
     nameTaken: `because a backup with the same name is already in ${newFolder}`,
@@ -180,8 +180,8 @@ function SettingsForm({
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // A changed location with backups at the old one (FR-026, US3-4a), or an
-  // old one that can't be reached (US3-4b): nothing is saved until answered.
+  // A changed location with backups at the old one (003 FR-026, US3-4a), or an
+  // old one that can't be reached (003 US3-4b): nothing is saved until answered.
   const [question, setQuestion] = useState<OldLocationBackups | null>(null);
   const [unreachable, setUnreachable] = useState<string | null>(null);
   const continuing = useRef(false);
@@ -222,7 +222,7 @@ function SettingsForm({
   }
 
   /** The backup settings are through: the lock settings follow, then what
-   * happened to the old location's backups is said (contracts/ui-databases.md
+   * happened to the old location's backups is said (003 contracts/ui-databases.md
    * §7 "Afterwards"). */
   async function finish(backupsSaved: BackupSettingsSaved, oldFolder?: string) {
     const settings = await databasesService.updateLockSettings(scope, lock);
@@ -534,7 +534,7 @@ function SettingsForm({
   );
 }
 
-/** What a document's name does (007 FR-012; contracts/ui-document-preview.md §5). It is this
+/** What a document's name does (007 FR-012; 007 contracts/ui-document-preview.md §5). It is this
  * computer's setting, not the database's: it is saved as soon as it is chosen, through the store
  * the document lists read, and the dialog's Save and Cancel leave it alone. Choosing "Open in
  * another app" asks natively first, so the control stays at the old value, busy, until that is
@@ -576,8 +576,8 @@ function DocumentsSection() {
   );
 }
 
-/** When the database locks (FR-034, FR-036, FR-038;
- * contracts/ui-databases.md §7 "Locking"). */
+/** When the database locks (003 FR-034, FR-036, FR-038;
+ * 003 contracts/ui-databases.md §7 "Locking"). */
 function LockingSection({
   status,
   lock,
@@ -641,7 +641,7 @@ function LockingSection({
   );
 }
 
-/** Restoring from a backup, and deleting them all (FR-028, FR-029). */
+/** Restoring from a backup, and deleting them all (003 FR-028, FR-029). */
 function BackupActions({
   name,
   disabled,
@@ -727,13 +727,13 @@ function BackupActions({
   );
 }
 
-/** Said wherever passphrases can't be saved (FR-019). */
+/** Said wherever passphrases can't be saved (003 FR-019). */
 const KEYRING_UNAVAILABLE = "Not available: this computer has no keyring service.";
 
-/** Whether this computer remembers the passphrase (FR-017, FR-018, FR-019;
- * contracts/ui-databases.md §7). Like the rest of the form it only stages the
+/** Whether this computer remembers the passphrase (003 FR-017, FR-018, FR-019;
+ * 003 contracts/ui-databases.md §7). Like the rest of the form it only stages the
  * choice: ticking Remember asks for nothing until Save, and Save then asks
- * for the passphrase with the FR-017 confirmation; unticking forgets the
+ * for the passphrase with the 003 FR-017 confirmation; unticking forgets the
  * saved one on Save. Cancel throws the choice away (#34). */
 function ThisComputer({
   status,

@@ -24,11 +24,11 @@ import {
 import { realClick, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/003-database-protection-management's User
- * Story 3 against the real built app: a backup when a changed database is
- * closed, restoring from one, and moving them when the backup location
- * changes. The rules (once a day, the chooser's facts, leaving them, and
- * the return from a cancelled restore) are tested in Rust and Vitest.
+ * End-to-end coverage of 003 US3 against the real built app: a backup when a
+ * changed database is closed, restoring from one, and moving them when the
+ * backup location changes. The rules (once a day, the chooser's facts, leaving
+ * them, and the return from a cancelled restore) are tested in Rust and
+ * Vitest.
  */
 
 const folder = `${scratchDocuments()}/Backed up`;
@@ -116,8 +116,8 @@ async function listed(make: string): Promise<boolean> {
   return (await listedNames()).some((name) => name.includes(make));
 }
 
-describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => {
-  it("backs up a changed database when it is closed and restores that backup with its passphrase (FR-025, FR-028)", async () => {
+describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)", () => {
+  it("backs up a changed database when it is closed and restores that backup with its passphrase (003 FR-025, FR-028)", async () => {
     await createDatabase({ folder, name: "Kept" });
     await addFirearm({
       make: "BackedUp",
@@ -145,7 +145,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
     // A wrong passphrase: the backend's field error lands on the field, and
-    // nothing is restored (003 US3 Scenario 5; the dialog's UI side is in
+    // nothing is restored (003 US3-5, contracts/ui-databases.md §9; the dialog's UI side is in
     // RestoreBackupDialog.test.tsx).
     await fill("Passphrase for this backup", "not the backup's passphrase");
     await clickEl('[role="dialog"] button[type="submit"]');
@@ -208,7 +208,7 @@ describe("User Story 3 (003) - Automatic Backups and Restoring From One", () => 
     await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 
-  it("moves the backups to the new location (FR-026, US3-4a)", async () => {
+  it("moves the backups to the new location (003 FR-026, US3-4a)", async () => {
     // Open, with both backups in the default folder: the journey above.
     expect(backupFiles()).toHaveLength(2);
     // Setting the new location with its choice sent directly, as the folder

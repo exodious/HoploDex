@@ -1,4 +1,4 @@
-//! What makes a backup due (FR-025, research.md §5): triggers on every
+//! What makes a backup due (003 FR-025, research.md §5): triggers on every
 //! collection table set `app_state.changes_waiting` in the same transaction
 //! as the change, and housekeeping writes never do.
 
@@ -62,7 +62,7 @@ fn every_table_is_housekeeping_or_tracks_changes() {
     }
     assert!(
         untracked.is_empty(),
-        "a collection table must mark a backup due on every change (FR-025); add these \
+        "a collection table must mark a backup due on every change (003 FR-025); add these \
          triggers, or list the table as housekeeping here if it truly is: {untracked:?}"
     );
     assert!(tables.contains(&"collection_settings".to_owned()));

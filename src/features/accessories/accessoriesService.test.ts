@@ -4,12 +4,13 @@ import { createSessionScope } from "../session/sessionScope";
 import * as accessoriesService from "./accessoriesService";
 
 // These tests mock `tauriClient`'s `invoke`, below the scope, so they pin the
-// arguments the backend receives and the session the call names (specs/008 FR-001). Tauri matches the top-level names to the
+// arguments the backend receives and the session the call names (008 FR-001).
+// Tauri matches the top-level names to the
 // command's parameters (camelCase of the Rust snake_case) and a struct
 // parameter is one object under its name: `assign_accessory_coverage` takes
 // `accessory_id` and `input`, so a flat `{ accessoryId, policyId, ... }` is
 // rejected by the real app although a test mocking `accessoriesService` passes
-// (US1/AC8, contracts/tauri-commands.md "Accessories (new)").
+// (006 US1-8, 006 contracts/tauri-commands.md "Accessories (new)").
 vi.mock("../../services/tauriClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../services/tauriClient")>()),
   invoke: vi.fn(),

@@ -9,11 +9,11 @@
 #   scripts/macos/pdf-surface-check.sh             the hostile PDF, truncated and
 #                                                  bit-flipped PDFs, a 10 MB PDF,
 #                                                  the reach probe, real input
-#   scripts/macos/pdf-surface-check.sh --hud-on    FR-003a: WebKit's PDF HUD left
-#                                                  on; passes only if the watch
-#                                                  deletes Open in Preview's copy,
-#                                                  closes the surface and sets the
-#                                                  hold
+#   scripts/macos/pdf-surface-check.sh --hud-on    WebKit's PDF HUD left on (007
+#                                                  FR-003a); passes only if the
+#                                                  watch deletes Open in
+#                                                  Preview's copy, closes the
+#                                                  surface and sets the hold
 #   scripts/macos/pdf-surface-check.sh shows       the 3-page PDF, a screenshot
 #
 # The VM's Terminal (or sshd) needs Accessibility and Screen Recording for
@@ -22,7 +22,7 @@
 # the app's folders taken from the E2E variables (an `e2e` build); it never
 # reaches a real database. Exits with the example's code.
 #
-# Run on the macOS 26 VM for T072 (check) and T073 (--hud-on).
+# Run on the macOS 26 VM for 007 T072 (check) and 007 T073 (--hud-on).
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=$ROOT/e2e/screenshots-out/pdf-surface

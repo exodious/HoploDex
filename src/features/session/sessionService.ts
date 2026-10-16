@@ -11,7 +11,7 @@ import type {
   PendingSummary,
 } from "../databases/types";
 
-// Typed wrappers for the open session's own commands and events (specs/003
+// Typed wrappers for the open session's own commands and events (003
 // contracts/tauri-commands.md "Commands: the open session", "Events").
 
 /** Fails with `DATABASE_CLOSED` when no database is open. */
@@ -23,7 +23,7 @@ export function dismissNote(scope: SessionScope, note: NoteKind): Promise<void> 
   return scope.invoke<void>("dismiss_note", { note });
 }
 
-/** The normal close, or a switch away (FR-010). Unsaved changes have been
+/** The normal close, or a switch away (003 FR-010). Unsaved changes have been
  * dealt with first. */
 export function closeDatabase(
   scope: SessionScope,
@@ -32,7 +32,7 @@ export function closeDatabase(
   return scope.invoke<CloseOutcome>("close_database", { reason });
 }
 
-/** Stops the backup the current close is making (FR-027). Its changes stay
+/** Stops the backup the current close is making (003 FR-027). Its changes stay
  * waiting for the next close. */
 export function skipBackup(): Promise<void> {
   return invoke<void>("skip_backup");
@@ -43,19 +43,19 @@ export function quitApplication(): Promise<void> {
   return invoke<void>("quit_application");
 }
 
-/** "Lock now" (FR-033, FR-035): `draft`, the form's unsaved input, is kept
+/** "Lock now" (003 FR-033, FR-035): `draft`, the form's unsaved input, is kept
  * as pending changes, then the database closes as a lock. */
 export function lockDatabase(scope: SessionScope, draft: Draft | null): Promise<CloseOutcome> {
   return scope.invoke<CloseOutcome>("lock_database", { draft });
 }
 
 /** Mirrors the open form's unsaved input into the backend's memory, for a
- * lock it starts on its own (research.md §16); `null` when clean. */
+ * lock it starts on its own (003 research.md §16); `null` when clean. */
 export function stagePendingChanges(scope: SessionScope, draft: Draft | null): Promise<void> {
   return scope.invoke<void>("stage_pending_changes", { draft });
 }
 
-/** Answers the open database's pending changes (FR-039, specs/008 research.md
+/** Answers the open database's pending changes (003 FR-039, 008 research.md
  * §6): `resume` gives back the draft and serves the collection while its form
  * opens; `opened` says it did; `notOpened` says it couldn't, and gives back
  * the summary for the dialog; `discard` removes them. */
@@ -70,12 +70,12 @@ export function resolvePendingChanges(
 
 export type PendingAction = "resume" | "opened" | "notOpened" | "discard";
 
-/** Input to the window: the idle time starts again (FR-035). */
+/** Input to the window: the idle time starts again (003 FR-035). */
 export function noteActivity(): Promise<void> {
   return invoke<void>("note_activity");
 }
 
-/** A native file or folder dialog opened or closed (research.md §15). */
+/** A native file or folder dialog opened or closed (003 research.md §15). */
 export function setIdlePaused(paused: boolean): Promise<void> {
   return invoke<void>("set_idle_paused", { reason: "nativeDialog", paused });
 }
@@ -83,12 +83,12 @@ export function setIdlePaused(paused: boolean): Promise<void> {
 /** `session:closed`'s payload. */
 export interface SessionClosed {
   /** The session that closed: the frontend ends only that session's scope
-   * (specs/008 research.md §3). */
+   * (008 research.md §3). */
   sessionId: number;
   reason: CloseReason;
   databasePath: string;
   outcome?: CloseOutcome;
-  /** What a sleep stopped (FR-037). */
+  /** What a sleep stopped (003 FR-037). */
   stoppedOperation?: OperationKind;
 }
 

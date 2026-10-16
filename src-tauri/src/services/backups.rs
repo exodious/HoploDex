@@ -1,9 +1,9 @@
-//! Automatic backups (FR-024–FR-029; research.md §7, §9; data-model.md
+//! Automatic backups (003 FR-024–FR-029; 003 research.md §7, §9; 003 data-model.md
 //! "Backup files"): when one is due, where it goes, what it is called, how
 //! it is copied and stamped, and how many are kept. The close in
 //! `session::lifecycle` and the restore in `commands::backups` make them
 //! through [`make_backup`]. [`move_backups`] takes them to a new location
-//! when it changes (FR-026, research.md §22).
+//! when it changes (003 FR-026, research.md §22).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -30,11 +30,11 @@ const PARTIAL_SUFFIX: &str = ".partial";
 /// Copies go in chunks of this size, stoppable between them.
 const COPY_CHUNK: u64 = 1024 * 1024;
 /// A deliberately slow copy speed, allowing for hard disks and network
-/// folders, to decide whether the progress bar shows at once (research.md
+/// folders, to decide whether the progress bar shows at once (003 research.md
 /// §7). The development machine copies at about 190 MiB/s.
 const ASSUMED_BYTES_PER_SECOND: u64 = 50 * 1024 * 1024;
 
-/// The folder a database's backups go to on this computer (research.md
+/// The folder a database's backups go to on this computer (003 research.md
 /// §7): `default` is a "HoploDex backups" folder next to the database, and
 /// anything else is the absolute path the user chose.
 pub fn resolve_folder(database_path: &Path, location: &str) -> PathBuf {
@@ -50,7 +50,7 @@ pub fn utc_text(now: &DateTime<FixedOffset>) -> String {
     now.with_timezone(&Utc).format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-/// Whether a close should make a backup (FR-025).
+/// Whether a close should make a backup (003 FR-025).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Due {
     Yes,
@@ -67,7 +67,7 @@ pub enum Due {
 /// calendar: `last_backup_at` (UTC) is compared by its local date with
 /// `now`'s. A record saying today is not enough on its own: when
 /// `kept_from(today)` finds none of today's backups left at the location
-/// (all deleted, FR-029, or left behind at an old location, FR-026), the
+/// (all deleted, 003 FR-029, or left behind at an old location, 003 FR-026), the
 /// changes would otherwise be in no backup at all, so one is due. It is
 /// asked only when the record says today.
 pub fn is_due(
@@ -107,7 +107,7 @@ pub fn has_backup_made_on(folder: &Path, database_id: &str, date: NaiveDate) -> 
     }
 }
 
-/// `<name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex`, in local time (research.md
+/// `<name> <YYYY-MM-DD HHMMSS> <id8>.hoplodex`, in local time (003 research.md
 /// §7). The first 8 hex digits of the database's id say whose backup it is.
 pub fn backup_file_name(name: &str, now: &DateTime<FixedOffset>, database_id: &str) -> String {
     format!("{name} {} {}.{DATABASE_EXTENSION}", now.format("%Y-%m-%d %H%M%S"), id8(database_id))
@@ -135,7 +135,7 @@ fn made_at_by_name(file_name: &str, id8: &str) -> Option<NaiveDateTime> {
 }
 
 /// The backups of the database `database_id` in `folder`, newest first
-/// (FR-028). They are chosen by the id and the timestamp in their names,
+/// (003 FR-028). They are chosen by the id and the timestamp in their names,
 /// never by the name alone, so a folder shared by two databases, or a
 /// database renamed in the file manager, never mixes up whose are whose.
 /// Files being written (`.partial`) are never listed. A missing folder has
@@ -177,7 +177,7 @@ pub fn estimate_seconds(len: u64) -> f64 {
 }
 
 /// A copy expected to take more than a second shows its progress bar at
-/// once; a shorter one only if it is still running a second later (SC-005).
+/// once; a shorter one only if it is still running a second later (003 SC-005).
 pub fn shows_progress_at_once(len: u64) -> bool {
     estimate_seconds(len) > 1.0
 }
@@ -268,7 +268,7 @@ pub fn copy_chunked(
     Ok(())
 }
 
-/// Stamps a fresh byte copy of the open database as a backup (research.md
+/// Stamps a fresh byte copy of the open database as a backup (003 research.md
 /// §3, §9): attached to the open connection without a key, which makes
 /// SQLCipher use the main database's key (the copy shares its salt, so it
 /// opens), the copy gets its open marker cleared, its pending changes
@@ -324,8 +324,8 @@ pub fn finalize(partial: &Path, final_path: &Path) -> io::Result<()> {
 }
 
 /// Keeps the newest `keep` backups of the database in `folder` and securely
-/// deletes the older ones (FR-025), never `protected`, the backup a restore
-/// is being made from (FR-028), which does not count towards `keep`.
+/// deletes the older ones (003 FR-025), never `protected`, the backup a restore
+/// is being made from (003 FR-028), which does not count towards `keep`.
 /// Returns the backups that could not be deleted.
 pub fn rotate(
     folder: &Path,
@@ -355,12 +355,12 @@ pub fn rotate(
 }
 
 /// Whether `a` and `b` name the same file or folder, however they are
-/// spelled (research.md §7).
+/// spelled (003 research.md §7).
 pub fn same_path(a: &Path, b: &Path) -> bool {
     a == b || matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
 }
 
-/// Why the backup location can't be used (FR-027).
+/// Why the backup location can't be used (003 FR-027).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocationProblem {
     Missing,
@@ -383,7 +383,7 @@ impl LocationProblem {
 
 /// Checks backups can be written to `folder`. The default folder is made
 /// when missing (at the first backup); a custom one that is missing is on a
-/// drive or share that isn't there, and is not made (FR-024, FR-027).
+/// drive or share that isn't there, and is not made (003 FR-024, FR-027).
 /// Writability is tried with a probe file, removed at once.
 pub fn check_location(folder: &Path, make_if_missing: bool) -> Result<(), LocationProblem> {
     if !folder.is_dir() {
@@ -417,7 +417,7 @@ pub fn check_location(folder: &Path, make_if_missing: bool) -> Result<(), Locati
 pub enum BackupFailure {
     Location(LocationProblem),
     InsufficientSpace(InsufficientSpace),
-    /// Skipped, or stopped by a sleep (FR-027, FR-037).
+    /// Skipped, or stopped by a sleep (003 FR-027, FR-037).
     Stopped,
     Io(io::Error),
 }
@@ -458,10 +458,10 @@ pub struct BackupJob<'a> {
     pub progress: &'a mut dyn FnMut(u64, u64),
 }
 
-/// Makes a backup of the open database (research.md §7): checks the
+/// Makes a backup of the open database (003 research.md §7): checks the
 /// location and its free space, records the backup as unfinished in
 /// `machine.json`, copies the file through SQLite's own handle (so the
-/// database keeps its lock, research.md §3), stamps the copy, and renames
+/// database keeps its lock, 003 research.md §3), stamps the copy, and renames
 /// it into place. However it ends, the partial file is gone and the record
 /// cleared, except after a crash, which the next launch's
 /// [`sweep_unfinished`] tidies. Returns the new backup's path. It does not
@@ -530,9 +530,9 @@ fn remove_partial(partial: &Path) {
 }
 
 /// At launch: a backup recorded as unfinished was cut short by a crash or a
-/// forced quit (US3-7). Its partial file is removed and the chooser says
+/// forced quit (003 US3-7). Its partial file is removed and the chooser says
 /// the changes will be backed up at the next close. A move of backups cut
-/// short the same way (research.md §22) has its partial copy removed, and
+/// short the same way (003 research.md §22) has its partial copy removed, and
 /// the chooser says how many backups are still at the old location.
 pub fn sweep_unfinished(machine: &MachineSettings) {
     if let Some(record) = machine.unfinished_backup() {
@@ -563,7 +563,7 @@ pub fn sweep_unfinished(machine: &MachineSettings) {
 
 /// The backups of a database a move to a new folder takes, oldest first,
 /// and those it leaves because a file of the same name is already there
-/// (FR-026: nothing is ever overwritten).
+/// (003 FR-026: nothing is ever overwritten).
 #[derive(Debug, Clone, Default)]
 pub struct MovePlan {
     pub to_move: Vec<BackupInfo>,
@@ -617,7 +617,7 @@ pub struct Moved {
     pub left_behind: u64,
     /// Why some were left behind; `None` when none were, or when stopped.
     pub reason: Option<LeftBehindReason>,
-    /// A sleep stopped it (FR-037).
+    /// A sleep stopped it (003 FR-037).
     pub stopped: bool,
 }
 
@@ -643,7 +643,7 @@ impl From<CopyError> for MoveFailure {
     }
 }
 
-/// Moves the planned backups, oldest first (FR-026, research.md §22). Each
+/// Moves the planned backups, oldest first (003 FR-026, research.md §22). Each
 /// is hard-linked into the new folder and its old name removed; when
 /// linking fails (another drive, or a filesystem without hard links) it is
 /// copied to `<name>.partial`, read back and compared byte for byte with
@@ -893,7 +893,7 @@ mod tests {
     use super::*;
 
     /// The OS's disk-full codes reach the user as insufficient space
-    /// (FR-026): `ENOSPC` on Linux and macOS, `ERROR_HANDLE_DISK_FULL` and
+    /// (003 FR-026): `ENOSPC` on Linux and macOS, `ERROR_HANDLE_DISK_FULL` and
     /// `ERROR_DISK_FULL` on Windows.
     #[test]
     fn a_full_disk_is_reported_as_insufficient_space() {

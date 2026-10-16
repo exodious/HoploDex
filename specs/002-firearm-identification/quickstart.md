@@ -42,7 +42,7 @@ Select the new spec with wdio's `--spec` argument (extra arguments pass
 through `e2e/run-e2e.mjs`):
 
 ```bash
-npm run test:e2e -- --spec e2e/specs/us6-identification.e2e.ts
+npm run test:e2e -- --spec e2e/specs/identification.e2e.ts
 ```
 
 All of these MUST pass before merge (Constitution, Development Workflow).
@@ -56,7 +56,7 @@ All of these MUST pass before merge (Constitution, Development Workflow).
 | US3 — duplicate checks | Records colliding on main marks, on original marks only, and on neither | `tests/identity_uniqueness_test.rs`, `tests/original_marks_warning_test.rs`, `tests/disposition_reversal_test.rs`, `RestoreDialog.test.tsx` |
 | US4 — browse, export, import | Group by origin; export → import round trip; invalid rows | `tests/list_firearms_test.rs`, `tests/import_export_test.rs`, `tests/import_matching_test.rs`, `ImportDialog.test.tsx` |
 | Backstop / performance | Raw `INSERT`s cannot create a forbidden pair; 10,000-record budgets | `tests/identity_uniqueness_test.rs` (bypasses the command layer), `tests/performance_test.rs` |
-| First-use flow (SC-007) | Record a re-imported M1 Carbine from the guide | `e2e/specs/us6-identification.e2e.ts` |
+| First-use flow (SC-007) | Record a re-imported M1 Carbine from the guide | `e2e/specs/identification.e2e.ts` |
 
 Write each test to fail first against the unimplemented behavior, then pass
 (red-green, Constitution II).

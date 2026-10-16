@@ -101,14 +101,14 @@ describe("the Group by menu (specs/005 contracts/ui-registration.md §6, FR-016)
     expect(trigger).toHaveTextContent("Group byNone");
   });
 
-  // 004 US1 Scenario 6, 005 US2 Scenario 9: the trigger names the grouping
+  // 004 US1-6, 005 US2-9: the trigger names the grouping
   it("shows the chosen grouping on the trigger", async () => {
     renderPage("caliber");
     const trigger = await screen.findByRole("button", { name: "Group by, Caliber" });
     expect(trigger).toHaveTextContent("Group byCaliber");
   });
 
-  // 004 US1 Scenario 6 (Cartridge), 005 US2 Scenario 9 (Registered as)
+  // 004 US1-6 (Cartridge), 005 US2-9 (Registered as)
   it("offers None, then three headed sections of radio items", async () => {
     const user = userEvent.setup();
     renderPage("caliber");
@@ -142,8 +142,8 @@ describe("the Group by menu (specs/005 contracts/ui-registration.md §6, FR-016)
     expect(checked.map((item) => item.textContent)).toEqual(["Caliber"]);
   });
 
-  // 001 US2 Scenario 2: the page regroups by the chosen item, and None ungroups.
-  // 004 US1 Scenario 6, 005 US2 Scenario 9: choosing Cartridge or Registered as regroups
+  // 001 US2-2: the page regroups by the chosen item, and None ungroups.
+  // 004 US1-6, 005 US2-9: choosing Cartridge or Registered as regroups
   it("regroups by the chosen item", async () => {
     const user = userEvent.setup();
     const changes = renderPage("caliber");
@@ -182,10 +182,10 @@ describe("the Group by menu (specs/005 contracts/ui-registration.md §6, FR-016)
   });
 });
 
-// 001 US3 Scenarios 7 and 14: the collection's attention banner names a policy
+// 001 US3-7 and US3-14: the collection's attention banner names a policy
 // the backend flags as expiring, and leaves out one whose warning is
 // suppressed because another blanket policy takes over.
-describe("the attention banner's expiring policies (FR-028)", () => {
+describe("the attention banner's expiring policies (001 FR-028)", () => {
   beforeEach(() => {
     listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "All", firearms: [summary] }] });
   });

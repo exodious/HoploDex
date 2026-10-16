@@ -1,7 +1,7 @@
 //! Integration tests for InsurancePolicy create/update — the optional
-//! blanket limit and the at-most-one-blanket-policy-in-force rule (FR-027,
-//! FR-036, spec.md US3 Acceptance Scenario 12) — and schedule-only coverage
-//! assignment (FR-014), run against a real temporary SQLCipher database.
+//! blanket limit and the at-most-one-blanket-policy-in-force rule (001 FR-027,
+//! FR-036, US3-12) — and schedule-only coverage
+//! assignment (001 FR-014), run against a real temporary SQLCipher database.
 //! Deleting a policy is covered in `policy_deletion_test.rs`.
 
 use crate::support;
@@ -234,7 +234,7 @@ fn scheduling_requires_an_amount_and_an_existing_policy() {
     assert_eq!(no_policy.code, "NOT_FOUND");
 }
 
-// --- Whole-dollar amounts (FR-037) ---
+// --- Whole-dollar amounts (001 FR-037) ---
 
 #[test]
 fn a_negative_scheduled_amount_is_rejected_with_a_field_error() {
@@ -341,7 +341,7 @@ fn the_database_itself_refuses_a_negative_limit_or_scheduled_amount() {
     );
 }
 
-/// FR-027 / US3 Acceptance Scenario 16: a policy carries optional free-form
+/// 001 FR-027 / US3-16: a policy carries optional free-form
 /// notes; a blank entry is stored as no notes.
 #[test]
 fn notes_are_stored_and_returned_from_create_update_and_list() {
@@ -361,7 +361,7 @@ fn notes_are_stored_and_returned_from_create_update_and_list() {
     assert_eq!(listed[0].policy.notes.as_deref(), Some("Renewal quote received."));
 }
 
-// 001 US3 Scenario 16
+// 001 US3-16
 #[test]
 fn blank_or_whitespace_only_notes_are_stored_as_null() {
     let db = TestDb::new();
@@ -380,7 +380,7 @@ fn blank_or_whitespace_only_notes_are_stored_as_null() {
     }
 }
 
-// 001 US3 Scenario 16
+// 001 US3-16
 #[test]
 fn notes_are_cleared_when_updated_with_null() {
     let db = TestDb::new();

@@ -14,12 +14,12 @@ export interface StrengthHintHandle {
 
 export interface StrengthHintProps {
   /** The passphrase input. The hint reads it when asked to update and keeps
-   * only the estimate, never the value (FR-007). */
+   * only the estimate, never the value (003 FR-007). */
   inputRef: RefObject<HTMLInputElement | null>;
 }
 
 /** A five-step strength meter with a label and zxcvbn's advice. It only
- * advises: a weak passphrase is never refused for being weak (FR-003). */
+ * advises: a weak passphrase is never refused for being weak (003 FR-003). */
 export const StrengthHint = forwardRef<StrengthHintHandle, StrengthHintProps>(
   ({ inputRef }, ref) => {
     const [estimate, setEstimate] = useState<Estimate | null>(null);
@@ -31,7 +31,7 @@ export const StrengthHint = forwardRef<StrengthHintHandle, StrengthHintProps>(
     const mounted = useRef(true);
 
     // zxcvbn and its dictionaries are large, so they load only when a
-    // strength hint is first shown (research.md §18), in a worker (#102).
+    // strength hint is first shown (003 research.md §18), in a worker (#102).
     useEffect(() => {
       mounted.current = true;
       startStrengthWorker();

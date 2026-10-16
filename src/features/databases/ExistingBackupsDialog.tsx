@@ -14,7 +14,7 @@ import "../firearms/forms.css";
 import "./databases.css";
 
 /** How long a move or deletion not expected to take long runs before its
- * bar shows, as on the closing screen (contracts/ui-databases.md §5). */
+ * bar shows, as on the closing screen (003 contracts/ui-databases.md §5). */
 const BAR_DELAY_MS = 1000;
 
 export interface ExistingBackupsDialogProps {
@@ -32,7 +32,7 @@ export interface ExistingBackupsDialogProps {
   onDone: (saved: BackupSettingsSaved) => void;
 }
 
-/** "Backups at the old location" (contracts/ui-databases.md §7; FR-026,
+/** "Backups at the old location" (003 contracts/ui-databases.md §7; 003 FR-026,
  * US3-4a): asked when the backup location changes and backups of the
  * database are at the old one. Moving or deleting them runs here, with its
  * progress, and can't be dismissed meanwhile. */
@@ -99,7 +99,7 @@ function Question({
 
   // Listening from the moment the question shows: a listener takes a round
   // trip to register, and the first event says whether to show the bar at
-  // once (SC-005).
+  // once (003 SC-005).
   useEffect(() => {
     const stopMove = databasesService.onBackupsMoveProgress(({ processed, total, showNow }) =>
       setRunning((current) =>

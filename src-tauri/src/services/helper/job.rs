@@ -1,5 +1,5 @@
-//! Windows: how HoploDex starts a confined helper (007's research.md §11,
-//! amended 2026-10-07; 008's research.md §8).
+//! Windows: how HoploDex starts a confined helper (007 research.md §11,
+//! amended 2026-10-07; 008 research.md §8).
 //!
 //! HoploDex, not the helper, owns the helper's job object: one job per
 //! helper, with `KILL_ON_JOB_CLOSE`, `ACTIVE_PROCESS = 1` and a memory

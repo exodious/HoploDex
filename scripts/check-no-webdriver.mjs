@@ -28,8 +28,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const crate = "tauri-plugin-wdio-webdriver";
 // What an E2E build carries and a shipped one must not: the variable the
 // server reads its port from, compiled into it, and the E2E-only switches the
-// app reads (007, research.md §4 and ui contract §10). Each is a string in the
-// binary only while its `#[cfg(feature = "e2e")]` code is built.
+// app reads (007 research.md §7, §16 and contracts/ui-document-preview.md §10).
+// Each is a string in the binary only while its `#[cfg(feature = "e2e")]` code
+// is built.
 const markers = [
   { name: "TAURI_WEBDRIVER_PORT", what: "the embedded WebDriver server" },
   { name: "HOPLODEX_E2E_PDF_PREVIEW", what: "the E2E switch that turns PDF preview off" },

@@ -35,7 +35,7 @@ export function importCollection(
 /** Stops the running import if it is still reading its files; the pending
  * `importCollection` then fails with `OPERATION_STOPPED`. Unscoped: it acts on
  * the running operation, and does nothing once rows are being saved
- * (contracts/tauri-commands.md `cancel_import`). */
+ * (008 contracts/tauri-commands.md `cancel_import`). */
 export function cancelImport(): Promise<null> {
   return invoke<null>("cancel_import");
 }

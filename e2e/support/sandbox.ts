@@ -8,7 +8,7 @@ import { repoRoot, seedBinary } from "./build";
  * The throwaway sandbox every E2E app runs in, shared by the test runner
  * (wdio.conf.ts, one sandbox per spec file) and the `wdio session` launcher
  * (e2e/session.ts), so the two isolate identically (constitution 1.2.0,
- * research.md §21). Nothing here reads or writes the developer's real
+ * 003 research.md §21). Nothing here reads or writes the developer's real
  * databases, config directory or keyring; DEVELOPMENT.md, "Test isolation",
  * says what that covers.
  *
@@ -20,7 +20,7 @@ import { repoRoot, seedBinary } from "./build";
  * The current sandbox's directory. It lives on `globalThis`, not in a module
  * variable, for the reason support/app.ts gives: WebdriverIO loads
  * `wdio.conf.ts` apart from the spec files, so this module is evaluated twice
- * in a worker, and a spec that reseeds (us9) must see the sandbox the config's
+ * in a worker, and a spec that reseeds (`locking`) must see the sandbox the config's
  * copy made.
  */
 interface SandboxState {
@@ -33,7 +33,7 @@ export const SANDBOX_PREFIX = "hoplodex-e2e-";
 /** The file the harness writes into a sandbox when it makes it: the process
  * id of the process that owns it. Only a directory that has one is a
  * sandbox for {@link sweepStaleSandboxes}; the prefix alone is not enough
- * (us13 writes plain files named `hoplodex-e2e-screen-<pid>.png` into the same
+ * (`document-preview` writes plain files named `hoplodex-e2e-screen-<pid>.png` into the same
  * folder). {@link removeSandbox} deletes it last. */
 export const OWNER_MARKER = ".hoplodex-e2e-owner";
 
@@ -47,7 +47,7 @@ export function sandboxPath(): string | undefined {
 }
 
 /** Where the documents folder, and so the suggested location for a new
- * database, points during a session (research.md §19). */
+ * database, points during a session (003 research.md §19). */
 function writeUserDirs(configDir: string, documents: string) {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, "user-dirs.dirs"), `XDG_DOCUMENTS_DIR="${documents}"\n`);
@@ -68,7 +68,7 @@ export const SHADER_CACHE = path.join(repoRoot, "node_modules", ".cache", "hoplo
  * Points the app at a throwaway data, config, cache and documents directory
  * for this session, so each spec starts at a first run and E2E runs never
  * see the developer's real databases, their recent list or their Documents
- * folder (constitution 1.2.0, research.md §21). A `user-dirs.dirs` in the
+ * folder (constitution 1.2.0, 003 research.md §21). A `user-dirs.dirs` in the
  * scratch config directory moves the documents folder into the sandbox too,
  * so even accepting the suggested location for a new database stays inside
  * it.
@@ -95,7 +95,7 @@ export function isolateAppData(): string {
   process.env.HOPLODEX_E2E_CACHE_HOME = cache;
   process.env.HOPLODEX_E2E_DOCUMENTS = documents;
   // The E2E build's in-memory keyring is kept here between launches, so a
-  // remembered passphrase outlives a relaunch (research.md §10).
+  // remembered passphrase outlives a relaunch (003 research.md §10).
   process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(root, "keyring.json");
   // An E2E build never hands an opened document to the OS, which would start
   // a real viewer: it writes the copy's path here instead (open_document, #27).
@@ -130,9 +130,6 @@ export function isolateAppData(): string {
  * setting on; whatever the developer's own environment holds never reaches
  * the app. */
 export interface SessionSettings {
-  /** A computer whose PDF viewer can't be used safely (007 FR-003a): PDFs
-   * are not previewable, TIFF and text still are. */
-  pdfOff?: boolean;
   /** How many seconds the idle lock's minute lasts. */
   idleMinuteSeconds?: number;
 }
@@ -149,11 +146,9 @@ export interface SessionSettings {
  */
 export function applySessionSettings(settings: SessionSettings = {}) {
   delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
-  if (settings.pdfOff) {
-    process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
-  } else {
-    delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
-  }
+  // PDF preview is on; a spec that wants it off (a viewer that can't be used
+  // safely, 007 FR-003a) sets HOPLODEX_E2E_PDF_PREVIEW=off and relaunches.
+  delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
   process.env.HOPLODEX_E2E_CONSENT = "open";
   if (settings.idleMinuteSeconds !== undefined) {
     process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = String(settings.idleMinuteSeconds);

@@ -1,6 +1,5 @@
-//! Integration tests for reversing a disposition (FR-033, spec.md US1
-//! Acceptance Scenario 12), run against a real temporary SQLCipher
-//! database.
+//! Integration tests for reversing a disposition (001 FR-033, US1-12), run
+//! against a real temporary SQLCipher database.
 
 use crate::support;
 
@@ -43,7 +42,7 @@ fn message(err: &CommandError) -> String {
     format!("{} {:?}", err.message, err.field_errors)
 }
 
-// 001 US1 Scenario 12
+// 001 US1-12
 #[test]
 fn keeping_the_history_restores_the_firearm_and_retains_the_disposition() {
     let db = TestDb::new();
@@ -133,7 +132,7 @@ fn a_reversal_that_clashes_on_nickname_is_blocked_naming_the_record_and_changes_
     assert_eq!(history_count(&db, original.id), 0, "and no history was written");
 }
 
-// 001 US1 Scenario 12
+// 001 US1-12
 #[test]
 fn a_reversal_can_rename_to_resolve_a_nickname_clash_in_the_same_step() {
     let db = TestDb::new();
@@ -179,7 +178,7 @@ fn a_reversal_that_clashes_on_make_model_serial_is_blocked_and_changes_nothing()
     ops::create_firearm(&db.conn, &firearm("Glock", "19", "ABC123"), false, None).unwrap();
 
     let err = ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Discard))
-        .expect_err("two active Glock 19 ABC123 would break FR-032");
+        .expect_err("two active Glock 19 ABC123 would break 001 FR-032");
 
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(message(&err).contains("ABC123"));
@@ -234,13 +233,13 @@ fn retained_history_is_removed_with_the_firearm() {
     assert_eq!(history_count(&db, created.id), 0, "deleting a firearm really deletes its history");
 }
 
-// specs/002-firearm-identification User Story 3: the year-of-manufacture
-// identity exception and the FR-009 warning apply to a restored firearm too
-// (FR-008, FR-009), inside the same reversal transaction.
+// 002 US3: the year-of-manufacture
+// identity exception and the 002 FR-009 warning apply to a restored firearm too
+// (002 FR-008, FR-009), inside the same reversal transaction.
 
 #[test]
 fn restoring_into_an_identity_clash_undistinguished_by_year_is_blocked_and_changes_nothing() {
-    // US3-4b
+    // 002 US3-4 (restoring into the clash)
     let db = TestDb::new();
     let original = ops::create_firearm(
         &db.conn,
@@ -260,7 +259,7 @@ fn restoring_into_an_identity_clash_undistinguished_by_year_is_blocked_and_chang
     .unwrap();
 
     let err = ops::reverse_disposition(&db.conn, original.id, &reverse(HistoryChoice::Keep))
-        .expect_err("undistinguished by year, the restore must be blocked (FR-008)");
+        .expect_err("undistinguished by year, the restore must be blocked (002 FR-008)");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(message(&err).to_lowercase().contains("year of manufacture"), "{}", message(&err));
     assert_eq!(ops::get_firearm(&db.conn, original.id).unwrap().status, FirearmStatus::Disposed);
@@ -269,7 +268,7 @@ fn restoring_into_an_identity_clash_undistinguished_by_year_is_blocked_and_chang
 
 #[test]
 fn restoring_into_an_original_marks_match_warns_and_only_proceeds_when_confirmed() {
-    // US3-9
+    // 002 US3-9
     let db = TestDb::new();
     let original = ops::create_firearm(
         &db.conn,
@@ -339,7 +338,7 @@ fn the_history_choice_is_required_on_the_wire() {
     assert!(matches!(discard.history, HistoryChoice::Discard));
 }
 
-/// specs/005-regulated-item-types FR-013: disposing of a registered firearm
+/// 005 FR-013: disposing of a registered firearm
 /// and reversing it leaves the classification and details as they were.
 #[test]
 fn registration_is_unchanged_after_disposal_and_after_reversal() {
@@ -373,11 +372,11 @@ fn registration_is_unchanged_after_disposal_and_after_reversal() {
     assert_eq!(registration(&restored), before);
 }
 
-// --- Accessories (specs/006-accessory-links FR-006) ----------------------------
+// --- Accessories (006 FR-006) --------------------------------------------------
 //
 // An accessory is disposed and restored as a firearm is, with its history kept
 // or discarded, but a restore re-checks no nickname or identity: an accessory
-// has neither (FR-004). Accessory inputs are built from the IPC shape
+// has neither (006 FR-004). Accessory inputs are built from the IPC shape
 // (camelCase JSON), so these tests do not depend on how the structs are spelled.
 
 fn parse<T: DeserializeOwned>(value: Value) -> T {
@@ -533,7 +532,7 @@ fn restoring_an_accessory_re_checks_no_identity_even_when_an_identical_one_exist
     let db = TestDb::new();
     let original = create_accessory(&db, Some("SAME-SN"));
     dispose_accessory(&db, original, "Jane Doe", "2025-06-15");
-    // Same kind, make, model and serial number as the disposed one (FR-004:
+    // Same kind, make, model and serial number as the disposed one (006 FR-004:
     // an accessory has no identity rule).
     let twin = create_accessory(&db, Some("SAME-SN"));
 

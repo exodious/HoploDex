@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Button, ConfirmDialog, Menu, MenuItem, ToastProvider, useToast } from "../../components";
 import { PreviewSurface } from "./PreviewSurface";
 
-// specs/007-document-preview/contracts/ui-document-preview.md §2 ("Page
-// area"), tasks.md T039. The component is `<PreviewSurface previewId name />`:
+// 007 contracts/ui-document-preview.md §2 ("Page area"), 007 T039. The component is
+// `<PreviewSurface previewId name />`:
 // the placeholder the PDF surface is placed over. It talks to the backend
 // through `set_preview_bounds` ({ previewId, bounds, visible }) and listens for
 // `preview:pdf-ready` ({ previewId }); both are pinned here at the IPC
@@ -120,7 +120,7 @@ function renderHarness() {
   );
 }
 
-describe("PreviewSurface: bounds (contract §2, contracts/tauri-commands.md set_preview_bounds)", () => {
+describe("PreviewSurface: bounds (007 contracts/ui-document-preview.md §2, 007 contracts/tauri-commands.md set_preview_bounds)", () => {
   it("sends its rectangle on mount", async () => {
     render(<PreviewSurface previewId={PREVIEW_ID} name={NAME} />);
 
@@ -169,7 +169,7 @@ describe("PreviewSurface: bounds (contract §2, contracts/tauri-commands.md set_
   });
 });
 
-describe("PreviewSurface: hidden while something is drawn over the viewer (contract §2)", () => {
+describe("PreviewSurface: hidden while something is drawn over the viewer (007 contracts/ui-document-preview.md §2)", () => {
   it("is hidden while a ConfirmDialog is open, and shown once it is gone", async () => {
     const user = userEvent.setup();
     renderHarness();
@@ -212,7 +212,7 @@ describe("PreviewSurface: hidden while something is drawn over the viewer (contr
   });
 });
 
-describe("PreviewSurface: progress and accessibility (contract §2, §8)", () => {
+describe("PreviewSurface: progress and accessibility (007 contracts/ui-document-preview.md §2, §8)", () => {
   it("shows Preparing with a spinner, announced politely, until preview:pdf-ready for its id", async () => {
     render(<PreviewSurface previewId={PREVIEW_ID} name={NAME} />);
 

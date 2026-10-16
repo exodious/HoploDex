@@ -1,7 +1,7 @@
 //! The app's own directories: its config directory (`machine.json`), its
 //! cache directory (the passphrase check's scratch files and the opened
-//! documents' copies, FR-035), and the documents and home folders a new
-//! database is suggested under (research.md §19). Every command and the
+//! documents' copies, 001 FR-035), and the documents and home folders a new
+//! database is suggested under (003 research.md §19). Every command and the
 //! startup go through here, never through `app.path()` directly.
 //!
 //! A shipped build asks the OS, through Tauri. An E2E build (`e2e` feature)
@@ -15,7 +15,7 @@
 //! (main.rs), and if that refusal were ever lost, the tests that check it
 //! would run it in their sandbox, never on the developer's data.
 //!
-//! It also names the two web views' data folders (research.md §6, "Windows'
+//! It also names the two web views' data folders (007 research.md §6, "Windows'
 //! user data folder"): the main window's and the PDF preview surface's,
 //! each under the cache directory, so an E2E build puts both in the sandbox.
 
@@ -26,7 +26,7 @@ use tauri::{AppHandle, Runtime};
 pub use resolve::{cache_dir, config_dir, document_dir, home_dir};
 
 /// The main window's web view data folder, `<cache>/main-webview/`. The
-/// window is built in `setup()` with it (research.md §6), so its folder is
+/// window is built in `setup()` with it (007 research.md §6), so its folder is
 /// never the one the preview surface uses and no `WEBVIEW2_USER_DATA_FOLDER`
 /// is needed.
 pub fn main_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<PathBuf> {
@@ -34,10 +34,10 @@ pub fn main_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Pa
 }
 
 /// The PDF preview surface's web view data folder, `<cache>/preview-webview2/`
-/// (research.md §6). On Windows, browser arguments belong to the browser
+/// (007 research.md §6). On Windows, browser arguments belong to the browser
 /// process every web view sharing a folder shares, so the surface has a
 /// folder of its own. Deleted at startup and after its browser process exits.
-#[allow(dead_code)] // used by the preview surface from T014's follow-on tasks
+#[allow(dead_code)] // used by the preview surface from 007 T014's follow-on tasks
 pub fn preview_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<PathBuf> {
     Ok(preview_webview_dir(&cache_dir(app)?))
 }

@@ -5,7 +5,7 @@ import { drawingBounds } from "../databases/plate/entries";
 import { DRAWINGS } from "./typeDrawings";
 import { render } from "../../test/sessionScope";
 
-// specs/005-regulated-item-types FR-001: every firearm type has its own
+// 005 FR-001: every firearm type has its own
 // drawing, the suppressor's included.
 describe("TypeDrawing", () => {
   it("has a drawing for every seeded type's key", () => {
@@ -23,9 +23,9 @@ describe("TypeDrawing", () => {
     expect(parts).toHaveLength(DRAWINGS.suppressor.parts.length);
   });
 
-  // specs/006-accessory-links FR-007a: an accessory with no photo shows its
+  // 006 FR-007a: an accessory with no photo shows its
   // kind's drawing, so every kind has one.
-  it("has a drawing for every accessory kind's key (FR-007a)", () => {
+  it("has a drawing for every accessory kind's key (006 FR-007a)", () => {
     for (const kind of ACCESSORY_KINDS) {
       expect(DRAWINGS[kind.genericThumbnailKey], kind.name).toBeDefined();
     }
@@ -37,7 +37,7 @@ describe("TypeDrawing", () => {
     expect(DRAWINGS.accessory).toBeDefined();
   });
 
-  it("renders the optic drawing, part for part (FR-007a)", () => {
+  it("renders the optic drawing, part for part (006 FR-007a)", () => {
     const { container } = render(<TypeDrawing typeKey="optic" />);
 
     const svg = container.querySelector("svg");

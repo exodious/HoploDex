@@ -13,7 +13,7 @@ use crate::services::insurance_status::{PolicyStatus, load_context};
 use crate::services::valuation::{self, ValueSummary};
 use crate::session::scoped::ScopedSession;
 
-/// Input for `assign_firearm_coverage`, per contracts/tauri-commands.md.
+/// Input for `assign_firearm_coverage`, per 001 contracts/tauri-commands.md.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssignCoverageInput {
@@ -22,7 +22,7 @@ pub struct AssignCoverageInput {
 }
 
 /// How the firearms and accessories scheduled under a policy being deleted are resolved
-/// (FR-034): moved to another policy, keeping their scheduled amounts, or
+/// (001 FR-034): moved to another policy, keeping their scheduled amounts, or
 /// left unscheduled — covered by the blanket policy in force, or uninsured.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -55,14 +55,14 @@ pub struct OtherPolicy {
     pub is_expired: bool,
 }
 
-/// What deleting a policy would do, for the FR-034 dialog to explain before
+/// What deleting a policy would do, for the 001 FR-034 dialog to explain before
 /// anything changes.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyDeletionImpact {
     pub is_expired: bool,
     pub is_blanket_in_force: bool,
-    /// Active firearms and accessories (FR-009), by kind (issue #56).
+    /// Active firearms and accessories (006 FR-009), by kind (issue #56).
     pub scheduled_counts: RecordCounts,
     pub scheduled_records: Vec<RecordLabel>,
     /// Active unscheduled firearms and accessories that lose blanket coverage
@@ -75,7 +75,7 @@ pub struct PolicyDeletionImpact {
 }
 
 /// A policy as listed: its record plus derived status (in force, expiring,
-/// expired, and the FR-028 warnings), so the frontend never re-derives them.
+/// expired, and the 001 FR-028 warnings), so the frontend never re-derives them.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InsurancePolicyView {
@@ -102,7 +102,7 @@ pub mod ops {
         .ok_or_else(|| CommandError::not_found("No insurance policy was found with that id."))
     }
 
-    /// Not in contracts/tauri-commands.md's original command list, but
+    /// Not in 001 contracts/tauri-commands.md's original command list, but
     /// necessary to populate the coverage-assignment policy picker — the
     /// contract only documents commands for mutating/summarizing policies,
     /// not enumerating them.
@@ -138,7 +138,7 @@ pub mod ops {
         Ok(InsurancePolicyView { policy, status })
     }
 
-    /// FR-036: at most one blanket policy in force on any date. Two blanket
+    /// 001 FR-036: at most one blanket policy in force on any date. Two blanket
     /// policies conflict when their dates overlap by more than a single
     /// shared boundary day (`A.start < B.end AND B.start < A.end`); the
     /// message names the other policy. Schedule-only policies never conflict.
@@ -335,7 +335,7 @@ pub mod ops {
     }
 
     /// Deletes a policy, first resolving the firearms scheduled under it
-    /// (FR-034), all in one transaction: an error anywhere leaves everything
+    /// (001 FR-034), all in one transaction: an error anywhere leaves everything
     /// as it was. A deletion that leaves active scheduled firearms unresolved
     /// is refused, so no firearm is ever silently un-insured; the foreign key
     /// stays `ON DELETE RESTRICT` as a backstop. Disposed firearms aren't
@@ -431,7 +431,7 @@ pub mod ops {
 
     /// Schedules a firearm under `policy_id` with its own amount, or, with
     /// `None`, unschedules it: it is then covered by the blanket policy in
-    /// force (FR-036). There is no per-firearm blanket assignment.
+    /// force (001 FR-036). There is no per-firearm blanket assignment.
     pub fn assign_firearm_coverage(
         conn: &Connection,
         firearm_id: i64,
@@ -448,12 +448,12 @@ pub mod ops {
             scheduled_coverage_amount: policy_id.and(scheduled_coverage_amount),
             ..crate::models::firearm::FirearmInput::from(&current)
         };
-        // Never touches an identifying field, so FR-009's warning never
-        // applies here (research.md §5); `confirmed_warnings: true` skips it.
+        // Never touches an identifying field, so 002 FR-009's warning never
+        // applies here (002 research.md §5); `confirmed_warnings: true` skips it.
         firearms::ops::update_firearm(conn, firearm_id, &input, true)
     }
 
-    /// [`assign_firearm_coverage`] for an accessory (FR-009).
+    /// [`assign_firearm_coverage`] for an accessory (006 FR-009).
     pub fn assign_accessory_coverage(
         conn: &Connection,
         accessory_id: i64,

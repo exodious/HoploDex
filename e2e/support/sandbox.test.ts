@@ -95,7 +95,7 @@ describe("sweeping old sandboxes", () => {
     const otherPrefix = path.join(parent, "other-ffffff");
     fs.mkdirSync(otherPrefix);
     fs.writeFileSync(path.join(otherPrefix, OWNER_MARKER), `${DEAD}\n`);
-    // us13's screenshots: plain files with the prefix, in the same folder.
+    // document-preview.e2e.ts's screenshots: plain files with the prefix, in the same folder.
     const screenshot = path.join(parent, `${SANDBOX_PREFIX}screen-${DEAD}.png`);
     fs.writeFileSync(screenshot, "png");
     // A file that happens to be named like a sandbox.

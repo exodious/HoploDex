@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
 
-// specs/008-hardening-batch contracts/tauri-commands.md "Every request names
+// 008 contracts/tauri-commands.md "Every request names
 // its session": the commands that act on the open database carry its session;
 // the ones that act on the running operation, the window or the app do not.
 

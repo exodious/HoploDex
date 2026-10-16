@@ -1,8 +1,8 @@
--- FTS5 external-content index over firearms, per data-model.md's
--- "Virtual table: firearms_fts" section (FR-013, US2 Scenarios 3-4).
--- specs/004-cartridges-action-types FR-008/FR-020 adds the cartridge and the
+-- FTS5 external-content index over firearms, per 001 data-model.md's
+-- "Virtual table: firearms_fts" section (001 FR-013, US2-3 and US2-4).
+-- 004 FR-008/FR-020 adds the cartridge and the
 -- action's name, looked up the way the type's name is.
--- specs/005-regulated-item-types FR-017 adds the classification's name and the
+-- 005 FR-017 adds the classification's name and the
 -- registration form and "registered to" text (not the approved date).
 --
 -- The trigram tokenizer matches any run of three or more characters inside a
@@ -37,7 +37,7 @@ CREATE VIRTUAL TABLE firearms_fts USING fts5(
     tokenize = 'trigram remove_diacritics 1'
 );
 
--- specs/002-firearm-identification FR-012: origin is indexed as its display
+-- 002 FR-012: origin is indexed as its display
 -- label so "imported"/"re-imported"/"domestic" search as the user reads them;
 -- country_of_manufacture is indexed as "United States" for a re-imported
 -- firearm, since that is what is displayed and searched (never stored).
@@ -171,8 +171,8 @@ BEGIN
     );
 END;
 
--- specs/006-accessory-links (data-model.md's "Virtual table: accessories_fts",
--- research.md §12): the same index over accessories, with the kind's name
+-- (006 data-model.md's "Virtual table: accessories_fts",
+-- 006 research.md §12): the same index over accessories, with the kind's name
 -- looked up the way a firearm's type name is. A search of one or two
 -- characters uses LIKE over the same values.
 CREATE VIRTUAL TABLE accessories_fts USING fts5(
@@ -259,8 +259,8 @@ BEGIN
     );
 END;
 
--- specs/007-document-preview FR-015 (data-model.md "Virtual table:
--- document_names_fts", research.md §19): a third trigram index, over a
+-- 007 FR-015 (007 data-model.md "Virtual table:
+-- document_names_fts", 007 research.md §19): a third trigram index, over a
 -- document's file name, so the collection and Accessories searches find a
 -- record by the name of its own documents ("appraisal" finds "2024
 -- appraisal.pdf"). It belongs to neither table's index: a match is joined
@@ -285,7 +285,7 @@ BEGIN
     VALUES ('delete', old.id, old.original_filename);
 END;
 
--- Filenames don't change today; kept for safety, as in research.md §19.
+-- Filenames don't change today; kept for safety, as in 007 research.md §19.
 CREATE TRIGGER document_names_fts_after_update AFTER UPDATE OF original_filename ON document_attachments
 BEGIN
     INSERT INTO document_names_fts (document_names_fts, rowid, original_filename)

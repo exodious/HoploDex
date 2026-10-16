@@ -1,5 +1,5 @@
 //! Replacing a database file in one step, and recovering a replacement
-//! that was interrupted (research.md §4; contracts/database-file.md
+//! that was interrupted (003 research.md §4; 003 contracts/database-file.md
 //! "Replacing the file"). Plain files stand in for databases: the swap never
 //! looks inside them.
 

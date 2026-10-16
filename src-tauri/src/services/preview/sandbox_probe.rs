@@ -1,5 +1,5 @@
 //! Whether WebKitGTK's sandbox works on this Linux, probed at startup
-//! (research.md §9).
+//! (007 research.md §9).
 //!
 //! WebKit's web-process sandbox is turned on for the whole app with
 //! `WEBKIT_FORCE_SANDBOX=1`, which must be in the environment before the

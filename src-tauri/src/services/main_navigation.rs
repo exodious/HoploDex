@@ -20,8 +20,8 @@
 //! answered by the web view itself and never goes out.
 //!
 //! The PDF surface's child web view has its own, narrower allowlist
-//! (`services::preview::surface`, research.md §6); this is the main window's
-//! (research.md §6, amended for #73).
+//! (`services::preview::surface`, 007 research.md §6); this is the main window's
+//! (007 research.md §6, amended for #73).
 
 use tauri::Url;
 
@@ -109,7 +109,7 @@ pub fn refuse_foreign_documents<R: tauri::Runtime>(
                     // cover: the IPC custom protocol (`http://ipc.localhost`),
                     // for every context. Answering its CORS preflight with a
                     // 403 breaks that protocol, and Tauri falls back to
-                    // `postMessage` (research.md §2). Leave all but documents.
+                    // `postMessage` (008 research.md §2). Leave all but documents.
                     let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
                     args.ResourceContext(&mut context)?;
                     if context != COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {

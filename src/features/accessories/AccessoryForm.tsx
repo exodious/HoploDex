@@ -22,16 +22,17 @@ import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/us
 import type { DraftTarget } from "../session/usePendingDraft";
 import type { Accessory, AccessoryInput } from "./types";
 
-// specs/006-accessory-links contracts/ui-accessories.md §3 (FR-001 to FR-005,
+// 006 contracts/ui-accessories.md §3 (006 FR-001 to FR-005,
 // FR-027): the accessory form, laid out as the firearm form is.
 
 export interface AccessoryFormProps {
   /** Present in edit mode; omitted when creating a new record. `mount` is
    * the record's `get_accessory` detail: the form shows `mount.chain[0]`, its
-   * direct host, as Mounted on (specs/006-accessory-links FR-010). */
+   * direct host, as Mounted on (006 FR-010). */
   initialValues?: Accessory & { mount?: MountDetail };
-  /** The record whose "Mount > New accessory…" opened the form (§5): Mounted
-   * on starts as this, and can be changed or cleared. */
+  /** The record whose "Mount > New accessory…" opened the form
+   * (006 contracts/ui-accessories.md §5): Mounted on starts as this, and can be changed
+   * or cleared. */
   presetMountedOn?: RecordLabel;
   onSubmit: (input: AccessoryInput) => Promise<void>;
   onCancel?: () => void;
@@ -41,10 +42,10 @@ export interface AccessoryFormProps {
  * it when `FormState` changes shape, so older drafts are only discarded. */
 export const FORM_VERSION = 1;
 
-/** FR-002: shown under Kind. */
+/** 006 FR-002: shown under Kind. */
 const KIND_HINT = "A suppressor is recorded as a firearm.";
 
-/** FR-005: shown under Estimated value. */
+/** 006 FR-005: shown under Estimated value. */
 const VALUE_HINT =
   "The value of this accessory as a whole, everything it describes included. Leave out any firearm or accessory recorded separately, such as one mounted on it.";
 
@@ -53,7 +54,7 @@ const VALUE_HINT =
 const KIND_LIST_FAILED =
   "The list of kinds couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
 
-/** The fields with suggestions and snapping (FR-003: the same entry commands
+/** The fields with suggestions and snapping (006 FR-003: the same entry commands
  * as the firearm form's). */
 type AccessoryEntryField = "make" | "model" | "cartridge" | "caliber";
 
@@ -71,7 +72,7 @@ interface FormState {
   caliberPrompt: string;
   cartridge: string;
   serialNumber: string;
-  /** specs/006-accessory-links FR-010: the record it is mounted on, as the
+  /** 006 FR-010: the record it is mounted on, as the
    * chooser names it; `null` is not mounted. */
   mountedOn: RecordLabel | null;
   notes: string;
@@ -117,7 +118,7 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/** specs/008-hardening-batch research.md §10: the free-text fields with a
+/** 008 research.md §10: the free-text fields with a
  * maximum, by their label (the backend's, so the two messages match). */
 const TEXT_LIMITS: readonly (readonly [Field, string, number])[] = [
   ["serialNumber", "Serial number", MAX_SHORT_TEXT_CHARS],
@@ -141,7 +142,7 @@ function lengthErrors(form: FormState): Partial<Record<Field, string>> {
 function validate(form: FormState): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (form.accessoryKindId === "") errors.accessoryKindId = "Choose a kind.";
-  // FR-001: required, as a firearm's, so the accessory has a name of its own.
+  // 006 FR-001: required, as a firearm's, so the accessory has a name of its own.
   if (form.make.trim() === "") errors.make = "Enter the make.";
   if (form.model.trim() === "") errors.model = "Enter the model.";
   for (const [field, label] of [
@@ -197,7 +198,7 @@ function isEntryField(name: string | undefined): name is AccessoryEntryField {
   return name === "make" || name === "model" || name === "cartridge" || name === "caliber";
 }
 
-/** Create/edit form for an accessory's record (US1). Insurance coverage and
+/** Create/edit form for an accessory's record (006 US1). Insurance coverage and
  * the disposition are set from the record's own panel and dialogs, so a save
  * here carries them over unchanged. Renders its own dialog body and footer
  * (use inside `<Dialog bare>`). */
@@ -295,7 +296,7 @@ export function AccessoryForm({
   /** specs/004 contracts/ui-entry.md §2–§3: settles one of the four fields,
    * when it was left or a suggestion was picked. Only text that changed since
    * it was last settled and, editing, differs from the saved value is sent
-   * (FR-014); the answer is applied only if the field still holds what was
+   * (004 FR-014); the answer is applied only if the field still holds what was
    * sent. Resolves whether the value was changed by snapping. A cartridge
    * also gets the caliber it derives. */
   function settle(field: AccessoryEntryField): Promise<boolean> {
@@ -381,7 +382,7 @@ export function AccessoryForm({
   };
   const caliberGuessed = form.caliberMode === "derived" && form.caliberSource === "guess";
 
-  // FR-002: the offered kinds in list order, plus the record's own when it
+  // 006 FR-002: the offered kinds in list order, plus the record's own when it
   // is no longer offered.
   const ownKindId = initialValues?.accessoryKindId;
   const kindOptions = kinds.kinds
@@ -390,8 +391,8 @@ export function AccessoryForm({
   const kindHint =
     kinds.failed && !errorFor("accessoryKindId") ? `${KIND_HINT} ${KIND_LIST_FAILED}` : KIND_HINT;
 
-  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
-  // and a lock keeps it (FR-039), labelled with the accessory's name (FR-027).
+  // Closing or quitting asks about unsaved input first (003 FR-010),
+  // and a lock keeps it (003 FR-039), labelled with the accessory's name (006 FR-027).
   const ownKindName = kinds.kinds.find((kind) => kind.id === ownKindId)?.name ?? "Accessory";
   useDirtyForm({
     label: initialValues
@@ -452,7 +453,7 @@ export function AccessoryForm({
       dispositionPrice: initialValues?.dispositionPrice ?? null,
       insurancePolicyId: initialValues?.insurancePolicyId ?? null,
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
-      // A disposed record is never mounted (FR-014).
+      // A disposed record is never mounted (006 FR-014).
       mountedOn: initialValues?.status === "disposed" ? null : (form.mountedOn?.record ?? null),
     };
     return submitInput(input);
@@ -591,7 +592,7 @@ export function AccessoryForm({
             </div>
           </div>
 
-          {/* FR-004: free text, no uniqueness, and no "no serial number" box. */}
+          {/* 006 FR-004: free text, no uniqueness, and no "no serial number" box. */}
           <div data-field="serialNumber">
             <TextField
               label="Serial number"
@@ -605,7 +606,7 @@ export function AccessoryForm({
             />
           </div>
 
-          {/* contracts/ui-accessories.md §3 row 5, §4. */}
+          {/* 006 contracts/ui-accessories.md §4, §3 row 5. */}
           {initialValues?.status !== "disposed" && (
             <div data-field="mountedOn">
               <MountChooser

@@ -1,15 +1,15 @@
-//! specs/006-accessory-links User Story 1 through `ops`, against a real
-//! temporary SQLCipher database (no mocks): the fixed kind list (FR-002),
-//! saving and reopening an accessory with every optional field (FR-001,
-//! FR-003, FR-004), the validation rules (data-model.md "Validation rules"),
-//! disposing, restoring and deleting one (FR-006), and the free-text
-//! `accessories` field staying as it is (FR-007).
+//! 006 US1 through `ops`, against a real
+//! temporary SQLCipher database (no mocks): the fixed kind list (006 FR-002),
+//! saving and reopening an accessory with every optional field (006 FR-001,
+//! FR-003, FR-004), the validation rules (006 data-model.md "Validation rules"),
+//! disposing, restoring and deleting one (006 FR-006), and the free-text
+//! `accessories` field staying as it is (006 FR-007).
 //!
-//! Written before the implementation (tasks.md T015). Inputs and outputs the
+//! Written before the implementation (006 tasks.md T015). Inputs and outputs the
 //! contract describes as JSON (`AccessoryInput` in, `AccessoryDetail`,
 //! `ListAccessoriesInput` and `DisposeInput` in or out) are built from and
 //! read as JSON in the contract's own camelCase names, so the tests need
-//! nothing from the structs but the names in contracts/tauri-commands.md.
+//! nothing from the structs but the names in 006 contracts/tauri-commands.md.
 
 use crate::support;
 
@@ -112,7 +112,7 @@ fn count(db: &TestDb, table: &str) -> i64 {
     db.conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap()
 }
 
-// --- The kinds (US1-2, FR-002) ------------------------------------------------
+// --- The kinds (006 US1-2, FR-002) --------------------------------------------
 
 #[test]
 fn the_fourteen_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
@@ -158,7 +158,7 @@ fn the_fourteen_kinds_are_listed_in_order_with_other_last_and_no_suppressor() {
 
 #[test]
 fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_the_command() {
-    // FR-002: the row is never removed; the command accepts any kind that exists.
+    // 006 FR-002: the row is never removed; the command accepts any kind that exists.
     let db = TestDb::new();
     let held = ops::create_accessory(&db.conn, &accessory(CONVERSION_KIT), None).unwrap();
 
@@ -182,12 +182,12 @@ fn a_kind_no_longer_offered_is_still_listed_still_held_and_still_choosable_in_th
     assert!(ops::create_accessory(&db.conn, &accessory(CONVERSION_KIT), None).is_ok());
 }
 
-// --- Saving and reopening (US1-3 to US1-5, FR-001) ------------------------------
+// --- Saving and reopening (006 US1-3 to US1-5, FR-001) --------------------------
 
 #[test]
 fn an_accessory_with_only_a_kind_make_and_model_saves_and_reopens_with_every_optional_field_empty()
 {
-    // US1-5.
+    // 006 US1-5.
     let mut db = TestDb::new();
     let created = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
     db.reopen();
@@ -223,7 +223,7 @@ fn an_accessory_with_only_a_kind_make_and_model_saves_and_reopens_with_every_opt
 
 #[test]
 fn an_optic_saves_and_every_value_comes_back() {
-    // US1-3.
+    // 006 US1-3.
     let mut db = TestDb::new();
     let mut input = accessory(OPTIC);
     input.make = "Leupold".into();
@@ -251,7 +251,7 @@ fn an_optic_saves_and_every_value_comes_back() {
 
 #[test]
 fn a_pair_of_magazines_saves_as_one_record() {
-    // US1-4.
+    // 006 US1-4.
     let db = TestDb::new();
     let mut input = accessory(MAGAZINE);
     input.make = "Walther".into();
@@ -294,7 +294,7 @@ fn getting_or_updating_an_accessory_that_does_not_exist_is_not_found() {
     );
 }
 
-// --- The kind is required (FR-001) ------------------------------------------------
+// --- The kind is required (006 FR-001) --------------------------------------------
 
 #[test]
 fn a_missing_or_unknown_kind_fails_on_the_kind_field_with_the_exact_message() {
@@ -314,7 +314,7 @@ fn a_missing_or_unknown_kind_fails_on_the_kind_field_with_the_exact_message() {
     assert_eq!(detail(&db, held.id)["accessoryKindId"], OPTIC);
 }
 
-// --- No identity rules (FR-004) ------------------------------------------------------
+// --- No identity rules (006 FR-004) --------------------------------------------------
 
 #[test]
 fn two_accessories_with_the_same_make_model_and_serial_number_both_save() {
@@ -331,7 +331,7 @@ fn two_accessories_with_the_same_make_model_and_serial_number_both_save() {
     assert_eq!(count(&db, "accessories"), 2);
 }
 
-// --- Entry rules and trimming (FR-003) ------------------------------------------------
+// --- Entry rules and trimming (006 FR-003) --------------------------------------------
 
 #[test]
 fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
@@ -392,7 +392,7 @@ fn make_model_caliber_and_cartridge_follow_004s_entry_rules() {
 
 #[test]
 fn a_blank_make_or_model_is_refused_on_create_and_on_update() {
-    // FR-001: so that no two accessories are named by their kind alone.
+    // 006 FR-001: so that no two accessories are named by their kind alone.
     let db = TestDb::new();
     let mut input = accessory(OPTIC);
     input.make = "   ".into();
@@ -491,7 +491,7 @@ fn serial_number_acquisition_source_and_notes_are_only_trimmed_and_blank_is_null
     assert!(ops::create_accessory(&db.conn, &free, None).is_ok());
 }
 
-// --- The firearm's amount, date, disposition and insurance rules (data-model.md) -----
+// --- The firearm's amount, date, disposition and insurance rules (006 data-model.md) -----
 
 #[test]
 fn an_acquisition_date_of_tomorrow_and_a_negative_amount_fail_with_the_firearms_messages() {
@@ -610,11 +610,11 @@ fn a_policy_without_an_amount_and_an_amount_without_a_policy_both_fail() {
     assert!(ops::create_accessory(&db.conn, &both, None).is_ok());
 }
 
-// --- Dispose, restore, delete (US1-9, US1-10, FR-006) ----------------------------------
+// --- Dispose, restore, delete (006 US1-9, US1-10, FR-006) ------------------------------
 
 #[test]
 fn a_disposed_accessory_leaves_the_default_list_and_is_listed_with_include_disposed() {
-    // US1-9.
+    // 006 US1-9.
     let db = TestDb::new();
     let kept = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let gone = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
@@ -660,7 +660,7 @@ fn disposing_an_accessory_with_a_missing_field_changes_nothing() {
 
 #[test]
 fn reversing_with_keep_retains_a_history_entry_and_with_discard_none() {
-    // US1-9, FR-006.
+    // 006 US1-9, FR-006.
     let db = TestDb::new();
     let kept = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
     let discarded = ops::create_accessory(&db.conn, &accessory(SLING), None).unwrap();
@@ -687,7 +687,7 @@ fn reversing_with_keep_retains_a_history_entry_and_with_discard_none() {
 
 #[test]
 fn restoring_does_not_recheck_identity_so_a_duplicate_of_an_active_one_comes_back() {
-    // FR-006: no nickname, key or marks re-check for an accessory.
+    // 006 FR-006: no nickname, key or marks re-check for an accessory.
     let db = TestDb::new();
     let mut input = accessory(OPTIC);
     input.make = "Leupold".into();
@@ -706,7 +706,7 @@ fn restoring_does_not_recheck_identity_so_a_duplicate_of_an_active_one_comes_bac
 
 #[test]
 fn deleting_needs_confirmation_and_then_removes_the_row() {
-    // US1-10.
+    // 006 US1-10.
     let db = TestDb::new();
     let created = ops::create_accessory(&db.conn, &accessory(OPTIC), None).unwrap();
 
@@ -725,7 +725,7 @@ fn deleting_needs_confirmation_and_then_removes_the_row() {
     );
 }
 
-// --- The free-text field stays (US1-11, FR-007) -----------------------------------------
+// --- The free-text field stays (006 US1-11, FR-007) -------------------------------------
 
 #[test]
 fn a_firearms_free_text_accessories_stays_unchanged_and_creates_no_accessory() {
@@ -744,7 +744,7 @@ fn a_firearms_free_text_accessories_stays_unchanged_and_creates_no_accessory() {
     assert_eq!(count(&db, "accessories"), 2, "only the two created; none from the text");
 }
 
-// --- The identifier never leaves the backend (FR-019) --------------------------------------
+// --- The identifier never leaves the backend (006 FR-019) ----------------------------------
 
 #[test]
 fn the_identifier_is_never_serialized_by_an_accessory_or_its_detail() {

@@ -21,9 +21,10 @@ import {
   stubIntersectionObserver,
 } from "../../test/intersectionObserver";
 
-// specs/006-accessory-links User Story 1, contracts/ui-accessories.md §12:
+// 006 US1, 006 contracts/ui-accessories.md §12:
 // the accessory's record page has the firearm record page's layout. The
-// Mounted section (§5) and the "Mounted on" chain (§6) are User Story 2's,
+// Mounted section (006 contracts/ui-accessories.md §5) and the "Mounted on" chain
+// (006 contracts/ui-accessories.md §6) are 006 US2's,
 // tested at the end.
 
 const getAccessory = vi.fn();
@@ -35,7 +36,7 @@ vi.mock("./accessoriesService", () => ({
     deleteAccessory(id, confirmed),
 }));
 // The edit form's make, model, cartridge and caliber use the shared entry
-// commands (FR-003).
+// commands (006 FR-003).
 vi.mock("../firearms/firearmsService", () => ({
   settleEntry: async (_scope: unknown, _field: string, text: string) => ({
     value: text.trim(),
@@ -44,14 +45,14 @@ vi.mock("../firearms/firearmsService", () => ({
   }),
   suggestEntries: async () => [],
 }));
-// specs/006-accessory-links US2: the Mounted section's chooser and Mount
+// 006 US2: the Mounted section's chooser and Mount
 // commands.
 vi.mock("../mounts/mountsService", () => ({
   listMountCandidates: async () => ({ candidates: [] }),
   mountRecord: async () => ({ item: null, host: null }),
 }));
 // The media panels talk to Tauri; they aren't under test, but the page's
-// placement of them is, and so is the owner it gives them (FR-007a).
+// placement of them is, and so is the owner it gives them (006 FR-007a).
 vi.mock("../media/PhotoGallery", () => ({
   PhotoGallery: (props: { owner: unknown }) => (
     <div data-testid="photo-gallery" data-owner={JSON.stringify(props.owner)} />
@@ -162,7 +163,7 @@ beforeEach(() => {
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
 });
 
-describe("AccessoryRecordPage bar (§12)", () => {
+describe("AccessoryRecordPage bar (006 contracts/ui-accessories.md §12)", () => {
   it("loads the accessory by its id", async () => {
     renderPage();
     await screen.findByRole("heading", { level: 1 });
@@ -208,7 +209,7 @@ describe("AccessoryRecordPage bar (§12)", () => {
   });
 });
 
-describe("AccessoryRecordPage pinned strip (FR-041, #47)", () => {
+describe("AccessoryRecordPage pinned strip (001 FR-041, #47)", () => {
   beforeEach(stubIntersectionObserver);
   afterEach(() => vi.unstubAllGlobals());
 
@@ -229,7 +230,7 @@ describe("AccessoryRecordPage pinned strip (FR-041, #47)", () => {
   });
 });
 
-describe("AccessoryRecordPage layout (§12)", () => {
+describe("AccessoryRecordPage layout (006 contracts/ui-accessories.md §12)", () => {
   it("lays the main column out as photos, Details, Value and acquisition, Notes, Documents, Disposition history", async () => {
     getAccessory.mockResolvedValue({
       ...optic,
@@ -275,7 +276,7 @@ describe("AccessoryRecordPage layout (§12)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("gives the photo gallery and the documents the accessory as their owner (FR-007a)", async () => {
+  it("gives the photo gallery and the documents the accessory as their owner (006 FR-007a)", async () => {
     renderPage();
 
     await screen.findByRole("heading", { level: 1, name: NAME });
@@ -397,7 +398,7 @@ describe("AccessoryRecordPage dialogs", () => {
   });
 });
 
-// The firearm's delete confirmation, worded for an accessory (§12).
+// The firearm's delete confirmation, worded for an accessory (006 contracts/ui-accessories.md §12).
 describe("AccessoryRecordPage delete confirmation", () => {
   it("asks 'Delete {name}?' in the firearm's words, and says to mark it disposed instead", async () => {
     const user = userEvent.setup();
@@ -474,9 +475,9 @@ describe("AccessoryRecordPage when the accessory can't be loaded", () => {
   });
 });
 
-// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §5, §6,
-// §12; US2-10, US2-12).
-describe("AccessoryRecordPage mounts (US2)", () => {
+// 006 US2 (006 contracts/ui-accessories.md §5, §6,
+// §12; 006 US2-10, US2-12).
+describe("AccessoryRecordPage mounts (006 US2)", () => {
   const upper: RecordLabel = {
     record: { kind: "accessory", id: 11 },
     make: "BCM",
@@ -544,7 +545,7 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     open.mockReset();
   });
 
-  it("shows the 'Mounted on' chain in the header facts, each record a link (§6, US2-12)", async () => {
+  it("shows the 'Mounted on' chain in the header facts, each record a link (006 contracts/ui-accessories.md §6, US2-12)", async () => {
     const user = userEvent.setup();
     renderWithNavigation();
 
@@ -580,7 +581,7 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     expect(plate().textContent).not.toMatch(/Mounted on/);
   });
 
-  it("puts the Mounted section after Notes and before Documents (§12)", async () => {
+  it("puts the Mounted section after Notes and before Documents (006 contracts/ui-accessories.md §12)", async () => {
     renderWithNavigation();
 
     await screen.findByRole("heading", { level: 1, name: NAME });
@@ -602,7 +603,7 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     expect(within(section).getByRole("button", { name: /^Unmount SureFire/ })).toBeInTheDocument();
   });
 
-  it("says 'Nothing mounted.' when nothing is mounted on it (US2-10)", async () => {
+  it("says 'Nothing mounted.' when nothing is mounted on it (006 US2-10)", async () => {
     getAccessory.mockResolvedValue(optic);
     renderWithNavigation();
 
@@ -625,7 +626,7 @@ describe("AccessoryRecordPage mounts (US2)", () => {
     expect(screen.queryByRole("region", { name: "Mounted" })).not.toBeInTheDocument();
   });
 
-  it("opens 'Add accessory' with Mounted on preset to this accessory, and changeable, from Mount > New accessory… (US2-4)", async () => {
+  it("opens 'Add accessory' with Mounted on preset to this accessory, and changeable, from Mount > New accessory… (006 US2-4)", async () => {
     const user = userEvent.setup();
     getAccessory.mockResolvedValue(optic);
     renderWithNavigation();
@@ -643,9 +644,9 @@ describe("AccessoryRecordPage mounts (US2)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 3 (contracts/ui-accessories.md §8,
+// 006 US3 (006 contracts/ui-accessories.md §8,
 // US3-5, US3-9): the delete confirmation names what stays behind, unmounted.
-describe("AccessoryRecordPage delete confirmation with mounted records (US3)", () => {
+describe("AccessoryRecordPage delete confirmation with mounted records (006 US3)", () => {
   const label = (id: number, make: string, model: string, typeName: string): RecordLabel => ({
     record: { kind: "accessory", id },
     make,
@@ -713,12 +714,12 @@ describe("AccessoryRecordPage delete confirmation with mounted records (US3)", (
   });
 });
 
-// specs/008-hardening-batch tasks.md T032 (US1-4), research.md §6: when a
+// 008 tasks.md T032 (008 US1-4), 008 research.md §6: when a
 // resumed draft for this accessory is waiting for its form and the accessory
 // can't be loaded, the page tells the scope (`scope.resumeFailed`), so the
 // pending changes dialog comes back. It tells it for nothing else.
 
-describe("AccessoryRecordPage: a resumed draft whose form can't open (US1-4)", () => {
+describe("AccessoryRecordPage: a resumed draft whose form can't open (008 US1-4)", () => {
   const draft = (targetId: number | null) => ({
     formVersion: 1,
     kind: "accessory" as const,

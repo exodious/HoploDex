@@ -1,6 +1,6 @@
-//! specs/006-accessory-links research.md §7: the shared record shapes
+//! 006 research.md §7: the shared record shapes
 //! (`RecordKind`, `RecordRef`, `RecordLabel` and the mount shapes), as
-//! contracts/tauri-commands.md "Shared shapes" gives them.
+//! 006 contracts/tauri-commands.md "Shared shapes" gives them.
 
 use serde::de::Deserializer;
 use serde::ser::{SerializeStruct, Serializer};
@@ -210,7 +210,7 @@ pub struct MountedEntry {
     pub depth: u32,
     /// The record's acquisition date (`YYYY-MM-DD`), so the dispose dialog can
     /// check the disposition date against it for each record it disposes of
-    /// (FR-014).
+    /// (006 FR-014).
     pub acquisition_date: Option<String>,
 }
 

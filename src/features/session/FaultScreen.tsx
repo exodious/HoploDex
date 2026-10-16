@@ -12,14 +12,14 @@ interface FaultBoundaryProps {
   fallback: ReactNode;
   /** The scope of the open database the boundary guards, for the collection's
    * boundary. If pending changes are being resumed when a render fails, the
-   * form can't open, so the scope is told (specs/008 research.md §6). */
+   * form can't open, so the scope is told (008 research.md §6). */
   scope?: SessionScope;
   children: ReactNode;
 }
 
 /** Catches a failure to render `children`, which would otherwise unmount the
  * whole window and leave it blank, with nothing listening for the window's
- * close button (research.md §17). */
+ * close button (003 research.md §17). */
 export class FaultBoundary extends Component<FaultBoundaryProps, { failed: boolean }> {
   state = { failed: false };
 

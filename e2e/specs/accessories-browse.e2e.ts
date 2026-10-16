@@ -12,11 +12,11 @@ import {
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/006-accessory-links' User Story 4 (US4-2):
- * the Accessories page, with an unmounted Sling added from the keyboard, is
- * grouped by Mounted on through the grouping menu, and shows the Rifle's group
- * and "Not mounted" last. The Rifle's group is the Optic mounted on it, which
- * the Mounting story (`us12-accessories-mounting`) made from the keyboard; here
+ * End-to-end coverage of 006 US4-2: the Accessories page, with an unmounted
+ * Sling added from the keyboard, is grouped by Mounted on through the
+ * grouping menu, and shows the Rifle's group and "Not mounted" last. The
+ * Rifle's group is the Optic mounted on it, which the Mounting story
+ * (`accessories-mounting`) made from the keyboard; here
  * `seedMountedRecords` makes it through the backend, with the rest of what that
  * story left (see `support/accessories.ts`). Real keys, as in that story.
  */
@@ -29,14 +29,14 @@ const groupHeadings = () =>
     ),
   );
 
-describe("User Story 4 - Browsing accessories by what they are mounted on (specs/006-accessory-links)", () => {
+describe("006 US4 - Browse, Group and Search Accessories (was us12-accessories-browse)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });
   before(async () => {
     await seedMountedRecords();
   });
-  it("groups the Accessories page by Mounted on from the keyboard: the Rifle's group, then Not mounted (US4-2)", async () => {
+  it("groups the Accessories page by Mounted on from the keyboard: the Rifle's group, then Not mounted (006 US4-2)", async () => {
     // Setup, not timed: an unmounted Sling, added from the Accessories page.
     await realClick("#record-name");
     await shiftTabToControl("Accessories");

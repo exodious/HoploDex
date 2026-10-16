@@ -20,9 +20,9 @@ import { render as renderBase, setResumedDraft } from "../../test/sessionScope";
 
 beforeEach(resetServiceMocks);
 
-// specs/004-cartridges-action-types User Story 1: the cartridge, and the
-// caliber it fills in (contracts/ui-entry.md §3, research.md §8).
-describe("FirearmForm cartridge and caliber (US1)", () => {
+// 004 US1: the cartridge, and the
+// caliber it fills in (004 contracts/ui-entry.md §3, research.md §8).
+describe("FirearmForm cartridge and caliber (004 US1)", () => {
   const cartridgeField = () => screen.getByLabelText("Cartridge");
   const caliberField = () => screen.getByLabelText("Caliber");
 
@@ -69,7 +69,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     expect(serial.closest(".hd-field")).toHaveClass("hd-field--half");
   });
 
-  it("fills Caliber from a built-in cartridge when Cartridge is left (US1-1)", async () => {
+  it("fills Caliber from a built-in cartridge when Cartridge is left (004 US1-1)", async () => {
     const user = userEvent.setup();
     render(<FirearmForm onSubmit={vi.fn()} />);
 
@@ -82,7 +82,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     expect(screen.queryByText("Guess")).not.toBeInTheDocument();
   });
 
-  it("marks a guessed caliber with a Guess tag described by its hint (US1-2)", async () => {
+  it("marks a guessed caliber with a Guess tag described by its hint (004 US1-2)", async () => {
     const user = userEvent.setup();
     render(<FirearmForm onSubmit={vi.fn()} />);
 
@@ -96,7 +96,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     );
   });
 
-  it("empties Caliber and asks for it when no bore can be read (US1-4)", async () => {
+  it("empties Caliber and asks for it when no bore can be read (004 US1-4)", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<FirearmForm onSubmit={onSubmit} />);
@@ -122,7 +122,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("keeps a caliber the user typed when the cartridge changes again (US1-3)", async () => {
+  it("keeps a caliber the user typed when the cartridge changes again (004 US1-3)", async () => {
     const user = userEvent.setup();
     render(<FirearmForm onSubmit={vi.fn()} />);
 
@@ -133,7 +133,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     await enterCartridge(user, "9x19mm Parabellum");
 
     // The cartridge settled twice; the caliber typed in between settles too
-    // (US2), and its answer changes nothing.
+    // (004 US2), and its answer changes nothing.
     await waitFor(() =>
       expect(settleEntry.mock.calls.filter(([field]) => field === "cartridge")).toHaveLength(2),
     );
@@ -141,7 +141,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     expect(screen.queryByText("Guess")).not.toBeInTheDocument();
   });
 
-  it("offers the new cartridge's caliber on a saved firearm instead of replacing it (US1-7)", async () => {
+  it("offers the new cartridge's caliber on a saved firearm instead of replacing it (004 US1-7)", async () => {
     const user = userEvent.setup();
     render(<FirearmForm initialValues={saved} onSubmit={vi.fn()} />);
 
@@ -171,7 +171,7 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
     ["Model", "Model"],
     ["Cartridge", "Cartridge"],
     ["Caliber", "Caliber"],
-  ])("shows FR-015's rules for %s when it is left, without truncating", async (label, name) => {
+  ])("shows 004 FR-015's rules for %s when it is left, without truncating", async (label, name) => {
     render(<FirearmForm onSubmit={vi.fn()} />);
     const field = screen.getByLabelText(label);
 
@@ -222,10 +222,10 @@ describe("FirearmForm cartridge and caliber (US1)", () => {
   });
 });
 
-describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
+describe("FirearmForm drafts of the caliber state (004 research.md §8)", () => {
   afterEach(() => setResumedDraft(null));
 
-  // specs/006-accessory-links research.md §19: the Mounted on choice raised it
+  // 006 research.md §19: the Mounted on choice raised it
   // from 3 to 4.
   it("is version 4", () => {
     expect(FORM_VERSION).toBe(4);
@@ -301,9 +301,9 @@ describe("FirearmForm drafts of the caliber state (research.md §8)", () => {
   });
 });
 
-// specs/004-cartridges-action-types User Story 2: the four entry fields
-// suggest and settle (contracts/ui-entry.md §1–§2).
-describe("FirearmForm suggestions and snapping (US2)", () => {
+// 004 US2: the four entry fields
+// suggest and settle (004 contracts/ui-entry.md §1–§2).
+describe("FirearmForm suggestions and snapping (004 US2)", () => {
   const field = (label: string) => screen.getByLabelText(label);
   const snappedMake = {
     value: "Smith & Wesson",
@@ -362,7 +362,7 @@ describe("FirearmForm suggestions and snapping (US2)", () => {
     expect(suggestEntries).toHaveBeenLastCalledWith("cartridge", "", undefined);
   });
 
-  // 004 US2 Scenario 4
+  // 004 US2-4
   it("lists the suggestions with their markers", async () => {
     suggestEntries.mockResolvedValue([
       { value: "9x19mm Parabellum", inCatalog: true, useCount: 2, caliber: "9mm" },
@@ -437,7 +437,7 @@ describe("FirearmForm suggestions and snapping (US2)", () => {
     expect(noteText("Caliber")).toContain("Changed to the built-in spelling “9mm”.");
   });
 
-  it("does not settle an untouched field, or one typed back to its saved value (FR-014)", async () => {
+  it("does not settle an untouched field, or one typed back to its saved value (004 FR-014)", async () => {
     const user = userEvent.setup();
     render(<FirearmForm initialValues={saved} onSubmit={vi.fn()} />);
 
@@ -553,15 +553,15 @@ describe("FirearmForm suggestions and snapping (US2)", () => {
   });
 });
 
-// specs/004-cartridges-action-types US3, contracts/ui-entry.md §4: the
+// 004 US3, contracts/ui-entry.md §4: the
 // Action choice, filtered by the selected type.
-describe("FirearmForm action (US3)", () => {
+describe("FirearmForm action (004 US3)", () => {
   // In list order, with 005's "Automatic or select-fire" (id 13) seventh.
   const ACTIONS = ACTION_TYPES;
   const NAMES = ACTIONS.map((action) => action.name);
   const ids = (...except: number[]) =>
     ACTIONS.map((action) => action.id).filter((id) => !except.includes(id));
-  // FR-018: Handgun (1) has no Pump action, Falling block or Inline
+  // 004 FR-018: Handgun (1) has no Pump action, Falling block or Inline
   // muzzleloader; Rifle (2) has all; Shotgun (3) has no Rolling block; Other
   // (4) maps none, which allows all.
   const collection = {

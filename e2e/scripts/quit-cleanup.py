@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks FR-035 / SC-010 on the real app: a decrypted copy of an opened
+"""Checks 001 FR-035 / SC-010 on the real app: a decrypted copy of an opened
 document must be gone once the app exits, however it is asked to quit.
 
 The WebDriver E2E suite doesn't check this. Its harness kills the app with

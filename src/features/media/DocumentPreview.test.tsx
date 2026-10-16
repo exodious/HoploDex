@@ -8,8 +8,8 @@ import { formatDate } from "../../lib/dates";
 import { DocumentPreview } from "./DocumentPreview";
 import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 
-// specs/007-document-preview/contracts/ui-document-preview.md §2, §3, §7, §8,
-// tasks.md T038. The viewer is
+// 007 contracts/ui-document-preview.md §2, §3, §7, §8,
+// 007 T038. The viewer is
 //
 //   <DocumentPreview documents index documentTypes onIndexChange onClose onDelete
 //                    onPdfEnded? />
@@ -20,11 +20,11 @@ import type { DocumentSummary, DocumentType, PreviewInfo } from "./types";
 // list owns the ConfirmDialog and what happens after (DocumentList.test.tsx).
 // `onPdfEnded(reason)` lets the list reload after `copyCaught` and `noViewer`.
 // The backend is pinned at the IPC boundary (`invoke`, `listen`), by the
-// command names and argument objects of contracts/tauri-commands.md. The
+// command names and argument objects of 007 contracts/tauri-commands.md. The
 // scroll area's size is read from the element (jsdom has none, so it is
 // stubbed below).
 //
-// "Open in another app…" is User Story 2's (tasks.md T085, the last describe):
+// "Open in another app…" is 007 US2's (007 T085, the last describe):
 // the footer's button and the states' primary action call
 // `open_document` with { id } and answer { opened: boolean }. The viewer hides
 // the PDF surface (`set_preview_bounds` with visible: false) while it waits,
@@ -97,7 +97,8 @@ const huge = doc(8, "Plan sheet.tif", "image/tiff", "tiff");
 const big = doc(9, "Range log.txt", "text/plain", "text");
 const documents = [receipt, scan, notes, rounds, bill];
 const ADDED = formatDate("2026-03-14");
-// ui contract §3 (amended 2026-10-07): the sentence repeats every reason `classify` refuses content.
+// 007 contracts/ui-document-preview.md §3 (amended 2026-10-07): the sentence repeats
+// every reason `classify` refuses content.
 const REFUSED_TAIL =
   ", or it holds macros, scripts, web page code, embedded objects or links that load outside content.";
 
@@ -261,7 +262,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe("DocumentPreview: the dialog (contract §2, §8)", () => {
+describe("DocumentPreview: the dialog (007 contracts/ui-document-preview.md §2, §8)", () => {
   it("is an xl dialog titled with the name, described by kind, date and position", async () => {
     await openViewer();
 
@@ -313,7 +314,7 @@ describe("DocumentPreview: the dialog (contract §2, §8)", () => {
   });
 });
 
-describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
+describe("DocumentPreview: closing and focus (007 US1-6, US1-7)", () => {
   async function closeBy(
     how: "escape" | "control" | "event",
     user: ReturnType<typeof userEvent.setup>,
@@ -350,7 +351,7 @@ describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
     expect(calls("close_preview")).toEqual([]);
   });
 
-  // 007 US1 Scenario 6 (FR-007)
+  // 007 US1-6 (007 FR-007)
   it("moves to the next and previous document of the record, with the buttons and with the arrow keys", async () => {
     const { user } = await openViewer();
     await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
@@ -377,7 +378,7 @@ describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
     expect(titleOf()).toBe("Purchase receipt.pdf");
   });
 
-  // 007 US1 Scenario 6 (FR-007)
+  // 007 US1-6 (007 FR-007)
   it("stops at the last document", async () => {
     await openViewer({ start: 4 });
     await screen.findByRole("dialog", { name: "Bill of sale.docx" });
@@ -387,7 +388,7 @@ describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
   });
 
   it("leaves the next preview to open_preview: moving on closes nothing itself", async () => {
-    // research.md §4: a PDF followed by a PDF keeps the surface, so only the
+    // 007 research.md §4: a PDF followed by a PDF keeps the surface, so only the
     // backend's open_preview replaces a preview; close_preview is for the end.
     const { user } = await openViewer();
     await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
@@ -409,7 +410,7 @@ describe("DocumentPreview: closing and focus (US1-6, US1-7)", () => {
   });
 });
 
-describe("DocumentPreview: a PDF (contract §2, §7)", () => {
+describe("DocumentPreview: a PDF (007 contracts/ui-document-preview.md §2, §7)", () => {
   it("shows the surface's placeholder, and F6 gives the surface the focus", async () => {
     const { user } = await openViewer();
     await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
@@ -442,7 +443,7 @@ describe("DocumentPreview: a PDF (contract §2, §7)", () => {
   });
 });
 
-describe("DocumentPreview: a multi-page TIFF (contract §2, §3, §7, §8)", () => {
+describe("DocumentPreview: a multi-page TIFF (007 contracts/ui-document-preview.md §2, §3, §7, §8)", () => {
   const TOOLBAR = [
     "First page",
     "Previous page",
@@ -583,7 +584,7 @@ describe("DocumentPreview: a multi-page TIFF (contract §2, §3, §7, §8)", () 
   });
 });
 
-describe("DocumentPreview: a single-page TIFF (contract §2)", () => {
+describe("DocumentPreview: a single-page TIFF (007 contracts/ui-document-preview.md §2)", () => {
   it("has zoom out, percent, zoom in, fit and actual size, and an image with just the name", async () => {
     const { user } = await openViewer({ docs: [single], start: 0 });
 
@@ -616,7 +617,7 @@ describe("DocumentPreview: a single-page TIFF (contract §2)", () => {
   });
 });
 
-describe("DocumentPreview: zoom buttons at a fit outside 50-400% (research.md §14, tasks.md T148)", () => {
+describe("DocumentPreview: zoom buttons at a fit outside 50-400% (007 research.md §14, 007 T148)", () => {
   const zoomIn = () => within(viewer()).getByRole("button", { name: "Zoom in" });
   const zoomOut = () => within(viewer()).getByRole("button", { name: "Zoom out" });
   const percent = () => within(viewer()).getByRole("button", { name: /\d+%/ });
@@ -662,7 +663,7 @@ describe("DocumentPreview: zoom buttons at a fit outside 50-400% (research.md §
   });
 });
 
-describe("DocumentPreview: text (contract §2)", () => {
+describe("DocumentPreview: text (007 contracts/ui-document-preview.md §2)", () => {
   it("shows text and CSV as a text child of a pre, with nothing made of it", async () => {
     await openViewer({ start: 3 });
 
@@ -680,7 +681,7 @@ describe("DocumentPreview: text (contract §2)", () => {
   });
 });
 
-describe("DocumentPreview: a text document over 1 MB is shown in chunks (research.md §12, tasks.md T154)", () => {
+describe("DocumentPreview: a text document over 1 MB is shown in chunks (007 research.md §12, 007 T154)", () => {
   // The chunk is 1 MiB of UTF-16 code units. The emoji sits across the first chunk's end,
   // so the cut has to move back by one to keep its two halves together.
   const CHUNK = 1 << 20;
@@ -751,7 +752,7 @@ describe("DocumentPreview: a text document over 1 MB is shown in chunks (researc
   });
 });
 
-describe("DocumentPreview: states (contract §3)", () => {
+describe("DocumentPreview: states (007 contracts/ui-document-preview.md §3)", () => {
   const cases: [string, () => void, string | RegExp][] = [
     [
       "PREVIEW_UNSUPPORTED",
@@ -820,8 +821,8 @@ describe("DocumentPreview: states (contract §3)", () => {
     },
   );
 
-  // ui contract §3: the kind reads as a word inside the sentence, but acronyms keep
-  // their capitals.
+  // 007 contracts/ui-document-preview.md §3: the kind reads as a word inside the
+  // sentence, but acronyms keep their capitals.
   it.each([
     [0, "Purchase receipt.pdf", "a PDF"],
     [1, "Appraisal scan.tif", "a TIFF"],
@@ -875,7 +876,7 @@ describe("DocumentPreview: states (contract §3)", () => {
     );
   });
 
-  it("DOCUMENT_CONTENT_MISMATCH offers no Open in another app… (FR-017)", async () => {
+  it("DOCUMENT_CONTENT_MISMATCH offers no Open in another app… (007 FR-017)", async () => {
     installBackend({
       open_preview: () => {
         throw failure("DOCUMENT_CONTENT_MISMATCH", "x");
@@ -891,7 +892,7 @@ describe("DocumentPreview: states (contract §3)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("DOCUMENT_CONTENT_MISMATCH for a kept document with an embedded object or outside link says every reason and offers no Open in another app… (FR-017, amended 2026-10-07)", async () => {
+  it("DOCUMENT_CONTENT_MISMATCH for a kept document with an embedded object or outside link says every reason and offers no Open in another app… (007 FR-017, amended 2026-10-07)", async () => {
     installBackend({
       open_preview: () => {
         throw failure(
@@ -951,9 +952,9 @@ describe("DocumentPreview: states (contract §3)", () => {
   });
 });
 
-// --- User Story 2 (T085) ------------------------------------------------------
+// --- 007 US2 (007 T085) -------------------------------------------------------
 
-describe("DocumentPreview: Open in another app… (contract §2, §3)", () => {
+describe("DocumentPreview: Open in another app… (007 contracts/ui-document-preview.md §2, §3)", () => {
   const OPEN = "Open in another app…";
 
   /** The viewer inside a ToastProvider, so that where a result goes (a toast, or
@@ -1006,7 +1007,7 @@ describe("DocumentPreview: Open in another app… (contract §2, §3)", () => {
     });
 
     // 007 FR-006
-    it("stays beside a PDF the surface can't show, which is the viewer's own message (FR-006)", async () => {
+    it("stays beside a PDF the surface can't show, which is the viewer's own message (007 FR-006)", async () => {
       await openWithToasts();
       await screen.findByRole("region", { name: "Purchase receipt.pdf, PDF" });
 
@@ -1173,7 +1174,7 @@ describe("DocumentPreview: Open in another app… (contract §2, §3)", () => {
       },
     );
 
-    it("DOCUMENT_CONTENT_MISMATCH offers it nowhere, footer included (US2-4, FR-017)", async () => {
+    it("DOCUMENT_CONTENT_MISMATCH offers it nowhere, footer included (007 US2-7, FR-017)", async () => {
       refuse("DOCUMENT_CONTENT_MISMATCH");
       await openWithToasts({ start: 4 });
 

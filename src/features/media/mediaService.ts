@@ -89,7 +89,7 @@ export function addDocumentFromPath(
 }
 
 /** Hands the document to the OS default app for its type, after the native
- * confirmation (FR-010; contracts/tauri-commands.md `open_document`).
+ * confirmation (007 FR-010; 007 contracts/tauri-commands.md `open_document`).
  * `opened` is false when the user declined the confirmation. */
 export function openDocument(scope: SessionScope, id: number): Promise<{ opened: boolean }> {
   return scope.invoke<{ opened: boolean }>("open_document", { id });
@@ -104,7 +104,7 @@ export function deleteDocument(
 }
 
 /** Opens the in-app preview of a document; replaces any preview already open
- * (contracts/tauri-commands.md `open_preview`). */
+ * (007 contracts/tauri-commands.md `open_preview`). */
 export function openPreview(scope: SessionScope, documentId: number): Promise<PreviewInfo> {
   return scope.invoke<PreviewInfo>("open_preview", { documentId });
 }
@@ -173,7 +173,7 @@ export function onPreviewFocusChrome(previewId: number, handler: () => void): ()
   return onPreviewEvent("preview:focus-chrome", previewId, () => handler());
 }
 
-/** This computer's "Open documents" setting (FR-012; contracts/tauri-commands.md
+/** This computer's "Open documents" setting (007 FR-011; 007 contracts/tauri-commands.md
  * `get_document_opening`). It needs no open database. */
 export function getDocumentOpening(): Promise<DocumentOpening> {
   return invoke<DocumentOpening>("get_document_opening");

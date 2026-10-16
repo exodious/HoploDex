@@ -11,7 +11,7 @@ function Harness({ initial = "" }: { initial?: string }) {
 
 const field = () => screen.getByLabelText("Barrel length") as HTMLInputElement;
 
-describe("DecimalField (FR-039)", () => {
+describe("DecimalField (001 FR-039)", () => {
   it("accepts digits and a single decimal point, ignoring letters", async () => {
     const user = userEvent.setup();
     render(<Harness />);

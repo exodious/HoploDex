@@ -1,6 +1,6 @@
 //! Changing a database's backup location with backups already at the old
-//! one: asking first, then leaving, deleting or moving them (FR-026,
-//! US3-4a, US3-4b, SC-007; research.md §22). Real backups made by earlier
+//! one: asking first, then leaving, deleting or moving them (003 FR-026,
+//! US3-4a, US3-4b, SC-007; 003 research.md §22). Real backups made by earlier
 //! closes, in temp directories, on a manual clock, with machine settings in
 //! a temp config directory.
 
@@ -218,7 +218,7 @@ fn partial_files(folder: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-// --- Asking (FR-026, US3-4a) -------------------------------------------------
+// --- Asking (003 FR-026, US3-4a) ---------------------------------------------
 
 #[test]
 fn a_changed_location_with_backups_at_the_old_one_asks_first_and_saves_nothing() {
@@ -267,9 +267,9 @@ fn the_same_folder_named_another_way_is_not_a_change() {
     assert_eq!(world.listed().len(), 3);
 }
 
-// --- Leave (US3-4a) ---------------------------------------------------------
+// --- Leave (003 US3-4a) -----------------------------------------------------
 
-// 003 US3 Scenario 4a
+// 003 US3-4a
 #[test]
 fn leaving_them_saves_and_they_are_no_longer_the_databases_backups() {
     let world = World::new();
@@ -300,7 +300,7 @@ fn leaving_them_saves_and_they_are_no_longer_the_databases_backups() {
     assert_eq!(world.listed().len(), 3);
 }
 
-// --- Delete (FR-029) ---------------------------------------------------------
+// --- Delete (003 FR-029) -----------------------------------------------------
 
 #[test]
 fn deleting_them_removes_only_this_databases_backups_at_the_old_folder() {
@@ -351,7 +351,7 @@ fn a_backup_that_cannot_be_deleted_keeps_the_old_location() {
     assert_eq!(world.listed().len(), 1, "the one left is still the database's");
 }
 
-// --- Move (FR-026, research.md §22) -----------------------------------------
+// --- Move (003 FR-026, research.md §22) -------------------------------------
 
 #[test]
 fn moving_them_on_one_drive_takes_every_backup_byte_for_byte() {
@@ -585,12 +585,16 @@ fn a_move_into_a_folder_already_holding_backups_rotates_nothing_until_the_next_b
     let saved = world.update_keeping(3, custom(&new), Some(ExistingBackupsChoice::Move)).unwrap();
 
     assert_eq!(outcome(&saved)["movedCount"], json!(3));
-    assert_eq!(world.backups_in(&new).len(), 5, "more than kept, until the next backup (SC-007)");
+    assert_eq!(
+        world.backups_in(&new).len(),
+        5,
+        "more than kept, until the next backup (003 SC-007)"
+    );
     world.backup_now();
     assert_eq!(world.backups_in(&new).len(), 3);
 }
 
-// --- An unreadable old location (US3-4b) -------------------------------------
+// --- An unreadable old location (003 US3-4b) ---------------------------------
 
 #[test]
 fn an_unreachable_old_custom_folder_allows_only_leaving_its_backups() {
@@ -648,7 +652,7 @@ fn the_cached_folder_follows_a_save_that_does_not_change_the_location() {
     assert_eq!(world.cached_folder(), Some(world.default_folder()));
 }
 
-// --- A move cut short by a crash (research.md §22) -------------------------
+// --- A move cut short by a crash (003 research.md §22) ---------------------
 
 #[test]
 fn a_move_cut_short_by_a_crash_is_swept_at_the_next_launch() {
