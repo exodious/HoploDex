@@ -553,7 +553,7 @@ for the tests with unwinding and for the binary with the profile's
 `panic = "abort"`, and the two then fail to link.
 
 The import has a release-only test of its own, `import_largest_test.rs`
-(specs/008-hardening-batch research.md §9, SC-003). It writes the largest
+(008 research.md §9, SC-003). It writes the largest
 export the app can make, 10,000 firearms and 10,000 accessories with every
 text field at its maximum, as one workbook and as two CSV files, then reads
 each through `import_reader::read_files` and imports it into a fresh database.
@@ -590,8 +590,9 @@ Spec files run in parallel, each in a WebdriverIO worker of its own: up to
 `HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 8. Each
 worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
 threads, which is why `scripts/dev-container.sh` raises the container's
-process limit. A run takes at least as long as its longest spec file, so keep
-each file to one user story or so. WebdriverIO hands spec files to workers in
+process limit. A run takes at least as long as its longest spec file, and
+each file has a start-up cost of its own; "E2E files" below says how tests are
+grouped into files. WebdriverIO hands spec files to workers in
 the order `specs` lists them, so `wdio.conf.ts` names the longest files first
 (`LONGEST_FIRST`) and then globs the rest; otherwise file name order can leave
 a long file to start last and run alone. When a spec file is split, renamed or
@@ -711,6 +712,65 @@ check, just as one with the WebDriver server does.
 WebDriver drives only the main web view. What goes on inside the PDF surface,
 a child web view, is the PDF surface check's.
 
+### E2E files
+
+An E2E file is named for the area of the app whose setup its tests share
+(`locking.e2e.ts`, `accessories-mounting.e2e.ts`), with no spec or story
+number in it: one file can hold journeys from several stories, and from
+several specs. Each story's tests are one top-level `describe()` titled
+`"<spec> US<n> - <the story's heading in spec.md>"`, such as
+`describe("006 US2 - Mount an Item on a Firearm", …)`, and a regression test
+that belongs to no story is `describe("Issue #<n> - …")`. The citation check
+below fails when a title names a story its spec doesn't have, or doesn't quote
+the story's heading exactly. To find a story's tests,
+`grep -rl '"006 US2 -' e2e/specs`. A title that ends in `(was us9-locking)`
+gives the file's name before #121, when a `usN` number, unrelated to the
+specs' story numbers, began every name.
+
+A new journey goes into a new `describe()` in the existing file whose setup
+it shares (the same seed, the same databases, the same relaunch or idle-lock
+setting in `wdio.conf.ts`), whatever spec it belongs to. Each file costs
+about 2.2 s to start and 2.5 s to set up its database or seed (#77), and at
+2 workers, the macOS and Windows VMs, a split costs more than it saves. Start
+a new file only when a journey shares setup with no existing file, or when
+the per-spec times (issue #77's "Measuring") show that one file has grown long
+enough to hold the run up. Then split it along its `describe()` blocks, name
+each part for what it shares, move shared helpers into `e2e/support/` (as
+`accessories.ts` and `documentPreview.ts` hold the `accessories-*` and
+`document-*` files' helpers), and update `LONGEST_FIRST`.
+
+### Spec citations
+
+Spec Kit numbers requirement, success-criterion, story, scenario and task IDs
+within each spec, and each spec has its own `research.md`, `plan.md`,
+`data-model.md`, `quickstart.md`, `tasks.md` and contracts. So outside a
+spec's own folder a citation names its spec first (#121):
+
+| Cites | Form |
+|---|---|
+| A requirement or success criterion | `003 FR-040`, `006 SC-002` |
+| A user story | `001 US2` |
+| An acceptance scenario (story 3, scenario 2) | `007 US3-2`, `003 US3-4a` |
+| A task | `008 T050` |
+| A document, or one of its sections | `007 research.md §5`, `006 contracts/ui-accessories.md §3`, `003 data-model.md` |
+
+One spec number covers the list that follows it, joined by commas, "and",
+"or", "to" or a dash: `(006 FR-001, FR-002 and SC-003)`,
+`003 research.md §1, §11`, `008 T005-T008`. A citation of another spec within
+the list takes its own number: `(006 FR-006; 001 FR-004)`. A path into a spec
+folder (`specs/007-document-preview/research.md`) names its spec already.
+"User Story 2" and "Scenario 3" are always written `001 US2` and `001 US1-3`.
+Inside `specs/NNN-name/`, bare IDs mean that spec, as Spec Kit writes them.
+
+`scripts/citations.mjs` checks this in `src/`, `src-tauri/`, `e2e/`,
+`scripts/` and `tools/` (not `src-tauri/vendor/`), and that each cited
+requirement, story, scenario, task, document and section exists in the spec
+it names. It also checks the E2E `describe()` titles above. `npm test` runs it
+(`scripts/citations.test.ts`); to check a few files while writing, run
+`node scripts/citations.mjs <file> …`. Passing it means a citation names a
+spec that has that ID, not that it is the right spec: FR-001 to FR-017 exist
+in every one, so check what the cited text says.
+
 ### PDF surface check
 
 The PDF surface (specs/007-document-preview/research.md §4 and §23) is a web
@@ -755,9 +815,9 @@ PDF surface check uses too). The example opens a main window with the app's own
 so it judges the native layer alone. It right-clicks a blank area, a row, a
 button, an image, a text field and a selection and logs every item each native
 menu offered (the filter's own log, `apply(.., log_items: true)`), presses every
-key FR-012 names and the mouse's back and forward buttons with text typed in a
+key 008 FR-012 names and the mouse's back and forward buttons with text typed in a
 field, and on macOS presses ⌃⌘D on a selection. It fails (exit 4) if a menu
-offered an item outside FR-011's list or appeared where none belongs, a Look Up
+offered an item outside 008 FR-011's list or appeared where none belongs, a Look Up
 panel opened, or the page reloaded or navigated or lost the typed text. Run it
 on every OS before a pull request that touches `window_controls/` or the
 browser controls, and whenever the web view engine is updated:
@@ -1193,7 +1253,7 @@ scripts/human-testing.sh --reset --pending-from 1.2.0   # reseed, with pending c
 ```
 
 `--release` is for trying what a development build doesn't have: the browser
-controls (no reload, no Inspect Element, a trimmed right-click menu; specs/008
+controls (no reload, no Inspect Element, a trimmed right-click menu; 008
 research.md §12-§15) are installed only in release and E2E builds. It runs
 `npm run build` and `cargo build --profile e2e --features custom-protocol,e2e`,
 as `npm run test:e2e` does, and launches that binary with the
@@ -1211,7 +1271,7 @@ are then recorded as kept by that version of HoploDex, in a form this build
 can't resume (a draft form version it doesn't know, and `last_saved_version`
 set to the version you gave). Open "Shared collection" to see the dialog that
 names that version and offers only **Close the database** and **Discard
-changes** (specs/008-hardening-batch quickstart.md, US4). Without it, the
+changes** (008 quickstart.md, US4). Without it, the
 pending changes are this build's and resume.
 
 The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own

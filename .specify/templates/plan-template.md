@@ -50,7 +50,11 @@ each scenario at the cheapest level that can show it, and say why wherever the
 plan departs from these defaults.*
 
 - **E2E, one journey per user story**: the story's main path through the real
-  app, keyboard-first where the story calls for it.
+  app, keyboard-first where the story calls for it, as a
+  `describe("[###] US1 - [the story's heading]")` in the existing E2E file
+  whose setup it shares, whatever spec that file began with. Every file adds
+  start-up time on every OS, so a new file needs a reason here (DEVELOPMENT.md,
+  "E2E files").
 - **E2E, one test per error mechanism per form or dialog**, not one per rule:
   a field error (the backend's `fieldErrors` land on the right field), an
   overridable warning (the `confirmedWarnings` resend), and a refusal whose
@@ -70,12 +74,14 @@ plan departs from these defaults.*
   a cheaper level.
 - **Everything else** (validation, duplicates, rounding, dates and other edge
   cases): Rust `ops` integration tests on a real database for persistence and
-  rules, Vitest for UI behaviour. Cite the scenario (`US1 Scenario 9`) in the
-  test's name or a comment, so each scenario's test can be found.
+  rules, Vitest for UI behaviour. Cite the scenario with this feature's number
+  (`[###] US1-9`: story 1, scenario 9) in the test's name or a comment, so each
+  scenario's test can be found. Every citation outside `specs/` names its spec
+  (`[###] FR-004`, `[###] research.md §3`; DEVELOPMENT.md, "Spec citations").
 
 | Story | E2E journey | Other E2E (error mechanism, real app, security) | Scenarios tested in Rust or Vitest |
 |-------|-------------|-------------------------------------------------|------------------------------------|
-| [US1] | [path walked] | [each test and why it needs the real app] | [scenario IDs → level] |
+| [US1] | [path walked; the E2E file it joins] | [each test and why it needs the real app] | [scenario IDs → level] |
 
 ## Project Structure
 
