@@ -445,6 +445,27 @@
   .hd-table .hd-col--narrow-hidden {
     display: none;
   }
+
+  /* The columns keep their percentages (`table-layout: fixed`), so at the
+     window's 800px minimum the Coverage cell is narrower than its pill, and
+     `contain: paint` cut the pill off at the table's edge (#108). Tighter
+     cell padding gives it room, and a pill that still doesn't fit wraps at
+     its hyphen rather than running out of the table. */
+  .hd-table th,
+  .hd-table td,
+  .hd-table .hd-group-row td {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .hd-table .hd-badge {
+    height: auto;
+    min-height: 22px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    line-height: 1.25;
+    white-space: normal;
+  }
 }
 
 /* The nickname beside a firearm's make and model (FR-031): quieter than the
