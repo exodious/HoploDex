@@ -114,7 +114,7 @@ describe("A screen that fails to render", () => {
     expect(sessionService.quitApplication).toHaveBeenCalledTimes(2);
   });
 
-  // specs/008-hardening-batch tasks.md T040 (US1-4), research.md §6: a render
+  // 008 tasks.md T040 (008 US1-4), 008 research.md §6: a render
   // that fails while pending changes are being resumed means their form can't
   // open, so the scope is told; otherwise nothing is.
   function scopeResuming(resuming: boolean) {

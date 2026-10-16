@@ -1,5 +1,5 @@
 //! Integration tests for `services::valuation`'s always-current value
-//! summary (spec.md US3 Acceptance Scenarios 5-6, 11, 13; FR-015/036), run
+//! summary (001 US3-5, US3-6, US3-11, US3-13, FR-015/FR-036), run
 //! against a real temporary SQLCipher database.
 
 use crate::support;
@@ -51,7 +51,7 @@ fn scenario_5_total_updates_immediately_after_every_mutation() {
     assert_eq!(
         get_value_summary(&db.conn).unwrap().collection_total,
         30000,
-        "disposed firearms are excluded from the active total (FR-025)"
+        "disposed firearms are excluded from the active total (001 FR-025)"
     );
 
     firearm_ops::delete_firearm(&db.conn, b.id, true).unwrap();
@@ -180,7 +180,7 @@ fn disposed_firearms_leave_every_part_of_the_summary() {
     assert!(summary.uninsured.is_empty());
 }
 
-// --- Accessories (specs/006-accessory-links US1-7, US1-8, FR-008, FR-009, SC-005) --
+// --- Accessories (006 US1-7, US1-8, FR-008, FR-009, SC-005) --
 //
 // Accessory inputs are built from the IPC shape (`AccessoryInput`'s camelCase
 // JSON), so these tests do not depend on how the struct is spelled.

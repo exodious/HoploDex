@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::commands::CommandError;
 use crate::models::record::RecordRef;
 
-/// Small cached thumbnail dimension (research.md §4: "~200px JPEG") — list/
+/// Small cached thumbnail dimension (001 research.md §4: "~200px JPEG") — list/
 /// tile browse views read only this, never the full-resolution original,
 /// so browse performance is independent of photo file size (Principle IV).
 const THUMBNAIL_MAX_DIMENSION: u32 = 200;
@@ -28,7 +28,7 @@ pub fn validate_photo_mime_type(mime_type: &str) -> Result<(), CommandError> {
 
 /// Decodes `original_bytes` and re-encodes a small JPEG thumbnail capped at
 /// `THUMBNAIL_MAX_DIMENSION` on its longest side, generated once at insert
-/// time (research.md §4) rather than on every browse render.
+/// time (001 research.md §4) rather than on every browse render.
 pub fn generate_thumbnail(original_bytes: &[u8]) -> Result<Vec<u8>, CommandError> {
     let image = ImageReader::new(Cursor::new(original_bytes))
         .with_guessed_format()
@@ -46,7 +46,7 @@ pub fn generate_thumbnail(original_bytes: &[u8]) -> Result<Vec<u8>, CommandError
 }
 
 /// Full `Photo` row, including `original_bytes` — used internally for
-/// export (FR-018) and thumbnail regeneration, never serialized directly to
+/// export (001 FR-018) and thumbnail regeneration, never serialized directly to
 /// the frontend (see `PhotoSummary`, which omits the potentially large
 /// original bytes).
 #[derive(Debug, Clone)]

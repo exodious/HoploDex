@@ -70,7 +70,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("ClosingScreen (contracts/ui-databases.md §5, SC-005)", () => {
+describe("ClosingScreen (003 contracts/ui-databases.md §5, SC-005)", () => {
   it("replaces the collection with the closing screen when a close starts", async () => {
     vi.mocked(sessionService.getDatabaseStatus).mockResolvedValue(status);
     vi.mocked(databasesService.getChooserState).mockReset();

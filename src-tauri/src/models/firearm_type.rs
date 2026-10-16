@@ -1,6 +1,6 @@
-//! specs/005-regulated-item-types FR-001/FR-003: the fixed firearm types and
+//! 005 FR-001/FR-003: the fixed firearm types and
 //! the fields each one omits, as `list_firearm_types` returns them
-//! (contracts/tauri-commands.md; research.md §3).
+//! (005 contracts/tauri-commands.md; 005 research.md §3).
 
 use serde::Serialize;
 
@@ -11,13 +11,13 @@ pub struct FirearmTypeInfo {
     pub name: String,
     pub generic_thumbnail_key: String,
     /// `false` = the type has no action: the form doesn't offer it and no
-    /// firearm of the type may hold one (FR-003).
+    /// firearm of the type may hold one (005 FR-003).
     pub action_type_applies: bool,
     pub barrel_length_applies: bool,
     pub capacity_applies: bool,
     /// `false` = the caliber is never worked out from the cartridge, on the
-    /// form or on import: a Suppressor's caliber is its bore (FR-002;
-    /// research.md §15).
+    /// form or on import: a Suppressor's caliber is its bore (005 FR-002;
+    /// 005 research.md §15).
     pub caliber_from_cartridge: bool,
 }
 

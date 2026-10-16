@@ -1,9 +1,9 @@
-//! Preview commands (contracts/tauri-commands.md "Preview commands"). Each
+//! Preview commands (007 contracts/tauri-commands.md "Preview commands"). Each
 //! is thin: it goes through the `Session`, then calls the matching function
 //! in `ops`.
 //!
 //! The preview lives in the open database (`OpenDatabase::preview`), so it
-//! ends with the database on every path (research.md §20). These commands
+//! ends with the database on every path (007 research.md §20). These commands
 //! need no write, so unlike the collection's they aren't held up by pending
 //! changes; they refuse with `DATABASE_CLOSED` when nothing is open.
 
@@ -32,7 +32,7 @@ use crate::session::scoped::ScopedSession;
 use crate::session::{OpenDatabase, Session, SessionId};
 
 /// The longest PDF.js may take to report its hook on Linux before the
-/// surface is closed (research.md §8).
+/// surface is closed (007 research.md §8).
 const HOOK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the preview commands need beyond the session: where the helper
@@ -155,7 +155,7 @@ impl<R: Runtime> SurfaceFactory for AppSurfaces<R> {
 }
 
 /// Where the viewer's page area last was, as `set_preview_bounds` sent it: a
-/// new surface is built there, hidden (contracts/tauri-commands.md
+/// new surface is built there, hidden (007 contracts/tauri-commands.md
 /// "open_preview"). There is one main window, so one place.
 static LAST_BOUNDS: Mutex<SurfaceBounds> =
     Mutex::new(SurfaceBounds { x: 0.0, y: 0.0, width: 800.0, height: 600.0 });
@@ -253,7 +253,7 @@ pub mod ops {
         }
         // Bound once for the run; nothing can bind that port but this
         // process, so a request that reaches it is a request the surface's
-        // other layers failed to stop (research.md §6).
+        // other layers failed to stop (007 research.md §6).
         if tripwire::shared().is_none() {
             return Err(failed(
                 "The PDF viewer couldn't be set up, so this document can't be shown.",
@@ -480,7 +480,7 @@ pub mod ops {
     }
 
     /// Hides the PDF surface if one is shown, where it is, so that a native
-    /// dialog `open_document` shows is not sitting under it (research.md
+    /// dialog `open_document` shows is not sitting under it (007 research.md
     /// §16). The viewer stays open; the frontend shows the surface again
     /// with `set_preview_bounds`. Nothing happens with no PDF preview, or no
     /// open database.
@@ -562,7 +562,7 @@ pub mod ops {
     /// The surface's `on_download` hook: a download of the surface's own URL
     /// means the web view has no PDF viewer. The download is refused by the
     /// caller; this ends the preview and turns PDF preview off for the run
-    /// (research.md §4, §7). Any other URL is not the sign.
+    /// (007 research.md §4, §7). Any other URL is not the sign.
     pub fn surface_download(
         session: &Arc<Session>,
         env: &PreviewEnv,
@@ -584,7 +584,7 @@ pub mod ops {
     }
 
     /// Linux: the surface must ask for the document within
-    /// `env.hook_timeout` (5 s, research.md §8's figure; no other is
+    /// `env.hook_timeout` (5 s, 007 research.md §8's figure; no other is
     /// recorded) of `open_preview`, or the preview fails as a missing hook
     /// does, so the viewer doesn't wait for a surface that never asks. The
     /// hook's own 5 s starts at the first serve (`hook_timed_out`).
@@ -618,7 +618,7 @@ pub mod ops {
 
     /// Linux: PDF.js's hook did not report within the preview's
     /// `hook_timeout` of its document being served (the protocol handler
-    /// starts that timer at the first serve, research.md §8), so the surface
+    /// starts that timer at the first serve, 007 research.md §8), so the surface
     /// is closed rather than shown with a PDF's scripting on. A no-op if the
     /// preview has ended, been replaced or been hooked since.
     pub fn hook_timed_out(session: &Session, session_id: SessionId, preview_id: u64) {

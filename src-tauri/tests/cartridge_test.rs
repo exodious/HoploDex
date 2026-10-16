@@ -1,7 +1,7 @@
-//! specs/004-cartridges-action-types User Story 1 through `ops`, against a
+//! 004 US1 through `ops`, against a
 //! real temporary SQLCipher database: the cartridge is stored as given,
-//! make, model, cartridge and caliber follow FR-015's entry rules, and
-//! `settle_entry` reports the caliber a cartridge derives (FR-003, FR-005).
+//! make, model, cartridge and caliber follow 004 FR-015's entry rules, and
+//! `settle_entry` reports the caliber a cartridge derives (004 FR-003, FR-005).
 
 use crate::support;
 
@@ -32,7 +32,7 @@ fn settle(db: &TestDb, field: EntryField, text: &str) -> SettleEntryOutput {
 
 #[test]
 fn a_catalog_cartridge_round_trips_with_its_caliber() {
-    // US1-1.
+    // 004 US1-1.
     let db = TestDb::new();
     let created = ops::create_firearm(
         &db.conn,
@@ -58,7 +58,7 @@ fn a_catalog_cartridge_round_trips_with_its_caliber() {
 
 #[test]
 fn a_custom_cartridge_and_a_caliber_only_record_round_trip() {
-    // US1-2 and US1-5.
+    // 004 US1-2 and US1-5.
     let db = TestDb::new();
     let custom = ops::create_firearm(
         &db.conn,
@@ -113,7 +113,7 @@ fn a_blank_cartridge_is_stored_as_null_and_the_four_fields_are_trimmed() {
 
 #[test]
 fn create_rejects_an_over_long_or_control_character_value_in_each_field() {
-    // FR-015.
+    // 004 FR-015.
     let db = TestDb::new();
     let long = "x".repeat(101);
     let exactly_100 = "é".repeat(100);
@@ -155,7 +155,7 @@ fn create_rejects_an_over_long_or_control_character_value_in_each_field() {
 #[test]
 fn update_checks_only_the_fields_whose_value_changed() {
     // Spec Assumptions: an existing record over the cap stays valid until
-    // that field is edited (data-model.md).
+    // that field is edited (004 data-model.md).
     let db = TestDb::new();
     let created =
         ops::create_firearm(&db.conn, &with_cartridge(None, "9mm", "C-7"), false, None).unwrap();
@@ -203,7 +203,7 @@ fn update_checks_only_the_fields_whose_value_changed() {
 
 #[test]
 fn create_stores_the_values_given_without_snapping_or_deriving() {
-    // research.md §6 and FR-004 / US1-8: the record keeps its own text,
+    // 004 research.md §6 and FR-004 / US1-8: the record keeps its own text,
     // whatever the catalog says.
     let db = TestDb::new();
     let created = ops::create_firearm(
@@ -276,7 +276,7 @@ fn settle_entry_serializes_in_the_contract_s_shape() {
 
 #[test]
 fn an_input_without_cartridge_or_action_deserializes() {
-    // FR-021: callers built before this feature keep working.
+    // 004 FR-021: callers built before this feature keep working.
     let json = serde_json::json!({
         "make": "Colt", "model": "1911", "serialNumber": "OLD-1", "noSerialAttested": false,
         "caliber": ".45", "firearmTypeId": 1, "nickname": null, "notes": null,

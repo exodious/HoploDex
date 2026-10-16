@@ -11,7 +11,7 @@ function Harness({ initial = "" }: { initial?: string }) {
 
 const field = () => screen.getByLabelText("Estimated value") as HTMLInputElement;
 
-describe("MoneyField (FR-037, US1 Acceptance Scenario 16)", () => {
+describe("MoneyField (001 FR-037, US1-16)", () => {
   it("accepts digits only while typing: a decimal point, comma or other character is ignored", async () => {
     const user = userEvent.setup();
     render(<Harness />);

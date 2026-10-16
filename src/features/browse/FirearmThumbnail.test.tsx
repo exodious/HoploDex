@@ -7,7 +7,7 @@ import { SessionScopeContext, createSessionScope } from "../session/sessionScope
 import type { SessionScope } from "../session/sessionScope";
 import { FirearmThumbnail } from "./FirearmThumbnail";
 
-// specs/008-hardening-batch tasks.md T028 (US1-1, US1-2), research.md §4: the
+// 008 tasks.md T028 (008 US1-1, US1-2), 008 research.md §4: the
 // thumbnail cache is the session scope's (`scope.thumbnails`), not the
 // module's, and an image that arrives after the scope ended is neither cached
 // nor shown. The backend is pinned at the IPC boundary; the scope is real.
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.mocked(tauriClient.invoke).mockReset();
 });
 
-describe("FirearmThumbnail: the cache belongs to the session (US1-1)", () => {
+describe("FirearmThumbnail: the cache belongs to the session (008 US1-1)", () => {
   it("doesn't show scope A's thumbnail for photo 7 under scope B, which loads its own", async () => {
     const a = createSessionScope(1);
     const b = createSessionScope(2);
@@ -109,7 +109,7 @@ describe("FirearmThumbnail: the cache belongs to the session (US1-1)", () => {
   });
 });
 
-describe("FirearmThumbnail: a late response (US1-2)", () => {
+describe("FirearmThumbnail: a late response (008 US1-2)", () => {
   it("drops a deferred response that arrives after the scope ended: not shown, not cached", async () => {
     const scope = createSessionScope(1);
     let finish!: (bytes: number[]) => void;
@@ -125,7 +125,7 @@ describe("FirearmThumbnail: a late response (US1-2)", () => {
   });
 });
 
-describe("FirearmThumbnail: no photo (001 US4 Scenario 3)", () => {
+describe("FirearmThumbnail: no photo (001 US4-3)", () => {
   it("draws the type's generic drawing and fetches nothing when thumbnailPhotoId is null", async () => {
     const scope = createSessionScope(1);
     const { container } = render(

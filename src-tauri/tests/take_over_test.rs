@@ -1,5 +1,5 @@
 //! The open marker, taking a database over, and noticing a take-over or
-//! lost storage while open (FR-032, SC-009; research.md §6; data-model.md
+//! lost storage while open (003 FR-032, SC-009; 003 research.md §6; 003 data-model.md
 //! "TakenOver"). Real SQLCipher files in temp directories; machine settings
 //! in a temp config directory.
 

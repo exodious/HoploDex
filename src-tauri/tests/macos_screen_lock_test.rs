@@ -1,5 +1,5 @@
 //! macOS: the screen-lock notices reach the session as `ScreenLocked` and
-//! `ScreenUnlocked` (FR-038, research.md §14, #28).
+//! `ScreenUnlocked` (003 FR-038, research.md §14, #28).
 //!
 //! It posts under notice names of its own. The real ones,
 //! `com.apple.screenIsLocked` and `com.apple.screenIsUnlocked`, go to every

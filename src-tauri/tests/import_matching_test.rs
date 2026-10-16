@@ -1,5 +1,5 @@
 //! Integration test: import matching/conflict resolution — make+model+
-//! serial key, no-serial-always-new, apply-to-remaining (spec.md FR-026,
+//! serial key, no-serial-always-new, apply-to-remaining (001 FR-026,
 //! FR-030), run against a real temporary SQLCipher database.
 
 use crate::sheets;
@@ -105,7 +105,7 @@ fn no_serial_attested_rows_are_always_inserted_as_new() {
     firearm_ops::create_firearm(&db.conn, &existing_firearm(), false, None).unwrap();
 
     // Same make/model as the existing record, but no_serial_attested=TRUE:
-    // must never match, always inserted as new (FR-030).
+    // must never match, always inserted as new (001 FR-030).
     let csv = csv_file(&[csv_firearm("Glock", "19", "", &[])]);
     let path = write_csv(&dir, &csv);
 
@@ -239,7 +239,7 @@ fn a_duplicate_of_an_active_record_is_not_offered_and_is_refused_and_reported() 
     assert_eq!(import_result.conflicts.len(), 1);
     assert!(
         !import_result.conflicts[0].duplicate_allowed,
-        "FR-032 would block it, so only skip and overwrite are offered"
+        "001 FR-032 would block it, so only skip and overwrite are offered"
     );
     let conflict_id = import_result.conflicts[0].conflict_id.clone();
 
@@ -387,7 +387,7 @@ fn a_row_with_both_a_serial_number_and_the_attestation_is_rejected() {
     );
 
     assert_eq!(result.imported_count, 0);
-    assert!(result.conflicts.is_empty(), "an exempt row is never matched (FR-030)");
+    assert!(result.conflicts.is_empty(), "an exempt row is never matched (001 FR-030)");
     assert_eq!(result.row_errors.len(), 1);
     assert_eq!(result.row_errors[0].row, 1);
     assert!(result.row_errors[0].message.contains("no serial number"));
@@ -508,7 +508,7 @@ fn apply_to_remaining_resolves_conflicts_not_explicitly_listed() {
     );
 }
 
-/// FR-039: overwriting an existing record from a file updates the physical
+/// 001 FR-039: overwriting an existing record from a file updates the physical
 /// details along with the rest.
 #[test]
 fn overwriting_a_conflict_updates_the_physical_details() {
@@ -550,10 +550,10 @@ fn overwriting_a_conflict_updates_the_physical_details() {
     assert_eq!(updated.finish.as_deref(), Some("nDLC"));
 }
 
-// specs/002-firearm-identification User Story 3/4: the year-of-manufacture
-// exception in import matching (FR-008, US4-5a, research.md §4). The
+// 002 US3/US4: the year-of-manufacture
+// exception in import matching (002 FR-008, US4-5a, research.md §4). The
 // spreadsheet's `year_of_manufacture` column is added by a later story
-// (T047), so this exercises `find_match` directly against a real database —
+// (002 T047), so this exercises `find_match` directly against a real database —
 // still no mocks, per the constitution.
 
 use hoplodex_lib::services::import_matching::find_match;
@@ -566,7 +566,7 @@ fn a_row_with_identical_main_marks_and_differing_years_on_both_sides_is_not_a_ma
     firearm_ops::create_firearm(&db.conn, &existing, false, None).unwrap();
 
     let found = find_match(&db.conn, "Glock", "19", Some("SAA-1"), false, Some(1944)).unwrap();
-    assert_eq!(found, None, "both have a year and they differ: not a match (US4-5a)");
+    assert_eq!(found, None, "both have a year and they differ: not a match (002 US4-5a)");
 }
 
 #[test]
@@ -594,9 +594,9 @@ fn existing_firearm_with_serial(serial: &str) -> FirearmInput {
     FirearmInput { serial_number: Some(serial.into()), ..existing_firearm() }
 }
 
-// --- specs/006-accessory-links US5: the record identifier first (tasks.md T101) -----------------
+// --- 006 US5: the record identifier first (006 tasks.md T101) -----------------------------------
 //
-// contracts/spreadsheet-format.md "Record ID" (Matching): an identifier that
+// 006 contracts/spreadsheet-format.md "Record ID" (Matching): an identifier that
 // belongs to an existing record of the row's own kind, active or disposed,
 // is the row's match, ahead of the make, model and serial number key. For a
 // firearm row anything else falls back to that key, as before; an accessory

@@ -3,7 +3,7 @@ import "./TypeDrawing.css";
 import { DRAWINGS } from "./typeDrawings";
 
 /*
- * Generic per-type thumbnails (FR-009) drawn as technical line art, like a
+ * Generic per-type thumbnails (001 FR-009) drawn as technical line art, like a
  * patent drawing: outlined parts with finer detail lines. Parts are
  * filled with the frame's paper color and painted back to front, so nearer
  * parts occlude the outlines behind them. Vector, theme-aware, and needing

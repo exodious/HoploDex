@@ -1,5 +1,5 @@
 //! Integration tests for deleting an insurance policy that has firearms
-//! scheduled under it (FR-034, spec.md US3 Acceptance Scenarios 9-10, 15),
+//! scheduled under it (001 FR-034, US3-9, US3-10 and US3-15),
 //! run against a real temporary SQLCipher database. "Today" in the status
 //! checks is the real date, so policy dates are wide enough not to matter.
 
@@ -364,7 +364,7 @@ fn the_wire_format_of_the_resolution_matches_the_contract() {
     ));
 }
 
-// --- Accessories (specs/006-accessory-links FR-009) ---------------------------
+// --- Accessories (006 FR-009) -------------------------------------------------
 //
 // A policy's scheduled records are firearms and accessories together. Accessory
 // inputs are built from the IPC shape (`AccessoryInput`'s camelCase JSON), so

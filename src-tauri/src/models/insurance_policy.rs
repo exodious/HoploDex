@@ -20,7 +20,7 @@ pub struct InsurancePolicy {
     pub agent_name: Option<String>,
     pub agent_contact: Option<String>,
     pub notes: Option<String>,
-    /// Set for a blanket policy (FR-036), absent for a schedule-only one.
+    /// Set for a blanket policy (001 FR-036), absent for a schedule-only one.
     pub blanket_coverage_limit: Option<i64>,
     pub effective_start_date: String,
     pub effective_end_date: String,
@@ -49,7 +49,7 @@ impl InsurancePolicy {
 }
 
 /// All `InsurancePolicy` fields except `id`, `createdAt`, `updatedAt`, per
-/// contracts/tauri-commands.md's `InsurancePolicyInput`.
+/// 001 contracts/tauri-commands.md's `InsurancePolicyInput`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InsurancePolicyInput {
@@ -60,7 +60,7 @@ pub struct InsurancePolicyInput {
     pub agent_name: Option<String>,
     pub agent_contact: Option<String>,
     pub notes: Option<String>,
-    /// Set for a blanket policy (FR-036), absent for a schedule-only one.
+    /// Set for a blanket policy (001 FR-036), absent for a schedule-only one.
     pub blanket_coverage_limit: Option<i64>,
     pub effective_start_date: String,
     pub effective_end_date: String,
@@ -68,13 +68,13 @@ pub struct InsurancePolicyInput {
 
 impl InsurancePolicyInput {
     /// Notes as stored: trimmed, and a blank or whitespace-only entry is no
-    /// notes at all (FR-027).
+    /// notes at all (001 FR-027).
     pub fn normalized_notes(&self) -> Option<&str> {
         self.notes.as_deref().map(str::trim).filter(|notes| !notes.is_empty())
     }
 }
 
-/// Validation rules from data-model.md's InsurancePolicy section.
+/// Validation rules from 001 data-model.md's InsurancePolicy section.
 pub fn validate_insurance_policy_input(input: &InsurancePolicyInput) -> Result<(), CommandError> {
     let mut errors: HashMap<String, String> = HashMap::new();
 
@@ -87,7 +87,7 @@ pub fn validate_insurance_policy_input(input: &InsurancePolicyInput) -> Result<(
     if input.insurance_company.trim().is_empty() {
         errors.insert("insuranceCompany".into(), "Insurance company is required.".into());
     }
-    // specs/008-hardening-batch research.md §10: the free-text maximums.
+    // 008 research.md §10: the free-text maximums.
     for (field, label, value, max) in [
         ("name", "Policy name", &input.name, MAX_SHORT_TEXT_CHARS),
         ("policyNumber", "Policy number", &input.policy_number, MAX_SHORT_TEXT_CHARS),

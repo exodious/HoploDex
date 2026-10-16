@@ -57,7 +57,7 @@ function failureMessage(e: unknown, fallback: string): string {
   return e instanceof CommandFailure ? e.message : fallback;
 }
 
-/** One firearm's full record (US1, US3, US4): identity plate, coverage,
+/** One firearm's full record (001 US1, US3, US4): identity plate, coverage,
  * photos, documents, acquisition and disposition history. */
 export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   const scope = useSessionScope();
@@ -96,7 +96,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
   }, [scope, id, revision]);
 
   // Pending changes the user resumed for this firearm reopen their form
-  // (FR-039), which takes them as its unsaved input.
+  // (003 FR-039), which takes them as its unsaved input.
   const loadedId = firearm?.id;
   useEffect(() => {
     const resumed = scope.resumed?.draft;
@@ -142,7 +142,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
       : undefined;
   const coveringPolicy = policy ?? blanketPolicy;
   const type = firearmTypeOption(firearmTypes.types, firearm.firearmTypeId);
-  // FR-027: the action's name comes from the list the collection loaded.
+  // 004 FR-027: the action's name comes from the list the collection loaded.
   const actionName = actionTypes.actions.find((a) => a.id === firearm.actionTypeId)?.name;
   const disposed = firearm.status === "disposed";
   // How mounts name this firearm.
@@ -273,7 +273,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
                 <span className="hd-plate__no-serial">None — attested as not required</span>
               )}
             </p>
-            {/* specs/006-accessory-links FR-013: what it is mounted on, and what
+            {/* 006 FR-013: what it is mounted on, and what
                 that is mounted on, each a link. */}
             {firearm.mount.chain.length > 0 && (
               <p className="hd-plate__mounted">
@@ -285,13 +285,13 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
         </div>
 
         <dl className="hd-titleblock">
-          {/* specs/004-cartridges-action-types FR-027: none recorded reads
+          {/* 004 FR-027: none recorded reads
               as an unrecorded date does. */}
-          {/* specs/005-regulated-item-types FR-002: a Suppressor's cartridge
+          {/* 005 FR-002: a Suppressor's cartridge
               is its rating; its caliber is its bore. */}
           <TitleCell label={cartridgeLabel(type.label)}>{firearm.cartridge ?? "—"}</TitleCell>
           <TitleCell label="Caliber">{firearm.caliber}</TitleCell>
-          {/* specs/005-regulated-item-types FR-003: a type with no action
+          {/* 005 FR-003: a type with no action
               shows no Action cell. */}
           {type.actionTypeApplies && <TitleCell label="Action">{actionName ?? "—"}</TitleCell>}
           <TitleCell label="Status">
@@ -420,7 +420,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
             />
           </section>
 
-          {/* specs/006-accessory-links FR-012: records mounted on this one, between
+          {/* 006 FR-012: records mounted on this one, between
               the notes and the free-text accessories note, which is unchanged. */}
           {!disposed && (
             <MountedSection
@@ -597,7 +597,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
 
 /** The plate's picture: the designated photo at full resolution (the
  * small thumbnail shows until the original loads), or the type drawing.
- * Shared with the accessory record page (006 §12). */
+ * Shared with the accessory record page (006 contracts/ui-accessories.md §12). */
 export function PlateFigure({
   thumbnailPhotoId,
   typeKey,
@@ -643,18 +643,18 @@ export function PlateFigure({
 
 /** specs/002-firearm-identification: the country a re-imported firearm
  * displays (and searches) is always "United States", never stored
- * (data-model.md's "Derived display values"). */
+ * (002 data-model.md's "Derived display values"). */
 function countryOfManufactureDisplay(firearm: Firearm): string | null {
   return firearm.origin === "reimported" ? "United States" : firearm.countryOfManufacture;
 }
 
-/** specs/002-firearm-identification US2-2: the "Original maker's marks"
+/** 002 US2-2: the "Original maker's marks"
  * block renders only when at least one of the three values is recorded. */
 function hasOriginalMarks(firearm: Firearm): boolean {
   return Boolean(firearm.originalMake || firearm.originalModel || firearm.originalSerialNumber);
 }
 
-/** Whether any of FR-039's six optional details is recorded, so a record
+/** Whether any of 001 FR-039's six optional details is recorded, so a record
  * with none shows no empty panel. */
 function hasPhysicalDetails(firearm: Firearm): boolean {
   return (

@@ -1,8 +1,8 @@
 //! Suggestion ranking and snapping for make, model, cartridge and caliber
-//! (specs/004-cartridges-action-types research.md §4 and §6).
+//! (004 research.md §4 and §6).
 //!
 //! The vocabulary is read from the tables at call time and kept nowhere
-//! (FR-011): a value whose last record was deleted is gone from the next
+//! (004 FR-011): a value whose last record was deleted is gone from the next
 //! call. Every comparison goes through the entry key
 //! ([`crate::services::entry_text`]), so what counts as the same value here
 //! is exactly what it counts as when saving and importing.
@@ -12,7 +12,7 @@
 //! reused from one to the next: at 20,000 distinct models over two tables,
 //! building and dropping the whole vocabulary on every keystroke (a `String`
 //! per word, per key and per value) took more than the query itself, on
-//! Windows, whose allocator is slower than Linux's (specs/007 T162).
+//! Windows, whose allocator is slower than Linux's (007 T162).
 
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -26,10 +26,10 @@ use crate::services::cartridges::catalog;
 use crate::services::entry_text::{EntryField, EntryWords, MAX_ENTRY_CHARS, check_entry_text};
 use crate::services::registration::BUILT_IN_FORMS;
 
-/// The most suggestions one call returns (research.md §4).
+/// The most suggestions one call returns (004 research.md §4).
 pub const MAX_SUGGESTIONS: usize = 20;
 
-/// Why a settled value differs from what was typed (research.md §6): it was
+/// Why a settled value differs from what was typed (004 research.md §6): it was
 /// snapped to the catalog's spelling or to one already on record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -38,13 +38,13 @@ pub enum ChangedBy {
     Record,
 }
 
-/// One row of the suggestion list (contracts/tauri-commands.md).
+/// One row of the suggestion list (004 contracts/tauri-commands.md).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Suggestion {
     /// The display spelling: the catalog's when it has one.
     pub value: String,
-    /// Built in (FR-016).
+    /// Built in (004 FR-016).
     pub in_catalog: bool,
     /// Firearms on record, active and disposed, across every spelling;
     /// 0 = catalog only.
@@ -97,7 +97,7 @@ impl Group {
     }
 
     /// The spelling used by the most records; the earliest recorded on a
-    /// tie (spec Edge Cases).
+    /// tie (004 spec.md Edge Cases).
     fn display(&self) -> &str {
         once(&self.first)
             .chain(&self.more)
@@ -126,7 +126,7 @@ pub struct FieldVocabulary {
 /// `UNION ALL`: it then reads the table's covering index in order and groups
 /// as it goes, where the joined one sorted all the rows into a temporary
 /// tree (about half of the 20,000 models' time at 10,000 firearms and
-/// 10,000 accessories, on Windows over the 50ms of SC-004). The two tables'
+/// 10,000 accessories, on Windows over 004 research.md §5's 50ms). The two tables'
 /// groups are merged in [`FieldVocabulary::load`].
 pub fn vocabulary_queries(field: EntryField) -> Vec<String> {
     let column = field.column();
@@ -159,13 +159,13 @@ pub fn vocabulary_queries(field: EntryField) -> Vec<String> {
 }
 
 /// Makes the first suggestion after a database opens as fast as the later
-/// ones (SC-004's 50ms; 004 research.md §5): reads what each field's
+/// ones (004 research.md §5's 50ms, for 004 SC-004): reads what each field's
 /// suggestions read, once, so the connection's page cache already holds the
 /// pages (a fresh connection decrypts each page from the file on first
 /// touch, which on macOS cost 123ms for the first Make query at 10,000
 /// firearms), and builds the catalog's index, which the first cartridge or
 /// caliber suggestion would otherwise build. The results are dropped, so
-/// nothing is kept (FR-011).
+/// nothing is kept (004 FR-011).
 pub fn warm(conn: &Connection) -> rusqlite::Result<()> {
     let _ = catalog_index();
     for field in EntryField::ALL {
@@ -223,7 +223,7 @@ fn words_key(text: &str) -> String {
 }
 
 /// The spelling the catalog or the vocabulary already has for `key`, and
-/// which of the two it is: the catalog first (research.md §6).
+/// which of the two it is: the catalog first (004 research.md §6).
 fn known_spelling<'a>(vocabulary: &'a FieldVocabulary, key: &str) -> Option<(&'a str, ChangedBy)> {
     let from_catalog = match vocabulary.field {
         EntryField::Cartridge => catalog().entry_by_name_key(key).map(|entry| entry.name.as_str()),
@@ -239,7 +239,7 @@ fn known_spelling<'a>(vocabulary: &'a FieldVocabulary, key: &str) -> Option<(&'a
     vocabulary.groups.get(key).map(|group| (group.display(), ChangedBy::Record))
 }
 
-/// Steps 1–2 of research.md §6: what `text` becomes in the vocabulary's
+/// Steps 1–2 of 004 research.md §6: what `text` becomes in the vocabulary's
 /// field. Returns the trimmed text unchanged when nothing matches, and the
 /// spelling that is already in use when it does.
 pub fn snap(vocabulary: &FieldVocabulary, text: &str) -> (String, Option<ChangedBy>) {
@@ -265,8 +265,8 @@ struct SheetSpelling {
     first: usize,
 }
 
-/// The import's sheet pass for one field (contracts/spreadsheet-format.md
-/// "Entry rules and snapping on import", FR-026): the spelling most of the
+/// The import's sheet pass for one field (004 contracts/spreadsheet-format.md
+/// "Entry rules and snapping on import", 004 FR-026): the spelling most of the
 /// sheet's cells use for each entry key, the earliest row winning a tie. It
 /// is consulted only for a value the catalog and the start-of-import
 /// snapshot don't know.
@@ -277,7 +277,7 @@ pub struct SheetSpellings {
 
 impl SheetSpellings {
     /// `cells` are the field's cells in row order. Blank cells, and cells
-    /// that break FR-015's rules (a row error of their own), don't vote.
+    /// that break 004 FR-015's rules (a row error of their own), don't vote.
     pub fn from_cells<'a>(field: EntryField, cells: impl IntoIterator<Item = &'a str>) -> Self {
         let mut by_key: HashMap<String, Vec<SheetSpelling>> = HashMap::new();
         for (index, cell) in cells.into_iter().enumerate() {
@@ -333,7 +333,7 @@ const WORD_PREFIX: u8 = 2;
 const INITIALISM_OR_ALIAS: u8 = 3;
 
 /// Each typed word is a prefix of a later word of the candidate, in order;
-/// a single typed word matches any word (research.md §4, tier 2).
+/// a single typed word matches any word (004 research.md §4, tier 2).
 fn word_prefix_match(typed: &EntryWords, candidate: &EntryWords) -> bool {
     let mut wanted = typed.words().peekable();
     if wanted.peek().is_none() {
@@ -353,7 +353,7 @@ fn word_prefix_match(typed: &EntryWords, candidate: &EntryWords) -> bool {
 }
 
 /// The best tier at which `typed` matches a value with these words
-/// (research.md §4). Empty text matches everything at tier 1.
+/// (004 research.md §4). Empty text matches everything at tier 1.
 fn text_tier(typed: &EntryWords, candidate: &EntryWords) -> Option<u8> {
     if candidate.key().starts_with(typed.key()) {
         Some(PREFIX)
@@ -374,7 +374,7 @@ fn initialism_starts_with(candidate: &EntryWords, prefix: &str) -> bool {
 
 /// The entry keys of a field's built-in values, each with a slot to count
 /// the records that use it in: a value on record with one of these keys
-/// takes the built-in spelling and appears once (US2-4).
+/// takes the built-in spelling and appears once (004 US2-4).
 #[derive(Default)]
 struct KeySlots {
     by_key: HashMap<String, usize>,
@@ -496,7 +496,7 @@ struct Candidate {
     make_matched: bool,
 }
 
-/// The ranked suggestions for `text` in the field (research.md §4): at most
+/// The ranked suggestions for `text` in the field (004 research.md §4): at most
 /// [`MAX_SUGGESTIONS`], best first, from the values on record now and the
 /// built-in ones. `make` is the make on the form: for a model, only models
 /// recorded with that make are offered, so a make that isn't on record
@@ -568,7 +568,7 @@ pub fn suggest(
 
     let mut ranked: Vec<Ranked> = Vec::new();
     // The built-in values first, so a value on record with the same key
-    // takes the built-in spelling and appears once (US2-4).
+    // takes the built-in spelling and appears once (004 US2-4).
     let mut offer = |name: &'static str,
                      slot: usize,
                      rank: u32,
@@ -592,7 +592,7 @@ pub fn suggest(
                     tier = best(tier, Some(INITIALISM_OR_ALIAS));
                 }
                 // The bore class: typing exactly it lists its cartridges,
-                // most common first (US2-3); typing part of it narrows to
+                // most common first (004 US2-3); typing part of it narrows to
                 // them at the lowest tier.
                 if !typed.key().is_empty() && entry.class_key.starts_with(typed.key()) {
                     let class_tier =
@@ -613,7 +613,7 @@ pub fn suggest(
                 );
             }
         }
-        // The built-in form names, in rank order (data-model.md "Built-in
+        // The built-in form names, in rank order (005 data-model.md "Built-in
         // Form Name"); only the typed text decides which are offered.
         EntryField::RegistrationForm => {
             for (rank, form) in index.forms.iter().enumerate() {

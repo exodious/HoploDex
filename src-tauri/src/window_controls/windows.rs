@@ -1,4 +1,4 @@
-//! Windows: the native browser controls (research.md §13, §14, §15).
+//! Windows: the native browser controls (008 research.md §13, §14, §15).
 //!
 //! `apply` reaches the main web view's COM interfaces through Tauri's
 //! `with_webview` (`webview2-com`, the crate wry uses), on the main thread,
@@ -15,7 +15,7 @@
 //!
 //! This adds no `WebResourceRequested` filter or handler: the main view's
 //! document filter (`services/main_navigation.rs`) is the only one, and it
-//! must keep seeing document requests only (research.md §2).
+//! must keep seeing document requests only (008 research.md §2).
 
 use ::windows::core::{Interface, PWSTR};
 use tauri::{Runtime, WebviewWindow};
@@ -23,9 +23,9 @@ use webview2_com::{
     ContextMenuRequestedEventHandler, Microsoft::Web::WebView2::Win32::*, take_pwstr,
 };
 
-/// The items FR-011 keeps, by WebView2's `Name`. Spelling suggestions arrive
+/// The items 008 FR-011 keeps, by WebView2's `Name`. Spelling suggestions arrive
 /// as `COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND` items named
-/// `spellcheck` (lower case, as the check logged them; T085).
+/// `spellcheck` (lower case, as the check logged them; 008 T085).
 const KEPT: &[&str] = &["cut", "copy", "paste", "selectAll", "undo", "redo", "emoji", "spellcheck"];
 
 /// Whether a menu item is kept, by name. Separators are handled apart.
@@ -42,7 +42,7 @@ fn text(f: impl FnOnce(&mut PWSTR) -> ::windows::core::Result<()>) -> String {
     take_pwstr(p)
 }
 
-/// Trims the menu to FR-011's items, logging each one offered when asked.
+/// Trims the menu to 008 FR-011's items, logging each one offered when asked.
 fn filter_menu(
     args: &ICoreWebView2ContextMenuRequestedEventArgs,
     log_items: bool,
@@ -162,7 +162,7 @@ fn configure(platform: &tauri::webview::PlatformWebview, log_items: bool) -> Res
 /// Installs the context menu filter, and turns the browser accelerator keys
 /// and swipe navigation off, on the main web view. `log_items` logs each
 /// menu item offered as `menu item name=<name> ... -> kept|removed`, which
-/// the window controls check parses (research.md §18).
+/// the window controls check parses (008 research.md §18).
 pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::Result<()> {
     let (done, result) = std::sync::mpsc::channel::<Result<(), String>>();
     window.with_webview(move |platform| {

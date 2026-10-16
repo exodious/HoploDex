@@ -67,7 +67,7 @@ import type {
 } from "./types";
 import "./forms.css";
 
-/** specs/002-firearm-identification research.md §7: not four digits, or
+/** 002 research.md §7: not four digits, or
  * outside 1400 to the current local year, is the same error. */
 function yearOfManufactureError(text: string): string | undefined {
   if (text === "") return undefined;
@@ -79,8 +79,7 @@ function yearOfManufactureError(text: string): string | undefined {
   return undefined;
 }
 
-/** The fields with suggestions and snapping (specs/004-cartridges-action-types
- * FR-009; specs/005-regulated-item-types research.md §7). */
+/** The fields with suggestions and snapping (004 FR-009; 005 research.md §7). */
 const ENTRY_FIELDS: readonly EntryFieldName[] = [
   "make",
   "model",
@@ -94,7 +93,7 @@ function isEntryField(name: string | undefined): name is EntryFieldName {
   return ENTRY_FIELDS.some((field) => field === name);
 }
 
-/** specs/004-cartridges-action-types FR-017: the actions the Action choice
+/** 004 FR-017: the actions the Action choice
  * offers for a firearm type, in list order. A type that maps none (Other, or
  * none chosen yet) offers the whole list. */
 function actionsForType(actionTypes: ActionTypesOutput, firearmTypeId: string): ActionType[] {
@@ -119,14 +118,14 @@ const TYPE_LIST_FAILED =
 const REGISTRATION_LIST_FAILED =
   "The list of classifications couldn't be loaded, so none can be chosen. Restart HoploDex to try again.";
 
-/** specs/005-regulated-item-types FR-002 (research.md §15): a suppressor's
+/** 005 FR-002 (005 research.md §15): a suppressor's
  * caliber is its bore, and its cartridge the most powerful one it is rated
  * for. */
 const SUPPRESSOR_CALIBER_HINT = "The bore diameter.";
 const SUPPRESSOR_CARTRIDGE_HINT = "The most powerful cartridge the suppressor is rated for.";
 
-/** The fields a type omits (FR-003) and whether it works its caliber out
- * from the cartridge (FR-002); with no type chosen, every field applies and
+/** The fields a type omits (005 FR-003) and whether it works its caliber out
+ * from the cartridge (005 FR-002); with no type chosen, every field applies and
  * the caliber is derived. */
 type FieldRules = Pick<
   FirearmTypeOption,
@@ -140,7 +139,7 @@ const ALL_FIELDS_APPLY: FieldRules = {
   caliberFromCartridge: true,
 };
 
-/** contracts/ui-registration.md §1: what changing to a type that omits a
+/** 005 contracts/ui-registration.md §1: what changing to a type that omits a
  * recorded field will clear at save, or "" when nothing is recorded there.
  * The values stay in the form until then. */
 function clearedFieldsNote(
@@ -175,7 +174,7 @@ function clearedFieldsNote(
   return `A ${typeName} has no ${join(omitted, "or")}, so ${join(values, "and")} will be cleared when you save.`;
 }
 
-/** specs/002-firearm-identification FR-010/research.md §8: what changing
+/** 002 FR-010 and research.md §8: what changing
  * origin away from `from` to `to` would discard, given the form's current
  * importer/country/original-marks values — `null` when nothing is lost. */
 type OriginDiscard = "country" | "importerAndMarks";
@@ -204,9 +203,9 @@ function originDiscard(
   if (importMarked(from) && !importMarked(to)) {
     const hasImporter = form.importerName.trim() !== "";
     const hasCountry = form.countryOfManufacture.trim() !== "";
-    // specs/002-firearm-identification US2: the "Original maker's marks"
+    // 002 US2: the "Original maker's marks"
     // fieldset only exists for an import-marked origin, so it is discarded
-    // alongside importer and country (T024).
+    // alongside importer and country (002 T024).
     const hasOriginalMarks =
       form.originalMake.trim() !== "" ||
       form.originalModel.trim() !== "" ||
@@ -260,7 +259,7 @@ function originGroupSummary(form: FormState): string {
     .join(" ");
 }
 
-/** specs/005-regulated-item-types FR-007, FR-009: the fields folded into the
+/** 005 FR-007, FR-009: the fields folded into the
  * Registration group, which starts closed unless one is recorded and opens
  * itself when an error lands on one of them. */
 const REGISTRATION_GROUP_FIELDS = [
@@ -289,7 +288,7 @@ function registrationDetailsSummary(form: FormState): string[] {
 }
 
 /** What the closed group says it holds: the recorded parts read back,
- * leaving out what is missing (contracts/ui-registration.md §2). */
+ * leaving out what is missing (005 contracts/ui-registration.md §2). */
 function registrationGroupSummary(form: FormState, className: string | undefined): string {
   const sentences: string[] = [];
   if (form.registrationClassId !== "" && className) sentences.push(`Registered as ${className}`);
@@ -301,7 +300,7 @@ function registrationGroupSummary(form: FormState, className: string | undefined
     .join(" ");
 }
 
-/** The question before Unspecified discards details (FR-012): names only the
+/** The question before Unspecified discards details (005 FR-012): names only the
  * parts that have a value. */
 function discardRegistrationDescription(form: FormState): string {
   const items: string[] = [];
@@ -315,7 +314,7 @@ function discardRegistrationDescription(form: FormState): string {
   return `Clearing what the firearm is registered as will discard ${list}. They can't be recovered once saved.`;
 }
 
-/** FR-039: the physical details, folded into their own group on the same
+/** 001 FR-039: the physical details, folded into their own group on the same
  * rules as the origin group (optional, closed unless recorded, opened by an
  * error inside it). */
 const PHYSICAL_GROUP_FIELDS = [
@@ -328,7 +327,7 @@ const PHYSICAL_GROUP_FIELDS = [
   "condition",
 ] as const satisfies readonly (keyof FormState)[];
 
-/** The group's fields the type in effect offers (FR-003). */
+/** The group's fields the type in effect offers (005 FR-003). */
 function offeredPhysicalFields(rules: FieldRules) {
   return PHYSICAL_GROUP_FIELDS.filter(
     (field) =>
@@ -379,22 +378,21 @@ const HIGHLIGHT_MS = 1800;
 export interface FirearmFormProps {
   /** Present in edit mode; omitted when creating a new record. `mount` is
    * the record's `get_firearm` detail: the form shows `mount.chain[0]`, its
-   * direct host, as Mounted on (specs/006-accessory-links FR-010). */
+   * direct host, as Mounted on (006 FR-010). */
   initialValues?: Firearm & { mount?: MountDetail };
   /** Opens with this field scrolled into view, focused, and its section
-   * briefly highlighted (FR-038). */
+   * briefly highlighted (001 FR-038). */
   focusField?: FocusField;
-  /** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009). */
+  /** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (002 FR-009). */
   onSubmit: (input: FirearmInput, confirmedWarnings?: boolean) => Promise<void>;
   onCancel?: () => void;
 }
 
-/** The version of this form's kept drafts (research.md §16). Raise it when
+/** The version of this form's kept drafts (003 research.md §16). Raise it when
  * `FormState` changes shape, so older drafts are only discarded. 2: the
- * cartridge and the caliber's state (specs/004-cartridges-action-types
- * research.md §8). 3: the registration classification and details
- * (specs/005-regulated-item-types). 4: the Mounted on choice
- * (specs/006-accessory-links research.md §19). */
+ * cartridge and the caliber's state (004 research.md §8). 3: the registration
+ * classification and details (005). 4: the Mounted on choice (006 research.md
+ * §19). */
 export const FORM_VERSION = 4;
 
 interface FormState {
@@ -402,19 +400,18 @@ interface FormState {
   model: string;
   nickname: string;
   caliber: string;
-  /** specs/004-cartridges-action-types: the caliber's state beside its
-   * text (research.md §8), as strings so a kept draft carries them;
-   * "" is none. */
+  /** The caliber's state beside its text (004 research.md §8), as strings so a
+   * kept draft carries them; "" is none. */
   caliberMode: CaliberMode;
   caliberSource: "" | DerivedCaliber["source"];
   caliberSuggestion: string;
   caliberPrompt: string;
   cartridge: string;
   firearmTypeId: string;
-  /** specs/004-cartridges-action-types FR-017: an action id; "" is
+  /** 004 FR-017: an action id; "" is
    * Unspecified. */
   actionTypeId: string;
-  /** specs/006-accessory-links FR-010: the record it is mounted on, as the
+  /** 006 FR-010: the record it is mounted on, as the
    * chooser names it; `null` is not mounted. */
   mountedOn: RecordLabel | null;
   serialNumber: string;
@@ -443,7 +440,7 @@ interface FormState {
   originalMake: string;
   originalModel: string;
   originalSerialNumber: string;
-  /** specs/005-regulated-item-types FR-007: a classification id; "" is
+  /** 005 FR-007: a classification id; "" is
    * Unspecified. */
   registrationClassId: string;
   registrationForm: string;
@@ -474,7 +471,7 @@ function toFormState(firearm?: FirearmFormProps["initialValues"]): FormState {
     model: firearm?.model ?? "",
     nickname: firearm?.nickname ?? "",
     caliber: firearm?.caliber ?? "",
-    // FR-006: a saved firearm's caliber counts as already edited.
+    // 004 FR-006: a saved firearm's caliber counts as already edited.
     caliberMode: firearm ? "edited" : "derived",
     caliberSource: "",
     caliberSuggestion: "",
@@ -521,7 +518,7 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/** specs/008-hardening-batch research.md §10: the free-text fields with a
+/** 008 research.md §10: the free-text fields with a
  * maximum, by their label (the backend's, so the two messages match). The
  * disposition recipient counts only on a disposed record. */
 const TEXT_LIMITS: readonly (readonly [Field, string, number])[] = [
@@ -552,7 +549,7 @@ function lengthErrors(form: FormState, disposed: boolean): Partial<Record<Field,
 }
 
 /** Client-side mirror of the backend's validation (serial attestation,
- * FR-029; disposition completeness), plus amount and date formats, so the
+ * 001 FR-029; disposition completeness), plus amount and date formats, so the
  * user gets immediate feedback instead of a round-trip error. */
 function validate(
   form: FormState,
@@ -604,7 +601,7 @@ function validate(
     if (future) errors.acquisitionDate = future;
   }
 
-  // FR-010: the approved date is a date and not in the future.
+  // 005 FR-010: the approved date is a date and not in the future.
   const approved = parseDateInput(form.registrationApproved);
   if (!approved.ok) errors.registrationApproved = approved.error;
   else {
@@ -690,7 +687,7 @@ const FIELD_ORDER: Field[] = [
   "dispositionPrice",
 ];
 
-/** Create/edit form for a firearm's record (US1). Insurance coverage is
+/** Create/edit form for a firearm's record (001 US1). Insurance coverage is
  * set from the record's own coverage panel; a disposed record's
  * disposition details can be corrected here. Renders its own dialog body
  * and footer (use inside `<Dialog bare>`). */
@@ -703,7 +700,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     mode: initialValues ? "edit" : "add",
     targetId: initialValues?.id ?? null,
   };
-  // Pending changes the user resumed start as unsaved input (FR-039).
+  // Pending changes the user resumed start as unsaved input (003 FR-039).
   const [form, setForm] = useState<FormState>(() =>
     resumedValues(scope, target, toFormState(initialValues)),
   );
@@ -714,7 +711,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   const latestForm = useRef(form);
   latestForm.current = form;
   // What each entry field was last settled to (a saved value counts as
-  // settled, FR-014), the cartridge and caliber it derived, so a caliber left
+  // settled, 004 FR-014), the cartridge and caliber it derived, so a caliber left
   // empty is derived again at once, and the settles still in flight.
   const lastSettled = useRef<Record<EntryFieldName, string>>({
     make: (initialValues?.make ?? "").trim(),
@@ -726,21 +723,21 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   });
   const derivedFrom = useRef<CaliberState["derivedFrom"]>(null);
   const settling = useRef(new Set<Promise<boolean>>());
-  // contracts/ui-entry.md §2: the note under a field whose value was snapped,
+  // 004 contracts/ui-entry.md §2: the note under a field whose value was snapped,
   // until the field is edited again.
   const [entryNotes, setEntryNotes] = useState<Partial<Record<EntryFieldName, string>>>({});
-  // contracts/ui-entry.md §4: the note under Action after a change of type
+  // 004 contracts/ui-entry.md §4: the note under Action after a change of type
   // cleared it, until an action is chosen or the type changes again.
   const [actionNote, setActionNote] = useState("");
   const actionTypes = useActionTypes();
   const firearmTypes = useFirearmTypes();
   const registrationClasses = useRegistrationClasses();
-  // specs/005-regulated-item-types FR-003: the fields the type in effect
+  // 005 FR-003: the fields the type in effect
   // omits; with no type chosen yet, none.
   const rulesFor = (typeId: string): FieldRules =>
     typeId === "" ? ALL_FIELDS_APPLY : firearmTypeOption(firearmTypes.types, Number(typeId));
   // The note under Type once, announced when a change of type makes a
-  // recorded field be cleared at save (contracts/ui-registration.md §1).
+  // recorded field be cleared at save (005 contracts/ui-registration.md §1).
   const [typeAnnouncement, setTypeAnnouncement] = useState("");
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -759,7 +756,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     () => focusField === "registration" || hasRegistrationValue(form),
   );
   const registrationClassRef = useRef<HTMLDivElement>(null);
-  // specs/005-regulated-item-types FR-012: set while the question about
+  // 005 FR-012: set while the question about
   // discarding the registration details is open.
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [physicalGroupOpen, setPhysicalGroupOpen] = useState(() =>
@@ -767,14 +764,14 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   );
   const originGuideButtonRef = useRef<HTMLButtonElement>(null);
   const registrationGuideButtonRef = useRef<HTMLButtonElement>(null);
-  // specs/002-firearm-identification FR-010: set while the discard
+  // 002 FR-010: set while the discard
   // confirmation is open, holding the origin the user picked and what it
   // would discard.
   const [pendingOrigin, setPendingOrigin] = useState<{
     next: Origin | "";
     discard: OriginDiscard;
   } | null>(null);
-  // specs/002-firearm-identification FR-009: set when a save returns
+  // 002 FR-009: set when a save returns
   // ORIGINAL_MARKS_MATCH, holding the input to resend if confirmed.
   const [pendingWarning, setPendingWarning] = useState<{
     input: FirearmInput;
@@ -820,11 +817,10 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  /** Runs the caliber reducer (research.md §8) over the form's caliber
-   * fields, for the type `prev` holds: specs/005-regulated-item-types
-   * research.md §15 reads whether it derives from the type list on each
-   * transition. `derivedFrom` is set before a cartridge action, so this only
-   * reads it. */
+  /** Runs the caliber reducer (004 research.md §8) over the form's caliber
+   * fields, for the type `prev` holds: 005 research.md §15 reads whether it
+   * derives from the type list on each transition. `derivedFrom` is set before
+   * a cartridge action, so this only reads it. */
   function withCaliber(prev: FormState, action: CaliberAction): FormState {
     const next = caliberReducer(
       {
@@ -852,9 +848,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setForm((prev) => withCaliber(prev, action));
   }
 
-  /** contracts/ui-entry.md §2–§3: settles one of the four fields, when it
+  /** 004 contracts/ui-entry.md §2–§3: settles one of the four fields, when it
    * was left or a suggestion was picked. Only text that changed since it was
-   * last settled and, editing, differs from the saved value is sent (FR-014);
+   * last settled and, editing, differs from the saved value is sent (004 FR-014);
    * the answer is applied only if the field still holds what was sent.
    * Resolves whether the value was changed by snapping. A cartridge also
    * gets the caliber it derives. */
@@ -865,7 +861,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     const previous = lastSettled.current[field];
     lastSettled.current[field] = trimmed;
     if (trimmed === "" || (initialValues && trimmed === (initialValues[field] ?? "").trim())) {
-      // Cleared, or typed back to the saved value (never settled, FR-014): a
+      // Cleared, or typed back to the saved value (never settled, 004 FR-014): a
       // derived caliber empties, an edited one loses its suggestion.
       if (field === "cartridge") {
         derivedFrom.current = null;
@@ -912,7 +908,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     return run;
   }
 
-  /** The user typed in an entry field: its note goes (§2). */
+  /** The user typed in an entry field: its note goes (004 contracts/ui-entry.md §2). */
   function editEntry(field: EntryFieldName, text: string) {
     setEntryNotes((notes) => (notes[field] ? { ...notes, [field]: undefined } : notes));
     if (field === "caliber") applyCaliber({ type: "caliberTyped", caliber: text });
@@ -953,13 +949,13 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   );
   const caliberGuessed = form.caliberMode === "derived" && form.caliberSource === "guess";
 
-  /** FR-019: an action the new type doesn't allow is cleared, with a note. An
+  /** 004 FR-019: an action the new type doesn't allow is cleared, with a note. An
    * allowed action is kept, silently. */
   function changeType(value: string) {
     const chosen = actionTypes.actions.find((action) => String(action.id) === form.actionTypeId);
     const next = rulesFor(value);
     // A type with no action keeps the value until save, with the note under
-    // Type (research.md §2); 004's clearing is for a type that has actions.
+    // Type (005 research.md §2); 004's clearing is for a type that has actions.
     const allowed = actionsForType(actionTypes, value);
     const cleared =
       next.actionTypeApplies &&
@@ -970,7 +966,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       cleared ? `${chosen.name} doesn't apply to a ${typeLabel}, so the action was cleared.` : "",
     );
     setTypeAnnouncement(clearedFieldsNote(typeLabel, next, form, chosen?.name));
-    // FR-002: the caliber is kept as entered; the reducer follows whether
+    // 005 FR-002: the caliber is kept as entered; the reducer follows whether
     // the new type derives it.
     setForm((prev) =>
       withCaliber(
@@ -980,7 +976,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     );
   }
 
-  /** FR-012: Unspecified with details recorded asks first; another
+  /** 005 FR-012: Unspecified with details recorded asks first; another
    * classification keeps the details; Unspecified with none clears at once. */
   function changeRegistrationClass(value: string) {
     if (value !== NOT_RECORDED) {
@@ -1012,7 +1008,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     }
   }
 
-  /** specs/002-firearm-identification contracts/ui-identification.md §3:
+  /** 002 contracts/ui-identification.md §3:
    * lists what will be discarded, by name and recorded value. */
   function discardedValuesDescription(): string {
     const items: string[] = [];
@@ -1052,7 +1048,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   }
 
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
-  // and a lock keeps it (FR-039).
+  // and a lock keeps it (003 FR-039).
   useDirtyForm({
     label: initialValues ? `${firearmName(initialValues)} (edit)` : "New firearm",
     isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
@@ -1067,7 +1063,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   /** Validates and saves; resolves whether it was saved. */
   async function save(): Promise<boolean> {
-    // contracts/ui-entry.md §2: wait for any settle in flight, then settle
+    // 004 contracts/ui-entry.md §2: wait for any settle in flight, then settle
     // the field that has focus (Enter pressed inside it). If that changes its
     // value the note shows and nothing is saved: the user reviews the
     // change, then saves again.
@@ -1111,7 +1107,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       firearmTypeId: Number(form.firearmTypeId),
       actionTypeId:
         form.actionTypeId === "" || !rules.actionTypeApplies ? null : Number(form.actionTypeId),
-      // A disposed record is never mounted (FR-014).
+      // A disposed record is never mounted (006 FR-014).
       mountedOn: disposed ? null : (form.mountedOn?.record ?? null),
       serialNumber: form.noSerialAttested ? null : form.serialNumber.trim(),
       noSerialAttested: form.noSerialAttested,
@@ -1143,7 +1139,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       originalMake: blankToNull(form.originalMake),
       originalModel: blankToNull(form.originalModel),
       originalSerialNumber: blankToNull(form.originalSerialNumber),
-      // Details never outlive their classification (FR-009).
+      // Details never outlive their classification (005 FR-009).
       registrationClassId:
         form.registrationClassId === "" ? null : Number(form.registrationClassId),
       registrationForm: form.registrationClassId === "" ? null : blankToNull(form.registrationForm),
@@ -1176,7 +1172,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   /** A save rejected on a field inside the origin group opens it, so the
    * error is never hidden. An identity clash on the serial number points at
-   * Year of manufacture (contracts/ui-identification.md §4): when no year is
+   * Year of manufacture (002 contracts/ui-identification.md §4): when no year is
    * recorded, open the group and bring the year into view. */
   function revealOriginGroupFor(error: CommandFailure) {
     const fieldErrors = error.fieldErrors;
@@ -1192,7 +1188,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     }
   }
 
-  /** specs/002-firearm-identification FR-009, contracts/ui-identification.md
+  /** 002 FR-009, contracts/ui-identification.md
    * §4: an `ORIGINAL_MARKS_MATCH` opens a confirm-to-save dialog instead of
    * the usual error banner; every other failure behaves as before. */
   async function submitInput(input: FirearmInput, confirmedWarnings?: boolean): Promise<boolean> {
@@ -1305,7 +1301,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               </span>
             </div>
 
-            {/* contracts/ui-entry.md §4: chosen from the fixed list only, and
+            {/* 004 contracts/ui-entry.md §4: chosen from the fixed list only, and
                 only from the actions the type allows. */}
             {rules.actionTypeApplies && (
               <div data-field="actionTypeId">
@@ -1333,7 +1329,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               </div>
             )}
 
-            {/* specs/006-accessory-links contracts/ui-accessories.md §4: after
+            {/* 006 contracts/ui-accessories.md §4: after
                 Type and Action. */}
             {!disposed && (
               <div data-field="mountedOn">
@@ -1347,7 +1343,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               </div>
             )}
 
-            {/* specs/004-cartridges-action-types contracts/ui-entry.md §3: the
+            {/* 004 contracts/ui-entry.md §3: the
                 cartridge, then the caliber it fills in, to its right. */}
             <div className="hd-form-grid hd-form-grid--2">
               <div data-field="cartridge">
@@ -1386,7 +1382,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   placeholder={isSuppressor ? "e.g. .30" : "e.g. 9mm"}
                   trailing={
                     caliberGuessed && (
-                      // FR-005: marked as a guess in words, not by color alone.
+                      // 004 FR-005: marked as a guess in words, not by color alone.
                       <span className="hd-guess-tag" aria-describedby="ff-caliber-hint">
                         Guess
                       </span>
@@ -1581,7 +1577,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               open={registrationGroupOpen}
               onOpenChange={setRegistrationGroupOpen}
             >
-              {/* FR-014: a record of what the owner enters; nothing here
+              {/* 005 FR-014: a record of what the owner enters; nothing here
                   decides what is regulated. */}
               <p className="hd-form-note" role="note">
                 HoploDex records what you enter here. It doesn't decide what is regulated or needs

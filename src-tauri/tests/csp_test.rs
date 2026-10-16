@@ -1,4 +1,4 @@
-//! FR-021 / SC-008: nothing in the app may reach the network, so the webview
+//! 001 FR-021 / SC-008: nothing in the app may reach the network, so the webview
 //! gets a restrictive Content-Security-Policy and no network-capable Tauri
 //! plugin or capability is enabled. These read the shipped configuration
 //! itself — the CSP is enforced by the webview, not by code we can call.
@@ -144,7 +144,8 @@ fn no_network_capable_plugin_is_a_dependency_or_has_a_permission() {
     for plugin in NETWORK_PLUGINS {
         assert!(
             !manifest.contains(&format!("tauri-plugin-{plugin}")),
-            "tauri-plugin-{plugin} can reach the network; HoploDex has no network feature (FR-021)"
+            "tauri-plugin-{plugin} can reach the network; HoploDex has no network \
+             feature (001 FR-021)"
         );
     }
 
@@ -173,7 +174,7 @@ fn no_network_capable_plugin_is_a_dependency_or_has_a_permission() {
     }
 }
 
-/// specs/007-document-preview research.md §13: the main web view gets no
+/// 007 research.md §13: the main web view gets no
 /// frames, workers, wasm or eval from the document preview (the PDF is shown
 /// in a separate surface), so a later change can't loosen the CSP to bring a
 /// PDF engine into it.

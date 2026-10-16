@@ -1,6 +1,6 @@
 //! Integration tests for `add_photo`/`set_thumbnail_photo`/`delete_photo`,
-//! including thumbnail-fallback behavior (spec.md US4 Acceptance Scenarios
-//! 1-3), run against a real temporary SQLCipher database.
+//! including thumbnail-fallback behavior (001 US4-1 to US4-3), run against a
+//! real temporary SQLCipher database.
 
 use crate::support;
 
@@ -105,14 +105,14 @@ fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
     let chosen =
         photo_ops::set_thumbnail_photo(&db.conn, RecordRef::Firearm(firearm.id), second.id)
             .unwrap();
-    // The result is `{ thumbnailPhotoId }` (contracts/tauri-commands.md "Photos
+    // The result is `{ thumbnailPhotoId }` (006 contracts/tauri-commands.md "Photos
     // and documents (amended)"), not the whole record.
     assert_eq!(serde_json::to_value(&chosen).unwrap(), json!({ "thumbnailPhotoId": second.id }));
     let updated = firearm_ops::get_firearm(&db.conn, firearm.id).unwrap();
     assert_eq!(updated.thumbnail_photo_id, Some(second.id));
 }
 
-// 001 US4 Scenario 3: with no photo left, `thumbnail_photo_id` is None, which is
+// 001 US4-3: with no photo left, `thumbnail_photo_id` is None, which is
 // what makes the record show its type's generic drawing (FirearmThumbnail.test.tsx).
 #[test]
 fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic() {
@@ -230,12 +230,13 @@ fn a_dropped_path_that_no_longer_exists_is_reported() {
     assert_eq!(err.code, "NOT_FOUND");
 }
 
-// --- Accessory photos (specs/006-accessory-links US1-12, FR-007a) -------------
+// --- Accessory photos (006 US1-12, FR-007a) -----------------------------------
 //
 // Photos belong to an owner, `RecordRef::Firearm(id)` or
-// `RecordRef::Accessory(id)` (research.md §3, §21). Accessory inputs are built
-// from the IPC shape (`AccessoryInput`'s camelCase JSON, contracts/tauri-
-// commands.md), so these tests do not depend on how the struct is spelled.
+// `RecordRef::Accessory(id)` (006 research.md §3, §21). Accessory inputs are built
+// from the IPC shape (`AccessoryInput`'s camelCase JSON, 006
+// contracts/tauri-commands.md), so these tests do not depend on how the struct
+// is spelled.
 
 fn parse<T: DeserializeOwned>(value: Value) -> T {
     serde_json::from_value(value).expect("the JSON must fit the type")
@@ -468,7 +469,7 @@ fn deleting_an_accessory_deletes_its_photos_and_only_its_photos() {
     assert_eq!(photo_ops::list_photos(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().len(), 1);
 }
 
-// --- At most 50 photos a record (FR-007, amended 2026-10-11; issue #95) ------
+// --- At most 50 photos a record (001 FR-007, amended 2026-10-11; issue #95) ------
 
 /// Gives `owner` its 50 photos.
 fn fill_with_photos(db: &TestDb, owner: RecordRef) {

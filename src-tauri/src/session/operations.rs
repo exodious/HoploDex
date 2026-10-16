@@ -1,8 +1,8 @@
-//! The long-running operation, if one is running (research.md §13;
-//! data-model.md "Operations registry"): at most one at a time, each
+//! The long-running operation, if one is running (003 research.md §13;
+//! 003 data-model.md "Operations registry"): at most one at a time, each
 //! stoppable. Loops check [`OperationGuard::is_cancelled`] between rows or
 //! chunks; a single long statement is stopped through its connection's
-//! interrupt handle. The registry also pauses the idle clock (research.md
+//! interrupt handle. The registry also pauses the idle clock (003 research.md
 //! §15).
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -18,7 +18,7 @@ struct Running {
     kind: OperationKind,
     cancel: AtomicBool,
     /// An import is still reading its files, which the user may stop
-    /// (`cancel_import`, research.md §11).
+    /// (`cancel_import`, 008 research.md §11).
     reading: AtomicBool,
     /// `cancel` was set by the user, not by the session ending or a sleep.
     user_stop: AtomicBool,
@@ -38,7 +38,7 @@ pub struct Operations {
     ended: Condvar,
 }
 
-/// An operation asked to stop, as the stopper sees it (FR-037): what it
+/// An operation asked to stop, as the stopper sees it (003 FR-037): what it
 /// was and, once it has ended, how far it got.
 #[derive(Clone)]
 pub struct StoppedOperation(Arc<Running>);
@@ -90,7 +90,7 @@ impl OperationGuard<'_> {
 
     /// Whether the operation was asked to stop by the user
     /// (`cancel_import`), as opposed to a lock, a sleep or a quit ending the
-    /// session (research.md §11).
+    /// session (008 research.md §11).
     pub fn is_stopped_by_user(&self) -> bool {
         self.running.user_stop.load(Ordering::SeqCst)
     }
@@ -170,7 +170,7 @@ impl Operations {
     }
 
     /// Asks the running operation to stop, interrupting its statement, and
-    /// returns what it was (FR-037).
+    /// returns what it was (003 FR-037).
     pub fn stop_running(&self) -> Option<OperationKind> {
         self.stop().map(|stopped| stopped.kind())
     }

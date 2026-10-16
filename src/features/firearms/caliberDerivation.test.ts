@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { caliberHint, caliberReducer, initialCaliberState } from "./caliberDerivation";
 import type { CaliberAction, CaliberState } from "./caliberDerivation";
 
-// specs/004-cartridges-action-types research.md §8 and contracts/ui-entry.md
+// 004 research.md §8 and contracts/ui-entry.md
 // §3's table: every transition, from both starting modes.
 
 const catalog9mm = { caliber: "9mm", source: "catalog" } as const;
@@ -39,7 +39,7 @@ describe("initialCaliberState", () => {
     });
   });
 
-  it("starts a saved firearm edited, keeping its caliber (FR-006)", () => {
+  it("starts a saved firearm edited, keeping its caliber (004 FR-006)", () => {
     const state = initialCaliberState("9mm");
     expect(state.caliber).toBe("9mm");
     expect(state.mode).toBe("edited");
@@ -50,20 +50,20 @@ describe("initialCaliberState", () => {
 describe("caliberReducer, derived mode", () => {
   const fresh = initialCaliberState();
 
-  it("takes a catalog cartridge's caliber (US1-1)", () => {
+  it("takes a catalog cartridge's caliber (004 US1-1)", () => {
     const state = run(fresh, settled("9x19mm Parabellum", catalog9mm));
     expect(state).toMatchObject({ caliber: "9mm", mode: "derived", source: "catalog" });
     expect(state.suggestion).toBeNull();
     expect(caliberHint(state)).toBe("From the cartridge.");
   });
 
-  it("takes a guess, marked as one (US1-2)", () => {
+  it("takes a guess, marked as one (004 US1-2)", () => {
     const state = run(fresh, settled(".30 Custom Improved", guess30));
     expect(state).toMatchObject({ caliber: ".30", mode: "derived", source: "guess" });
     expect(caliberHint(state)).toBe("Guessed from the cartridge. Check it before saving.");
   });
 
-  it("empties the caliber and asks for it when nothing can be read (US1-4)", () => {
+  it("empties the caliber and asks for it when nothing can be read (004 US1-4)", () => {
     const state = run(
       fresh,
       settled("9x19mm Parabellum", catalog9mm),
@@ -99,7 +99,7 @@ describe("caliberReducer, derived mode", () => {
     expect(state.caliber).toBe(".45");
   });
 
-  it("becomes edited when the caliber is typed in, dropping the tag and hint (US1-3)", () => {
+  it("becomes edited when the caliber is typed in, dropping the tag and hint (004 US1-3)", () => {
     const state = run(fresh, settled(".30 Custom Improved", guess30), {
       type: "caliberTyped",
       caliber: ".308",
@@ -107,7 +107,7 @@ describe("caliberReducer, derived mode", () => {
     expect(state).toMatchObject({ caliber: ".308", mode: "edited", source: null, prompt: null });
     expect(caliberHint(state)).toBeUndefined();
 
-    // US1-3: a later cartridge change leaves the typed caliber alone.
+    // 004 US1-3: a later cartridge change leaves the typed caliber alone.
     const later = run(state, settled("9x19mm Parabellum", catalog9mm));
     expect(later.caliber).toBe(".308");
   });
@@ -138,7 +138,7 @@ describe("caliberReducer, derived mode", () => {
 describe("caliberReducer, edited mode (a saved firearm)", () => {
   const saved = initialCaliberState("9mm");
 
-  it("keeps the caliber and offers the derived one when it differs (US1-7)", () => {
+  it("keeps the caliber and offers the derived one when it differs (004 US1-7)", () => {
     const state = run(saved, settled(".45 ACP", catalog45));
     expect(state).toMatchObject({ caliber: "9mm", mode: "edited", suggestion: ".45" });
     expect(caliberHint(state)).toBeUndefined();
@@ -207,7 +207,7 @@ describe("caliberReducer, edited mode (a saved firearm)", () => {
   });
 });
 
-// specs/005-regulated-item-types FR-002, US1-7, research.md §15: a type
+// 005 FR-002, US1-7, research.md §15: a type
 // whose `caliberFromCartridge` is false (Suppressor) never derives its
 // caliber; changing type keeps the caliber's text either way.
 describe("caliberReducer, a type that doesn't derive (Suppressor)", () => {

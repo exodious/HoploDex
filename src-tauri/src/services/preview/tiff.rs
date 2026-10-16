@@ -1,5 +1,5 @@
 //! TIFF page counting and rendering, run inside the render helper
-//! (research.md §11).
+//! (007 research.md §11).
 //!
 //! [`load`] walks the file's directories itself, reading only the few tags a
 //! page's size needs, so the page list is cheap and a hostile chain (a
@@ -18,7 +18,7 @@ use tiff::decoder::{Decoder, DecodingResult, Limits};
 
 use super::PageSize;
 
-/// The DPI of a page that doesn't say (research.md §11).
+/// The DPI of a page that doesn't say (007 research.md §11).
 const DEFAULT_DPI: f64 = 200.0;
 
 /// The most directories one file may have. A scan of more pages than this is
@@ -26,7 +26,7 @@ const DEFAULT_DPI: f64 = 200.0;
 const MAX_PAGES: usize = 10_000;
 
 /// The widest page the helper makes, and the most pixels in it
-/// (research.md §14).
+/// (007 research.md §14).
 pub const MAX_WIDTH_PX: u32 = 4096;
 pub const MAX_PIXELS: u64 = 24 * 1024 * 1024;
 

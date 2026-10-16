@@ -15,9 +15,9 @@ export interface BrowseListProps {
   onSelect: (id: number) => void;
 }
 
-/** Row/list layout for browsing the collection (US2 Acceptance Scenario
- * 1): one table for every group, with the serial number under each name so
- * firearms sharing a make and model stay distinguishable. */
+/** Row/list layout for browsing the collection (001 US2-1): one
+ * table for every group, with the serial number under each name so firearms
+ * sharing a make and model stay distinguishable. */
 export function BrowseList({ groups, groupBy, onSelect }: BrowseListProps) {
   // The columns and the click handler stay the same while the grouping and
   // `onSelect` do, so rows already mounted are not rendered again when more
@@ -47,7 +47,7 @@ const isDisposed = (firearm: FirearmSummary) => firearm.status === "disposed";
 /** The columns, in order, less the ones the grouping repeats in its titles.
  * Widths are shares of the table, so they are the same in every group. The
  * Caliber cell carries the cartridge too, so it goes for either grouping
- * (FR-027). Type is what a narrow window drops. */
+ * (004 FR-027). Type is what a narrow window drops. */
 function firearmColumns(
   groupBy: GroupBy | undefined,
   onSelect: (id: number) => void,

@@ -1,4 +1,4 @@
-//! Free space before a copy (FR-016, research.md §4): a copy of a database
+//! Free space before a copy (003 FR-016, research.md §4): a copy of a database
 //! file is only started when its folder has room for the file plus 5%, so
 //! it does not fill the disk halfway through.
 
@@ -74,7 +74,7 @@ pub fn check_room_for_copy(file_len: u64, dir: &Path) -> Result<(), Insufficient
 
 /// Checks there is room for several copies at once, each `(folder, file
 /// length)`. Copies to folders on the same volume need their room summed
-/// (research.md §8). The first volume short of room is reported.
+/// (003 research.md §8). The first volume short of room is reported.
 pub fn check_room(copies: &[(&Path, u64)]) -> Result<(), InsufficientSpace> {
     let mut volumes: Vec<(Option<Volume>, &Path, u64)> = Vec::new();
     for &(dir, len) in copies {

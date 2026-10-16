@@ -20,7 +20,7 @@ const events = vi.hoisted(() => {
 });
 vi.mock("@tauri-apps/api/event", () => ({ listen: events.listen }));
 
-describe("PassphraseField (contracts/ui-databases.md §0, FR-007)", () => {
+describe("PassphraseField (003 contracts/ui-databases.md §0, FR-007)", () => {
   it("is a password input that the browser won't spell-check, capitalize or remember as text", () => {
     render(<PassphraseField label="Passphrase" autoComplete="new-password" />);
 
@@ -154,7 +154,7 @@ describe("PassphraseField (contracts/ui-databases.md §0, FR-007)", () => {
     expect(input).toHaveAccessibleDescription(/Use at least 12 characters\./);
   });
 
-  it("empties every field when the screen locks or the computer sleeps (FR-007)", async () => {
+  it("empties every field when the screen locks or the computer sleeps (003 FR-007)", async () => {
     const user = userEvent.setup();
     render(
       <>

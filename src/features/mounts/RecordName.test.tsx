@@ -7,10 +7,10 @@ import { RecordName } from "./RecordName";
 import type { RecordLabel } from "./types";
 import { render } from "../../test/sessionScope";
 
-// specs/006-accessory-links FR-005, contracts/ui-accessories.md (rules): a
+// 006 FR-005, 006 contracts/ui-accessories.md (rules): a
 // record of either kind is named by `RecordName`. A firearm is named as
 // `FirearmName` names it (make, model and “nickname”, 001 FR-031); an
-// accessory by "{make} {model} · {kind}" (both required, FR-001).
+// accessory by "{make} {model} · {kind}" (both required, 006 FR-001).
 
 function firearmLabel(overrides: Partial<RecordLabel> = {}): RecordLabel {
   return {
@@ -61,7 +61,7 @@ describe("RecordName for a firearm", () => {
   });
 });
 
-describe("RecordName for an accessory (FR-005)", () => {
+describe("RecordName for an accessory (006 FR-005)", () => {
   it("reads make, model and kind", () => {
     const { container } = render(<RecordName label={accessoryLabel()} />);
     expect(container).toHaveTextContent(/^Leupold VX-5HD 3-15x44 · Optic$/);

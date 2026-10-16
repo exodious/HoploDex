@@ -1,4 +1,4 @@
-//! The duplicate checks use an index (specs/008-hardening-batch research.md
+//! The duplicate checks use an index (008 research.md
 //! §19). An import checks every row against the collection, and a query
 //! that scans every firearm made 3,000 + 3,000 rows take 73 s; a rewrite
 //! that stops the planner using the index brings that back without failing

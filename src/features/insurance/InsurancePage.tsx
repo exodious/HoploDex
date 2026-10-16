@@ -14,11 +14,11 @@ import "./insurance.css";
 const kinds = (records: InsuranceRecord[]) =>
   countKinds(records.map((record) => record.label.record));
 
-/** Value and coverage across the collection (US3): the collection-wide
+/** Value and coverage across the collection (001 US3): the collection-wide
  * total with its firearms and accessories subtotals (006 FR-008), every
  * policy with its blanket usage and the firearms and accessories scheduled
- * on it (FR-015, FR-017, 006 FR-009), expiry warnings (FR-028), and whatever
- * isn't covered. Policies can be added, edited, and deleted here (FR-027). */
+ * on it (001 FR-015, FR-017, 006 FR-009), expiry warnings (001 FR-028), and whatever
+ * isn't covered. Policies can be added, edited, and deleted here (001 FR-027). */
 export function InsurancePage() {
   const { firearms, accessories, summary, policies } = useCollection();
   const { back, open } = useNavigation();

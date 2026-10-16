@@ -1,10 +1,10 @@
 //! The TIFF render helper itself, run as `CARGO_BIN_EXE_hoplodex
-//! --render-helper` (feature 007, T033; research.md §11's confinement table):
+//! --render-helper` (007 T033; 007 research.md §11's confinement table):
 //! once confined it can open no file and no TCP socket, it exits when its
 //! parent dies, its environment is empty, core dumps are off, and the parent
 //! kills it past the `Load` and `Render` limits.
 //!
-//! Assumed API (T050-T053):
+//! Assumed API (007 T050-T053):
 //! - `services::preview::HelperHandle::command(exe: &Path) -> std::process::Command`:
 //!   the command the parent runs, `--render-helper` already its argument,
 //!   with a cleared environment, piped stdin and stdout and stderr discarded.
@@ -32,7 +32,7 @@
 //!   release binary has no such mode, so the tests that use it are skipped
 //!   under `--release`.
 //!
-//! On Windows (research.md §11, amended 2026-10-07) HoploDex owns the helper's
+//! On Windows (007 research.md §11, amended 2026-10-07) HoploDex owns the helper's
 //! job object and starts the helper into it with `CreateProcessW`
 //! (`services::helper::job::spawn`). The helper refuses to serve
 //! outside such a job, so the self-check is run through `helper::job::spawn`,
@@ -141,7 +141,7 @@ fn once_confined_it_can_open_no_file_and_no_tcp_socket() {
         eprintln!("Landlock ABI enforced by the helper: {abi:?}");
         let Some(abi) = abi.filter(|_| json["landlock_enforced"] == true) else {
             eprintln!(
-                "Landlock is not available here (best effort, research.md §11): \
+                "Landlock is not available here (best effort, 007 research.md §11): \
                  the file and network confinement can't be checked"
             );
             return;
@@ -165,7 +165,7 @@ fn once_confined_it_can_open_no_file_and_no_tcp_socket() {
     }
 }
 
-/// Windows' measures (research.md §11): the job object's one-process limit and
+/// Windows' measures (007 research.md §11): the job object's one-process limit and
 /// the child-process policy stop the helper from starting a program. The
 /// mitigations don't confine files or the network, which the table doesn't ask.
 #[cfg(all(debug_assertions, windows))]
@@ -237,7 +237,7 @@ fn it_exits_when_its_parent_dies() {
 }
 
 /// If HoploDex exits, everything it spawned goes with it at once, with its
-/// stdin still open (research.md §11, amended 2026-10-07): on macOS, which has
+/// stdin still open (007 research.md §11, amended 2026-10-07): on macOS, which has
 /// no `PR_SET_PDEATHSIG`, a `kqueue` watch on the parent does it.
 #[cfg(target_os = "macos")]
 #[test]
@@ -305,7 +305,7 @@ fn the_parent_stub() {
 /// "If HoploDex exits, everything it spawned goes with it at once": HoploDex
 /// owns the helper's job object, so a HoploDex that is terminated (no chance
 /// to run any code of its own) closes the handle and the kernel kills the
-/// helper (research.md §11, amended 2026-10-07).
+/// helper (007 research.md §11, amended 2026-10-07).
 #[cfg(windows)]
 #[test]
 fn the_helper_dies_with_hoplodex_even_if_it_is_killed() {

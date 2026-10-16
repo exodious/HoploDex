@@ -42,10 +42,10 @@ function failureMessage(e: unknown, fallback: string): string {
   return e instanceof CommandFailure ? e.message : fallback;
 }
 
-/** One accessory's full record (specs/006-accessory-links US1, FR-007a,
- * FR-013; contracts/ui-accessories.md §12): the firearm record page's
+/** One accessory's full record (006 US1, FR-007a,
+ * FR-013; 006 contracts/ui-accessories.md §12): the firearm record page's
  * layout, with photos, documents, value, notes, disposition history and
- * coverage, and (User Story 2) its "Mounted on" chain and Mounted section. */
+ * coverage, and (006 US2) its "Mounted on" chain and Mounted section. */
 export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   const scope = useSessionScope();
   const {
@@ -79,7 +79,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   }, [scope, id, revision]);
 
   // Pending changes the user resumed for this accessory reopen their form
-  // (FR-039), which takes them as its unsaved input.
+  // (003 FR-039), which takes them as its unsaved input.
   const loadedId = accessory?.id;
   useEffect(() => {
     const resumed = scope.resumed?.draft;
@@ -259,7 +259,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
                 <span className="hd-plate__no-serial">None recorded</span>
               )}
             </p>
-            {/* specs/006-accessory-links FR-013, contracts/ui-accessories.md §6: what
+            {/* 006 FR-013, 006 contracts/ui-accessories.md §6: what
                 it is mounted on, and what that is mounted on, each a link; the
                 firearm's record page shows it in the same place. */}
             {accessory.mount.chain.length > 0 && (
@@ -346,7 +346,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
             />
           </section>
 
-          {/* specs/006-accessory-links FR-012: after the notes, before the documents. */}
+          {/* 006 FR-012: after the notes, before the documents. */}
           {!disposed && (
             <MountedSection
               record={label}

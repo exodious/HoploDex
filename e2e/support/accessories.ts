@@ -22,7 +22,7 @@ import { realClick, realKey } from "./realInput";
  * before it recreates that state here instead.
  */
 
-/** The whole path must take well under a minute (SC-001 asks for the first
+/** The whole path must take well under a minute (006 SC-001 asks for the first
  * part, an accessory recorded and mounted, in under one); this is a guard
  * against a flow that became slow or needs the mouse, not a benchmark. */
 export const TASK_LIMIT_MS = 60_000;
@@ -290,8 +290,8 @@ export async function createAccessory(input: {
 }
 
 /** What the Mounting story leaves behind, for the stories after it: the
- * three firearms, the Nikon P3 Optic mounted on the Rifle (US2-1) and the
- * Suppressor moved from the Rifle to the AR (US2-3a, US2-4). The records are
+ * three firearms, the Nikon P3 Optic mounted on the Rifle (006 US2-1) and the
+ * Suppressor moved from the Rifle to the AR (006 US2-3a, US2-4). The records are
  * made through the backend (setup, not timed), and the app is left on the
  * AR's record, where the Mounting story ended. */
 export async function seedMountedRecords() {

@@ -61,7 +61,7 @@ export function sendQuitEvent(pid: number) {
 /** Quits the app with process id `pid` as loginwindow does when a log out,
  * restart or shut down asks every application to quit: the quit Apple Event
  * with its `kAEQuitReason` (`kAEReallyLogOut`, "rlgo"), sent to that one
- * process (FR-039, #107). */
+ * process (003 FR-039, #107). */
 export function sendLogOutQuitEvent(pid: number) {
   const result = execFileSync(realInput(), ["quit", String(pid), "rlgo"])
     .toString()

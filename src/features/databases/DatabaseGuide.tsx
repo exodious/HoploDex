@@ -20,7 +20,7 @@ interface Section {
   settings?: (status: DatabaseStatus) => SettingRow[];
 }
 
-/** The guide's text (FR-030, contracts/ui-databases.md §11). The dialogs
+/** The guide's text (003 FR-030, contracts/ui-databases.md §11). The dialogs
  * say each point in a sentence or two; this is where it is explained. */
 const SECTIONS: Section[] = [
   {
@@ -88,7 +88,7 @@ const SECTIONS: Section[] = [
   },
 ];
 
-/** "About databases and security" (FR-030, contracts/ui-databases.md §11):
+/** "About databases and security" (003 FR-030, contracts/ui-databases.md §11):
  * a shared `Dialog` with headed sections, in the style of the origin guide.
  * The text is the same for every database; with one open, the backup and
  * lock sections also show how it is set up, beside the defaults. */

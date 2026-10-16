@@ -1,6 +1,5 @@
-//! Integration tests for the serial-number attestation rule (spec.md
-//! Acceptance Scenarios 6-7 / FR-029), run against a real temporary
-//! SQLCipher database.
+//! Integration tests for the serial-number attestation rule (001 US1-6, US1-7
+//! and FR-029), run against a real temporary SQLCipher database.
 
 use crate::support;
 

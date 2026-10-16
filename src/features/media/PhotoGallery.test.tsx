@@ -10,7 +10,7 @@ import type { SessionScope } from "../session/sessionScope";
 import { PhotoGallery } from "./PhotoGallery";
 import type { PhotoSummary } from "./types";
 
-// specs/008-hardening-batch tasks.md T029 (US1-2, US1-5), research.md §5: a
+// 008 tasks.md T029 (008 US1-2, US1-5), 008 research.md §5: a
 // batch checks `scope.ended` before each file and stops, and a list load that
 // resolves after the scope ended never reaches the list. The backend is
 // pinned at the IPC boundary (`invoke`, `listenForFileDrops`); the scope is
@@ -73,7 +73,7 @@ beforeEach(() => {
   backend.invoke.mockReset();
 });
 
-describe("PhotoGallery: a batch stops at the scope's end (US1-5)", () => {
+describe("PhotoGallery: a batch stops at the scope's end (008 US1-5)", () => {
   it("sends exactly one add of three dropped photos when the scope ends after the first", async () => {
     const scope = createSessionScope(1);
     backend.invoke.mockImplementation(async (command: string, args: { path?: string }) => {
@@ -126,7 +126,7 @@ describe("PhotoGallery: a batch stops at the scope's end (US1-5)", () => {
   });
 });
 
-describe("PhotoGallery: a late load (US1-2)", () => {
+describe("PhotoGallery: a late load (008 US1-2)", () => {
   it("drops a list that resolves after the scope ended", async () => {
     const scope = createSessionScope(1);
     let finish!: (photos: PhotoSummary[]) => void;
@@ -241,7 +241,7 @@ describe("PhotoGallery: at most 50 photos (001 FR-007, amended 2026-10-11)", () 
   });
 });
 
-describe("PhotoGallery: choosing the thumbnail (001 US4 Scenario 2)", () => {
+describe("PhotoGallery: choosing the thumbnail (001 US4-2)", () => {
   // A parent that holds the thumbnail id the way a record page does: the gallery
   // calls `onChanged` and the page reloads the record with its new thumbnail.
   function Page({ scope }: { scope: SessionScope }) {

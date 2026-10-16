@@ -31,8 +31,8 @@ function renderDialog(onRestore = vi.fn().mockResolvedValue(undefined)) {
   return { onRestore, onOpenChange };
 }
 
-describe("RestoreDialog (FR-033)", () => {
-  // 001 US1 Scenario 12
+describe("RestoreDialog (001 FR-033)", () => {
+  // 001 US1-12
   it("asks what to do with the disposition and never picks for the user", async () => {
     const user = userEvent.setup();
     const { onRestore } = renderDialog();
@@ -126,7 +126,7 @@ describe("RestoreDialog (FR-033)", () => {
   });
 
   it("shows the nickname maximum at once and refuses to restore past it", async () => {
-    // specs/008-hardening-batch research.md §10, contracts/ui.md §3
+    // 008 research.md §10, contracts/ui.md §3
     const user = userEvent.setup();
     const message = 'That nickname is already used by Sig P226 "Old Faithful".';
     const onRestore = vi
@@ -189,7 +189,7 @@ describe("RestoreDialog (FR-033)", () => {
   });
 
   it("shows an identity clash naming the year exception, the same as the form", async () => {
-    // specs/002-firearm-identification FR-008
+    // 002 FR-008
     const user = userEvent.setup();
     const message =
       "Glock 19 (serial ABC123) already has this make, model and serial number. " +
@@ -210,7 +210,7 @@ describe("RestoreDialog (FR-033)", () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
   });
 
-  it("offers 'Restore anyway' on an original-marks match and resends confirmed (US3-9)", async () => {
+  it("offers 'Restore anyway' on an original-marks match and resends confirmed (002 US3-9)", async () => {
     const user = userEvent.setup();
     const message =
       "Ridgeline Arms Hi-Power (serial RA-1) already has these original maker's marks.";
@@ -233,7 +233,7 @@ describe("RestoreDialog (FR-033)", () => {
   });
 });
 
-// specs/006-accessory-links FR-006, FR-009, FR-027: given an accessory, the
+// 006 FR-006, FR-009, FR-027: given an accessory, the
 // dialog names it by `RecordName`, hands the same input to `onRestore`, which
 // the accessory's page sends as `reverse_accessory_disposition`, and keeps
 // its draft as `kind: "accessory"`. An accessory has no nickname to clash.
@@ -313,7 +313,7 @@ describe("RestoreDialog for an accessory", () => {
     expect(screen.queryByLabelText("New nickname")).not.toBeInTheDocument();
   });
 
-  it("keeps its unsaved choice as a draft of the accessory (FR-027)", async () => {
+  it("keeps its unsaved choice as a draft of the accessory (006 FR-027)", async () => {
     const user = userEvent.setup();
     renderAccessoryDialog();
     expect(getDirtyForm()).toBeNull();

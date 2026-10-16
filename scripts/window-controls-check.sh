@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # The window controls check on Linux (specs/008-hardening-batch/research.md §18,
-# quickstart.md): builds src-tauri/examples/window_controls_check.rs with the
-# E2E profile (a development build installs none of the filters, FR-014) and
+# 008 quickstart.md): builds src-tauri/examples/window_controls_check.rs with the
+# E2E profile (a development build installs none of the filters, 008 FR-014) and
 # runs it under Xvfb with throwaway HOME and XDG folders and real XTest input.
 # It opens the main window with the app's own `window_controls::apply` and a
 # test page, right-clicks a blank area, a row, a button, an image, a text field
-# and a selection and logs every item each menu offered, presses every FR-012
+# and a selection and logs every item each menu offered, presses every 008 FR-012
 # key and the mouse's back and forward buttons, and fails if a menu offered an
-# item outside FR-011's list or appeared where none belongs, or the page
+# item outside 008 FR-011's list or appeared where none belongs, or the page
 # reloaded or navigated. Run it in the dev container:
 #
 #   scripts/dev-container.sh scripts/window-controls-check.sh [EXAMPLE FLAGS...]

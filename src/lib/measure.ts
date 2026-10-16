@@ -1,4 +1,4 @@
-// Physical details are stored as scaled integers (FR-039): lengths in
+// Physical details are stored as scaled integers (001 FR-039): lengths in
 // hundredths of an inch, weight in tenths of an ounce, so they stay exact.
 // They are entered as decimals, sent over IPC as the scaled integer and
 // exported as plain decimals. Anything typed with more precision than the

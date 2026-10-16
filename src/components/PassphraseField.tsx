@@ -18,7 +18,7 @@ export interface PassphraseFieldProps {
   label: string;
   /** `current-password` to open, `new-password` to set one. */
   autoComplete: "current-password" | "new-password";
-  /** Shows the strength hint below the field (FR-003). */
+  /** Shows the strength hint below the field (003 FR-003). */
   strength?: boolean;
   error?: string;
   hint?: ReactNode;
@@ -35,7 +35,7 @@ export interface PassphraseFieldProps {
 /** Sent when the screen locks or the computer is going to sleep. */
 export const CLEAR_PASSPHRASE_FIELDS = "system:clear-passphrase-fields";
 
-/** The one input for typing a passphrase (contracts/ui-databases.md §0,
+/** The one input for typing a passphrase (003 contracts/ui-databases.md §0,
  * FR-007). It is uncontrolled: the value lives only in the input, is read
  * through the handle on submit and reset straight after, and is never put
  * in React state, context or any store. It empties itself when the screen

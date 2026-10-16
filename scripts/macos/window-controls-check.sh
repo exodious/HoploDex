@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The window controls check on macOS (specs/008-hardening-batch/research.md
-# §13, §18, quickstart.md). Run from a Mac that has the tart VM set up
+# §13, §18, 008 quickstart.md). Run from a Mac that has the tart VM set up
 # (scripts/tart-vm.sh setup), it starts the macOS 26 VM, copies this checkout
 # in, runs the check in the test user's desktop session (it needs a window and
 # posts input), and copies the log and screenshots back to
@@ -12,21 +12,21 @@
 # It opens the main window with the app's own `window_controls::apply` (the
 # hook on WryWebView) and a test page, right-clicks a blank area, a row, a
 # button, an image, a text field and a selection and logs every item each menu
-# offered, presses every FR-012 key and the mouse's back and forward buttons,
+# offered, presses every 008 FR-012 key and the mouse's back and forward buttons,
 # and presses control-command-D on a selection (Look Up). It fails if a menu
-# offered an item outside FR-011's list or appeared where none belongs, the
+# offered an item outside 008 FR-011's list or appeared where none belongs, the
 # page reloaded or navigated, or a Look Up panel opened. AppKit's AutoFill is
 # not in the log: it is added outside the menu's items and kept by the owner's
-# decision (spec.md Clarifications 2026-10-11).
+# decision (008 spec.md Clarifications 2026-10-11).
 #
 # The VM's Terminal (or sshd) needs Accessibility and Screen Recording for the
 # input and the screenshots (scripts/tart-vm.sh setup grants them where SIP is
 # off). The check builds with the E2E profile, since a development build
-# installs no filters (FR-014), and runs as the VM's test user in a fresh
+# installs no filters (008 FR-014), and runs as the VM's test user in a fresh
 # scratch folder; it never reaches a real database. Exits with the example's
 # code (0 passed, 1 no window, 3 usage, 4 a check failed).
 #
-# Run on the macOS 26 VM for T084.
+# Run on the macOS 26 VM for 008 T084.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=$ROOT/e2e/screenshots-out/window-controls

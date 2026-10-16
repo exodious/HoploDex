@@ -8,7 +8,7 @@ import { repoRoot, seedBinary } from "./build";
  * The throwaway sandbox every E2E app runs in, shared by the test runner
  * (wdio.conf.ts, one sandbox per spec file) and the `wdio session` launcher
  * (e2e/session.ts), so the two isolate identically (constitution 1.2.0,
- * research.md §21). Nothing here reads or writes the developer's real
+ * 003 research.md §21). Nothing here reads or writes the developer's real
  * databases, config directory or keyring; DEVELOPMENT.md, "Test isolation",
  * says what that covers.
  *
@@ -47,7 +47,7 @@ export function sandboxPath(): string | undefined {
 }
 
 /** Where the documents folder, and so the suggested location for a new
- * database, points during a session (research.md §19). */
+ * database, points during a session (003 research.md §19). */
 function writeUserDirs(configDir: string, documents: string) {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, "user-dirs.dirs"), `XDG_DOCUMENTS_DIR="${documents}"\n`);
@@ -68,7 +68,7 @@ export const SHADER_CACHE = path.join(repoRoot, "node_modules", ".cache", "hoplo
  * Points the app at a throwaway data, config, cache and documents directory
  * for this session, so each spec starts at a first run and E2E runs never
  * see the developer's real databases, their recent list or their Documents
- * folder (constitution 1.2.0, research.md §21). A `user-dirs.dirs` in the
+ * folder (constitution 1.2.0, 003 research.md §21). A `user-dirs.dirs` in the
  * scratch config directory moves the documents folder into the sandbox too,
  * so even accepting the suggested location for a new database stays inside
  * it.
@@ -95,7 +95,7 @@ export function isolateAppData(): string {
   process.env.HOPLODEX_E2E_CACHE_HOME = cache;
   process.env.HOPLODEX_E2E_DOCUMENTS = documents;
   // The E2E build's in-memory keyring is kept here between launches, so a
-  // remembered passphrase outlives a relaunch (research.md §10).
+  // remembered passphrase outlives a relaunch (003 research.md §10).
   process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(root, "keyring.json");
   // An E2E build never hands an opened document to the OS, which would start
   // a real viewer: it writes the copy's path here instead (open_document, #27).

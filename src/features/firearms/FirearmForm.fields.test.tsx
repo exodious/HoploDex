@@ -19,7 +19,7 @@ import type { Firearm } from "./types";
 beforeEach(resetServiceMocks);
 
 describe("FirearmForm serial-attestation rule", () => {
-  // 001 US1 Scenario 7
+  // 001 US1-7
   it("blocks submission when serial number is blank and attestation is unchecked", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -38,7 +38,7 @@ describe("FirearmForm serial-attestation rule", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  // 001 US1 Scenario 6
+  // 001 US1-6
   it("allows submission with a blank serial number once attestation is checked", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -77,7 +77,7 @@ describe("FirearmForm serial-attestation rule", () => {
     expect(submitted.noSerialAttested).toBe(false);
   });
 
-  // 001 US1 Scenario 11
+  // 001 US1-11
   it("checking attestation disables and does not require the serial number field", async () => {
     const user = userEvent.setup();
     render(<FirearmForm onSubmit={vi.fn()} />);
@@ -88,7 +88,7 @@ describe("FirearmForm serial-attestation rule", () => {
     expect(screen.getByLabelText("Serial number")).toBeDisabled();
   });
 
-  // 001 US1 Scenario 11: a firearm with no serial number is taken out of the
+  // 001 US1-11: a firearm with no serial number is taken out of the
   // duplicate check, so what was typed before is not sent.
   it("submits serialNumber null when 'no serial' is checked after a serial was typed", async () => {
     const user = userEvent.setup();
@@ -108,7 +108,7 @@ describe("FirearmForm serial-attestation rule", () => {
     });
   });
 
-  // 001 US1 Scenario 11: unlocking the serial field puts the rule back.
+  // 001 US1-11: unlocking the serial field puts the rule back.
   it("unchecking 'no serial' unlocks the field, asks for a serial again and blocks the save", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -160,9 +160,9 @@ describe("FirearmForm amount cap (#67)", () => {
   });
 });
 
-// 001 US1 Scenarios 3 and 16: amounts are whole dollars, and editing shows them
+// 001 US1-3 and US1-16: amounts are whole dollars, and editing shows them
 // as typed (no grouping, no cents).
-describe("FirearmForm amounts when editing (FR-037)", () => {
+describe("FirearmForm amounts when editing (001 FR-037)", () => {
   it("prefills the replacement value and price paid as plain whole dollars", () => {
     render(
       <FirearmForm
@@ -189,7 +189,7 @@ describe("FirearmForm amounts when editing (FR-037)", () => {
   });
 });
 
-// specs/008-hardening-batch research.md §10, contracts/ui.md §3: the free-text
+// 008 research.md §10, contracts/ui.md §3: the free-text
 // maximums, shown at once and never cut off. The labels are the backend's.
 describe("FirearmForm free-text maximums", () => {
   const SHORT = [
@@ -296,8 +296,8 @@ describe("FirearmForm free-text maximums", () => {
   });
 });
 
-// 001 US1 Scenarios 13-14
-describe("FirearmForm date rules (FR-003 / FR-004)", () => {
+// 001 US1-13 and US1-14
+describe("FirearmForm date rules (001 FR-003 / FR-004)", () => {
   it("blocks a future acquisition date with a field-level message", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -355,7 +355,7 @@ describe("FirearmForm date rules (FR-003 / FR-004)", () => {
   });
 });
 
-describe("FirearmForm nickname (FR-031)", () => {
+describe("FirearmForm nickname (001 FR-031)", () => {
   it("submits a trimmed nickname, or null when left blank", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -402,8 +402,8 @@ describe("FirearmForm nickname (FR-031)", () => {
   });
 });
 
-// 001 US1 Scenario 17
-describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", () => {
+// 001 US1-17
+describe("FirearmForm physical details (001 FR-039, US1-17)", () => {
   const group = () => screen.getByRole("group", { name: "Physical details" });
   const barrel = () => within(group()).getByLabelText("Barrel length (in)");
   const overall = () => within(group()).getByLabelText("Overall length (in)");
@@ -624,7 +624,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
     expect(await screen.findByText("Weight must be greater than 0.")).toBeInTheDocument();
   });
 
-  // 001 US1 Scenario 17: clearing all six removes the Physical details panel
+  // 001 US1-17: clearing all six removes the Physical details panel
   // from the record, so every one is sent as null.
   it("submits all six as null after a record's physical details are cleared", async () => {
     const user = userEvent.setup();
@@ -675,7 +675,7 @@ describe("FirearmForm physical details (FR-039, US1 Acceptance Scenario 17)", ()
   });
 });
 
-describe("FirearmForm focusField (FR-038, US1 Acceptance Scenario 15)", () => {
+describe("FirearmForm focusField (001 FR-038, US1-15)", () => {
   function reducedMotion(reduce: boolean) {
     vi.stubGlobal(
       "matchMedia",

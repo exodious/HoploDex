@@ -2,7 +2,7 @@ import { Badge, InsuranceWarningBadge } from "../../components";
 import type { FirearmSummary } from "./types";
 
 /** A firearm's coverage state in browse views — every uninsured or
- * under-insured firearm is visibly flagged wherever it's listed (SC-004).
+ * under-insured firearm is visibly flagged wherever it's listed (001 SC-004).
  * An accessory's summary has the same three fields (specs/006). */
 export function CoverageCell({
   firearm,

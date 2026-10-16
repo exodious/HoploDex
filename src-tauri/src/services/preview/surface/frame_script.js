@@ -1,4 +1,4 @@
-// The script the surface runs in every frame (research.md §8, §10). Rust
+// The script the surface runs in every frame (007 research.md §8, §10). Rust
 // writes the surface's secret in where SECRET is; the script is otherwise the
 // same for every surface. It is a belt over the braces Rust holds in native
 // code: nothing here is what stops a document from reaching anything.

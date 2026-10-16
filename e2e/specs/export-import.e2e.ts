@@ -5,7 +5,7 @@ import { createDatabase, listedNames, scratchDocuments, search } from "../suppor
 import { writeSheetsWorkbook } from "../support/spreadsheets";
 
 /**
- * End-to-end coverage of User Story 5's acceptance scenarios (spec.md),
+ * End-to-end coverage of 001 US5's acceptance scenarios (001 spec.md),
  * driven against the real built app through its embedded WebDriver server.
  *
  * The folder and file fields accept typed paths (not only native pickers)
@@ -14,7 +14,7 @@ import { writeSheetsWorkbook } from "../support/spreadsheets";
  * e2e/support/ui.ts for why interactions go through page JS.
  */
 
-/** The spreadsheet's columns, in order (contracts/spreadsheet-format.md). */
+/** The spreadsheet's columns, in order (001 contracts/spreadsheet-format.md). */
 const COLUMNS = [
   "make",
   "model",
@@ -106,7 +106,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     workDir = fs.mkdtempSync(path.join(scratchDocuments(), "export-"));
   });
 
-  it("exports the collection to a spreadsheet and photos folder (Scenario 1)", async () => {
+  it("exports the collection to a spreadsheet and photos folder (001 US5-1)", async () => {
     await addFirearm({
       make: "ExportE2EGlock",
       model: "19",
@@ -134,9 +134,9 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
 
     await clickButton("Done");
 
-    // Scenario 2: the exported file imports again. Make it a different
+    // 001 US5-2: the exported file imports again. Make it a different
     // firearm, so it is added, not matched, and drop the record ID, which a
-    // match would otherwise be made by (specs/006-accessory-links FR-019).
+    // match would otherwise be made by (006 FR-019).
     const exported = fs.readFileSync(path.join(workDir, spreadsheet!), "utf-8");
     const copyPath = path.join(workDir, "copy.csv");
     fs.writeFileSync(
@@ -152,7 +152,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     await search("ExportE2EGlock");
     expect(await listedNames()).toContain("ExportE2EGlock Copy");
 
-    // Scenario 2 and 3: a prepared spreadsheet imports its good row, and
+    // 001 US5-2 and US5-3: a prepared spreadsheet imports its good row, and
     // reports the failing one by table and row without discarding it.
     const preparedPath = path.join(workDir, "import-mixed.csv");
     fs.writeFileSync(
@@ -172,7 +172,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     await search("");
   });
 
-  // 008 US2 (spec.md FR-006 to FR-008; contracts/ui.md §2).
+  // 008 US2 (008 spec.md FR-006 to FR-008; 008 contracts/ui.md §2).
   it("refuses a workbook over the import's limits and names it (008 US2, a refused file)", async () => {
     // Stands in for `import-samples/import-refused-too-many-sheets.xlsx`
     // (20 sheets; examples/human_seed.rs): this spec starts at a first run

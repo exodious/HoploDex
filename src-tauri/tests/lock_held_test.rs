@@ -1,5 +1,5 @@
 //! An open database stays locked against other processes while HoploDex
-//! reads its file (research.md §2, §3). On Linux and macOS, closing any file
+//! reads its file (003 research.md §2, §3). On Linux and macOS, closing any file
 //! descriptor on a file drops every POSIX lock the process holds on it,
 //! SQLite's exclusive lock included, so nothing may read an open database
 //! through a descriptor of its own. SQLite shares lock state between the

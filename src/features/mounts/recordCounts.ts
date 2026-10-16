@@ -1,7 +1,7 @@
 import type { RecordKind } from "./types";
 
 // Issue #56: the application doesn't call a firearm or an accessory a
-// "record" on its own (spec.md FR-012's wording rule). A count says what it
+// "record" on its own (006 spec.md FR-012's wording rule). A count says what it
 // counts ("1 firearm and 2 accessories"), and a noun for a set of them names
 // the kinds in it ("accessories", "firearms and accessories").
 

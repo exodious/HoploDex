@@ -4,7 +4,7 @@ import { createSessionScope } from "../session/sessionScope";
 import * as firearmsService from "./firearmsService";
 
 // Pins the arguments the backend receives and the session each call names
-// (specs/008-hardening-batch FR-001), the entry commands included.
+// (008 FR-001), the entry commands included.
 vi.mock("../../services/tauriClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../services/tauriClient")>()),
   invoke: vi.fn(),

@@ -13,11 +13,10 @@ import { InsurancePage } from "./InsurancePage";
 import type { InsurancePolicy, ValueSummary } from "./types";
 import { render } from "../../test/sessionScope";
 
-// specs/006-accessory-links User Story 1, FR-008, FR-009,
-// contracts/ui-accessories.md §10: active accessories count in the value
-// summary as their own subtotal, in the blanket policy's count and in the
-// records no policy covers, and a policy lists the accessories scheduled on
-// it with its firearms.
+// 006 US1, FR-008, FR-009, contracts/ui-accessories.md §10: active accessories
+// count in the value summary as their own subtotal, in the blanket policy's
+// count and in the records no policy covers, and a policy lists the
+// accessories scheduled on it with its firearms.
 
 vi.mock("./insuranceService");
 
@@ -218,8 +217,8 @@ beforeEach(() => {
   });
 });
 
-// 001 US3 Scenario 6
-describe("InsurancePage value summary (FR-008, contracts/ui-accessories.md §10)", () => {
+// 001 US3-6
+describe("InsurancePage value summary (006 FR-008, contracts/ui-accessories.md §10)", () => {
   it("shows the collection total with the firearms and accessories subtotals beside it", () => {
     renderPage(collectionWith(summaryWith()));
 
@@ -245,7 +244,7 @@ describe("InsurancePage value summary (FR-008, contracts/ui-accessories.md §10)
   });
 });
 
-describe("InsurancePage policies (FR-009)", () => {
+describe("InsurancePage policies (006 FR-009)", () => {
   it("counts the firearms and the accessories the blanket policy covers", () => {
     renderPage(collectionWith(summaryWith()));
 
@@ -296,7 +295,7 @@ describe("InsurancePage policies (FR-009)", () => {
   });
 });
 
-describe("InsurancePage records no policy covers (FR-008)", () => {
+describe("InsurancePage records no policy covers (006 FR-008)", () => {
   it("lists an uninsured accessory with the uninsured firearms, by its name", async () => {
     const user = userEvent.setup();
     const bare = { ...magazine, insuranceWarning: "uninsured" as const };
@@ -321,7 +320,7 @@ describe("InsurancePage records no policy covers (FR-008)", () => {
 
 // 001 ui-review (PR #1 regression): the legend's Under-insured figure is how
 // much coverage is missing, not the firearms' value, and Uninsured includes a
-// firearm scheduled on an expired policy (US3 Scenario 8).
+// firearm scheduled on an expired policy (001 US3-8).
 describe("InsurancePage coverage overview legend", () => {
   const firearm = (id: number, overrides: Partial<FirearmSummary>): FirearmSummary => ({
     ...colt,

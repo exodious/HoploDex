@@ -19,9 +19,9 @@ import type {
   RestoreProgress,
 } from "./types";
 
-// Typed wrappers for choosing, creating and opening databases (specs/003
+// Typed wrappers for choosing, creating and opening databases (003
 // contracts/tauri-commands.md). Passphrases are passed straight through as
-// command arguments and never kept (FR-007).
+// command arguments and never kept (003 FR-007).
 
 export function getChooserState(): Promise<ChooserState> {
   return invoke<ChooserState>("get_chooser_state");
@@ -33,9 +33,9 @@ export function createDatabase(input: CreateDatabaseInput): Promise<DatabaseStat
 
 export interface OpenOptions {
   /** Save the typed passphrase in this computer's keyring once it opens the
-   * database (FR-017), sent only after the confirmation. */
+   * database (003 FR-017), sent only after the confirmation. */
   rememberPassphrase?: boolean;
-  /** Open a database marked open on another computer (FR-032), sent only
+  /** Open a database marked open on another computer (003 FR-032), sent only
    * after the take-over confirmation. */
   takeOver?: boolean;
 }
@@ -56,25 +56,25 @@ export function openDatabase(
 }
 
 /** Takes a database off this computer's recent list. The file is never
- * touched (FR-012). */
+ * touched (003 FR-012). */
 export function removeRecentDatabase(path: string): Promise<{ removed: true }> {
   return invoke<{ removed: true }>("remove_recent_database", { path });
 }
 
-/** Points an unavailable recent entry at where its file now is (FR-012). */
+/** Points an unavailable recent entry at where its file now is (003 FR-012). */
 export function locateDatabase(path: string, newPath: string): Promise<RecentDatabase> {
   return invoke<RecentDatabase>("locate_database", { path, newPath });
 }
 
 /** Saves the open database's passphrase in this computer's keyring, once
- * the backend has checked it opens the database (FR-017). Sent only after
+ * the backend has checked it opens the database (003 FR-017). Sent only after
  * the confirmation. */
 export function savePassphrase(scope: SessionScope, passphrase: string): Promise<PassphraseSaved> {
   return scope.invoke<PassphraseSaved>("save_passphrase", { passphrase });
 }
 
 /** Deletes the passphrase saved for the database at `path`, or for the open
- * one (FR-018). */
+ * one (003 FR-018). */
 export function forgetSavedPassphrase(
   scope: SessionScope,
   path?: string,
@@ -82,7 +82,7 @@ export function forgetSavedPassphrase(
   return scope.invoke<PassphraseSaved>("forget_saved_passphrase", path ? { path } : {});
 }
 
-/** Saves the open database's backup settings (FR-024, FR-026). A changed
+/** Saves the open database's backup settings (003 FR-024, FR-026). A changed
  * location with backups at the old one is refused until `existingBackups`
  * says what to do with them, which may move or delete them first. */
 export function updateBackupSettings(
@@ -92,7 +92,7 @@ export function updateBackupSettings(
   return scope.invoke<BackupSettingsSaved>("update_backup_settings", { ...input });
 }
 
-/** Saves the open database's lock settings (FR-034, FR-038). The idle time
+/** Saves the open database's lock settings (003 FR-034, FR-038). The idle time
  * starts again. */
 export function updateLockSettings(
   scope: SessionScope,
@@ -102,7 +102,7 @@ export function updateLockSettings(
 }
 
 /** Notices came for a chooser already showing, such as the operation a
- * sleep stopped (FR-037): `getChooserState` has them. */
+ * sleep stopped (003 FR-037): `getChooserState` has them. */
 export function onChooserNotices(handler: () => void): () => void {
   return listen<unknown>("chooser:notices", () => handler());
 }
@@ -110,7 +110,7 @@ export function onChooserNotices(handler: () => void): () => void {
 /** Sends a command that works on the open database when it names no
  * `databasePath` (through `scope`, which then is required) and on a database
  * that isn't open when it does (sent with no session: none is open, or it is
- * not the one meant; contracts/tauri-commands.md "Every request names its
+ * not the one meant; 008 contracts/tauri-commands.md "Every request names its
  * session"). */
 function invokeOnOpenOrPath<T>(
   scope: SessionScope | null,
@@ -128,7 +128,7 @@ function invokeOnOpenOrPath<T>(
 }
 
 /** The open database's backups (through `scope`), or, with `databasePath`,
- * those of a database that doesn't open (FR-028), for which `scope` is
+ * those of a database that doesn't open (003 FR-028), for which `scope` is
  * `null`. */
 export function listBackups(
   scope: SessionScope | null,
@@ -139,7 +139,7 @@ export function listBackups(
 
 /** Replaces the open database (through `scope`), or the damaged one at
  * `databasePath` (`scope` is `null`), with a backup, which is then open with
- * that backup's passphrase (FR-028). */
+ * that backup's passphrase (003 FR-028). */
 export function restoreBackup(
   scope: SessionScope | null,
   backupPath: string,
@@ -155,7 +155,7 @@ export function restoreBackup(
 }
 
 /** Changes the open database's passphrase by copy, verify and replace
- * (FR-015, FR-016). */
+ * (003 FR-015, FR-016). */
 export function changePassphrase(
   scope: SessionScope,
   currentPassphrase: string,
@@ -164,7 +164,7 @@ export function changePassphrase(
   return scope.invoke<PassphraseChanged>("change_passphrase", { currentPassphrase, newPassphrase });
 }
 
-/** Securely deletes every backup of the open database (FR-029). */
+/** Securely deletes every backup of the open database (003 FR-029). */
 export function deleteAllBackups(scope: SessionScope, confirmed: boolean): Promise<BackupsDeleted> {
   return scope.invoke<BackupsDeleted>("delete_all_backups", { confirmed });
 }

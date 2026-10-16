@@ -42,17 +42,17 @@ import {
 } from "../support/ui";
 
 /**
- * End-to-end coverage of specs/007-document-preview's User Story 1 (spec.md,
- * contracts/ui-document-preview.md) against the real built app, on the
- * human-testing seed's Glock 19 Gen5 and the Leupold mounted on it. The
- * harness seeds the collection for this spec (wdio.conf.ts); the specs of US2
- * and US3 are `us13-document-preview-open-elsewhere` and `-setting`, and the
- * helpers they share with this one are in `support/documentPreview.ts`.
+ * End-to-end coverage of 007 US1 (007 spec.md, contracts/ui-document-preview.md)
+ * against the real built app, on the human-testing seed's Glock 19 Gen5 and
+ * the Leupold mounted on it. The harness seeds the collection for this spec
+ * (wdio.conf.ts); the specs of 007 US2 and US3 are
+ * `document-open-elsewhere` and `document-open-setting`, and the helpers they
+ * share with this one are in `support/documentPreview.ts`.
  *
  * What happens inside the PDF surface (the viewer's own controls, every
- * hostile PDF) is the surface check's (research.md §23); this spec drives the
- * main web view and watches what HoploDex itself does: the viewer, the events
- * the backend sends it, what is left on disk, and what is on the screen.
+ * hostile PDF) is the surface check's (007 research.md §23); this spec drives
+ * the main web view and watches what HoploDex itself does: the viewer, the
+ * events the backend sends it, what is left on disk, and what is on the screen.
  */
 
 const GLOCK_SERIAL = "BXKT482";
@@ -178,7 +178,7 @@ function marker(kind: string): string {
 // --- Disk and screen --------------------------------------------------------
 
 /** Every folder a leaked copy could land in: the sandbox's XDG folders, TMPDIR
- * and the system temp folder (research.md §23, SC-002). */
+ * and the system temp folder (007 research.md §23, SC-002). */
 function scanRoots(): string[] {
   const roots = [
     process.env.XDG_DATA_HOME,
@@ -472,7 +472,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     await openRecord(GLOCK);
   });
 
-  it("SC-001: a PDF of about 10 MB is ready within 1 s", async () => {
+  it("007 SC-001: a PDF of about 10 MB is ready within 1 s", async () => {
     const file = writeLargePdf(path.join(scratchDocuments(), "large"));
     expect(fs.statSync(file).size).toBeGreaterThan(9.5 * 1024 * 1024);
     const owner = { kind: "firearm", id: await glockId() };
@@ -483,7 +483,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     const clickedAt = await openDocument("Large appraisal.pdf");
     const ready = await waitForEvent("preview:pdf-ready", mark);
 
-    console.log(`SC-001: click to preview:pdf-ready ${Math.round(ready.at - clickedAt)} ms`);
+    console.log(`007 SC-001: click to preview:pdf-ready ${Math.round(ready.at - clickedAt)} ms`);
     expect(ready.at - clickedAt).toBeLessThan(1000);
     await closeViewer();
   });
@@ -557,7 +557,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
       timeout: 5000,
       timeoutMsg: "Page Down never moved to page 2",
     });
-    // Each zoom key moves its own way (research.md §14): − lowers the percent
+    // Each zoom key moves its own way (007 research.md §14): − lowers the percent
     // and + raises it. The fit this scan opens at can lie outside 50-400% (on
     // Linux it is 789%), where the key that would move the wrong way does
     // nothing, so + first has to be left alone above 400%, and − twice puts the
@@ -601,7 +601,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     ).toBe(true);
 
     // The mounted Leupold's own receipt previews on its own record (the
-    // Glock's documents never reach it: FR-007, document_test.rs).
+    // Glock's documents never reach it: 007 FR-007, document_test.rs).
     await goTo("Accessories");
     await $("h1=Accessories").waitForExist();
     await browser.waitUntil(
@@ -626,7 +626,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     await openRecord(GLOCK);
   });
 
-  it("SC-002: leaves no copy of a PDF, TIFF or text document on disk, during or after a preview", async function () {
+  it("007 SC-002: leaves no copy of a PDF, TIFF or text document on disk, during or after a preview", async function () {
     this.timeout(180000);
     // A little before the markers exist, for file systems whose times are
     // coarser than a millisecond.
@@ -679,7 +679,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     fs.rmSync(control);
   });
 
-  it("FR-006, SC-003: a truncated and a bit-flipped PDF reach the surface, and the app stays up", async function () {
+  it("007 FR-006, SC-003: a truncated and a bit-flipped PDF reach the surface, and the app stays up", async function () {
     this.timeout(120000);
     for (const name of ["three-pages-truncated.pdf", "three-pages-bitflipped.pdf"]) {
       await attach(name, "application/pdf", fs.readFileSync(path.join(FIXTURES, name)));
@@ -775,7 +775,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     this.timeout(180000);
     await switchDatabase();
     // The idle lock's minute lasts 3 s in this app (wdio.conf.ts does it for
-    // US9's spec; this one asks for it itself).
+    // the locking spec; this one asks for it itself).
     process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = "3";
     await relaunchApp();
     await waitForChooser();

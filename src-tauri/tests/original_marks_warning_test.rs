@@ -1,5 +1,5 @@
-//! Integration tests for the FR-009 original-marks warning
-//! (specs/002-firearm-identification User Story 3), run against a real
+//! Integration tests for the 002 FR-009 original-marks warning
+//! (002 US3), run against a real
 //! temporary SQLCipher database.
 
 use crate::support;
@@ -88,7 +88,7 @@ fn resending_with_confirmed_warnings_saves_it() {
     ops::create_firearm(&db.conn, &input, false, None).expect_err("first attempt warns");
 
     let created = ops::create_firearm(&db.conn, &input, true, None)
-        .expect("confirmed_warnings: true saves it (US3-5)");
+        .expect("confirmed_warnings: true saves it (002 US3-5)");
     assert_eq!(created.original_serial_number.as_deref(), Some("FN-2"));
 
     let count: i64 = db.conn.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0)).unwrap();
@@ -107,7 +107,7 @@ fn a_partial_original_marks_set_never_warns() {
         with_original_marks("Century Arms", "Hi-Power Clone", "CA-3", "FN", "High Power", "FN-3");
     second.original_serial_number = None;
     ops::create_firearm(&db.conn, &second, false, None)
-        .expect("a partial set on the existing record never triggers the warning (US3-8)");
+        .expect("a partial set on the existing record never triggers the warning (002 US3-8)");
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn a_match_against_a_disposed_firearm_never_warns() {
         false,
         None,
     )
-    .expect("a disposed firearm's original marks are never compared (US3-7)");
+    .expect("a disposed firearm's original marks are never compared (002 US3-7)");
 }
 
 #[test]
@@ -142,8 +142,8 @@ fn matching_original_marks_with_different_main_serials_is_never_blocked_by_ident
     )
     .unwrap();
 
-    // Different main make/model/serial, so FR-007/FR-008 never applies;
-    // only the FR-009 warning should fire (US3-6).
+    // Different main make/model/serial, so 002 FR-007/FR-008 never applies;
+    // only the 002 FR-009 warning should fire (002 US3-6).
     let err = ops::create_firearm(
         &db.conn,
         &with_original_marks(
@@ -193,7 +193,7 @@ fn editing_a_firearm_into_a_match_also_warns() {
     assert_eq!(confirmed.original_serial_number.as_deref(), Some("FN-6"));
 }
 
-// specs/002-firearm-identification FR-006: the same non-judgment guarantee
+// 002 FR-006: the same non-judgment guarantee
 // for the ORIGINAL_MARKS_MATCH warning.
 #[test]
 fn the_original_marks_match_message_never_judges_legality() {

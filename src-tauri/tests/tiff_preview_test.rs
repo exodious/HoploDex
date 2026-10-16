@@ -1,11 +1,11 @@
-//! The TIFF preview against the real render helper (feature 007, T032;
-//! research.md §11, §14, §20): `open_preview` starts `CARGO_BIN_EXE_hoplodex
+//! The TIFF preview against the real render helper (007 T032;
+//! 007 research.md §11, §14, §20): `open_preview` starts `CARGO_BIN_EXE_hoplodex
 //! --render-helper`, `render_preview_page` asks it for pages, and the
-//! crafted TIFFs of T004 fail cleanly. Real SQLCipher databases in temp
+//! crafted TIFFs of 007 T004 fail cleanly. Real SQLCipher databases in temp
 //! directories. How the preview ends at a lock, close, switch, sleep and
-//! shutdown is lock_test.rs's (T036).
+//! shutdown is lock_test.rs's (007 T036).
 //!
-//! Assumed API (T048, T049, T053, T054; shapes in
+//! Assumed API (007 T048, T049, T053, T054; shapes in
 //! tests/support/preview_support.rs): `commands::preview::PreviewEnv {
 //! helper_limits: HelperLimits, .. }` and `ops::{open_preview, close_preview,
 //! render_preview_page(&Session, id, page, width_px) -> Result<Vec<u8>>}`;
@@ -59,7 +59,7 @@ fn pages_of(info: &Value) -> Vec<(f64, f64)> {
 }
 
 /// The first page's size in points as the TIFF's own tags give it: its
-/// pixels over its DPI, or 200 DPI without the tags (research.md §11).
+/// pixels over its DPI, or 200 DPI without the tags (007 research.md §11).
 fn expected_first_page_points(tiff: &[u8]) -> (f64, f64) {
     let little = &tiff[..2] == b"II";
     let u16_at = |at: usize| {
@@ -117,7 +117,7 @@ fn break_compression_of(tiff: &mut [u8], page: usize, value: u16) {
     }
 }
 
-// --- Opening and rendering (US1-2, US1-3) ---------------------------------------
+// --- Opening and rendering (007 US1-2, US1-3) -----------------------------------
 
 #[test]
 fn a_single_page_opens_with_its_size_in_points_at_its_dpi() {
@@ -279,7 +279,7 @@ fn each_crafted_tiff_fails_cleanly_and_the_session_stays_usable() {
     }
 }
 
-// --- Closing at once (spec Edge Cases, "A large document") ------------------------
+// --- Closing at once (007 spec.md Edge Cases, "A large document") --------------------
 
 /// A valid 8192-pixel-wide TIFF of at least 100 MB, made once.
 fn large() -> &'static hostile::Generated {
@@ -336,7 +336,7 @@ fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
     assert!(preview_support::helper_children().is_empty());
 }
 
-// --- A crashing helper (research.md §11 "Failures") -------------------------------
+// --- A crashing helper (007 research.md §11 "Failures") ---------------------------
 
 #[cfg(unix)]
 #[test]
@@ -377,7 +377,7 @@ fn a_killed_helper_fails_that_page_is_restarted_and_a_third_crash_ends_the_previ
     assert!(preview_support::helper_children().is_empty());
 }
 
-// --- Page sizes and requests (research.md §14) ------------------------------------
+// --- Page sizes and requests (007 research.md §14) --------------------------------
 
 #[test]
 fn the_width_is_clamped_to_4096_pixels() {
@@ -444,7 +444,7 @@ fn a_bad_page_width_or_kind_of_preview_is_a_validation_error() {
     assert_eq!(render(&world, pdf_id, 0, 100).unwrap_err(), "VALIDATION_ERROR", "a PDF preview");
 }
 
-// --- The helper ends with the preview (US1-8) -------------------------------------
+// --- The helper ends with the preview (007 US1-8) ---------------------------------
 
 #[test]
 fn the_helper_is_gone_after_close_preview_and_after_opening_another_document() {
@@ -474,7 +474,7 @@ fn the_helper_is_gone_after_close_preview_and_after_opening_another_document() {
     assert!(!preview_support::process_is_gone(replacement));
 }
 
-// --- Nothing reaches the disk (FR-003, SC-002) ------------------------------------
+// --- Nothing reaches the disk (007 FR-003, SC-002) --------------------------------
 
 /// Points `TMPDIR` and the XDG folders at a scratch folder for the test and
 /// puts them back after. Only this test changes the environment.

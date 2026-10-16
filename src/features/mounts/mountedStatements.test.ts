@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mountedStatements } from "./mountedStatements";
 import type { MountedEntry, RecordLabel } from "./types";
 
-// FR-014, issue #56: the statements under the dispose choices name the kinds
+// 006 FR-014, issue #56: the statements under the dispose choices name the kinds
 // they are about and what those were mounted on.
 
 const label = (

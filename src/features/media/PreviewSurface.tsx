@@ -1,7 +1,6 @@
 // The viewer's PDF page area: the placeholder region the PDF surface (a child
 // web view the backend places over the window) is laid over. Contract:
-// specs/007-document-preview/contracts/ui-document-preview.md §2 ("Page
-// area"), research.md §3 and §15.
+// 007 contracts/ui-document-preview.md §2 ("Page area"), 007 research.md §3 and §15.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionScope } from "../session/sessionScope";
 import { onPdfReady, setPreviewBounds } from "./mediaService";

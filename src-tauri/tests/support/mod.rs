@@ -16,7 +16,7 @@ use hoplodex_lib::session::{Session, SessionEvents};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-/// The fixed passphrase of every test database (research.md §20).
+/// The fixed passphrase of every test database (003 research.md §20).
 #[allow(dead_code)]
 pub const TEST_PASSPHRASE: &str = "correct horse battery staple";
 
@@ -288,7 +288,7 @@ pub fn csv_file(rows: &[String]) -> String {
     lines.join("\n") + "\n"
 }
 
-/// A valid record identifier (FR-019), for tests that insert a firearm with
+/// A valid record identifier (006 FR-019), for tests that insert a firearm with
 /// raw SQL.
 #[allow(dead_code)]
 pub fn uid() -> String {

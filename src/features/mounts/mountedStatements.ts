@@ -10,7 +10,7 @@ function kept(entries: MountedEntry[]): string {
   return entries.length === 1 ? `The kept ${noun}` : `Kept ${noun}`;
 }
 
-/** What happens to the records kept, below the choices (FR-014): which are
+/** What happens to the records kept, below the choices (006 FR-014): which are
  * unmounted, named by what they were mounted on, and which stay mounted.
  * `disposeWith` holds the records disposed with `subjectName`, by
  * `recordKey`. */

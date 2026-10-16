@@ -72,10 +72,9 @@ async function fillOriginalMarks(maker: string, model: string, serial: string) {
 }
 
 /**
- * End-to-end coverage of specs/002-firearm-identification's User Story 1
- * (SC-007, US1-7): a first-time user follows the "How do I record this?"
- * guide's re-imported M1 Carbine example, saves with no further prompt,
- * reopens the record, and confirms every value shows labeled.
+ * End-to-end coverage of 002 SC-007 and US1-7: a first-time user follows the
+ * "How do I record this?" guide's re-imported M1 Carbine example, saves with no
+ * further prompt, reopens the record, and confirms every value shows labeled.
  *
  * Driven against the real built app through its embedded WebDriver server — no
  * mocks. See e2e/support/ui.ts for why interactions go through page JS.
@@ -86,7 +85,7 @@ describe("002 US1 - Record Where a Firearm Came From (was us6-identification)", 
     await createDatabase();
   });
 
-  it("records a re-imported M1 Carbine following the guide's example (SC-007, US1-7)", async () => {
+  it("records a re-imported M1 Carbine following the guide's example (002 SC-007, US1-7)", async () => {
     // The guide opens from the Add firearm form, and Escape closes only the
     // guide: the form stays open under it, and is the one the record is
     // saved from.
@@ -145,8 +144,8 @@ describe("002 US1 - Record Where a Firearm Came From (was us6-identification)", 
   });
 
   // M1 (issue #77 step 8): the only E2E check of FirearmForm's overridable
-  // warning, the `confirmedWarnings` resend. 002 US3 Scenario 5.
-  it("warns when another firearm has the same original marks, and saves once confirmed (002 US3 Scenario 5)", async () => {
+  // warning, the `confirmedWarnings` resend. 002 US3-5.
+  it("warns when another firearm has the same original marks, and saves once confirmed (002 US3-5)", async () => {
     await back();
     const marks = { maker: "Fabrique Nationale", model: "Hi-Power", serial: "74C12345" };
 

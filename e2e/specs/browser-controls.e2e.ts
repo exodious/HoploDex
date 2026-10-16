@@ -21,12 +21,11 @@ import {
 } from "../support/ui";
 
 /**
- * End-to-end coverage of specs/008-hardening-batch's User Story 3 (browser
- * controls, #40; spec.md FR-010 to FR-013, contracts/ui.md) against the real
- * built app. The E2E build installs the controls like a release build does
- * (research.md §15), so this runs them: the page's own layer, here
- * (research.md §12); what each OS's menus offer is the window controls
- * check's (research.md §13, §18).
+ * End-to-end coverage of 008 US3 (browser controls, #40; 008 spec.md FR-010 to
+ * FR-013, 008 contracts/ui.md) against the real built app. The E2E build
+ * installs the controls like a release build does (008 research.md §15), so
+ * this runs them: the page's own layer, here (008 research.md §12); what each
+ * OS's menus offer is the window controls check's (008 research.md §13, §18).
  *
  * The page side runs on every OS. The real keyboard and the mouse's back and
  * forward buttons, which reach the web view before the page does, run on

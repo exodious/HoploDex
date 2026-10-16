@@ -1,6 +1,6 @@
 //! Automatic backups at close, rotation, listing, deleting them all, and a
-//! backup opened directly (FR-025–FR-029, SC-004, SC-005; research.md §7,
-//! §9; data-model.md "Backup files"). Real SQLCipher files in temp
+//! backup opened directly (003 FR-025–FR-029, SC-004, SC-005; 003 research.md §7,
+//! §9; 003 data-model.md "Backup files"). Real SQLCipher files in temp
 //! directories, a manual clock with its own time zone, and machine settings
 //! in a temp config directory.
 
@@ -152,7 +152,7 @@ impl World {
     }
 
     fn set_backups(&self, enabled: bool, keep_count: i64, location: BackupLocationInput) {
-        // Backups already at an old location stay there, as before FR-026
+        // Backups already at an old location stay there, as before 003 FR-026
         // asked about them; backup_location_change_test covers the rest.
         let existing_backups = Some(ExistingBackupsChoice::Leave);
         databases::update_backup_settings(
@@ -195,7 +195,7 @@ fn notices(events: &TestEvents) -> Vec<Value> {
 
 // --- Close triggers ---------------------------------------------------------
 
-// 003 US3 Scenario 1
+// 003 US3-1
 #[test]
 fn a_close_after_changes_makes_one_backup_then_clears_the_changes() {
     let world = World::new();
@@ -215,7 +215,7 @@ fn a_close_after_changes_makes_one_backup_then_clears_the_changes() {
     assert_eq!(world.backup_record(), (false, Some("2026-09-25T12:30:05Z".to_owned())));
 }
 
-// 003 US3 Scenario 1a
+// 003 US3-1a
 #[test]
 fn a_second_close_the_same_day_makes_none_but_the_next_days_close_does() {
     let world = World::new();
@@ -231,7 +231,7 @@ fn a_second_close_the_same_day_makes_none_but_the_next_days_close_does() {
     assert_eq!(world.backups_in(&world.default_folder(), &id).len(), 1);
 
     // Still the 25th in UTC, but the 26th where the computer is: a new day
-    // (US3-1a), with the changes of the last session still waiting.
+    // (003 US3-1a), with the changes of the last session still waiting.
     world.clock.set("2026-09-26T00:30:00+02:00");
     world.open();
     assert!(world.backup_record().0, "the changes are still waiting");
@@ -331,7 +331,7 @@ fn with_backups_off_none_is_made_and_the_existing_ones_are_kept() {
 
     assert_eq!(world.backups_in(&world.default_folder(), &id).len(), 1);
     world.open();
-    assert!(world.backup_record().0, "the changes stay waiting (US3-8)");
+    assert!(world.backup_record().0, "the changes stay waiting (003 US3-8)");
 }
 
 #[test]
@@ -343,7 +343,7 @@ fn a_dropped_connection_leaves_the_changes_waiting_for_the_next_close() {
     drop(world.session.take(world.session.current_id()));
 
     world.open();
-    assert_eq!(world.backup_record(), (true, None), "US3-1b");
+    assert_eq!(world.backup_record(), (true, None), "003 US3-1b");
     assert_eq!(world.close().backup, BackupOutcome::Made);
 }
 
@@ -485,7 +485,7 @@ fn a_backup_opened_directly_becomes_its_own_database() {
     lifecycle::open(&world.session, &world.machine, &backup, &passphrase(), false).unwrap();
 
     let new_id = world.database_id();
-    assert_ne!(new_id, id, "research.md §9: a new identity");
+    assert_ne!(new_id, id, "003 research.md §9: a new identity");
     let status = databases::database_status(&world.session, &world.machine).unwrap();
     let note = status.notes.opened_backup.expect("the opened-backup note");
     assert_eq!(note.backup_of_name, "Mine");
@@ -713,7 +713,7 @@ fn a_backup_left_unfinished_is_swept_at_the_next_launch() {
             reason: BackupFailureReason::Interrupted,
         }]
     );
-    // SC-004: the database is whole, the changes wait, and the next close
+    // 003 SC-004: the database is whole, the changes wait, and the next close
     // backs them up.
     world.open();
     assert_eq!(world.firearm_count(), 1);
@@ -741,7 +741,7 @@ fn the_first_progress_arrives_at_once_and_says_whether_to_show_the_bar() {
     world.close();
 
     let waited = first_progress.lock().unwrap().expect("a backup:progress event");
-    assert!(waited.as_millis() < 100, "SC-005: {waited:?}");
+    assert!(waited.as_millis() < 100, "003 SC-005: {waited:?}");
     let first = &world.events.payloads("backup:progress")[0];
     let total = fs::metadata(world.path()).unwrap().len();
     assert_eq!(first, &json!({ "processed": 0, "total": total, "showNow": false }));
@@ -752,7 +752,7 @@ fn the_first_progress_arrives_at_once_and_says_whether_to_show_the_bar() {
     assert!(backups::shows_progress_at_once((50 << 20) + 1));
 }
 
-// --- Interruption points (SC-004) -------------------------------------------
+// --- Interruption points (003 SC-004) ---------------------------------------
 
 /// Stops the backup of a changed, multi-chunk database when `stop_here`
 /// says so, then checks nothing was lost or left behind, and that the next
@@ -804,7 +804,7 @@ fn a_backup_stopped_at_finalize_loses_nothing() {
     interrupted_backup(|processed, total| processed == total);
 }
 
-// --- Deleting all backups (FR-029, US3-4) -----------------------------------
+// --- Deleting all backups (003 FR-029, US3-4) -------------------------------
 
 /// "Mine" with three backups made over three days, left open.
 fn with_three_backups(world: &World) -> Vec<BackupInfo> {
@@ -863,7 +863,7 @@ fn deleting_all_backups_deletes_every_one_and_nothing_else() {
     assert_eq!(fs::read(&unrelated).unwrap(), b"keep me");
     assert!(other.exists());
     assert_eq!(fs::read(world.path()).unwrap(), before, "the database is untouched");
-    assert_eq!(world.backup_record(), record, "deleting backups is not a change (FR-025)");
+    assert_eq!(world.backup_record(), record, "deleting backups is not a change (003 FR-025)");
 
     // The next due close backs up as usual.
     world.change();
@@ -914,7 +914,7 @@ fn path_text(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-// --- Record identifiers (FR-019, research.md §23) -----------------------------
+// --- Record identifiers (006 FR-019, research.md §23) -------------------------
 
 #[test]
 fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
@@ -949,7 +949,7 @@ fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
     assert_eq!(world.firearm_uids(), before, "restoring brings the same identifiers back");
 }
 
-// --- Accessories (specs/006-accessory-links FR-025, research.md §23) ---------
+// --- Accessories (006 FR-025, research.md §23) -------------------------------
 
 /// What an accessory and its photo are, as stored: `(id, uid, make, serial
 /// number, thumbnail photo id)` of every accessory by id.
@@ -1073,7 +1073,7 @@ fn an_accessory_its_photo_and_its_identifier_survive_a_backup_and_a_restore_of_i
     );
 }
 
-// --- Mounts (specs/006-accessory-links FR-025) ---------------------------------------------
+// --- Mounts (006 FR-025) -------------------------------------------------------------------
 
 /// `(item firearm, item accessory, host firearm, host accessory)` of every
 /// mount by id.

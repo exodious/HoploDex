@@ -3,7 +3,7 @@ import { RecordName } from "./RecordName";
 import type { RecordLabel } from "./types";
 import "./mounts.css";
 
-// specs/006-accessory-links FR-013, contracts/ui-accessories.md §6: "Mounted
+// 006 FR-013, 006 contracts/ui-accessories.md §6: "Mounted
 // on" followed by the chain, each record a link: "BCM upper · Upper receiver,
 // on LaRue PredatAR · Rifle". The caller supplies the "Mounted on" label (a
 // fact row's, or the firearm plate's).

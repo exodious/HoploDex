@@ -4,7 +4,7 @@ import { listen } from "../services/tauriClient";
 import { CLEAR_PASSPHRASE_FIELDS } from "./PassphraseField";
 import type { PassphraseFieldHandle } from "./PassphraseField";
 
-/** The fewest characters a new passphrase may have (FR-003). */
+/** The fewest characters a new passphrase may have (003 FR-003). */
 export const MIN_PASSPHRASE_CHARS = 12;
 
 /** How long typing pauses before a problem is shown. A problem put right
@@ -46,7 +46,7 @@ function length(text: string): number {
 }
 
 /** What is wrong, from the fields as they are now. The passphrases are read
- * here and dropped when it returns: only the verdict leaves (FR-007). */
+ * here and dropped when it returns: only the verdict leaves (003 FR-007). */
 function inspect(fields: PassphraseCheckFields): { ready: boolean; errors: PassphraseCheckErrors } {
   const current = fields.current?.current?.read().normalize("NFC");
   const passphrase = (fields.passphrase.current?.read() ?? "").normalize("NFC");
@@ -78,7 +78,7 @@ function sameErrors(a: PassphraseCheckErrors, b: PassphraseCheckErrors): boolean
 }
 
 /** Checks a new passphrase and its confirmation as they are typed
- * (contracts/ui-databases.md §0), for the forms that set one. `ready` follows
+ * (003 contracts/ui-databases.md §0), for the forms that set one. `ready` follows
  * every keystroke, so the form's button enables the moment all is well;
  * problems wait for a pause in typing. The fields stay uncontrolled: each
  * check reads them afresh, and the timer that waits for the pause holds no

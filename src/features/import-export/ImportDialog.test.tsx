@@ -76,12 +76,12 @@ async function importTheFile(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByText(/matches a firearm|match firearms/);
 }
 
-describe("ImportDialog (FR-026, FR-032)", () => {
+describe("ImportDialog (001 FR-026, FR-032)", () => {
   beforeEach(() => {
     vi.mocked(importExportService.importCollection).mockResolvedValue(result);
   });
 
-  it("offers 'Add as new' only where FR-032 would allow the new record", async () => {
+  it("offers 'Add as new' only where 001 FR-032 would allow the new record", async () => {
     const user = userEvent.setup();
     await importTheFile(user);
 
@@ -139,7 +139,7 @@ describe("ImportDialog (FR-026, FR-032)", () => {
   });
 });
 
-// specs/001-firearm-inventory FR-026: a row that matches an existing record waits
+// 001 FR-026: a row that matches an existing record waits
 // for the user's decision, and the import applies only once every one has it.
 describe("ImportDialog: deciding matching rows (001 FR-026)", () => {
   beforeEach(() => {
@@ -206,7 +206,7 @@ describe("ImportDialog: deciding matching rows (001 FR-026)", () => {
   });
 });
 
-describe("ImportDialog warnings (US4-6, FR-009)", () => {
+describe("ImportDialog warnings (002 US4-6, FR-009)", () => {
   it("shows a Warnings section, separate from row errors and conflicts, with the count in the tally", async () => {
     const user = userEvent.setup();
     vi.mocked(importExportService.importCollection).mockResolvedValue({
@@ -257,7 +257,7 @@ describe("ImportDialog warnings (US4-6, FR-009)", () => {
   });
 });
 
-describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026, SC-007)", () => {
+describe("ImportDialog report of derived and matched values (004 US4, FR-025, FR-026, SC-007)", () => {
   async function importWith(overrides: Partial<ImportResult>) {
     const user = userEvent.setup();
     vi.mocked(importExportService.importCollection).mockResolvedValue({
@@ -309,7 +309,7 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
     ]);
   });
 
-  it('labels a snapped registration form and "Registered to" by name (US4)', async () => {
+  it('labels a snapped registration form and "Registered to" by name (005 US4)', async () => {
     const user = await importWith({
       snappedValues: [
         {
@@ -402,8 +402,8 @@ describe("ImportDialog report of derived and matched values (US4, FR-025, FR-026
   });
 });
 
-// specs/006-accessory-links contracts/ui-accessories.md §11 (FR-022, US5).
-describe("ImportDialog files and the two tables (US5)", () => {
+// 006 contracts/ui-accessories.md §11 (006 FR-022, US5).
+describe("ImportDialog files and the two tables (006 US5)", () => {
   const FIREARMS = "/data/firearms.csv";
   const ACCESSORIES = "/data/accessories.xlsx";
 
@@ -583,7 +583,7 @@ describe("ImportDialog files and the two tables (US5)", () => {
     return user;
   }
 
-  // 001 US5 Scenario 3
+  // 001 US5-3
   it("names each failed row's table, whichever table it is in", async () => {
     await importWith({
       rowErrors: [
@@ -699,7 +699,7 @@ describe("ImportDialog files and the two tables (US5)", () => {
   });
 });
 
-describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-014)", () => {
+describe("ImportDialog: replacing a record with a disposed row (issue #56, 006 FR-014)", () => {
   const label = (
     id: number,
     kind: "firearm" | "accessory",
@@ -855,7 +855,7 @@ describe("ImportDialog: replacing a record with a disposed row (issue #56, FR-01
   });
 });
 
-// specs/008-hardening-batch contracts/ui.md §2 (FR-006, FR-008): the dialog
+// 008 contracts/ui.md §2 (008 FR-006, FR-008): the dialog
 // while the files are read, the button that stops it, and a refused file.
 describe("ImportDialog reading the files (008 US2)", () => {
   const FILE = "/data/inventory.xlsx";

@@ -29,10 +29,9 @@ import {
 } from "../support/ui";
 
 /**
- * End-to-end coverage of specs/003-database-protection-management's User
- * Story 6 against the real built app: "lock now" with Ctrl+L while a form
- * has unsaved input and the pending changes resumed at the next open, and the
- * idle lock.
+ * End-to-end coverage of 003 US6 against the real built app: "lock now" with
+ * Ctrl+L while a form has unsaved input and the pending changes resumed at the
+ * next open, and the idle lock.
  */
 
 const folder = `${scratchDocuments()}/Locking`;
@@ -104,7 +103,7 @@ async function chooserSays(text: string): Promise<boolean> {
 
 describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", () => {
   // One journey for the story: lock with Ctrl+L while a form has unsaved input,
-  // then resume it at the next open (003 US6 Scenarios 1, 2, 6 and 7). What the
+  // then resume it at the next open (003 US6-1, US6-2, US6-6 and US6-7). What the
   // chooser says after a lock (the notice, the selected row), discarding the
   // changes and closing from the dialog are covered below the E2E level.
   it("locks with Ctrl+L while a firearm is being edited, leaving nothing from the collection, and resumes the exact input at the next open", async () => {
@@ -157,7 +156,7 @@ describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", ()
     expect(await chooserSays("HoploDex locked “Locked” after 1 minute without use.")).toBe(true);
   });
 
-  // FR-039, #107: on macOS a log out, restart or shut down asks every
+  // 003 FR-039, #107: on macOS a log out, restart or shut down asks every
   // application to quit with the quit Apple Event and a reason. Cancelling it
   // (as a user's Quit is, to ask about unsaved changes) cancels the log out.
   it("quits at once for a log out's quit event, keeping unsaved input as pending changes (macOS)", async function () {
@@ -189,11 +188,11 @@ describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", ()
   });
 });
 
-// specs/008-hardening-batch User Story 4: changes a form this build doesn't
-// know can't be resumed, but the database can be closed with them kept
-// (contracts/ui.md §1). Each test seeds the human-testing collection afresh,
-// whose "Shared collection" holds pending changes for the Beretta 92FS edit
-// and is marked open on another computer.
+// 008 US4: changes a form this build doesn't know can't be resumed, but the
+// database can be closed with them kept (008 contracts/ui.md §1). Each test
+// seeds the human-testing collection afresh, whose "Shared collection" holds
+// pending changes for the Beretta 92FS edit and is marked open on another
+// computer.
 const SHARED = "Shared collection";
 const BERETTA_LABEL = "Beretta 92FS — edit";
 

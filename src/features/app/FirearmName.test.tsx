@@ -7,7 +7,7 @@ import { firearmName } from "./collectionStore";
 import { FirearmName } from "./FirearmName";
 import { render } from "../../test/sessionScope";
 
-describe("firearmName (FR-031)", () => {
+describe("firearmName (001 FR-031)", () => {
   it("is make and model alone when there is no nickname", () => {
     expect(firearmName({ make: "Glock", model: "19" })).toBe("Glock 19");
     expect(firearmName({ make: "Glock", model: "19", nickname: null })).toBe("Glock 19");
@@ -62,7 +62,7 @@ const groups: VisibleGroup[] = [
   { key: "All", total: 2, firearms: [summary(1, "Range gun"), summary(2, null)] },
 ];
 
-describe("browse views (US1 Scenario 8)", () => {
+describe("browse views (001 US1-8)", () => {
   it("list view tells identical firearms apart by nickname", () => {
     render(<BrowseList groups={groups} groupBy={undefined} onSelect={() => {}} />);
 

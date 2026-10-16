@@ -1,12 +1,12 @@
-//! Linux: the native browser controls (research.md §13, §14, §15).
+//! Linux: the native browser controls (008 research.md §13, §14, §15).
 //!
 //! WebKitGTK offers a context menu with Back, Forward, Reload, Inspect
 //! Element, link and image items and more, none of which an application has.
 //! `apply` connects the main web view's `context-menu` signal and keeps only
-//! the stock actions that edit or copy text (FR-010, FR-011). It is an
+//! the stock actions that edit or copy text (008 FR-010, FR-011). It is an
 //! allowlist: an action a later WebKitGTK adds is removed until someone
 //! looks at it. Reload and navigation need nothing here: WebKitGTK binds no
-//! key to them and GTK3 has no swipe navigation (research.md §14), so the
+//! key to them and GTK3 has no swipe navigation (008 research.md §14), so the
 //! page's own handlers (`src/features/app/browserControls.ts`) are the
 //! measure.
 
@@ -16,7 +16,7 @@ use webkit2gtk::{
     gio::prelude::ActionExt,
 };
 
-/// Whether a menu item of this stock action is kept (FR-011). `custom_name`
+/// Whether a menu item of this stock action is kept (008 FR-011). `custom_name`
 /// is the name of the item's `GAction`, which is all a `Custom` item says
 /// about itself.
 fn keeps(action: &ContextMenuAction, custom_name: Option<&str>) -> bool {
@@ -35,7 +35,7 @@ fn keeps(action: &ContextMenuAction, custom_name: Option<&str>) -> bool {
         // WebKit gives the actions it has no stock name for (some spelling
         // items among them) the `Custom` action. They are kept when the name
         // says spelling or grammar; the window controls check logs every
-        // one it sees (research.md §13).
+        // one it sees (008 research.md §13).
         ContextMenuAction::Custom => custom_name.is_some_and(|name| {
             let name = name.to_ascii_lowercase();
             name.contains("spell") || name.contains("grammar")
@@ -73,12 +73,12 @@ fn tidy_separators(menu: &webkit2gtk::ContextMenu) {
     }
 }
 
-/// Trims the main web view's context menu to FR-011's items. `log_items` logs
+/// Trims the main web view's context menu to 008 FR-011's items. `log_items` logs
 /// every item offered and whether it was kept, for the window controls check
-/// (research.md §18). A menu left with nothing isn't shown.
+/// (008 research.md §18). A menu left with nothing isn't shown.
 ///
 /// Called on the `main` web view from `setup()` by `window_controls::apply`
-/// (T080), in release and E2E builds only (research.md §15), on the main
+/// (008 T080), in release and E2E builds only (008 research.md §15), on the main
 /// thread, which `with_webview` runs it on.
 pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::Result<()> {
     window.with_webview(move |platform| {

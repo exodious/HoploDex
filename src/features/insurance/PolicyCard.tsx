@@ -13,7 +13,7 @@ import { accessoryRecord, firearmRecord, refKey, type InsuranceRecord } from "./
 import type { BlanketSummary, InsurancePolicy, PolicySummary } from "./types";
 
 /** One policy: its term, its blanket usage when it is the blanket policy in
- * force, the firearms and accessories scheduled under it, and contacts (FR-015, FR-027,
+ * force, the firearms and accessories scheduled under it, and contacts (001 FR-015, FR-027,
  * FR-028, FR-036). */
 export function PolicyCard({
   policy,
@@ -180,7 +180,7 @@ export function PolicyCard({
 
 /** The policy's state today. Which warnings show is the backend's call, so a
  * blanket policy that a successor has taken over from reads as history
- * rather than a lapse (FR-028). */
+ * rather than a lapse (001 FR-028). */
 function TermBadge({ policy }: { policy: InsurancePolicy }) {
   if (policy.expiredWarning) {
     return <InsuranceWarningBadge kind="expired" label={expiryLabel(policy)} />;

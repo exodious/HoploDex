@@ -1,8 +1,8 @@
-// specs/004-cartridges-action-types research.md §8 and contracts/ui-entry.md
+// 004 research.md §8 and contracts/ui-entry.md
 // §3: the caliber field's state on the firearm form, beside its text. Pure,
 // so every transition is tested without rendering the form.
 //
-// specs/005-regulated-item-types FR-002 (research.md §15): every transition
+// 005 FR-002 (005 research.md §15): every transition
 // is told whether the type in effect works its caliber out from the
 // cartridge (`caliberFromCartridge`). A Suppressor's doesn't: its caliber is
 // its bore, so a settled cartridge is remembered but fills, guesses, suggests
@@ -12,18 +12,18 @@ import type { DerivedCaliber } from "./types";
 
 /** `derived`: the caliber follows the cartridge. `edited`: the user's (or a
  * saved firearm's) caliber, which a cartridge change never overwrites
- * (FR-006). */
+ * (004 FR-006). */
 export type CaliberMode = "derived" | "edited";
 
 export interface CaliberState {
   caliber: string;
   mode: CaliberMode;
-  /** How a derived caliber was filled; a guess is marked as one (FR-005). */
+  /** How a derived caliber was filled; a guess is marked as one (004 FR-005). */
   source: DerivedCaliber["source"] | null;
   /** In `edited` mode, the caliber the current cartridge derives when it
-   * differs from the field's (US1-7). */
+   * differs from the field's (004 US1-7). */
   suggestion: string | null;
-  /** The cartridge no caliber could be read from, for the prompt (US1-4). */
+  /** The cartridge no caliber could be read from, for the prompt (004 US1-4). */
   prompt: string | null;
   /** The last cartridge settled and what it derived, so a caliber left
    * empty can be derived again at once. */
@@ -40,7 +40,7 @@ export type CaliberAction =
   | { type: "typeChanged" };
 
 /** A new firearm's caliber starts derived and empty; a saved firearm's
- * starts edited (FR-006: its saved caliber counts as already edited). */
+ * starts edited (004 FR-006: its saved caliber counts as already edited). */
 export function initialCaliberState(savedCaliber?: string): CaliberState {
   return {
     caliber: savedCaliber ?? "",
@@ -104,7 +104,7 @@ export function caliberReducer(
         mode: "edited",
         source: null,
         prompt: null,
-        // contracts/ui-entry.md §3: the suggestion line goes once the
+        // 004 contracts/ui-entry.md §3: the suggestion line goes once the
         // caliber is edited to the suggested value.
         suggestion: state.suggestion === action.caliber.trim() ? null : state.suggestion,
       };
@@ -122,7 +122,7 @@ export function caliberReducer(
         suggestion: null,
       };
     case "typeChanged": {
-      // The caliber's text is kept either way (FR-002).
+      // The caliber's text is kept either way (005 FR-002).
       const filled = state.caliber.trim() !== "";
       if (!derives) {
         // Now the owner's to check against the bore: no "From the
@@ -142,7 +142,7 @@ export function caliberReducer(
   }
 }
 
-/** The caliber field's hint for its state (contracts/ui-entry.md §3), or
+/** The caliber field's hint for its state (004 contracts/ui-entry.md §3), or
  * none. */
 export function caliberHint(state: CaliberState): string | undefined {
   if (state.prompt !== null) {

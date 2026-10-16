@@ -11,8 +11,8 @@ import { SessionScopeContext, createSessionScope } from "./sessionScope";
 import type { SessionScope } from "./sessionScope";
 import { STAGE_DELAY_MS, currentDraft, flushPendingDraft, getDirtyForm } from "./usePendingDraft";
 
-// Staging and resuming are the session scope's (specs/008-hardening-batch
-// research.md §4, §6; tasks.md T030, T037): each form stages through the
+// Staging and resuming are the session scope's (008
+// research.md §4, §6; 008 tasks.md T030, T037): each form stages through the
 // scope it registered under, a draft is matched only through the scope that
 // resumed it, and the staging state resets when a scope ends. The backend is
 // pinned at the IPC boundary (`invoke`), with the real scope and session
@@ -102,7 +102,7 @@ beforeEach(() => {
   vi.mocked(tauriClient.invoke).mockReset().mockResolvedValue(undefined);
 });
 
-describe("usePendingDraft: staging (research.md §16)", () => {
+describe("usePendingDraft: staging (003 research.md §16)", () => {
   let scope: SessionScope;
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -188,7 +188,7 @@ describe("usePendingDraft: staging (research.md §16)", () => {
   });
 });
 
-describe("usePendingDraft: the scope's end (US1, research.md §4)", () => {
+describe("usePendingDraft: the scope's end (008 US1, research.md §4)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
@@ -258,7 +258,7 @@ describe("usePendingDraft: the scope's end (US1, research.md §4)", () => {
   });
 });
 
-describe("usePendingDraft: resuming (FR-039, research.md §6)", () => {
+describe("usePendingDraft: resuming (003 FR-039, 008 research.md §6)", () => {
   it("opens the form with the resumed changes as unsaved input, and reports it opened", async () => {
     const scope = createSessionScope(1);
     scope.resumed = {

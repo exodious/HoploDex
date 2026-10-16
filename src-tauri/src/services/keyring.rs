@@ -1,5 +1,5 @@
 //! Passphrases saved in this computer's keyring, one per database, only when
-//! the user asks (FR-017–FR-019, research.md §10; data-model.md "Keyring:
+//! the user asks (003 FR-017–FR-019, research.md §10; 003 data-model.md "Keyring:
 //! saved passphrase"). Each is the entry service `io.github.exodious.HoploDex`
 //! (the bundle identifier), user `passphrase:<database_id>`, keyed by the
 //! database's id rather than its path, so moving the file keeps it and a
@@ -34,7 +34,7 @@ type KeyringError = ::keyring::Error;
 pub struct Keyring {
     backend: Backend,
     /// Whether the keyring answers, probed the first time it is needed and
-    /// then kept for the session (FR-019).
+    /// then kept for the session (003 FR-019).
     available: OnceLock<bool>,
 }
 
@@ -82,7 +82,7 @@ impl Keyring {
         Self { backend: Backend::System { mirror }, available: OnceLock::new() }
     }
 
-    /// Whether passphrases can be saved on this computer (FR-019). A
+    /// Whether passphrases can be saved on this computer (003 FR-019). A
     /// failure's reason is logged, never shown.
     pub fn is_available(&self) -> bool {
         *self.available.get_or_init(|| match &self.backend {

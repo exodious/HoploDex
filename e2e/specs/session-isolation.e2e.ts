@@ -19,13 +19,13 @@ import {
 } from "../support/ui";
 
 /**
- * End-to-end coverage of specs/008-hardening-batch's User Story 1 against
- * the real built app: nothing of one database's session reaches the next
- * (FR-001, FR-002, FR-005, SC-001). The two databases the human-testing seed
- * makes, "Main collection" and "Shared collection", each have a firearm whose
- * thumbnail is the photo with id 1, with different bytes
- * (src-tauri/examples/human_seed.rs), so a thumbnail kept from the first
- * session and shown in the second is a different picture and is noticed.
+ * End-to-end coverage of 008 US1 against the real built app: nothing of one
+ * database's session reaches the next (008 FR-001, FR-002, FR-005, SC-001). The
+ * two databases the human-testing seed makes, "Main collection" and "Shared
+ * collection", each have a firearm whose thumbnail is the photo with id 1,
+ * with different bytes (src-tauri/examples/human_seed.rs), so a thumbnail kept
+ * from the first session and shown in the second is a different picture and is
+ * noticed.
  *
  * Needs the seeded collection (wdio.conf.ts); the one passphrase opens both.
  */
@@ -217,7 +217,7 @@ describe("008 US1 - Each Database's Data Stays With Its Own Session (was us14-se
   });
 
   it("shows Shared's own thumbnail, and none of Main's toasts, after locking the restored Main", async () => {
-    // A toast raised in Main belongs to Main's session (FR-005): it is up
+    // A toast raised in Main belongs to Main's session (008 FR-005): it is up
     // when Main is locked, and gone when Shared's collection shows, though it
     // would still have had time left.
     const raised = await raiseToast(GLOCK);

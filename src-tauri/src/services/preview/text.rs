@@ -1,4 +1,4 @@
-//! Plain text and CSV, decoded for the viewer (research.md §12).
+//! Plain text and CSV, decoded for the viewer (007 research.md §12).
 //!
 //! [`decode`] is total: every input gives a string, bounded by the input's
 //! size, so no helper process is needed. It is also inert: it only chooses an
@@ -11,7 +11,7 @@ const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
 const UTF16_LE_BOM: [u8; 2] = [0xFF, 0xFE];
 const UTF16_BE_BOM: [u8; 2] = [0xFE, 0xFF];
 
-/// Decodes a text document's bytes (FR-005):
+/// Decodes a text document's bytes (007 FR-005):
 ///
 /// - a UTF-8 byte order mark is stripped;
 /// - UTF-16 LE or BE is taken from its mark;

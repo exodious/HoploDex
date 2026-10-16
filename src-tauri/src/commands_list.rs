@@ -1,4 +1,4 @@
-// Every app command, for the app ACL manifest (research.md §5). `build.rs`
+// Every app command, for the app ACL manifest (007 research.md §5). `build.rs`
 // includes this file, so it is plain constants with no `use` and no inner docs.
 // A command registered in `generate_handler!` (main.rs) is named here and allowed in
 // `capabilities/default.json`; `tests/acl_manifest_test.rs` checks all three.

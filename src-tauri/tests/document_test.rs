@@ -1,5 +1,5 @@
 //! Integration tests for `add_document`/`get_document`/`delete_document`
-//! (spec.md US4 Acceptance Scenario 4; FR-010), run against a real
+//! (001 US4-4, FR-010), run against a real
 //! temporary SQLCipher database.
 
 use crate::support;
@@ -171,7 +171,7 @@ fn a_dropped_folder_is_not_attached() {
     );
 }
 
-/// Regression for FR-035 / SC-010: the decrypted copies `open_document`
+/// Regression for 001 FR-035 / SC-010: the decrypted copies `open_document`
 /// writes must not outlive the session. Clearing the folder overwrites each
 /// file's contents before unlinking it — a hard link taken beforehand keeps
 /// the old inode reachable, so it shows whether the bytes were really
@@ -252,11 +252,11 @@ fn a_copy_that_cannot_be_deleted_is_reported_and_retried_by_the_next_sweep() {
     assert!(!opened.exists());
 }
 
-// --- Accessory documents (specs/006-accessory-links US1-12, FR-007a) ----------
+// --- Accessory documents (006 US1-12, FR-007a) --------------------------------
 //
 // Documents belong to an owner, `RecordRef::Firearm(id)` or
-// `RecordRef::Accessory(id)` (research.md §3, §21). Accessory inputs are built
-// from the IPC shape (`AccessoryInput`'s camelCase JSON, contracts/tauri-
+// `RecordRef::Accessory(id)` (006 research.md §3, §21). Accessory inputs are built
+// from the IPC shape (`AccessoryInput`'s camelCase JSON, 006 contracts/tauri-
 // commands.md), so these tests do not depend on how the struct is spelled.
 
 fn parse<T: DeserializeOwned>(value: Value) -> T {
@@ -342,7 +342,7 @@ fn documents_are_listed_by_owner_and_only_that_owners() {
     assert_eq!(ids(RecordRef::Accessory(other)).len(), 2);
 }
 
-/// 007 FR-007 (US1-6): a mounted record's documents are its own. Browsing a host's documents
+/// 007 FR-007, US1-6: a mounted record's documents are its own. Browsing a host's documents
 /// never reaches the accessory mounted on it, and the other way round.
 #[test]
 fn a_host_and_the_accessory_mounted_on_it_list_only_their_own_documents() {
@@ -397,7 +397,7 @@ fn a_document_row_needs_exactly_one_owner() {
 }
 
 /// The same `CHECK` guards the retained dispositions, so it is tested here
-/// beside the other two tables that share the owner pair (research.md §3).
+/// beside the other two tables that share the owner pair (006 research.md §3).
 #[test]
 fn a_disposition_history_row_needs_exactly_one_owner() {
     let db = TestDb::new();
@@ -451,7 +451,7 @@ fn deleting_an_accessory_deletes_its_documents_and_only_its_documents() {
     );
 }
 
-// ---- Feature 007: the type rule at attach (FR-016) and what a list derives
+// ---- Feature 007: the type rule at attach (007 FR-016) and what a list derives
 
 /// A row `add_document` would refuse, as a database from before this
 /// feature could hold it.
@@ -598,7 +598,7 @@ fn list_documents_derives_the_preview_fields_from_the_recorded_type() {
         [UnavailableReason::Held, UnavailableReason::CheckFailed, UnavailableReason::NoViewer]
     {
         let off = summaries(PdfAvailability::Unavailable { reason });
-        // Only the PDF changes: TIFF and text still preview (FR-003a).
+        // Only the PDF changes: TIFF and text still preview (007 FR-003a).
         assert_eq!(
             fields(&off),
             [
@@ -653,7 +653,7 @@ fn a_row_of_another_type_stays_listed_and_can_be_deleted() {
     assert_eq!(document_count(&db), 0);
 }
 
-// --- At most 50 documents a record (FR-010, amended 2026-10-11) ---------------
+// --- At most 50 documents a record (001 FR-010, amended 2026-10-11) -----------
 
 /// Gives `owner` its 50 documents.
 fn fill_with_documents(db: &TestDb, owner: RecordRef) {

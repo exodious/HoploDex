@@ -20,7 +20,7 @@ function sanitize(text: string): string {
     : cleaned.slice(0, point + 1) + cleaned.slice(point + 1).replace(/\./g, "");
 }
 
-/** Decimal input for a measurement (FR-039), modelled on `MoneyField`:
+/** Decimal input for a measurement (001 FR-039), modelled on `MoneyField`:
  * digits and one decimal point only. Extra decimal places are kept as typed;
  * the parser rounds to the stored unit on submit. */
 export function DecimalField({ value, onValueChange, error, ...props }: DecimalFieldProps) {

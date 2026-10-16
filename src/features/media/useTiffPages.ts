@@ -1,6 +1,6 @@
 // Page layout, zoom, current page and the render-ahead window for a TIFF
-// shown from the render helper's page sizes. Design: specs/007-document-preview/
-// research.md §14 (TIFF pages, zoom and memory). The hook is given the scroll
+// shown from the render helper's page sizes. Design: 007 research.md §14 (TIFF
+// pages, zoom and memory). The hook is given the scroll
 // area's measurements and never touches layout itself.
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { CommandFailure } from "../../services/tauriClient";
@@ -15,7 +15,7 @@ export type TiffZoom = "fitWidth" | "fitPage" | number;
 export const PAGE_GAP = 16;
 /** Room kept clear around a page when it is fitted, in CSS px. */
 const FIT_MARGIN = 16;
-/** Bitmaps kept in the main web view (research.md §14). */
+/** Bitmaps kept in the main web view (007 research.md §14). */
 const MAX_BITMAPS = 8;
 /** Widest bitmap asked for; beyond it the page is scaled up in CSS. */
 const MAX_WIDTH_PX = 4096;
@@ -51,7 +51,7 @@ export interface TiffPages {
   setZoom: (zoom: TiffZoom) => void;
   zoomIn: () => void;
   zoomOut: () => void;
-  /** Zoom in is off at 400% and above, which a fit can be (research.md §14). */
+  /** Zoom in is off at 400% and above, which a fit can be (007 research.md §14). */
   canZoomIn: boolean;
   /** Zoom out is off at 50% and below, which a fit can be. */
   canZoomOut: boolean;
@@ -178,7 +178,7 @@ export function useTiffPages({
 
   // A new preview (or a new page list) starts empty, and a closing one frees
   // every bitmap it made; a render still in flight then finds its generation
-  // gone and makes none (research.md §20).
+  // gone and makes none (007 research.md §20).
   useEffect(() => {
     const mine = held.current;
     const pending = inflight.current;
@@ -280,7 +280,7 @@ export function useTiffPages({
     setZoomState(typeof next === "number" ? clampPercent(next) : next);
   }, []);
   // A fit can be outside 50–400%: the button that would move the wrong way is
-  // off, and the other steps into the range (research.md §14).
+  // off, and the other steps into the range (007 research.md §14).
   const canZoomIn = percent < ZOOM_MAX;
   const canZoomOut = percent > ZOOM_MIN;
   const zoomIn = useCallback(() => {

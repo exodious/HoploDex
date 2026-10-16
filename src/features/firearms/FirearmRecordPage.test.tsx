@@ -36,7 +36,7 @@ vi.mock("./firearmsService", () => ({
     derivedCaliber: null,
   }),
 }));
-// specs/006-accessory-links US2: the Mounted section's chooser and Mount
+// 006 US2: the Mounted section's chooser and Mount
 // commands.
 vi.mock("../mounts/mountsService", () => ({
   listMountCandidates: async () => ({ candidates: [] }),
@@ -92,7 +92,7 @@ const firearm: FirearmDetail = {
   createdAt: "2025-01-01 00:00:00",
   updatedAt: "2025-01-01 00:00:00",
   dispositionHistory: [],
-  // specs/006-accessory-links US2: not mounted, nothing mounted on it.
+  // 006 US2: not mounted, nothing mounted on it.
   mountedOn: null,
   mount: { chain: [], mounted: [] },
 };
@@ -133,7 +133,7 @@ function renderPage() {
   );
 }
 
-describe("FirearmRecordPage 'Add' links (FR-038, US1 Acceptance Scenario 15)", () => {
+describe("FirearmRecordPage 'Add' links (001 FR-038, US1-15)", () => {
   beforeEach(() => {
     getFirearm.mockReset().mockResolvedValue(firearm);
     Element.prototype.scrollIntoView = vi.fn();
@@ -176,8 +176,8 @@ describe("FirearmRecordPage 'Add' links (FR-038, US1 Acceptance Scenario 15)", (
   });
 });
 
-// 001 US1 Scenario 17
-describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17)", () => {
+// 001 US1-17
+describe("FirearmRecordPage physical details (001 FR-039, US1-17)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
   });
@@ -224,8 +224,8 @@ describe("FirearmRecordPage physical details (FR-039, US1 Acceptance Scenario 17
   });
 });
 
-// 001 US1 Scenario 6: a firearm saved without a serial number says why.
-describe("FirearmRecordPage serial number (US1)", () => {
+// 001 US1-6: a firearm saved without a serial number says why.
+describe("FirearmRecordPage serial number (001 US1)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
   });
@@ -239,8 +239,8 @@ describe("FirearmRecordPage serial number (US1)", () => {
   });
 });
 
-// 001 US1 Scenarios 3 and 16: amounts are whole dollars, shown grouped.
-describe("FirearmRecordPage amounts (FR-037, US1)", () => {
+// 001 US1-3 and US1-16: amounts are whole dollars, shown grouped.
+describe("FirearmRecordPage amounts (001 FR-037, US1)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
   });
@@ -256,7 +256,7 @@ describe("FirearmRecordPage amounts (FR-037, US1)", () => {
   });
 });
 
-// specs/004-cartridges-action-types FR-027, contracts/ui-entry.md §7.
+// 004 FR-027, contracts/ui-entry.md §7.
 describe("FirearmRecordPage cartridge, caliber and action", () => {
   beforeEach(() => {
     getFirearm.mockReset();
@@ -291,8 +291,8 @@ describe("FirearmRecordPage cartridge, caliber and action", () => {
   });
 });
 
-// specs/002-firearm-identification contracts/ui-identification.md §5, FR-013, US1-3
-describe("FirearmRecordPage identification (US1)", () => {
+// 002 contracts/ui-identification.md §5, FR-013, US1-3
+describe("FirearmRecordPage identification (002 US1)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
   });
@@ -336,7 +336,7 @@ describe("FirearmRecordPage identification (US1)", () => {
     expect(within(panel).queryByText("Importer")).not.toBeInTheDocument();
   });
 
-  // specs/002-firearm-identification research.md §6: the origin label must
+  // 002 research.md §6: the origin label must
   // agree across the SQL CASE (0002_fts5.sql), Origin::label() and
   // ORIGIN_OPTIONS — this is the TypeScript side of that guard, checking
   // ORIGIN_OPTIONS' labels are what the record page actually shows.
@@ -352,8 +352,8 @@ describe("FirearmRecordPage identification (US1)", () => {
   );
 });
 
-// specs/002-firearm-identification contracts/ui-identification.md §5, US2-1, US2-2
-describe("FirearmRecordPage original maker's marks (US2)", () => {
+// 002 contracts/ui-identification.md §5, US2-1, US2-2
+describe("FirearmRecordPage original maker's marks (002 US2)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
   });
@@ -393,7 +393,7 @@ describe("FirearmRecordPage original maker's marks (US2)", () => {
   });
 });
 
-describe("FirearmRecordPage pinned strip (FR-041, US1/AC18)", () => {
+describe("FirearmRecordPage pinned strip (001 FR-041, US1-18)", () => {
   const navigation: Navigation = {
     route: { page: "firearm", id: 1, from: "collection" },
     navigate: () => {},
@@ -505,7 +505,7 @@ describe("FirearmRecordPage pinned strip (FR-041, US1/AC18)", () => {
   );
 });
 
-// specs/004-cartridges-action-types FR-027, contracts/ui-entry.md §7.
+// 004 FR-027, contracts/ui-entry.md §7.
 describe("FirearmRecordPage cartridge", () => {
   beforeEach(() => {
     getFirearm.mockReset();
@@ -542,7 +542,7 @@ describe("FirearmRecordPage cartridge", () => {
   });
 });
 
-// specs/005-regulated-item-types US1-3 (contracts/ui-registration.md §4): a
+// 005 US1-3, contracts/ui-registration.md §4: a
 // Suppressor's cartridge is its rating and its caliber its bore, and it has no
 // action.
 describe("FirearmRecordPage title block by type", () => {
@@ -582,8 +582,8 @@ describe("FirearmRecordPage title block by type", () => {
   });
 });
 
-// specs/005-regulated-item-types contracts/ui-registration.md §4, FR-018, US2-3, US2-4
-describe("FirearmRecordPage registration (US2)", () => {
+// 005 contracts/ui-registration.md §4, FR-018, US2-3, US2-4
+describe("FirearmRecordPage registration (005 US2)", () => {
   beforeEach(() => {
     getFirearm.mockReset();
     Element.prototype.scrollIntoView = vi.fn();
@@ -665,7 +665,7 @@ describe("FirearmRecordPage registration (US2)", () => {
     );
   });
 
-  // FR-014, SC-002, US2-8: nothing on the page judges legal status.
+  // 005 FR-014, SC-002, US2-8: nothing on the page judges legal status.
   it.each([
     [
       "a Rifle with a 10.5 in barrel and no classification",
@@ -693,9 +693,9 @@ describe("FirearmRecordPage registration (US2)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §5, §6;
-// US2-10): the "Mounted on" chain in the header facts and the Mounted section.
-describe("FirearmRecordPage mounts (US2)", () => {
+// 006 US2, contracts/ui-accessories.md §5, §6, US2-10: the "Mounted on" chain in
+// the header facts and the Mounted section.
+describe("FirearmRecordPage mounts (006 US2)", () => {
   const upper: RecordLabel = {
     record: { kind: "accessory", id: 11 },
     make: "BCM",
@@ -766,7 +766,7 @@ describe("FirearmRecordPage mounts (US2)", () => {
     Element.prototype.scrollIntoView = vi.fn();
   });
 
-  it("shows 'Mounted on {host}, on {its host}' in the header facts, each a link (§6, US2-12)", async () => {
+  it("shows 'Mounted on {host}, on {its host}' in the header facts, each a link (006 contracts/ui-accessories.md §6, US2-12)", async () => {
     const user = userEvent.setup();
     renderWithNavigation();
 
@@ -811,7 +811,7 @@ describe("FirearmRecordPage mounts (US2)", () => {
     expect(within(section).getByRole("button", { name: /^Unmount Leupold/ })).toBeInTheDocument();
   });
 
-  it("says 'Nothing mounted.' in the Mounted section when nothing is (US2-10)", async () => {
+  it("says 'Nothing mounted.' in the Mounted section when nothing is (006 US2-10)", async () => {
     getFirearm.mockResolvedValue(firearm);
     renderWithNavigation();
 
@@ -820,7 +820,7 @@ describe("FirearmRecordPage mounts (US2)", () => {
     expect(within(section).getByRole("button", { name: /^Mount/ })).toBeInTheDocument();
   });
 
-  it("puts the Mounted section after Notes and before the free-text Accessories subsection, which is unchanged (US2-10)", async () => {
+  it("puts the Mounted section after Notes and before the free-text Accessories subsection, which is unchanged (006 US2-10)", async () => {
     getFirearm.mockResolvedValue(firearm);
     renderWithNavigation();
 
@@ -864,9 +864,9 @@ describe("FirearmRecordPage mounts (US2)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 3 (contracts/ui-accessories.md §8,
-// US3-5, US3-9): the delete confirmation names what stays behind, unmounted.
-describe("FirearmRecordPage delete confirmation with mounted records (US3)", () => {
+// 006 US3, contracts/ui-accessories.md §8, US3-5, US3-9: the delete confirmation
+// names what stays behind, unmounted.
+describe("FirearmRecordPage delete confirmation with mounted records (006 US3)", () => {
   const label = (id: number, make: string, model: string, typeName: string): RecordLabel => ({
     record: { kind: "accessory", id },
     make,
@@ -944,12 +944,12 @@ describe("FirearmRecordPage delete confirmation with mounted records (US3)", () 
   });
 });
 
-// specs/008-hardening-batch tasks.md T032 (US1-4), research.md §6: when a
+// 008 tasks.md T032, US1-4, research.md §6: when a
 // resumed draft for this firearm is waiting for its form and the firearm
 // can't be loaded, the page tells the scope (`scope.resumeFailed`), so the
 // pending changes dialog comes back. It tells it for nothing else.
 
-describe("FirearmRecordPage: a resumed draft whose form can't open (US1-4)", () => {
+describe("FirearmRecordPage: a resumed draft whose form can't open (008 US1-4)", () => {
   const draft = (targetId: number | null) => ({
     formVersion: 4,
     kind: "firearm" as const,

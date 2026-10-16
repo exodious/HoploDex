@@ -1,4 +1,4 @@
-//! Integration tests for User Story 1 (specs/002-firearm-identification):
+//! Integration tests for 002 US1:
 //! origin, year of manufacture, country of manufacture and importer name,
 //! run against a real temporary SQLCipher database — no mocks, per the
 //! constitution.
@@ -65,7 +65,7 @@ fn origin_year_and_importer_round_trip_for_reimported_with_no_country() {
     assert_eq!(created.origin, Some(Origin::Reimported));
     assert_eq!(created.year_of_manufacture, Some(1944));
     assert_eq!(created.importer_name.as_deref(), Some("Century International Arms"));
-    // US1-2: countryOfManufacture is always null for reimported.
+    // 002 US1-2: countryOfManufacture is always null for reimported.
     assert_eq!(created.country_of_manufacture, None);
 
     let fetched = ops::get_firearm(&db.conn, created.id).unwrap();
@@ -86,7 +86,7 @@ fn a_firearm_with_no_origin_shows_null_with_nothing_else_offered() {
 
 #[test]
 fn a_firearm_created_before_this_feature_still_round_trips_unchanged() {
-    // US1-8: a pre-existing record has no origin data at all; get_firearm
+    // 002 US1-8: a pre-existing record has no origin data at all; get_firearm
     // must not choke on nulls in the new columns.
     let db = TestDb::new();
     let created =
@@ -189,9 +189,9 @@ fn a_non_blank_country_on_a_domestic_record_is_rejected() {
     );
 }
 
-// specs/002-firearm-identification User Story 2: the original manufacturer's
+// 002 US2: the original manufacturer's
 // make, model and serial number, alongside the main marks, on an imported or
-// re-imported firearm (FR-004).
+// re-imported firearm (002 FR-004).
 
 #[test]
 fn original_marks_round_trip_on_an_imported_firearm_distinct_from_the_main_marks() {

@@ -1,10 +1,10 @@
-//! Whether PDF preview is available, and why not (research.md §7, §17).
+//! Whether PDF preview is available, and why not (007 research.md §7, §17).
 
 use std::sync::{Arc, Mutex};
 
 use crate::services::machine_settings::MachineSettings;
 
-/// Why PDF preview is off on this computer (FR-003a).
+/// Why PDF preview is off on this computer (007 FR-003a).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnavailableReason {
     /// A copy written by the PDF viewer was caught during this version of
@@ -19,7 +19,7 @@ pub enum UnavailableReason {
 
 impl UnavailableReason {
     /// The reason's sentence, shown after "PDFs can't be previewed on this
-    /// computer." (ui contract §3).
+    /// computer." (007 contracts/ui-document-preview.md §3).
     pub fn message(self) -> &'static str {
         match self {
             Self::Held => {
@@ -35,7 +35,7 @@ impl UnavailableReason {
     }
 }
 
-/// Whether PDFs are previewed on this computer in this run (data-model.md
+/// Whether PDFs are previewed on this computer in this run (007 data-model.md
 /// "In memory, per run"). TIFF and text are unaffected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfAvailability {
@@ -48,7 +48,7 @@ impl PdfAvailability {
         matches!(self, Self::Available)
     }
 
-    /// Decides at startup (research.md §7, §17): this version's hold keeps
+    /// Decides at startup (007 research.md §7, §17): this version's hold keeps
     /// PDF preview off, then the OS check. A hold for another version is
     /// cleared, so this version tries again. `os_check_passed` is
     /// [`os_check`]'s answer.
@@ -94,7 +94,7 @@ impl PdfAvailabilityState {
 }
 
 impl PdfAvailabilityState {
-    /// The watch caught a copy the PDF viewer wrote (macOS, research.md §7):
+    /// The watch caught a copy the PDF viewer wrote (macOS, 007 research.md §7):
     /// PDF preview stays off until a different version of HoploDex runs. The
     /// hold is written to `machine.json` and takes effect now.
     pub fn hold(&self, machine: &MachineSettings) {
@@ -103,7 +103,7 @@ impl PdfAvailabilityState {
     }
 
     /// A surface's web view turned its PDF into a download: it has no
-    /// built-in PDF viewer (research.md §4).
+    /// built-in PDF viewer (007 research.md §4).
     pub fn mark_no_viewer(&self) {
         self.set(PdfAvailability::Unavailable { reason: UnavailableReason::NoViewer });
     }
@@ -116,13 +116,13 @@ impl Default for PdfAvailabilityState {
 }
 
 /// Decides at startup, in `setup()` before anything is shown: this version's
-/// hold, then [`os_check`] (research.md §7).
+/// hold, then [`os_check`] (007 research.md §7).
 pub fn decide_at_startup(machine: &MachineSettings) -> PdfAvailability {
     PdfAvailability::at_startup(machine, env!("CARGO_PKG_VERSION"), os_check())
 }
 
 /// Whether this computer's web view has what the PDF surface needs to be held
-/// to FR-003 and FR-004 (research.md §7), logging why not.
+/// to 007 FR-003 and FR-004 (007 research.md §7), logging why not.
 ///
 /// An E2E build (`e2e` feature only) reads `HOPLODEX_E2E_PDF_PREVIEW=off` to
 /// fail it, so the frontend's handling can be tested and photographed.
@@ -139,7 +139,7 @@ pub fn os_check() -> bool {
     passed
 }
 
-/// WebKitGTK ships PDF.js from 2.40 (research.md §3).
+/// WebKitGTK ships PDF.js from 2.40 (007 research.md §3).
 #[cfg(target_os = "linux")]
 fn platform_check() -> bool {
     // SAFETY: both only read the version WebKitGTK was built as.
@@ -150,7 +150,7 @@ fn platform_check() -> bool {
 }
 
 /// The WebKit SPI the macOS surface switches the PDF HUD and WebRTC off
-/// with (research.md §6, §7): shared by [`platform_check`], which tries them
+/// with (007 research.md §6, §7): shared by [`platform_check`], which tries them
 /// on a throwaway `WKPreferences` at startup, and the surface, which applies
 /// them to its own web view's, so the two can't mean different things.
 #[cfg(target_os = "macos")]
@@ -165,9 +165,9 @@ pub(crate) mod webkit_switches {
     /// Turns the PDF HUD (Open in Preview, Download) and WebRTC off in
     /// `prefs`, and reads both back. Any SPI that is missing, any feature
     /// that isn't listed, or a switch that doesn't read back as off is an
-    /// `Err`: the caller must then not show a PDF (FR-003, FR-004).
+    /// `Err`: the caller must then not show a PDF (007 FR-003, FR-004).
     /// `leave_hud_on` is only for the surface check's `--hud-on` variant
-    /// (FR-003a), which tests the watch with the HUD on: the HUD is then
+    /// (007 FR-003a), which tests the watch with the HUD on: the HUD is then
     /// neither switched nor required to read back off.
     pub(crate) fn switch_off(prefs: &WKPreferences, leave_hud_on: bool) -> Result<(), String> {
         // SAFETY: each selector is checked with `respondsToSelector:` before
@@ -214,7 +214,7 @@ pub(crate) mod webkit_switches {
 }
 
 /// `WKPreferences`'s SPI switches exist, find the HUD's feature and hold
-/// both settings off (research.md §7); see [`webkit_switches::switch_off`].
+/// both settings off (007 research.md §7); see [`webkit_switches::switch_off`].
 /// Must run on the main thread (`setup()` does).
 #[cfg(target_os = "macos")]
 fn platform_check() -> bool {
@@ -244,7 +244,7 @@ fn platform_check() -> bool {
 /// (`ContextMenuRequested`) 1.0.1185.39, and `ICoreWebView2_25`
 /// (`SaveAsUIShowing`, the newest) 1.0.2739.15, which is runtime 128.0.2739.15.
 /// The surface also queries each interface when it is built, so a threshold
-/// set too low fails there instead (research.md §7).
+/// set too low fails there instead (007 research.md §7).
 #[cfg(windows)]
 const MIN_WEBVIEW2_VERSION: windows::core::PCWSTR = windows::core::w!("128.0.2739.15");
 

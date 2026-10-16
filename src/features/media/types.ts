@@ -1,6 +1,6 @@
 // Mirrors src-tauri/src/models/photo.rs and
 // src-tauri/src/models/document_attachment.rs's wire shapes (camelCase),
-// User Story 4. specs/006-accessory-links: both belong to an owner, a
+// 001 US4. 006 research.md §3: both belong to an owner, a
 // firearm or an accessory.
 
 import type { RecordRef } from "../mounts/types";
@@ -21,12 +21,12 @@ export interface DocumentSummary {
   id: number;
   owner: RecordRef;
   originalFilename: string;
-  /** Always the canonical type found by the content check (FR-016). */
+  /** Always the canonical type found by the content check (007 FR-016). */
   mimeType: string;
   createdAt: string;
   /** From the recorded type; the content is confirmed at `open_preview`. */
   previewKind: PreviewKind | null;
-  /** False for a PDF while PDF preview is off on this computer (FR-003a). */
+  /** False for a PDF while PDF preview is off on this computer (007 FR-003a). */
   previewAvailable: boolean;
   /** False only for rows stored before 007 with a non-document type. */
   openable: boolean;

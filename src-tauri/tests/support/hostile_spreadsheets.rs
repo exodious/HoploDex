@@ -1,4 +1,4 @@
-//! Generators for hostile and malformed import files (feature 008, T049,
+//! Generators for hostile and malformed import files (008 T049,
 //! research.md §8 and §9).
 //!
 //! Nothing is checked in and nothing is built in memory: each generator
@@ -95,7 +95,7 @@ const fn unreadable(build: fn(&Path) -> Vec<PathBuf>, name: &'static str) -> Cas
     Case { name, expect: Expect::Unreadable, build }
 }
 
-/// Every hostile case (T049), each with the outcome it must give.
+/// Every hostile case (008 T049), each with the outcome it must give.
 pub fn corpus() -> Vec<Case> {
     use ImportLimit::*;
     vec![

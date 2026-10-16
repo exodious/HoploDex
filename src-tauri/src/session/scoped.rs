@@ -15,7 +15,7 @@ use crate::commands::CommandError;
 use rusqlite::Connection;
 
 /// The header every scoped command is sent with: the open session's
-/// `DatabaseStatus.sessionId`, as a decimal integer (contracts/
+/// `DatabaseStatus.sessionId`, as a decimal integer (008 contracts/
 /// tauri-commands.md "Every request names its session").
 pub const SESSION_HEADER: &str = "HoploDex-Session";
 

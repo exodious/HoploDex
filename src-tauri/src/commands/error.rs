@@ -12,7 +12,7 @@ use crate::services::disk_space;
 use crate::services::import_reader::limits::ImportLimit;
 
 /// The single error shape returned by every Tauri IPC command, per
-/// contracts/tauri-commands.md. `code` is a stable, machine-matchable
+/// 001 contracts/tauri-commands.md. `code` is a stable, machine-matchable
 /// identifier (e.g. `"VALIDATION_ERROR"`); `message` is safe to show
 /// directly to the user and never contains a passphrase; `field_errors`
 /// carries per-field validation failures for form rendering; `details`
@@ -68,7 +68,7 @@ impl CommandError {
         Self::new("DATABASE_CLOSED", "No database is open.")
     }
 
-    /// FR-039: pending changes must be resumed or discarded first.
+    /// 003 FR-039: pending changes must be resumed or discarded first.
     pub fn pending_changes_unresolved() -> Self {
         Self::new(
             "PENDING_CHANGES_UNRESOLVED",
@@ -76,7 +76,7 @@ impl CommandError {
         )
     }
 
-    /// FR-032: another computer replaced or changed the file.
+    /// 003 FR-032: another computer replaced or changed the file.
     pub fn database_taken_over() -> Self {
         Self::new(
             "DATABASE_TAKEN_OVER",
@@ -84,13 +84,13 @@ impl CommandError {
         )
     }
 
-    /// FR-028.
+    /// 003 FR-028.
     pub fn database_damaged(backups_available: bool) -> Self {
         Self::new("DATABASE_DAMAGED", "This database is damaged and can't be opened.")
             .with_details(Some(json!({ "backupsAvailable": backups_available })))
     }
 
-    /// FR-006: a wrong passphrase, a file that is not a HoploDex database
+    /// 003 FR-006: a wrong passphrase, a file that is not a HoploDex database
     /// and a damaged first page are not told apart.
     pub fn passphrase_incorrect(
         saved_passphrase_failed: Option<bool>,
@@ -124,7 +124,7 @@ impl CommandError {
         .with_details(path_details(path))
     }
 
-    /// FR-014.
+    /// 003 FR-014.
     pub fn database_in_use() -> Self {
         Self::new(
             "DATABASE_IN_USE",
@@ -132,7 +132,7 @@ impl CommandError {
         )
     }
 
-    /// FR-014.
+    /// 003 FR-014.
     pub fn database_newer_version() -> Self {
         Self::new(
             "DATABASE_NEWER_VERSION",
@@ -141,7 +141,7 @@ impl CommandError {
         )
     }
 
-    /// FR-032. `since` is ISO-8601 UTC.
+    /// 003 FR-032. `since` is ISO-8601 UTC.
     pub fn database_open_elsewhere(machine_name: &str, since: &str) -> Self {
         Self::new(
             "DATABASE_OPEN_ELSEWHERE",
@@ -155,7 +155,7 @@ impl CommandError {
             .with_details(path_details(path))
     }
 
-    /// FR-016.
+    /// 003 FR-016.
     pub fn insufficient_space(bytes_needed: u64, bytes_available: u64, path: &Path) -> Self {
         Self::new("INSUFFICIENT_SPACE", "There isn't enough free space.").with_details(Some(
             json!({
@@ -207,18 +207,18 @@ impl CommandError {
         if disk_space::is_disk_full(err) { Self::disk_full(None) } else { otherwise() }
     }
 
-    /// FR-027. `reason` is `missing`, `notWritable` or `insufficientSpace`.
+    /// 003 FR-027. `reason` is `missing`, `notWritable` or `insufficientSpace`.
     pub fn backup_location_unavailable(path: &Path, reason: &str) -> Self {
         Self::new("BACKUP_LOCATION_UNAVAILABLE", "The backup folder can't be used.")
             .with_details(Some(json!({ "path": path.to_string_lossy(), "reason": reason })))
     }
 
-    /// FR-019.
+    /// 003 FR-019.
     pub fn keyring_unavailable() -> Self {
         Self::new("KEYRING_UNAVAILABLE", "This computer's keyring isn't available.")
     }
 
-    /// FR-037: a sleep stopped a long operation.
+    /// 003 FR-037: a sleep stopped a long operation.
     pub fn operation_stopped(
         operation: OperationKind,
         imported_count: Option<u64>,
@@ -236,7 +236,7 @@ impl CommandError {
     }
 
     /// 008 FR-006: a file passed one of the import's limits
-    /// (`IMPORT_LIMIT_EXCEEDED`, contracts/tauri-commands.md). The message
+    /// (`IMPORT_LIMIT_EXCEEDED`, 008 contracts/tauri-commands.md). The message
     /// names the file, the sheet of a workbook, and the limit.
     pub fn import_limit_exceeded(file: &str, sheet: Option<&str>, limit: ImportLimit) -> Self {
         let mut details = json!({ "file": file, "limit": limit });
@@ -248,7 +248,7 @@ impl CommandError {
 
     /// 001 FR-007 and FR-010 (amended 2026-10-11): `owner` already has
     /// `limit` photos or documents (`what`, plural), the most a record may
-    /// have (`ATTACHMENT_LIMIT_REACHED`, contracts/tauri-commands.md).
+    /// have (`ATTACHMENT_LIMIT_REACHED`, 001 contracts/tauri-commands.md).
     pub fn attachment_limit_reached(owner: RecordRef, what: &str, limit: u32) -> Self {
         Self::new(
             "ATTACHMENT_LIMIT_REACHED",
@@ -264,7 +264,7 @@ impl CommandError {
         Self::new("VALIDATION_ERROR", format!("{file}: could not read the file."))
     }
 
-    /// FR-037: a sleep stopped a move of backups (FR-026), with
+    /// 003 FR-037: a sleep stopped a move of backups (003 FR-026), with
     /// `left_behind_count` of them still in `folder`. The new location is
     /// kept.
     pub fn move_stopped(left_behind_count: u64, folder: &Path) -> Self {
@@ -276,7 +276,7 @@ impl CommandError {
             })))
     }
 
-    /// FR-026: the backup location changed and `count` backups of the
+    /// 003 FR-026: the backup location changed and `count` backups of the
     /// database, `total_bytes` in all, are at the old one. Nothing was
     /// saved; the UI asks what to do with them and sends the settings again.
     pub fn backups_at_old_location(folder: &Path, count: u64, total_bytes: u64) -> Self {
@@ -291,7 +291,7 @@ impl CommandError {
         })))
     }
 
-    /// FR-026: some backups at the old location couldn't be deleted, so the
+    /// 003 FR-026: some backups at the old location couldn't be deleted, so the
     /// old location was kept, and they are still the database's.
     pub fn backups_not_all_deleted(deleted_count: u64, failed_paths: &[String]) -> Self {
         Self::new(
@@ -301,7 +301,7 @@ impl CommandError {
         .with_details(Some(json!({ "deletedCount": deleted_count, "failedPaths": failed_paths })))
     }
 
-    /// FR-026: the old backup location can't be read, so its backups can't
+    /// 003 FR-026: the old backup location can't be read, so its backups can't
     /// be moved or deleted from here. Nothing was saved; leaving them is
     /// the only choice.
     pub fn old_backup_location_unavailable(folder: &Path) -> Self {
@@ -321,7 +321,7 @@ impl CommandError {
         .with_details(Some(json!({ "operation": operation })))
     }
 
-    /// FR-028: the "before restoring" backup of the current database could
+    /// 003 FR-028: the "before restoring" backup of the current database could
     /// not be made, so the restore went no further.
     pub fn restore_cancelled() -> Self {
         Self::new(
@@ -343,7 +343,7 @@ impl CommandError {
         .with_details(path_details(path))
     }
 
-    /// FR-032: the file's storage can't be reached.
+    /// 003 FR-032: the file's storage can't be reached.
     pub fn database_unavailable(path: &Path) -> Self {
         Self::new(
             Self::DATABASE_UNAVAILABLE,
@@ -359,9 +359,9 @@ impl CommandError {
     /// Maps a raw `rusqlite::Error` to a safe, generic `CommandError` for
     /// use with `.map_err(CommandError::from_db)` at call sites — internal
     /// error detail is logged, never forwarded to the frontend. Corruption
-    /// found by any command is reported as a damaged database (research.md
+    /// found by any command is reported as a damaged database (003 research.md
     /// §2), and an I/O error as a file that can't be reached, whose path the
-    /// session adds (research.md §6).
+    /// session adds (003 research.md §6).
     pub fn from_db(err: rusqlite::Error) -> Self {
         log::error!("db error: {err}");
         match err {
@@ -408,7 +408,7 @@ impl From<DbError> for CommandError {
     }
 }
 
-/// One code per open outcome (research.md §2).
+/// One code per open outcome (003 research.md §2).
 impl From<OpenError> for CommandError {
     fn from(err: OpenError) -> Self {
         match err {

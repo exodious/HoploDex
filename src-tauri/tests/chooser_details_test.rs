@@ -1,4 +1,4 @@
-//! What the chooser says about a database before it is unlocked (FR-040):
+//! What the chooser says about a database before it is unlocked (003 FR-040):
 //! its backups, found by file name, and whether the file changed after this
 //! computer last closed it. Real SQLCipher files in temp directories;
 //! machine settings in a temp config directory.

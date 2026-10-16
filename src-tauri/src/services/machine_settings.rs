@@ -1,5 +1,5 @@
 //! `machine.json`: what this computer (this OS account) keeps about
-//! databases, and nothing more (FR-013, research.md §6, §11; data-model.md
+//! databases, and nothing more (003 FR-013, research.md §6, §11; 003 data-model.md
 //! "Machine-local"). It holds paths, names and times only, never collection
 //! data or secrets. The config directory is always passed in, so tests and
 //! tools use throwaway ones.
@@ -23,7 +23,7 @@ const VERSION: u32 = 1;
 /// `app_state.open_machine_name` holds at most this many characters.
 const MAX_DISPLAY_NAME_CHARS: usize = 255;
 
-/// This computer as the open marker records it (FR-032).
+/// This computer as the open marker records it (003 FR-032).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachineIdentity {
     /// 32 hex digits, random on first run.
@@ -32,7 +32,7 @@ pub struct MachineIdentity {
     pub display_name: String,
 }
 
-/// One entry of the recent-databases list (FR-012).
+/// One entry of the recent-databases list (003 FR-012).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentEntry {
@@ -46,10 +46,10 @@ pub struct RecentEntry {
     /// Resolved and cached at each open, for restoring a database that no
     /// longer opens.
     pub backup_folder: Option<PathBuf>,
-    /// FR-017. The passphrase itself is only ever in the keyring.
+    /// 003 FR-017. The passphrase itself is only ever in the keyring.
     pub passphrase_saved: bool,
     /// The file's modification time, UTC ISO-8601 to the millisecond, when
-    /// this computer last closed it (FR-040). `None` while it is open here
+    /// this computer last closed it (003 FR-040). `None` while it is open here
     /// or after it ended without a close (a crash), after a close that found
     /// it out of reach or taken over, and after the entry is re-located:
     /// then nothing is said about changes made elsewhere.
@@ -75,7 +75,7 @@ pub fn modified_at(path: &Path) -> Option<String> {
     )
 }
 
-/// A backup that was being written when HoploDex stopped (research.md §7).
+/// A backup that was being written when HoploDex stopped (003 research.md §7).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnfinishedBackup {
@@ -85,7 +85,7 @@ pub struct UnfinishedBackup {
 }
 
 /// A move of backups to a new location that was under way when HoploDex
-/// stopped (research.md §22).
+/// stopped (003 research.md §22).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnfinishedBackupMove {
@@ -97,7 +97,7 @@ pub struct UnfinishedBackupMove {
     pub partial_path: Option<PathBuf>,
 }
 
-/// The PDF preview hold (FR-003a, research.md §7, §17): the macOS watch caught
+/// The PDF preview hold (007 FR-003a, research.md §7, §17): the macOS watch caught
 /// a copy of a document. Paths and a version only, never a document's name or
 /// content.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -125,11 +125,11 @@ struct MachineFile {
     unfinished_backup_move: Option<UnfinishedBackupMove>,
     #[serde(default)]
     notices: Vec<ChooserNotice>,
-    /// FR-011. A file written before this field existed reads as Preview, so
+    /// 007 FR-011. A file written before this field existed reads as Preview, so
     /// `VERSION` stays 1.
     #[serde(default)]
     document_opening: DocumentOpening,
-    /// FR-003a. `None` (JSON `null`) unless a hold or a leftover is recorded.
+    /// 007 FR-003a. `None` (JSON `null`) unless a hold or a leftover is recorded.
     #[serde(default)]
     pdf_preview_hold: Option<PdfPreviewHold>,
 }
@@ -160,7 +160,7 @@ impl MachineFile {
 /// reported: losing the recent list must never stop a database opening.
 ///
 /// It also holds this computer's [`Keyring`], where the passphrases its
-/// `passphraseSaved` flags stand for are kept (FR-017). A loaded one has the
+/// `passphraseSaved` flags stand for are kept (003 FR-017). A loaded one has the
 /// keyring [`off`](Keyring::off), so tests and tools never reach the OS
 /// keyring; the app gives it the real one with
 /// [`with_keyring`](Self::with_keyring).
@@ -266,7 +266,7 @@ impl MachineSettings {
     }
 
     /// Records where the backups of the database at `path` now go, after
-    /// its backup location was saved (research.md §8, §11). Nothing happens
+    /// its backup location was saved (003 research.md §8, §11). Nothing happens
     /// when `path` isn't in the list.
     pub fn set_backup_folder(&self, path: &Path, backup_folder: &Path) {
         self.update(|file| {
@@ -277,7 +277,7 @@ impl MachineSettings {
     }
 
     /// Records the modification time of the file at `path` as this
-    /// computer leaves it, at a close (FR-040). Nothing happens when `path`
+    /// computer leaves it, at a close (003 FR-040). Nothing happens when `path`
     /// isn't in the list.
     pub fn set_left_modified(&self, path: &Path, left_modified_at: Option<String>) {
         self.update(|file| {
@@ -293,7 +293,7 @@ impl MachineSettings {
     }
 
     /// Removes `path` from the recent list, returning the entry that was
-    /// there. The database file is never touched (FR-012).
+    /// there. The database file is never touched (003 FR-012).
     pub fn remove_recent(&self, path: &Path) -> Option<RecentEntry> {
         let mut removed = None;
         self.update(|file| {
@@ -305,7 +305,7 @@ impl MachineSettings {
     }
 
     /// Records whether a passphrase is saved for the database at `path`
-    /// (FR-017). Nothing happens when `path` isn't in the list.
+    /// (003 FR-017). Nothing happens when `path` isn't in the list.
     pub fn set_passphrase_saved(&self, path: &Path, saved: bool) {
         self.update(|file| {
             if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
@@ -329,7 +329,7 @@ impl MachineSettings {
 
     /// Points the recent entry for `path` at `new_path`, where the user found
     /// the file, keeping everything else about it but the time it was left
-    /// (FR-012, FR-040), and marks it `located` until it next opens. An entry
+    /// (003 FR-012, FR-040), and marks it `located` until it next opens. An entry
     /// already at `new_path` is merged away, since entries are identified by
     /// path. `None` when `path` isn't in the list.
     pub fn locate_recent(&self, path: &Path, new_path: &Path) -> Option<RecentEntry> {
@@ -364,7 +364,7 @@ impl MachineSettings {
         taken
     }
 
-    /// How this computer opens a document (FR-011), for every database.
+    /// How this computer opens a document (007 FR-011), for every database.
     pub fn document_opening(&self) -> DocumentOpening {
         self.lock().document_opening
     }
@@ -373,7 +373,7 @@ impl MachineSettings {
         self.update(|file| file.document_opening = value);
     }
 
-    /// The PDF preview hold, or `None` when there is none (FR-003a).
+    /// The PDF preview hold, or `None` when there is none (007 FR-003a).
     pub fn pdf_preview_hold(&self) -> Option<PdfPreviewHold> {
         self.lock().pdf_preview_hold.clone()
     }

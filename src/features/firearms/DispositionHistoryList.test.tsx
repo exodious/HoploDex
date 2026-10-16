@@ -3,13 +3,13 @@ import { screen } from "@testing-library/react";
 import { DispositionHistoryList } from "./DispositionHistoryList";
 import { render } from "../../test/sessionScope";
 
-describe("DispositionHistoryList (FR-033)", () => {
+describe("DispositionHistoryList (001 FR-033)", () => {
   it("renders nothing when no dispositions were retained", () => {
     const { container } = render(<DispositionHistoryList entries={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  // 001 US1 Scenario 12
+  // 001 US1-12
   it("lists each retained disposition as it was recorded", () => {
     render(
       <DispositionHistoryList

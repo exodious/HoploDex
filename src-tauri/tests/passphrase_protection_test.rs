@@ -1,5 +1,5 @@
-//! The passphrase-keyed file format (FR-002, FR-003, FR-006, FR-011;
-//! research.md §1, §1a, §2; contracts/database-file.md). Every case runs
+//! The passphrase-keyed file format (003 FR-002, FR-003, FR-006, FR-011;
+//! 003 research.md §1, §1a, §2; 003 contracts/database-file.md). Every case runs
 //! against a real SQLCipher file in a temp directory, made with the
 //! production cipher settings.
 
@@ -43,7 +43,7 @@ fn a_database_reopens_with_its_passphrase_and_keeps_its_rows() {
     assert_eq!(keep, 7);
 }
 
-// 003 US1 Scenario 6
+// 003 US1-6
 #[test]
 fn a_wrong_passphrase_is_refused_and_the_file_is_untouched() {
     let db = TestDb::new();
@@ -59,7 +59,7 @@ fn a_wrong_passphrase_is_refused_and_the_file_is_untouched() {
     assert_eq!(fs::read(&path).unwrap(), before, "a refused open must not write the file");
 }
 
-// 003 US1 Scenario 2
+// 003 US1-2
 #[test]
 fn a_new_passphrase_needs_twelve_characters_and_no_nul() {
     let short = validate_new_passphrase(&phrase("elevenchars")).unwrap_err();
@@ -228,7 +228,7 @@ fn verify_passphrase_checks_a_candidate_without_touching_the_open_file() {
     db.conn.execute("UPDATE collection_settings SET idle_lock_minutes = 11", []).unwrap();
 }
 
-// --- User Story 1: through `commands::databases::ops` -----------------------
+// --- 003 US1: through `commands::databases::ops` ----------------------------
 
 mod through_commands {
     use std::fs;
@@ -364,7 +364,7 @@ mod through_commands {
         assert_eq!(recent[0].path, world.path("Main"));
     }
 
-    // 003 US1 Scenario 6
+    // 003 US1-6
     #[test]
     fn a_wrong_passphrase_is_refused_through_the_command_and_the_file_is_untouched() {
         let world = World::new();
@@ -387,7 +387,7 @@ mod through_commands {
         assert_eq!(fs::read(world.path("Main")).unwrap(), before);
     }
 
-    // 003 US1 Scenarios 2 and 3
+    // 003 US1-2 and US1-3
     #[test]
     fn create_refuses_a_short_passphrase_and_a_missing_acknowledgement() {
         let world = World::new();
@@ -404,7 +404,7 @@ mod through_commands {
 
         assert_eq!(err.code, "VALIDATION_ERROR");
         assert_eq!(field_error(&err, "passphrase").as_deref(), Some("Use at least 12 characters."));
-        assert!(field_error(&err, "acknowledgedUnrecoverable").is_some(), "FR-004");
+        assert!(field_error(&err, "acknowledgedUnrecoverable").is_some(), "003 FR-004");
         assert!(!world.path("Main").exists(), "nothing is created when the input is refused");
         assert!(!world.session.is_open());
     }
@@ -427,7 +427,7 @@ mod through_commands {
         assert_eq!(err.code, "PASSPHRASE_INCORRECT");
     }
 
-    // 003 US1 Scenario 4
+    // 003 US1-4
     #[test]
     fn dismissing_the_disk_encryption_note_is_kept_and_is_not_a_change_to_back_up() {
         let world = World::new();
@@ -461,7 +461,7 @@ mod through_commands {
             false,
         )
         .unwrap();
-        assert!(!status.notes.disk_encryption, "the note stays dismissed (FR-008)");
+        assert!(!status.notes.disk_encryption, "the note stays dismissed (003 FR-008)");
     }
 
     #[test]
@@ -634,8 +634,8 @@ mod through_commands {
         );
     }
 
-    /// SC-002: nothing about a database is kept in the keyring unless the
-    /// user asks (FR-017), and creating or opening never asks.
+    /// 003 SC-002: nothing about a database is kept in the keyring unless the
+    /// user asks (003 FR-017), and creating or opening never asks.
     #[cfg(feature = "mock-keyring")]
     #[test]
     fn create_and_open_write_nothing_to_the_keyring() {

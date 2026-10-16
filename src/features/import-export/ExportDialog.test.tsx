@@ -16,7 +16,7 @@ vi.mock("./importExportService");
 
 const browse = { query: "", groupBy: undefined, includeDisposed: false, view: "list" } as const;
 
-/** contracts/tauri-commands.md `get_export_scope`'s output. */
+/** 006 contracts/tauri-commands.md `get_export_scope`'s output. */
 function scope(overrides: Partial<ExportScope> = {}): ExportScope {
   return {
     firearmCount: 3,
@@ -28,8 +28,8 @@ function scope(overrides: Partial<ExportScope> = {}): ExportScope {
 }
 
 /** The dialog reads its counts and disclosure from `get_export_scope`
- * (specs/006-accessory-links contracts/ui-accessories.md §11), not from the
- * collection's list or `list_firearms`. */
+ * (006 contracts/ui-accessories.md §11), not from the collection's
+ * list or `list_firearms`. */
 function mockScope(forAll: ExportScope, forFiltered: ExportScope = forAll) {
   vi.mocked(importExportService.getExportScope).mockImplementation(async (_scope, input) =>
     input.scope === "filtered" ? forFiltered : forAll,
@@ -51,7 +51,7 @@ beforeEach(() => {
 });
 
 describe("ExportDialog disclosure (Constitution V: what leaves the device, and where)", () => {
-  it("describes the export as not encrypted and points to encrypted backups (FR-031)", () => {
+  it("describes the export as not encrypted and points to encrypted backups (003 FR-031)", () => {
     renderDialog();
 
     const dialog = screen.getByRole("dialog", { name: "Export collection" });
@@ -103,7 +103,7 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
   });
 });
 
-describe("ExportDialog registration disclosure (FR-020, US4-2)", () => {
+describe("ExportDialog registration disclosure (005 FR-020, US4-2)", () => {
   const PLAIN = "including serial numbers and values.";
   const WITH_REGISTRATION = "including serial numbers, values and registration details.";
   const filtered = { ...browse, query: "glock" };
@@ -146,8 +146,8 @@ describe("ExportDialog registration disclosure (FR-020, US4-2)", () => {
   });
 });
 
-// specs/006-accessory-links contracts/ui-accessories.md §11 (FR-020, FR-021).
-describe("ExportDialog with accessories (US5)", () => {
+// 006 contracts/ui-accessories.md §11 (006 FR-020, FR-021).
+describe("ExportDialog with accessories (006 US5)", () => {
   const filtered = { ...browse, query: "glock" };
 
   /** The sentence of the privacy note that holds `phrase`. */
@@ -288,7 +288,7 @@ describe("ExportDialog with accessories (US5)", () => {
   });
 });
 
-// specs/001-firearm-inventory spec.md US5, the filtered-export edge case: only the
+// 001 spec.md US5, the filtered-export edge case: only the
 // current search results are exported when the user asks for them.
 describe("ExportDialog exporting the current results (001 US5, filtered export)", () => {
   const filtered = { ...browse, query: "glock" };

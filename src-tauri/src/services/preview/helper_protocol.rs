@@ -1,5 +1,5 @@
 //! The TIFF mode's requests and responses between the app and the render
-//! helper, shared by both ends (007's research.md §11), in the frames of
+//! helper, shared by both ends (007 research.md §11), in the frames of
 //! `services::helper::frames`.
 //!
 //! The parent sends one [`Request::Load`] and then any number of

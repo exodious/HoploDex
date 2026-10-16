@@ -11,8 +11,8 @@ export interface UnsavedChangesPromptProps {
 }
 
 /** Save, discard or cancel when a close, switch or quit finds a form with
- * unsaved input (FR-010, specs/003 contracts/ui-databases.md §6). A lock
- * never asks (FR-033). */
+ * unsaved input (003 FR-010, contracts/ui-databases.md §6). A lock
+ * never asks (003 FR-033). */
 export function UnsavedChangesPrompt({
   label,
   onSave,

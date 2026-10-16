@@ -45,7 +45,7 @@ export function startStrengthWorker() {
 }
 
 /** zxcvbn's estimate for `value`, or `null` when the worker is unavailable
- * (the hint then shows only its advice: it never blocks, FR-003). The value
+ * (the hint then shows only its advice: it never blocks, 003 FR-003). The value
  * is posted to the worker and kept nowhere here. */
 export function estimateStrength(value: string): Promise<Estimate | null> {
   startStrengthWorker();

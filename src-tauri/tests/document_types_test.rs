@@ -1,5 +1,5 @@
 //! `services::document_types`: the one list, `classify`, and the
-//! `list_document_types` command's op (feature 007, FR-016, FR-017,
+//! `list_document_types` command's op (007 FR-016, FR-017,
 //! research.md §2).
 
 use crate::support;
@@ -13,7 +13,7 @@ use serde_json::json;
 use support::document_fixture;
 use support::hostile_documents::{self as hostile, Refusal as Owed};
 
-/// Every type of research.md §2's table: a fixture, the name to give it, the
+/// Every type of 007 research.md §2's table: a fixture, the name to give it, the
 /// canonical MIME type and extension, and how it is previewed.
 fn accepted_cases()
 -> Vec<(&'static str, &'static str, &'static str, &'static str, Option<PreviewKind>)> {
@@ -70,7 +70,7 @@ fn compares_the_extension_without_regard_to_case() {
 
 #[test]
 fn a_damaged_pdf_or_tiff_that_keeps_its_signature_is_accepted() {
-    // The viewer reports them in its own words (FR-006).
+    // The viewer reports them in its own words (007 FR-006).
     for fixture in ["three-pages-truncated.pdf", "three-pages-bitflipped.pdf"] {
         assert!(classify("damaged.pdf", &document_fixture(fixture)).is_ok(), "{fixture}");
     }

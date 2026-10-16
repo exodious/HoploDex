@@ -1,5 +1,5 @@
 //! The app's side: starts the reading child, receives its frames, and ends it
-//! on cancel, lock, close or timeout (research.md §8, §11).
+//! on cancel, lock, close or timeout (008 research.md §8, §11).
 //!
 //! One child reads one file. The file goes to it in 1 MiB chunks from a thread
 //! of its own, and its rows come back in batches, which are made into import
@@ -34,7 +34,7 @@ use crate::services::spreadsheet::{
     ReadTable, SpreadsheetFormat, TableKind, TableReader, unprotect_csv_cell,
 };
 
-/// How often the watcher looks at the cancel flag and the session (SC-004).
+/// How often the watcher looks at the cancel flag and the session (008 SC-004).
 const POLL: Duration = Duration::from_millis(100);
 
 /// A backstop for the whole reading, past which the child is killed whatever
@@ -49,7 +49,7 @@ struct Budget {
     cells: u64,
     text_bytes: u64,
     /// The kinds of table already read. A second table of a kind is an error
-    /// (FR-022) that needs no rows, so its rows are not kept: what is held
+    /// (006 FR-022) that needs no rows, so its rows are not kept: what is held
     /// is at most one firearm table and one accessory table, whatever the
     /// cells in the files.
     seen: Vec<TableKind>,
@@ -85,7 +85,7 @@ enum Event {
 }
 
 /// Reads and recognises every non-blank sheet of the files, without saving
-/// anything (FR-022: the files are read whole, and pass, before a row is
+/// anything (006 FR-022: the files are read whole, and pass, before a row is
 /// saved).
 ///
 /// - `helper_exe` is the executable started again as `--import-helper`: the
@@ -95,10 +95,10 @@ enum Event {
 ///   child is killed on either. A stop that the user made while the session is
 ///   current is `OPERATION_STOPPED`; one made after it ended, or by the
 ///   session ending (a lock, a sleep, a quit), is `DATABASE_CLOSED`
-///   (research.md §11).
+///   (008 research.md §11).
 /// - `progress` is given the base name of the file being read, then the bytes
 ///   of the files parsed so far and their total (the dialog's "Reading
-///   <file>…", contracts/ui.md §2).
+///   <file>…", 008 contracts/ui.md §2).
 ///
 /// A file over a limit is `IMPORT_LIMIT_EXCEEDED`; one that can't be read is
 /// `VALIDATION_ERROR` "<file>: could not read the file."; either refuses the
@@ -129,7 +129,7 @@ pub fn read_files(
     for (file, size) in files.iter().zip(sizes) {
         let name = file_name(&file.file_path);
         // The helper's `done` of `of` is the share of this file read (a CSV's
-        // bytes; a workbook's stages, research.md §11), scaled to its size.
+        // bytes; a workbook's stages, 008 research.md §11), scaled to its size.
         let mut offset_progress = |done: u64, of: u64| {
             let share = if of == 0 {
                 size
@@ -195,7 +195,7 @@ impl Sheets {
                     self.sheets.push((None, TableReader::new()));
                 }
                 for mut row in rows {
-                    // The limits again, as a second line (research.md §9).
+                    // The limits again, as a second line (008 research.md §9).
                     self.rows += 1;
                     if self.rows > MAX_ROWS + 1 {
                         return Some(self.refuse(ImportLimit::Rows));
@@ -362,7 +362,7 @@ fn read_one(
 
 /// Has the import been stopped or has its session ended? The session first:
 /// `OPERATION_STOPPED` is the user's, and only while the session still stands
-/// (research.md §11).
+/// (008 research.md §11).
 fn stopped(cancel: &dyn Fn() -> bool, is_current: &dyn Fn() -> bool) -> Option<End> {
     if !is_current() {
         Some(End::Closed)

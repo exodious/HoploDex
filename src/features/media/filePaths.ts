@@ -21,7 +21,7 @@ export function isPhotoPath(path: string): boolean {
 
 /** Whether a dropped file is one of the document types the backend keeps
  * (`list_document_types`), by extension; the backend's content check stays the
- * authority (ui contract §6). */
+ * authority (007 contracts/ui-document-preview.md §6). */
 export function isDocumentPath(path: string, types: DocumentType[]): boolean {
   const ext = extension(path);
   return ext !== "" && types.some((type) => type.extensions.includes(ext));

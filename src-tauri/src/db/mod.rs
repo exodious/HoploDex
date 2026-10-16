@@ -1,6 +1,6 @@
 //! Database files: creating, opening and checking a passphrase against the
-//! passphrase-keyed SQLCipher format (specs/003-database-protection-management
-//! research.md §1, §1a, §2; contracts/database-file.md). Every function takes
+//! passphrase-keyed SQLCipher format (003 research.md §1, §1a, §2;
+//! 003 contracts/database-file.md). Every function takes
 //! its path from the caller: nothing here knows where a user keeps their
 //! databases.
 
@@ -19,7 +19,7 @@ use crate::services::passphrase::Passphrase;
 
 /// Versioned SQL migrations, applied in order. Names are stored in
 /// `schema_migrations`, which is also the database's data-layout version
-/// (contracts/database-file.md).
+/// (003 contracts/database-file.md).
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_initial", include_str!("migrations/0001_initial.sql")),
     ("0002_fts5", include_str!("migrations/0002_fts5.sql")),
@@ -27,7 +27,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
 ];
 
 /// The cipher page size, which is also the size of the page-1 probe
-/// (research.md §1a).
+/// (003 research.md §1a).
 const PAGE_SIZE: usize = 4096;
 
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +42,7 @@ pub enum DbError {
     Exists(PathBuf),
 }
 
-/// Why a database did not open (research.md §2). Each maps to one command
+/// Why a database did not open (003 research.md §2). Each maps to one command
 /// error code. None of them is reported after anything was written.
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
@@ -52,7 +52,7 @@ pub enum OpenError {
     Unreadable { path: PathBuf },
     #[error("the database is in use by another connection")]
     InUse,
-    /// Also a file that is not a HoploDex database: FR-006 does not tell the
+    /// Also a file that is not a HoploDex database: 003 FR-006 does not tell the
     /// two apart.
     #[error("wrong passphrase, or not a HoploDex database")]
     PassphraseIncorrect,
@@ -92,10 +92,10 @@ pub fn now_utc() -> String {
 }
 
 /// Keys a fresh connection and sets everything each connection needs,
-/// before its first read: the pinned cipher settings (FR-011), foreign keys,
+/// before its first read: the pinned cipher settings (003 FR-011), foreign keys,
 /// secure deletion (constitution V), and exclusive locking, so a second
 /// copy of HoploDex is told "in use" rather than "wrong passphrase"
-/// (research.md §2). A busy file is reported at once rather than waited on.
+/// (003 research.md §2). A busy file is reported at once rather than waited on.
 fn configure(conn: &Connection, passphrase: &Passphrase) -> rusqlite::Result<()> {
     conn.pragma_update(None, "key", passphrase.as_str())?;
     cipher::apply_cipher_settings(conn, "main")?;
@@ -108,7 +108,7 @@ fn configure(conn: &Connection, passphrase: &Passphrase) -> rusqlite::Result<()>
 /// Creates a new database at `path`, which must not exist yet, and returns
 /// its open connection holding the file lock. The database has the default
 /// settings, a new random identity, nothing waiting to be backed up, and
-/// the open marker set to `machine` (FR-032).
+/// the open marker set to `machine` (003 FR-032).
 pub fn create_database(
     path: &Path,
     passphrase: &Passphrase,
@@ -142,7 +142,7 @@ fn initialize(
     apply_migrations(&conn)?;
     // The settings row goes in before `app_state` exists, so its
     // change-tracking trigger finds no backup record to mark: creating a
-    // database is not a change to back up (FR-025).
+    // database is not a change to back up (003 FR-025).
     conn.execute("INSERT INTO collection_settings (id) VALUES (1)", [])?;
     conn.execute(
         "INSERT INTO app_state (id, database_id, created_at, open_machine_id, open_machine_name,
@@ -150,14 +150,14 @@ fn initialize(
          VALUES (1, ?1, ?2, ?3, ?4, ?2, 0)",
         rusqlite::params![random_hex(16)?, now_utc(), machine.id, machine.display_name],
     )?;
-    // A new database was written by this version (FR-015).
+    // A new database was written by this version (008 FR-015).
     record_saved_version(&conn)?;
     Ok(conn)
 }
 
 /// Records this build's [`APP_VERSION`](crate::APP_VERSION) as the version
-/// that last saved the database (`app_state.last_saved_version`, FR-015,
-/// specs/008-hardening-batch research.md §16). It changes no row when that
+/// that last saved the database (`app_state.last_saved_version`, 008 FR-015,
+/// 008 research.md §16). It changes no row when that
 /// is already the recorded value, so a caller can count rows changed. Not a
 /// change to back up: `app_state` has no change-tracking triggers.
 pub fn record_saved_version(conn: &Connection) -> rusqlite::Result<()> {
@@ -169,10 +169,10 @@ pub fn record_saved_version(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 /// Opens the database at `path` with `passphrase` on `machine`, in
-/// research.md §2's order. Nothing is written until every check has passed,
-/// so a refused open never changes the file (FR-006, FR-014). A database
+/// 003 research.md §2's order. Nothing is written until every check has passed,
+/// so a refused open never changes the file (003 FR-006, FR-014). A database
 /// marked open on another computer is refused unless `take_over` is set
-/// (FR-032). The returned connection holds the file's exclusive lock until
+/// (003 FR-032). The returned connection holds the file's exclusive lock until
 /// it is dropped.
 pub fn open_database(
     path: &Path,
@@ -244,7 +244,7 @@ pub fn open_database(
 
 /// Opens a copy that is to replace a database (a restore's, a passphrase
 /// change's) with the passphrase it should have, and proves it sound
-/// before anything is replaced (research.md §4): every page's HMAC
+/// before anything is replaced (003 research.md §4): every page's HMAC
 /// (`cipher_integrity_check`), SQLite's own `integrity_check`, a HoploDex
 /// database, and no migration this build doesn't know. Returns the
 /// connection so the caller can stamp the copy. Nothing else knows about
@@ -315,7 +315,7 @@ fn is_hoplodex_database(conn: &Connection) -> rusqlite::Result<bool> {
 }
 
 /// Checks `candidate` against the database open on `conn`, whose file is
-/// locked against any second connection (research.md §1a): the file's first
+/// locked against any second connection (003 research.md §1a): the file's first
 /// page, ciphertext only, is copied into `scratch_dir` and opened with the
 /// candidate, and page 1's HMAC check decides. The probe is deleted whatever
 /// the result. The page is read through the connection's own file handle
@@ -373,12 +373,12 @@ pub fn reclaim_freed_space(conn: &Connection) {
 /// also had an entry in its full-text index. FTS5 records a delete as a marker beside the old
 /// entry, both holding the deleted words, until its segments are merged; the
 /// merge (`optimize`) drops both, so no word of a deleted firearm stays in
-/// the file (specs/004-cartridges-action-types SC-005, research.md §14).
+/// the file (004 SC-005, research.md §14).
 /// Both indexes are merged, since a delete cascades through a mount and
-/// either record's words may be in either one (specs/006-accessory-links
-/// SC-006). A deleted document's file name is in a third one,
+/// either record's words may be in either one (006 SC-006). A deleted
+/// document's file name is in a third one,
 /// `document_names_fts`, which a document delete and a cascade from either
-/// record both touch (specs/007-document-preview research.md §19), so it is
+/// record both touch (007 research.md §19), so it is
 /// merged too. Failures are logged, as in [`reclaim_freed_space`].
 pub fn reclaim_deleted_record(conn: &Connection) {
     for index in ["firearms_fts", "accessories_fts", "document_names_fts"] {

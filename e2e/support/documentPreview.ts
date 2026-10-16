@@ -191,7 +191,7 @@ export function logLines(
   variable: "HOPLODEX_E2E_CONSENT_LOG" | "HOPLODEX_E2E_OPENED_LOG",
 ): string[] {
   const file = process.env[variable];
-  if (!file) throw new Error(`${variable} is not set (wdio.conf.ts, T092)`);
+  if (!file) throw new Error(`${variable} is not set (wdio.conf.ts, 007 T092)`);
   return fs.existsSync(file)
     ? fs
         .readFileSync(file, "utf-8")

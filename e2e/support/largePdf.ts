@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * A valid PDF of about a given size, for the preview's speed check (SC-001:
+ * A valid PDF of about a given size, for the preview's speed check (007 SC-001:
  * a document of about 10 MB shows within 1 s), with no file checked in.
  *
  * Each page draws one image, an RGB bitmap stored without a filter and filled

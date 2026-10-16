@@ -1,4 +1,4 @@
-//! Noticing that another computer took the database over (FR-032, research.md
+//! Noticing that another computer took the database over (003 FR-032, research.md
 //! §6). On a cloud-synced folder another computer's changes arrive as the
 //! sync client replacing the file at the path, and our open file descriptor
 //! keeps pointing at the old one, so the connection itself never sees it.
@@ -54,7 +54,7 @@ pub enum FingerprintCheck {
     /// else: another computer took the database over.
     Replaced,
     /// The path is missing or can't be examined: the drive or network share
-    /// has gone. This is not a take-over (research.md §6).
+    /// has gone. This is not a take-over (003 research.md §6).
     Unreachable,
 }
 

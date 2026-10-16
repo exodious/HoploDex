@@ -8,12 +8,12 @@ import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import "./databases.css";
 
 /** The open database's menu, at the left of the top bar's tools
- * (contracts/ui-databases.md §4), with a lock button beside it. Its label
+ * (003 contracts/ui-databases.md §4), with a lock button beside it. Its label
  * is always "Database": the window's title names the open one. Locking
- * asks nothing (FR-035) and is the way to close the database from here; it
+ * asks nothing (003 FR-035) and is the way to close the database from here; it
  * leads to the chooser, which opens this database or another. The menu also
- * holds the database's settings (§7), the passphrase change (§8), the
- * restore dialog (§9) and the guide (§11). */
+ * holds the database's settings, the passphrase change, the restore dialog and
+ * the guide (003 contracts/ui-databases.md §7, §8, §9 and §11 in turn). */
 export function DatabaseMenu() {
   const session = useSession();
   const [dialog, setDialog] = useState<"settings" | "passphrase" | "restore" | "guide" | null>(

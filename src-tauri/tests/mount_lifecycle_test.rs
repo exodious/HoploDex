@@ -1,9 +1,9 @@
-//! specs/006-accessory-links User Story 3 through `ops`, against a real
+//! 006 US3 through `ops`, against a real
 //! temporary SQLCipher database (no mocks): disposing a host with some of
-//! what is mounted on it (FR-014, research.md §9), restoring, and deleting
-//! hosts and items (FR-015).
+//! what is mounted on it (006 FR-014, research.md §9), restoring, and deleting
+//! hosts and items (006 FR-015).
 //!
-//! Written before the implementation (tasks.md T079). `DisposeInput` is
+//! Written before the implementation (006 tasks.md T079). `DisposeInput` is
 //! built as the contract's own camelCase JSON, so the tests need nothing
 //! from the struct but its `withMounted` field.
 
@@ -199,7 +199,7 @@ fn assert_kept_unmounted(db: &TestDb, record: RecordRef) {
     assert_eq!(rows_involving(db, record), 0);
 }
 
-// --- Disposing a host with some of what is on it (US3-1, US3-2) ------------------------------
+// --- Disposing a host with some of what is on it (006 US3-1, US3-2) --------------------------
 
 #[test]
 fn disposing_a_rifle_with_its_optic_disposes_both_and_leaves_the_suppressor_unmounted() {
@@ -247,7 +247,7 @@ fn leaving_with_mounted_out_is_the_same_as_an_empty_list() {
     assert_kept_unmounted(&db, optic);
 }
 
-// --- Disposing an item, and restoring (US3-3, US3-4) -------------------------------------------
+// --- Disposing an item, and restoring (006 US3-3, US3-4) ---------------------------------------
 
 #[test]
 fn disposing_a_mounted_optic_unmounts_it_and_restoring_either_record_restores_it_unmounted() {
@@ -278,7 +278,7 @@ fn disposing_a_mounted_optic_unmounts_it_and_restoring_either_record_restores_it
     assert_eq!(mount_rows(&db), 0);
 }
 
-// --- A firearm carrying a firearm carrying an accessory (US3-7) --------------------------------
+// --- A firearm carrying a firearm carrying an accessory (006 US3-7) ----------------------------
 
 #[test]
 fn a_launcher_and_its_light_are_kept_or_disposed_as_chosen() {
@@ -323,7 +323,7 @@ fn disposing_everything_below_a_rifle_disposes_every_listed_record() {
     assert_eq!(mount_rows(&db), 0);
 }
 
-// --- An upper carrying an optic (US3-8) ---------------------------------------------------------
+// --- An upper carrying an optic (006 US3-8) -----------------------------------------------------
 
 #[test]
 fn an_upper_and_its_optic_are_kept_or_disposed_as_chosen() {
@@ -458,7 +458,7 @@ fn a_failing_disposal_leaves_the_listed_records_as_they_were() {
     assert_eq!(status(&db, rifle), "active");
 }
 
-// --- Deleting (US3-5, US3-6, US3-9, FR-015) --------------------------------------------------------
+// --- Deleting (006 US3-5, US3-6, US3-9, FR-015) ----------------------------------------------------
 
 #[test]
 fn deleting_a_rifle_leaves_its_records_in_the_collection_and_those_further_down_where_they_are() {

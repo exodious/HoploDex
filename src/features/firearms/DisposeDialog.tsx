@@ -31,7 +31,7 @@ export type DisposeDialogProps = RecordSubjectProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDispose: (input: DisposeInput) => Promise<void>;
-  /** What the record is mounted on and what is mounted on it (FR-014); none
+  /** What the record is mounted on and what is mounted on it (006 FR-014); none
    * when the page has not loaded it. */
   mount?: MountDetail;
   /** Called when the backend reports that what is mounted has changed, so the
@@ -39,9 +39,9 @@ export type DisposeDialogProps = RecordSubjectProps & {
   onMountChanged?: () => void | Promise<void>;
 };
 
-/** Marks a firearm or an accessory disposed (US1 Scenario 4; 006 FR-006). The
+/** Marks a firearm or an accessory disposed (001 US1-4; 006 FR-006). The
  * record keeps its full history but leaves the active collection, its totals,
- * and coverage checks (FR-023, FR-025). */
+ * and coverage checks (001 FR-023, FR-025). */
 export function DisposeDialog({
   open,
   onOpenChange,
@@ -81,7 +81,7 @@ export function DisposeDialog({
   );
 }
 
-/** The version of this form's kept drafts (research.md §16). Raise it when
+/** The version of this form's kept drafts (003 research.md §16). Raise it when
  * {@link DisposeValues} changes shape, so older drafts are only discarded. */
 export const FORM_VERSION = 2;
 
@@ -92,7 +92,7 @@ interface DisposeValues {
   date: string;
   price: string;
   /** The records disposed with it, by `recordKey`, each with the price typed
-   * for it (blank: none). A record not here is kept (FR-014). */
+   * for it (blank: none). A record not here is kept (006 FR-014). */
   disposeWith: Record<string, string>;
 }
 
@@ -117,7 +117,7 @@ function DisposeForm({
     targetId: subject.id,
   };
   const label = `${subject.name} (disposal)`;
-  // Pending changes the user resumed start as unsaved input (FR-039).
+  // Pending changes the user resumed start as unsaved input (003 FR-039).
   const [today] = useState(todayIso);
   const [resumed] = useState(() =>
     resumedValues<DisposeValues>(scope, target, {
@@ -153,7 +153,7 @@ function DisposeForm({
 
   const parsedDate = parseDateInput(date);
   const parsedPrice = parseDollars(price);
-  // specs/008-hardening-batch research.md §10: over its maximum, the
+  // 008 research.md §10: over its maximum, the
   // recipient shows the message at once, since text is usually pasted in.
   const recipientTooLong = textLengthError("Transferred to", recipient, MAX_SHORT_TEXT_CHARS);
   const errors = {
@@ -186,7 +186,7 @@ function DisposeForm({
     ),
   );
   // A record disposed with it is checked against its own acquisition date, as
-  // the record's own is (FR-014, US3/AC2); the error names it.
+  // the record's own is (006 FR-014, US3-2; 001 FR-004); the error names it.
   const dateErrors = new Map(
     parsedWith.flatMap(({ entry }) => {
       const error =
@@ -205,7 +205,7 @@ function DisposeForm({
   );
 
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
-  // and a lock keeps it (FR-039).
+  // and a lock keeps it (003 FR-039).
   const values: DisposeValues = { dispositionType, recipient, date, price, disposeWith };
   useDirtyForm({
     label,
@@ -253,7 +253,7 @@ function DisposeForm({
       });
       return true;
     } catch (e) {
-      // What is mounted changed under the dialog (FR-014): say so, and have the
+      // What is mounted changed under the dialog (006 FR-014): say so, and have the
       // page reload the list.
       const stale = e instanceof CommandFailure ? e.fieldErrors?.withMounted : undefined;
       if (stale) void onMountChanged?.();

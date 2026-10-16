@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { kindInSentence } from "./documentKind";
 
-// specs/007-document-preview/contracts/ui-document-preview.md §3 (tasks.md T159).
+// 007 contracts/ui-document-preview.md §3 (007 T159).
 describe("kindInSentence", () => {
   it.each([
     ["Plain text", "plain text"],

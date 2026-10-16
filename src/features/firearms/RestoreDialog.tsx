@@ -17,11 +17,11 @@ export type RestoreDialogProps = RecordSubjectProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Rejects with a `CommandFailure` when the restored record would clash
-   * with an active one (FR-031/FR-032); the dialog then shows why. */
+   * with an active one (001 FR-031/FR-032); the dialog then shows why. */
   onRestore: (input: ReverseDispositionInput) => Promise<void>;
 };
 
-/** Reverses a disposition (FR-033): the firearm or accessory returns to the
+/** Reverses a disposition (001 FR-033): the firearm or accessory returns to the
  * active collection, and the user decides whether its disposition details are
  * kept as history or discarded. That choice is never defaulted. */
 export function RestoreDialog({ open, onOpenChange, onRestore, ...record }: RestoreDialogProps) {
@@ -48,7 +48,7 @@ const HISTORY_OPTIONS: { value: HistoryChoice; label: string; description: strin
   },
 ];
 
-/** The version of this form's kept drafts (research.md §16). Raise it when
+/** The version of this form's kept drafts (003 research.md §16). Raise it when
  * {@link RestoreValues} changes shape, so older drafts are only discarded. */
 export const FORM_VERSION = 1;
 
@@ -72,7 +72,7 @@ function RestoreDialogBody({
     mode: "restore",
     targetId: subject.id,
   };
-  // Pending changes the user resumed start as unsaved input (FR-039).
+  // Pending changes the user resumed start as unsaved input (003 FR-039).
   const [resumed] = useState(() =>
     resumedValues<RestoreValues>(scope, target, {
       history: "",
@@ -87,13 +87,13 @@ function RestoreDialogBody({
   // a firearm has a nickname, so an accessory never clashes (006 FR-006).
   const [renaming, setRenaming] = useState(resumed.renaming);
   const [nickname, setNickname] = useState(resumed.nickname);
-  // specs/002-firearm-identification US3-9: once an ORIGINAL_MARKS_MATCH
+  // 002 US3-9: once an ORIGINAL_MARKS_MATCH
   // warning has been shown, the same button resends confirmed.
   const [confirmedWarnings, setConfirmedWarnings] = useState(false);
 
   const nicknameRef = useRef<HTMLInputElement>(null);
 
-  // specs/008-hardening-batch research.md §10: over its maximum, the new
+  // 008 research.md §10: over its maximum, the new
   // nickname shows the message at once, since text is usually pasted in.
   const nicknameTooLong = renaming
     ? textLengthError("New nickname", nickname, MAX_SHORT_TEXT_CHARS)
@@ -133,7 +133,7 @@ function RestoreDialogBody({
   }
 
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
-  // and a lock keeps it (FR-039).
+  // and a lock keeps it (003 FR-039).
   const values: RestoreValues = { history, renaming, nickname };
   useDirtyForm({
     label: `${subject.name} (restore)`,

@@ -1,5 +1,5 @@
 //! Integration tests for `list_firearms`'s search/group/`includeDisposed`
-//! behavior (001 US2 Acceptance Scenarios 1-5), run against a real
+//! behavior (001 US2-1 to US2-5), run against a real
 //! temporary SQLCipher database — no mocks, per the constitution.
 
 use crate::support;
@@ -166,7 +166,7 @@ fn disposed_firearms_are_excluded_by_default_but_included_on_request() {
 
     let default_result = ops::list_firearms(&db.conn, &ListFirearmsInput::default()).unwrap();
     let default_all: Vec<_> = default_result.groups.iter().flat_map(|g| &g.firearms).collect();
-    assert_eq!(default_all.len(), 1, "disposed firearms excluded by default (FR-025)");
+    assert_eq!(default_all.len(), 1, "disposed firearms excluded by default (001 FR-025)");
 
     let with_disposed = ops::list_firearms(
         &db.conn,
@@ -224,10 +224,10 @@ fn summaries_carry_serial_number_and_coverage_assignment() {
     assert_eq!(without_serial.scheduled_coverage_amount, None);
 }
 
-// specs/002-firearm-identification US4-1: grouping by origin, in a fixed
+// 002 US4-1: grouping by origin, in a fixed
 // order (Domestic, Imported, Re-imported, Unspecified) rather than
 // alphabetically, with only the origins actually present in the result.
-// specs/004-cartridges-action-types research.md §11 renamed "Not specified"
+// 004 research.md §11 renamed "Not specified"
 // to "Unspecified".
 
 #[test]
@@ -288,7 +288,7 @@ fn group_by_origin_omits_origins_with_no_firearms() {
     assert_eq!(keys, vec!["Domestic", "Unspecified"]);
 }
 
-// specs/004-cartridges-action-types US1-6, FR-008 and FR-027: the cartridge
+// 004 US1-6, FR-008 and FR-027: the cartridge
 // on each summary, and grouping by it.
 
 fn chambered(make: &str, model: &str, cartridge: Option<&str>, caliber: &str) -> FirearmInput {
@@ -329,7 +329,7 @@ fn summaries_carry_the_cartridge() {
     assert_eq!(hawken.cartridge, None);
 }
 
-// 004 US1 Scenario 6
+// 004 US1-6
 #[test]
 fn group_by_cartridge_keys_by_the_stored_text_with_unspecified_last() {
     let db = TestDb::new();
@@ -348,8 +348,8 @@ fn group_by_cartridge_keys_by_the_stored_text_with_unspecified_last() {
 
     let groups = group_keys(&db.conn, GroupBy::Cartridge);
     let keys: Vec<&str> = groups.iter().map(|(key, _)| key.as_str()).collect();
-    // Spelling variants already on record stay separate groups (spec Edge
-    // Cases); the rest are alphabetical, and firearms with none come last.
+    // Spelling variants already on record stay separate groups (004 spec.md
+    // Edge Cases); the rest are alphabetical, and firearms with none come last.
     assert_eq!(
         keys,
         vec![".45 ACP", "9X19mm Parabellum", "9x19mm Parabellum", "Zulu Wildcat", "Unspecified"]
@@ -361,7 +361,7 @@ fn group_by_cartridge_keys_by_the_stored_text_with_unspecified_last() {
 
 #[test]
 fn group_by_caliber_gathers_every_cartridge_of_the_bore_class() {
-    // US1-6: 9x19mm Parabellum, 9x18mm Makarov and a cartridge recorded as
+    // 004 US1-6: 9x19mm Parabellum, 9x18mm Makarov and a cartridge recorded as
     // just "9mm" all fall in the "9mm" group.
     let db = TestDb::new();
     ops::create_firearm(
@@ -404,7 +404,7 @@ fn group_by_cartridge_deserializes_from_its_wire_name() {
     assert_eq!(input.group_by, Some(GroupBy::Cartridge));
 }
 
-// specs/004-cartridges-action-types US3-4: the action's name on each
+// 004 US3-4: the action's name on each
 // summary, and grouping by it in the action list's order.
 
 fn acting(model: &str, firearm_type_id: i64, action_type_id: Option<i64>) -> FirearmInput {
@@ -462,7 +462,7 @@ fn group_by_action_type_deserializes_from_its_wire_name() {
     assert_eq!(input.group_by, Some(GroupBy::ActionType));
 }
 
-// specs/005-regulated-item-types US1-4: a Suppressor groups under its own
+// 005 US1-4: a Suppressor groups under its own
 // type and shows its own drawing.
 
 #[test]
@@ -485,8 +485,8 @@ fn a_suppressor_groups_under_suppressor_with_its_own_drawing() {
     assert_eq!(summary.action_type_name, None);
 }
 
-// 005 US2 Scenario 9
-/// specs/005-regulated-item-types US2-9, US2-10, FR-016.
+// 005 US2-9
+/// 005 US2-9, US2-10, FR-016.
 #[test]
 fn grouping_by_registration_follows_the_list_and_the_alphabet_with_unspecified_last() {
     let db = TestDb::new();
@@ -550,7 +550,7 @@ fn group_by_action_puts_automatic_after_break_action_and_before_falling_block() 
     assert_eq!(keys, vec!["Break action", "Automatic or select-fire", "Falling block"]);
 }
 
-// --- Mounts (specs/006-accessory-links US2-11, FR-016a) -----------------------------------
+// --- Mounts (006 US2-11, FR-016a) ---------------------------------------------------------
 
 const RIFLE: i64 = 2;
 const SUPPRESSOR: i64 = 5;
@@ -623,7 +623,10 @@ fn a_mounted_firearm_names_its_host_and_a_carrying_firearm_counts_what_is_below_
     assert_eq!(suppressor["mountedOn"]["record"], json!({ "kind": "firearm", "id": deer.id() }));
     assert_eq!(suppressor["mountedOn"]["make"], "Ruger");
     assert_eq!(suppressor["mountedOn"]["model"], "Precision");
-    assert_eq!(suppressor["mountedOn"]["nickname"], "Deer rifle", "named as everywhere (FR-005)");
+    assert_eq!(
+        suppressor["mountedOn"]["nickname"], "Deer rifle",
+        "named as firearms are (006 FR-016a; 001 FR-031)"
+    );
     assert_eq!(suppressor["mountedCounts"], json!({ "firearms": 0, "accessories": 0 }));
     let rifle = summary(&all, deer);
     assert_eq!(rifle["mountedOn"], Value::Null);

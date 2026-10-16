@@ -1,14 +1,14 @@
 //! A confined helper's confinement (the TIFF render helper's and the import
-//! helper's, research.md §8): Landlock on Linux, a job object (made by
+//! helper's, 008 research.md §8): Landlock on Linux, a job object (made by
 //! HoploDex, checked here) and mitigations on Windows, the sandbox profile on
-//! macOS (007's research.md §11).
+//! macOS (007 research.md §11).
 //!
 //! [`confine`] is called by the helper before it reads a byte of any document
 //! (`preview::helper::run`). Each branch also makes the helper die with HoploDex at
 //! once, by whatever its OS offers: `PR_SET_PDEATHSIG` on Linux, a job object
 //! that HoploDex itself owns on Windows (the kernel ends the helper when
 //! HoploDex's handle to it closes, however HoploDex ends), and a `kqueue`
-//! `NOTE_EXIT` watch on the parent on macOS (research.md §11, amended 2026-10-07).
+//! `NOTE_EXIT` watch on the parent on macOS (007 research.md §11, amended 2026-10-07).
 
 /// What [`confine`] managed, for the helper's self-check and the log.
 #[derive(Debug, Clone, Copy, Default)]
@@ -33,7 +33,7 @@ pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
 
 /// Logs once per run, from the app, what this computer's kernel lets the
 /// helper be confined with, since the helper's own stderr is discarded
-/// (research.md §11: "best effort on older kernels, logged once").
+/// (007 research.md §11: "best effort on older kernels, logged once").
 pub fn log_support_once() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(imp::log_support);
@@ -400,7 +400,7 @@ mod imp {
     }
 
     /// No error box and no Windows Error Reporting heap or snapshot for this
-    /// process, so a crash writes no content (FR-003). Excluding the program
+    /// process, so a crash writes no content (007 FR-003). Excluding the program
     /// by name would write the user's registry, so `WerSetFlags` (per
     /// process) is used instead; its failure isn't fatal, since
     /// `SetErrorMode` has already stopped the dialog.

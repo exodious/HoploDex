@@ -1,5 +1,5 @@
 //! The native confirmation's text and the session's consent rule
-//! (research.md §16, §17; ui contract §4).
+//! (007 research.md §16, §17; 007 contracts/ui-document-preview.md §4).
 //!
 //! Handing a document to another app is decided by the user in a native
 //! dialog that Rust shows, with text Rust builds from the stored file name, so
@@ -41,7 +41,7 @@ pub enum ConsentRequest {
 /// The longest file name the dialog's title shows, in characters.
 const NAME_LIMIT: usize = 120;
 
-/// The four consequences every confirmation lists (FR-009).
+/// The four consequences every confirmation lists (007 FR-009).
 const CONSEQUENCES: [&str; 4] = [
     "Other apps, and anyone who can use this computer account, can read the copy while it is there.",
     "The other app may keep its own copies or records of the document, such as recent-files lists, \
@@ -108,7 +108,7 @@ fn is_bidi_control(c: char) -> bool {
     matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
-/// Whether an external open must ask (research.md §17): always, unless the
+/// Whether an external open must ask (007 research.md §17): always, unless the
 /// setting is "Open in another app" and this session has already been
 /// answered "Open in another app". Every external open goes through this.
 pub fn needs_consent(setting: DocumentOpening, confirmed_this_session: bool) -> bool {
@@ -116,7 +116,7 @@ pub fn needs_consent(setting: DocumentOpening, confirmed_this_session: bool) -> 
 }
 
 /// Asks the user. Blocks until they answer, so a caller must not hold the
-/// session's lock (research.md §16).
+/// session's lock (007 research.md §16).
 pub trait Consent: Send + Sync {
     fn ask(&self, request: ConsentRequest) -> ConsentAnswer;
 }

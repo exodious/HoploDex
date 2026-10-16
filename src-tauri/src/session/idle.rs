@@ -1,4 +1,4 @@
-//! The idle lock's clock (FR-034, FR-035, research.md §15). It lives in the
+//! The idle lock's clock (003 FR-034, FR-035, research.md §15). It lives in the
 //! backend, since a hidden or minimized webview's timers can be throttled or
 //! frozen, and runs on wall time, so time asleep counts as idle. The
 //! frontend reports input with `note_activity` at most once a second; a
@@ -54,7 +54,7 @@ fn minute_seconds_from(setting: Option<&str>) -> i64 {
 }
 
 /// Input Rust itself sees in the application's windows, as the PDF surface's
-/// web view does (research.md §10): counts as activity, like the main web
+/// web view does (007 research.md §10): counts as activity, like the main web
 /// view's `note_activity`. The caller keeps it to once a second.
 pub fn note_activity(session: &crate::session::Session) {
     session.idle().note_activity(session.clock().now());

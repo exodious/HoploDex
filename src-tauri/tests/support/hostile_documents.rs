@@ -1,4 +1,4 @@
-//! Generators for hostile and malformed documents (feature 007, T004,
+//! Generators for hostile and malformed documents (007 T004,
 //! research.md §2, §11 and §23).
 //!
 //! Each returns bytes (and a file name) for a test to attach, classify or
@@ -14,7 +14,7 @@
 //! the code it must refuse it with.
 #![allow(dead_code)]
 
-/// What a document is refused with (data-model.md, "Validation").
+/// What a document is refused with (007 data-model.md, "Validation").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
     /// `DOCUMENT_TYPE_NOT_ALLOWED`: the extension isn't on the list.
@@ -58,7 +58,7 @@ pub struct Hostile {
     pub refusal: Refusal,
 }
 
-/// Every non-TIFF hostile document of T004, each with the refusal that
+/// Every non-TIFF hostile document of 007 T004, each with the refusal that
 /// `classify` owes it.
 pub fn refused_documents() -> Vec<Hostile> {
     use Refusal::*;
@@ -569,7 +569,7 @@ pub fn html_named_pdf() -> Generated {
 
 /// A DOCX that is otherwise sound, with one more entry whose directory
 /// record declares 3 GB of content (the bytes behind it are one). Reading it
-/// whole would take far longer than reading its directory (research.md §2).
+/// whole would take far longer than reading its directory (007 research.md §2).
 pub fn docx_declaring_gigabytes() -> Generated {
     const HUGE: &str = "word/media/huge.bin";
     let mut b = word_package(WORD_MAIN, &[(HUGE, b"x")]);
@@ -597,7 +597,7 @@ pub fn text_named_tiff() -> Generated {
 }
 
 /// What a `.txt` or `.csv` must not begin with after an optional BOM and
-/// whitespace: `<` followed by one of these, in any case (research.md §2).
+/// whitespace: `<` followed by one of these, in any case (007 research.md §2).
 pub const MARKUP_STARTS: [&str; 6] = ["!DOCTYPE html", "html", "svg", "?xml", "script", "head"];
 
 /// A file named `name` that starts with a BOM, whitespace and then `<tag`
@@ -749,7 +749,7 @@ pub fn large_tiff(min_bytes: usize) -> Generated {
 
 /// A one-page PDF holding `marker`: raw in a content-stream
 /// comment and as the page's text, uncompressed, so a scan of the disk for
-/// the marker finds any copy of the document (research.md §23, SC-002).
+/// the marker finds any copy of the document (007 research.md §23, SC-002).
 pub fn marker_pdf(marker: &[u8; 64]) -> Generated {
     let mut text = Vec::new();
     for &c in marker {

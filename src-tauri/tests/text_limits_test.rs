@@ -288,7 +288,7 @@ fn an_imported_cell_over_its_maximum_is_a_row_error_and_one_at_it_imports() {
     let store = ImportSessionStore::new();
 
     // The entry fields have their own import handling (snapping, settling);
-    // the fields new to §10 are the ones tried here, each in an imported,
+    // the fields new to 008 research.md §10 are the ones tried here, each in an imported,
     // disposed row so that its details apply.
     let firearm_cols: Vec<_> =
         firearm_fields().into_iter().filter(|(_, _, max, _)| *max != ENTRY).collect();

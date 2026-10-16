@@ -12,7 +12,7 @@ export interface MoneyFieldProps extends Omit<
   onValueChange: (text: string) => void;
 }
 
-/** Whole-dollar input (FR-037): "$" prefix, digits only. A typed ".", "," or
+/** Whole-dollar input (001 FR-037): "$" prefix, digits only. A typed ".", "," or
  * other character is ignored; a pasted "$", commas or spaces are dropped; a
  * pasted amount with cents is refused with a message, never rounded. Grouping
  * ("$1,250") is display-only and never appears in the field. */

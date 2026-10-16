@@ -35,12 +35,13 @@ function failureMessage(e: unknown, fallback: string): string {
 const PDF_OFF = "PDFs can't be previewed on this computer.";
 const NOT_OPENABLE = "This can't be opened: it is not a document type.";
 
-/** A dropped file that isn't a document type (ui contract §6). */
+/** A dropped file that isn't a document type (007 contracts/ui-document-preview.md §6). */
 const refusal = (name: string) =>
   `${name} wasn't attached. Documents can be PDF, TIFF, text, CSV, RTF, Word, spreadsheet or OpenDocument files.`;
 
 /** What the meta line adds after the kind and date, where it applies
- * (contract §1; FR-013: the list shows which documents can be previewed). */
+ * (007 contracts/ui-document-preview.md §1; 007 FR-013: the list shows which documents
+ * can be previewed). */
 function metaSuffix(doc: DocumentSummary): string {
   if (!doc.openable) return " · can't be opened: not a document type";
   if (doc.previewKind === null) return " · opens in another app";
@@ -49,12 +50,12 @@ function metaSuffix(doc: DocumentSummary): string {
 }
 
 /** Documents attached to a firearm or an accessory — receipts, appraisals, manuals — that
- * open in the computer's default app for their type (US4, FR-010), and that the viewer
+ * open in the computer's default app for their type (001 US4, 001 FR-010), and that the viewer
  * previews inside HoploDex (007). */
 export function DocumentList({ owner }: DocumentListProps) {
   const scope = useSessionScope();
   const notify = useToast();
-  // What the name does follows this computer's setting (FR-012); "Preview" and
+  // What the name does follows this computer's setting (007 FR-013); "Preview" and
   // "Open in another app…" stay on the row either way.
   const nameOpensExternally = useDocumentOpening() === "external";
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
@@ -62,13 +63,14 @@ export function DocumentList({ owner }: DocumentListProps) {
   const [opening, setOpening] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<DocumentSummary | null>(null);
   const [types, setTypes] = useState<DocumentType[]>([]);
-  // What the viewer's footer says in place of a toast while a PDF is shown (ui contract §2).
+  // What the viewer's footer says in place of a toast while a PDF is shown
+  // (007 contracts/ui-document-preview.md §2).
   const [viewerMessage, setViewerMessage] = useState<ViewerMessage | null>(null);
   // The document the viewer shows, by id: a reload of the list can't move it.
   const [viewing, setViewing] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // The system's file chooser gives the window no input while it is open
-  // (research.md §15).
+  // (003 research.md §15).
   useEffect(() => (inputRef.current ? pauseIdleForFileInput(inputRef.current) : undefined), []);
 
   /** Reloads the list. `then` runs with it in the same batch of updates as
@@ -93,7 +95,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner.kind, owner.id]);
 
-  // The labels come from the backend's table, with no list of the app's own (FR-016).
+  // The labels come from the backend's table, with no list of the app's own (007 FR-016).
   // A drop waits for the same load (`typesLoad`), so it is routed by the types and not
   // by an empty list; a failed load is `[]`, and rows then show their extension, which
   // is what a pre-007 row shows anyway.
@@ -111,8 +113,8 @@ export function DocumentList({ owner }: DocumentListProps) {
 
   /** Says what a toast would say, except for a message the viewer causes while it shows
    * a PDF: the PDF surface is a separate web view that a toast can't be drawn over and
-   * would hide, so the viewer's footer says it (ui contract §2). `shown` is the document
-   * the viewer shows once the message is said. */
+   * would hide, so the viewer's footer says it (007 contracts/ui-document-preview.md §2).
+   * `shown` is the document the viewer shows once the message is said. */
   function say(text: string, error: boolean, shown?: DocumentSummary | null) {
     if (shown?.previewKind === "pdf" && shown.previewAvailable) {
       setViewerMessage({ text, error });
@@ -123,8 +125,8 @@ export function DocumentList({ owner }: DocumentListProps) {
 
   /** Attaches each document in turn, carrying on past one that fails so a
    * bad file doesn't cost the rest of a batch. A batch stops at the scope's end
-   * (FR-002, research.md §5): what was attached stays, and nothing more is sent.
-   * It also stops once the record is full (FR-010, amended 2026-10-11): the
+   * (008 FR-002, 008 research.md §5): what was attached stays, and nothing more is sent.
+   * It also stops once the record is full (001 FR-010, amended 2026-10-11): the
    * documents up to the limit stay, and the rest are named as not attached. */
   async function addAll(pending: { name: string; add: () => Promise<unknown> }[]) {
     if (pending.length === 0) return;
@@ -179,8 +181,8 @@ export function DocumentList({ owner }: DocumentListProps) {
   }
 
   /** Routes a drop: documents attach, photos are Photos' (so nothing is said),
-   * and anything else is refused before any command (ui contract §6). It waits for
-   * the document types; if they couldn't be loaded, nothing can be refused by
+   * and anything else is refused before any command (007 contracts/ui-document-preview.md §6).
+   * It waits for the document types; if they couldn't be loaded, nothing can be refused by
    * extension here, so every non-photo goes to the backend, whose content check is
    * the authority and which refuses what isn't a document type. */
   async function routeDrop(paths: string[]) {
@@ -235,7 +237,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     viewing === null || !documents ? -1 : documents.findIndex((d) => d.id === viewing);
 
   /** The backend closed the PDF surface and turned PDF preview off here, so PDFs
-   * show as not previewable (contracts/tauri-commands.md, `preview:pdf-ended`). */
+   * show as not previewable (007 contracts/tauri-commands.md, `preview:pdf-ended`). */
   function onPdfEnded(reason: PdfEndReason) {
     if (reason === "copyCaught" || reason === "noViewer") void load();
   }

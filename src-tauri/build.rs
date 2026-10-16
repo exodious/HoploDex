@@ -4,7 +4,7 @@ include!("src/commands_list.rs");
 fn main() {
     // An app manifest makes Tauri refuse any command a window's capabilities
     // don't allow. Without one, every local page (and a registered custom
-    // protocol counts as local) may call every app command (research.md §5).
+    // protocol counts as local) may call every app command (007 research.md §5).
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),

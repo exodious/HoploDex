@@ -6,7 +6,7 @@ import { track } from "../lib/busy";
 
 /**
  * Mirrors src-tauri/src/commands/error.rs's `CommandError` — the one error
- * shape every IPC command returns, per contracts/tauri-commands.md.
+ * shape every IPC command returns, per 001 contracts/tauri-commands.md.
  */
 export interface CommandError {
   code: string;
@@ -56,7 +56,7 @@ export interface InvokeCallOptions {
 
 /**
  * The only path the frontend uses to reach the Tauri backend (database,
- * filesystem, keyring) — per contracts/tauri-commands.md. Wraps
+ * filesystem, keyring) — per 001 contracts/tauri-commands.md. Wraps
  * `@tauri-apps/api`'s `invoke` to normalize backend failures into a typed
  * {@link CommandFailure} instead of an untyped rejection.
  */

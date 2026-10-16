@@ -1,4 +1,4 @@
-//! Opening and closing, as ordered steps (data-model.md "Session states and
+//! Opening and closing, as ordered steps (003 data-model.md "Session states and
 //! transitions"). The commands in `commands::databases` are thin wrappers
 //! over these, and the tests call them directly.
 
@@ -27,7 +27,7 @@ use crate::session::{ImmediateClose, OpenDatabase, Session, SessionId, SessionIn
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most
-/// (research.md §14); what is not done by then is finished on waking.
+/// (003 research.md §14); what is not done by then is finished on waking.
 const IMMEDIATE_WAIT: Duration = Duration::from_secs(10);
 
 /// Creates a database at `path` and makes it the open one, closing any other
@@ -60,9 +60,9 @@ pub fn create(
 /// one, closing any other open database first as a switch. A replacement of
 /// the file that a crash interrupted is finished or undone first, and what
 /// it left beside the database removed once the passphrase has opened it
-/// (research.md §4). A refused open installs nothing and changes nothing.
+/// (003 research.md §4). A refused open installs nothing and changes nothing.
 /// A database marked open on another computer opens only with `take_over`
-/// (FR-032).
+/// (003 FR-032).
 pub fn open(
     session: &Session,
     machine: &MachineSettings,
@@ -87,7 +87,7 @@ pub fn open(
 /// Wraps a freshly opened connection for the session, warms what the first
 /// suggestion reads, and records the open in the recent list, with what this
 /// computer should remember about the database. A backup opened directly
-/// becomes a database of its own here (research.md §9).
+/// becomes a database of its own here (003 research.md §9).
 pub(crate) fn prepare(
     machine: &MachineSettings,
     conn: Connection,
@@ -98,7 +98,7 @@ pub(crate) fn prepare(
         .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
         .map_err(|err| CommandError::from_db(err).located_at(path))?;
     // Before the connection goes into the session, so no command waits on
-    // it. It is part of the open: the 1s of SC-003 includes it, timed in
+    // it. It is part of the open: the 1s of 003 SC-003 includes it, timed in
     // `performance_test.rs`.
     if let Err(err) = suggestions::warm(&conn) {
         log::warn!("warming the suggestions failed: {err}");
@@ -140,24 +140,24 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
     Ok(Some(OpenedBackupNote { backup_of_name: of_name.unwrap_or_default(), made_at }))
 }
 
-/// The normal close (FR-010, FR-022, FR-025, FR-027, FR-032): announce it,
+/// The normal close (003 FR-010, FR-022, FR-025, FR-027, FR-032): announce it,
 /// make a backup if one is due, clear the open marker (in the same
 /// transaction as the backup record), close the connection (which clears
 /// the key from memory), and delete this session's decrypted document
 /// copies. Refused with `DATABASE_CLOSED`, with nothing closed, when
 /// nothing is open or when the open database is not the session `id`: a
 /// late close can't end the session opened after it (008 research.md §2).
-/// A lock (FR-033) is this close, after its unsaved input is kept (see
+/// A lock (003 FR-033) is this close, after its unsaved input is kept (see
 /// [`lock`]).
 ///
-/// The file is checked first, as before any write (research.md §6). If
+/// The file is checked first, as before any write (003 research.md §6). If
 /// another computer has taken it over, this is a take-over close. If it
 /// can't be reached, nothing is written and no backup is made: the open
 /// marker stays, which is this computer's own and so is cleared at the next
 /// open here.
 ///
 /// A sleep or shutdown during the backup turns it into an immediate close
-/// from there (FR-037, FR-038): the backup is stopped, its changes stay
+/// from there (003 FR-037, FR-038): the backup is stopped, its changes stay
 /// waiting, and this thread finishes the close as [`close_immediate`] would.
 pub fn close_normal(
     session: &Session,
@@ -186,7 +186,7 @@ pub fn close_normal(
     // Unsaved input was kept by a lock, or dealt with by the user.
     open.staged_draft = None;
     // The preview is off the screen and out of memory before the close is
-    // announced, however long the backup takes (FR-014, research.md §20).
+    // announced, however long the backup takes (007 FR-014, research.md §20).
     drop(open.end_preview());
     let check = if open.storage_lost {
         FingerprintCheck::Unreachable
@@ -263,7 +263,7 @@ pub fn close_normal(
     Ok(outcome)
 }
 
-/// The locks (FR-033).
+/// The locks (003 FR-033).
 fn is_lock(reason: CloseReason) -> bool {
     matches!(
         reason,
@@ -289,7 +289,7 @@ fn finish_closing(session: &Session) -> bool {
     began
 }
 
-/// Locks the open database (FR-033, FR-035, FR-039): `draft`, the form's
+/// Locks the open database (003 FR-033, FR-035, FR-039): `draft`, the form's
 /// unsaved input at this moment, is kept as pending changes inside the
 /// database, then the normal close runs with `reason`, making a backup if
 /// one is due. No confirmation is asked. If the draft can't be kept, the
@@ -332,7 +332,7 @@ pub fn lock(
 }
 
 /// Locks with the draft the frontend last staged: the idle lock and the
-/// lock at screen lock, which the backend starts on its own (research.md
+/// lock at screen lock, which the backend starts on its own (003 research.md
 /// §16).
 pub fn lock_with_staged(
     session: &Session,
@@ -345,7 +345,7 @@ pub fn lock_with_staged(
     lock(session, id, machine, reason, draft)
 }
 
-/// The immediate close, at sleep or shutdown (FR-037, FR-039; data-model.md
+/// The immediate close, at sleep or shutdown (003 FR-037, FR-039; 003 data-model.md
 /// "Closing(immediate)"), strictly in this order:
 /// 1. stop any running operation, and tell the frontend, which drops the
 ///    collection from the screen;
@@ -396,7 +396,7 @@ pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
     session.set_last_closed(&path);
     // Before `session:closed`, which is when the frontend drops the
     // collection: the preview goes first, without waiting for the rest of
-    // the close (FR-014).
+    // the close (007 FR-014).
     session.end_preview();
     let events = session.events();
     if is_lock(reason) && !lock_announced {
@@ -468,11 +468,11 @@ fn finish_immediately(session: &Session, machine: &MachineSettings, mut open: Op
     drop(open);
     session.clear_opened_documents();
     session.set_last_closed(&path);
-    // Last, after everything that clears the collection away (FR-037).
+    // Last, after everything that clears the collection away (003 FR-037).
     leave(machine, &path, writable);
 }
 
-/// Records how this computer left the file at `path` (FR-040): its
+/// Records how this computer left the file at `path` (003 FR-040): its
 /// modification time once the connection has closed, or unknown when the
 /// file was out of reach or another computer had replaced it, so that a
 /// change made there is never taken for this computer's own.
@@ -483,7 +483,7 @@ fn leave(machine: &MachineSettings, path: &Path, reachable_and_ours: bool) {
 
 /// Step 5 of an immediate close, if one has begun: waits for the operation
 /// it stopped to unwind, removing its partial files, then tells the chooser
-/// which it was and how far it got (FR-037). The close counts as under way
+/// which it was and how far it got (003 FR-037). The close counts as under way
 /// until then. Returns whether an immediate close had begun.
 fn report_stopped(session: &Session) -> bool {
     let (path, stopped) = match &session.closing().immediate {
@@ -512,8 +512,8 @@ fn stopped_notice(path: &Path, stopped: &StoppedOperation) -> ChooserNotice {
 
 /// Finishes, on waking, whatever an immediate close did not get to before
 /// the computer slept: steps 1 to 3 before any command is accepted, then
-/// the rest (FR-037). A sleep the OS gave no usable notice of is only
-/// noticed now, and locks now if the idle lock is on (research.md §14).
+/// the rest (003 FR-037). A sleep the OS gave no usable notice of is only
+/// noticed now, and locks now if the idle lock is on (003 research.md §14).
 pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
     complete_immediate(session, machine);
     session.wait_closed(IMMEDIATE_WAIT);
@@ -523,7 +523,7 @@ pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
     }
 }
 
-/// The computer is going to sleep (FR-007, FR-037): passphrase fields
+/// The computer is going to sleep (003 FR-007, FR-037): passphrase fields
 /// clear whatever else happens; a close under way becomes immediate; and
 /// with the idle lock on, an open database locks at once.
 pub fn will_sleep(session: &Session, machine: &MachineSettings) {
@@ -538,7 +538,7 @@ pub fn will_sleep(session: &Session, machine: &MachineSettings) {
     }
 }
 
-/// The screen locked (FR-007, FR-038): passphrase fields clear, and with
+/// The screen locked (003 FR-007, FR-038): passphrase fields clear, and with
 /// the option on, the open database locks as a normal close.
 pub fn screen_locked(session: &Session, machine: &MachineSettings) {
     session.events().emit("system:clear-passphrase-fields", json!({}));
@@ -550,14 +550,14 @@ pub fn screen_locked(session: &Session, machine: &MachineSettings) {
     }
 }
 
-/// The OS is shutting down or ending the application (FR-039): pending
+/// The OS is shutting down or ending the application (003 FR-039): pending
 /// changes are kept before the key is cleared and document copies are
 /// deleted, and no backup is made.
 pub fn will_shut_down(session: &Session, machine: &MachineSettings) {
     close_immediate(session, machine, CloseReason::Shutdown);
 }
 
-/// One tick of the idle lock (FR-034, research.md §15): locks once the idle
+/// One tick of the idle lock (003 FR-034, research.md §15): locks once the idle
 /// duration has passed since the last input. Returns whether it locked.
 pub fn idle_tick(session: &Session, machine: &MachineSettings) -> bool {
     let running = session.operations().is_running();
@@ -567,7 +567,7 @@ pub fn idle_tick(session: &Session, machine: &MachineSettings) -> bool {
     lock_with_staged(session, machine, CloseReason::Idle).is_ok()
 }
 
-/// The backup step of a normal close (FR-025, FR-027): made only when due,
+/// The backup step of a normal close (003 FR-025, FR-027): made only when due,
 /// reporting `backup:progress`, and skippable through the operations
 /// registry. A failure is reported in the chooser and leaves the changes
 /// waiting for the next close.
@@ -599,7 +599,7 @@ fn backup_at_close(
             return backup_failed(session, open, BackupFailureReason::Io);
         }
     };
-    // A sleep or shutdown came first: it starts no backup (FR-037).
+    // A sleep or shutdown came first: it starts no backup (003 FR-037).
     if session.closing_immediately() {
         return CloseOutcome::backup(BackupOutcome::Skipped);
     }
@@ -655,7 +655,7 @@ fn backup_at_close(
 }
 
 /// A backup that could not be made: the chooser says so, with the reason
-/// (FR-027), and the changes stay waiting.
+/// (003 FR-027), and the changes stay waiting.
 fn backup_failed(
     session: &Session,
     open: &OpenDatabase,
@@ -668,7 +668,7 @@ fn backup_failed(
     CloseOutcome { backup: BackupOutcome::Failed, failure_reason: Some(reason) }
 }
 
-/// Another computer has taken the database over (FR-032): tell the user,
+/// Another computer has taken the database over (003 FR-032): tell the user,
 /// then let go of it without writing anything more, so no backup and no
 /// marker clear. The frontend is told first, so it drops the collection
 /// view before anything else happens.

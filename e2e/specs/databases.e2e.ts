@@ -213,7 +213,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
   // name field) and the relaunch that shows nothing before the passphrase.
   // The dialog's own rules (Saved as, 12 characters, matching, the
   // acknowledgement) are in CreateDatabaseDialog.test.tsx.
-  it("creates a database, keeps a firearm that only the right passphrase shows again (FR-003, FR-005, FR-006)", async () => {
+  it("creates a database, keeps a firearm that only the right passphrase shows again (003 FR-003, FR-005, FR-006)", async () => {
     // A file already at the name asked for; the backend refuses the create.
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(`${folder}/Taken.hoplodex`, "");
@@ -305,7 +305,7 @@ async function asksForPassphrase(): Promise<boolean> {
 }
 
 describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another Computer (was us7-databases)", () => {
-  it("keeps two databases with their own passphrases in two folders, and switches between them (US2-1, US2-4)", async () => {
+  it("keeps two databases with their own passphrases in two folders, and switches between them (003 US2-1, US2-4)", async () => {
     await switchDatabase();
     await createDatabase(club);
     await addFirearm({
@@ -337,7 +337,7 @@ describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another C
     expect(await showsFirearm("HomeGun")).toBe(false);
   });
 
-  it("asks the same question for ⌘Q, the macOS menu's Quit and the Dock's Quit, and Cancel keeps the form as it was (FR-010, #107)", async function () {
+  it("asks the same question for ⌘Q, the macOS menu's Quit and the Dock's Quit, and Cancel keeps the form as it was (003 FR-010, #107)", async function () {
     skipWithoutMacInput(this);
     // macOS's own Quit (`terminate:`: ⌘Q, the menu, the Dock, an Apple
     // Event) used to end the process without a request, so unsaved input
@@ -384,7 +384,7 @@ describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another C
     expect(await showsFirearm("Unsaved make")).toBe(false);
   });
 
-  it("asks save, discard or cancel when quitting with an unsaved firearm form, and Discard quits (FR-010)", async () => {
+  it("asks save, discard or cancel when quitting with an unsaved firearm form, and Discard quits (003 FR-010)", async () => {
     // "Club" is open from the switch above. The prompt's buttons, Cancel and a
     // Save that fails validation are in SessionProvider.test.tsx; here the
     // real quit request, the process ending and the relaunch.
@@ -418,7 +418,7 @@ describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another C
 describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7-databases)", () => {
   const SAVED_NOTE = "Opens without a passphrase on this computer";
 
-  it("remembers a passphrase at open, after the confirmation (FR-017)", async () => {
+  it("remembers a passphrase at open, after the confirmation (003 FR-017)", async () => {
     await switchDatabase();
     await selectChooserRow("Home");
     expect(await asksForPassphrase()).toBe(true);
@@ -451,7 +451,7 @@ describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7
     expect(await showsFirearm("HomeGun")).toBe(true);
   });
 
-  it("only stages forgetting it in the database settings: Cancel leaves it saved (FR-018, #34)", async () => {
+  it("only stages forgetting it in the database settings: Cancel leaves it saved (003 FR-018, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await expect($("fieldset*=This computer")).toHaveText(
@@ -475,7 +475,7 @@ describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7
     await waitForCollection();
   });
 
-  it("forgets it with Save, and the prompt returns (FR-018, #34)", async () => {
+  it("forgets it with Save, and the prompt returns (003 FR-018, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await toggle("Remember the passphrase on this computer");
@@ -489,7 +489,7 @@ describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7
     await unlock(home.passphrase);
   });
 
-  it("remembers it again from the database settings, asking for the passphrase only at Save (FR-017, #34)", async () => {
+  it("remembers it again from the database settings, asking for the passphrase only at Save (003 FR-017, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await toggle("Remember the passphrase on this computer");

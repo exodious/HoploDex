@@ -1,4 +1,4 @@
-//! specs/006-accessory-links contracts/tauri-commands.md "Mounts (new)": the
+//! 006 contracts/tauri-commands.md "Mounts (new)": the
 //! mount commands. Each `#[tauri::command]` is thin and calls the matching
 //! function in `ops`, which takes a `&Connection`.
 
@@ -15,7 +15,7 @@ use crate::models::record::{RecordLabel, RecordRef};
 use crate::services::mounts::{self, MountGraph};
 use crate::session::scoped::ScopedSession;
 
-/// A dispose dialog's list no longer matches what is mounted (research.md
+/// A dispose dialog's list no longer matches what is mounted (006 research.md
 /// §9).
 const STALE_MOUNTED: &str = "What is mounted has changed. Close the dialog and try again.";
 
@@ -65,7 +65,7 @@ pub struct ListMountCandidatesInput {
 pub struct MountCandidate {
     pub label: RecordLabel,
     /// Where the candidate is mounted now (its direct host), so the
-    /// frontend can ask before moving it (FR-012).
+    /// frontend can ask before moving it (006 FR-012).
     pub mounted_on: Option<RecordLabel>,
 }
 
@@ -82,9 +82,9 @@ pub mod ops {
     const DEFAULT_LIMIT: u32 = 50;
     const MAX_LIMIT: u32 = 100;
 
-    /// FR-012: mounts, moves or unmounts `item` in one step. Everything
-    /// mounted on it stays mounted on it (FR-010). Nothing about the two
-    /// records' kinds, types or calibers is checked (FR-011).
+    /// 006 FR-012: mounts, moves or unmounts `item` in one step. Everything
+    /// mounted on it stays mounted on it (006 FR-010). Nothing about the two
+    /// records' kinds, types or calibers is checked (006 FR-011).
     pub fn mount_record(
         conn: &Connection,
         input: &MountRecordInput,
@@ -105,7 +105,7 @@ pub mod ops {
         Ok(MountRecordOutput { item: item_label, host: host_label })
     }
 
-    /// FR-014, research.md §9: disposes of `host` and the listed records
+    /// 006 FR-014, research.md §9: disposes of `host` and the listed records
     /// below it, with the host's type, recipient and date, in one step. The
     /// listed records must all be below the host now (else a stale dialog
     /// could dispose of the wrong record). Every mount that involves the
@@ -151,7 +151,7 @@ pub mod ops {
         })
     }
 
-    /// FR-014, US3/AC2: a record disposed of with the host that fails its own
+    /// 006 FR-014, US3-2; 001 FR-004: a record disposed of with the host that fails its own
     /// checks (a disposition date before its own acquisition date) names
     /// itself and the reason on `withMounted`; the caller's transaction rolls
     /// everything back.
@@ -227,16 +227,16 @@ pub mod ops {
         CommandError::new("INTERNAL_ERROR", "An unexpected error occurred.")
     }
 
-    /// The choices for either direction of a mount (research.md §8), each
+    /// The choices for either direction of a mount (006 research.md §8), each
     /// with where it is mounted now. A query matches make, model, the two
     /// together ("Leupold VX"), nickname, serial number and, for an
-    /// accessory, its kind ("sling") (FR-012).
+    /// accessory, its kind ("sling") (006 FR-012).
     pub fn list_mount_candidates(
         conn: &Connection,
         input: &ListMountCandidatesInput,
     ) -> Result<ListMountCandidatesOutput, CommandError> {
         let graph = MountGraph::load(conn)?;
-        // What may not be chosen, by the rule of the role (FR-010).
+        // What may not be chosen, by the rule of the role (006 FR-010).
         let mut excluded: Vec<RecordRef> = Vec::new();
         match (input.role, input.record) {
             (MountRole::Host, Some(item)) => {

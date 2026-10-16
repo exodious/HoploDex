@@ -1,5 +1,5 @@
 //! The loopback tripwire that proves the PDF surface reaches no network
-//! (research.md §6).
+//! (007 research.md §6).
 //!
 //! The surface's proxy points at this listener, a port HoploDex holds on
 //! `127.0.0.1`: nothing else can bind it, so a request that arrives is one

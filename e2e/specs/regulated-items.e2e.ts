@@ -10,18 +10,17 @@ import {
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/005-regulated-item-types' User Story 2
- * (SC-001, US2-1, US2-2, US2-5): a Suppressor is added and registered
- * from the keyboard alone, as real key events through the X server, since the
- * suggestion list's and menu's focus behaviour is WebKitGTK's to get right and
- * WebDriver's own keys don't pass through GTK. See "Real keyboard and mouse
- * input" in DEVELOPMENT.md.
+ * End-to-end coverage of 005 SC-001, US2-1, US2-2 and US2-5: a Suppressor is
+ * added and registered from the keyboard alone, as real key events through the
+ * X server, since the suggestion list's and menu's focus behaviour is
+ * WebKitGTK's to get right and WebDriver's own keys don't pass through GTK. See
+ * "Real keyboard and mouse input" in DEVELOPMENT.md.
  *
- * Grouping by Registered as, with Unspecified last (US2-9), is tested in Rust
- * and Vitest (see the citations in those tests).
+ * Grouping by Registered as, with Unspecified last (005 US2-9), is tested in
+ * Rust and Vitest (see the citations in those tests).
  */
 
-/** The whole task must take well under two minutes (SC-001); this is a guard
+/** The whole task must take well under two minutes (005 SC-001); this is a guard
  * against a flow that became slow or needs the mouse, not a benchmark. */
 const TASK_LIMIT_MS = 120_000;
 
@@ -81,7 +80,7 @@ describe("005 US2 - Record an Item's Registration (was us11-regulated-items)", (
     await createDatabase();
   });
 
-  it("adds and registers a Suppressor from the keyboard alone (SC-001)", async () => {
+  it("adds and registers a Suppressor from the keyboard alone (005 SC-001)", async () => {
     const started = Date.now();
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();
@@ -113,7 +112,7 @@ describe("005 US2 - Record an Item's Registration (was us11-regulated-items)", (
     expect(await checkedType()).toBe("5");
 
     // Suppressor omits the action. Its cartridge is the one it is rated for,
-    // and its caliber, the bore, is never worked out from it (US1-7).
+    // and its caliber, the bore, is never worked out from it (005 US1-7).
     await tabTo("Rated cartridge");
     await typeReal(".300 Winchester Magnum");
     await tabTo("Caliber");

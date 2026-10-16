@@ -6,7 +6,7 @@ import { MountChooser } from "./MountChooser";
 import type { RecordLabel, RecordRef } from "./types";
 import { render } from "../../test/sessionScope";
 
-// specs/006-accessory-links contracts/ui-accessories.md §4 (FR-010, FR-012):
+// 006 contracts/ui-accessories.md §4 (006 FR-010, FR-012):
 // `MountChooser` is a `Combobox` field labelled "Mounted on" that searches
 // `list_mount_candidates`. Its props, as these tests assume them:
 // `value: RecordLabel | null` (what is chosen), `onChange(label | null)`,
@@ -96,7 +96,7 @@ beforeEach(() => {
   answer({ label: deerRifle, mountedOn: null }, { label: upper, mountedOn: null });
 });
 
-describe("MountChooser field (§4)", () => {
+describe("MountChooser field (006 contracts/ui-accessories.md §4)", () => {
   it("is a combobox labelled 'Mounted on'", () => {
     render(<Harness />);
     expect(field()).toBeInTheDocument();
@@ -136,7 +136,7 @@ describe("MountChooser field (§4)", () => {
   });
 });
 
-describe("MountChooser searching (§4, FR-012)", () => {
+describe("MountChooser searching (006 contracts/ui-accessories.md §4, FR-012)", () => {
   it("asks list_mount_candidates for hosts when the list opens, for a new record", async () => {
     const user = userEvent.setup();
     render(<Harness record={null} />);
@@ -149,7 +149,7 @@ describe("MountChooser searching (§4, FR-012)", () => {
     );
   });
 
-  it("passes the record being placed, so the backend leaves it and what is on it out (US2-6, US2-16)", async () => {
+  it("passes the record being placed, so the backend leaves it and what is on it out (006 US2-6, US2-16)", async () => {
     const user = userEvent.setup();
     render(<Harness record={{ kind: "firearm", id: 4 }} />);
 
@@ -212,7 +212,7 @@ describe("MountChooser searching (§4, FR-012)", () => {
   });
 });
 
-describe("MountChooser options (§4)", () => {
+describe("MountChooser options (006 contracts/ui-accessories.md §4)", () => {
   async function openList() {
     const user = userEvent.setup();
     render(<Harness />);
@@ -270,7 +270,7 @@ describe("MountChooser options (§4)", () => {
   });
 });
 
-describe("MountChooser choosing and clearing (§4, FR-012)", () => {
+describe("MountChooser choosing and clearing (006 contracts/ui-accessories.md §4, FR-012)", () => {
   it("chooses a candidate by click and shows it", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -284,7 +284,7 @@ describe("MountChooser choosing and clearing (§4, FR-012)", () => {
     expect(field()).toHaveDisplayValue(/Deer rifle/);
   });
 
-  it("asks nothing when the candidate is already mounted elsewhere (FR-012)", async () => {
+  it("asks nothing when the candidate is already mounted elsewhere (006 FR-012)", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     answer({ label: optic, mountedOn: upper });
@@ -298,7 +298,7 @@ describe("MountChooser choosing and clearing (§4, FR-012)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("passes where the candidate is mounted now as a second argument (FR-012)", async () => {
+  it("passes where the candidate is mounted now as a second argument (006 FR-012)", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     answer({ label: optic, mountedOn: upper }, { label: deerRifle, mountedOn: null });
@@ -357,7 +357,7 @@ describe("MountChooser choosing and clearing (§4, FR-012)", () => {
   });
 });
 
-describe("MountChooser keyboard (§4)", () => {
+describe("MountChooser keyboard (006 contracts/ui-accessories.md §4)", () => {
   it("moves with ↓ ↑ and chooses with Enter", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
