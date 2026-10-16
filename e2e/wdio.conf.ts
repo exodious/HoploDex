@@ -134,14 +134,12 @@ export const config: WebdriverIO.Config = {
     // WebdriverIO connects with this same config object once the hook
     // returns, so the session goes to this worker's app.
     config.port = assignWorkerPort(cid);
-    // Only a spec named so gets a setting for its whole session; a spec that
-    // needs more sets the variable itself and calls relaunchApp()
-    // (applySessionSettings in support/sandbox.ts). Specs that are named:
-    // `-pdf-off` (a viewer that can't be used safely, 007 FR-003a) and the
-    // locking spec, whose idle minute lasts 3 s so its test doesn't wait a
-    // real one.
+    // Only a spec named here gets a setting for its whole session; a spec that
+    // needs another sets the variable itself and calls relaunchApp()
+    // (applySessionSettings in support/sandbox.ts), as document-preview does
+    // for PDF preview off. The one named: the locking spec, whose idle minute
+    // lasts 3 s so its test doesn't wait a real one.
     applySessionSettings({
-      pdfOff: specs.some((spec) => spec.endsWith("-pdf-off.e2e.ts")),
       idleMinuteSeconds: specs.some((spec) => spec.endsWith("/locking.e2e.ts")) ? 3 : undefined,
     });
     // The screenshot walk, 007's preview specs (`document-preview`,

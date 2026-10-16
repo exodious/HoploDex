@@ -704,7 +704,8 @@ every spec, and a spec that tests the dialog sets its own and calls
 `relaunchApp()`, since the app reads it at start-up.
 `HOPLODEX_E2E_PDF_PREVIEW=off` makes the start-up check say the computer's PDF
 viewer can't be used, so PDFs aren't previewable while TIFF and text still
-are (a spec file named `*-pdf-off.e2e.ts` gets it for its whole session). Both
+are (a spec sets it and calls `relaunchApp()`, as `document-preview.e2e.ts`
+does). Both
 variable names are among the markers `scripts/check-no-webdriver.mjs` looks
 for, so a shipped binary that carries either one fails `build-appimage.sh`'s
 check, just as one with the WebDriver server does.
@@ -1016,7 +1017,7 @@ override that:
   on Linux: use `screenshot`.
 - The sandbox starts with the harness's defaults: the in-memory keyring, the
   native "open in another app" confirmation answered "Open", PDF preview on,
-  the real idle minute. A spec's own settings (`-pdf-off`, the
+  the real idle minute. A spec's own settings (PDF preview off, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
 - In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on

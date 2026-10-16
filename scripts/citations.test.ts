@@ -100,14 +100,22 @@ describe("spec citations", () => {
     ]);
   });
 
-  it("finds the files to check in a copy of the checkout without git", () => {
-    // The walk finds every tracked file and nothing git ignores.
+  // Whether this checkout is a git work tree; the macOS VM's copy is not
+  // (scripts/tart-vm.sh), and there the comparison can't be made.
+  const inGit = (() => {
+    try {
+      execFileSync("git", ["-C", ROOT, "rev-parse", "--is-inside-work-tree"], { stdio: "ignore" });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  it.skipIf(!inGit)("walks to every tracked file and to nothing git ignores", () => {
     const tracked = execFileSync(
       "git",
       ["-C", ROOT, "ls-files", "--", "src", "src-tauri", "e2e", "scripts", "tools"],
-      {
-        encoding: "utf8",
-      },
+      { encoding: "utf8" },
     )
       .split("\n")
       .filter(Boolean);
@@ -124,8 +132,9 @@ describe("spec citations", () => {
       if ((error as { status?: number }).status !== 1) throw error;
     }
     expect(ignored).toBe("");
+  });
 
-    // And checkedFiles() falls back to it where git has no repository.
+  it("walks the folders where git has no repository", () => {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-citations-"));
     try {
       fs.copyFileSync(path.join(ROOT, ".gitignore"), path.join(copy, ".gitignore"));

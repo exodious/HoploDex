@@ -130,9 +130,6 @@ export function isolateAppData(): string {
  * setting on; whatever the developer's own environment holds never reaches
  * the app. */
 export interface SessionSettings {
-  /** A computer whose PDF viewer can't be used safely (007 FR-003a): PDFs
-   * are not previewable, TIFF and text still are. */
-  pdfOff?: boolean;
   /** How many seconds the idle lock's minute lasts. */
   idleMinuteSeconds?: number;
 }
@@ -149,11 +146,9 @@ export interface SessionSettings {
  */
 export function applySessionSettings(settings: SessionSettings = {}) {
   delete process.env.HOPLODEX_E2E_SEED_PASSPHRASE;
-  if (settings.pdfOff) {
-    process.env.HOPLODEX_E2E_PDF_PREVIEW = "off";
-  } else {
-    delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
-  }
+  // PDF preview is on; a spec that wants it off (a viewer that can't be used
+  // safely, 007 FR-003a) sets HOPLODEX_E2E_PDF_PREVIEW=off and relaunches.
+  delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
   process.env.HOPLODEX_E2E_CONSENT = "open";
   if (settings.idleMinuteSeconds !== undefined) {
     process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = String(settings.idleMinuteSeconds);
