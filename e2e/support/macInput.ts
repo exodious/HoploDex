@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 /**
  * Real input on macOS, through `src-tauri/examples/real_input.swift` (the
  * tool the window controls and PDF surface checks use): the keys a person
- * presses and the menu bar they use, for the app's quit routes (#107), which
+ * presses, the menu bar they use and the quit event the Dock sends, for the
+ * app's quit routes (#107), which
  * WebDriver can't reach and which differ on each OS. Needs Accessibility for
  * whatever runs the suite, as the macOS checks in DEVELOPMENT.md do. A test
  * that uses it starts with {@link skipWithoutMacInput}.
@@ -46,6 +47,25 @@ export function pressCommandQ(pid: number) {
   bringToFront(pid);
   // 12 is the virtual key code of Q.
   execFileSync(realInput(), ["key", "12", "cmd"]);
+}
+
+/** Quits the app with process id `pid` as the Dock's Quit does: with the
+ * quit Apple Event, sent to that one process (`terminate:` on its side). */
+export function sendQuitEvent(pid: number) {
+  const result = execFileSync(realInput(), ["quit", String(pid)])
+    .toString()
+    .trim();
+  if (result !== "sent") throw new Error("the quit event wasn't sent");
+}
+
+/** The title of the application menu's Quit item in the app with process id
+ * `pid`: "Quit" and the process's localized name, which is the executable's in
+ * the E2E build and the bundle's in a release. */
+export function quitMenuItemTitle(pid: number): string {
+  const paths = execFileSync(realInput(), ["menu", String(pid)]).toString();
+  const title = /(?:^|> )(Quit [^>\n]*?)(?: \[disabled\])?$/m.exec(paths)?.[1];
+  if (!title) throw new Error(`the menu bar has no Quit item:\n${paths}`);
+  return title;
 }
 
 /** Chooses the menu bar item titled `title` in the app with process id `pid`

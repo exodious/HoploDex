@@ -12,6 +12,9 @@ use std::time::{Duration, Instant, SystemTime};
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+/// Makes macOS's `terminate:` ask before ending the app (#107).
+#[cfg(target_os = "macos")]
+pub use macos::ask_before_terminate;
 /// The macOS observers under screen-lock notice names of the caller's
 /// choosing, for `tests/macos_screen_lock_test.rs`.
 #[cfg(target_os = "macos")]

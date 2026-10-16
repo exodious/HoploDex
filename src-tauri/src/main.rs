@@ -35,20 +35,11 @@ use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
-#[cfg(target_os = "macos")]
-use tauri::{
-    Runtime,
-    menu::{Menu, MenuItem, MenuItemKind},
-};
 
 /// What the frontend is sent when the user closes the window or quits: it
 /// asks about unsaved changes, then calls `quit_application` (research.md
 /// §17).
 const QUIT_REQUESTED: &str = "app:quit-requested";
-
-/// The application menu's Quit item on macOS (and so ⌘Q).
-#[cfg(target_os = "macos")]
-const QUIT_MENU_ID: &str = "quit";
 
 /// The OS is shutting down or ending the application, so its exit request
 /// is let through rather than asked about (research.md §17).
@@ -60,33 +51,6 @@ fn request_quit(app: &AppHandle) {
     if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
         log::warn!("could not emit {QUIT_REQUESTED}: {err}");
     }
-}
-
-/// Tauri's default application menu, with its Quit item swapped for one that
-/// asks (#107). The predefined one is `terminate:`, which ends the process
-/// through tao's `applicationWillTerminate` without a
-/// `RunEvent::ExitRequested`, so ⌘Q and the menu's Quit skipped the
-/// unsaved-changes question and the database's normal close. The OS's own
-/// shutdown still ends the app at once through NSWorkspace's power-off
-/// notice (`platform/macos.rs`), which does not come through this menu.
-#[cfg(target_os = "macos")]
-fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let menu = Menu::default(handle)?;
-    // The first submenu is the application's, whose last item is Quit.
-    if let Some(MenuItemKind::Submenu(application)) = menu.items()?.into_iter().next() {
-        let items = application.items()?;
-        if let Some(last @ MenuItemKind::Predefined(_)) = items.last() {
-            application.remove(last)?;
-            application.append(&MenuItem::with_id(
-                handle,
-                QUIT_MENU_ID,
-                "Quit HoploDex",
-                true,
-                Some("CmdOrCtrl+Q"),
-            )?)?;
-        }
-    }
-    Ok(menu)
 }
 
 /// The OS ends the application (FR-039): the open database closes at once,
@@ -214,20 +178,12 @@ fn main() {
     #[cfg(target_os = "linux")]
     let webkit_sandbox = sandbox_probe::decide_and_apply();
     let builder = tauri::Builder::default();
-    // ⌘Q and the application menu's Quit are requests, like the window's
-    // close button (research.md §17, #107).
-    #[cfg(target_os = "macos")]
-    let builder = builder.menu(app_menu).on_menu_event(|app, event| {
-        if event.id() == QUIT_MENU_ID {
-            request_quit(app);
-        }
-    });
     // The E2E suite's WebDriver server, on 127.0.0.1 at
     // `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs any
     // script in the page, so it must never reach a shipped build.
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
-    builder
+    let app = builder
         // The PDF surface's documents, from memory (research.md §4).
         .register_asynchronous_uri_scheme_protocol(
             protocol_handler::SCHEME,
@@ -428,27 +384,43 @@ fn main() {
             hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, event| match event {
-            // An exit without a code is the user quitting (the application
-            // menu, the last window): a request, like closing the window.
-            // `quit_application` and the termination signals exit with one.
-            // One the OS asks for as it shuts down is let through.
-            RunEvent::ExitRequested { code: None, api, .. }
-                if !OS_ENDING.load(Ordering::SeqCst) =>
-            {
-                api.prevent_exit();
-                request_quit(app);
+        .expect("error while building tauri application");
+    // Every macOS `terminate:` (⌘Q, the application menu's and the Dock's
+    // Quit, an Apple Event quit) is a request, like the window's close
+    // button (research.md §17, #107). tao ends the app from
+    // `applicationWillTerminate:` with no `RunEvent::ExitRequested`, so the
+    // delegate is asked first. The OS's own shutdown is let through; the
+    // app's exit with a code (`quit_application`) stops the loop and never
+    // calls `terminate:`.
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.handle().clone();
+        platform::ask_before_terminate(move || {
+            if OS_ENDING.load(Ordering::SeqCst) {
+                return true;
             }
-            // Decrypted copies of opened documents live only as long as the
-            // session (FR-035); the startup sweep covers abnormal exits.
-            RunEvent::Exit => {
-                clear_opened_documents_cache(app);
-                // Not there when the exit is a setup that failed.
-                if let Some(machine) = app.try_state::<MachineSettings>() {
-                    machine.sweep_hold_leftovers();
-                }
-            }
-            _ => {}
+            request_quit(&handle);
+            false
         });
+    }
+    app.run(|app, event| match event {
+        // An exit without a code is the user quitting (the application
+        // menu, the last window): a request, like closing the window.
+        // `quit_application` and the termination signals exit with one.
+        // One the OS asks for as it shuts down is let through.
+        RunEvent::ExitRequested { code: None, api, .. } if !OS_ENDING.load(Ordering::SeqCst) => {
+            api.prevent_exit();
+            request_quit(app);
+        }
+        // Decrypted copies of opened documents live only as long as the
+        // session (FR-035); the startup sweep covers abnormal exits.
+        RunEvent::Exit => {
+            clear_opened_documents_cache(app);
+            // Not there when the exit is a setup that failed.
+            if let Some(machine) = app.try_state::<MachineSettings>() {
+                machine.sweep_hold_leftovers();
+            }
+        }
+        _ => {}
+    });
 }

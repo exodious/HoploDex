@@ -848,7 +848,7 @@ ask. They save the staged draft as pending changes, clear the open marker if
 that is part of the same write, close the connection, delete the decrypted
 document copies, then exit (FR-039 ordering).
 
-_Amended 2026-10-16 (#107): on macOS the predefined Quit item (⌘Q) is `terminate:`, which ends the process without a `RunEvent::ExitRequested`, so it skipped the question. `main.rs` now replaces it in the application menu with an item that emits `app:quit-requested`. A quit that doesn't come through the menu (the Dock's Quit, an Apple Event) still takes the old path._
+_Amended 2026-10-16 (#107): on macOS every `terminate:` (⌘Q, the application menu's and the Dock's Quit, an Apple Event quit) ends the process through tao's `applicationWillTerminate:` without a `RunEvent::ExitRequested`, so it skipped the question. `platform/macos.rs`'s `ask_before_terminate` adds `applicationShouldTerminate:` to tao's app delegate class (tao defines none): it cancels the termination and emits `app:quit-requested`, except while `OS_ENDING` is set (NSWorkspace's power-off notice, FR-039). `quit_application` exits with a code, which stops the loop and never calls `terminate:`._
 
 ---
 

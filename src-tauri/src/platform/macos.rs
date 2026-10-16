@@ -5,11 +5,12 @@
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, NSObject};
-use objc2::{AnyThread, DefinedClass, define_class, msg_send, sel};
+use objc2::runtime::{AnyClass, AnyObject, Imp, NSObject, Sel};
+use objc2::{AnyThread, DefinedClass, class, define_class, ffi, msg_send, sel};
 use objc2_app_kit::{NSWorkspace, NSWorkspaceWillPowerOffNotification};
 use objc2_foundation::{
     NSDistributedNotificationCenter, NSNotification, NSNotificationSuspensionBehavior, NSString,
@@ -214,6 +215,95 @@ pub fn observe_notifications(sender: Sender<SystemEvent>, locked: &str, unlocked
     }
 }
 
+/// Answers the application delegate's `applicationShouldTerminate:`: true
+/// lets the termination go ahead, false cancels it (the hook has then asked
+/// the user, or been told the OS is ending the app).
+type TerminateDecision = Arc<dyn Fn() -> bool + Send + Sync>;
+
+static ON_TERMINATE: Mutex<Option<TerminateDecision>> = Mutex::new(None);
+
+// NSApplicationTerminateReply
+const TERMINATE_CANCEL: usize = 0;
+const TERMINATE_NOW: usize = 1;
+
+extern "C-unwind" fn application_should_terminate(
+    _this: &AnyObject,
+    _cmd: Sel,
+    _sender: *mut AnyObject,
+) -> usize {
+    let decide = ON_TERMINATE.lock().ok().and_then(|hook| hook.clone());
+    match decide {
+        Some(decide) if !decide() => TERMINATE_CANCEL,
+        _ => TERMINATE_NOW,
+    }
+}
+
+/// Adds `applicationShouldTerminate:` to `class`, an application delegate's
+/// class that doesn't define it, so that `terminate:` (⌘Q, the application
+/// menu's and the Dock's Quit, an Apple Event quit) calls `decide` first and
+/// goes on only when it returns true (#107). Returns false, adding nothing,
+/// if the class already answers the selector. Call it before the run loop
+/// starts.
+fn add_terminate_hook(class: &AnyClass, decide: impl Fn() -> bool + Send + Sync + 'static) -> bool {
+    let selector = sel!(applicationShouldTerminate:);
+    if class.responds_to(selector) {
+        return false;
+    }
+    *ON_TERMINATE.lock().expect("the terminate hook's lock") = Some(Arc::new(decide));
+    // SAFETY: the function takes (self, _cmd, sender) and returns an
+    // NSUInteger, which is what the type encoding "Q@:@" says.
+    let imp: Imp = unsafe {
+        std::mem::transmute::<extern "C-unwind" fn(&AnyObject, Sel, *mut AnyObject) -> usize, Imp>(
+            application_should_terminate,
+        )
+    };
+    // SAFETY: `class` is a registered class, and class_addMethod only adds to
+    // it (it does not replace a method it already defines).
+    unsafe {
+        ffi::class_addMethod(
+            class as *const AnyClass as *mut AnyClass,
+            selector,
+            imp,
+            c"Q@:@".as_ptr(),
+        )
+        .as_bool()
+    }
+}
+
+/// Makes every `terminate:` of the application ask `decide` first (#107).
+/// tao ends the app from `applicationWillTerminate:` without ever raising
+/// `RunEvent::ExitRequested`, so the unsaved-changes question and the
+/// database's normal close were skipped; its delegate doesn't define
+/// `applicationShouldTerminate:`, so this adds it to the delegate's class.
+/// `decide` returns false after asking the user (the quit then comes back
+/// through `quit_application`, which exits with a code through `stop:`, not
+/// `terminate:`), and true when the OS is ending the app (FR-039).
+///
+/// Call it once the event loop has been created (it sets the delegate) and
+/// before it runs. Returns false, with a warning logged, when there is no
+/// delegate or it already answers `applicationShouldTerminate:`.
+pub fn ask_before_terminate(decide: impl Fn() -> bool + Send + Sync + 'static) -> bool {
+    // SAFETY: NSApplication's sharedApplication and delegate, on the main
+    // thread (where `main` runs this).
+    let class = unsafe {
+        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        let delegate: *mut AnyObject = msg_send![app, delegate];
+        delegate.as_ref().map(AnyObject::class)
+    };
+    let Some(class) = class else {
+        log::warn!("no application delegate: ⌘Q will not ask about unsaved changes");
+        return false;
+    };
+    let added = add_terminate_hook(class, decide);
+    if !added {
+        log::warn!(
+            "{} already answers applicationShouldTerminate:: Quit will not ask about unsaved changes",
+            class.name().to_string_lossy()
+        );
+    }
+    added
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
@@ -253,6 +343,47 @@ mod tests {
                 .postNotificationName_object(NSWorkspaceWillPowerOffNotification, None)
         };
         assert!(matches!(events.try_recv(), Ok(SystemEvent::WillShutDown { .. })));
+    }
+
+    /// A delegate class like tao's, which has no `applicationShouldTerminate:` of its own.
+    fn delegate_class() -> &'static AnyClass {
+        use objc2::ClassType;
+        use objc2::runtime::ClassBuilder;
+        ClassBuilder::new(c"HoploDexTestTerminateDelegate", NSObject::class())
+            .expect("a new class name")
+            .register()
+    }
+
+    #[test]
+    fn the_terminate_hook_cancels_when_asked_and_lets_the_os_end_the_app() {
+        use std::sync::atomic::AtomicBool;
+
+        let ending = Arc::new(AtomicBool::new(false));
+        let asked = Arc::new(AtomicU32::new(0));
+        let class = delegate_class();
+        let (ending_seen, asked_seen) = (ending.clone(), asked.clone());
+        assert!(add_terminate_hook(class, move || {
+            if ending_seen.load(Ordering::SeqCst) {
+                return true;
+            }
+            asked_seen.fetch_add(1, Ordering::SeqCst);
+            false
+        }));
+        // A second hook on a class that has one is refused.
+        assert!(!add_terminate_hook(class, || true));
+
+        let delegate: Retained<AnyObject> = unsafe { msg_send![class, new] };
+        let terminate = |delegate: &AnyObject| -> usize {
+            let null: *mut AnyObject = std::ptr::null_mut();
+            unsafe { msg_send![delegate, applicationShouldTerminate: null] }
+        };
+        // A user's quit is cancelled, after the question was started.
+        assert_eq!(terminate(&delegate), TERMINATE_CANCEL);
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        // The OS ending the app is let through, with no question.
+        ending.store(true, Ordering::SeqCst);
+        assert_eq!(terminate(&delegate), TERMINATE_NOW);
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
     }
 
     #[test]
